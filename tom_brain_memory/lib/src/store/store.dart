@@ -57,6 +57,17 @@
 // `default*` probe functions, and the
 // `kEmbeddingModelMarkerFileName` / `embeddingModelMarkerPath`
 // convention for the marker file A.50+ will own.
+//
+// A.50 — `vec_extension_loader.dart` + `vec_extension_events.dart`:
+// the sqlite-vec (vec0) shared-library loader. Owns
+// `VecExtensionLoader` (the load pipeline with injection points for
+// open / lookup / register), `VecExtensionLoadResult` (the outcome
+// record), `VecLoadOutcome` / `VecUnavailableReason` (per-outcome
+// value types), the `DynamicLibraryOpener` /
+// `DynamicLibrarySymbolLookup` / `ExtensionRegistrar` typedefs (for
+// test injection), the `loadVecExtensionWithFailOpen` wiring helper
+// for the open() path, and the `VectorIndexUnavailable`
+// `MemoryEvent` leaf emitted on every non-`loaded` outcome.
 
 export 'boot_integrity.dart'
     show
@@ -92,3 +103,14 @@ export 'two_db_coordinator.dart'
         TwoDbReplayFailure,
         TwoDbReplayReport,
         VectorApplier;
+export 'vec_extension_events.dart' show VectorIndexUnavailable;
+export 'vec_extension_loader.dart'
+    show
+        DynamicLibraryOpener,
+        DynamicLibrarySymbolLookup,
+        ExtensionRegistrar,
+        VecExtensionLoadResult,
+        VecExtensionLoader,
+        VecLoadOutcome,
+        VecUnavailableReason,
+        loadVecExtensionWithFailOpen;

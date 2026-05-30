@@ -27,6 +27,8 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 ///   * A.38 — `NodeDemoted`, `NodeForgotten` (the remaining
 ///     node-lifecycle leaves; rounds out the set Plan step A.38
 ///     committed to emitting)
+///   * A.50 — `VectorIndexUnavailable` (sqlite-vec extension load
+///     fell back to BM25-only mode at boot time)
 ///
 /// The `kind` discriminator convention for memory events is
 /// `memory.<event-name>`, kebab-cased (e.g. `memory.node-persisted`).
