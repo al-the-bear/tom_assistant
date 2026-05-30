@@ -11,6 +11,13 @@
 //     sealed `StackException` family. Bootstrap-name constant
 //     `bootstrapStackNames` exported here so A.43 and the operator
 //     UI can share one source of truth.
+//   - A.41 — `priority_policy.dart` — pure-function evaluators
+//     for all four `PriorityPolicyKind` variants. Exported as
+//     `sortByPolicy`, `comparePolicy`, `effectivePriority` so
+//     consumers (the SQLite reader's time-decayed post-sort, the
+//     operator UI's "show effective score" overlay, future
+//     in-memory `StackApi` mocks) share one canonical ordering
+//     implementation.
 //
 // Hidden from the public surface:
 //
@@ -19,6 +26,8 @@
 //     a concrete api in tests / wiring code. The abstract `StackApi`
 //     remains the contract surface.
 
+export 'priority_policy.dart'
+    show comparePolicy, effectivePriority, sortByPolicy;
 export 'sqlite_stack_api.dart' show SqliteStackApi, bootstrapStackNames;
 export 'stack_api.dart' show StackApi;
 export 'stack_events.dart'

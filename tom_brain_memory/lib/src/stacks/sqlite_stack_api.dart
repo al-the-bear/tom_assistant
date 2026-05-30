@@ -65,6 +65,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
     show NodeId, StackEntryId;
 
 import '../api/memory_event.dart';
+import 'priority_policy.dart';
 import 'stack_api.dart';
 import 'stack_events.dart';
 import 'stack_exception.dart';
@@ -665,13 +666,30 @@ final class SqliteStackApi implements StackApi {
   /// Reads the top [k] *active* entries ordered per the stack's
   /// current priority policy. Used by both `peek` and the
   /// transactional read-half of `pop`.
+  ///
+  /// Static policies (`fifo`, `lifo`, `priority`) push the
+  /// ordering into SQL — those `ORDER BY` clauses match the
+  /// pure-function comparators in `priority_policy.dart` 1:1.
+  /// `timeDecayedPriority` cannot express `exp(-Δt / halflife)`
+  /// in SQLite (no built-in `exp`), so the implementation fetches
+  /// every active row and post-sorts with the shared
+  /// `sortByPolicy` helper from the A.41 pure-function module.
+  /// Bootstrap stacks are bounded (n ≤ 1000 per spec § 5.4); the
+  /// full-set fetch is the simplest correct choice. A heuristic
+  /// candidate window (raw priority is an upper bound on effective
+  /// score, so a top-N pre-filter is safe) can replace it later
+  /// if profiling demands it.
   List<StackEntry> _readTopActive(String name, Row stackRow, int k) {
-    final policy = stackRow['priority_policy'] as String;
-    final attrs = _decodeAttrsJson(
+    final policyName = stackRow['priority_policy'] as String;
+    final priorityAttrs = _decodeAttrsJson(
       stackRow['priority_policy_attrs_json'] as String?,
     );
-    final orderClause = _orderClauseFor(policy, attrs);
 
+    if (policyName == PriorityPolicyKind.timeDecayedPriority.name) {
+      return _readTimeDecayedTop(name, priorityAttrs, k);
+    }
+
+    final orderClause = _staticOrderClause(policyName);
     final rows = _db.select(
       'SELECT id, stack_name, entry_node, priority, status, '
       'attrs_json, pushed_at_ms '
@@ -682,6 +700,56 @@ final class SqliteStackApi implements StackApi {
       <Object?>[name, k],
     );
     return rows.map(_rowToEntry).toList(growable: false);
+  }
+
+  /// Time-decayed top-K read. Fetches the full active set, applies
+  /// the pure-function `sortByPolicy` evaluator (which implements
+  /// `priority * exp(-Δt / halflife)` per spec § 5.2), then takes
+  /// the top [k]. See `_readTopActive` for the bounded-stack
+  /// rationale.
+  List<StackEntry> _readTimeDecayedTop(
+    String name,
+    Map<String, Object?> priorityAttrs,
+    int k,
+  ) {
+    final halflifeMs =
+        (priorityAttrs['halflifeMs'] as num?)?.toInt();
+    if (halflifeMs == null || halflifeMs <= 0) {
+      // Bypassed `_validatePolicy`. Fall back to raw-priority
+      // ordering so the read does not throw; the misconfiguration
+      // surfaces via `info`.
+      final orderClause =
+          _staticOrderClause(PriorityPolicyKind.priority.name);
+      final rows = _db.select(
+        'SELECT id, stack_name, entry_node, priority, status, '
+        'attrs_json, pushed_at_ms '
+        'FROM stack_entries '
+        "WHERE stack_name = ? AND status = 'active' "
+        '$orderClause '
+        'LIMIT ?',
+        <Object?>[name, k],
+      );
+      return rows.map(_rowToEntry).toList(growable: false);
+    }
+
+    final rows = _db.select(
+      'SELECT id, stack_name, entry_node, priority, status, '
+      'attrs_json, pushed_at_ms '
+      'FROM stack_entries '
+      "WHERE stack_name = ? AND status = 'active'",
+      <Object?>[name],
+    );
+    if (rows.isEmpty) return const <StackEntry>[];
+    final entries = rows.map(_rowToEntry).toList();
+    final policy = StackPolicy(
+      priority: PriorityPolicyKind.timeDecayedPriority,
+      // Retention is irrelevant for sort — `unbounded` is the
+      // value-type-safe placeholder.
+      retention: RetentionPolicyKind.unbounded,
+      halflifeMs: halflifeMs,
+    );
+    final sorted = sortByPolicy(entries, policy, now: _now().toUtc());
+    return sorted.take(k).toList(growable: false);
   }
 
   StackEntry _rowToEntry(Row row) {
@@ -705,15 +773,15 @@ final class SqliteStackApi implements StackApi {
   StackEntryStatus _statusFromName(String name) =>
       StackEntryStatus.values.firstWhere((s) => s.name == name);
 
-  /// Returns the SQL `ORDER BY` clause that implements the named
-  /// priority policy. `timeDecayedPriority` cannot express its
-  /// continuous decay in a single `ORDER BY` without `exp()`
-  /// (SQLite has no built-in `exp`); we approximate by ordering on
-  /// `priority * (1 - (now - pushed_at) / halflife)` clamped to the
-  /// linear regime — sufficient for the cooperative-priority use
-  /// cases of bootstrap stacks, with the full exponential decay
-  /// landing at A.41 as a Dart-side post-sort over a wider window.
-  String _orderClauseFor(String policy, Map<String, Object?> attrs) {
+  /// Returns the SQL `ORDER BY` clause for one of the three
+  /// *static* policies (`fifo`, `lifo`, `priority`). These map
+  /// directly to SQL because their comparators only reference
+  /// per-row columns. `timeDecayedPriority` is handled in Dart by
+  /// `_readTimeDecayedTop` — SQLite has no `exp()` so the
+  /// continuous decay cannot be expressed as a single `ORDER BY`.
+  /// The clauses here are an optimisation; the canonical ordering
+  /// reference is `priority_policy.dart`.
+  String _staticOrderClause(String policy) {
     switch (policy) {
       case 'fifo':
         return 'ORDER BY pushed_at_ms ASC, id ASC';
@@ -721,19 +789,6 @@ final class SqliteStackApi implements StackApi {
         return 'ORDER BY pushed_at_ms DESC, id DESC';
       case 'priority':
         return 'ORDER BY priority DESC, pushed_at_ms ASC, id ASC';
-      case 'timeDecayedPriority':
-        // A.41 will replace this with the proper exponential decay
-        // computed in Dart over a candidate window. The linear
-        // approximation here is correct for the trivial cases the
-        // A.40 test suite exercises (priority dominates when
-        // halflife >> age) and degrades gracefully thereafter.
-        final halflifeMs =
-            (attrs['halflifeMs'] as num?)?.toDouble() ?? 1.0;
-        final now = _now().toUtc().millisecondsSinceEpoch;
-        return 'ORDER BY '
-            '(priority * (1.0 - (CAST($now AS REAL) - pushed_at_ms) '
-            '/ CAST($halflifeMs AS REAL))) DESC, '
-            'pushed_at_ms ASC, id ASC';
       default:
         // Unknown policy — fall through to FIFO so the catalogue
         // is still queryable. A surprised operator gets ordered
