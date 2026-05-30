@@ -25,8 +25,22 @@
 // `readSchemaVersion` probe the migrator (A.28) will chain off.
 // The opener (A.26) does not call this yet; the migrator (A.28)
 // is the wiring step.
+//
+// A.28 — `schema_migrator.dart`: the forward-only chained migrator.
+// Owns `SchemaMigration` (the per-version registration value),
+// `kSchemaMigrations` (the append-only registry — today: v1 only),
+// `SchemaMigrator` (the class that walks the registry and applies
+// pending versions), `SchemaMigrationReport` (the outcome record),
+// and `SchemaVersionAhead` (the refusal-to-downgrade exception).
 
 export 'memory_directory.dart';
+export 'schema_migrator.dart'
+    show
+        SchemaMigration,
+        SchemaMigrationReport,
+        SchemaMigrator,
+        SchemaVersionAhead,
+        kSchemaMigrations;
 export 'schema_v1.dart'
     show applySchemaV1, readSchemaVersion, schemaV1Statements,
         schemaV1Summary, schemaV1Version;
