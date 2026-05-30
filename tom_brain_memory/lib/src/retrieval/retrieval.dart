@@ -1,6 +1,6 @@
 // Barrel for the `retrieval/` module.
 //
-// As of A.54 this barrel exports:
+// As of A.55 this barrel exports:
 //
 //   - `RecallQuery` — input record for `TomBrainMemory.recall`,
 //     plus `RecallMode`, `SymbolicFilter`, `AttrClause`,
@@ -15,10 +15,15 @@
 //     persister.
 //   - `Bm25Recall`, `Bm25RecallCandidate` — BM25-mode executor for
 //     `RecallQuery.text`.
+//   - `VectorRecall`, `VectorRecallCandidate` — vector-mode executor
+//     for `RecallQuery.embedding`. Groups embedding-bearing types by
+//     `EmbeddingPolicy.modelIdentity`, queries each per-model index
+//     in `vectors.db` once, enriches with `type_name` from `nodes`,
+//     and merges into a single ascending-distance ranking.
 //
 // Wiring across later Phase A steps:
 //
-//   - A.55 – A.59 — vector / symbolic / fusion / diversity, and
+//   - A.56 – A.59 — symbolic / fusion / diversity, and
 //     `RecallReport` population.
 //   - A.61 – A.62 — graph-walk mode + symbolic filter compiler.
 
@@ -40,3 +45,4 @@ export 'recall_query.dart'
         SymbolicOp;
 export 'recall_result.dart' show RecallReport, RecallResult;
 export 'stream_query.dart' show StreamCursor, StreamQuery;
+export 'vector_recall.dart' show VectorRecall, VectorRecallCandidate;
