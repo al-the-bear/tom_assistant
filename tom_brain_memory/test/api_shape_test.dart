@@ -295,6 +295,7 @@ class _FakeMemory implements TomBrainMemory {
     NodeId from,
     EdgeType type,
     NodeId to, {
+    required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
   }) async =>

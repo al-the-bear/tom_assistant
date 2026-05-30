@@ -86,6 +86,12 @@ import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show BrainTime, EdgeId, FixedClock, NodeId, Vec;
 
+/// Scope used by every `edge()` call in this test file. The
+/// idempotency key is left null because these tests exercise
+/// edge creation paths, not idempotency replay; the dedicated
+/// A.67 cross-cut test covers replay.
+const _testScope = Scope.nonIdempotent(producer: 'a39-test');
+
 void main() {
   group('A.39 end-to-end (bootstrap → persist → edge → demote → forget)',
       () {
@@ -387,7 +393,7 @@ void main() {
 
       final eventsBefore = events.length;
       final edgeId =
-          await edgeWriter.edge(from, EdgeType.evidenceFor, to);
+          await edgeWriter.edge(from, EdgeType.evidenceFor, to, scope: _testScope);
       // The edge row landed.
       final row = db.select(
         'SELECT from_node, to_node, type FROM edges WHERE id = ?',
@@ -427,7 +433,7 @@ void main() {
 
       Object? caught;
       try {
-        await edgeWriter.edge(from, EdgeType.motivates, to);
+        await edgeWriter.edge(from, EdgeType.motivates, to, scope: _testScope);
       } catch (e) {
         caught = e;
       }
@@ -464,7 +470,7 @@ void main() {
 
       Object? caught;
       try {
-        await edgeWriter.edge(from, EdgeType.evidenceFor, to);
+        await edgeWriter.edge(from, EdgeType.evidenceFor, to, scope: _testScope);
       } catch (e) {
         caught = e;
       }

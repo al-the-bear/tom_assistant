@@ -51,6 +51,12 @@ import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show BrainTime, BrainVersion, EdgeId, FixedClock, NodeId, Vec;
 
+/// Scope used by every `edge()` call in this test file. The
+/// idempotency key is left null because these tests exercise
+/// edge creation paths, not idempotency replay; the dedicated
+/// A.67 cross-cut test covers replay.
+const _testScope = Scope.nonIdempotent(producer: 'edge-reader-test');
+
 void main() {
   group('A.37 EdgeReader.edgesOf', () {
     late Database db;
@@ -179,12 +185,12 @@ void main() {
           await persistConclusion('summary', key: 'cn1');
 
       // Outgoing: claim --derived_from--> src1
-      final e1 = await writer.edge(claim, EdgeType.derivedFrom, src1);
+      final e1 = await writer.edge(claim, EdgeType.derivedFrom, src1, scope: _testScope);
       // Outgoing: claim --evidence_for--> conclusion
       final e2 =
-          await writer.edge(claim, EdgeType.evidenceFor, conclusion);
+          await writer.edge(claim, EdgeType.evidenceFor, conclusion, scope: _testScope);
       // Incoming: src2 --evidence_for--> claim
-      final e3 = await writer.edge(src2, EdgeType.evidenceFor, claim);
+      final e3 = await writer.edge(src2, EdgeType.evidenceFor, claim, scope: _testScope);
 
       final edges = await reader.edgesOf(claim);
       expect(edges.map((e) => e.id), containsAll(<EdgeId>[e1, e2, e3]));
@@ -196,8 +202,8 @@ void main() {
       final src1 = await persistSource('https://x.example', key: 's3');
       final src2 = await persistSource('https://y.example', key: 's4');
 
-      final e1 = await writer.edge(claim, EdgeType.derivedFrom, src1);
-      await writer.edge(src2, EdgeType.evidenceFor, claim); // incoming
+      final e1 = await writer.edge(claim, EdgeType.derivedFrom, src1, scope: _testScope);
+      await writer.edge(src2, EdgeType.evidenceFor, claim, scope: _testScope); // incoming
 
       final edges = await reader.edgesOf(
         claim,
@@ -213,8 +219,8 @@ void main() {
       final src1 = await persistSource('https://m.example', key: 's5');
       final src2 = await persistSource('https://n.example', key: 's6');
 
-      await writer.edge(claim, EdgeType.derivedFrom, src1); // outgoing
-      final e2 = await writer.edge(src2, EdgeType.evidenceFor, claim);
+      await writer.edge(claim, EdgeType.derivedFrom, src1, scope: _testScope); // outgoing
+      final e2 = await writer.edge(src2, EdgeType.evidenceFor, claim, scope: _testScope);
 
       final edges = await reader.edgesOf(
         claim,
@@ -232,8 +238,8 @@ void main() {
       final src = await persistSource('https://k.example', key: 's7');
       final conc = await persistConclusion('summary', key: 'cn2');
 
-      await writer.edge(claim, EdgeType.derivedFrom, src);
-      await writer.edge(claim, EdgeType.evidenceFor, conc);
+      await writer.edge(claim, EdgeType.derivedFrom, src, scope: _testScope);
+      await writer.edge(claim, EdgeType.evidenceFor, conc, scope: _testScope);
 
       final edges = await reader.edgesOf(claim);
       expect(
@@ -246,7 +252,7 @@ void main() {
         () async {
       final claim = await persistClaim('seed', key: 'c5');
       final src = await persistSource('https://q.example', key: 's8');
-      await writer.edge(claim, EdgeType.derivedFrom, src);
+      await writer.edge(claim, EdgeType.derivedFrom, src, scope: _testScope);
 
       // Sanity: with the default filter there IS an edge.
       expect(await reader.edgesOf(claim), hasLength(1));
@@ -264,8 +270,8 @@ void main() {
       final src = await persistSource('https://r.example', key: 's9');
       final conc = await persistConclusion('summary', key: 'cn3');
 
-      await writer.edge(claim, EdgeType.derivedFrom, src);
-      await writer.edge(claim, EdgeType.evidenceFor, conc);
+      await writer.edge(claim, EdgeType.derivedFrom, src, scope: _testScope);
+      await writer.edge(claim, EdgeType.evidenceFor, conc, scope: _testScope);
 
       final edges = await reader.edgesOf(
         claim,
@@ -282,9 +288,9 @@ void main() {
       final conc = await persistConclusion('summary', key: 'cn4');
       final src2 = await persistSource('https://u.example', key: 's11');
 
-      await writer.edge(claim, EdgeType.derivedFrom, src);
-      await writer.edge(claim, EdgeType.evidenceFor, conc);
-      await writer.edge(src2, EdgeType.evidenceFor, claim);
+      await writer.edge(claim, EdgeType.derivedFrom, src, scope: _testScope);
+      await writer.edge(claim, EdgeType.evidenceFor, conc, scope: _testScope);
+      await writer.edge(src2, EdgeType.evidenceFor, claim, scope: _testScope);
       // The mentions edge is rejected by the registry — Claim's
       // allowedOutgoing is {derivedFrom, evidenceFor}. So we cannot
       // sneak in a third unrelated label without expanding the
@@ -308,8 +314,8 @@ void main() {
       final src = await persistSource('https://o.example', key: 's12');
       final conc = await persistConclusion('summary', key: 'cn5');
 
-      await writer.edge(claim, EdgeType.derivedFrom, src);
-      await writer.edge(claim, EdgeType.evidenceFor, conc);
+      await writer.edge(claim, EdgeType.derivedFrom, src, scope: _testScope);
+      await writer.edge(claim, EdgeType.evidenceFor, conc, scope: _testScope);
 
       final first = await reader.edgesOf(claim);
       final second = await reader.edgesOf(claim);
@@ -327,9 +333,9 @@ void main() {
       final src2 = await persistSource('https://2.example', key: 's14');
       final src3 = await persistSource('https://3.example', key: 's15');
 
-      final e1 = await writer.edge(claim, EdgeType.derivedFrom, src1);
-      final e2 = await writer.edge(claim, EdgeType.derivedFrom, src2);
-      final e3 = await writer.edge(claim, EdgeType.derivedFrom, src3);
+      final e1 = await writer.edge(claim, EdgeType.derivedFrom, src1, scope: _testScope);
+      final e2 = await writer.edge(claim, EdgeType.derivedFrom, src2, scope: _testScope);
+      final e3 = await writer.edge(claim, EdgeType.derivedFrom, src3, scope: _testScope);
 
       final ids = <EdgeId>[e1, e2, e3]
         ..sort((a, b) => a.toString().compareTo(b.toString()));
@@ -372,7 +378,7 @@ void main() {
       // Use Claim → Claim with evidenceFor instead: Claim's
       // allowedOutgoing AND allowedIncoming both include evidenceFor.
       final claim = await persistClaim('reflexive', key: 'csl');
-      final e1 = await writer.edge(claim, EdgeType.evidenceFor, claim);
+      final e1 = await writer.edge(claim, EdgeType.evidenceFor, claim, scope: _testScope);
 
       final both = await reader.edgesOf(claim);
       expect(both, hasLength(1));
@@ -394,7 +400,7 @@ void main() {
     test('empty attrs_json column decodes to empty map', () async {
       final claim = await persistClaim('seed', key: 'cae');
       final src = await persistSource('https://e.example', key: 'sae');
-      await writer.edge(claim, EdgeType.derivedFrom, src);
+      await writer.edge(claim, EdgeType.derivedFrom, src, scope: _testScope);
 
       final edges = await reader.edgesOf(claim);
       expect(edges.single.attrs, isEmpty);
@@ -415,6 +421,7 @@ void main() {
         EdgeType.evidenceFor,
         claim,
         attrs: attrs,
+        scope: _testScope,
       );
 
       final edges = await reader.edgesOf(claim);
@@ -429,6 +436,7 @@ void main() {
         EdgeType.derivedFrom,
         src,
         weight: 0.42,
+        scope: _testScope,
       );
 
       final edges = await reader.edgesOf(claim);
@@ -440,7 +448,7 @@ void main() {
       final src = await persistSource('https://nc.example', key: 'snc');
 
       expect(await reader.edgesOf(claim), isEmpty);
-      await writer.edge(claim, EdgeType.derivedFrom, src);
+      await writer.edge(claim, EdgeType.derivedFrom, src, scope: _testScope);
       expect(await reader.edgesOf(claim), hasLength(1));
     });
   });

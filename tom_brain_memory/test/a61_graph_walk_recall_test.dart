@@ -86,6 +86,12 @@ import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show BrainTime, BrainVersion, EdgeId, FixedClock, NodeId, Vec;
 
+/// Scope used by every `edge()` call in this test file. The
+/// idempotency key is left null because these tests exercise
+/// edge creation paths, not idempotency replay; the dedicated
+/// A.67 cross-cut test covers replay.
+const _testScope = Scope.nonIdempotent(producer: 'a61-test');
+
 void main() {
   group('A.61 GraphWalkRecall', () {
     late Database memoryDb;
@@ -203,7 +209,7 @@ void main() {
     test('maxDepth <= 0 returns [] without issuing SQL', () async {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
 
       expect(
         recall.recall(
@@ -224,7 +230,7 @@ void main() {
     test('perModeK <= 0 returns [] without issuing SQL', () async {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
 
       expect(
         recall.recall(seeds: <NodeId>{a}, perModeK: 0),
@@ -240,7 +246,7 @@ void main() {
         () async {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
 
       final zeros = <EdgeType, double>{
         for (final t in EdgeType.values) t: 0.0,
@@ -258,8 +264,8 @@ void main() {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
       final c = await mkTopic('c');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(b, EdgeType.mentions, c);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(b, EdgeType.mentions, c, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -274,9 +280,9 @@ void main() {
       final b = await mkTopic('b');
       final c = await mkTopic('c');
       final d = await mkTopic('d');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(b, EdgeType.mentions, c);
-      await edgeWriter.edge(c, EdgeType.mentions, d);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(b, EdgeType.mentions, c, scope: _testScope);
+      await edgeWriter.edge(c, EdgeType.mentions, d, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -291,9 +297,9 @@ void main() {
       final b = await mkTopic('b');
       final c = await mkTopic('c');
       final d = await mkTopic('d');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(b, EdgeType.mentions, c);
-      await edgeWriter.edge(c, EdgeType.mentions, d);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(b, EdgeType.mentions, c, scope: _testScope);
+      await edgeWriter.edge(c, EdgeType.mentions, d, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -313,8 +319,8 @@ void main() {
       // A cycle A→B→A — the second hop reaches A again. The visited-
       // set + seed-exclusion guard means A never appears in the
       // candidate list.
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(b, EdgeType.mentions, a);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(b, EdgeType.mentions, a, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -329,8 +335,8 @@ void main() {
     test('A→B, B→A: maxDepth=3 returns {B} exactly once', () async {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(b, EdgeType.mentions, a);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(b, EdgeType.mentions, a, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -344,7 +350,7 @@ void main() {
     test('self-loop A→A returns [] (only reachable node is the seed)',
         () async {
       final a = await mkTopic('a');
-      await edgeWriter.edge(a, EdgeType.mentions, a);
+      await edgeWriter.edge(a, EdgeType.mentions, a, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -358,9 +364,9 @@ void main() {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
       final c = await mkTopic('c');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(b, EdgeType.mentions, c);
-      await edgeWriter.edge(c, EdgeType.mentions, a);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(b, EdgeType.mentions, c, scope: _testScope);
+      await edgeWriter.edge(c, EdgeType.mentions, a, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -379,8 +385,8 @@ void main() {
       final b = await mkTopic('b');
       final c = await mkTopic('c');
       // Two equally-distant direct neighbours, different edge types.
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(a, EdgeType.derivedFrom, c);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(a, EdgeType.derivedFrom, c, scope: _testScope);
 
       final boosted = recall.recall(
         seeds: <NodeId>{a},
@@ -403,8 +409,8 @@ void main() {
       final b = await mkTopic('b');
       final c = await mkTopic('c');
       // Two direct neighbours of A: B via mentions, C via derivedFrom.
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(a, EdgeType.derivedFrom, c);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(a, EdgeType.derivedFrom, c, scope: _testScope);
 
       // Zero out `mentions` — B should disappear from the result, C
       // should remain.
@@ -427,8 +433,8 @@ void main() {
       final a = await mkTopic('a');
       final t1 = await mkTopic('t1');
       final m1 = await mkMarker('m1');
-      await edgeWriter.edge(a, EdgeType.mentions, t1);
-      await edgeWriter.edge(a, EdgeType.mentions, m1);
+      await edgeWriter.edge(a, EdgeType.mentions, t1, scope: _testScope);
+      await edgeWriter.edge(a, EdgeType.mentions, m1, scope: _testScope);
 
       // Without the filter both neighbours come back.
       final all = recall.recall(seeds: <NodeId>{a});
@@ -462,9 +468,9 @@ void main() {
       final b = await mkTopic('b');
       final c = await mkTopic('c');
       final d = await mkTopic('d');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(a, EdgeType.mentions, c);
-      await edgeWriter.edge(b, EdgeType.mentions, d);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(a, EdgeType.mentions, c, scope: _testScope);
+      await edgeWriter.edge(b, EdgeType.mentions, d, scope: _testScope);
 
       final first = recall.recall(seeds: <NodeId>{a});
       final second = recall.recall(seeds: <NodeId>{a});
@@ -487,9 +493,9 @@ void main() {
       final b = await mkTopic('b');
       final c = await mkTopic('c');
       final d = await mkTopic('d');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(a, EdgeType.mentions, c);
-      await edgeWriter.edge(a, EdgeType.mentions, d);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(a, EdgeType.mentions, c, scope: _testScope);
+      await edgeWriter.edge(a, EdgeType.mentions, d, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -516,9 +522,9 @@ void main() {
       final b = await mkTopic('b');
       final c = await mkTopic('c');
       final d = await mkTopic('d');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(a, EdgeType.mentions, c);
-      await edgeWriter.edge(a, EdgeType.mentions, d);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(a, EdgeType.mentions, c, scope: _testScope);
+      await edgeWriter.edge(a, EdgeType.mentions, d, scope: _testScope);
 
       final all = recall.recall(seeds: <NodeId>{a});
       expect(all, hasLength(3));
@@ -539,8 +545,8 @@ void main() {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
       final c = await mkTopic('c');
-      await edgeWriter.edge(a, EdgeType.mentions, b); // A→B (outgoing)
-      await edgeWriter.edge(c, EdgeType.mentions, a); // C→A (incoming)
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope); // A→B (outgoing)
+      await edgeWriter.edge(c, EdgeType.mentions, a, scope: _testScope); // C→A (incoming)
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -556,8 +562,8 @@ void main() {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
       final c = await mkTopic('c');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(c, EdgeType.mentions, a);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(c, EdgeType.mentions, a, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -573,8 +579,8 @@ void main() {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
       final c = await mkTopic('c');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(c, EdgeType.mentions, a);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(c, EdgeType.mentions, a, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -588,7 +594,7 @@ void main() {
     test('negative depthDecay raises ArgumentError', () async {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
 
       expect(
         () => recall.recall(
@@ -603,7 +609,7 @@ void main() {
         () async {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
 
       expect(
         () => recall.recall(
@@ -625,8 +631,8 @@ void main() {
       final a = await mkTopic('a');
       final b = await mkTopic('b'); // 1-hop from A
       final c = await mkTopic('c'); // 2-hop from A via B
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(b, EdgeType.mentions, c);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(b, EdgeType.mentions, c, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},
@@ -645,8 +651,8 @@ void main() {
       final a = await mkTopic('a');
       final b = await mkTopic('b');
       final c = await mkTopic('c');
-      await edgeWriter.edge(a, EdgeType.mentions, b);
-      await edgeWriter.edge(b, EdgeType.mentions, c);
+      await edgeWriter.edge(a, EdgeType.mentions, b, scope: _testScope);
+      await edgeWriter.edge(b, EdgeType.mentions, c, scope: _testScope);
 
       final result = recall.recall(
         seeds: <NodeId>{a},

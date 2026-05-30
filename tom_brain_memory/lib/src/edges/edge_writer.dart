@@ -30,16 +30,23 @@
 //     as `NodePersister` — per-operation owner, composed into the
 //     concrete store at a later step.
 //   - `edgesOf` queries. Lands at A.37.
-//   - Producer attribution. The abstract `TomBrainMemory.edge`
-//     signature does not carry a `Scope`; `produced_by` is left
-//     NULL at this layer. If a future step needs producer
-//     attribution for edges (the dispatcher will, for trace
-//     stitching), the abstract surface gets an explicit `scope`
-//     parameter; tracked as **Q-A.36.2**.
 //   - Symmetric `NodeRejected` events on `NodePersister` failures.
 //     The asymmetry (NodePersister throws-only; EdgeWriter
 //     throws-and-emits) is documented in `edge_events.dart` and
 //     in **Q-A.36.1**.
+//
+// What this file owns since A.67:
+//
+//   - Producer attribution. The abstract `TomBrainMemory.edge`
+//     signature now requires a `Scope`; `scope.producer` lands in
+//     the `produced_by` column so the trace stitcher can attribute
+//     every edge to the agent run that wrote it (closes Q-A.36.2).
+//   - `Scope.idempotencyKey` enforcement, mirroring `NodePersister`
+//     (spec § 9.1). A second `edge` call under the same key returns
+//     the original `EdgeId` without inserting a duplicate row and
+//     without emitting an `EdgeCreated` event. The DB-level guard
+//     is `uniq_edges_idempotency_key`, the partial-unique index on
+//     `edges(idempotency_key)`.
 //
 // Layering:
 //
@@ -57,6 +64,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
 
 import '../api/memory_event.dart';
+import '../api/scope.dart';
 import '../nodes/node_type_registry.dart';
 import 'edge_events.dart';
 import 'edge_type.dart';
@@ -109,7 +117,16 @@ final class EdgeWriter {
 
   /// Creates an edge `from --type--> to`, returning the new edge id.
   ///
-  /// Contract (spec § 3.1, § 4.2, § 15):
+  /// Contract (spec § 3.1, § 4.2, § 9.1, § 15):
+  ///
+  ///   * Idempotency. When [scope].idempotencyKey is non-null AND an
+  ///     edge already exists under that key, the existing [EdgeId]
+  ///     is returned, no row is inserted, and no event is emitted —
+  ///     the call is a silent no-op. The existing endpoints / label
+  ///     / weight / attrs are *not* compared against the in-flight
+  ///     request; the key alone is the deduplication contract
+  ///     (mirroring `NodePersister.persist`). A re-running agent
+  ///     supplies the same key on retry and gets the same edge.
   ///
   ///   * Endpoints must name live rows in `nodes`. A missing endpoint
   ///     throws [EdgeEndpointMissing] and emits [EdgeRejected]. No
@@ -130,7 +147,10 @@ final class EdgeWriter {
   ///   * On success: a fresh [EdgeId] is minted, a row is inserted
   ///     into `edges` (composite indexes idx_edges_from_type /
   ///     idx_edges_to_type / idx_edges_type_from_to update
-  ///     transparently), and [EdgeCreated] is emitted.
+  ///     transparently), `scope.producer` is recorded in
+  ///     `produced_by`, `scope.idempotencyKey` (when supplied) is
+  ///     recorded in `idempotency_key`, and [EdgeCreated] is
+  ///     emitted.
   ///
   /// [weight] defaults to `1.0`. [attrs] defaults to an empty map;
   /// the only attribute currently in use is `{'kind': 'depends_on'}`
@@ -140,10 +160,23 @@ final class EdgeWriter {
     NodeId from,
     EdgeType type,
     NodeId to, {
+    required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
   }) async {
     final effectiveAttrs = attrs ?? const <String, Object?>{};
+
+    // 0. Idempotency hit? Cheapest check first — a single indexed
+    //    lookup. On hit we return immediately without touching the
+    //    registry or any endpoint validation; the prior write already
+    //    satisfied those checks. Mirrors `NodePersister.persist`
+    //    (spec § 9.1).
+    if (scope.idempotencyKey != null) {
+      final existing = _lookupByIdempotencyKey(scope.idempotencyKey!);
+      if (existing != null) {
+        return existing;
+      }
+    }
 
     // 1. Endpoint existence + type lookup. Two SELECTs (one per
     //    endpoint). The from-side is checked first — when both fail,
@@ -231,8 +264,8 @@ final class EdgeWriter {
     _db.execute(
       'INSERT INTO edges ('
       'id, from_node, to_node, type, weight, attrs_json, produced_by, '
-      'created_at_ms, created_at_iso'
-      ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'created_at_ms, created_at_iso, idempotency_key'
+      ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       <Object?>[
         id.toString(),
         from.toString(),
@@ -240,11 +273,12 @@ final class EdgeWriter {
         type.wireName,
         weight,
         effectiveAttrs.isEmpty ? null : jsonEncode(effectiveAttrs),
-        // produced_by left NULL until the abstract surface carries
-        // a Scope for edges; tracked as Q-A.36.2.
-        null,
+        // produced_by carries Scope.producer for trace stitching
+        // (A.67 closes Q-A.36.2).
+        scope.producer,
         atMs,
         atIso,
+        scope.idempotencyKey,
       ],
     );
 
@@ -263,6 +297,23 @@ final class EdgeWriter {
     );
 
     return id;
+  }
+
+  // ─── Internal: idempotency ───────────────────────────────────────
+
+  /// Looks up an existing edge by `Scope.idempotencyKey`. Returns
+  /// the existing [EdgeId] when a row matches, `null` otherwise.
+  ///
+  /// The lookup goes through `uniq_edges_idempotency_key` — the
+  /// partial-unique index defined in schema-v1 — so it is a single
+  /// index seek even when the table is large.
+  EdgeId? _lookupByIdempotencyKey(String key) {
+    final rows = _db.select(
+      'SELECT id FROM edges WHERE idempotency_key = ? LIMIT 1',
+      <Object?>[key],
+    );
+    if (rows.isEmpty) return null;
+    return EdgeId.fromString(rows.first['id'] as String);
   }
 
   // ─── Internal: endpoint lookup ───────────────────────────────────

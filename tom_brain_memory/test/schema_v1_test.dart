@@ -165,7 +165,8 @@ void main() {
       }));
     });
 
-    test('edges carries weight + attrs + dual-time + producer', () {
+    test('edges carries weight + attrs + dual-time + producer + '
+        'idempotency_key', () {
       final cols = _columnNames(db, table: 'edges');
       expect(cols, containsAll(<String>{
         'id',
@@ -177,7 +178,16 @@ void main() {
         'produced_by',
         'created_at_ms',
         'created_at_iso',
+        // A.67 — edge idempotency mirrors nodes; column is nullable
+        // and uniquely indexed only when present.
+        'idempotency_key',
       }));
+    });
+
+    test('edges has the partial-unique idempotency_key index '
+        '(A.67)', () {
+      final indexes = _indexNames(db, table: 'edges');
+      expect(indexes, contains('uniq_edges_idempotency_key'));
     });
 
     test('stacks carries policy JSON, bootstrap flag, dual-time', () {

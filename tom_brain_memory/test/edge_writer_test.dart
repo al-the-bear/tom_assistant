@@ -58,6 +58,12 @@ import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show BrainTime, BrainVersion, EdgeId, FixedClock, NodeId, Vec;
 
+/// Scope used by every `edge()` call in this test file. The
+/// idempotency key is left null because these tests exercise
+/// edge creation paths, not idempotency replay; the dedicated
+/// A.67 cross-cut test covers replay.
+const _testScope = Scope.nonIdempotent(producer: 'edge-writer-test');
+
 void main() {
   group('A.36 EdgeWriter.edge', () {
     late Database db;
@@ -203,7 +209,7 @@ void main() {
       final source = await persistSource('https://example.org/a', key: 'ks1');
 
       final id =
-          await writer.edge(claim, EdgeType.derivedFrom, source);
+          await writer.edge(claim, EdgeType.derivedFrom, source, scope: _testScope);
 
       // Row in edges.
       final rows = db.select(
@@ -217,7 +223,10 @@ void main() {
       expect(row['type'], equals('derived_from'));
       expect((row['weight'] as num).toDouble(), equals(1.0));
       expect(row['attrs_json'], isNull);
-      expect(row['produced_by'], isNull);
+      // A.67: produced_by now mirrors `scope.producer` so the trace
+      // stitcher can attribute every edge to its writing run.
+      expect(row['produced_by'], equals('edge-writer-test'));
+      expect(row['idempotency_key'], isNull);
       expect(row['created_at_ms'], equals(fakeNow.millisecondsSinceEpoch));
 
       // Event emitted with resolved type names.
@@ -241,7 +250,7 @@ void main() {
       final s2 = await persistPlanStep('run-tests', key: 'ps2');
 
       final attrs = <String, Object?>{'kind': 'depends_on'};
-      final id = await writer.edge(s2, EdgeType.partOf, s1, attrs: attrs);
+      final id = await writer.edge(s2, EdgeType.partOf, s1, attrs: attrs, scope: _testScope);
 
       final row = db
           .select('SELECT attrs_json FROM edges WHERE id = ?',
@@ -265,6 +274,7 @@ void main() {
         EdgeType.evidenceFor,
         conclusion,
         weight: 0.42,
+        scope: _testScope,
       );
 
       final row =
@@ -282,9 +292,9 @@ void main() {
       final source = await persistSource('https://example.org/b', key: 'sm1');
 
       final id1 =
-          await writer.edge(claim, EdgeType.derivedFrom, source);
+          await writer.edge(claim, EdgeType.derivedFrom, source, scope: _testScope);
       final id2 =
-          await writer.edge(claim, EdgeType.derivedFrom, source);
+          await writer.edge(claim, EdgeType.derivedFrom, source, scope: _testScope);
 
       expect(id1, isNot(equals(id2)));
       expect(edgeCount(), equals(2));
@@ -296,7 +306,7 @@ void main() {
       final writer = buildWriter();
       final claim = await persistClaim('seed', key: 'ci1');
       final source = await persistSource('https://example.org/c', key: 'si1');
-      await writer.edge(claim, EdgeType.derivedFrom, source);
+      await writer.edge(claim, EdgeType.derivedFrom, source, scope: _testScope);
 
       // EXPLAIN QUERY PLAN should pick one of the composite indexes
       // rather than a SCAN. We don't assert the exact plan — that's
@@ -320,7 +330,7 @@ void main() {
 
       // Claim.allowedOutgoing only contains derivedFrom. Try mentions.
       await expectLater(
-        writer.edge(claim, EdgeType.mentions, source),
+        writer.edge(claim, EdgeType.mentions, source, scope: _testScope),
         throwsA(isA<EdgeNotPermitted>()
             .having((e) => e.side, 'side', EdgeEndpointSide.from)
             .having((e) => e.rejectingTypeName, 'rejecting', 'Claim')
@@ -344,7 +354,7 @@ void main() {
 
       // Happy-path seed so we have one edge to count against later.
       // Source's allowedIncoming includes derivedFrom, so this passes.
-      await writer.edge(claim, EdgeType.derivedFrom, source);
+      await writer.edge(claim, EdgeType.derivedFrom, source, scope: _testScope);
 
       // To exercise the to-side rejection we pick a different pair:
       // PlanStep --motivates--> PlanStep. PlanStep.allowedOutgoing
@@ -353,7 +363,7 @@ void main() {
       final s2 = await persistPlanStep('deploy', key: 'pl2');
 
       await expectLater(
-        writer.edge(s1, EdgeType.motivates, s2),
+        writer.edge(s1, EdgeType.motivates, s2, scope: _testScope),
         throwsA(isA<EdgeNotPermitted>()
             .having((e) => e.side, 'side', EdgeEndpointSide.to)
             .having((e) => e.rejectingTypeName, 'rejecting', 'PlanStep')
@@ -379,7 +389,7 @@ void main() {
       final phantom = NodeId.generate();
 
       await expectLater(
-        writer.edge(phantom, EdgeType.derivedFrom, source),
+        writer.edge(phantom, EdgeType.derivedFrom, source, scope: _testScope),
         throwsA(isA<EdgeEndpointMissing>()
             .having((e) => e.side, 'side', EdgeEndpointSide.from)
             .having((e) => e.reason, 'reason',
@@ -398,7 +408,7 @@ void main() {
       final phantom = NodeId.generate();
 
       await expectLater(
-        writer.edge(claim, EdgeType.derivedFrom, phantom),
+        writer.edge(claim, EdgeType.derivedFrom, phantom, scope: _testScope),
         throwsA(isA<EdgeEndpointMissing>()
             .having((e) => e.side, 'side', EdgeEndpointSide.to)),
       );
@@ -412,7 +422,7 @@ void main() {
       final ghostA = NodeId.generate();
       final ghostB = NodeId.generate();
       await expectLater(
-        writer.edge(ghostA, EdgeType.derivedFrom, ghostB),
+        writer.edge(ghostA, EdgeType.derivedFrom, ghostB, scope: _testScope),
         throwsA(isA<EdgeEndpointMissing>()
             .having((e) => e.side, 'side', EdgeEndpointSide.from)),
       );
@@ -436,7 +446,7 @@ void main() {
       );
 
       await expectLater(
-        writer.edge(claim, EdgeType.derivedFrom, source),
+        writer.edge(claim, EdgeType.derivedFrom, source, scope: _testScope),
         throwsA(isA<UnknownNodeTypeForEdge>()
             .having((e) => e.side, 'side', EdgeEndpointSide.from)
             .having((e) => e.unknownTypeName, 'type', 'NotRegistered')
@@ -457,7 +467,7 @@ void main() {
       final claim = await persistClaim('p', key: 'kpj1');
       final source = await persistSource('https://example.org/h', key: 'spj1');
       final id =
-          await writer.edge(claim, EdgeType.derivedFrom, source, weight: 0.5);
+          await writer.edge(claim, EdgeType.derivedFrom, source, weight: 0.5, scope: _testScope);
 
       final payload =
           events.whereType<EdgeCreated>().single.payloadJson();

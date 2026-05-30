@@ -149,15 +149,16 @@ CREATE TABLE IF NOT EXISTS nodes (
   // ─────────────────────────────────────────────────────────────
   '''
 CREATE TABLE IF NOT EXISTS edges (
-  id              TEXT    PRIMARY KEY,
-  from_node       TEXT    NOT NULL,
-  to_node         TEXT    NOT NULL,
-  type            TEXT    NOT NULL,
-  weight          REAL    NOT NULL DEFAULT 1.0,
-  attrs_json      TEXT,
-  produced_by     TEXT,
-  created_at_ms   INTEGER NOT NULL,
-  created_at_iso  TEXT    NOT NULL
+  id               TEXT    PRIMARY KEY,
+  from_node        TEXT    NOT NULL,
+  to_node          TEXT    NOT NULL,
+  type             TEXT    NOT NULL,
+  weight           REAL    NOT NULL DEFAULT 1.0,
+  attrs_json       TEXT,
+  produced_by      TEXT,
+  created_at_ms    INTEGER NOT NULL,
+  created_at_iso   TEXT    NOT NULL,
+  idempotency_key  TEXT
 )
 ''',
   'CREATE INDEX IF NOT EXISTS idx_edges_from_type '
@@ -166,6 +167,13 @@ CREATE TABLE IF NOT EXISTS edges (
       'ON edges(to_node, type)',
   'CREATE INDEX IF NOT EXISTS idx_edges_type_from_to '
       'ON edges(type, from_node, to_node)',
+  // Partial-unique index: idempotency keys only collide when they
+  // are non-null, mirroring the `nodes` invariant (spec § 9.1).
+  // A re-running agent (A.67) supplies the same scope.idempotencyKey;
+  // the second `edge` call returns the original EdgeId without
+  // inserting a duplicate row.
+  'CREATE UNIQUE INDEX IF NOT EXISTS uniq_edges_idempotency_key '
+      'ON edges(idempotency_key) WHERE idempotency_key IS NOT NULL',
 
   // ─────────────────────────────────────────────────────────────
   // node_types — cached `NodeTypeDecl` for fast lookup.

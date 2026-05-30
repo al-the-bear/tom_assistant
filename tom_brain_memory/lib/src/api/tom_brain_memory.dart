@@ -116,10 +116,19 @@ abstract class TomBrainMemory {
   /// `EdgeNotPermitted` on violation. `weight` defaults to 1.0;
   /// `attrs` carries optional per-edge metadata
   /// (e.g. `{'kind': 'depends_on'}` for plan-step dependencies).
+  ///
+  /// [scope] carries producer attribution and idempotency. Per
+  /// spec § 9.1 (and A.67): when `scope.idempotencyKey` is non-null
+  /// and an edge already exists under that key, the same `EdgeId`
+  /// is returned and no event is emitted — the second `edge` call
+  /// is a no-op. `scope.producer` lands in the `produced_by`
+  /// column so the trace stitcher can attribute every edge to the
+  /// agent run that wrote it.
   Future<EdgeId> edge(
     NodeId from,
     EdgeType type,
     NodeId to, {
+    required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
   });
