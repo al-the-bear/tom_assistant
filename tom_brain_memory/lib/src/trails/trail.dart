@@ -184,4 +184,23 @@ final class TrailEntry {
           if (details.isNotEmpty) 'details': details,
         },
       );
+
+  /// `outcome` entry — synthesised by `closeTrail` from the
+  /// caller-supplied [TrailOutcome]. Always the last line of a
+  /// closed trail. Carrying the outcome as a regular JSONL line
+  /// (rather than as a SQLite-only column) means a readback over a
+  /// trail file alone is sufficient to reconstruct the full run
+  /// without consulting `memory.db` — which is what corruption-
+  /// tolerant inspectors and offline forensic tooling rely on.
+  factory TrailEntry.outcome(TrailOutcome outcome, {DateTime? at}) =>
+      TrailEntry(
+        at: (at ?? DateTime.now()).toUtc(),
+        kind: TrailEntryKind.outcome,
+        payload: <String, Object?>{
+          'status': outcome.status.name,
+          'summary': outcome.summary,
+          if (outcome.details.isNotEmpty) 'details': outcome.details,
+          'elapsedMs': outcome.elapsedMs,
+        },
+      );
 }
