@@ -63,3 +63,10 @@ export 'src/events/events.dart'
 // constructor; the shared layer offers no global clock.
 export 'src/time/time.dart'
     show BrainTime, Clock, FixedClock, MutableTestClock, SystemClock;
+
+// A.16 — version/ module: BrainVersion monotonic positive-integer
+// version with total ordering and `next()` successor. Used by procedure
+// revisions, schema migrations, the node-type registry, and stack-
+// policy revisions. "No version yet" is represented as
+// `Maybe<BrainVersion>`; the integer range itself is always ≥ 1.
+export 'src/version/version.dart' show BrainVersion;
