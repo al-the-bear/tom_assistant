@@ -1,0 +1,20 @@
+name: tom_brain_memory
+description: Self-organizing property-graph memory for Tom Brain — storage, retrieval, cognitive agents, sleep cycles, MCP server, multi-machine sync, backup. Owns the canonical knowledge graph that every Tom Brain component reads from.
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.8
+
+# Dependency discipline (Plan step A.21 → A.22):
+# This is the A.21 *skeleton*. Runtime dependencies (`tom_brain_shared`,
+# `tom_basics`, `tom_core_kernel`, `tom_core_server`, `sqlite3`,
+# `dart_mcp`) are added in A.22 — not here. The skeleton ships with only
+# dev dependencies so the smoke test, `dart pub get`, and `dart analyze`
+# can run on an empty barrel without pulling in storage / MCP / native
+# transitive concerns prematurely.
+dependencies:
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
