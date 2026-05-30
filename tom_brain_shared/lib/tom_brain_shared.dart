@@ -83,3 +83,12 @@ export 'src/version/version.dart' show BrainVersion;
 // number. There is no role-template assembly here — that lives in
 // the substrate at B.22.
 export 'src/anchor/anchor.dart' show AssistantDedicationAnchor;
+
+// A.70 — cognitive_agents/ module: `AgentRegistration` is the per-
+// agent registry value memory uses to attribute writes (`producedBy`)
+// and to enforce read/write scopes (spec § 9.5). The runtime registry
+// and the `AgentScopeViolation` exception live in `tom_brain_memory`;
+// the value type stays here because the dispatcher (Phase D) and the
+// procedure-author role (Phase E) populate / serialise it without
+// depending on memory.
+export 'src/cognitive_agents/cognitive_agents.dart' show AgentRegistration;

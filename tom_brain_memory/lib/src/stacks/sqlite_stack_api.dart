@@ -98,6 +98,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import '../api/memory_event.dart';
 import '../api/scope.dart';
 import '../budget/write_budget_tracker.dart';
+import '../cognitive_agents/agent_registry.dart';
 import 'priority_policy.dart';
 import 'stack_api.dart';
 import 'stack_events.dart';
@@ -145,6 +146,12 @@ final class SqliteStackApi implements StackApi {
   /// whether a `Scope` was supplied.
   final WriteBudgetTracker? _budgetTracker;
 
+  /// Optional `AgentRegistry` scope enforcement (A.70; spec § 9.5).
+  /// When non-null AND `scope.agentName` is non-null, the registry
+  /// resolves the agent and enforces `writeScopes` against
+  /// `"stack:<name>"`. When null, pushes do not enforce scopes.
+  final AgentRegistry? _agentRegistry;
+
   /// Per-stack `StackEvent` broadcast controllers, minted lazily
   /// on first `events(name)` call.
   final Map<String, StreamController<StackEvent>> _eventStreams =
@@ -162,12 +169,14 @@ final class SqliteStackApi implements StackApi {
     DateTime Function()? now,
     void Function(MemoryEvent)? eventSink,
     WriteBudgetTracker? budgetTracker,
+    AgentRegistry? agentRegistry,
   })  : _db = memoryDb,
         _entryIdMint = entryIdMint ?? StackEntryId.generate,
         _stackNodeIdMint = stackNodeIdMint ?? NodeId.generate,
         _now = now ?? DateTime.now,
         _eventSink = eventSink,
-        _budgetTracker = budgetTracker;
+        _budgetTracker = budgetTracker,
+        _agentRegistry = agentRegistry;
 
   /// Releases stream controllers. Called by the higher-level store
   /// during `close`. Does NOT close the underlying database handle.
@@ -474,6 +483,18 @@ final class SqliteStackApi implements StackApi {
         message:
             'push: stack "$name" does not exist. Create it via '
             'StackApi.create first.',
+      );
+    }
+    // Agent-scope enforcement (A.70; spec § 9.5). After the stack-
+    // existence guard (a push to a missing stack fails structurally,
+    // not as a scope violation) and *before* the budget charge so
+    // a denied scope does not consume `maxStackEntries`. Pass-
+    // through when no scope was supplied, no registry is wired,
+    // or `scope.agentName` is null.
+    if (scope != null) {
+      _agentRegistry?.guardStackPush(
+        agentName: scope.agentName,
+        stackName: name,
       );
     }
     // WriteBudget enforcement (A.68; spec § 9.3). After the

@@ -60,6 +60,24 @@
 //     tracker is wired, when `scope.runId` is null, or when the
 //     run was not `beginRun`-registered.
 //
+// What this file owns since A.70:
+//
+//   - `AgentRegistry` write-scope enforcement (spec § 9.5). When
+//     `Scope.agentName` is non-null AND the writer was wired with
+//     an `AgentRegistry`, the registry resolves the named agent and
+//     verifies that its `writeScopes` contain
+//     `"edge:<wireName>"`. A miss throws `AgentScopeViolation`
+//     **before** the SQLite INSERT runs — same shape as the
+//     `WriteBudget` rejection: no row left behind, no `EdgeCreated`
+//     emitted, no `EdgeRejected` emitted (a scope violation is a
+//     refusal, not a structural rejection — `EdgeRejected` is for
+//     alphabet / endpoint failures), no budget charge consumed.
+//     The guard sits between the permission / alphabet checks and
+//     the budget charge so a denied write also does not consume
+//     budget. Pass-through when no registry is wired, when
+//     `scope.agentName` is null (bootstrap and migration writes),
+//     or when the registry pass-through rules fire.
+//
 // What this file owns since A.69:
 //
 //   - `ContradictionDetected` shaking-event emission (spec § 9.4).
@@ -92,6 +110,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
 import '../api/memory_event.dart';
 import '../api/scope.dart';
 import '../budget/write_budget_tracker.dart';
+import '../cognitive_agents/agent_registry.dart';
 import '../cognitive_agents/shaking_events.dart';
 import '../nodes/node_type_registry.dart';
 import 'edge_events.dart';
@@ -131,6 +150,13 @@ final class EdgeWriter {
   /// not enforce a budget.
   final WriteBudgetTracker? _budgetTracker;
 
+  /// Optional `AgentRegistry` scope enforcement (A.70; spec § 9.5).
+  /// When non-null AND `scope.agentName` is non-null, the registry
+  /// resolves the agent and enforces `writeScopes` against
+  /// `"edge:<wireName>"`. When null, edge writes do not enforce
+  /// scopes — see `AgentRegistry` header for the opt-in rationale.
+  final AgentRegistry? _agentRegistry;
+
   /// Constructs the writer around an already-opened, already-migrated
   /// `memory.db` handle and a registry bound to the same store.
   ///
@@ -142,12 +168,14 @@ final class EdgeWriter {
     DateTime Function()? now,
     void Function(MemoryEvent)? eventSink,
     WriteBudgetTracker? budgetTracker,
+    AgentRegistry? agentRegistry,
   })  : _db = memoryDb,
         _registry = registry,
         _idMint = idMint ?? EdgeId.generate,
         _now = now ?? DateTime.now,
         _eventSink = eventSink,
-        _budgetTracker = budgetTracker;
+        _budgetTracker = budgetTracker,
+        _agentRegistry = agentRegistry;
 
   // ─── Public surface ──────────────────────────────────────────────
 
@@ -287,6 +315,19 @@ final class EdgeWriter {
         otherTypeName: fromTypeName,
       );
     }
+
+    // 3a. Agent-scope enforcement (A.70; spec § 9.5). Pass-through
+    //     when no registry is wired or when `scope.agentName` is
+    //     null. Sits *after* the closed-alphabet / endpoint checks
+    //     (a structurally invalid edge fails structurally, not as
+    //     a scope violation), *before* the budget charge (a denied
+    //     scope does not consume `maxEdges`), and *before* the
+    //     INSERT so a violation leaves no row behind and does not
+    //     emit `EdgeCreated` or `ContradictionDetected`.
+    _agentRegistry?.guardEdgeWrite(
+      agentName: scope.agentName,
+      wireName: type.wireName,
+    );
 
     // 3b. WriteBudget enforcement (A.68; spec § 9.3). After every
     //     rejection helper (rejected edges do NOT consume budget) and

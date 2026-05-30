@@ -34,6 +34,22 @@
 //     through unchecked — see `WriteBudgetTracker` header for the
 //     opt-in rationale.
 //
+// What this file owns since A.70:
+//
+//   - `AgentRegistry` write-scope enforcement (spec § 9.5). When
+//     `Scope.agentName` is non-null AND the persister was wired
+//     with an `AgentRegistry`, the registry resolves the named
+//     agent and verifies that its `writeScopes` contain
+//     `"node:<typeName>"`. A miss throws `AgentScopeViolation`
+//     **before** the SQLite INSERT runs — same shape as the
+//     `WriteBudget` rejection: no row left behind, no event
+//     emitted, no budget charge consumed. The check sits between
+//     the validation passes and the budget charge so a denied
+//     write also does not consume budget. Pass-through when no
+//     registry is wired, when `scope.agentName` is null (bootstrap
+//     and migration writes), or when the registry pass-through
+//     rules fire.
+//
 // What this file does NOT own (yet):
 //
 //   - The full `SqliteTomBrainMemory` concrete class. The plan
@@ -80,6 +96,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
 import '../api/memory_event.dart';
 import '../api/scope.dart';
 import '../budget/write_budget_tracker.dart';
+import '../cognitive_agents/agent_registry.dart';
 import '../retrieval/fts5_writer.dart';
 import '../store/two_db_coordinator.dart';
 import 'node.dart';
@@ -133,6 +150,13 @@ final class NodePersister {
   /// opt-in rationale.
   final WriteBudgetTracker? _budgetTracker;
 
+  /// Optional `AgentRegistry` scope enforcement (A.70; spec § 9.5).
+  /// When non-null AND `scope.agentName` is non-null, the registry
+  /// resolves the agent and enforces `writeScopes` against
+  /// `"node:<typeName>"`. When null, persist does not enforce
+  /// scopes — see `AgentRegistry` header for the opt-in rationale.
+  final AgentRegistry? _agentRegistry;
+
   /// Constructs the persister around an already-opened, already-
   /// migrated `memory.db` handle and a coordinator/registry bound to
   /// the same store.
@@ -147,6 +171,7 @@ final class NodePersister {
     void Function(MemoryEvent)? eventSink,
     Fts5Writer? ftsWriter,
     WriteBudgetTracker? budgetTracker,
+    AgentRegistry? agentRegistry,
   })  : _db = memoryDb,
         _coordinator = coordinator,
         _registry = registry,
@@ -154,7 +179,8 @@ final class NodePersister {
         _now = now ?? DateTime.now,
         _eventSink = eventSink,
         _ftsWriter = ftsWriter,
-        _budgetTracker = budgetTracker;
+        _budgetTracker = budgetTracker,
+        _agentRegistry = agentRegistry;
 
   // ─── Public surface ────────────────────────────────────────────
 
@@ -212,6 +238,17 @@ final class NodePersister {
     //    substrate to embed; the caller produced the embedding (or
     //    chose not to).
     _validateEmbeddingAgainstPolicy(decl, draft);
+
+    // 4a. Agent-scope enforcement (A.70; spec § 9.5). Pass-through
+    //     when no registry is wired or when `scope.agentName` is
+    //     null. Runs *before* the budget charge so a denied write
+    //     does not consume a unit of `maxNodes`, and *before* the
+    //     SQLite INSERT so a violation leaves no row behind and
+    //     emits no event.
+    _agentRegistry?.guardNodeWrite(
+      agentName: scope.agentName,
+      typeName: draft.typeName,
+    );
 
     // 4b. WriteBudget enforcement (A.68; spec § 9.3). After the
     //     idempotency short-circuit and after every validation
@@ -497,6 +534,7 @@ final class NodePersister {
           'idempotency_key': scope.idempotencyKey,
         if (scope.causedBy != null) 'caused_by': scope.causedBy,
         if (scope.runId != null) 'run_id': scope.runId,
+        if (scope.agentName != null) 'agent_name': scope.agentName,
       };
 
   static Map<String, Object?> _valuesToJson(Map<String, Object?> values) {

@@ -39,11 +39,26 @@ final class Scope {
   /// `producer` is shared across runs.
   final String? runId;
 
+  /// Agent identity the write is issued under (spec § 9.5, plan
+  /// step A.70). When non-null AND the memory store was opened with
+  /// an `AgentRegistry`, the registry resolves this name to an
+  /// `AgentRegistration` and enforces the registration's
+  /// `writeScopes` against the resource the write touches
+  /// (`node:<TypeName>`, `edge:<wireName>`, `stack:<name>`).
+  ///
+  /// When null the registry pass-through fires — bootstrap writes
+  /// (initial node-type registration, bootstrap-stack installation)
+  /// and migration writes have no agent identity, and forcing one
+  /// would muddy the layering. The same opt-in shape the
+  /// `WriteBudgetTracker` uses for `runId`.
+  final String? agentName;
+
   const Scope({
     required this.producer,
     this.idempotencyKey,
     this.causedBy,
     this.runId,
+    this.agentName,
   });
 
   /// Convenience constructor for non-idempotent writes (rare,
@@ -53,6 +68,7 @@ final class Scope {
     required this.producer,
     this.causedBy,
     this.runId,
+    this.agentName,
   }) : idempotencyKey = null;
 }
 
