@@ -1,21 +1,44 @@
-// Barrel for the `stacks/` module (A.23 layout; A.24 surface).
+// Barrel for the `stacks/` module.
 //
-// At A.24 this barrel exports:
+// History of additions:
 //
-//   - `StackApi` — the abstract CRUD surface (§ 5.1).
-//   - `StackPolicy`, `PriorityPolicyKind`, `RetentionPolicyKind` —
-//     policy primitives (§ 5.2 – § 5.3).
-//   - `StackDecl` — creation declaration for non-bootstrap stacks.
-//   - `StackSummary`, `StackInfo` — catalogue read models.
-//   - `StackEntry`, `StackEntryStatus` — the materialised entry
-//     shape returned by `peek` / `pop`.
-//   - `StackEvent`, `StackEventKind` — lifecycle stream value.
+//   - A.23 — folder layout.
+//   - A.24 — abstract `StackApi` surface + value-type shapes.
+//   - A.40 — concrete `SqliteStackApi` implementation, typed
+//     `MemoryEvent` leaves (`StackCreated`, `StackPushed`,
+//     `StackPopped`, `StackEntryUpdated`, `StackEntryRemoved`,
+//     `StackPolicyChanged`, `StackOverflowDemoted`), and the
+//     sealed `StackException` family. Bootstrap-name constant
+//     `bootstrapStackNames` exported here so A.43 and the operator
+//     UI can share one source of truth.
 //
-// The six bootstrap stack *instances* (questions_open,
-// automation_ideas, interests, inflight, recent_runs,
-// restructure_backlog) land at A.43.
+// Hidden from the public surface:
+//
+//   - `Row` is a `sqlite3` type; internal to the implementation.
+//   - The `Sqlite*` prefix is exposed so consumers can construct
+//     a concrete api in tests / wiring code. The abstract `StackApi`
+//     remains the contract surface.
 
+export 'sqlite_stack_api.dart' show SqliteStackApi, bootstrapStackNames;
 export 'stack_api.dart' show StackApi;
+export 'stack_events.dart'
+    show
+        StackCreated,
+        StackEntryRemoved,
+        StackEntryUpdated,
+        StackOverflowDemoted,
+        StackPolicyChanged,
+        StackPopped,
+        StackPushed;
+export 'stack_exception.dart'
+    show
+        BootstrapStackImmutable,
+        StackAlreadyExists,
+        StackEntryNotFound,
+        StackException,
+        StackNotFound,
+        StackPolicyConfigInvalid,
+        StackPolicyConfigInvalidReason;
 export 'stack_types.dart'
     show
         PriorityPolicyKind,
