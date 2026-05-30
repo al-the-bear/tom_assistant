@@ -33,6 +33,19 @@
 // pending versions), `SchemaMigrationReport` (the outcome record),
 // and `SchemaVersionAhead` (the refusal-to-downgrade exception).
 //
+// A.30 — `two_db_coordinator.dart`: the two-database (memory.db +
+// vectors.db) write coordinator. Owns `TwoDbCoordinator` (the runner
+// that wraps every node-with-vector write in the
+// `pending_vector_writes` WAL protocol), `VectorApplier` (the
+// abstract `vectors.db`-side hook that A.50+ will implement against
+// sqlite-vec), `PendingVectorWritePayload` (the input value type for
+// a new write), `PendingVectorWrite` (the row read back during
+// recovery), `TwoDbReplayReport` (the recovery outcome), and
+// `TwoDbReplayFailure` (per-row failure record). The coordinator
+// does not open or own `vectors.db`; it interacts with it solely
+// through `VectorApplier`, keeping A.30 free of any sqlite-vec
+// dependency.
+//
 // A.29 — `boot_integrity.dart`: the boot-time integrity check.
 // Owns `BootIntegrityCheck` (the four-probe runner — schema version,
 // FTS5 availability, loadExtension capability, embedding-model
@@ -71,3 +84,11 @@ export 'schema_migrator.dart'
 export 'schema_v1.dart'
     show applySchemaV1, readSchemaVersion, schemaV1Statements,
         schemaV1Summary, schemaV1Version;
+export 'two_db_coordinator.dart'
+    show
+        PendingVectorWrite,
+        PendingVectorWritePayload,
+        TwoDbCoordinator,
+        TwoDbReplayFailure,
+        TwoDbReplayReport,
+        VectorApplier;
