@@ -56,3 +56,10 @@ export 'src/events/events.dart'
         DiagnosticEnvelope,
         DiagnosticSeverity,
         DiagnosticSeverityCompare;
+
+// A.15 — time/ module: BrainTime canonical timestamp + Clock injection
+// surface (SystemClock for production, FixedClock / MutableTestClock for
+// tests). Every brain component that reads "now" takes a Clock by
+// constructor; the shared layer offers no global clock.
+export 'src/time/time.dart'
+    show BrainTime, Clock, FixedClock, MutableTestClock, SystemClock;
