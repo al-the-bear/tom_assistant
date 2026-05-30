@@ -70,3 +70,16 @@ export 'src/time/time.dart'
 // policy revisions. "No version yet" is represented as
 // `Maybe<BrainVersion>`; the integer range itself is always ≥ 1.
 export 'src/version/version.dart' show BrainVersion;
+
+// A.17 — anchor/ module: `AssistantDedicationAnchor` is the framing
+// every internal Tom Brain prompt opens with (overview's Postulate 3).
+// Static-only surface: `text`, `version`, `wrap(prompt)`,
+// `containsAnchor(candidate)`, `wrapAll(messages)`. The substrate
+// (B.22 / B.23) calls `wrap` on every outbound prompt; the access
+// edge (E.31) uses `containsAnchor` for an inbound pre-check. The
+// hashing referenced in `thinking_specification.md` § 10.1 is
+// computed by the substrate (which already depends on `crypto`); the
+// shared layer carries only the text and a hand-bumped revision
+// number. There is no role-template assembly here — that lives in
+// the substrate at B.22.
+export 'src/anchor/anchor.dart' show AssistantDedicationAnchor;
