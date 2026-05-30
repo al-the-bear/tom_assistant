@@ -1,6 +1,6 @@
 // Barrel for the `retrieval/` module.
 //
-// As of A.56 this barrel exports:
+// As of A.57 this barrel exports:
 //
 //   - `RecallQuery` — input record for `TomBrainMemory.recall`,
 //     plus `RecallMode`, `SymbolicFilter`, `AttrClause`,
@@ -26,10 +26,17 @@
 //     `SymbolicFilter` into a parameterised SQL `WHERE` clause over
 //     the `nodes` table (type, time window, scope, attribute
 //     equality / comparison / IN-list).
+//   - `rrfFuse`, `RrfFusedCandidate`, `kDefaultRrfK` — Reciprocal
+//     Rank Fusion (pure function, spec § 6.2). Takes one ranked
+//     `List<NodeId>` per `RecallMode` and returns the descending-
+//     score fused list. Default `k_rrf = 60`. The fusion stage runs
+//     after the mode executors and before the diversifier (A.58).
 //
 // Wiring across later Phase A steps:
 //
-//   - A.57 – A.59 — fusion / diversity / `RecallReport` population.
+//   - A.58 — MMR diversifier (`λ = 0.7`) over the RRF output.
+//   - A.59 — `RecallReport` population + `TomBrainMemory.recall`
+//     wiring (executors → RRF → MMR → re-rank hook → result).
 //   - A.61 – A.62 — graph-walk mode + symbolic seed pre-filter.
 
 export 'bm25_recall.dart' show Bm25Recall, Bm25RecallCandidate;
@@ -49,6 +56,7 @@ export 'recall_query.dart'
         SymbolicFilter,
         SymbolicOp;
 export 'recall_result.dart' show RecallReport, RecallResult;
+export 'rrf.dart' show RrfFusedCandidate, kDefaultRrfK, rrfFuse;
 export 'stream_query.dart' show StreamCursor, StreamQuery;
 export 'symbolic_recall.dart'
     show
