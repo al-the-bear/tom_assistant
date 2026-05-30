@@ -27,11 +27,16 @@
 //     status / outcome columns are updated. `TrailEntryCorrupted`
 //     fires inside `readTrail` on JSONL lines that fail to parse.
 //
-//   - A basic `readTrail` reader. The reader is intentionally
-//     simple — it skips bad lines and emits `TrailEntryCorrupted`
-//     events for them. A.48 will replace the line-by-line parse
-//     with the streaming reader spec § 8.3 calls for; A.49 will
-//     add the end-to-end durability and corruption tests.
+//   - A corruption-tolerant streaming `readTrail` reader (A.48).
+//     The reader uses `File.openRead()` piped through a UTF-8
+//     decoder configured with `allowMalformed: true` and then
+//     through `LineSplitter`, so memory stays bounded regardless
+//     of trail size and so binary garbage mid-file does not crash
+//     the stream (malformed bytes surface as the Unicode
+//     replacement character, the JSON parse then fails for that
+//     one line, and a `TrailEntryCorrupted` event fires). A.49
+//     will add the end-to-end durability and corruption tests
+//     that exercise the cross-cut behaviour.
 //
 // What this file does NOT own:
 //
@@ -255,11 +260,34 @@ final class SqliteTrailStore {
 
   /// Reads a trail back as a stream of [TrailEntry] values.
   ///
-  /// Bad JSONL lines are silently skipped; a [TrailEntryCorrupted]
-  /// event is emitted per skip so observers learn about the
-  /// corruption. (Spec § 8.3.) The file is found via the in-process
-  /// `_open` map when the trail is still active, and via the
-  /// `trails` index row otherwise.
+  /// Streaming contract (A.48 / spec § 8.3):
+  ///
+  /// - The file is consumed via `File.openRead()` piped through
+  ///   `utf8.decoder` (with `allowMalformed: true`) and `LineSplitter`.
+  ///   Memory stays bounded regardless of trail size — even a
+  ///   multi-gigabyte trail file is read line-by-line without
+  ///   loading the full contents into memory.
+  /// - Malformed UTF-8 byte sequences mid-file do not crash the
+  ///   stream: `allowMalformed: true` substitutes the Unicode
+  ///   replacement character (U+FFFD), the JSON parse then fails
+  ///   for that one line, and the line is reported via a
+  ///   [TrailEntryCorrupted] event.
+  /// - Bad JSONL lines are silently skipped on the result stream;
+  ///   one [TrailEntryCorrupted] event is emitted per skip so
+  ///   observers learn about the corruption without the event bus
+  ///   having to carry the unparseable bytes themselves.
+  /// - A truncated final line (partial write surviving a crash
+  ///   between fsyncs) is treated the same as any other corrupt
+  ///   line: skipped, with a [TrailEntryCorrupted] event whose
+  ///   `lineNumber` is the line position the truncation occupies.
+  /// - Empty lines (blank lines, or the no-op line after the
+  ///   trailing newline that JSONL writers conventionally emit) are
+  ///   not corruption: they are skipped silently and do not
+  ///   advance the corruption counter or emit events.
+  ///
+  /// Trail-id resolution: the JSONL path is resolved from the
+  /// in-process `_open` map for trails that are still active, and
+  /// from the `trails` index row for trails that have been closed.
   ///
   /// Throws [StateError] when the trail id is unknown — neither in
   /// `_open` nor in the index row. Distinct from "file missing on
@@ -280,11 +308,22 @@ final class SqliteTrailStore {
         path,
       );
     }
-    final raw = await file.readAsString();
-    if (raw.isEmpty) return;
-    final lines = raw.split('\n');
+    // Streaming pipeline:
+    //   file bytes → utf8(allowMalformed) → line splitter → per-line decode
+    //
+    // `allowMalformed: true` is load-bearing: without it, a stray
+    // non-UTF-8 byte anywhere in the file would tear the stream
+    // down with a FormatException and we would lose every line
+    // after the offending byte. With it, the offending bytes
+    // become U+FFFD inside one line, that line fails JSON decode,
+    // we emit `TrailEntryCorrupted` for it, and every subsequent
+    // line is still readable.
+    final lines = file
+        .openRead()
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .transform(const LineSplitter());
     var lineNumber = 0;
-    for (final line in lines) {
+    await for (final line in lines) {
       lineNumber += 1;
       if (line.isEmpty) continue;
       final entry = _tryDecodeEntry(id, line, lineNumber);
