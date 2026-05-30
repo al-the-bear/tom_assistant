@@ -44,3 +44,15 @@ export 'src/result/result.dart'
         ResultMap,
         ResultWhen,
         Some;
+
+// A.14 — events/ module: BrainEvent abstract base + DiagnosticEnvelope
+// transport wrapper + DiagnosticSeverity. Subclasses of BrainEvent live in
+// the owning component (memory adds MemoryEvent at A.38). The
+// DiagnosticSeverityCompare extension is exported so consumers can read
+// `severity.atLeast(...)` predicates without an additional import.
+export 'src/events/events.dart'
+    show
+        BrainEvent,
+        DiagnosticEnvelope,
+        DiagnosticSeverity,
+        DiagnosticSeverityCompare;
