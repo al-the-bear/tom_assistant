@@ -21,6 +21,8 @@
 //   - A.34 — `persist(NodeDraft, Scope)` write path.
 //   - A.35 — `get` / `getMany` / `demote` / `forget`.
 
+export 'critique_hook.dart'
+    show CritiqueApproved, CritiqueHook, CritiqueOutcome, CritiqueRejected;
 export 'node.dart' show Node, NodeDraft, NodeStatus;
 export 'node_type_decl.dart'
     show
@@ -30,6 +32,16 @@ export 'node_type_decl.dart'
         IndexPolicy,
         NodeTypeDecl,
         RetentionPolicy;
+export 'node_type_events.dart' show NodeTypeRegistered;
+export 'node_type_registration.dart'
+    show
+        InvalidNodeTypeDecl,
+        NodeTypeAlreadyExists,
+        NodeTypeNotFound,
+        NodeTypeRegistrationException,
+        NodeTypeRejected,
+        NodeTypeVersionNotMonotonic;
+export 'node_type_registry.dart' show NodeTypeRegistry;
 export 'node_type_yaml_loader.dart'
     show
         NodeTypeManifestException,
