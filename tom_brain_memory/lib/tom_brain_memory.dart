@@ -6,12 +6,14 @@
 /// is augmented by retrieval over the graph, and each completed trail is
 /// folded back into the graph by the cognitive agents.
 ///
-/// At the A.21 scaffold step this barrel is intentionally empty. The
-/// surface lands incrementally across Phase A:
+/// At A.23 the `lib/src/` folder layout is in place but every
+/// subfolder barrel is intentionally empty — the actual surface lands
+/// incrementally across the remaining Phase A steps:
 ///
-/// - A.23 — `lib/src/` folder layout (`store/`, `retrieval/`, `nodes/`,
-///   `edges/`, `stacks/`, `classification/`, `trails/`, `migrations/`,
-///   `api/`, `mcp_server/`, `isolate_adapter/`, `config/`).
+/// - A.23 ✅ — `lib/src/` folder layout (`store/`, `retrieval/`,
+///   `nodes/`, `edges/`, `stacks/`, `classification/`, `trails/`,
+///   `migrations/`, `api/`, `mcp_server/`, `isolate_adapter/`,
+///   `config/`).
 /// - A.24 — `TomBrainMemory` abstract interface + `MemoryConfig`.
 /// - A.26 – A.87 — store, retrieval, agents, sleep cycles, MCP server,
 ///   multi-machine sync, backup.
@@ -22,4 +24,21 @@
 /// package implements.
 library;
 
-// Exports land here, one per module, as A.23+ steps ship.
+// A.23 — module barrels. Each `src/<folder>/<folder>.dart` is currently
+// an empty barrel; the export here ensures the top-level package
+// surface mirrors the internal layout from day one. As later A-steps
+// add public symbols inside each module, the symbols become visible
+// through `package:tom_brain_memory/tom_brain_memory.dart` without
+// further changes here.
+export 'src/api/api.dart';
+export 'src/classification/classification.dart';
+export 'src/config/config.dart';
+export 'src/edges/edges.dart';
+export 'src/isolate_adapter/isolate_adapter.dart';
+export 'src/mcp_server/mcp_server.dart';
+export 'src/migrations/migrations.dart';
+export 'src/nodes/nodes.dart';
+export 'src/retrieval/retrieval.dart';
+export 'src/stacks/stacks.dart';
+export 'src/store/store.dart';
+export 'src/trails/trails.dart';
