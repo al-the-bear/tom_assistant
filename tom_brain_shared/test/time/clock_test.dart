@@ -23,7 +23,9 @@ final class _MinimalClock implements Clock {
   DateTime now() => DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
   @override
   int nowMs() => ms;
-  // No override of nowBrainTime — uses Clock's default delegation.
+  // `Clock` is an `abstract interface class`, so every implementer must
+  // supply its own `nowBrainTime`. We mirror Clock's default body verbatim
+  // here; the surrounding test verifies the delegation contract holds.
   @override
   BrainTime nowBrainTime() => BrainTime.fromMs(nowMs());
 }

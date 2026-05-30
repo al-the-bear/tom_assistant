@@ -1,0 +1,8 @@
+# Dart / Pub
+.dart_tool/
+.packages
+pubspec.lock
+build/
+
+# Coverage (produced by `dart pub global run coverage:test_with_coverage`)
+coverage/

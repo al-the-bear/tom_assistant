@@ -59,7 +59,15 @@ abstract interface class Clock {
   /// and the `DateTime` view derived from it without any chance of drift
   /// between the two. Components that need both should prefer this over
   /// calling [now] and [nowMs] separately.
+  ///
+  /// Note: because `Clock` is an `abstract interface class`, every concrete
+  /// implementer reaches this method via `implements` and therefore must
+  /// supply its own override. The default body is kept as a readable
+  /// reference implementation but is structurally never invoked at runtime;
+  /// the coverage tool flags it as uncovered by design.
+  // coverage:ignore-start
   BrainTime nowBrainTime() => BrainTime.fromMs(nowMs());
+  // coverage:ignore-end
 }
 
 /// Production [Clock] backed by `DateTime.now()`.

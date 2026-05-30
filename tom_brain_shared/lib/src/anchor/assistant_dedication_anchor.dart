@@ -69,7 +69,10 @@
 /// chatbot) would be a *different* type, not a subclass of this one.
 final class AssistantDedicationAnchor {
   // Private const constructor: prevents instantiation. Static-only API.
-  const AssistantDedicationAnchor._();
+  // Never invoked at runtime; the line is structurally uncoverable by
+  // design — the class is static-only and exposes no factory that would
+  // call it.
+  const AssistantDedicationAnchor._(); // coverage:ignore-line
 
   /// The canonical anchor text.
   ///
