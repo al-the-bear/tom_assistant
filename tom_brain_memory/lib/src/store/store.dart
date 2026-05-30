@@ -32,7 +32,34 @@
 // `SchemaMigrator` (the class that walks the registry and applies
 // pending versions), `SchemaMigrationReport` (the outcome record),
 // and `SchemaVersionAhead` (the refusal-to-downgrade exception).
+//
+// A.29 — `boot_integrity.dart`: the boot-time integrity check.
+// Owns `BootIntegrityCheck` (the four-probe runner — schema version,
+// FTS5 availability, loadExtension capability, embedding-model
+// marker), `BootIntegrityReport` (the outcome record),
+// `BootIntegrityFailure` (raised by `report.throwIfFailed()`),
+// `IntegrityProbeResult` / `IntegrityProbeStatus` (per-probe value
+// types), the `Fts5Probe` / `LoadExtensionProbe` /
+// `EmbeddingMarkerProbe` typedefs (for test injection), the three
+// `default*` probe functions, and the
+// `kEmbeddingModelMarkerFileName` / `embeddingModelMarkerPath`
+// convention for the marker file A.50+ will own.
 
+export 'boot_integrity.dart'
+    show
+        BootIntegrityCheck,
+        BootIntegrityFailure,
+        BootIntegrityReport,
+        EmbeddingMarkerProbe,
+        Fts5Probe,
+        IntegrityProbeResult,
+        IntegrityProbeStatus,
+        LoadExtensionProbe,
+        defaultEmbeddingMarkerProbe,
+        defaultFts5Probe,
+        defaultLoadExtensionProbe,
+        embeddingModelMarkerPath,
+        kEmbeddingModelMarkerFileName;
 export 'memory_directory.dart';
 export 'schema_migrator.dart'
     show
