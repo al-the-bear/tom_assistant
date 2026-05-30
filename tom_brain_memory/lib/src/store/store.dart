@@ -68,6 +68,19 @@
 // test injection), the `loadVecExtensionWithFailOpen` wiring helper
 // for the open() path, and the `VectorIndexUnavailable`
 // `MemoryEvent` leaf emitted on every non-`loaded` outcome.
+//
+// A.51 — `vector_table.dart` + `vector_table_exception.dart`: the
+// `vectors.db` side of the storage stack. Owns `VectorTable` (the
+// per-model vector-index layer over `vectors.db`), `VectorIndexInfo`
+// (the meta-row value type), `VectorMatch` (the k-NN result row),
+// `VectorIndexBackend` (the backend interface), `Vec0VirtualTableBackend`
+// (production — composes sqlite-vec DDL/SQL), `PlainBlobTableBackend`
+// (test — plain SQL with a Dart-side brute-force k-NN), and the
+// sealed exception family `VectorTableException` /
+// `EmbeddingModelMismatch` / `EmbeddingDimsMismatch` /
+// `IndexInstallationConflict`. Records the embedding-model identity
+// per row by virtue of the per-model index layout (each model gets
+// its own physical table, recorded in `vector_indexes`).
 
 export 'boot_integrity.dart'
     show
@@ -114,3 +127,17 @@ export 'vec_extension_loader.dart'
         VecLoadOutcome,
         VecUnavailableReason,
         loadVecExtensionWithFailOpen;
+export 'vector_table.dart'
+    show
+        PlainBlobTableBackend,
+        Vec0VirtualTableBackend,
+        VectorIndexBackend,
+        VectorIndexInfo,
+        VectorMatch,
+        VectorTable;
+export 'vector_table_exception.dart'
+    show
+        EmbeddingDimsMismatch,
+        EmbeddingModelMismatch,
+        IndexInstallationConflict,
+        VectorTableException;
