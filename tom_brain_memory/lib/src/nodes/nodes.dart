@@ -1,25 +1,31 @@
-// Barrel for the `nodes/` module (Plan step A.23).
+// Barrel for the `nodes/` module (A.23 layout; A.24 surface).
 //
-// Owns the open node-type system described in `memory_specification.md`
-// § 4.1:
+// At A.24 this barrel exports:
 //
-//   - `NodeTypeDecl` — the schema-and-policy declaration registered via
-//     `propose_node_type_v1`.
-//   - `NodeDraft` / `Node` — write-side and read-side records.
-//   - The 21 bootstrap node types (Event, Claim, Concept, Conclusion,
-//     Question, Pattern, Contradiction, Source, Stack, StackEntry,
-//     Trail, Procedure, Run, Role, Persona, Substrate, Centroid,
-//     MigrationCursor, Tombstone, NodeTypeDecl, EdgeMeta).
-//   - Per-type indexPolicy / retentionPolicy / classificationPolicy.
+//   - `Node` / `NodeDraft` / `NodeStatus` — read- and write-side
+//     records used by `TomBrainMemory.persist`, `get`, `getMany`,
+//     `stream`.
+//   - `NodeTypeDecl` + supporting structs — schema-and-policy
+//     declaration registered via `registerNodeType`.
+//   - `FieldSpec`, `FieldType`, `IndexPolicy`, `EmbeddingPolicy`,
+//     `RetentionPolicy` — the per-type policy primitives.
 //
-// Hard invariant (§ 1.3): **node types are open**, but new types only
-// arrive via the `propose_node_type_v1` procedure path, never as a code
-// edit alone. The 12-edge alphabet (`edges/`) is closed.
+// The 21 bootstrap node-type *instances* land at A.32 (per the plan).
+// The A.24 surface only declares the *shape* of a `NodeTypeDecl`.
 //
 // Wiring across later Phase A steps:
 //
-//   - A.40+ — NodeTypeDecl, NodeDraft, Node record shapes.
-//   - A.42+ — the 21 bootstrap registrations.
-//   - A.44+ — registry CRUD + persistence in `memory.db`.
-//
-// At A.23 this folder is intentionally empty. No exports yet.
+//   - A.32 — YAML manifest loader + 21 bootstrap registrations.
+//   - A.33 — `registerNodeType` with critique-driven overlap check.
+//   - A.34 — `persist(NodeDraft, Scope)` write path.
+//   - A.35 — `get` / `getMany` / `demote` / `forget`.
+
+export 'node.dart' show Node, NodeDraft, NodeStatus;
+export 'node_type_decl.dart'
+    show
+        EmbeddingPolicy,
+        FieldSpec,
+        FieldType,
+        IndexPolicy,
+        NodeTypeDecl,
+        RetentionPolicy;

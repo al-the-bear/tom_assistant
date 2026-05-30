@@ -1,21 +1,26 @@
-// Barrel for the `edges/` module (Plan step A.23).
+// Barrel for the `edges/` module (A.23 layout; A.24 surface).
 //
-// Owns the closed 12-edge alphabet described in `memory_specification.md`
-// § 4.2. The alphabet is permanent (hard invariant § 1.3 — "open node
-// types, closed edges"):
+// At A.24 this barrel exports:
 //
-//   1. relatesTo            7. derivedFrom
-//   2. supports             8. supersededBy
-//   3. contradicts          9. satisfiedBy
-//   4. partOf              10. observedIn
-//   5. instanceOf          11. authoredBy
-//   6. mentionedIn         12. anchoredTo
+//   - `EdgeType` — the closed 12-edge alphabet from
+//     `memory_specification.md` § 4.2 (mentions, derived_from,
+//     superseded_by, satisfied_by, motivates, evidence_for,
+//     contradicts, part_of, produced_by, authored_by, targets,
+//     caused_by). The earlier draft list in the original A.23 barrel
+//     header (relatesTo / supports / instanceOf / mentionedIn /
+//     observedIn / anchoredTo) was superseded by the final spec; see
+//     Q-A.24.1.
+//   - `EdgeDirection` — direction filter for
+//     `TomBrainMemory.edgesOf`.
+//   - `Edge` — read-side record returned by `edgesOf` and graph-walk
+//     recall.
 //
 // Wiring across later Phase A steps:
 //
-//   - A.45+ — EdgeType enum, Edge record, EdgeDirection.
-//   - A.47+ — edge writes and `edgesOf` queries against `memory.db`.
-//   - A.48+ — `EdgeMeta` node for per-edge classification/weight metadata
-//             (the meta records that ride alongside the edge itself).
-//
-// At A.23 this folder is intentionally empty. No exports yet.
+//   - A.36 — `edge(...)` write path enforces `allowedOutgoing` /
+//             `allowedIncoming` against the NodeType registry.
+//   - A.37 — `edgesOf(...)` query path with direction + type filters.
+//   - A.61 — graph-walk recall mode (`memory_specification.md` § 10).
+
+export 'edge.dart' show Edge;
+export 'edge_type.dart' show EdgeDirection, EdgeType;

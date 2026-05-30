@@ -1,23 +1,14 @@
-// Barrel for the `classification/` module (Plan step A.23).
+// Barrel for the `classification/` module (A.23 layout; A.24 surface).
 //
-// Owns the LLM-independent classification path described in
-// `memory_specification.md` § 7:
+// At A.24 this barrel exports:
 //
-//   - Centroids (§ 7.1) — per-class mean embedding, maintained by
-//     `dream_recentroid_v1`.
-//   - The classification call (§ 7.2) — cosine to nearest centroid,
-//     with explicit certainty bands (high / borderline / low).
-//   - Centroid maintenance (§ 7.3) — incremental update + periodic
-//     recompute.
-//   - Batch LLM classification (§ 7.4) — opt-in, scheduled, budgeted,
-//     and always procedure-initiated (hard invariant § 1.2 — "memory
-//     does not call LLMs on the hot path").
+//   - `ClassificationTarget` — match-against discriminator
+//     (NodeType vs Procedure centroids).
+//   - `ClassificationDecision` — confident / uncertain / unknown.
+//   - `ClassificationResult` — `classify()` return value.
 //
-// Wiring across later Phase A steps:
-//
-//   - A.65+ — Centroid node + ClassificationResult shape.
-//   - A.67+ — classify() implementation against the centroid table.
-//   - A.69+ — uncertainty-band query (`findUncertain`) for the batch
-//             LLM path.
-//
-// At A.23 this folder is intentionally empty. No exports yet.
+// The centroid table, the `updateCentroid` write path, and the
+// `findUncertain` batch surface land at A.63 – A.66.
+
+export 'classification_result.dart'
+    show ClassificationDecision, ClassificationResult, ClassificationTarget;
