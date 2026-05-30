@@ -1,12 +1,12 @@
 // Barrel for the `retrieval/` module.
 //
-// As of A.59 this barrel exports:
+// As of A.61 this barrel exports:
 //
 //   - `RecallQuery` — input record for `TomBrainMemory.recall`,
 //     plus `RecallMode`, `SymbolicFilter`, `AttrClause`,
 //     `SymbolicOp`, `RecallBudget`, `FusionPolicy`,
 //     `FusionStrategy`, `DiversityPolicy`, `DiversityStrategy`,
-//     and the `ReRankHook` typedef.
+//     `GraphWalkPolicy`, and the `ReRankHook` typedef.
 //   - `RecallResult`, `RecallReport` — output record + cost
 //     breakdown.
 //   - `StreamQuery`, `StreamCursor` — cursor-backed bulk iteration.
@@ -26,6 +26,13 @@
 //     `SymbolicFilter` into a parameterised SQL `WHERE` clause over
 //     the `nodes` table (type, time window, scope, attribute
 //     equality / comparison / IN-list).
+//   - `GraphWalkRecall`, `GraphWalkRecallCandidate`,
+//     `kDefaultEdgeTypeWeight` — graph-walk-mode executor for
+//     `RecallQuery.seeds`. Runs a bounded-depth BFS over
+//     `memory.db.edges` with per-edge-type weights, depth decay, an
+//     optional direction filter, and an optional `typeNames` post-
+//     filter. Seeds are excluded from the result; cycles are broken
+//     at first re-entry via a visited-set guard.
 //   - `rrfFuse`, `RrfFusedCandidate`, `kDefaultRrfK` — Reciprocal
 //     Rank Fusion (pure function, spec § 6.2). Takes one ranked
 //     `List<NodeId>` per `RecallMode` and returns the descending-
@@ -47,15 +54,19 @@
 //
 // Wiring across later Phase A steps:
 //
-//   - A.61 – A.62 — graph-walk mode + symbolic seed pre-filter
-//     (drops into `RecallExecutor` without re-shaping the dispatch).
+//   - A.62 — graph-walk-mode test bench (cycle safety, depth bound,
+//     mixed-edge walks). The mode itself lands at A.61 and exports
+//     `GraphWalkRecall` / `GraphWalkRecallCandidate` here.
 
 export 'bm25_recall.dart' show Bm25Recall, Bm25RecallCandidate;
 export 'fts5_catalog.dart' show Fts5Catalog;
 export 'fts5_writer.dart' show Fts5Writer;
+export 'graph_walk_recall.dart'
+    show GraphWalkRecall, GraphWalkRecallCandidate, kDefaultEdgeTypeWeight;
 export 'recall_executor.dart'
     show
         Bm25ModeFn,
+        GraphWalkModeFn,
         NodeBulkReader,
         RecallExecutor,
         SymbolicModeFn,
@@ -67,6 +78,7 @@ export 'recall_query.dart'
         DiversityStrategy,
         FusionPolicy,
         FusionStrategy,
+        GraphWalkPolicy,
         RecallBudget,
         RecallMode,
         RecallQuery,

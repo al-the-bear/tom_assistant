@@ -9,6 +9,7 @@
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
 
+import '../edges/edge_type.dart';
 import '../nodes/node.dart';
 
 /// One of the four retrieval modes (§ 6.1).
@@ -149,6 +150,61 @@ final class DiversityPolicy {
   static const DiversityPolicy defaultMmr = DiversityPolicy();
 }
 
+/// Per-call policy for the `graphWalk` retrieval mode (spec § 6.1).
+///
+/// The walk is BFS from `RecallQuery.seeds` across the edge graph
+/// stored in `memory.db.edges`. Each visited node is scored as
+/// `parentScore * edgeTypeWeight * edge.weight * depthDecay` and the
+/// best score across all reaching paths wins. Seeds are excluded from
+/// the result candidates — graph walk returns *related* nodes, not the
+/// seed set itself.
+///
+/// Defaults are tuned for the spec's "two-hop neighbour expansion"
+/// reading: depth 2, `0.5` decay per hop, every edge type weighted 1.0,
+/// both directions traversed.
+final class GraphWalkPolicy {
+  /// Maximum hop count from any seed. Depth 0 = seeds (always excluded
+  /// from results); depth 1 = direct neighbours; depth 2 = neighbours
+  /// of neighbours. A `maxDepth <= 0` causes the executor to return
+  /// no candidates without touching the database.
+  final int maxDepth;
+  ///
+  /// Multiplicative decay applied per hop. `1.0` = no decay (a 5-hop
+  /// path scores the same as a 1-hop path with the same edge weights);
+  /// `0.0` would zero-out anything past depth 0. The default `0.5`
+  /// halves the contribution per additional hop, so a 2-hop neighbour
+  /// must have ~2x the edge-weight product to outrank a 1-hop one.
+  final double depthDecay;
+
+  /// Per-edge-type multiplier applied at every traversal step.
+  ///
+  /// Edge types absent from this map default to `1.0`. A weight of
+  /// `0.0` removes the edge type from the walk entirely (the executor
+  /// skips edges of that type — they neither propagate score nor
+  /// expand the frontier). Negative weights are rejected at executor
+  /// construction time.
+  final Map<EdgeType, double> edgeTypeWeights;
+
+  /// Which direction to traverse from each frontier node.
+  ///
+  /// `both` (default) walks the undirected graph — the conventional
+  /// reading of "graph walk for relatedness". `outgoing` follows only
+  /// `from → to` (consequence-style); `incoming` follows only
+  /// `to → from` (provenance-style).
+  final EdgeDirection direction;
+
+  const GraphWalkPolicy({
+    this.maxDepth = 2,
+    this.depthDecay = 0.5,
+    this.edgeTypeWeights = const <EdgeType, double>{},
+    this.direction = EdgeDirection.both,
+  });
+
+  /// System-wide default — depth 2, decay 0.5, every edge weighted
+  /// 1.0, undirected walk.
+  static const GraphWalkPolicy defaultPolicy = GraphWalkPolicy();
+}
+
 /// Signature of the optional caller-supplied re-rank hook.
 ///
 /// The hook receives the post-diversity candidate list and returns
@@ -188,6 +244,11 @@ final class RecallQuery {
   /// Diversity policy.
   final DiversityPolicy diversity;
 
+  /// Per-call graph-walk policy (depth, decay, per-edge-type weights,
+  /// direction). Only meaningful when [RecallMode.graphWalk] is in
+  /// [modes] and [seeds] is non-empty.
+  final GraphWalkPolicy graphWalk;
+
   /// Optional LLM re-rank hook.
   final ReRankHook? reRank;
 
@@ -201,6 +262,7 @@ final class RecallQuery {
     this.budget = const RecallBudget(),
     this.fusion = FusionPolicy.defaultRrf,
     this.diversity = DiversityPolicy.defaultMmr,
+    this.graphWalk = GraphWalkPolicy.defaultPolicy,
     this.reRank,
   });
 }

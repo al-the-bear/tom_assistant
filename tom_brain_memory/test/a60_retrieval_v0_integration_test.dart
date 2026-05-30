@@ -70,6 +70,7 @@ void main() {
     late Bm25Recall bm25;
     late VectorRecall vector;
     late SymbolicRecall symbolic;
+    late GraphWalkRecall graphWalk;
     late NodeReader nodeReader;
     late RecallExecutor executor;
     late int idCounter;
@@ -144,12 +145,14 @@ void main() {
         vectorTable: vectorTable,
       );
       symbolic = SymbolicRecall(memoryDb: memoryDb);
+      graphWalk = GraphWalkRecall(memoryDb: memoryDb);
       nodeReader = NodeReader(memoryDb: memoryDb);
 
       executor = RecallExecutor(
         bm25: bm25,
         vector: vector,
         symbolic: symbolic,
+        graphWalk: graphWalk,
         nodeReader: nodeReader,
         clock: fixedClock,
       );

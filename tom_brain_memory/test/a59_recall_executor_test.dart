@@ -28,7 +28,9 @@
 //   * Vector without embedding → 0 candidates, degraded = true.
 //   * Vector with null executor (boot-degraded) → 0 candidates,
 //     degraded = true.
-//   * graphWalk → 0 candidates, degraded = true (A.61 placeholder).
+//   * graphWalk without seeds → 0 candidates, not degraded.
+//   * graphWalk with seeds → ranked via the executor, not degraded.
+//   * graphWalk executor throws → 0 candidates, degraded = true.
 //   * Mode executor throws → 0 candidates, degraded = true.
 //
 //   Fusion gates
@@ -133,11 +135,20 @@ void main() {
         }) =>
             const <SymbolicRecallCandidate>[];
 
+    GraphWalkModeFn noGraphWalk() => ({
+          required Set<NodeId> seeds,
+          GraphWalkPolicy policy = GraphWalkPolicy.defaultPolicy,
+          Set<String>? typeNames,
+          int perModeK = 64,
+        }) =>
+            const <GraphWalkRecallCandidate>[];
+
     RecallExecutor newExecutor({
       Bm25ModeFn? bm25,
       VectorModeFn? vector,
       bool vectorNullExecutor = false,
       SymbolicModeFn? symbolic,
+      GraphWalkModeFn? graphWalk,
       required NodeBulkReader nodeReader,
       MutableTestClock? clock,
     }) =>
@@ -145,6 +156,7 @@ void main() {
           bm25: bm25 ?? noBm25(),
           vector: vectorNullExecutor ? null : (vector ?? noVector()),
           symbolic: symbolic ?? noSymbolic(),
+          graphWalk: graphWalk ?? noGraphWalk(),
           nodeReader: nodeReader,
           clock: clock ?? MutableTestClock(BrainTime.utc(2026, 1, 1)),
         );
@@ -354,11 +366,73 @@ void main() {
       expect(result.report.degraded, isTrue);
     });
 
-    test('graphWalk mode degrades silently (A.61 placeholder)', () async {
-      final exec = newExecutor(nodeReader: makeBulkReader(const []));
+    test('graphWalk without seeds yields 0 candidates, not degraded',
+        () async {
+      var called = false;
+      final exec = newExecutor(
+        graphWalk: ({
+          required Set<NodeId> seeds,
+          GraphWalkPolicy policy = GraphWalkPolicy.defaultPolicy,
+          Set<String>? typeNames,
+          int perModeK = 64,
+        }) {
+          called = true;
+          return const [];
+        },
+        nodeReader: makeBulkReader(const []),
+      );
       final result = await exec.recall(
         RecallQuery(modes: const {RecallMode.graphWalk}, k: 5),
       );
+      expect(called, isFalse);
+      expect(result.report.candidatesPerMode, {RecallMode.graphWalk: 0});
+      expect(result.report.degraded, isFalse);
+    });
+
+    test('graphWalk with seeds dispatches to the executor', () async {
+      final seed = mintId();
+      final neighbour = mintId();
+      List<GraphWalkRecallCandidate> graphWalk({
+        required Set<NodeId> seeds,
+        GraphWalkPolicy policy = GraphWalkPolicy.defaultPolicy,
+        Set<String>? typeNames,
+        int perModeK = 64,
+      }) =>
+          [
+            GraphWalkRecallCandidate(
+                nodeId: neighbour, typeName: 'Concept', score: 0.5),
+          ];
+      final exec = newExecutor(
+        graphWalk: graphWalk,
+        nodeReader: makeBulkReader([makeNode(neighbour)]),
+      );
+      final result = await exec.recall(RecallQuery(
+        modes: const {RecallMode.graphWalk},
+        seeds: {seed},
+        k: 5,
+      ));
+      expect(result.nodes.map((n) => n.id), [neighbour]);
+      expect(result.report.candidatesPerMode, {RecallMode.graphWalk: 1});
+      expect(result.report.degraded, isFalse);
+    });
+
+    test('graphWalk executor throwing → degraded, count = 0', () async {
+      final seed = mintId();
+      final exec = newExecutor(
+        graphWalk: ({
+          required Set<NodeId> seeds,
+          GraphWalkPolicy policy = GraphWalkPolicy.defaultPolicy,
+          Set<String>? typeNames,
+          int perModeK = 64,
+        }) =>
+            throw StateError('boom'),
+        nodeReader: makeBulkReader(const []),
+      );
+      final result = await exec.recall(RecallQuery(
+        modes: const {RecallMode.graphWalk},
+        seeds: {seed},
+        k: 5,
+      ));
       expect(result.report.candidatesPerMode, {RecallMode.graphWalk: 0});
       expect(result.report.degraded, isTrue);
     });

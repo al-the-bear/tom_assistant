@@ -25,8 +25,8 @@
 // What this file does NOT own:
 //
 //   - The mode executors themselves. `Bm25Recall`, `VectorRecall`,
-//     `SymbolicRecall`, and the future `GraphWalkRecall` (A.61) are
-//     standalone units in this package; the executor just calls them.
+//     `SymbolicRecall`, and `GraphWalkRecall` are standalone units in
+//     this package; the executor just calls them.
 //   - The pure-function fusion / diversity primitives. `rrfFuse` lives
 //     in `rrf.dart`; `mmrDiversify` lives in `mmr.dart`. The executor
 //     is the *composer* — it knows nothing about the math beyond the
@@ -41,8 +41,11 @@
 //     embedding requires `VectorTable` to expose a `getEmbeddingsFor`
 //     surface; that lookup is not yet on the table. The fallback —
 //     BM25-score-derived similarity — is what the executor uses today.
-//   - The graph-walk mode. The executor leaves a labelled slot for it
-//     so A.61 drops in without re-shaping the dispatch.
+//   - The graph-walk traversal itself. `GraphWalkRecall` owns the
+//     BFS-with-decay logic, the cycle-detection visited-set, and the
+//     per-edge-type weight table; the executor's only job is to hand
+//     it the seeds + per-query `GraphWalkPolicy` + optional typeNames
+//     filter, then thread the resulting ranking into RRF.
 //   - Re-rank-hook LLM instantiation. The hook is a caller-supplied
 //     `Future<List<NodeId>> Function(List<Node>)`. The executor calls
 //     it (when present), filters its output to known ids, and
@@ -56,7 +59,8 @@
 //           - bm25      → Bm25Recall.recall(...)
 //           - vector    → VectorRecall.recall(...) iff embedding ≠ null
 //           - symbolic  → SymbolicRecall.recall(...)
-//           - graphWalk → degraded (A.61)
+//           - graphWalk → GraphWalkRecall.recall(...) iff seeds ≠ null
+//                         and non-empty
 //        b. Record per-mode candidate count and the ranked
 //           `List<NodeId>` for RRF input.
 //        c. For BM25 candidates, retain the per-NodeId score so the
@@ -105,9 +109,6 @@
 //     the vector mode. The future hookup will call a caller-injected
 //     `Embedder` once, count the callout, and feed the result to
 //     `VectorRecall.recall(...)`.
-//   - **GraphWalk mode (A.61).** Currently labelled-and-degraded; the
-//     A.61 file drops a `GraphWalkRecall` into the dispatch alongside
-//     the other three.
 //   - **`FusionStrategy.weighted`.** The policy carries optional
 //     weights; the executor today routes only RRF. The gate is the
 //     `FusionStrategy` switch in `_fuse`. See Q-A.57.4.
@@ -120,6 +121,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import '../nodes/node.dart';
 import '../nodes/node_reader.dart';
 import 'bm25_recall.dart';
+import 'graph_walk_recall.dart';
 import 'mmr.dart';
 import 'recall_query.dart';
 import 'recall_result.dart';
@@ -157,6 +159,18 @@ typedef SymbolicModeFn = List<SymbolicRecallCandidate> Function({
   int perModeK,
 });
 
+/// Signature of the graph-walk mode executor, as seen by
+/// [RecallExecutor].
+///
+/// Matches `GraphWalkRecall.recall`. Tests inject a fake; production
+/// wires the method tear-off.
+typedef GraphWalkModeFn = List<GraphWalkRecallCandidate> Function({
+  required Set<NodeId> seeds,
+  GraphWalkPolicy policy,
+  Set<String>? typeNames,
+  int perModeK,
+});
+
 /// Bulk node read for the post-fusion materialisation step.
 ///
 /// Matches `NodeReader.getMany`. Tests inject a fake that resolves from
@@ -188,6 +202,10 @@ final class RecallExecutor {
   /// Symbolic mode executor function. Always required.
   final SymbolicModeFn _symbolic;
 
+  /// Graph-walk mode executor function. Always required at A.61+;
+  /// previously a stub-degraded slot in the executor.
+  final GraphWalkModeFn _graphWalk;
+
   /// Bulk-node reader for the post-fusion materialisation.
   final NodeBulkReader _nodeReader;
 
@@ -208,12 +226,14 @@ final class RecallExecutor {
     required Bm25Recall bm25,
     required VectorRecall? vector,
     required SymbolicRecall symbolic,
+    required GraphWalkRecall graphWalk,
     required NodeReader nodeReader,
     Clock clock = const SystemClock(),
   }) : this.fromCallables(
           bm25: bm25.recall,
           vector: vector?.recall,
           symbolic: symbolic.recall,
+          graphWalk: graphWalk.recall,
           nodeReader: nodeReader.getMany,
           clock: clock,
         );
@@ -229,11 +249,13 @@ final class RecallExecutor {
     required Bm25ModeFn bm25,
     required VectorModeFn? vector,
     required SymbolicModeFn symbolic,
+    required GraphWalkModeFn graphWalk,
     required NodeBulkReader nodeReader,
     Clock clock = const SystemClock(),
   })  : _bm25 = bm25,
         _vector = vector,
         _symbolic = symbolic,
+        _graphWalk = graphWalk,
         _nodeReader = nodeReader,
         _clock = clock;
 
@@ -357,12 +379,43 @@ final class RecallExecutor {
       case RecallMode.symbolic:
         return _runSymbolic(query);
       case RecallMode.graphWalk:
-        // A.61 lands graphWalk. Until then it is degraded silently.
-        return const _ModeResult(
-          candidateCount: 0,
-          ranked: <NodeId>[],
-          degraded: true,
-        );
+        return _runGraphWalk(query);
+    }
+  }
+
+  _ModeResult _runGraphWalk(RecallQuery query) {
+    final seeds = query.seeds;
+    if (seeds == null || seeds.isEmpty) {
+      // Graph walk without a seed set is meaningless. Refuse silently —
+      // mirrors the symbolic-mode "no filter" branch. Treat as zero
+      // candidates, not degraded: the caller asked for a mode whose
+      // input was missing, which is a no-op, not a system fault.
+      return const _ModeResult(
+        candidateCount: 0,
+        ranked: <NodeId>[],
+        degraded: false,
+      );
+    }
+    try {
+      final candidates = _graphWalk(
+        seeds: seeds,
+        policy: query.graphWalk,
+        typeNames: query.filter?.typeNames,
+        perModeK: query.budget.perModeK,
+      );
+      final ranked =
+          candidates.map((c) => c.nodeId).toList(growable: false);
+      return _ModeResult(
+        candidateCount: candidates.length,
+        ranked: List<NodeId>.unmodifiable(ranked),
+        degraded: false,
+      );
+    } catch (_) {
+      return const _ModeResult(
+        candidateCount: 0,
+        ranked: <NodeId>[],
+        degraded: true,
+      );
     }
   }
 
