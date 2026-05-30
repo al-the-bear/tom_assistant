@@ -65,6 +65,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
 
 import '../api/memory_event.dart';
 import '../api/scope.dart';
+import '../retrieval/fts5_writer.dart';
 import '../store/two_db_coordinator.dart';
 import 'node.dart';
 import 'node_events.dart';
@@ -103,6 +104,13 @@ final class NodePersister {
   /// sink to inspect emissions.
   final void Function(MemoryEvent)? _eventSink;
 
+  /// Optional FTS5 writer. When non-null, every successful
+  /// `INSERT INTO nodes` is paired with an `INSERT INTO fts_<Type>`
+  /// inside the same `writeNode` transaction. When null, FTS5 rows
+  /// are not maintained (the historic A.34 behaviour, kept for tests
+  /// that pre-date A.54).
+  final Fts5Writer? _ftsWriter;
+
   /// Constructs the persister around an already-opened, already-
   /// migrated `memory.db` handle and a coordinator/registry bound to
   /// the same store.
@@ -115,12 +123,14 @@ final class NodePersister {
     NodeId Function()? idMint,
     DateTime Function()? now,
     void Function(MemoryEvent)? eventSink,
+    Fts5Writer? ftsWriter,
   })  : _db = memoryDb,
         _coordinator = coordinator,
         _registry = registry,
         _idMint = idMint ?? NodeId.generate,
         _now = now ?? DateTime.now,
-        _eventSink = eventSink;
+        _eventSink = eventSink,
+        _ftsWriter = ftsWriter;
 
   // ─── Public surface ────────────────────────────────────────────
 
@@ -211,6 +221,17 @@ final class NodePersister {
             scope.idempotencyKey,
             vectorPayload?.embeddingModelId,
           ],
+        );
+        // FTS5 row insert. Wired only when the opener provided an
+        // `Fts5Writer` (A.54+). The writer is a no-op when the type
+        // has no FTS-indexed fields, so types without text columns
+        // pass through cleanly. Inside the coordinator's transaction
+        // so a failure here rolls back the node row too.
+        _ftsWriter?.insertRow(
+          db: db,
+          decl: decl,
+          nodeId: id.toString(),
+          values: draft.values,
         );
       },
       vector: vectorPayload,

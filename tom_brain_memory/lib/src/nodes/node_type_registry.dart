@@ -63,6 +63,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 
 import '../api/memory_event.dart';
 import '../edges/edge_type.dart';
+import '../retrieval/fts5_catalog.dart';
 import 'critique_hook.dart';
 import 'node_type_decl.dart';
 import 'node_type_events.dart';
@@ -102,6 +103,15 @@ final class NodeTypeRegistry {
   /// sink to inspect emissions.
   final void Function(MemoryEvent)? _eventSink;
 
+  /// Optional FTS5 catalog. When non-null, the registry provisions
+  /// per-type FTS5 virtual tables on warm-up and on every fresh
+  /// `registerNodeType`. When null, the registry leaves FTS5 tables
+  /// to a separate provisioning path (the historic A.33 behaviour).
+  ///
+  /// `Fts5Catalog.ensureTable` is idempotent, so multiple warm-ups
+  /// of the registry are safe.
+  final Fts5Catalog? _ftsCatalog;
+
   /// In-memory cache: type name → live tip of the registered decl.
   /// Populated lazily by `_warmFromDb`.
   final Map<String, NodeTypeDecl> _cache = <String, NodeTypeDecl>{};
@@ -123,11 +133,13 @@ final class NodeTypeRegistry {
     NodeId Function()? idMint,
     DateTime Function()? now,
     void Function(MemoryEvent)? eventSink,
+    Fts5Catalog? ftsCatalog,
   })  : _db = memoryDb,
         _critiqueHook = critiqueHook,
         _idMint = idMint ?? NodeId.generate,
         _now = now ?? DateTime.now,
-        _eventSink = eventSink;
+        _eventSink = eventSink,
+        _ftsCatalog = ftsCatalog;
 
   // ─── Public surface ────────────────────────────────────────────
 
@@ -177,6 +189,15 @@ final class NodeTypeRegistry {
     final declNodeId = _idMint();
     final at = _now().toUtc();
     _writeCacheRow(decl, declNodeId, at);
+
+    // 4a. Provision the FTS5 virtual table for this type, when the
+    //     opener wired a catalog. Idempotent via
+    //     `CREATE VIRTUAL TABLE IF NOT EXISTS`. Done outside the
+    //     cache-row transaction because DDL on a virtual table is
+    //     not transactional in SQLite's strict sense (the table
+    //     either exists or it does not — there is no in-flight
+    //     intermediate state).
+    _ftsCatalog?.ensureTable(decl, _db);
 
     // 5. In-memory cache update + event emission.
     _cache[decl.typeName] = decl;
@@ -479,6 +500,16 @@ final class NodeTypeRegistry {
       _cache[decl.typeName] = decl;
       _cacheDeclNodeIds[decl.typeName] =
           NodeId.fromString(row['decl_node_id'] as String);
+    }
+    // Re-assert FTS5 tables for every type already on disk. This is
+    // the recovery path for a store opened against a DB whose
+    // node_types rows survived a process restart: their per-type FTS
+    // virtual tables may have been created by a previous run (in
+    // which case `CREATE … IF NOT EXISTS` is a no-op) or may need to
+    // be created now (first boot after a registry-only restore).
+    final ftsCatalog = _ftsCatalog;
+    if (ftsCatalog != null) {
+      ftsCatalog.ensureAllTables(_cache.values, _db);
     }
     _warmed = true;
   }

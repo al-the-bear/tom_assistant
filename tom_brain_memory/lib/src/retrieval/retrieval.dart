@@ -1,6 +1,6 @@
-// Barrel for the `retrieval/` module (A.23 layout; A.24 surface).
+// Barrel for the `retrieval/` module.
 //
-// At A.24 this barrel exports:
+// As of A.54 this barrel exports:
 //
 //   - `RecallQuery` — input record for `TomBrainMemory.recall`,
 //     plus `RecallMode`, `SymbolicFilter`, `AttrClause`,
@@ -10,13 +10,21 @@
 //   - `RecallResult`, `RecallReport` — output record + cost
 //     breakdown.
 //   - `StreamQuery`, `StreamCursor` — cursor-backed bulk iteration.
+//   - `Fts5Catalog` — per-type FTS5 virtual-table layout owner.
+//   - `Fts5Writer` — per-type FTS5 INSERT path called by the
+//     persister.
+//   - `Bm25Recall`, `Bm25RecallCandidate` — BM25-mode executor for
+//     `RecallQuery.text`.
 //
 // Wiring across later Phase A steps:
 //
-//   - A.54 – A.59 — single-mode executors, fusion, diversity,
+//   - A.55 – A.59 — vector / symbolic / fusion / diversity, and
 //     `RecallReport` population.
 //   - A.61 – A.62 — graph-walk mode + symbolic filter compiler.
 
+export 'bm25_recall.dart' show Bm25Recall, Bm25RecallCandidate;
+export 'fts5_catalog.dart' show Fts5Catalog;
+export 'fts5_writer.dart' show Fts5Writer;
 export 'recall_query.dart'
     show
         AttrClause,
