@@ -13,4 +13,6 @@
 library;
 
 // Exports land here, one per module, as A.10 – A.17 ship.
-// Intentionally empty at A.7.
+
+// A.10 — ids/ module: ULID + NodeId/EdgeId/TrailId/StackEntryId/ProcedureId.
+export 'src/ids/ids.dart';
