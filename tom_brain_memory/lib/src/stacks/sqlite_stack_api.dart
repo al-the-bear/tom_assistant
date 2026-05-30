@@ -383,6 +383,68 @@ final class SqliteStackApi implements StackApi {
     );
   }
 
+  @override
+  Future<void> delete(String name) async {
+    _assertOpen();
+    final rows = _db.select(
+      'SELECT stack_node_id, is_bootstrap FROM stacks '
+      'WHERE name = ? LIMIT 1',
+      <Object?>[name],
+    );
+    if (rows.isEmpty) {
+      throw StackNotFound(
+        stackName: name,
+        message:
+            'delete: stack "$name" does not exist (already deleted, '
+            'or never created).',
+      );
+    }
+    final row = rows.first;
+    final isBootstrap = (row['is_bootstrap'] as int) == 1;
+    // Bootstrap immutability is checked via the catalogue flag
+    // rather than the `bootstrapStackNames` constant so a future
+    // operator-imported stack that mirrors a bootstrap name (via
+    // direct SQL ingestion) is still protected by the same path.
+    // The two should agree by construction — the installer is the
+    // only writer of `is_bootstrap = 1`.
+    if (isBootstrap) {
+      throw BootstrapStackImmutable(
+        stackName: name,
+        message:
+            '"$name" is a bootstrap stack and cannot be deleted '
+            '(spec § 5.4). Bootstrap stacks are installed on first '
+            'open and remain for the lifetime of the memory.',
+      );
+    }
+    final stackNodeId = row['stack_node_id'] as String;
+    _db.execute('BEGIN');
+    try {
+      _db.execute(
+        'DELETE FROM stack_entries WHERE stack_name = ?',
+        <Object?>[name],
+      );
+      _db.execute(
+        'DELETE FROM stacks WHERE name = ?',
+        <Object?>[name],
+      );
+      _db.execute(
+        'DELETE FROM nodes WHERE id = ?',
+        <Object?>[stackNodeId],
+      );
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+    // Close the per-stack event stream if one was minted — no one
+    // should be subscribed to a deleted stack, and dangling
+    // controllers would leak.
+    final controller = _eventStreams.remove(name);
+    if (controller != null) {
+      await controller.close();
+    }
+  }
+
   // ─── Entries: push / peek / pop ───────────────────────────────
 
   @override

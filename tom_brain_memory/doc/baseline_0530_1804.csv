@@ -1,0 +1,384 @@
+ID,Groups,Description,Baseline [05-30 18:04],[05-30 18:04]
+,A.23 folder layout,there are exactly twelve required subfolders,OK/OK,OK/OK
+,A.23 folder layout,lib/src/api/ exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/api/api.dart exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/classification/ exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/classification/classification.dart exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/config/ exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/config/config.dart exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/edges/ exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/edges/edges.dart exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/isolate_adapter/ exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/isolate_adapter/isolate_adapter.dart exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/mcp_server/ exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/mcp_server/mcp_server.dart exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/migrations/ exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/migrations/migrations.dart exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/nodes/ exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/nodes/nodes.dart exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/retrieval/ exists,OK/OK,OK/OK
+,A.30 two-database coordinator,"persistNodeWithVector commits node, applies vector, clears pending row",OK/OK,OK/OK
+,A.23 folder layout,lib/src/retrieval/retrieval.dart exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/stacks/ exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/stacks/stacks.dart exists,OK/OK,OK/OK
+,A.30 two-database coordinator,persistNodeWithVector without a vector writes no pending row and never calls the applier,OK/OK,OK/OK
+,A.23 folder layout,lib/src/store/ exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/store/store.dart exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/trails/ exists,OK/OK,OK/OK
+,A.23 folder layout,lib/src/trails/trails.dart exists,OK/OK,OK/OK
+,A.30 two-database coordinator,persistNodeWithVector stamps enqueued_at from the injected clock,OK/OK,OK/OK
+,A.30 two-database coordinator,"crash between writes: applier throws, node + pending row survive, a fresh coordinator with a healthy applier replays",OK/OK,OK/OK
+,A.23 folder layout,top-level barrel re-exports every subfolder barrel,OK/OK,OK/OK
+,A.23 folder layout,stale A.21 placeholder lib/src/.gitkeep is gone,OK/OK,OK/OK
+,A.30 two-database coordinator,"writeNode throws → memory.db rolled back, no pending row, applier never called",OK/OK,OK/OK
+,A.23 folder layout,no unexpected subfolders are present under lib/src/,OK/OK,OK/OK
+,A.30 two-database coordinator,"writeNode that violates a constraint rolls back cleanly, leaving the coordinator usable for a subsequent write",OK/OK,OK/OK
+,A.30 two-database coordinator,recoverPending on a clean DB returns an empty report,OK/OK,OK/OK
+,A.30 two-database coordinator,recoverPending aggregates per-row failures without aborting the pass; failing rows stay pending,OK/OK,OK/OK
+,A.30 two-database coordinator,recoverPending is idempotent: running twice with a healthy applier returns an empty report on the second pass,OK/OK,OK/OK
+,A.30 two-database coordinator,recoverPending respects the idempotency contract of the applier: an upsert-style applier may have already partially written the vector,OK/OK,OK/OK
+,A.30 two-database coordinator,"listPending returns rows ordered by enqueued_at_ms ASC, matching the original write order",OK/OK,OK/OK
+,A.34 NodePersister.persist,commits a fresh node with embedding and emits event,OK/OK,OK/OK
+,A.30 two-database coordinator,per-node uniqueness: two pending rows for the same node id raises a SqliteException from the primary key constraint,OK/OK,OK/OK
+,A.34 NodePersister.persist,EmbeddingPolicy.none type persists without touching applier,OK/OK,OK/OK
+,A.30 two-database coordinator,"PendingVectorWrite, PendingVectorWritePayload, TwoDbReplayReport, TwoDbReplayFailure toString surfaces are operator-grade (non-empty + carry the discriminating fields)",OK/OK,OK/OK
+,A.30 two-database coordinator,TwoDbReplayReport.failures is unmodifiable,OK/OK,OK/OK
+,A.34 NodePersister.persist,nullable fields can be omitted,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,get returns null for an unknown id,OK/OK,OK/OK
+,A.34 NodePersister.persist,enum field accepts a value in the allowed set,OK/OK,OK/OK
+,A.34 NodePersister.persist,multiple writes produce distinct ids and rows,OK/OK,OK/OK
+,A.34 NodePersister.persist,"second persist with same idempotency key returns prior id, no INSERT, no event, no applier call",OK/OK,OK/OK
+,A.34 NodePersister.persist,different idempotency keys produce distinct nodes,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,get returns the persisted node,OK/OK,OK/OK
+,A.34 NodePersister.persist,Scope.nonIdempotent always writes a fresh node,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,get returns null for a forgotten id,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,get returns a demoted node with status = demoted,OK/OK,OK/OK
+,A.34 NodePersister.persist,"unknown typeName → UnknownNodeType, no side effects",OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,getMany returns empty for empty input,OK/OK,OK/OK
+,A.34 NodePersister.persist,unknown field → InvalidNodeDraft.unknownField,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,getMany preserves input order,OK/OK,OK/OK
+,A.34 NodePersister.persist,missing required field → InvalidNodeDraft.missingRequiredField,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,getMany elides missing ids,OK/OK,OK/OK
+,A.34 NodePersister.persist,field type mismatch → InvalidNodeDraft.fieldTypeMismatch,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,getMany returns each found node once for duplicate ids,OK/OK,OK/OK
+,A.34 NodePersister.persist,enum value out of range → InvalidNodeDraft.enumValueOutOfRange,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,getMany reflects demoted status,OK/OK,OK/OK
+,A.34 NodePersister.persist,invalid nodeRef → InvalidNodeDraft.invalidNodeRef,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,demote flips status from active to demoted,OK/OK,OK/OK
+,A.34 NodePersister.persist,valid nodeRef is accepted,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,demote on already-demoted node is a no-op (updated_at unchanged),OK/OK,OK/OK
+,A.34 NodePersister.persist,missing embedding for embedding-bearing type → EmbeddingPolicyViolation.missingEmbedding,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,demote on a non-existent id is a no-op,OK/OK,OK/OK
+,A.34 NodePersister.persist,unexpected embedding on EmbeddingPolicy.none → EmbeddingPolicyViolation.unexpectedEmbedding,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,demote does not delete the row,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,"forget writes a Tombstone, indexes it, removes the live row",OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,forget on a non-existent id is a no-op,OK/OK,OK/OK
+,A.34 NodePersister.persist,embedding dimension mismatch → EmbeddingPolicyViolation.dimensionMismatch,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,forget on an already-forgotten id does not chain Tombstones,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,forget on a demoted node still writes a Tombstone,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,forget clears pending vector writes for the forgotten id,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,Tombstone is reachable by its own NodeId via get,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,lookupTombstone resolves a forgotten id to its Tombstone,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,demote emits NodeDemoted on the active → demoted transition,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,"demote is silent on no-op (already-demoted, missing)",OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,forget emits NodeForgotten on the Tombstone commit,OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,"forget is silent on no-op (unknown, already-forgotten)",OK/OK,OK/OK
+,A.35 NodeReader + NodeLifecycleManager,forget on a demoted node emits NodeForgotten with the post-demote type name and the supplied reason,OK/OK,OK/OK
+,A.22 dependency surface,tom_brain_shared exposes the cross-component vocabulary,OK/OK,OK/OK
+,A.22 dependency surface,tom_basics exposes TomLogger (the only log surface),OK/OK,OK/OK
+,A.22 dependency surface,tom_core_kernel exposes TomBean and TomBearerAuthentication,OK/OK,OK/OK
+,A.22 dependency surface,tom_core_server exposes the server authentication surface,OK/OK,OK/OK
+,A.22 dependency surface,sqlite3 exposes the FFI Dart surface,OK/OK,OK/OK
+,A.22 dependency surface,dart_mcp exposes the MCPServer base + protocol enum,OK/OK,OK/OK
+,A.26 MemoryDirectory.openOrCreate,creates a fresh root with the three required subdirectories,OK/OK,OK/OK
+,A.26 MemoryDirectory.openOrCreate,is idempotent on an existing root,OK/OK,OK/OK
+,A.26 MemoryDirectory.openOrCreate,regenerates a missing subdirectory on re-open,OK/OK,OK/OK
+,A.22 dependency surface,yaml exposes the loadYaml entry + YamlMap surface (A.32),OK/OK,OK/OK
+,A.22 forbidden surface,policy is documented (no enforcement target at A.22 yet),OK/OK,OK/OK
+,A.26 MemoryDirectory.openOrCreate,throws when the root path points at a file,OK/OK,OK/OK
+,A.26 MemoryDirectory.openOrCreate,throws ArgumentError when the root path is empty,OK/OK,OK/OK
+,A.26 MemoryDirectory.openOrCreate,resolves all exposed paths as absolute,OK/OK,OK/OK
+,A.26 MemoryDirectory.openOrCreate,exposes canonical filenames for the SQLite databases,OK/OK,OK/OK
+,A.26 MemoryDirectory freshness probes,isFresh is true before either DB file exists,OK/OK,OK/OK
+,A.26 MemoryDirectory freshness probes,memoryDbExists flips to true once the file is materialised,OK/OK,OK/OK
+,A.26 MemoryDirectory equality,two MemoryDirectory values for the same root compare equal,OK/OK,OK/OK
+fifo,priority_policy — totality & determinism,empty input → empty output,OK/OK,OK/OK
+fifo,priority_policy — totality & determinism,single-entry input → single-entry output,OK/OK,OK/OK
+fifo,priority_policy — totality & determinism,comparator is antisymmetric (200 random pairs),OK/OK,OK/OK
+fifo,priority_policy — totality & determinism,sortByPolicy is idempotent (50 random lists),OK/OK,OK/OK
+lifo,priority_policy — totality & determinism,empty input → empty output,OK/OK,OK/OK
+lifo,priority_policy — totality & determinism,single-entry input → single-entry output,OK/OK,OK/OK
+lifo,priority_policy — totality & determinism,comparator is antisymmetric (200 random pairs),OK/OK,OK/OK
+lifo,priority_policy — totality & determinism,sortByPolicy is idempotent (50 random lists),OK/OK,OK/OK
+priority,priority_policy — totality & determinism,empty input → empty output,OK/OK,OK/OK
+priority,priority_policy — totality & determinism,single-entry input → single-entry output,OK/OK,OK/OK
+priority,priority_policy — totality & determinism,comparator is antisymmetric (200 random pairs),OK/OK,OK/OK
+priority,priority_policy — totality & determinism,sortByPolicy is idempotent (50 random lists),OK/OK,OK/OK
+timeDecayedPriority,priority_policy — totality & determinism,empty input → empty output,OK/OK,OK/OK
+timeDecayedPriority,priority_policy — totality & determinism,single-entry input → single-entry output,OK/OK,OK/OK
+timeDecayedPriority,priority_policy — totality & determinism,comparator is antisymmetric (200 random pairs),OK/OK,OK/OK
+timeDecayedPriority,priority_policy — totality & determinism,sortByPolicy is idempotent (50 random lists),OK/OK,OK/OK
+,A.39 end-to-end (bootstrap → persist → edge → demote → forget),bootstrap manifest registers all 21 spec types,OK/OK,OK/OK
+,priority_policy — fifo,200 random lists: non-decreasing in pushedAt,OK/OK,OK/OK
+,bootstrap_node_types.yaml — completeness,manifest declares exactly the 21 bootstrap types,OK/OK,OK/OK
+,priority_policy — fifo,order independent of input order,OK/OK,OK/OK
+,bootstrap_node_types.yaml — completeness,every type has version=1 at bootstrap,OK/OK,OK/OK
+,bootstrap_node_types.yaml — completeness,every type starts without a classification centroid,OK/OK,OK/OK
+,bootstrap_node_types.yaml — completeness,no bootstrap type claims supersedes or validator,OK/OK,OK/OK
+,bootstrap_node_types.yaml — embedding policy,types with embedded fields name them as source_fields,OK/OK,OK/OK
+,bootstrap_node_types.yaml — embedding policy,Stack / StackEntry / Tombstone declare no embedding,OK/OK,OK/OK
+,bootstrap_node_types.yaml — edge permissions,key edges from spec § 4.1 are reachable in either direction,OK/OK,OK/OK
+,bootstrap_node_types.yaml — edge permissions,Stack has no outgoing edges,OK/OK,OK/OK
+,bootstrap_node_types.yaml — edge permissions,Tombstone only emits derived_from,OK/OK,OK/OK
+,bootstrap_node_types.yaml — edge permissions,Question may not have outgoing evidence_for,OK/OK,OK/OK
+,bootstrap_node_types.yaml — index/retention sanity,every indexed field is in the schema (loader-enforced),OK/OK,OK/OK
+,A.27 schema-v1 surface,readSchemaVersion is 0 on a fresh DB,OK/OK,OK/OK
+,bootstrap_node_types.yaml — index/retention sanity,Event/Source/NodeType/Stack/Tombstone retain indefinitely,OK/OK,OK/OK
+,priority_policy — lifo,200 random lists: non-increasing in pushedAt,OK/OK,OK/OK
+,bootstrap_node_types.yaml — barrel surface,loader symbols are reachable through the top-level barrel,OK/OK,OK/OK
+,priority_policy — lifo,lifo with all-distinct pushedAt is fifo reversed,OK/OK,OK/OK
+,A.39 end-to-end (bootstrap → persist → edge → demote → forget),every registered type is individually reachable via getNodeType,OK/OK,OK/OK
+,priority_policy — priority,200 random lists: non-increasing in priority; ties by time then id,OK/OK,OK/OK
+,A.29 default probes against in-memory SQLite,defaultFts5Probe returns ok on the workspace SQLite build,OK/OK,OK/OK
+,priority_policy — priority,effectivePriority == raw priority under static-priority policy,OK/OK,OK/OK
+,A.27 schema-v1 surface,applySchemaV1 records version 1 in migrations,OK/OK,OK/OK
+,A.27 schema-v1 surface,applySchemaV1 creates all ten Plan-A.27 tables,OK/OK,OK/OK
+,A.29 default probes against in-memory SQLite,"defaultLoadExtensionProbe returns a definite verdict (ok or failed, never skipped)",OK/OK,OK/OK
+,A.27 schema-v1 surface,edges has the three composite indexes spec § 4.2 mandates,OK/OK,OK/OK
+,tom_brain_memory package,barrel library resolves and test framework runs,OK/OK,OK/OK
+,A.27 schema-v1 surface,"nodes has the type, status, and time indexes",OK/OK,OK/OK
+,priority_policy — timeDecayedPriority,200 random lists: non-increasing in effective score,OK/OK,OK/OK
+,A.29 default probes against in-memory SQLite,defaultEmbeddingMarkerProbe returns skipped with Q-A.26.2 reference,OK/OK,OK/OK
+,A.27 schema-v1 surface,stack_entries has the policy-ordering indexes,OK/OK,OK/OK
+,A.39 end-to-end (bootstrap → persist → edge → demote → forget),persist with the same idempotency key is a no-op returning the original id,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — happy path,parses a single-type manifest with embedding defaults,OK/OK,OK/OK
+,priority_policy — timeDecayedPriority,effective = raw * exp(-Δt / halflife) — 200 random triples,OK/OK,OK/OK
+,priority_policy — timeDecayedPriority,long halflife → order converges to static priority,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — happy path,accepts `retention: indefinite` shorthand,OK/OK,OK/OK
+,A.27 schema-v1 surface,"trails has run, status, and opened-at indexes",OK/OK,OK/OK
+overtake,priority_policy — timeDecayedPriority,new low-raw entry beats old high-raw entry,OK/OK,OK/OK
+,priority_policy — timeDecayedPriority,future-pushed entry: envelope clamped at Δt = 0,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — happy path,accepts `embedding: none` shorthand,OK/OK,OK/OK
+,priority_policy — timeDecayedPriority,misconfigured (null halflifeMs) → falls back to raw priority,OK/OK,OK/OK
+,A.27 schema-v1 surface,tombstones_index has the time and tombstone-lookup indexes,OK/OK,OK/OK
+,A.29 BootIntegrityCheck.run on a real in-memory DB,fresh DB migrates to v1; all real probes converge,OK/OK,OK/OK
+,priority_policy — timeDecayedPriority,misconfigured (zero halflifeMs) → falls back to raw priority,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — happy path,parses enum and nodeRef field types,OK/OK,OK/OK
+,A.27 schema-v1 surface,pending_vector_writes has the enqueue-time index,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — happy path,returns an unmodifiable list,OK/OK,OK/OK
+,A.29 BootIntegrityCheck.run on a real in-memory DB,"already-at-v1 DB → migration no-op, probes unchanged",OK/OK,OK/OK
+,A.27 schema-v1 column shapes,nodes has the spec-aligned columns,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects unsupported manifest_version,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects missing manifest_version,OK/OK,OK/OK
+,A.39 end-to-end (bootstrap → persist → edge → demote → forget),persist with a different idempotency key writes a fresh node,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects non-map root,OK/OK,OK/OK
+,A.27 schema-v1 column shapes,edges carries weight + attrs + dual-time + producer,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects missing `types:` list,OK/OK,OK/OK
+,A.29 SchemaVersionAhead propagation,run() lets SchemaVersionAhead propagate unchanged,OK/OK,OK/OK
+,A.24 TomBrainMemory abstract surface,a fake implementation of every method compiles,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects duplicate type name,OK/OK,OK/OK
+,A.27 schema-v1 column shapes,"stacks carries policy JSON, bootstrap flag, dual-time",OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects unknown field type,OK/OK,OK/OK
+,A.24 TomBrainMemory abstract surface,stacks getter returns a StackApi,OK/OK,OK/OK
+,A.29 injectable probes,"all-failing probes → report carries failures, no throw from run",OK/OK,OK/OK
+,A.24 TomBrainMemory abstract surface,migrations getter returns a MigrationApi,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects unknown edge wire-name,OK/OK,OK/OK
+,A.27 schema-v1 column shapes,stack_entries carries priority + status + dual-time,OK/OK,OK/OK
+,A.24 TomBrainMemory abstract surface,events() returns a Stream<MemoryEvent>,OK/OK,OK/OK
+,A.29 injectable probes,injected ok marker probe → marker probe reports ok,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects enum without `values`,OK/OK,OK/OK
+,A.27 schema-v1 column shapes,"pending_vector_writes carries model id, blob, dims, time",OK/OK,OK/OK
+,A.24 MemoryConfig defaults,forTesting builds a usable config with sensible defaults,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects `values` on non-enum field,OK/OK,OK/OK
+,A.39 end-to-end (bootstrap → persist → edge → demote → forget),"persist with same key but different content still returns the original id (key is the contract, not the content)",OK/OK,OK/OK
+,A.29 injectable probes,injected probe receives the same db / directory / config,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects index field that is not in the schema,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects embedding map without source_fields,OK/OK,OK/OK
+,A.24 MemoryConfig defaults,forTesting rejects an empty root,OK/OK,OK/OK
+,A.27 schema-v1 column shapes,"centroids carries model id, blob, dims, count, time",OK/OK,OK/OK
+,A.29 injectable probes,injected migrator with fake v2 advances DB and reports through schemaVersion probe,OK/OK,OK/OK
+,A.36 EdgeWriter.edge,commits a fresh edge and emits EdgeCreated,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects unknown embedding shorthand,OK/OK,OK/OK
+,A.24 MemoryConfig defaults,"retrieval defaults match spec § 6.2 (rrfK=60, mmrLambda=0.7)",OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects retention without horizon_ms key,OK/OK,OK/OK
+,A.24 MemoryConfig defaults,classification defaults match spec § 7.2,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects unknown retention shorthand,OK/OK,OK/OK
+,A.24 MemoryConfig defaults,"trails defaults: fsync on, 7-day compress, 90-day cold",OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects non-integer version,OK/OK,OK/OK
+,A.27 schema-v1 column shapes,"migrations carries version, dual-time, summary",OK/OK,OK/OK
+,A.24 MemoryConfig defaults,default write-budget caps match spec § 9.3,OK/OK,OK/OK
+,A.29 injectable probes,clock injection pins startedAt and finishedAt,OK/OK,OK/OK
+,NodeTypeYamlLoader.parse — error surfacing,rejects missing `name`,OK/OK,OK/OK
+,A.24 MemoryConfig defaults,MCP server defaults to disabled,OK/OK,OK/OK
+,A.29 BootIntegrityReport surface,throwIfFailed is a no-op on a clean report,OK/OK,OK/OK
+,A.24 MemoryConfig defaults,replication defaults to authority role,OK/OK,OK/OK
+,A.27 schema-v1 column shapes,tombstones_index carries forgotten_id → tombstone_id mapping,OK/OK,OK/OK
+,A.29 BootIntegrityReport surface,throwIfFailed raises BootIntegrityFailure when any probe failed,OK/OK,OK/OK
+,A.24 MemoryConfig defaults,replication role enum has authority/worker/mirror,OK/OK,OK/OK
+,A.29 BootIntegrityReport surface,probes list is unmodifiable,OK/OK,OK/OK
+,A.29 BootIntegrityReport surface,duration is non-negative and matches start/finish difference,OK/OK,OK/OK
+,A.36 EdgeWriter.edge,non-empty attrs round-trip into row and event,OK/OK,OK/OK
+,A.29 BootIntegrityFailure surface,toString lists every failing probe on its own line,OK/OK,OK/OK
+,A.24 MemoryConfig path resolution,resolves DB and folder paths under root,OK/OK,OK/OK
+,A.29 marker-path convention,kEmbeddingModelMarkerFileName is the documented constant,OK/OK,OK/OK
+,A.39 end-to-end (bootstrap → persist → edge → demote → forget),permitted edge (Claim --evidence_for--> Claim) commits and round-trips via EdgeReader,OK/OK,OK/OK
+,A.27 schema-v1 idempotency,applySchemaV1 is safe to call twice — second call is a no-op,OK/OK,OK/OK
+,A.29 marker-path convention,embeddingModelMarkerPath resolves under the directory root,OK/OK,OK/OK
+,A.29 IntegrityProbeResult shape,"toString includes name, status, and summary",OK/OK,OK/OK
+,A.29 IntegrityProbeResult shape,status-derived helpers (isOk / isFailed / isSkipped) are exclusive,OK/OK,OK/OK
+,A.24 supporting value types,EdgeType closed alphabet matches spec § 4.2 (12 kinds),OK/OK,OK/OK
+,A.36 EdgeWriter.edge,custom weight round-trips into row and event,OK/OK,OK/OK
+,A.24 supporting value types,EdgeType.fromWireName round-trips every value,OK/OK,OK/OK
+,A.24 supporting value types,EdgeDirection enum has outgoing/incoming/both,OK/OK,OK/OK
+,A.24 supporting value types,DemotionReason enum lists every spec-named reason,OK/OK,OK/OK
+,A.24 supporting value types,ForgetReason enum lists every spec-named reason,OK/OK,OK/OK
+,A.24 supporting value types,Scope constructor records producer + idempotency key,OK/OK,OK/OK
+,A.27 schema-v1 idempotency,partial-apply scenario: v1 statements already partly executed,OK/OK,OK/OK
+,A.24 supporting value types,Scope.nonIdempotent sets idempotencyKey null,OK/OK,OK/OK
+,A.36 EdgeWriter.edge,multiple edges between same endpoints get distinct ids,OK/OK,OK/OK
+,A.27 statement-list shape,schemaV1Statements returns at least the 10 CREATE TABLE stmts,OK/OK,OK/OK
+,A.24 supporting value types,ClassificationResult.unknown is the cold-start sentinel,OK/OK,OK/OK
+,A.27 statement-list shape,schemaV1Statements is non-empty and all-uppercase-DDL,OK/OK,OK/OK
+,A.24 supporting value types,MemoryStats.empty has zeroed observables,OK/OK,OK/OK
+,A.27 statement-list shape,schemaV1Summary mentions the spec section,OK/OK,OK/OK
+,A.24 supporting value types,LatencyHistogram.zero is a both-zero pair,OK/OK,OK/OK
+,A.36 EdgeWriter.edge,composite indexes accept the inserts (smoke check on planner),OK/OK,OK/OK
+,A.31 open/close idempotency (on-disk memory.db),open → schema v1 → close → re-open → still v1 → close → re-open → still v1 (no migration applied on the later opens),OK/OK,OK/OK
+,A.36 EdgeWriter.edge,label not in from-type allowedOutgoing → EdgeNotPermitted (from),OK/OK,OK/OK
+,A.36 EdgeWriter.edge,label not in to-type allowedIncoming → EdgeNotPermitted (to),OK/OK,OK/OK
+,A.31 open/close idempotency (on-disk memory.db),directory subdirectories survive close-and-re-open of the DB handle,OK/OK,OK/OK
+,A.39 end-to-end (bootstrap → persist → edge → demote → forget),edge whose label is not in the from-type allowedOutgoing throws EdgeNotPermitted(side=from) and inserts nothing,OK/OK,OK/OK
+,A.36 EdgeWriter.edge,from-node missing → EdgeEndpointMissing (from),OK/OK,OK/OK
+,A.31 schema bump v0 (empty) → v1 (on-disk memory.db),a freshly-created memory.db file is v0; the migrator brings it to v1 and the bump is durable,OK/OK,OK/OK
+,A.36 EdgeWriter.edge,to-node missing → EdgeEndpointMissing (to),OK/OK,OK/OK
+,A.36 EdgeWriter.edge,both endpoints missing → from-side rejection wins,OK/OK,OK/OK
+,A.39 end-to-end (bootstrap → persist → edge → demote → forget),edge whose label is allowed-outgoing but not in the to-type allowedIncoming throws EdgeNotPermitted(side=to),OK/OK,OK/OK
+,A.31 schema bump v0 (empty) → v1 (on-disk memory.db),v0 → v1 bump is observable through the BootIntegrityCheck path,OK/OK,OK/OK
+,A.36 EdgeWriter.edge,node row references an unregistered type → UnknownNodeTypeForEdge,OK/OK,OK/OK
+,A.36 EdgeWriter.edge,EdgeCreated.payloadJson carries the wire-name and types,OK/OK,OK/OK
+,A.31 FTS5 unavailable error path (boot refuses to open),a synthetic FTS5-unavailable build surfaces as a `BootIntegrityFailure` from `throwIfFailed`,OK/OK,OK/OK
+,A.39 end-to-end (bootstrap → persist → edge → demote → forget),persist → demote → forget produces a single correct Tombstone,OK/OK,OK/OK
+,A.28 SchemaMigrator construction validation,empty registry is rejected,OK/OK,OK/OK
+,A.31 FTS5 unavailable error path (boot refuses to open),a passing FTS5 probe + failing loadExtension probe partition the failures correctly,OK/OK,OK/OK
+,A.28 SchemaMigrator construction validation,registry not starting at 1 is rejected,OK/OK,OK/OK
+,A.28 SchemaMigrator construction validation,registry with a gap is rejected,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),empty store: list is empty and info returns null,OK/OK,OK/OK
+,A.28 SchemaMigrator construction validation,registry with a duplicate version is rejected,OK/OK,OK/OK
+,A.28 SchemaMigrator construction validation,unsorted-but-contiguous registry is accepted and re-sorted,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,default direction=both returns outgoing AND incoming,OK/OK,OK/OK
+,A.39 end-to-end (bootstrap → persist → edge → demote → forget),forget after demote does not chain Tombstones if called twice,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,direction=outgoing returns only from-edges,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,direction=incoming returns only to-edges,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),list returns all stacks ordered by name with bootstrap=false,OK/OK,OK/OK
+,A.31 two-DB transaction replay (process-restart model),failing apply leaves a pending row in the on-disk memory.db; a fresh process re-opens the file and `recoverPending` replays it,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,types=null returns every label,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,types=<Set>{} returns [] without touching the database,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),"info round-trips policy, summary, entryNodeType, harvesterHook",OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,types=<Set>{one} returns only that label,OK/OK,OK/OK
+,A.31 two-DB transaction replay (process-restart model),replay survives the BootIntegrityCheck path: opener → migrate → probes → recover,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,"types=<Set>{a,b} returns the union",OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),create on a bootstrap name → BootstrapStackImmutable,OK/OK,OK/OK
+,A.28 SchemaMigrator default-registry behaviour,default registry exposes v1 as the latest known version,OK/OK,OK/OK
+,A.28 SchemaMigrator default-registry behaviour,kSchemaMigrations carries exactly one entry today,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),create twice with the same name → StackAlreadyExists,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,repeated edgesOf calls return identical order,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),policy validation: boundedN without maxCount,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,same-timestamp edges tiebreak by id ASC,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),policy validation: boundedAge without maxAgeMs,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),policy validation: timeDecayedPriority without halflifeMs,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,edgesOf on a never-persisted id returns [] (no throw),OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),policy validation: unbounded with a bound supplied,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,self-loop returns the row exactly once under direction=both,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),policy validation: static priority with halflifeMs supplied,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),create emits StackCreated with the resolved policy + node id,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,empty attrs_json column decodes to empty map,OK/OK,OK/OK
+,A.28 SchemaMigrator default-registry behaviour,migrate on a fresh DB applies v1 and reports it,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),updatePolicy swaps the bundle and emits StackPolicyChanged,OK/OK,OK/OK
+,A.43 installBootstrapStacks,bootstrapStackSpecs has exactly six entries with unique names,OK/OK,OK/OK
+,A.28 SchemaMigrator default-registry behaviour,migrate on an already-at-v1 DB is a no-op,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,"commits a fresh type, mints decl-node id, emits event",OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),updatePolicy on missing stack → StackNotFound,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,non-empty attrs round-trip into Edge.attrs,OK/OK,OK/OK
+,A.43 installBootstrapStacks,spec policies match memory_specification.md § 5.4,OK/OK,OK/OK
+,A.28 SchemaMigrator chained-registry behaviour (fake v2),fresh DB → both v1 and v2 applied in order,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,commits a type with EmbeddingPolicy.none,OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,custom weight round-trips,OK/OK,OK/OK
+,A.43 installBootstrapStacks,spec name set agrees with sqlite_stack_api rejection set,OK/OK,OK/OK
+,A.28 SchemaMigrator chained-registry behaviour (fake v2),already-at-v1 DB → only v2 applied,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,successor replaces the live tip,OK/OK,OK/OK
+push,A.40 SqliteStackApi (StackApi contract),"mints id, persists row, emits StackPushed + StackEvent",OK/OK,OK/OK
+,A.37 EdgeReader.edgesOf,reader sees rows committed by writer (no caching),OK/OK,OK/OK
+,A.28 SchemaMigrator chained-registry behaviour (fake v2),already-at-v2 DB → no migrations applied,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,listAll returns insertion order,OK/OK,OK/OK
+peek,A.40 SqliteStackApi (StackApi contract),fifo ordering honoured,OK/OK,OK/OK
+,A.42 SqliteStackApi retention policies,"unbounded never archives, never emits overflow",OK/OK,OK/OK
+,A.28 SchemaMigrator forward-only refusal,migrate throws SchemaVersionAhead when DB is ahead,OK/OK,OK/OK
+peek,A.40 SqliteStackApi (StackApi contract),lifo ordering honoured,OK/OK,OK/OK
+,A.28 SchemaMigrator forward-only refusal,refused migrate does not mutate the DB,OK/OK,OK/OK
+,A.43 installBootstrapStacks,first install: all six stacks committed with is_bootstrap=1,OK/OK,OK/OK
+peek,A.40 SqliteStackApi (StackApi contract),priority ordering honoured; ties broken by FIFO,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,a second registry warms its cache from existing rows,OK/OK,OK/OK
+,A.28 SchemaMigrator forward-only refusal,SchemaVersionAhead.toString mentions both versions,OK/OK,OK/OK
+,A.42 SqliteStackApi retention policies,bounded_n + fifo: the (N+1)th push archives itself,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),policy change takes effect for subsequent peeks,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,hook receives a snapshot of currently-registered types,OK/OK,OK/OK
+,A.28 SchemaMigrator mid-chain failure,v2 failure leaves v1 committed; v2 row absent,OK/OK,OK/OK
+,A.42 SqliteStackApi retention policies,bounded_n + priority: lowest-priority entries are archived,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,approval note is preserved in the emitted event,OK/OK,OK/OK
+,A.28 SchemaMigrationReport shape,didApplyAny matches applied.isNotEmpty,OK/OK,OK/OK
+,A.43 installBootstrapStacks,first install: canonical Stack nodes minted with bootstrap provenance,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),"pop returns the top entry, deletes the row, emits StackPopped",OK/OK,OK/OK
+,A.28 SchemaMigrationReport shape,duration is non-negative,OK/OK,OK/OK
+,A.28 SchemaMigrationReport shape,applied list is unmodifiable,OK/OK,OK/OK
+,A.42 SqliteStackApi retention policies,bounded_n + priority: tied-lowest priority — newer goes first,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),pop on empty returns null and emits nothing,OK/OK,OK/OK
+,A.28 SchemaMigrationReport shape,clock injection drives report timestamps,OK/OK,OK/OK
+,A.28 SchemaMigration toString,mentions version and summary,OK/OK,OK/OK
+,A.43 installBootstrapStacks,first install: policy attrs JSON round-trips halflife and bounds,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects empty typeName,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),update mutates priority and re-orders subsequent peek,OK/OK,OK/OK
+,A.42 SqliteStackApi retention policies,bounded_n + time_decayed_priority: lowest effective score archived,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects non-PascalCase typeName,OK/OK,OK/OK
+,A.43 installBootstrapStacks,second install on the same DB is a no-op,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),update on missing entry → StackEntryNotFound,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects typeName starting with digit,OK/OK,OK/OK
+bounded_age,A.42 SqliteStackApi retention policies,entries older than maxAge are archived on push,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects version < 1 (via BrainVersion guard),OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),"remove deletes the row, emits StackEntryRemoved, leaves no trace of the membership; node row is untouched (verified at SQL layer)",OK/OK,OK/OK
+,A.43 installBootstrapStacks,partial install self-heals on next call,OK/OK,OK/OK
+bounded_age,A.42 SqliteStackApi retention policies,"no push, no sweep — stale entries stay active",OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects empty schema,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),remove on missing entry → StackEntryNotFound,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects FieldSpec.name mismatched with map key,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),every entry-side method throws StackNotFound on missing stack,OK/OK,OK/OK
+streamArchived,A.42 SqliteStackApi retention policies,limit caps the row count,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects empty validatorScriptId,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),events() is a broadcast stream that fires pushed/popped/updated,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects embeddingPolicy.modelIdentity empty (not none),OK/OK,OK/OK
+,A.43 SqliteStackApi.delete,delete on every bootstrap stack → BootstrapStackImmutable,OK/OK,OK/OK
+streamArchived,A.42 SqliteStackApi retention policies,missing stack → StackNotFound,OK/OK,OK/OK
+,A.40 SqliteStackApi (StackApi contract),close releases the api; subsequent mutations throw StateError,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects embeddingPolicy.dimensions <= 0,OK/OK,OK/OK
+streamArchived,A.42 SqliteStackApi retention policies,empty when nothing was archived,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects empty embeddingPolicy.sourceFields,OK/OK,OK/OK
+,A.43 SqliteStackApi.delete,create on every bootstrap name still rejected after install,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects embeddingPolicy.sourceFields naming missing field,OK/OK,OK/OK
+,A.42 SqliteStackApi retention policies,events(name) carries pushed then overflowDemoted for the same push that crosses the bound,OK/OK,OK/OK
+,A.43 SqliteStackApi.delete,delete on unknown stack → StackNotFound,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects embeddingPolicy.sourceFields naming non-string field,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects indexPolicy.ftsFields naming missing field,OK/OK,OK/OK
+,A.42 SqliteStackApi retention policies,bounded_n overflow archives the membership but leaves the referenced node row untouched,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects indexPolicy.ftsFields naming non-eligible field,OK/OK,OK/OK
+,A.43 SqliteStackApi.delete,"delete on a non-bootstrap stack removes catalogue row, canonical node, and entries",OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects indexPolicy.vectorFields naming missing field,OK/OK,OK/OK
+,A.42 SqliteStackApi retention policies,archived entry can be re-activated via update; peek sees it again,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects indexPolicy.vectorFields naming non-vec field,OK/OK,OK/OK
+,A.43 SqliteStackApi.delete,delete twice → second call throws StackNotFound,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,rejects indexPolicy.vectorFields naming non-eligible vec field,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,NodeTypeAlreadyExists when supersedes is null and name collides,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,NodeTypeNotFound when supersedes set but type absent,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,NodeTypeNotFound when supersedes references stale decl-node id,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,NodeTypeVersionNotMonotonic when supersedes set but version not >,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,NodeTypeRejected when hook returns CritiqueRejected,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,NodeTypeRejected when hook crashes preserves the crash message,OK/OK,OK/OK
+,A.33 NodeTypeRegistry.registerNodeType,event sink is optional — no callback configured,OK/OK,OK/OK

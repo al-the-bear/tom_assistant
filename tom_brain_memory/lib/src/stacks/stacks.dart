@@ -26,6 +26,13 @@
 //     a concrete api in tests / wiring code. The abstract `StackApi`
 //     remains the contract surface.
 
+export 'bootstrap_stacks_installer.dart'
+    show
+        BootstrapInstallReport,
+        BootstrapStackSpec,
+        bootstrapStackSpecs,
+        installBootstrapStacks,
+        stackEntryNodeTypeAny;
 export 'priority_policy.dart'
     show comparePolicy, effectivePriority, sortByPolicy;
 export 'sqlite_stack_api.dart' show SqliteStackApi, bootstrapStackNames;

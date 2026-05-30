@@ -50,6 +50,19 @@ abstract class StackApi {
   /// subsequent `peek` / `pop` calls.
   Future<void> updatePolicy(String name, StackPolicy policy);
 
+  /// Deletes a non-bootstrap stack outright — removes the catalogue
+  /// row, the canonical `Stack` node, and every `stack_entries` row
+  /// owned by it (active and archived). The underlying nodes that
+  /// the entries referenced are left intact (spec § 5: stack
+  /// membership is bookkeeping; deletion only erases the
+  /// membership, not the contents).
+  ///
+  /// Refuses bootstrap names with `BootstrapStackImmutable`
+  /// (spec § 5.4: the six reserved stacks are installed on first
+  /// open and cannot be deleted). Refuses unknown names with
+  /// `StackNotFound`.
+  Future<void> delete(String name);
+
   // Entries ----------------------------------------------------------
 
   /// Atomically pushes [entry] onto [name] with [priority].

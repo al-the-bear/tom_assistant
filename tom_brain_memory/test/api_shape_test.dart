@@ -393,6 +393,9 @@ class _FakeStackApi implements StackApi {
   Future<void> updatePolicy(String name, StackPolicy policy) async {}
 
   @override
+  Future<void> delete(String name) async {}
+
+  @override
   Future<StackEntryId> push(
     String name,
     NodeId entry, {
