@@ -25,3 +25,22 @@ export 'src/embedding/embedding.dart';
 // overflow.
 export 'src/budget/budget.dart'
     show Budget, BudgetDelta, BudgetExceededError, TokenSpend, WriteBudget;
+
+// A.13 — result/ module: Result<T, E> sealed sum (Ok / Err) and Maybe<T>
+// sealed sum (Some / None), with fluent whenOk / whenErr / whenSome /
+// whenNone extensions and map / mapErr / fold transformations. The
+// extension types are exported so consumers can reference them by name
+// (rare — the methods are reached via dispatch), and so a future
+// `extension on Result` augmentation in this package stays unambiguous.
+export 'src/result/result.dart'
+    show
+        Err,
+        Maybe,
+        MaybeMap,
+        MaybeWhen,
+        None,
+        Ok,
+        Result,
+        ResultMap,
+        ResultWhen,
+        Some;
