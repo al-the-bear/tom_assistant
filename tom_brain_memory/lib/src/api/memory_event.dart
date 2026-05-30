@@ -24,6 +24,9 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 ///   * A.33 — `NodeTypeRegistered`
 ///   * A.34 — `NodePersisted`
 ///   * A.36 — `EdgeCreated`, `EdgeRejected`
+///   * A.38 — `NodeDemoted`, `NodeForgotten` (the remaining
+///     node-lifecycle leaves; rounds out the set Plan step A.38
+///     committed to emitting)
 ///
 /// The `kind` discriminator convention for memory events is
 /// `memory.<event-name>`, kebab-cased (e.g. `memory.node-persisted`).

@@ -11,7 +11,7 @@
 //     column to `demoted`. The row stays addressable by id; only
 //     retrieval (FTS + vector + graph walk) is expected to skip
 //     non-`active` rows once those subsystems land. The reason is
-//     captured for the eventual `NodeDemoted` event (A.38) but is
+//     captured on the emitted `NodeDemoted` event (A.38) but is
 //     not persisted on the row — there is no column for it on
 //     `nodes`, and the audit trail belongs in the trail JSONL the
 //     producing run writes, not in the live table.
@@ -64,10 +64,15 @@
 //     and lands with the edge implementation at A.36+. Tracked as
 //     **Q-A.35.4**.
 //
-//   - **Event emission.** `NodeDemoted` and `NodeForgotten` are
-//     scheduled for A.38; A.35 does not emit. The `eventSink`
-//     parameter exists so A.38 wires the events in without
-//     reshaping the constructor.
+//   - **Event emission (A.38).** `demote` emits `NodeDemoted` on the
+//     active → demoted transition only; idempotent re-demotes,
+//     demotes against non-existent rows, and demotes against rows in
+//     any non-active status emit nothing. `forget` emits
+//     `NodeForgotten` after the COMMIT of the Tombstone-write +
+//     index-write + live-row-delete transaction; forgets against
+//     unknown / already-forgotten ids emit nothing. The success-only
+//     convention mirrors `NodePersister` (see `node_events.dart`
+//     header for the reasoning).
 //
 // Layering:
 //
@@ -86,6 +91,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 import '../api/memory_event.dart';
 import '../api/scope.dart';
 import 'node.dart';
+import 'node_events.dart';
 
 /// In-process owner of the `demote` and `forget` paths.
 ///
@@ -105,10 +111,11 @@ final class NodeLifecycleManager {
   /// override for determinism.
   final DateTime Function() _now;
 
-  /// Optional sink for `MemoryEvent`s — wired by the store opener
-  /// once `NodeDemoted` / `NodeForgotten` land at A.38. At A.35
-  /// the sink is reserved but never called (see file header).
-  // ignore: unused_field
+  /// Optional sink for `MemoryEvent`s. The concrete store opener
+  /// wires this to the same `StreamController` that backs
+  /// `TomBrainMemory.events()`; tests pass a list-backed sink to
+  /// inspect emissions. `null` disables emission entirely (no leak,
+  /// no allocation on the hot path).
   final void Function(MemoryEvent)? _eventSink;
 
   /// Canonical type name for Tombstone rows.
@@ -156,14 +163,32 @@ final class NodeLifecycleManager {
   /// [reason] is captured for the eventual `NodeDemoted` event
   /// (A.38) but is not persisted on the row.
   Future<void> demote(NodeId id, DemotionReason reason) async {
+    final idStr = id.toString();
+
+    // Resolve the type name first. Used both as the no-op guard
+    // (the row may be missing) and to enrich the eventual
+    // `NodeDemoted` event so subscribers don't have to round-trip
+    // back into SQLite for it. Selecting `status` here too lets us
+    // gate event emission on the actual transition rather than on
+    // `db.updatedRows`, which the `sqlite3` package exposes but
+    // tests would have to introspect to verify.
+    final pre = _db.select(
+      'SELECT type_name, status FROM nodes WHERE id = ? LIMIT 1',
+      <Object?>[idStr],
+    );
+    if (pre.isEmpty) return;
+    final preStatus = pre.first['status'] as String;
+    if (preStatus != NodeStatus.active.name) return;
+    final typeName = pre.first['type_name'] as String;
+
     final now = _now().toUtc();
     final nowMs = now.millisecondsSinceEpoch;
     final nowIso = now.toIso8601String();
 
-    // The WHERE clause filters by both id and status so a row that
-    // is already demoted, archived, or forgotten incurs zero
-    // writes. `forgotten` rows are already absent (forget DELETEs
-    // them) so the filter is belt-and-braces.
+    // The WHERE clause keeps the status filter so a concurrent
+    // demote landing between our SELECT and our UPDATE collapses to
+    // a no-op at the SQL layer (we are single-writer per
+    // connection in v1 so this is belt-and-braces).
     _db.execute(
       'UPDATE nodes SET status = ?, updated_at_ms = ?, '
       'updated_at_iso = ? '
@@ -172,17 +197,19 @@ final class NodeLifecycleManager {
         NodeStatus.demoted.name,
         nowMs,
         nowIso,
-        id.toString(),
+        idStr,
         NodeStatus.active.name,
       ],
     );
 
-    // No event emission at A.35 — `NodeDemoted` lands at A.38. The
-    // `reason` parameter is consumed by the future event
-    // constructor; until then the call site captures it in its
-    // trail JSONL.
-    // ignore: unused_local_variable
-    final _ = reason;
+    _eventSink?.call(
+      NodeDemoted(
+        nodeId: id,
+        typeName: typeName,
+        reason: reason,
+        occurredAt: now,
+      ),
+    );
   }
 
   /// User-explicit deletion of [id]: writes a `Tombstone` node,
@@ -216,6 +243,14 @@ final class NodeLifecycleManager {
   Future<void> forget(NodeId id, ForgetReason reason) async {
     final idStr = id.toString();
 
+    // Emission state — populated inside the transaction, consumed
+    // *after* COMMIT. We never want to emit a `NodeForgotten` for a
+    // transaction that rolled back, and we never want a sink
+    // callback to throw while we hold an open transaction.
+    NodeId? emittedTombstoneId;
+    String? emittedForgottenType;
+    DateTime? emittedAt;
+
     // Single transaction: read the existing row, then write the
     // tombstone + index + delete + cleanup. The read is inside the
     // transaction so a concurrent reader cannot see a half-state
@@ -241,6 +276,9 @@ final class NodeLifecycleManager {
       final nowIso = now.toIso8601String();
       final tombstoneId = _idMint();
       final tombstoneIdStr = tombstoneId.toString();
+      emittedTombstoneId = tombstoneId;
+      emittedForgottenType = forgottenType;
+      emittedAt = now;
 
       // 1. INSERT the Tombstone node row directly. The Tombstone
       //    type carries EmbeddingPolicy.none so there is no vector
@@ -310,7 +348,25 @@ final class NodeLifecycleManager {
       rethrow;
     }
 
-    // No event emission at A.35 — `NodeForgotten` lands at A.38.
+    // Emit AFTER the COMMIT — a rolled-back transaction must not
+    // surface a `NodeForgotten` event (the catch arm rethrows and we
+    // never reach this point), and the sink callback runs outside
+    // the open transaction so a sink failure cannot poison the
+    // SQLite handle. Flow analysis sees that the only way past the
+    // try-catch is the success path that assigned all three
+    // emission vars, so the bang-operators below are accurate.
+    final sink = _eventSink;
+    if (sink != null) {
+      sink(
+        NodeForgotten(
+          forgottenNodeId: id,
+          tombstoneNodeId: emittedTombstoneId,
+          forgottenType: emittedForgottenType,
+          reason: reason,
+          occurredAt: emittedAt,
+        ),
+      );
+    }
   }
 }
 

@@ -123,6 +123,7 @@ void main() {
         memoryDb: db,
         idMint: mintLifecycleId,
         now: () => fakeNow,
+        eventSink: events.add,
       );
     });
 
@@ -443,6 +444,121 @@ void main() {
       expect(entry.forgottenType, equals('Claim'));
       expect(entry.reason, equals('scopeViolation'));
       expect(entry.forgottenAt, equals(fakeNow));
+    });
+
+    // ─── A.38 — NodeDemoted / NodeForgotten event emission ─────────
+
+    test('demote emits NodeDemoted on the active → demoted transition',
+        () async {
+      final id = await persistClaim(text: 'd', key: 'k-d');
+      // Drain the NodePersisted event emitted by persistClaim so the
+      // assertion below isolates the demote-side emission.
+      final beforeDemote = events.length;
+
+      fakeNow = DateTime.utc(2026, 5, 30, 15, 0, 0);
+      await lifecycle.demote(id, DemotionReason.prunerDecision);
+
+      final lifecycleEvents = events.sublist(beforeDemote);
+      expect(lifecycleEvents, hasLength(1));
+      final ev = lifecycleEvents.single;
+      expect(ev, isA<NodeDemoted>());
+      final demoted = ev as NodeDemoted;
+      expect(demoted.nodeId, equals(id));
+      expect(demoted.typeName, equals('Claim'));
+      expect(demoted.reason, equals(DemotionReason.prunerDecision));
+      expect(demoted.occurredAt, equals(fakeNow));
+      expect(demoted.kind, equals('memory.node-demoted'));
+      expect(
+        demoted.payloadJson(),
+        equals(<String, Object?>{
+          'nodeId': id.toString(),
+          'typeName': 'Claim',
+          'reason': 'prunerDecision',
+        }),
+      );
+    });
+
+    test('demote is silent on no-op (already-demoted, missing)', () async {
+      final id = await persistClaim(text: 'x', key: 'k-noop');
+      await lifecycle.demote(id, DemotionReason.prunerDecision);
+      final afterFirstDemote = events.length;
+
+      // Second demote at a later wall-clock — must NOT emit a second
+      // NodeDemoted (no transition).
+      fakeNow = DateTime.utc(2026, 5, 30, 16, 0, 0);
+      await lifecycle.demote(id, DemotionReason.prunerDecision);
+      expect(events.length, equals(afterFirstDemote));
+
+      // Demote against a never-existed id — also silent.
+      final unknown = NodeId.generate();
+      await lifecycle.demote(unknown, DemotionReason.prunerDecision);
+      expect(events.length, equals(afterFirstDemote));
+    });
+
+    test('forget emits NodeForgotten on the Tombstone commit', () async {
+      final id = await persistClaim(text: 'gone', key: 'k-f');
+      final beforeForget = events.length;
+
+      fakeNow = DateTime.utc(2026, 5, 30, 17, 0, 0);
+      await lifecycle.forget(id, ForgetReason.userRequested);
+
+      final lifecycleEvents = events.sublist(beforeForget);
+      expect(lifecycleEvents, hasLength(1));
+      final ev = lifecycleEvents.single;
+      expect(ev, isA<NodeForgotten>());
+      final forgotten = ev as NodeForgotten;
+
+      // The Tombstone id in the event must match the actual row in
+      // `tombstones_index` — that table is the SQL-side audit trail
+      // and the event is its observability twin; they must agree.
+      final indexed = lookupTombstone(db, id);
+      expect(indexed, isNotNull);
+      expect(forgotten.forgottenNodeId, equals(id));
+      expect(forgotten.tombstoneNodeId, equals(indexed!.tombstoneNodeId));
+      expect(forgotten.forgottenType, equals('Claim'));
+      expect(forgotten.reason, equals(ForgetReason.userRequested));
+      expect(forgotten.occurredAt, equals(fakeNow));
+      expect(forgotten.kind, equals('memory.node-forgotten'));
+      expect(
+        forgotten.payloadJson(),
+        equals(<String, Object?>{
+          'forgottenNodeId': id.toString(),
+          'tombstoneNodeId': indexed.tombstoneNodeId.toString(),
+          'forgottenType': 'Claim',
+          'reason': 'userRequested',
+        }),
+      );
+    });
+
+    test('forget is silent on no-op (unknown, already-forgotten)', () async {
+      // Unknown id — no Tombstone, no event.
+      final beforeUnknown = events.length;
+      await lifecycle.forget(NodeId.generate(), ForgetReason.userRequested);
+      expect(events.length, equals(beforeUnknown));
+
+      // Already-forgotten id — first forget emits, second is silent.
+      final id = await persistClaim(text: 'twice', key: 'k-twice');
+      await lifecycle.forget(id, ForgetReason.userRequested);
+      final afterFirstForget = events.length;
+      await lifecycle.forget(id, ForgetReason.userRequested);
+      expect(events.length, equals(afterFirstForget));
+    });
+
+    test('forget on a demoted node emits NodeForgotten with the post-demote '
+        'type name and the supplied reason', () async {
+      final id = await persistClaim(text: 'd-then-f', key: 'k-d-f');
+      await lifecycle.demote(id, DemotionReason.prunerDecision);
+      final beforeForget = events.length;
+
+      await lifecycle.forget(id, ForgetReason.legalErasure);
+
+      final lifecycleEvents = events.sublist(beforeForget);
+      expect(lifecycleEvents, hasLength(1));
+      final forgotten = lifecycleEvents.single as NodeForgotten;
+      // The forgotten type must be the original Claim, not the
+      // status — demote changes status, not type_name.
+      expect(forgotten.forgottenType, equals('Claim'));
+      expect(forgotten.reason, equals(ForgetReason.legalErasure));
     });
   });
 }
