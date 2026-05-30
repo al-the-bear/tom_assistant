@@ -31,10 +31,14 @@
 //     `List<NodeId>` per `RecallMode` and returns the descending-
 //     score fused list. Default `k_rrf = 60`. The fusion stage runs
 //     after the mode executors and before the diversifier (A.58).
+//   - `mmrDiversify`, `MmrInput`, `MmrSelected`, `kDefaultMmrLambda`
+//     — Maximal Marginal Relevance diversifier (pure function,
+//     spec § 6.2). Generic over the candidate item type; takes a
+//     caller-supplied similarity callback. Default `λ = 0.7`. Runs
+//     after RRF and before the optional re-rank hook (A.59).
 //
 // Wiring across later Phase A steps:
 //
-//   - A.58 — MMR diversifier (`λ = 0.7`) over the RRF output.
 //   - A.59 — `RecallReport` population + `TomBrainMemory.recall`
 //     wiring (executors → RRF → MMR → re-rank hook → result).
 //   - A.61 – A.62 — graph-walk mode + symbolic seed pre-filter.
@@ -56,6 +60,8 @@ export 'recall_query.dart'
         SymbolicFilter,
         SymbolicOp;
 export 'recall_result.dart' show RecallReport, RecallResult;
+export 'mmr.dart'
+    show MmrInput, MmrSelected, kDefaultMmrLambda, mmrDiversify;
 export 'rrf.dart' show RrfFusedCandidate, kDefaultRrfK, rrfFuse;
 export 'stream_query.dart' show StreamCursor, StreamQuery;
 export 'symbolic_recall.dart'
