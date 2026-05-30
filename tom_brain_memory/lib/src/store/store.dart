@@ -15,4 +15,9 @@
 //   - A.27+ — schema bootstrap, vec0 extension load, FTS5 setup.
 //   - A.30+ — transactional node/edge writes, the two-DB commit log.
 //
-// At A.23 this folder is intentionally empty. No exports yet.
+// A.26 — first concrete symbol lands: `MemoryDirectory`, the opener
+// for the `<memory-root>` directory layout. Later steps (A.27+) add
+// the SQLite schema, vec0 extension load, FTS5 setup, and the
+// two-database transactional commit log alongside it.
+
+export 'memory_directory.dart';
