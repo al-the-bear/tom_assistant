@@ -81,6 +81,18 @@
 // `IndexInstallationConflict`. Records the embedding-model identity
 // per row by virtue of the per-model index layout (each model gets
 // its own physical table, recorded in `vector_indexes`).
+//
+// A.52 — `vector_table_applier.dart`: the production [VectorApplier]
+// that bridges the two-DB coordinator's `PendingVectorWrite` payload
+// (raw little-endian float32 blob + embedding-model-id + node-id)
+// into a `VectorTable.insertVector(nodeId, vector, modelId)` call.
+// Owns the single class `VectorTableApplier`. The persister (A.34)
+// already routes through the coordinator (A.30) when a draft carries
+// an embedding under a non-`none` policy; A.52 supplies the
+// production adapter that closes the wiring at the `vectors.db`
+// boundary. Idempotency is delegated to `VectorTable.insertVector`
+// (both ship backends use INSERT … ON CONFLICT DO UPDATE), so the
+// coordinator's `recoverPending` path converges on replay.
 
 export 'boot_integrity.dart'
     show
@@ -135,6 +147,7 @@ export 'vector_table.dart'
         VectorIndexInfo,
         VectorMatch,
         VectorTable;
+export 'vector_table_applier.dart' show VectorTableApplier;
 export 'vector_table_exception.dart'
     show
         EmbeddingDimsMismatch,
