@@ -17,7 +17,7 @@
 // A.28+ once the SQLite schema is in place.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, TrailId, Vec;
+    show EdgeId, NodeId, TrailId, Vec, WriteBudget;
 
 import '../classification/classification_result.dart';
 import '../config/memory_config.dart';
@@ -72,6 +72,50 @@ abstract class TomBrainMemory {
   /// Used by the cadence-driver in the dispatcher. Memory does
   /// not schedule its own checkpoint cadence — the caller does.
   Future<void> checkpoint();
+
+  // ─── WriteBudget enforcement (§ 9.3) ─────────────────────────
+
+  /// Registers [budget] as the `WriteBudget` cap for the
+  /// agent-run identified by [runId] (`memory_specification.md`
+  /// § 9.3, § 9.5).
+  ///
+  /// Subsequent `persist` / `edge` / stack `push` calls whose
+  /// `Scope.runId` matches [runId] consume one unit per write of
+  /// the corresponding dimension; a charge that would push any
+  /// component below zero raises `WriteBudgetExceeded` (the
+  /// memory-internal exception, distinct from
+  /// `tom_brain_shared.BudgetExceededError`). The rejected write
+  /// inserts no row, emits no event, and does not consume budget.
+  ///
+  /// Budget enforcement is **opt-in**: writes whose runs were
+  /// never registered pass through unchecked. Bootstrap installs
+  /// (node-type registry seeding, bootstrap stack creation) and
+  /// operator-driven ad-hoc writes belong to that branch.
+  ///
+  /// Calling [beginRun] twice with the same [runId] replaces the
+  /// prior registration — runs are unique by contract, so this is
+  /// most likely a programmer error, but the obvious "reset to the
+  /// new cap" semantics is the least-surprising response.
+  Future<void> beginRun({
+    required String runId,
+    required WriteBudget budget,
+  });
+
+  /// Removes the budget registration for [runId]. Subsequent
+  /// writes that name the same id pass through unchecked.
+  ///
+  /// Called by the dispatcher when an agent run terminates
+  /// (success, failure, or cancellation). Calling [endRun] for an
+  /// unregistered run id is a no-op — same shape as `close()` on
+  /// an already-closed resource.
+  Future<void> endRun(String runId);
+
+  /// Returns the remaining `WriteBudget` for [runId], or `null`
+  /// when the run is not registered. Exposed for the operator UI
+  /// and trace-stitcher observers; production write paths consult
+  /// the tracker via the typed charge methods, not via this
+  /// getter.
+  Future<WriteBudget?> remainingBudget(String runId);
 
   // ─── Node CRUD ───────────────────────────────────────────────
 

@@ -275,6 +275,18 @@ class _FakeMemory implements TomBrainMemory {
   Future<void> checkpoint() async {}
 
   @override
+  Future<void> beginRun({
+    required String runId,
+    required WriteBudget budget,
+  }) async {}
+
+  @override
+  Future<void> endRun(String runId) async {}
+
+  @override
+  Future<WriteBudget?> remainingBudget(String runId) async => null;
+
+  @override
   Future<NodeId> persist(NodeDraft draft, {required Scope scope}) async =>
       NodeId.generate();
 
@@ -402,6 +414,7 @@ class _FakeStackApi implements StackApi {
     NodeId entry, {
     double priority = 0.0,
     Map<String, Object?>? attrs,
+    Scope? scope,
   }) async =>
       StackEntryId.generate();
 

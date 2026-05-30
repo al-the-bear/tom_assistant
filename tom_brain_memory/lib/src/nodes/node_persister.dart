@@ -20,6 +20,20 @@
 //     idempotency hit — the event stream is the audit log of *new*
 //     nodes).
 //
+// What this file owns since A.68:
+//
+//   - `WriteBudget.maxNodes` enforcement via the optional
+//     `WriteBudgetTracker` (spec § 9.3, § 9.5). The check runs
+//     **after** the idempotency lookup and **before** any validation
+//     work — an idempotent re-persist does not charge the budget
+//     (no new node materialises), and a rejected draft does not
+//     charge either (the throw fires before `chargeNode` is
+//     reached). A successful new-row commit charges exactly one
+//     unit. When no tracker is wired, or `scope.runId` is null, or
+//     the run was never `beginRun`-registered, persist passes
+//     through unchecked — see `WriteBudgetTracker` header for the
+//     opt-in rationale.
+//
 // What this file does NOT own (yet):
 //
 //   - The full `SqliteTomBrainMemory` concrete class. The plan
@@ -65,6 +79,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
 
 import '../api/memory_event.dart';
 import '../api/scope.dart';
+import '../budget/write_budget_tracker.dart';
 import '../retrieval/fts5_writer.dart';
 import '../store/two_db_coordinator.dart';
 import 'node.dart';
@@ -111,6 +126,13 @@ final class NodePersister {
   /// that pre-date A.54).
   final Fts5Writer? _ftsWriter;
 
+  /// Optional `WriteBudget` enforcement (A.68; spec § 9.3). When
+  /// non-null, every successful new-row commit consumes one unit of
+  /// the registered run's `maxNodes`. When null, persist does not
+  /// enforce a budget — see `WriteBudgetTracker` header for the
+  /// opt-in rationale.
+  final WriteBudgetTracker? _budgetTracker;
+
   /// Constructs the persister around an already-opened, already-
   /// migrated `memory.db` handle and a coordinator/registry bound to
   /// the same store.
@@ -124,13 +146,15 @@ final class NodePersister {
     DateTime Function()? now,
     void Function(MemoryEvent)? eventSink,
     Fts5Writer? ftsWriter,
+    WriteBudgetTracker? budgetTracker,
   })  : _db = memoryDb,
         _coordinator = coordinator,
         _registry = registry,
         _idMint = idMint ?? NodeId.generate,
         _now = now ?? DateTime.now,
         _eventSink = eventSink,
-        _ftsWriter = ftsWriter;
+        _ftsWriter = ftsWriter,
+        _budgetTracker = budgetTracker;
 
   // ─── Public surface ────────────────────────────────────────────
 
@@ -188,6 +212,18 @@ final class NodePersister {
     //    substrate to embed; the caller produced the embedding (or
     //    chose not to).
     _validateEmbeddingAgainstPolicy(decl, draft);
+
+    // 4b. WriteBudget enforcement (A.68; spec § 9.3). After the
+    //     idempotency short-circuit and after every validation
+    //     guard — a rejected draft does NOT consume budget, and an
+    //     idempotent no-op does NOT consume budget either. Before
+    //     the commit so a budget rejection leaves no row behind.
+    //     Pass-through when no tracker is wired or the run is
+    //     unregistered (see WriteBudgetTracker header).
+    _budgetTracker?.chargeNode(
+      runId: scope.runId,
+      producer: scope.producer,
+    );
 
     // 5. Commit. Single transaction across memory.db + (optionally)
     //    vectors.db via the coordinator's WAL protocol.

@@ -48,6 +48,18 @@
 //     is `uniq_edges_idempotency_key`, the partial-unique index on
 //     `edges(idempotency_key)`.
 //
+// What this file owns since A.68:
+//
+//   - `WriteBudget.maxEdges` enforcement via the optional
+//     `WriteBudgetTracker` (spec § 9.3, § 9.5). Idempotency
+//     short-circuit fires first (a re-call does not charge), every
+//     rejection helper fires before the charge call (an
+//     `EdgeRejected` event does not consume budget), and the
+//     charge fires immediately before the INSERT so a budget
+//     exception leaves no row behind. Pass-through when no
+//     tracker is wired, when `scope.runId` is null, or when the
+//     run was not `beginRun`-registered.
+//
 // Layering:
 //
 //   - The writer takes a raw `sqlite3` `Database` handle and a
@@ -65,6 +77,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
 
 import '../api/memory_event.dart';
 import '../api/scope.dart';
+import '../budget/write_budget_tracker.dart';
 import '../nodes/node_type_registry.dart';
 import 'edge_events.dart';
 import 'edge_type.dart';
@@ -97,6 +110,12 @@ final class EdgeWriter {
   /// sink to inspect emissions.
   final void Function(MemoryEvent)? _eventSink;
 
+  /// Optional `WriteBudget` enforcement (A.68; spec § 9.3). When
+  /// non-null, every successful new-row commit consumes one unit of
+  /// the registered run's `maxEdges`. When null, edge writes do
+  /// not enforce a budget.
+  final WriteBudgetTracker? _budgetTracker;
+
   /// Constructs the writer around an already-opened, already-migrated
   /// `memory.db` handle and a registry bound to the same store.
   ///
@@ -107,11 +126,13 @@ final class EdgeWriter {
     EdgeId Function()? idMint,
     DateTime Function()? now,
     void Function(MemoryEvent)? eventSink,
+    WriteBudgetTracker? budgetTracker,
   })  : _db = memoryDb,
         _registry = registry,
         _idMint = idMint ?? EdgeId.generate,
         _now = now ?? DateTime.now,
-        _eventSink = eventSink;
+        _eventSink = eventSink,
+        _budgetTracker = budgetTracker;
 
   // ─── Public surface ──────────────────────────────────────────────
 
@@ -251,6 +272,18 @@ final class EdgeWriter {
         otherTypeName: fromTypeName,
       );
     }
+
+    // 3b. WriteBudget enforcement (A.68; spec § 9.3). After every
+    //     rejection helper (rejected edges do NOT consume budget) and
+    //     after the idempotency short-circuit (a re-call does NOT
+    //     consume budget) — but before the INSERT, so a budget
+    //     exception leaves no row behind. Pass-through when no
+    //     tracker is wired, when `scope.runId` is null, or when the
+    //     run was not `beginRun`-registered.
+    _budgetTracker?.chargeEdge(
+      runId: scope.runId,
+      producer: scope.producer,
+    );
 
     // 4. Commit. Single INSERT — no transaction needed: a single-row
     //    edge insert is atomic in SQLite. The composite indexes from

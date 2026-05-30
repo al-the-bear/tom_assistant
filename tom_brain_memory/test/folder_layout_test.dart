@@ -1,8 +1,15 @@
 // A.23 folder-layout contract test.
 //
-// Locks the twelve `lib/src/<folder>/` subfolders required by Plan
-// step A.23 and the per-folder barrel file convention used across the
-// Tom Brain projects (sibling: `tom_brain_shared`).
+// Locks the `lib/src/<folder>/` subfolder inventory required by Plan
+// step A.23 (twelve original subfolders) and subsequent steps that
+// introduce new subsystems:
+//
+//   * A.68 — `budget/` (WriteBudget enforcement, the only memory-side
+//     home for the tracker + exception type that gates `persist` /
+//     `edge` / stack `push`).
+//
+// Plus the per-folder barrel file convention used across the Tom Brain
+// projects (sibling: `tom_brain_shared`).
 //
 // What this test asserts:
 //
@@ -30,8 +37,10 @@ import 'package:test/test.dart';
 
 const _requiredSubfolders = <String>[
   // Per Plan step A.23 — order matters only as documentation; the test
-  // checks the set, not the order.
+  // checks the set, not the order. Subsequent plan steps may extend
+  // the inventory (see file header).
   'api',
+  'budget', // A.68
   'classification',
   'config',
   'edges',
@@ -47,12 +56,12 @@ const _requiredSubfolders = <String>[
 
 void main() {
   group('A.23 folder layout', () {
-    test('there are exactly twelve required subfolders', () {
-      // Sanity-check the list itself against the Plan A.23 inventory
-      // so that a stray edit to `_requiredSubfolders` cannot silently
-      // shrink the contract.
-      expect(_requiredSubfolders, hasLength(12));
-      expect(_requiredSubfolders.toSet(), hasLength(12),
+    test('subfolder inventory matches the expected size and is unique', () {
+      // Sanity-check the list itself so that a stray edit to
+      // `_requiredSubfolders` cannot silently shrink or duplicate
+      // the contract. A.23 seeded 12; A.68 added `budget` for 13.
+      expect(_requiredSubfolders, hasLength(13));
+      expect(_requiredSubfolders.toSet(), hasLength(13),
           reason: 'subfolder list must be free of duplicates');
     });
 

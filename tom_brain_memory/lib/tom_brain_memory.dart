@@ -31,6 +31,7 @@ library;
 // through `package:tom_brain_memory/tom_brain_memory.dart` without
 // further changes here.
 export 'src/api/api.dart';
+export 'src/budget/budget.dart';
 export 'src/classification/classification.dart';
 export 'src/config/config.dart';
 export 'src/edges/edges.dart';

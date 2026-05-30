@@ -21,6 +21,7 @@
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show NodeId, StackEntryId;
 
+import '../api/scope.dart';
 import 'stack_types.dart';
 
 /// Dedicated CRUD surface for the brain's stacks.
@@ -69,11 +70,21 @@ abstract class StackApi {
   ///
   /// `priority` is the *raw* priority (no decay applied here). The
   /// returned id can be used for later `update` / `remove`.
+  ///
+  /// [scope] is optional and carries the agent-run identity for
+  /// `WriteBudget.maxStackEntries` enforcement (A.68; spec § 9.3).
+  /// When omitted, the push is not budget-charged — bootstrap
+  /// installs and ad-hoc operator pushes belong to this branch.
+  /// When supplied, every successful push consumes one unit of the
+  /// registered run's `maxStackEntries`; an unregistered run still
+  /// passes through unchecked (the tracker is opt-in — see
+  /// `WriteBudgetTracker` header).
   Future<StackEntryId> push(
     String name,
     NodeId entry, {
     double priority = 0.0,
     Map<String, Object?>? attrs,
+    Scope? scope,
   });
 
   /// Top-K read. Honours the stack's current priority policy.

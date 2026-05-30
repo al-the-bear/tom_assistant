@@ -96,6 +96,8 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
     show NodeId, StackEntryId;
 
 import '../api/memory_event.dart';
+import '../api/scope.dart';
+import '../budget/write_budget_tracker.dart';
 import 'priority_policy.dart';
 import 'stack_api.dart';
 import 'stack_events.dart';
@@ -136,6 +138,13 @@ final class SqliteStackApi implements StackApi {
   /// Optional sink for global `MemoryEvent`s.
   final void Function(MemoryEvent)? _eventSink;
 
+  /// Optional `WriteBudget` enforcement (A.68; spec § 9.3). When
+  /// non-null and `push` is called with a `Scope`, the push
+  /// consumes one unit of the registered run's `maxStackEntries`.
+  /// When null, pushes do not enforce a budget regardless of
+  /// whether a `Scope` was supplied.
+  final WriteBudgetTracker? _budgetTracker;
+
   /// Per-stack `StackEvent` broadcast controllers, minted lazily
   /// on first `events(name)` call.
   final Map<String, StreamController<StackEvent>> _eventStreams =
@@ -152,11 +161,13 @@ final class SqliteStackApi implements StackApi {
     NodeId Function()? stackNodeIdMint,
     DateTime Function()? now,
     void Function(MemoryEvent)? eventSink,
+    WriteBudgetTracker? budgetTracker,
   })  : _db = memoryDb,
         _entryIdMint = entryIdMint ?? StackEntryId.generate,
         _stackNodeIdMint = stackNodeIdMint ?? NodeId.generate,
         _now = now ?? DateTime.now,
-        _eventSink = eventSink;
+        _eventSink = eventSink,
+        _budgetTracker = budgetTracker;
 
   /// Releases stream controllers. Called by the higher-level store
   /// during `close`. Does NOT close the underlying database handle.
@@ -453,6 +464,7 @@ final class SqliteStackApi implements StackApi {
     NodeId entry, {
     double priority = 0.0,
     Map<String, Object?>? attrs,
+    Scope? scope,
   }) async {
     _assertOpen();
     final stackRow = _selectStackRow(name);
@@ -462,6 +474,18 @@ final class SqliteStackApi implements StackApi {
         message:
             'push: stack "$name" does not exist. Create it via '
             'StackApi.create first.',
+      );
+    }
+    // WriteBudget enforcement (A.68; spec § 9.3). After the
+    // stack-existence guard (a push at a missing stack does NOT
+    // consume budget) and before the INSERT (a budget exception
+    // leaves no row behind). Pass-through when no scope was
+    // supplied, no tracker is wired, the scope has no runId, or the
+    // run is unregistered.
+    if (scope != null) {
+      _budgetTracker?.chargeStackEntry(
+        runId: scope.runId,
+        producer: scope.producer,
       );
     }
     final id = _entryIdMint();
