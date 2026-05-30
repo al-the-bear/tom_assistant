@@ -6,15 +6,62 @@ version: 0.0.1
 environment:
   sdk: ^3.10.8
 
-# Dependency discipline (Plan step A.21 → A.22):
-# This is the A.21 *skeleton*. Runtime dependencies (`tom_brain_shared`,
-# `tom_basics`, `tom_core_kernel`, `tom_core_server`, `sqlite3`,
-# `dart_mcp`) are added in A.22 — not here. The skeleton ships with only
-# dev dependencies so the smoke test, `dart pub get`, and `dart analyze`
-# can run on an empty barrel without pulling in storage / MCP / native
-# transitive concerns prematurely.
+# Dependency discipline (Plan step A.22):
+#
+# The six runtime dependencies named in the plan, no more:
+#
+#   - tom_brain_shared    — cross-component vocabulary (NodeId, Vec, Budget,
+#                           Result, events, time, version, anchor). The only
+#                           Tom-Brain-level library this package imports.
+#   - tom_basics          — workspace baseline (UUID, exception types,
+#                           TomLogger). `TomLogger` lives here, not in
+#                           tom_core_kernel (see Q-A.22.1).
+#   - tom_core_kernel     — `TomBean` (the BeanLocator surface the plan
+#                           references — see Q-A.22.1 for the naming gap).
+#   - tom_core_server     — `TomBearerAuthentication` for the MCP-server
+#                           bearer-token check at A.76.
+#   - sqlite3             — workspace pin from A.4 (^2.4.0, resolves to
+#                           latest v2.x ≤ 2.9.4). FFI `loadExtension` API
+#                           required for the vec0 binary at A.50.
+#   - dart_mcp            — workspace pin from A.5 (^0.5.0, resolves to
+#                           0.5.1). Server side at A.75 (read-only seven
+#                           tools); no HTTP transport in scope.
+#
+# Explicitly NOT here (plan step A.22 — "No HTTP client, no JWT, no
+# logger."):
+#
+#   - http / dio          — memory does no network I/O. Web fetches are a
+#                           substrate / access concern.
+#   - jose / dart_jsonwebtoken / openid_client — token validation is the
+#                           caller's responsibility. `TomBearerAuthentication`
+#                           is consumed for principal handling, not JWT
+#                           parsing.
+#   - logger / logging    — the `tomLog` instance from tom_basics is the
+#                           only log surface. No second logger is permitted
+#                           in this package.
+#
+# The dependency-discipline test (`test/dependency_surface_test.dart`)
+# enforces this contract at build time.
 dependencies:
+  tom_brain_shared:
+    path: ../tom_brain_shared
+  # tom_basics is published to pub.dev; mixing a path dep on tom_basics
+  # with a path dep on tom_core_kernel (which itself declares
+  # `tom_basics: any` → hosted) is rejected by the pub solver. The
+  # convention `tom_brain_shared` uses — hosted constraint — is the one
+  # that keeps the dependency graph internally consistent across the
+  # workspace. The local edit to tom_basics still flows through, because
+  # tom_basics's published version matches what's on disk for the
+  # workspace's Phase A timeline.
+  tom_basics: ^1.0.0
+  tom_core_kernel:
+    path: ../../tom_ai/core/tom_core_kernel
+  tom_core_server:
+    path: ../../tom_ai/core/tom_core_server
+  sqlite3: ^2.4.0
+  dart_mcp: ^0.5.0
 
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
+  yaml: ^3.1.2
