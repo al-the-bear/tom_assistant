@@ -1,6 +1,6 @@
 // Barrel for the `retrieval/` module.
 //
-// As of A.57 this barrel exports:
+// As of A.59 this barrel exports:
 //
 //   - `RecallQuery` — input record for `TomBrainMemory.recall`,
 //     plus `RecallMode`, `SymbolicFilter`, `AttrClause`,
@@ -36,16 +36,30 @@
 //     spec § 6.2). Generic over the candidate item type; takes a
 //     caller-supplied similarity callback. Default `λ = 0.7`. Runs
 //     after RRF and before the optional re-rank hook (A.59).
+//   - `RecallExecutor` — the recall-pipeline orchestrator (A.59).
+//     Dispatches the four-mode executors, fuses with `rrfFuse`,
+//     diversifies with `mmrDiversify`, optionally invokes the
+//     caller-supplied `ReRankHook`, materialises nodes via
+//     `NodeReader.getMany`, and populates the `RecallReport` cost
+//     breakdown. The full `TomBrainMemory.recall` wrapper (event
+//     stream, observability hooks) lands in a later Phase A step;
+//     `RecallExecutor` is the testable composition core.
 //
 // Wiring across later Phase A steps:
 //
-//   - A.59 — `RecallReport` population + `TomBrainMemory.recall`
-//     wiring (executors → RRF → MMR → re-rank hook → result).
-//   - A.61 – A.62 — graph-walk mode + symbolic seed pre-filter.
+//   - A.61 – A.62 — graph-walk mode + symbolic seed pre-filter
+//     (drops into `RecallExecutor` without re-shaping the dispatch).
 
 export 'bm25_recall.dart' show Bm25Recall, Bm25RecallCandidate;
 export 'fts5_catalog.dart' show Fts5Catalog;
 export 'fts5_writer.dart' show Fts5Writer;
+export 'recall_executor.dart'
+    show
+        Bm25ModeFn,
+        NodeBulkReader,
+        RecallExecutor,
+        SymbolicModeFn,
+        VectorModeFn;
 export 'recall_query.dart'
     show
         AttrClause,
