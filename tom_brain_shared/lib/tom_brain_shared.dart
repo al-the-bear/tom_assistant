@@ -16,3 +16,6 @@ library;
 
 // A.10 — ids/ module: ULID + NodeId/EdgeId/TrailId/StackEntryId/ProcedureId.
 export 'src/ids/ids.dart';
+
+// A.11 — embedding/ module: Vec (Float32List wrapper) + cosine / dot / l2.
+export 'src/embedding/embedding.dart';
