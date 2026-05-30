@@ -15,7 +15,8 @@
 //
 // Wiring across later Phase A steps:
 //
-//   - A.32 — YAML manifest loader + 21 bootstrap registrations.
+//   - A.32 — YAML manifest loader + 21 bootstrap registrations
+//     (`NodeTypeYamlLoader`, `bootstrap_node_types.yaml`).
 //   - A.33 — `registerNodeType` with critique-driven overlap check.
 //   - A.34 — `persist(NodeDraft, Scope)` write path.
 //   - A.35 — `get` / `getMany` / `demote` / `forget`.
@@ -29,3 +30,9 @@ export 'node_type_decl.dart'
         IndexPolicy,
         NodeTypeDecl,
         RetentionPolicy;
+export 'node_type_yaml_loader.dart'
+    show
+        NodeTypeManifestException,
+        NodeTypeYamlLoader,
+        kBootstrapManifestPackageUri,
+        kSupportedManifestVersion;

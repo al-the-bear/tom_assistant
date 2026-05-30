@@ -1,11 +1,16 @@
-// A.22 dependency-surface contract test.
+// A.22 dependency-surface contract test (extended at A.32).
 //
-// Locks the six runtime dependencies named in the plan and the specific
+// Locks the runtime dependencies named in the plan and the specific
 // identifiers from each that this package will lean on. The act of
 // compiling the imports + referencing one symbol from each library is the
 // assertion — if any dependency disappears from `pubspec.yaml` or any
 // referenced identifier is renamed away from us, this test fails to load
 // before the rest of the suite runs.
+//
+// A.32 promotes `yaml` from `dev_dependencies` to a runtime dependency
+// — the bootstrap node-type manifest is parsed by runtime code (see
+// `lib/src/nodes/node_type_yaml_loader.dart`). The seventh dependency
+// is locked here alongside the original six.
 //
 // The six A.22 dependencies (in plan order):
 //
@@ -42,6 +47,11 @@
 //   6. dart_mcp             — `MCPServer` (the base class A.75's seven-
 //                             tool server will extend) and
 //                             `ProtocolVersion`.
+//   7. yaml                 — promoted from dev at A.32. Parses the
+//                             bootstrap node-type manifest
+//                             (`lib/src/nodes/bootstrap_node_types.yaml`).
+//                             We lock `loadYaml` and `YamlMap` as the
+//                             specific surface the loader uses.
 //
 // What this test does NOT do:
 //
@@ -63,6 +73,7 @@ import 'package:tom_core_kernel/tom_core_kernel.dart' as kernel;
 import 'package:tom_core_server/tom_core_server.dart' as server;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:dart_mcp/server.dart' as mcp;
+import 'package:yaml/yaml.dart' as yaml;
 
 import 'package:test/test.dart';
 
@@ -125,6 +136,19 @@ void main() {
       // shape change (e.g. enum removed and replaced with a const class)
       // would surface here.
       expect(mcp.ProtocolVersion.values, isNotEmpty);
+    });
+
+    test('yaml exposes the loadYaml entry + YamlMap surface (A.32)', () {
+      // The bootstrap-manifest loader leans on these two surfaces:
+      //   - `loadYaml(String)` to parse the YAML text;
+      //   - `YamlMap` / `YamlList` to walk the resulting tree.
+      // Functional smoke-test rather than just identifier lookup so a
+      // future package-rename or signature change surfaces here, not in
+      // the loader's first call site.
+      final parsed = yaml.loadYaml('manifest_version: 1\ntypes: []\n');
+      expect(parsed, isA<yaml.YamlMap>());
+      expect((parsed as yaml.YamlMap)['manifest_version'], 1);
+      expect(parsed['types'], isA<yaml.YamlList>());
     });
   });
 

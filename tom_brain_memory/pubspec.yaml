@@ -6,9 +6,16 @@ version: 0.0.1
 environment:
   sdk: ^3.10.8
 
-# Dependency discipline (Plan step A.22):
+# Dependency discipline (Plan step A.22, extended at A.32):
 #
-# The six runtime dependencies named in the plan, no more:
+# Six dependencies were named in the plan. A.32 promotes `yaml` from
+# `dev_dependencies` to runtime — the bootstrap-node-type manifest is a
+# YAML file shipped with this package and parsed by runtime code in
+# `lib/src/nodes/node_type_yaml_loader.dart` (the "YAML manifest loader"
+# the plan explicitly calls for in A.32). See Q-A.32.1 for the contract
+# change rationale.
+#
+# Runtime dependencies (in plan + A.32 order):
 #
 #   - tom_brain_shared    — cross-component vocabulary (NodeId, Vec, Budget,
 #                           Result, events, time, version, anchor). The only
@@ -26,6 +33,13 @@ environment:
 #   - dart_mcp            — workspace pin from A.5 (^0.5.0, resolves to
 #                           0.5.1). Server side at A.75 (read-only seven
 #                           tools); no HTTP transport in scope.
+#   - yaml                — promoted from dev at A.32. The bootstrap
+#                           manifest (`lib/src/nodes/bootstrap_node_types.yaml`)
+#                           is parsed by runtime code so a freshly-booted
+#                           memory instance can register the 21 bootstrap
+#                           types without going through a code-generation
+#                           step. Pinned to `^3.1.2` (the dev-dep version
+#                           that was in place pre-A.32).
 #
 # Explicitly NOT here (plan step A.22 — "No HTTP client, no JWT, no
 # logger."):
@@ -60,8 +74,8 @@ dependencies:
     path: ../../tom_ai/core/tom_core_server
   sqlite3: ^2.4.0
   dart_mcp: ^0.5.0
+  yaml: ^3.1.2
 
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
-  yaml: ^3.1.2
