@@ -95,7 +95,7 @@ types:
       source_fields: [summary]
     index:
       fts_fields: [summary]
-      vector_fields: [summary]
+      vector_fields: []
     retention: indefinite
     allowed_outgoing: [caused_by, mentions]
     allowed_incoming: [caused_by, derived_from, mentions]
@@ -109,7 +109,7 @@ types:
       source_fields: [statement]
     index:
       fts_fields: [statement]
-      vector_fields: [statement]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
@@ -127,7 +127,7 @@ types:
       source_fields: [name, description]
     index:
       fts_fields: [name, description]
-      vector_fields: [name]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
@@ -145,7 +145,7 @@ types:
       source_fields: [statement, rationale]
     index:
       fts_fields: [statement, rationale]
-      vector_fields: [statement]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
@@ -162,7 +162,7 @@ types:
       source_fields: [text]
     index:
       fts_fields: [text]
-      vector_fields: [text]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
@@ -180,7 +180,7 @@ types:
       source_fields: [signature, description]
     index:
       fts_fields: [signature, description]
-      vector_fields: [signature]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
@@ -197,7 +197,7 @@ types:
       source_fields: [summary]
     index:
       fts_fields: [summary]
-      vector_fields: [summary]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: false
@@ -215,7 +215,7 @@ types:
       source_fields: [title]
     index:
       fts_fields: [title]
-      vector_fields: [title]
+      vector_fields: []
     retention: indefinite
     allowed_outgoing: [evidence_for, mentions]
     allowed_incoming: [mentions, derived_from]
@@ -230,7 +230,7 @@ types:
       source_fields: [goal, summary]
     index:
       fts_fields: [goal, summary]
-      vector_fields: [goal]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
@@ -248,7 +248,7 @@ types:
       source_fields: [description]
     index:
       fts_fields: [description]
-      vector_fields: [description]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
@@ -269,7 +269,7 @@ types:
       source_fields: [summary]
     index:
       fts_fields: [kind, summary]
-      vector_fields: [summary]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
@@ -288,7 +288,7 @@ types:
       source_fields: [name, summary]
     index:
       fts_fields: [name, summary]
-      vector_fields: [name]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
@@ -307,7 +307,7 @@ types:
       source_fields: [summary]
     index:
       fts_fields: [summary]
-      vector_fields: [summary]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: false
@@ -325,7 +325,7 @@ types:
       source_fields: [description, motivation]
     index:
       fts_fields: [description, motivation]
-      vector_fields: [description]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
@@ -343,7 +343,7 @@ types:
       source_fields: [topic, why]
     index:
       fts_fields: [topic, why]
-      vector_fields: [topic]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
@@ -362,7 +362,7 @@ types:
       source_fields: [type_name, schema_summary]
     index:
       fts_fields: [type_name, schema_summary]
-      vector_fields: [type_name]
+      vector_fields: []
     retention: indefinite
     allowed_outgoing: [superseded_by, derived_from, mentions]
     allowed_incoming: [superseded_by, derived_from, mentions]
@@ -378,7 +378,7 @@ types:
       source_fields: [summary]
     index:
       fts_fields: [summary]
-      vector_fields: [summary]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: false
@@ -396,7 +396,7 @@ types:
       source_fields: [summary]
     index:
       fts_fields: [summary]
-      vector_fields: [summary]
+      vector_fields: []
     retention:
       default_horizon_ms: null
       reinforcement_resets_horizon: false
