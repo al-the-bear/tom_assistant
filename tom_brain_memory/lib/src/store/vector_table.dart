@@ -771,6 +771,77 @@ final class VectorTable {
     );
   }
 
+  /// Reads the stored vectors for [nodeIds] under [modelId].
+  ///
+  /// Used by `findUncertain` (A.65) to materialise the per-node
+  /// embeddings it needs to score against the per-key centroid. The
+  /// recall pipeline does **not** use this path — `queryNearest` is
+  /// the right primitive for "give me nodes near a query vector"; this
+  /// primitive is the inverse, "give me the vectors for these node ids
+  /// so I can compare them against an arbitrary centroid".
+  ///
+  /// Contract:
+  ///
+  ///   * Returns a map keyed by the bare `node_id` string (the same
+  ///     wire form the vector backend stores). Missing rows — the id
+  ///     never had a vector under this model, or the row was deleted
+  ///     — are absent from the map; the caller's iteration over
+  ///     [nodeIds] decides whether absence is an error.
+  ///   * Returns an empty map when [nodeIds] is empty or when no index
+  ///     is installed for [modelId]. The latter is the
+  ///     `findUncertain`-against-an-uninstalled-model case; raising
+  ///     would force every consumer to wrap the read in a try/catch
+  ///     for a normal "model isn't installed here" outcome.
+  ///   * Rows whose stored blob length disagrees with the installed
+  ///     `dims * 4` are skipped silently. The plain backend's
+  ///     dim-mismatch tolerance is mirrored here — a drifted row
+  ///     cannot participate in cosine scoring; the conservative branch
+  ///     is to drop it from the result rather than throw.
+  ///
+  /// Batched in a single `SELECT node_id, embedding FROM <table>
+  /// WHERE node_id IN (?, ?, …)` so the per-call cost is one SQLite
+  /// round-trip per model group, not one per id. Callers should chunk
+  /// at the SQLite host-parameter ceiling (default 999) when handing
+  /// in larger id sets; `findUncertain`'s `limit = 200` upper bound
+  /// keeps it comfortably under the ceiling for current use.
+  ///
+  /// Backend independence: the SQL surface `SELECT embedding FROM
+  /// <table>` is supported by both `vec0` (returns the embedding as
+  /// the wire blob form) and the plain blob backend (returns the
+  /// stored `BLOB` column). The dim-validation check defends against
+  /// the case where a future backend returns a different on-wire
+  /// representation; the layer surfaces that as a missing row rather
+  /// than a malformed Vec.
+  Map<String, Vec> readVectors({
+    required List<String> nodeIds,
+    required String modelId,
+  }) {
+    if (nodeIds.isEmpty) return const <String, Vec>{};
+    final info = lookupIndex(modelId);
+    if (info == null) return const <String, Vec>{};
+
+    final placeholders = List<String>.filled(nodeIds.length, '?').join(',');
+    final rows = _vectorsDb.select(
+      'SELECT node_id, embedding FROM "${info.tableName}" '
+      'WHERE node_id IN ($placeholders)',
+      nodeIds,
+    );
+    final result = <String, Vec>{};
+    for (final row in rows) {
+      final raw = row['embedding'];
+      Uint8List? blob;
+      if (raw is Uint8List) {
+        blob = raw;
+      } else if (raw is List<int>) {
+        blob = Uint8List.fromList(raw);
+      }
+      if (blob == null) continue;
+      if (blob.lengthInBytes != info.dims * 4) continue;
+      result[row['node_id'] as String] = Vec.fromBlob(blob);
+    }
+    return result;
+  }
+
   /// Derives a SQL-safe physical table name from [modelId].
   ///
   /// The algorithm:

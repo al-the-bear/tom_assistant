@@ -23,13 +23,25 @@
 //     `SqliteTomBrainMemory.classify` (later A-step) wraps with
 //     `Future.value(...)` to satisfy the abstract surface.
 //
-// A.65 will add `findUncertain` for the opt-in batch path. The
-// concrete `SqliteTomBrainMemory` wires `update` into the abstract
-// `TomBrainMemory.updateCentroid(forKey, centroid)` surface in a
-// later A-step — see Q-A.63.2 in `prototype_implementation_questions.md`
-// for why the abstract signature stays minimal.
+// At A.65 the opt-in batch path lands:
+//
+//   * `UncertainCandidate` — one borderline candidate with similarity.
+//   * `UncertainFinder` — wraps a `CentroidStore` + `VectorTable` +
+//     `memory.db` handle and returns node ids whose centroid
+//     similarity falls in a `[low, high]` band. The opt-in batch
+//     consumer (`dream_recentroid_v1`) reads these to feed an LLM-batch
+//     re-classification (spec § 7.4). Memory never originates the call.
+//
+// The concrete `SqliteTomBrainMemory` wires `update` into the abstract
+// `TomBrainMemory.updateCentroid(forKey, centroid)` surface and the
+// `UncertainFinder.find` into the abstract
+// `TomBrainMemory.findUncertain(forKey, low, high, limit)` surface in
+// a later A-step — see Q-A.63.2 in
+// `prototype_implementation_questions.md` for why the abstract
+// signatures stay minimal.
 
 export 'centroid_store.dart' show CentroidRecord, CentroidStore;
 export 'classification_result.dart'
     show ClassificationDecision, ClassificationResult, ClassificationTarget;
 export 'classifier.dart' show Classifier;
+export 'uncertain_finder.dart' show UncertainCandidate, UncertainFinder;
