@@ -29,6 +29,12 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 ///     committed to emitting)
 ///   * A.50 — `VectorIndexUnavailable` (sqlite-vec extension load
 ///     fell back to BM25-only mode at boot time)
+///   * A.69 — `ShakingEvent` sealed family + the four sub-kinds
+///     (`ContradictionDetected`, `CentroidDriftDetected`,
+///     `RetrievalConflict`, `CritiqueRejected`) named in spec § 9.4 /
+///     § 16. The three memory-internal sub-kinds are emitted by the
+///     edge writer, the centroid store, and the recall executor;
+///     `CritiqueRejected` is agent-raised via `ShakingEventEmitter`.
 ///
 /// The `kind` discriminator convention for memory events is
 /// `memory.<event-name>`, kebab-cased (e.g. `memory.node-persisted`).

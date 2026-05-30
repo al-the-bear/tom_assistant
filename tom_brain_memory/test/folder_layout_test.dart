@@ -7,6 +7,11 @@
 //   * A.68 — `budget/` (WriteBudget enforcement, the only memory-side
 //     home for the tracker + exception type that gates `persist` /
 //     `edge` / stack `push`).
+//   * A.69 — `cognitive_agents/` (the home for the shaking-event
+//     family + the `ShakingEventEmitter` helper that lets cognitive
+//     agents raise `CritiqueRejected`; memory-internal sub-kinds
+//     are emitted from their owning sub-modules, but the sealed
+//     `ShakingEvent` types and the agent-side helper live here).
 //
 // Plus the per-folder barrel file convention used across the Tom Brain
 // projects (sibling: `tom_brain_shared`).
@@ -42,6 +47,7 @@ const _requiredSubfolders = <String>[
   'api',
   'budget', // A.68
   'classification',
+  'cognitive_agents', // A.69
   'config',
   'edges',
   'isolate_adapter',
@@ -59,9 +65,10 @@ void main() {
     test('subfolder inventory matches the expected size and is unique', () {
       // Sanity-check the list itself so that a stray edit to
       // `_requiredSubfolders` cannot silently shrink or duplicate
-      // the contract. A.23 seeded 12; A.68 added `budget` for 13.
-      expect(_requiredSubfolders, hasLength(13));
-      expect(_requiredSubfolders.toSet(), hasLength(13),
+      // the contract. A.23 seeded 12; A.68 added `budget` for 13;
+      // A.69 added `cognitive_agents` for 14.
+      expect(_requiredSubfolders, hasLength(14));
+      expect(_requiredSubfolders.toSet(), hasLength(14),
           reason: 'subfolder list must be free of duplicates');
     });
 

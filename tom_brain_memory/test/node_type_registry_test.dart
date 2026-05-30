@@ -44,7 +44,7 @@
 //
 //   Failure — critique
 //   ------------------
-//   * NodeTypeRejected when hook returns CritiqueRejected (reason +
+//   * NodeTypeRejected when hook returns CritiqueRefused (reason +
 //     conflictingTypeNames preserved).
 //   * NodeTypeRejected when hook crashes (crash message preserved).
 //
@@ -659,9 +659,9 @@ void main() {
     // Critique
     // ──────────────────────────────────────────────────────────────
 
-    test('NodeTypeRejected when hook returns CritiqueRejected', () async {
+    test('NodeTypeRejected when hook returns CritiqueRefused', () async {
       final registry = buildRegistry(
-        hook: (_, _) async => const CritiqueRejected(
+        hook: (_, _) async => const CritiqueRefused(
           reason: 'overlaps Pattern',
           conflictingTypeNames: <String>['Pattern'],
         ),

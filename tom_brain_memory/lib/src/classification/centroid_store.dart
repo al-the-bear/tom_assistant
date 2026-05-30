@@ -79,12 +79,44 @@
 // `updateCentroid` does not affect an in-flight recall". The store
 // itself is not multi-threaded — it inherits the `Database` handle's
 // single-owner rule, same as every other A-step store class.
+//
+// ─────────────────────────────────────────────────────────────────────
+// What this file owns since A.69
+// ─────────────────────────────────────────────────────────────────────
+//
+// `CentroidDriftDetected` shaking-event emission (spec § 9.4). After
+// every successful `update`, the store compares the freshly-written
+// centroid against the prior row (read before the upsert):
+//
+//   * No prior row (first-ever update for this key) — no emission.
+//     There is nothing to compare against.
+//   * Prior `embedding_model_id` differs from the new one — emits
+//     unconditionally with `cosineSimilarity: null`. A different
+//     embedding model produces incommensurable vectors; the only
+//     correct downstream reaction is a re-embed migration. The cosine
+//     cutoff is bypassed because the comparison would be meaningless.
+//   * Same model, prior `example_count` >= `driftMinPreviousExamples`
+//     (default `8`) AND `cosine(prior, new) < driftCosineThreshold`
+//     (default `0.85`) — emits with the measured cosine. The
+//     example-count floor avoids treating cold-start jitter
+//     (centroid built from a handful of examples) as drift.
+//   * All other cases — no emission. The centroid moved, but not
+//     beyond the tolerance the store was configured for.
+//
+// Q-A.69.2 documents the threshold rationale. The detection runs
+// regardless of whether an `eventSink` is wired — the prior read is
+// cheap and unconditional makes the logic easier to reason about; the
+// sink call short-circuits when null.
 
 import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainTime, Clock, Vec;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show BrainTime, Clock, Vec, cosine;
 
+import '../api/memory_event.dart';
+import '../api/scope.dart';
+import '../cognitive_agents/shaking_events.dart';
 import 'classification_result.dart';
 
 /// One row of the `centroids` table.
@@ -199,8 +231,22 @@ final class CentroidStore {
     return null;
   }
 
+  /// Default cosine-similarity cutoff for `CentroidDriftDetected`
+  /// emission. A new centroid with `cosine(prior, new) < this` and a
+  /// prior `example_count >= defaultDriftMinPreviousExamples` is
+  /// considered drifted. See Q-A.69.2 for the value rationale.
+  static const double defaultDriftCosineThreshold = 0.85;
+
+  /// Default floor for prior-row `example_count` before drift is
+  /// considered. Avoids treating cold-start jitter (a centroid built
+  /// from a handful of examples) as drift.
+  static const int defaultDriftMinPreviousExamples = 8;
+
   final Database _db;
   final Clock _clock;
+  final void Function(MemoryEvent)? _eventSink;
+  final double _driftCosineThreshold;
+  final int _driftMinPreviousExamples;
 
   /// Constructs a store over [memoryDb] using [clock] for
   /// `updated_at` stamps.
@@ -208,11 +254,45 @@ final class CentroidStore {
   /// Production passes `const SystemClock()`; tests inject
   /// [FixedClock] or [MutableTestClock] so the row's `updated_at`
   /// can be asserted exactly.
+  ///
+  /// `eventSink` is optional — when non-null, every [update] that
+  /// crosses the drift threshold (or changes embedding model id)
+  /// emits a [CentroidDriftDetected] shaking event onto it. The
+  /// concrete `SqliteTomBrainMemory` wires this to the same
+  /// `StreamController` that backs `TomBrainMemory.events()`; tests
+  /// pass a list-backed sink to inspect emissions.
+  ///
+  /// `driftCosineThreshold` defaults to [defaultDriftCosineThreshold]
+  /// (`0.85`); `driftMinPreviousExamples` defaults to
+  /// [defaultDriftMinPreviousExamples] (`8`). Both are carried in
+  /// every emitted [CentroidDriftDetected] so subscribers can
+  /// correlate threshold tuning with shaking-event volume.
   CentroidStore({
     required Database memoryDb,
     required Clock clock,
+    void Function(MemoryEvent)? eventSink,
+    double driftCosineThreshold = defaultDriftCosineThreshold,
+    int driftMinPreviousExamples = defaultDriftMinPreviousExamples,
   })  : _db = memoryDb,
-        _clock = clock;
+        _clock = clock,
+        _eventSink = eventSink,
+        _driftCosineThreshold = driftCosineThreshold,
+        _driftMinPreviousExamples = driftMinPreviousExamples {
+    if (driftCosineThreshold < -1.0 || driftCosineThreshold > 1.0) {
+      throw ArgumentError.value(
+        driftCosineThreshold,
+        'driftCosineThreshold',
+        'CentroidStore: driftCosineThreshold must be in [-1.0, 1.0]',
+      );
+    }
+    if (driftMinPreviousExamples < 0) {
+      throw ArgumentError.value(
+        driftMinPreviousExamples,
+        'driftMinPreviousExamples',
+        'CentroidStore: driftMinPreviousExamples must be >= 0',
+      );
+    }
+  }
 
   /// Upserts the centroid row for [forKey].
   ///
@@ -234,11 +314,19 @@ final class CentroidStore {
   /// table — same as a subsequent [read] would return — so callers
   /// (chiefly `dream_recentroid_v1`) can echo the stamped form into
   /// their trail without an extra round-trip.
+  ///
+  /// `scope` is optional and only used to propagate `runId` /
+  /// `causedBy` onto any emitted [CentroidDriftDetected] event so the
+  /// dispatcher's trace stitcher can correlate the drift signal back
+  /// to the run (typically a `dream_recentroid_v1` run) that produced
+  /// it. Passing `null` is legal — the event is still emitted, just
+  /// without run-correlation metadata.
   CentroidRecord update({
     required String forKey,
     required String embeddingModelId,
     required Vec centroid,
     required int exampleCount,
+    Scope? scope,
   }) {
     if (forKey.isEmpty) {
       throw ArgumentError.value(
@@ -261,6 +349,12 @@ final class CentroidStore {
         'CentroidStore.update: exampleCount must be >= 0',
       );
     }
+
+    // A.69 — read the prior row BEFORE the upsert so we can compute
+    // the drift signal against the pre-update centroid. The `ON
+    // CONFLICT DO UPDATE` in the next statement rewrites the row
+    // wholesale, so any prior state has to be captured up front.
+    final prior = read(forKey);
 
     final updatedAt = BrainTime.now(_clock);
     final blob = centroid.toBlob();
@@ -295,6 +389,33 @@ final class CentroidStore {
       ],
     );
 
+    // A.69 — drift detection. Three cases:
+    //
+    //   1. No prior row (first-ever update for this key) — emit nothing.
+    //      There is nothing to compare; emitting on every cold-start
+    //      would drown the shaking-event stream in noise.
+    //   2. Model-id change between prior and new — emit unconditionally
+    //      with `cosineSimilarity: null`. A different embedding model
+    //      produces incommensurable vectors, so the cosine cutoff is
+    //      bypassed; the only correct downstream reaction is a
+    //      re-embed migration.
+    //   3. Same model AND prior.exampleCount >= _driftMinPreviousExamples
+    //      AND cosine(prior, new) < _driftCosineThreshold — emit with
+    //      the measured cosine. The example-count floor avoids treating
+    //      cold-start jitter as drift.
+    //
+    // Anything else: the centroid moved, but not beyond the configured
+    // tolerance — no emission.
+    _maybeEmitDrift(
+      forKey: forKey,
+      embeddingModelId: embeddingModelId,
+      newCentroid: centroid,
+      newExampleCount: exampleCount,
+      prior: prior,
+      occurredAt: updatedAt.toDateTime(),
+      scope: scope,
+    );
+
     return CentroidRecord(
       forKey: forKey,
       embeddingModelId: embeddingModelId,
@@ -302,6 +423,85 @@ final class CentroidStore {
       exampleCount: exampleCount,
       updatedAt: updatedAt,
     );
+  }
+
+  /// Internal: detect drift between [prior] and the freshly-written
+  /// centroid, and emit [CentroidDriftDetected] when warranted.
+  ///
+  /// See the file header (`What this file owns since A.69`) for the
+  /// decision table. Short-circuits when no `_eventSink` is wired so
+  /// the cosine computation only runs when a subscriber is listening.
+  void _maybeEmitDrift({
+    required String forKey,
+    required String embeddingModelId,
+    required Vec newCentroid,
+    required int newExampleCount,
+    required CentroidRecord? prior,
+    required DateTime occurredAt,
+    required Scope? scope,
+  }) {
+    final sink = _eventSink;
+    if (sink == null) return;
+    if (prior == null) return;
+
+    final modelChanged = prior.embeddingModelId != embeddingModelId;
+    if (modelChanged) {
+      sink(
+        CentroidDriftDetected(
+          forKey: forKey,
+          embeddingModelId: embeddingModelId,
+          previousEmbeddingModelId: prior.embeddingModelId,
+          exampleCount: newExampleCount,
+          previousExampleCount: prior.exampleCount,
+          cosineSimilarity: null,
+          driftCosineThreshold: _driftCosineThreshold,
+          occurredAt: occurredAt,
+          runId: scope?.runId,
+          causedBy: scope?.causedBy,
+        ),
+      );
+      return;
+    }
+
+    if (prior.exampleCount < _driftMinPreviousExamples) return;
+    if (prior.centroid.dimension != newCentroid.dimension) {
+      // Same model but different dimension — defensive: cosine would
+      // throw. Treat as drift; carry cosine=null so subscribers can
+      // tell this from a normal cosine-cutoff drift.
+      sink(
+        CentroidDriftDetected(
+          forKey: forKey,
+          embeddingModelId: embeddingModelId,
+          previousEmbeddingModelId: prior.embeddingModelId,
+          exampleCount: newExampleCount,
+          previousExampleCount: prior.exampleCount,
+          cosineSimilarity: null,
+          driftCosineThreshold: _driftCosineThreshold,
+          occurredAt: occurredAt,
+          runId: scope?.runId,
+          causedBy: scope?.causedBy,
+        ),
+      );
+      return;
+    }
+
+    final c = cosine(prior.centroid, newCentroid);
+    if (c < _driftCosineThreshold) {
+      sink(
+        CentroidDriftDetected(
+          forKey: forKey,
+          embeddingModelId: embeddingModelId,
+          previousEmbeddingModelId: prior.embeddingModelId,
+          exampleCount: newExampleCount,
+          previousExampleCount: prior.exampleCount,
+          cosineSimilarity: c,
+          driftCosineThreshold: _driftCosineThreshold,
+          occurredAt: occurredAt,
+          runId: scope?.runId,
+          causedBy: scope?.causedBy,
+        ),
+      );
+    }
   }
 
   /// Returns the centroid row for [forKey], or `null` when no row

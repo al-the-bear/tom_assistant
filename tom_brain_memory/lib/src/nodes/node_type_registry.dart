@@ -174,7 +174,7 @@ final class NodeTypeRegistry {
     }
     final String? approvalNote;
     switch (outcome) {
-      case CritiqueRejected(:final reason, :final conflictingTypeNames):
+      case CritiqueRefused(:final reason, :final conflictingTypeNames):
         throw NodeTypeRejected(
           typeName: decl.typeName,
           message: 'critique hook rejected the proposal: $reason',

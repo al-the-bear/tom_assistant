@@ -60,6 +60,20 @@
 //     tracker is wired, when `scope.runId` is null, or when the
 //     run was not `beginRun`-registered.
 //
+// What this file owns since A.69:
+//
+//   - `ContradictionDetected` shaking-event emission (spec § 9.4).
+//     A successful `contradicts` edge insert emits a
+//     `ContradictionDetected` immediately after the `EdgeCreated`
+//     pair, on the same event sink. Carries the new edge's id,
+//     both endpoints, the resolved endpoint type names, and
+//     `runId` / `causedBy` from the writing scope. Idempotency
+//     hits emit neither event; rejection paths emit neither (an
+//     `EdgeRejected` does not signal contradiction even when the
+//     refused label was `contradicts`). The pairing with
+//     `EdgeCreated` is structural: consumers always see the
+//     structural fact first, the cognitive signal second.
+//
 // Layering:
 //
 //   - The writer takes a raw `sqlite3` `Database` handle and a
@@ -78,6 +92,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
 import '../api/memory_event.dart';
 import '../api/scope.dart';
 import '../budget/write_budget_tracker.dart';
+import '../cognitive_agents/shaking_events.dart';
 import '../nodes/node_type_registry.dart';
 import 'edge_events.dart';
 import 'edge_type.dart';
@@ -328,6 +343,31 @@ final class EdgeWriter {
         occurredAt: at,
       ),
     );
+
+    // 5. Shaking-event emission (A.69, spec § 9.4). A successful
+    //    `contradicts` edge insert pairs with a `ContradictionDetected`
+    //    shaking event — the closed-alphabet edge doc on
+    //    `EdgeType.contradicts` names this as the cognitive signal
+    //    that the new edge invalidates whatever its `to` endpoint
+    //    had previously concluded. Emitted AFTER `EdgeCreated` so
+    //    consumers see the structural fact first, the cognitive
+    //    signal second; `runId` / `causedBy` carried from `scope`
+    //    so the dispatcher's trace stitcher can correlate the
+    //    contradicted-by-whom story across runs.
+    if (type == EdgeType.contradicts) {
+      _eventSink?.call(
+        ContradictionDetected(
+          edgeId: id,
+          from: from,
+          to: to,
+          fromTypeName: fromTypeName,
+          toTypeName: toTypeName,
+          occurredAt: at,
+          runId: scope.runId,
+          causedBy: scope.causedBy,
+        ),
+      );
+    }
 
     return id;
   }

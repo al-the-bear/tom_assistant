@@ -70,28 +70,35 @@ final class CritiqueApproved extends CritiqueOutcome {
       note == null ? 'CritiqueApproved' : 'CritiqueApproved($note)';
 }
 
-/// Hook rejected the proposal. [reason] is required; [conflictingTypeNames]
+/// Hook refused the proposal. [reason] is required; [conflictingTypeNames]
 /// points at the existing types the hook thinks overlap (empty when the
-/// rejection is for a non-overlap reason, e.g. drift from a previous
-/// rejected name).
-final class CritiqueRejected extends CritiqueOutcome {
+/// refusal is for a non-overlap reason, e.g. drift from a previous
+/// refused name).
+///
+/// Renamed from `CritiqueRejected` at A.69 to free that name for the
+/// shaking-event sub-kind declared in spec § 9.4. See Q-A.69.1 in
+/// `prototype_implementation_questions.md` for the rationale. The two
+/// concepts are unrelated: this class is a synchronous outcome returned
+/// by the node-type proposal critique hook; the shaking-event leaf is
+/// a typed `MemoryEvent` raised by sleep-cycle agents.
+final class CritiqueRefused extends CritiqueOutcome {
   /// Human-readable explanation. Surfaces verbatim in
   /// `NodeTypeRejected` (the failure thrown by `registerNodeType`).
   final String reason;
 
   /// Names of existing types the hook considers overlapping. Empty list
-  /// is legal — not every rejection is about overlap.
+  /// is legal — not every refusal is about overlap.
   final List<String> conflictingTypeNames;
 
-  const CritiqueRejected({
+  const CritiqueRefused({
     required this.reason,
     this.conflictingTypeNames = const <String>[],
   });
 
   @override
   String toString() => conflictingTypeNames.isEmpty
-      ? 'CritiqueRejected($reason)'
-      : 'CritiqueRejected($reason; conflicts: ${conflictingTypeNames.join(", ")})';
+      ? 'CritiqueRefused($reason)'
+      : 'CritiqueRefused($reason; conflicts: ${conflictingTypeNames.join(", ")})';
 }
 
 /// Caller-supplied function that judges a candidate node-type proposal
@@ -107,7 +114,7 @@ final class CritiqueRejected extends CritiqueOutcome {
 ///     the registry awaits the future and treats long latencies as
 ///     "still in progress" — no built-in timeout. Callers responsible
 ///     for budgeting hand the hook a wrapper that cancels.
-///   * MUST NOT throw for "rejection" — return `CritiqueRejected`
+///   * MUST NOT throw for "refusal" — return `CritiqueRefused`
 ///     instead. An exception from the hook is treated as a
 ///     **hook crash** by the registry and surfaces as
 ///     `NodeTypeRejected(reason: 'critique hook crashed: …')`.
@@ -124,7 +131,7 @@ final class CritiqueRejected extends CritiqueOutcome {
 ///
 /// CritiqueHook rejectIfNameContains(String fragment) =>
 ///     (decl, _) async => decl.typeName.contains(fragment)
-///         ? CritiqueRejected(reason: 'name contains "$fragment"')
+///         ? CritiqueRefused(reason: 'name contains "$fragment"')
 ///         : const CritiqueApproved();
 /// ```
 typedef CritiqueHook = Future<CritiqueOutcome> Function(

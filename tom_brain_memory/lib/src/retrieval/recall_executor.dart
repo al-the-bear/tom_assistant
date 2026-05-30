@@ -112,12 +112,31 @@
 //   - **`FusionStrategy.weighted`.** The policy carries optional
 //     weights; the executor today routes only RRF. The gate is the
 //     `FusionStrategy` switch in `_fuse`. See Q-A.57.4.
+//
+// What this file owns since A.69:
+//
+//   - `RetrievalConflict` shaking-event emission (spec § 9.4). After
+//     the per-mode dispatch loop completes but BEFORE fusion, the
+//     executor inspects the set of modes that returned non-empty
+//     candidate lists. When at least two such modes exist AND the
+//     intersection of their top-`min(5, perModeK)` `NodeId`s is
+//     empty, a `RetrievalConflict` is emitted onto the optional
+//     `_eventSink`. See Q-A.69.3 for the disagreement-rule
+//     rationale. RRF will still fuse the disjoint lists; the event is
+//     a typed signal that the resulting ordering is structurally
+//     fragile and a `dream_reconsolidate_v1` pass should look at the
+//     query. The optional `Scope` parameter on `recall()` only
+//     supplies `runId` / `causedBy` for the emitted event; it is not
+//     consulted by the executor for any other purpose.
 
 import 'dart:math' as math;
 
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show Clock, NodeId, SystemClock, Vec;
 
+import '../api/memory_event.dart';
+import '../api/scope.dart';
+import '../cognitive_agents/shaking_events.dart';
 import '../nodes/node.dart';
 import '../nodes/node_reader.dart';
 import 'bm25_recall.dart';
@@ -212,6 +231,18 @@ final class RecallExecutor {
   /// Clock for `elapsedMs` measurement + wall-clock budget enforcement.
   final Clock _clock;
 
+  /// Optional sink for `MemoryEvent`s — currently used to emit
+  /// `RetrievalConflict` after the mode loop (A.69; spec § 9.4). The
+  /// concrete `SqliteTomBrainMemory` wires this to the same
+  /// `StreamController` that backs `TomBrainMemory.events()`; tests
+  /// pass a list-backed sink to inspect emissions.
+  final void Function(MemoryEvent)? _eventSink;
+
+  /// Cap on the per-mode top-K window used for the empty-intersection
+  /// disagreement check (A.69; see Q-A.69.3). The window the executor
+  /// actually uses is `min(_retrievalConflictTopK, perModeK)`.
+  static const int _retrievalConflictTopK = 5;
+
   /// Constructs the executor over the four concrete mode executors and
   /// a `NodeReader`. This is the production constructor — bound by the
   /// store opener once it lands later in Phase A.
@@ -222,6 +253,10 @@ final class RecallExecutor {
   ///
   /// [clock] defaults to `SystemClock` for production. Tests inject
   /// a `MutableTestClock` to pin `elapsedMs`.
+  ///
+  /// [eventSink] is optional — wire it to the memory store's typed
+  /// event stream to receive `RetrievalConflict` signals when the
+  /// per-mode results disagree (spec § 9.4; A.69).
   RecallExecutor({
     required Bm25Recall bm25,
     required VectorRecall? vector,
@@ -229,6 +264,7 @@ final class RecallExecutor {
     required GraphWalkRecall graphWalk,
     required NodeReader nodeReader,
     Clock clock = const SystemClock(),
+    void Function(MemoryEvent)? eventSink,
   }) : this.fromCallables(
           bm25: bm25.recall,
           vector: vector?.recall,
@@ -236,6 +272,7 @@ final class RecallExecutor {
           graphWalk: graphWalk.recall,
           nodeReader: nodeReader.getMany,
           clock: clock,
+          eventSink: eventSink,
         );
 
   /// Callable-injecting constructor. Production prefers the concrete-
@@ -252,12 +289,14 @@ final class RecallExecutor {
     required GraphWalkModeFn graphWalk,
     required NodeBulkReader nodeReader,
     Clock clock = const SystemClock(),
+    void Function(MemoryEvent)? eventSink,
   })  : _bm25 = bm25,
         _vector = vector,
         _symbolic = symbolic,
         _graphWalk = graphWalk,
         _nodeReader = nodeReader,
-        _clock = clock;
+        _clock = clock,
+        _eventSink = eventSink;
 
   // ─── Public surface ──────────────────────────────────────────────
 
@@ -286,7 +325,14 @@ final class RecallExecutor {
   ///     list is filtered to ids present in the input; unknown ids
   ///     are dropped silently. `reRankInvoked = true` after the
   ///     call returns, regardless of whether the hook reordered.
-  Future<RecallResult> recall(RecallQuery query) async {
+  ///   * `RetrievalConflict` (A.69; spec § 9.4) is emitted onto the
+  ///     optional event sink — between the mode loop and fusion —
+  ///     whenever at least two modes returned non-empty candidate
+  ///     lists AND the intersection of their top-`min(5, perModeK)`
+  ///     `NodeId`s is empty. The fused result is still returned;
+  ///     the event is a typed signal, not a refusal. [scope] only
+  ///     supplies `runId` / `causedBy` for the emitted event.
+  Future<RecallResult> recall(RecallQuery query, {Scope? scope}) async {
     final startMs = _clock.nowMs();
 
     // candidatesPerMode is keyed by every mode the caller requested,
@@ -309,6 +355,17 @@ final class RecallExecutor {
       perModeRanked[mode] = result.ranked;
       if (result.degraded) degraded = true;
     }
+
+    // A.69 — `RetrievalConflict` shaking-event emission (spec § 9.4).
+    // Runs between mode dispatch and fusion: it inspects what each
+    // mode wanted before RRF blurs that signal into a single ranking.
+    // Cheap (early-out when no sink wired; only iterates non-empty
+    // per-mode lists; the intersection is over a top-K window <= 5).
+    _maybeEmitRetrievalConflict(
+      perModeRanked: perModeRanked,
+      perModeK: query.budget.perModeK,
+      scope: scope,
+    );
 
     // Fusion. Empty per-mode map → empty fused list (rrfFuse handles
     // this explicitly). A budget-exceeded post-modes still gets a
@@ -692,6 +749,78 @@ final class RecallExecutor {
       }
     }
     return reordered;
+  }
+
+  // ─── Internal: shaking events (A.69) ─────────────────────────────
+
+  /// Detects `RetrievalConflict` and emits onto [_eventSink] when
+  /// warranted (spec § 9.4; Q-A.69.3).
+  ///
+  /// The disagreement rule: at least two modes returned non-empty
+  /// candidate lists AND the intersection of their top-`min(5,
+  /// perModeK)` `NodeId`s is empty. Modes whose candidate list is
+  /// empty (degraded, no matches, refused for missing inputs) do not
+  /// participate in the check — they did not produce a conflicting
+  /// opinion, they produced no opinion.
+  ///
+  /// Short-circuits early when no sink is wired so the typical recall
+  /// pays no cost beyond a single null check.
+  void _maybeEmitRetrievalConflict({
+    required Map<RecallMode, List<NodeId>> perModeRanked,
+    required int perModeK,
+    required Scope? scope,
+  }) {
+    final sink = _eventSink;
+    if (sink == null) return;
+    if (perModeRanked.isEmpty) return;
+
+    // Collect modes that actually produced candidates.
+    final contributingModes = <RecallMode>[];
+    final topPerMode = <RecallMode, List<NodeId>>{};
+    final cap = perModeK < _retrievalConflictTopK
+        ? perModeK
+        : _retrievalConflictTopK;
+    if (cap <= 0) return;
+
+    for (final entry in perModeRanked.entries) {
+      if (entry.value.isEmpty) continue;
+      contributingModes.add(entry.key);
+      final topN = entry.value.length > cap
+          ? entry.value.sublist(0, cap)
+          : List<NodeId>.from(entry.value);
+      topPerMode[entry.key] = List<NodeId>.unmodifiable(topN);
+    }
+
+    // A single contributing mode cannot disagree with itself.
+    if (contributingModes.length < 2) return;
+
+    // Intersection over `value` (the underlying String) — `NodeId` is
+    // a value-equal wrapper, but using `value` keeps the set keyed by
+    // a primitive type so contains-checks remain O(1) without
+    // depending on `NodeId`'s `hashCode` contract surfaced elsewhere.
+    var intersection = topPerMode[contributingModes.first]!
+        .map((id) => id.value)
+        .toSet();
+    for (var i = 1; i < contributingModes.length; i++) {
+      intersection = intersection
+          .intersection(topPerMode[contributingModes[i]]!
+              .map((id) => id.value)
+              .toSet());
+      if (intersection.isEmpty) break;
+    }
+    if (intersection.isNotEmpty) return;
+
+    sink(
+      RetrievalConflict(
+        conflictingModes:
+            List<RecallMode>.unmodifiable(contributingModes),
+        topPerMode: Map<RecallMode, List<NodeId>>.unmodifiable(topPerMode),
+        topK: cap,
+        occurredAt: _clock.now(),
+        runId: scope?.runId,
+        causedBy: scope?.causedBy,
+      ),
+    );
   }
 
   // ─── Internal: clock helpers ─────────────────────────────────────

@@ -30,7 +30,7 @@
 //   5. `NodeTypeRejected`            — structural and consistency
 //                                       checks passed; the
 //                                       caller-supplied `CritiqueHook`
-//                                       returned `CritiqueRejected` (or
+//                                       returned `CritiqueRefused` (or
 //                                       crashed — see the hook
 //                                       contract).
 //
@@ -121,7 +121,7 @@ final class NodeTypeVersionNotMonotonic extends NodeTypeRegistrationException {
   });
 }
 
-/// The caller-supplied `CritiqueHook` returned `CritiqueRejected` (or
+/// The caller-supplied `CritiqueHook` returned `CritiqueRefused` (or
 /// crashed; a crash is normalised into this exception with the
 /// crash message preserved in [reason]).
 final class NodeTypeRejected extends NodeTypeRegistrationException {

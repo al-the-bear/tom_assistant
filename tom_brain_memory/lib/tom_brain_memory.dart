@@ -33,6 +33,7 @@ library;
 export 'src/api/api.dart';
 export 'src/budget/budget.dart';
 export 'src/classification/classification.dart';
+export 'src/cognitive_agents/cognitive_agents.dart';
 export 'src/config/config.dart';
 export 'src/edges/edges.dart';
 export 'src/isolate_adapter/isolate_adapter.dart';

@@ -22,7 +22,7 @@
 //   - A.35 — `get` / `getMany` / `demote` / `forget`.
 
 export 'critique_hook.dart'
-    show CritiqueApproved, CritiqueHook, CritiqueOutcome, CritiqueRejected;
+    show CritiqueApproved, CritiqueHook, CritiqueOutcome, CritiqueRefused;
 export 'node.dart' show Node, NodeDraft, NodeStatus;
 export 'node_events.dart' show NodeDemoted, NodeForgotten, NodePersisted;
 export 'node_lifecycle.dart'
