@@ -24,6 +24,16 @@
 export 'critique_hook.dart'
     show CritiqueApproved, CritiqueHook, CritiqueOutcome, CritiqueRejected;
 export 'node.dart' show Node, NodeDraft, NodeStatus;
+export 'node_events.dart' show NodePersisted;
+export 'node_persist_exception.dart'
+    show
+        EmbeddingPolicyViolation,
+        EmbeddingPolicyViolationReason,
+        InvalidNodeDraft,
+        InvalidNodeDraftReason,
+        NodePersistException,
+        UnknownNodeType;
+export 'node_persister.dart' show NodePersister;
 export 'node_type_decl.dart'
     show
         EmbeddingPolicy,
