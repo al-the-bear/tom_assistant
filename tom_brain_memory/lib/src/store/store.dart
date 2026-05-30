@@ -19,5 +19,14 @@
 // for the `<memory-root>` directory layout. Later steps (A.27+) add
 // the SQLite schema, vec0 extension load, FTS5 setup, and the
 // two-database transactional commit log alongside it.
+//
+// A.27 — `schema_v1.dart`: the v1 DDL constants and the
+// idempotent `applySchemaV1(Database)` entry point, plus the
+// `readSchemaVersion` probe the migrator (A.28) will chain off.
+// The opener (A.26) does not call this yet; the migrator (A.28)
+// is the wiring step.
 
 export 'memory_directory.dart';
+export 'schema_v1.dart'
+    show applySchemaV1, readSchemaVersion, schemaV1Statements,
+        schemaV1Summary, schemaV1Version;
