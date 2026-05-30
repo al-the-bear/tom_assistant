@@ -1,6 +1,6 @@
-// Barrel for the `edges/` module (A.23 layout; A.24 surface).
+// Barrel for the `edges/` module (A.23 layout; A.24 / A.36 surface).
 //
-// At A.24 this barrel exports:
+// Current exports:
 //
 //   - `EdgeType` — the closed 12-edge alphabet from
 //     `memory_specification.md` § 4.2 (mentions, derived_from,
@@ -14,13 +14,29 @@
 //     `TomBrainMemory.edgesOf`.
 //   - `Edge` — read-side record returned by `edgesOf` and graph-walk
 //     recall.
+//   - `EdgeWriter` — in-process owner of the `edge(...)` write path
+//     (A.36). Enforces endpoint existence, type registration, and
+//     the `allowedOutgoing` / `allowedIncoming` permission table.
+//   - `EdgeCreated`, `EdgeRejected` — `MemoryEvent` leaves emitted
+//     by `EdgeWriter` (A.36).
+//   - `EdgeWriteException` family — typed refusals from the writer
+//     (`EdgeEndpointMissing`, `EdgeNotPermitted`,
+//     `UnknownNodeTypeForEdge`).
 //
 // Wiring across later Phase A steps:
 //
-//   - A.36 — `edge(...)` write path enforces `allowedOutgoing` /
-//             `allowedIncoming` against the NodeType registry.
 //   - A.37 — `edgesOf(...)` query path with direction + type filters.
 //   - A.61 — graph-walk recall mode (`memory_specification.md` § 10).
 
 export 'edge.dart' show Edge;
+export 'edge_events.dart' show EdgeCreated, EdgeRejected;
 export 'edge_type.dart' show EdgeDirection, EdgeType;
+export 'edge_write_exception.dart'
+    show
+        EdgeEndpointMissing,
+        EdgeEndpointSide,
+        EdgeNotPermitted,
+        EdgeRejectionReason,
+        EdgeWriteException,
+        UnknownNodeTypeForEdge;
+export 'edge_writer.dart' show EdgeWriter;

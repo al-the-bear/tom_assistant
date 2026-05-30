@@ -20,6 +20,11 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 /// AuthorityUnreachable) live in their owning sub-modules and
 /// arrive incrementally across Phase A.
 ///
+/// Leaves landed so far:
+///   * A.33 — `NodeTypeRegistered`
+///   * A.34 — `NodePersisted`
+///   * A.36 — `EdgeCreated`, `EdgeRejected`
+///
 /// The `kind` discriminator convention for memory events is
 /// `memory.<event-name>`, kebab-cased (e.g. `memory.node-persisted`).
 abstract class MemoryEvent extends BrainEvent {
