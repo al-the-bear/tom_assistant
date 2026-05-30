@@ -19,3 +19,9 @@ export 'src/ids/ids.dart';
 
 // A.11 — embedding/ module: Vec (Float32List wrapper) + cosine / dot / l2.
 export 'src/embedding/embedding.dart';
+
+// A.12 — budget/ module: Budget, TokenSpend, BudgetDelta, WriteBudget plus
+// the BudgetExceededError raised by Budget.minus when a charge would
+// overflow.
+export 'src/budget/budget.dart'
+    show Budget, BudgetDelta, BudgetExceededError, TokenSpend, WriteBudget;
