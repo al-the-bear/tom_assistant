@@ -421,6 +421,10 @@ class _FakeStackApi implements StackApi {
   Future<void> remove(String name, NodeId entry) async {}
 
   @override
+  Stream<StackEntry> streamArchived(String name, {int? limit}) =>
+      const Stream<StackEntry>.empty();
+
+  @override
   Stream<StackEvent> events(String name) => const Stream<StackEvent>.empty();
 }
 

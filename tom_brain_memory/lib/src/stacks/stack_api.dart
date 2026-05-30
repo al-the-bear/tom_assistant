@@ -8,6 +8,15 @@
 // At A.24 the API is declared but unimplemented. The atomicity of
 // `push`/`pop`, the four priority policies, and the three retention
 // policies all land at A.40 – A.45.
+//
+// `streamArchived` (A.42) is the read window over the demoted half
+// of a stack. § 5.3 specifies that `bounded_n` overflow archives
+// the lowest-priority entries (status flipped to `archived`,
+// underlying node untouched), and that the archive "remains
+// queryable via `streamArchived()`". The method is part of the
+// abstract surface — anyone re-implementing `StackApi` (e.g. an
+// in-memory test double, or a future isolate-bridged adapter)
+// MUST provide it.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show NodeId, StackEntryId;
@@ -72,6 +81,27 @@ abstract class StackApi {
 
   /// Removes the entry's membership — the underlying node stays.
   Future<void> remove(String name, NodeId entry);
+
+  // Archive read window ---------------------------------------------
+
+  /// Yields the archived entries of [name] (`status = archived`),
+  /// most recently archived first.
+  ///
+  /// Archival is produced exclusively by retention enforcement on
+  /// [push] (`bounded_n` → lowest-priority entries; `bounded_age` →
+  /// entries older than `maxAge`) and by explicit
+  /// `update(..., status: archived)` calls. Demotion never deletes
+  /// the underlying node (`memory_specification.md` § 5.3); this
+  /// stream is the read path into that archive.
+  ///
+  /// [limit] caps the number of rows emitted. `null` = unlimited.
+  /// The stream is finite (closes after the snapshot is drained);
+  /// it is NOT a live feed of new archivals — for that, subscribe
+  /// to [events] and filter on `StackEventKind.overflowDemoted`.
+  ///
+  /// Throws `StackNotFound` (synchronously, as the first stream
+  /// event) when [name] is not a registered stack.
+  Stream<StackEntry> streamArchived(String name, {int? limit});
 
   // Observability ----------------------------------------------------
 
