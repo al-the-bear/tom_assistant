@@ -42,6 +42,30 @@ environment:
 #                           Workspace pin from A.5 (^0.5.0) — keeps
 #                           the substrate and memory components on a
 #                           single resolved dart_mcp.
+#   - http                — provisional dependency for the Streamable
+#                           HTTP MCP transport (B.8 / `lib/src/mcp_client/
+#                           http_transport.dart`). dart_mcp's client
+#                           surface is transport-agnostic
+#                           (`StreamChannel<String>`); there is no
+#                           ready-made HTTP transport in dart_mcp 0.5.1
+#                           so we POST through `package:http`. A
+#                           follow-up pass migrates this onto
+#                           `tom_core_kernel.HttpClient` so retry /
+#                           circuit-breaker policy is shared with the
+#                           LLM provider calls (Q-B.8.2). Until then
+#                           `http` is an explicit pubspec entry — it
+#                           is *not* a transitive ride-along.
+#   - stream_channel      — `StreamChannel<String>` is dart_mcp's
+#                           transport surface. The substrate consumes
+#                           it directly (transport adapters, in-isolate
+#                           channel pairs used by tests, channel
+#                           splitting in HttpMcpTransport). Pinned to
+#                           dart_mcp's pin range via standard
+#                           resolution.
+#   - async               — `StreamSinkTransformer` (used by
+#                           `stdio_transport.dart` to append the
+#                           newline framing on outbound writes).
+#                           Same transitive note as `stream_channel`.
 #
 # Explicitly NOT here (Spec § 11 "reuse before rebuild"):
 #
@@ -72,6 +96,9 @@ dependencies:
   tom_core_server:
     path: ../../tom_ai/core/tom_core_server
   dart_mcp: ^0.5.0
+  http: ^1.2.0
+  stream_channel: ^2.1.4
+  async: ^2.13.0
 
 dev_dependencies:
   lints: ^6.0.0
