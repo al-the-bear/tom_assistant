@@ -68,6 +68,7 @@ import 'package:json_rpc_2/json_rpc_2.dart' show RpcException;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal;
 
 import '../api/tom_brain_memory.dart';
+import '../observability/memory_log.dart';
 import 'bearer_auth.dart';
 import 'mcp_tools.dart';
 
@@ -234,8 +235,26 @@ tests), listTools returns an empty list.
   @override
   FutureOr<InitializeResult> initialize(InitializeRequest request) {
     if (authenticator != null) {
-      _principal = _checkBearerToken(request, authenticator!);
+      try {
+        _principal = _checkBearerToken(request, authenticator!);
+      } on RpcException catch (e) {
+        // A.84 — bearer-auth refusal is an operationally significant
+        // event; `warn` is the right level (not `error`: the server
+        // is doing its job by refusing). Principal name is *not*
+        // logged because the request did not yet establish one.
+        MemoryLog.mcp.warn(
+          () => 'mcp initialize refused (rpc code ${e.code}: ${e.message})',
+        );
+        rethrow;
+      }
     }
+    // A.84 — successful handshake. `status` so the line is visible
+    // even at the `silent` filter, since MCP server startup is a
+    // load-bearing lifecycle event for the operator.
+    MemoryLog.mcp.status(
+      () => 'mcp server initialized'
+          '${_principal == null ? "" : " (principal=${_principal!.username})"}',
+    );
     return super.initialize(request);
   }
 

@@ -12,6 +12,10 @@
 //     agents raise `CritiqueRejected`; memory-internal sub-kinds
 //     are emitted from their owning sub-modules, but the sealed
 //     `ShakingEvent` types and the agent-side helper live here).
+//   * A.84 — `observability/` (the `MemoryLog` category wrapper over
+//     `tomLog` from tom_basics; the six categories named in the plan
+//     — `tom_brain.memory.{store,retrieval,stacks,trail,mcp,isolate}`
+//     — surface here as const `MemoryLog.<area>` instances).
 //
 // Plus the per-folder barrel file convention used across the Tom Brain
 // projects (sibling: `tom_brain_shared`).
@@ -54,6 +58,7 @@ const _requiredSubfolders = <String>[
   'mcp_server',
   'migrations',
   'nodes',
+  'observability', // A.84
   'retrieval',
   'stacks',
   'store',
@@ -66,9 +71,10 @@ void main() {
       // Sanity-check the list itself so that a stray edit to
       // `_requiredSubfolders` cannot silently shrink or duplicate
       // the contract. A.23 seeded 12; A.68 added `budget` for 13;
-      // A.69 added `cognitive_agents` for 14.
-      expect(_requiredSubfolders, hasLength(14));
-      expect(_requiredSubfolders.toSet(), hasLength(14),
+      // A.69 added `cognitive_agents` for 14; A.84 added
+      // `observability` for 15.
+      expect(_requiredSubfolders, hasLength(15));
+      expect(_requiredSubfolders.toSet(), hasLength(15),
           reason: 'subfolder list must be free of duplicates');
     });
 

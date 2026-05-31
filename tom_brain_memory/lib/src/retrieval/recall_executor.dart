@@ -139,6 +139,7 @@ import '../api/scope.dart';
 import '../cognitive_agents/shaking_events.dart';
 import '../nodes/node.dart';
 import '../nodes/node_reader.dart';
+import '../observability/memory_log.dart';
 import 'bm25_recall.dart';
 import 'graph_walk_recall.dart';
 import 'mmr.dart';
@@ -414,6 +415,26 @@ final class RecallExecutor {
       reRankInvoked: reRankInvoked,
       degraded: degraded,
     );
+
+    // A.84 — observability hook. A `debug` line on every recall is
+    // fine in development and filtered out in production; a `warn`
+    // line on the degraded path is always visible at `still` and
+    // tells an operator that a recall fell back early without having
+    // to subscribe to events. Lazy evaluation keeps the formatting
+    // cost off the production hot path.
+    if (degraded) {
+      MemoryLog.retrieval.warn(
+        () => 'recall degraded after ${report.elapsedMs}ms '
+            '(modes=${query.modes.map((m) => m.name).join("+")}, '
+            'k=${query.k}, returned=${finalNodes.length})',
+      );
+    } else {
+      MemoryLog.retrieval.debug(
+        () => 'recall ok in ${report.elapsedMs}ms '
+            '(modes=${query.modes.map((m) => m.name).join("+")}, '
+            'k=${query.k}, returned=${finalNodes.length})',
+      );
+    }
 
     return RecallResult(
       nodes: List<Node>.unmodifiable(finalNodes),

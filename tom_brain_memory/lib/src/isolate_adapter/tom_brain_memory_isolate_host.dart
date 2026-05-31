@@ -30,6 +30,7 @@ import 'package:tom_core_kernel/tom_core_kernel.dart'
     show TomExecutor, TomWorker;
 
 import '../config/memory_config.dart';
+import '../observability/memory_log.dart';
 import 'isolate_boot.dart';
 import 'isolate_cancellation_protocol.dart';
 import 'isolate_envelopes.dart';
@@ -148,6 +149,11 @@ class TomBrainMemoryIsolateHost {
     // stream chunks back to us via `sendToCreator(...)`.
     _router = _StreamRouter(_streamSinks);
     TomWorker.executors.add(_router!);
+    // A.84 — host spawn is a major lifecycle event; one `status`
+    // line so operators see the boot in any log filter.
+    MemoryLog.isolate.status(
+      () => 'isolate host spawned (namePrefix=$namePrefix)',
+    );
   }
 
   /// Shuts the isolate down cleanly.
@@ -196,6 +202,9 @@ class TomBrainMemoryIsolateHost {
     }
     worker.close();
     _shutdownComplete = true;
+    // A.84 — matching `status` for clean shutdown so an operator can
+    // confirm the worker stopped cleanly without inspecting state.
+    MemoryLog.isolate.status('isolate host shut down');
   }
 
   // ─── Envelope dispatch ────────────────────────────────────────

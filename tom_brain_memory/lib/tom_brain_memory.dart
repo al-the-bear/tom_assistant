@@ -40,6 +40,7 @@ export 'src/isolate_adapter/isolate_adapter.dart';
 export 'src/mcp_server/mcp_server.dart';
 export 'src/migrations/migrations.dart';
 export 'src/nodes/nodes.dart';
+export 'src/observability/observability.dart';
 export 'src/retrieval/retrieval.dart';
 export 'src/stacks/stacks.dart';
 export 'src/store/store.dart';

@@ -60,6 +60,7 @@
 
 import 'package:sqlite3/sqlite3.dart';
 
+import '../observability/memory_log.dart';
 import 'schema_v1.dart';
 
 /// A single registered schema-version migration.
@@ -300,6 +301,23 @@ final class SchemaMigrator {
     final finalVersion =
         toApply.isEmpty ? currentVersion : toApply.last.version;
     final finishedAt = _now();
+
+    // A.84 — emit a single status line per migrate() call. We log
+    // every call (even no-ops) at `debug`, and promote to `status`
+    // only when at least one version was actually applied. This keeps
+    // routine reopens quiet while making schema progress visible at
+    // the silent level.
+    if (toApply.isEmpty) {
+      MemoryLog.store.debug(
+        'schema migrate: no-op (already at v$currentVersion)',
+      );
+    } else {
+      final versions = toApply.map((m) => 'v${m.version}').join(', ');
+      MemoryLog.store.status(
+        'schema migrated from v$currentVersion to v$finalVersion '
+        '(applied: $versions)',
+      );
+    }
 
     return SchemaMigrationReport(
       fromVersion: currentVersion,

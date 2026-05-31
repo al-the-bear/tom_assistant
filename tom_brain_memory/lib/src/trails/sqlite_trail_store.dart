@@ -71,6 +71,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
     show Clock, SystemClock, TrailId;
 
 import '../api/memory_event.dart';
+import '../observability/memory_log.dart';
 import 'trail.dart';
 import 'trail_events.dart';
 import 'trail_writer.dart';
@@ -179,6 +180,13 @@ final class SqliteTrailStore {
       writer: writer,
       openedAt: openedAt,
     );
+    // A.84 — `debug` for trail open: routine and high-frequency in a
+    // running brain. The matching `closeTrail` emits a `status` line
+    // because closure carries the outcome.
+    MemoryLog.trail.debug(
+      () => 'opened trail $trailId for run ${run.runId} '
+          '(jsonl=${writer.path})',
+    );
     return trailId;
   }
 
@@ -253,6 +261,14 @@ final class SqliteTrailStore {
         occurredAt: closedAt,
         runId: open.runRef.runId,
       ),
+    );
+    // A.84 — visible status line on close. Mirrors the `openTrail`
+    // debug line and gives the operator a single grep-friendly entry
+    // per completed trail (with outcome + entry count).
+    MemoryLog.trail.status(
+      () => 'closed trail ${open.id} for run ${open.runRef.runId} '
+          '(outcome=${outcome.status.name}, '
+          'entries=${open.writer.entryCount})',
     );
   }
 

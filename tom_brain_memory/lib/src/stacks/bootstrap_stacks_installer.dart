@@ -56,6 +56,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import '../api/memory_event.dart';
+import '../observability/memory_log.dart';
 import 'sqlite_stack_api.dart' show bootstrapStackNames;
 import 'stack_events.dart';
 import 'stack_types.dart';
@@ -389,6 +390,22 @@ BootstrapInstallReport installBootstrapStacks(
       ),
     );
     installed.add(spec.name);
+  }
+
+  // A.84 — one status line per call. `status` is visible even at the
+  // `silent` level, so an operator always sees the install summary
+  // on first open without having to enable debug logging.
+  if (installed.isEmpty) {
+    MemoryLog.stacks.debug(
+      'bootstrap stacks: nothing to install '
+      '(all ${skipped.length} already present)',
+    );
+  } else {
+    MemoryLog.stacks.status(
+      'installed ${installed.length} bootstrap stack(s): '
+      '${installed.join(", ")}'
+      '${skipped.isEmpty ? "" : " (skipped ${skipped.length} existing)"}',
+    );
   }
 
   return BootstrapInstallReport(installed: installed, skipped: skipped);
