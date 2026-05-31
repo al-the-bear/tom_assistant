@@ -45,10 +45,13 @@
 //   * B.30 ✅ — `WebFetch.fetch(url, {budget})` with content-type-aware
 //     extraction (HTML → readable text, JSON passthrough, binary →
 //     metadata only).
-//   * B.31 — Wire the web HTTP seam to `tom_core_kernel.HttpClient`
-//     for retry / circuit-breaker. The `DefaultWebHttpClient` shipped
-//     at B.29 is the placeholder that B.31 swaps; `WebSearch` /
-//     `WebFetch` code stays unchanged.
+//   * B.31 ✅ — Wire the web HTTP seam to `tom_core_kernel`'s
+//     `TomHttpClientFactory` (`TomKernelWebHttpClient`) and add a
+//     retry + circuit-breaker decorator (`RetryingWebHttpClient`) that
+//     stacks around any inner `WebHttpClient`. `WebSearch` / `WebFetch`
+//     code stays unchanged. The kernel itself does NOT ship a
+//     `RetryPolicy` / `CircuitBreaker` surface (see Q-B.31.1); the
+//     prototype implements both inside the substrate's web seam.
 //   * B.32 — Conformance tests covering search structure, fetch
 //     budget, large-page truncation, non-200 typed error.
 
@@ -56,6 +59,8 @@ export 'default_web_fetch.dart';
 export 'default_web_search.dart';
 export 'duckduckgo_search_provider.dart';
 export 'html_readable_extractor.dart';
+export 'retrying_web_http_client.dart';
+export 'tom_kernel_web_http_client.dart';
 export 'web_fetch.dart';
 export 'web_http_client.dart';
 export 'web_search.dart';
