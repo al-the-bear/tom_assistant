@@ -75,6 +75,13 @@ dependencies:
   sqlite3: ^2.4.0
   dart_mcp: ^0.5.0
   yaml: ^3.1.2
+  # A.75 — surfaced as direct deps because `mcp_transports.dart` and the
+  # A.75 conformance test import them explicitly (StreamChannel,
+  # StreamSinkTransformer). They were already pulled in transitively
+  # through `dart_mcp`; the lint `depend_on_referenced_packages` requires
+  # them in our pubspec when our own source imports them.
+  async: ^2.13.0
+  stream_channel: ^2.1.4
 
 dev_dependencies:
   lints: ^6.0.0
