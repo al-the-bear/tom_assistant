@@ -8,6 +8,8 @@
 
 export 'channel_transport.dart' show ChannelMcpTransport;
 export 'http_transport.dart' show HttpMcpTransport;
+export 'mcp_auth.dart'
+    show McpAuthConfig, McpAuthConfigInvalid, McpAuthResolver;
 export 'mcp_client.dart'
     show McpClient, McpClientIdentity, McpSession, McpToolInfo, McpToolResult;
 export 'mcp_errors.dart'

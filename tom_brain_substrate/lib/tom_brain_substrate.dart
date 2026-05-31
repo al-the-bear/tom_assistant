@@ -66,13 +66,26 @@
 /// for the contract this package implements.
 library;
 
-// B.8 — Outbound MCP client surface (Substrate Spec § 3.2).
+// B.8 / B.33 / B.34 — Outbound MCP client surface (Substrate Spec § 3.2).
 //
 // Exposes the transport abstraction plus the two prototype transports
 // (stdio, Streamable-HTTP-JSON), the `ChannelMcpTransport` used by
 // tests and in-process colocation, the typed error taxonomy, and the
 // `McpClient` / `McpSession` pair that wraps `dart_mcp`'s outbound
 // client.
+//
+// B.34 layers config-side bearer-token plumbing on top of the B.8
+// `McpBearerCredential`:
+//
+//   * `McpAuthConfig` (sealed) — `none` / `bearer(token | secretRef)`.
+//   * `McpAuthResolver` — turns config + endpoint metadata into a
+//     concrete `McpBearerCredential` (or `null`), reading secret
+//     files once at resolve time and rejecting stdio + auth pairs
+//     before any `connect()` is attempted.
+//   * `McpAuthConfigInvalid` — operator-side config error, distinct
+//     from the runtime-side `McpAuthFailed` (HTTP 401/403).
+//   * `McpBearerCredential.fingerprint` / redacted `toString` — the
+//     only token-identifying surface allowed in logs.
 export 'src/mcp_client/mcp_client_barrel.dart';
 
 // B.9 — Consumer-facing api/ surface (Substrate Spec § 3.1).

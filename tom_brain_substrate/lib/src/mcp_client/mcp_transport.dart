@@ -33,6 +33,9 @@
 //     layer up in `McpClient`. The transport surfaces failures as
 //     typed errors and lets the client decide.
 
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:stream_channel/stream_channel.dart';
 
 /// Optional bearer-token credential applied by HTTP transports.
@@ -41,14 +44,54 @@ import 'package:stream_channel/stream_channel.dart';
 /// `prototype_implementation_plan.md`: auth is HTTP-only). Token
 /// material is held by value; the surrounding `SubstrateConfig`
 /// loader resolves `_ai/secrets/*.bearer` paths into the concrete
-/// string before constructing this object.
+/// string before constructing this object via `McpAuthResolver`
+/// (see `mcp_auth.dart`).
+///
+/// B.34 invariants:
+///
+///   - [toString] **never** includes the raw [token]; it surfaces
+///     [fingerprint] only. This keeps every accidental log statement,
+///     stack trace, and assertion message safe from credential leak.
+///   - [fingerprint] is deterministic for the same token (same 8 hex
+///     characters across substrate boots / processes), so trail
+///     consumers can correlate "did the rotated token actually
+///     change?" without ever seeing the bytes.
+///   - Equality is by [token] (not by [fingerprint]) — the
+///     fingerprint collision probability is non-zero (2⁻³²) and
+///     equality has to be exact for the dispatcher's credential
+///     deduplication.
 final class McpBearerCredential {
   /// The raw bearer token. Substrate logs **never** include this
-  /// field; observability emits a token-fingerprint instead
+  /// field; observability emits the [fingerprint] instead
   /// (Substrate Spec § 10.2).
   final String token;
 
   const McpBearerCredential(this.token);
+
+  /// Short, log-safe identifier — the first 8 hex characters of the
+  /// SHA-256 hash of [token].
+  ///
+  /// 32 bits of distinguishing power is enough for the prototype's
+  /// per-endpoint identification needs ("did the credential I'm
+  /// reading match the one I expect?") while keeping log lines
+  /// scannable. Crucially, the fingerprint is one-way — knowing the
+  /// fingerprint does not reveal the token.
+  String get fingerprint {
+    final bytes = utf8.encode(token);
+    final digest = crypto.sha256.convert(bytes);
+    return digest.toString().substring(0, 8);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is McpBearerCredential && other.token == token);
+
+  @override
+  int get hashCode => token.hashCode;
+
+  @override
+  String toString() => 'McpBearerCredential(fingerprint: $fingerprint)';
 }
 
 /// A transport that yields a `StreamChannel<String>` of newline-framed
