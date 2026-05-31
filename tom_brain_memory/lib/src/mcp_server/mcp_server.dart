@@ -33,10 +33,12 @@
 //   - A.77 – A.79 — the seven tools, one per step.
 //
 // At A.23 this folder was intentionally empty. A.75 lands the server
-// skeleton + the supported transports; later steps add bearer-auth
-// (A.76) and the seven tools (A.77 – A.79) without changing this
-// barrel's export list (subsequent files are wired into the same two
-// modules listed below).
+// skeleton + the supported transports; A.76 lands the bearer-token
+// authentication surface (`bearer_auth.dart`) and folds the
+// `initialize`-time check into the server class. Later steps add the
+// seven tools (A.77 – A.79) without changing this barrel's export list
+// (subsequent files are wired into the same modules listed below).
 
+export 'bearer_auth.dart';
 export 'mcp_transports.dart';
 export 'tom_brain_memory_mcp_server.dart';

@@ -82,6 +82,12 @@ dependencies:
   # them in our pubspec when our own source imports them.
   async: ^2.13.0
   stream_channel: ^2.1.4
+  # A.76 — `tom_brain_memory_mcp_server.dart` translates `BearerAuthFailure`
+  # into a JSON-RPC error (`RpcException`) when the `initialize` handshake
+  # cannot accept a token. Pulled in transitively through `dart_mcp`
+  # (which itself uses json_rpc_2 for the wire layer); surfaced here so
+  # `depend_on_referenced_packages` stays satisfied.
+  json_rpc_2: '>=3.0.3 <5.0.0'
 
 dev_dependencies:
   lints: ^6.0.0
