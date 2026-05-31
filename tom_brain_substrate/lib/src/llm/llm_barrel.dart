@@ -37,16 +37,31 @@
 //
 // What this barrel does NOT export:
 //
-//   * Concrete provider implementations (`OllamaLlmProvider`,
-//     `OpenAiPassthroughProvider`, `StubLlmProvider`) — not landed
-//     yet. They arrive at B.14 / B.15 / B.16 and the barrel will
-//     export them then.
+//   * `OpenAiPassthroughProvider` (B.15), `StubLlmProvider` (B.16) —
+//     not landed yet. The barrel will export them when they do.
 //   * The router or failure classifier — those live under
 //     `lib/src/router/` (B.18+) with their own barrel.
 //   * The role registry — lives under `lib/src/roles/` (B.21+) with
 //     its own barrel. The roles surface is the only producer of
 //     `WirePrompt`; everything else (substrate-internal or test)
 //     consumes the type.
+//
+// What this barrel adds at B.14:
+//
+//   * `OllamaLlmProvider` — first concrete provider against Ollama's
+//     `/api/chat` (non-streaming + streaming) on top of the
+//     [OllamaHttpClient] wire-shape seam.
+//   * `OllamaHttpClient` (interface) + `DefaultOllamaHttpClient`
+//     (production impl) — the testable wire seam. Exported so test
+//     fakes and the (future) router-layer cancellable variant can
+//     bind against the contract without a `package:foo/src/...`
+//     deep-import.
+//   * The Ollama-side value classes (`OllamaMessage`,
+//     `OllamaGenerationOptions`, `OllamaChatResponse`,
+//     `OllamaStreamFragment`, `OllamaTagEntry`) and the
+//     `OllamaHttpException` thrown by the production transport.
 
 export 'llm_provider.dart';
+export 'ollama_http_client.dart';
+export 'ollama_llm_provider.dart';
 export 'wire_prompt.dart';

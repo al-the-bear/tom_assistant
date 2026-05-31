@@ -99,6 +99,15 @@ dependencies:
   http: ^1.2.0
   stream_channel: ^2.1.4
   async: ^2.13.0
+  # B.14 — `OllamaLlmProvider._hashPrompt` stamps a sha256 of the
+  # wire-prompt body onto `LlmCallReport.promptHash`. The hash format
+  # (`sha256:<hex>`) matches `tom_brain_shared.AnchorRegistry.currentHash`
+  # so the trail can compare prompt + anchor hashes without parsing.
+  # `crypto` is transitively present (http → http_parser → crypto) but
+  # the workspace rule (`tom_build_base`-first / no transitive deps as
+  # direct deps) requires the explicit pin here. Refreshing the
+  # dependency-surface test contract per `dependency_surface_test.dart`.
+  crypto: ^3.0.0
 
 dev_dependencies:
   lints: ^6.0.0
