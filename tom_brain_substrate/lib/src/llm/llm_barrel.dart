@@ -37,8 +37,6 @@
 //
 // What this barrel does NOT export:
 //
-//   * `StubLlmProvider` (B.16) — not landed yet. The barrel will
-//     export it when it does.
 //   * The router or failure classifier — those live under
 //     `lib/src/router/` (B.18+) with their own barrel.
 //   * The role registry — lives under `lib/src/roles/` (B.21+) with
@@ -77,10 +75,25 @@
 //     `OpenAiStreamFragment`, `OpenAiEmbeddingResponse`,
 //     `OpenAiModelEntry`) and the `OpenAiHttpException` thrown by
 //     the production transport.
+//
+// What this barrel adds at B.16:
+//
+//   * `StubLlmProvider` — third concrete provider. Deterministic,
+//     in-process, NO network. Drives the LLM-free conformance test
+//     on memory (`memory_specification.md` § 1 invariant 2) plus
+//     every downstream module's test suite (router, embedding
+//     service, dispatcher, access). Three response-generation modes
+//     (scripted queue, custom responder callback, default echo) with
+//     `StubLlmProvider.alwaysFails` factory for the failure path.
+//   * The associated typedefs (`StubResponder`, `StubChunkSplitter`)
+//     and the helper splitters (`StubLlmProvider.singleChunk`,
+//     `StubLlmProvider.splitByWord`) so tests can compose multi-chunk
+//     stream shapes without redefining boilerplate.
 
 export 'llm_provider.dart';
 export 'ollama_http_client.dart';
 export 'ollama_llm_provider.dart';
 export 'openai_http_client.dart';
 export 'openai_passthrough_provider.dart';
+export 'stub_llm_provider.dart';
 export 'wire_prompt.dart';
