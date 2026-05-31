@@ -199,3 +199,27 @@ export 'src/roles/roles_barrel.dart';
 // per-input output), so a regression to the abstract surface is caught
 // regardless of which production backend ships next.
 export 'src/embed/embed_barrel.dart';
+
+// B.29 — Web-tools surface (Substrate Spec § 8).
+//
+// `WebSearch` (abstract; the substrate-side contract every consumer
+// binds against), `DefaultWebSearch` (registry-driven impl; the only
+// concrete `WebSearch` shipped at B.29), `WebSearchProvider` (plug-in
+// shape for one concrete engine), `DuckDuckGoHtmlSearchProvider`
+// (no-key default), the typed error surfaces
+// (`UnknownWebSearchProvider`, `WebSearchProviderException`), and the
+// narrow `WebHttpClient` / `DefaultWebHttpClient` /
+// `WebHttpResponse` / `WebHttpTransportException` seam that B.30's
+// `WebFetch` will also bind against and that B.31 will re-wire to
+// `tom_core_kernel.HttpClient` for retry / circuit-breaker.
+//
+// The consumer-facing value types (`WebSearchResult`, `WebSearchOptions`,
+// `SearchHit`, `WebFetchResult`, `WebFetchOptions`, `BinaryFetchMeta`)
+// ship through the `api/` barrel above (B.9); the web tools are the
+// *producers* of those values.
+//
+// Plan steps B.30 (`WebFetch.fetch`), B.31 (HttpClient wiring), B.32
+// (conformance tests) build out the rest of `web/`. B.29 lands the
+// search half plus the shared HTTP seam; the fetch half re-uses the
+// seam so B.31 only has to swap one transport.
+export 'src/web/web_barrel.dart';
