@@ -8,9 +8,15 @@
 /// not advisory). There is no public path that bypasses the anchor;
 /// B.23 will land a dedicated test that enforces this.
 ///
-/// At B.8 the package exposes the outbound MCP client surface; the
-/// rest of `lib/src/` is still empty and the LLM / role / embed / web
-/// barrels follow in subsequent steps:
+/// At B.9 the package exposes:
+///   * The outbound MCP client surface (B.8) — `McpClient`,
+///     `McpSession`, transports, typed errors.
+///   * The consumer-facing api/ surface (B.9) — `TomBrainSubstrate`,
+///     `TomBrainSubstrateClient`, plus every value type listed in
+///     `substrate_specification.md` § 3.1.
+///
+/// The rest of `lib/src/` is still empty; subsequent steps land
+/// the LLM / role / embed / web / config / facade subsystems:
 ///
 /// - B.6 ✅ — Project skeleton (`lib/`, `test/`, `pubspec.yaml`,
 ///   `_copilot_guidelines/`).
@@ -21,10 +27,19 @@
 ///   `HttpMcpTransport`, `ChannelMcpTransport`, bearer-token auth
 ///   plumbing on the HTTP transport, typed [McpClientException]
 ///   taxonomy). Spec § 3.2 reference.
-/// - B.9 onwards — `TomBrainSubstrate` interface (engine-side single
-///   entry point), provider impls, routing, roles, anchor injection,
-///   embedding service, web tools, config, observability, in-process
-///   client, phase-end review.
+/// - B.9 ✅ — Top-level `TomBrainSubstrate` interface (the engine
+///   bridge's single entry point) + `TomBrainSubstrateClient` (the
+///   consumer-facing contract) + every value type from spec § 3.1
+///   (`LlmCall`, `LlmOptions`, `ToolCatalogue`, `LlmCallReport`,
+///   sealed `LlmStreamEvent` family, `LlmFailure`,
+///   `EmbeddingResult`, `EmbeddingModelIdentity`, web-tool result /
+///   option types, `McpEndpoint`, sealed `SubstrateEvent` family,
+///   `SubstrateStats`, opaque `SubstrateConfig` placeholder,
+///   `CancellationToken` / `CancellationTokenSource`). No
+///   implementations yet — interfaces and value classes only.
+/// - B.10 onwards — provider impls, routing, roles, anchor
+///   injection, embedding service, web tools, config, observability,
+///   in-process client, phase-end review.
 ///
 /// Note on plan-text vs. file-comment numbering: the plan numbers the
 /// substep that is "folder layout" as B.8 in the older draft; the
@@ -46,3 +61,12 @@ library;
 // `McpClient` / `McpSession` pair that wraps `dart_mcp`'s outbound
 // client.
 export 'src/mcp_client/mcp_client_barrel.dart';
+
+// B.9 — Consumer-facing api/ surface (Substrate Spec § 3.1).
+//
+// `TomBrainSubstrate` (in-process marker), `TomBrainSubstrateClient`
+// (substitutable contract), and every value type listed in spec
+// § 3.1. The api/ barrel intentionally does NOT re-export the
+// mcp_client surface — that surface is exported above so the two
+// independent module barrels stay independent.
+export 'src/api/api.dart';
