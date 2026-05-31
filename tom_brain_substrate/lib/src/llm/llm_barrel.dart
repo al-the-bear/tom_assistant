@@ -37,8 +37,8 @@
 //
 // What this barrel does NOT export:
 //
-//   * `OpenAiPassthroughProvider` (B.15), `StubLlmProvider` (B.16) —
-//     not landed yet. The barrel will export them when they do.
+//   * `StubLlmProvider` (B.16) — not landed yet. The barrel will
+//     export it when it does.
 //   * The router or failure classifier — those live under
 //     `lib/src/router/` (B.18+) with their own barrel.
 //   * The role registry — lives under `lib/src/roles/` (B.21+) with
@@ -60,8 +60,27 @@
 //     `OllamaGenerationOptions`, `OllamaChatResponse`,
 //     `OllamaStreamFragment`, `OllamaTagEntry`) and the
 //     `OllamaHttpException` thrown by the production transport.
+//
+// What this barrel adds at B.15:
+//
+//   * `OpenAiPassthroughProvider` — second concrete provider against
+//     any OpenAI-format Chat Completions endpoint (OpenAI itself,
+//     OpenRouter, Groq, Cerebras, SambaNova, …) on top of the
+//     [OpenAiHttpClient] wire-shape seam. Carries bearer-token auth +
+//     extra-headers plumbing and exposes off-interface helpers
+//     `embedRaw`, `embedBatchRaw`, `listAvailableModels` for the
+//     embedding service (B.25 / B.26) and router (B.18+) to consume.
+//   * `OpenAiHttpClient` (interface) + `DefaultOpenAiHttpClient`
+//     (production impl) — the testable wire seam.
+//   * The OpenAI-side value classes (`OpenAiMessage`,
+//     `OpenAiGenerationOptions`, `OpenAiChatResponse`,
+//     `OpenAiStreamFragment`, `OpenAiEmbeddingResponse`,
+//     `OpenAiModelEntry`) and the `OpenAiHttpException` thrown by
+//     the production transport.
 
 export 'llm_provider.dart';
 export 'ollama_http_client.dart';
 export 'ollama_llm_provider.dart';
+export 'openai_http_client.dart';
+export 'openai_passthrough_provider.dart';
 export 'wire_prompt.dart';
