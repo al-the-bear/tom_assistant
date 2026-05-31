@@ -1,4 +1,6 @@
 // B.9 — `LlmCall`, `LlmOptions`, `LlmCallReport`, `ToolCatalogue`.
+// B.12 — extended `LlmOptions` with the `model` field per plan text
+//        (model, temperature, max tokens, stop sequences, tool catalogue).
 //
 // substrate_specification.md § 3.1 names these as the consumer-facing
 // vocabulary of a substrate LLM call:
@@ -10,11 +12,14 @@
 //     consumer cannot bypass the anchor because the consumer cannot
 //     supply the prompt.
 //
-//   - `LlmOptions { temperature, maxOutputTokens, stopSequences,
+//   - `LlmOptions { model, temperature, maxOutputTokens, stopSequences,
 //                   toolCatalogue, responseFormat }`
 //     — per-call provider-tunable knobs. The router may downgrade
 //     unsupported knobs (e.g. JSON-mode on a provider that lacks it)
-//     and surface the downgrade on the report's `notes`.
+//     and surface the downgrade on the report's `notes`. The `model`
+//     field is the caller's optional override of the route-resolved
+//     model id; see field doc on [LlmOptions.model] for the resolution
+//     order at the router.
 //
 //   - `LlmCallReport { providerId, modelId, anchorHash, promptHash,
 //                      tokensIn, tokensOut, retries, wallClockMs,
@@ -115,18 +120,67 @@ final class LlmCall {
 /// support a given knob downgrade gracefully and append a note to
 /// [LlmCallReport.notes]; substrate does not fail the call just
 /// because a knob did not apply.
+///
+/// At plan step B.12 the field set landed as
+/// `(model, temperature, maxOutputTokens, stopSequences, toolCatalogue,
+/// responseFormat)`. `responseFormat` is an additive extension of the
+/// plan-text list — it was already shipped at B.9 and is kept because
+/// it does not collide with any other knob and consumers that do not
+/// supply it pay zero cost.
 final class LlmOptions {
+  /// Optional override of the route-resolved model id.
+  ///
+  /// Resolution order at the router (B.18+):
+  ///
+  ///   1. If [model] is non-null, the router uses it verbatim, subject
+  ///      to availability on the selected provider's route chain. A
+  ///      route chain that does not expose this model surfaces a typed
+  ///      `ModelNotAvailableInRoute` (no silent fallback).
+  ///   2. If [model] is null, the router consults the role's
+  ///      `budgetDefaults.modelPreference` (spec § 6.1) — a list of
+  ///      preferred model ids, in priority order, the first
+  ///      route-available one wins.
+  ///   3. If neither yields a model, the route's provider default
+  ///      (e.g. Ollama's `OLLAMA_DEFAULT_MODEL`) applies.
+  ///
+  /// The resolved model id is stamped onto [LlmCallReport.modelId]
+  /// for trail attribution regardless of which step in the
+  /// resolution chain produced it.
+  ///
+  /// Stored as `String?` (not a stronger `ModelId` type) for the same
+  /// reason [LlmCall.roleId] is `String`: model ids are configured
+  /// (`providers[*].models[*].id`), not enumerated in code, and a
+  /// per-provider registry would force a substrate rebuild every time
+  /// a new model becomes available.
+  ///
+  /// Plan step B.12 named this field "model" verbatim; the public
+  /// getter follows that name. Equivalent terms ("modelId",
+  /// "modelName") deliberately do not exist on this surface to keep
+  /// one canonical spelling across config, trail, and code.
+  final String? model;
+
   /// Sampling temperature in `[0.0, 2.0]`. `null` ⇒ provider /
   /// role default.
   final double? temperature;
 
   /// Hard cap on the response token count. `null` ⇒ provider /
   /// role default.
+  ///
+  /// The plan text at B.12 says "max tokens"; the field keeps the
+  /// fuller name `maxOutputTokens` because every prototype provider
+  /// (Ollama `/api/chat`'s `num_predict`, OpenAI `max_tokens`)
+  /// applies the cap to output only — input-token bounding lives on
+  /// [LlmCall.budget] (token-spend ceiling), not on this knob.
   final int? maxOutputTokens;
 
   /// Generation halts when any of these strings appears in the
   /// emitted text. Always treated as an unordered set (the provider
   /// may reorder for prefix matching).
+  ///
+  /// Defaults to `const <String>[]` (no stop sequences). Consumers
+  /// that pass `null` for this field would defeat the const default;
+  /// the constructor signature therefore makes it non-nullable with
+  /// an empty-list default rather than accepting `null`.
   final List<String> stopSequences;
 
   /// Tools the role is allowed to call during this completion.
@@ -139,9 +193,13 @@ final class LlmOptions {
   /// Optional structured-response declaration. Currently a JSON
   /// schema as a `Map<String, Object?>`; later phases may swap to
   /// a stronger type. `null` ⇒ free-form text response.
+  ///
+  /// Not named by the B.12 plan text but additive; see the class
+  /// docstring on why it stays.
   final Map<String, Object?>? responseFormat;
 
   const LlmOptions({
+    this.model,
     this.temperature,
     this.maxOutputTokens,
     this.stopSequences = const <String>[],
@@ -152,7 +210,51 @@ final class LlmOptions {
   /// The all-defaults instance. Used as the default value on
   /// [LlmCall.options]; consumers that need to tweak one field
   /// build a new instance.
+  ///
+  /// Equivalent to `const LlmOptions()` — every field is at its
+  /// "router resolves" default ([model]/[temperature]/[maxOutputTokens]
+  /// null, [stopSequences] empty, [toolCatalogue] empty,
+  /// [responseFormat] null).
   static const LlmOptions empty = LlmOptions();
+
+  /// Returns a copy of this instance with selected fields replaced.
+  ///
+  /// The B.12 plan text does not name `copyWith`; it is added here
+  /// because the conformance test for `LlmOptions` (and the router's
+  /// future field-merge logic at B.18+) need a zero-allocation path
+  /// to override one knob without re-listing the rest. Naming the
+  /// sentinel `_unset` (private) prevents callers from passing it by
+  /// accident: passing `null` for [model], [temperature],
+  /// [maxOutputTokens], or [responseFormat] explicitly clears the
+  /// field (sets it to null), while omitting the parameter leaves
+  /// the existing value untouched.
+  LlmOptions copyWith({
+    Object? model = _unset,
+    Object? temperature = _unset,
+    Object? maxOutputTokens = _unset,
+    List<String>? stopSequences,
+    ToolCatalogue? toolCatalogue,
+    Object? responseFormat = _unset,
+  }) {
+    return LlmOptions(
+      model: identical(model, _unset) ? this.model : model as String?,
+      temperature: identical(temperature, _unset)
+          ? this.temperature
+          : temperature as double?,
+      maxOutputTokens: identical(maxOutputTokens, _unset)
+          ? this.maxOutputTokens
+          : maxOutputTokens as int?,
+      stopSequences: stopSequences ?? this.stopSequences,
+      toolCatalogue: toolCatalogue ?? this.toolCatalogue,
+      responseFormat: identical(responseFormat, _unset)
+          ? this.responseFormat
+          : responseFormat as Map<String, Object?>?,
+    );
+  }
+
+  /// Private sentinel used by [copyWith] to distinguish "omit" from
+  /// "explicitly set to null" on nullable fields. Not exported.
+  static const Object _unset = Object();
 }
 
 /// The catalogue of tools a role may invoke during a completion.

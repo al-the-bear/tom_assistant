@@ -155,11 +155,12 @@ abstract class LlmProvider {
   /// A provider that loses the hash is a defect.
   ///
   /// **Provenance stamp.** The returned report's `providerId` MUST
-  /// equal [id]; the `modelId` MUST equal [options].`model`-equivalent
-  /// (router-resolved at submission); the `promptHash` MUST be the
-  /// content hash of [prompt].[WirePrompt.body]. These fields are
-  /// the trail's only way to attribute a call without storing the
-  /// prompt text itself.
+  /// equal [id]; the `modelId` MUST equal the resolved model id (the
+  /// router resolves [options].model per [LlmOptions.model]'s
+  /// documented resolution order before invoking the provider); the
+  /// `promptHash` MUST be the content hash of [prompt].[WirePrompt.body].
+  /// These fields are the trail's only way to attribute a call
+  /// without storing the prompt text itself.
   Future<LlmCallReport> complete(WirePrompt prompt, LlmOptions options);
 
   /// Streams the prompt's completion.
