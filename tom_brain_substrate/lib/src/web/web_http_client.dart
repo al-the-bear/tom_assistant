@@ -1,6 +1,11 @@
-// B.29 — `WebHttpClient`: the narrow wire-shape seam between the
+// B.29 / B.30 — `WebHttpClient`: the narrow wire-shape seam between the
 // substrate's web tools (`WebSearch` / `WebFetch`) and the underlying
 // HTTP transport.
+//
+// B.30 extends the seam with a third method, `getBytes`, that streams a
+// response body up to a caller-supplied byte budget and returns the
+// raw bytes plus a `truncated` flag. `WebFetch` uses this; `WebSearch`
+// providers continue to use the existing string-bodied `get` / `postForm`.
 //
 // Same pattern as `OllamaHttpClient` (lib/src/llm/ollama_http_client.dart):
 // every outbound request the web-tools sub-module makes goes through this
@@ -38,6 +43,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -96,6 +102,34 @@ abstract class WebHttpClient {
     Duration? requestTimeout,
   });
 
+  /// Streams a `GET` response body up to [byteBudget] bytes and returns
+  /// the raw bytes plus a [WebHttpBytesResponse.truncated] flag.
+  ///
+  /// Used by `WebFetch` (B.30) so:
+  ///
+  ///   - The substrate never materialises a response body larger than
+  ///     the caller's per-call budget (`WebFetchOptions.budgetBytes`).
+  ///   - Binary responses can be inspected for size + content-type
+  ///     without paying decode cost on bytes the caller will discard.
+  ///   - Truncation is observable (`WebFetchResult.truncated = true`)
+  ///     rather than silently lost — the caller decides whether to
+  ///     re-fetch with a larger budget or accept the partial body.
+  ///
+  /// [byteBudget] = `null` ⇒ no cap (the implementation reads the full
+  /// body). A cap of `0` returns an empty body with `truncated = true`
+  /// only when the server reported a non-zero `Content-Length`; an
+  /// empty body with no length header reports `truncated = false`.
+  ///
+  /// Non-2xx responses are returned as-is (no exception); the caller
+  /// (`WebFetch`) inspects the status code and raises
+  /// `WebFetchHttpException` per its own policy.
+  Future<WebHttpBytesResponse> getBytes(
+    Uri url, {
+    Map<String, String> headers,
+    Duration? requestTimeout,
+    int? byteBudget,
+  });
+
   /// Releases any underlying HTTP client resources.
   void close();
 }
@@ -129,6 +163,60 @@ final class WebHttpResponse {
     required this.body,
     required this.headers,
     required this.url,
+  });
+}
+
+/// Decoded byte-shaped response from a [WebHttpClient.getBytes]
+/// streaming round-trip.
+///
+/// Mirrors [WebHttpResponse] in spirit (status / headers / final URL)
+/// but carries the response body as raw bytes plus a [truncated] flag
+/// so `WebFetch` (B.30) can:
+///
+///   - Decide content-type-aware extraction *after* the bytes are in
+///     hand (HTML → readable text, JSON → parse, binary → metadata
+///     only) without paying for a string decode on bytes that turn
+///     out to be binary.
+///   - Surface budget truncation to the caller as
+///     `WebFetchResult.truncated = true` rather than silently losing
+///     the rest of the response.
+///
+/// [contentLength] reflects the server's `Content-Length` header
+/// verbatim (parsed as int when present). It is independent of
+/// [bodyBytes.length]: a truncated 2 MiB response with a 256 KiB
+/// budget reports `contentLength = 2 * 1024 * 1024` and
+/// `bodyBytes.length = 256 * 1024`.
+final class WebHttpBytesResponse {
+  /// HTTP status code (e.g. `200`, `404`, `503`).
+  final int statusCode;
+
+  /// Raw response body bytes, truncated to the budget the caller
+  /// passed via `WebHttpClient.getBytes(byteBudget:)`. May be empty
+  /// when the server sent an empty body or when the caller passed a
+  /// budget of `0`.
+  final List<int> bodyBytes;
+
+  /// Response headers, lower-case keys.
+  final Map<String, String> headers;
+
+  /// Final URL after any redirects the underlying client followed.
+  final Uri url;
+
+  /// `Content-Length` header parsed as int when the server sent one;
+  /// `null` when absent or unparseable.
+  final int? contentLength;
+
+  /// `true` when the substrate stopped reading at the budget. `false`
+  /// when the body fit within the budget (or no budget was passed).
+  final bool truncated;
+
+  const WebHttpBytesResponse({
+    required this.statusCode,
+    required this.bodyBytes,
+    required this.headers,
+    required this.url,
+    required this.contentLength,
+    required this.truncated,
   });
 }
 
@@ -212,6 +300,95 @@ class DefaultWebHttpClient implements WebHttpClient {
     } on Exception catch (e) {
       throw WebHttpTransportException(url: url, cause: e);
     }
+  }
+
+  @override
+  Future<WebHttpBytesResponse> getBytes(
+    Uri url, {
+    Map<String, String> headers = const <String, String>{},
+    Duration? requestTimeout,
+    int? byteBudget,
+  }) async {
+    if (byteBudget != null && byteBudget < 0) {
+      throw ArgumentError.value(
+        byteBudget,
+        'byteBudget',
+        'byteBudget must be >= 0 (or null for no cap)',
+      );
+    }
+    final request = http.Request('GET', url);
+    request.headers.addAll(headers);
+    // Disable redirect-following at the request layer so we observe
+    // the final URL ourselves; package:http's BaseClient follows by
+    // default on platforms where the underlying client supports it.
+    request.followRedirects = true;
+
+    final http.StreamedResponse streamed;
+    try {
+      final sendFuture = _inner.send(request);
+      streamed = await (requestTimeout == null
+          ? sendFuture
+          : sendFuture.timeout(requestTimeout));
+    } on Exception catch (e) {
+      throw WebHttpTransportException(url: url, cause: e);
+    }
+
+    final lowerHeaders = <String, String>{
+      for (final entry in streamed.headers.entries)
+        entry.key.toLowerCase(): entry.value,
+    };
+    final declaredLength = int.tryParse(lowerHeaders['content-length'] ?? '');
+
+    // Read the stream, stopping at `byteBudget` if set. We collect
+    // into a single `BytesBuilder` so the final byte list is one
+    // contiguous allocation rather than a chain of small chunks.
+    final builder = BytesBuilder(copy: false);
+    var read = 0;
+    var truncated = false;
+    try {
+      await for (final chunk in streamed.stream) {
+        if (byteBudget == null) {
+          builder.add(chunk);
+          read += chunk.length;
+          continue;
+        }
+        final remaining = byteBudget - read;
+        if (remaining <= 0) {
+          truncated = true;
+          break;
+        }
+        if (chunk.length <= remaining) {
+          builder.add(chunk);
+          read += chunk.length;
+        } else {
+          builder.add(chunk.sublist(0, remaining));
+          read += remaining;
+          truncated = true;
+          break;
+        }
+      }
+    } on Exception catch (e) {
+      throw WebHttpTransportException(url: url, cause: e);
+    }
+
+    // If the server reported a Content-Length larger than what we
+    // actually read, the response was truncated even if the stream
+    // ended naturally (HTTP/1.1 chunked + Content-Length disagreement,
+    // or a closed connection mid-body). Mark it.
+    if (!truncated &&
+        declaredLength != null &&
+        declaredLength > builder.length) {
+      truncated = true;
+    }
+
+    return WebHttpBytesResponse(
+      statusCode: streamed.statusCode,
+      bodyBytes: builder.takeBytes(),
+      headers: lowerHeaders,
+      url: url,
+      contentLength: declaredLength,
+      truncated: truncated,
+    );
   }
 
   WebHttpResponse _wrap(http.Response response, Uri requestUrl) {

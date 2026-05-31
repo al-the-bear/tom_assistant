@@ -574,6 +574,23 @@ class _FakeWebHttpClient implements WebHttpClient {
   }
 
   @override
+  Future<WebHttpBytesResponse> getBytes(
+    Uri url, {
+    Map<String, String> headers = const <String, String>{},
+    Duration? requestTimeout,
+    int? byteBudget,
+  }) async {
+    // B.29 tests never call `getBytes` — the search providers use only
+    // `get` / `postForm`. The method is part of the shared seam B.30
+    // adds for `WebFetch`; left unimplemented here so the surface
+    // contract is honoured without forcing this fake to grow a fetch-
+    // shaped second canned-response field.
+    throw UnimplementedError(
+      '_FakeWebHttpClient.getBytes is not exercised by B.29 tests',
+    );
+  }
+
+  @override
   void close() {
     closeCount += 1;
   }

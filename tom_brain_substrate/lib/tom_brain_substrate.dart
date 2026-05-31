@@ -200,26 +200,52 @@ export 'src/roles/roles_barrel.dart';
 // regardless of which production backend ships next.
 export 'src/embed/embed_barrel.dart';
 
-// B.29 — Web-tools surface (Substrate Spec § 8).
+// B.29 / B.30 — Web-tools surface (Substrate Spec § 8).
 //
-// `WebSearch` (abstract; the substrate-side contract every consumer
-// binds against), `DefaultWebSearch` (registry-driven impl; the only
-// concrete `WebSearch` shipped at B.29), `WebSearchProvider` (plug-in
-// shape for one concrete engine), `DuckDuckGoHtmlSearchProvider`
-// (no-key default), the typed error surfaces
-// (`UnknownWebSearchProvider`, `WebSearchProviderException`), and the
-// narrow `WebHttpClient` / `DefaultWebHttpClient` /
-// `WebHttpResponse` / `WebHttpTransportException` seam that B.30's
-// `WebFetch` will also bind against and that B.31 will re-wire to
-// `tom_core_kernel.HttpClient` for retry / circuit-breaker.
+// Search (B.29):
+//
+//   * `WebSearch` — abstract substrate-side contract every consumer
+//     binds against.
+//   * `DefaultWebSearch` — registry-driven impl; the only concrete
+//     `WebSearch` shipped at B.29.
+//   * `WebSearchProvider` — plug-in shape for one concrete engine.
+//   * `DuckDuckGoHtmlSearchProvider` — no-key default provider.
+//   * `UnknownWebSearchProvider`, `WebSearchProviderException` — typed
+//     search-side error surfaces.
+//
+// Fetch (B.30):
+//
+//   * `WebFetch` — abstract substrate-side contract every consumer
+//     binds against.
+//   * `DefaultWebFetch` — content-type-dispatching impl backed by the
+//     shared `WebHttpClient` seam.
+//   * `WebFetchHttpException` — non-2xx response surface.
+//   * `WebFetchUnsupportedType` — spec § 8.2 unsupported-content-type
+//     refusal (PDF at v1).
+//   * `extractReadableHtml` / `extractReadableHtmlString` — HTML →
+//     prose strip helper; used by `DefaultWebFetch`'s HTML branch.
+//
+// Shared HTTP seam (B.29, extended by B.30):
+//
+//   * `WebHttpClient` — abstract `get` / `postForm` / `getBytes`
+//     surface. Test fakes implement this; the production seam is
+//     `DefaultWebHttpClient`.
+//   * `DefaultWebHttpClient` — `package:http`-backed production impl.
+//     B.31 swaps this for a `tom_core_kernel.HttpClient`-backed
+//     variant; `WebSearch` / `WebFetch` code does not change.
+//   * `WebHttpResponse` — string-bodied response (used by `WebSearch`).
+//   * `WebHttpBytesResponse` — byte-streamed response with budget
+//     truncation (used by `WebFetch`).
+//   * `WebHttpTransportException` — transport-level failure
+//     (DNS / connection-refused / socket close / timeout).
 //
 // The consumer-facing value types (`WebSearchResult`, `WebSearchOptions`,
 // `SearchHit`, `WebFetchResult`, `WebFetchOptions`, `BinaryFetchMeta`)
 // ship through the `api/` barrel above (B.9); the web tools are the
 // *producers* of those values.
 //
-// Plan steps B.30 (`WebFetch.fetch`), B.31 (HttpClient wiring), B.32
-// (conformance tests) build out the rest of `web/`. B.29 lands the
-// search half plus the shared HTTP seam; the fetch half re-uses the
-// seam so B.31 only has to swap one transport.
+// Plan steps B.31 (HttpClient wiring), B.32 (conformance tests) build
+// out the rest of `web/`. B.29 landed the search half plus the shared
+// HTTP seam; B.30 lands the fetch half on the same seam so B.31 only
+// has to swap one transport class.
 export 'src/web/web_barrel.dart';

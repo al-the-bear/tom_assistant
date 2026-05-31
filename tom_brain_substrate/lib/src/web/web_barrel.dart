@@ -12,9 +12,18 @@
 //   * `DuckDuckGoHtmlSearchProvider` — no-key default provider.
 //   * `WebSearchProviderException`, `UnknownWebSearchProvider` —
 //     typed search-side error surfaces.
+//   * `WebFetch` — abstract fetch contract (B.30).
+//   * `DefaultWebFetch` — content-type-dispatching fetch impl backed
+//     by the shared `WebHttpClient` seam (B.30).
+//   * `WebFetchHttpException`, `WebFetchUnsupportedType` — typed
+//     fetch-side error surfaces (B.30).
+//   * `extractReadableHtml` / `extractReadableHtmlString` — HTML →
+//     prose strip helper, shared between fetch's HTML branch and
+//     anywhere else the substrate needs to read prose out of HTML.
 //   * `WebHttpClient` + `DefaultWebHttpClient` + `WebHttpResponse` +
-//     `WebHttpTransportException` — narrow wire-shape seam shared
-//     across all web tools (B.29 search and B.30 fetch).
+//     `WebHttpBytesResponse` + `WebHttpTransportException` — narrow
+//     wire-shape seam shared across all web tools (B.29 search +
+//     B.30 fetch).
 //
 // What this barrel does NOT export:
 //
@@ -33,9 +42,9 @@
 //   * B.29 ✅ — `WebSearch.search(query, {provider, k})` with
 //     DuckDuckGo HTML as the default no-key provider, plug-in points
 //     for SerpAPI / Brave / Tavily. This barrel.
-//   * B.30 — `WebFetch.fetch(url, {budget})` with content-type-aware
+//   * B.30 ✅ — `WebFetch.fetch(url, {budget})` with content-type-aware
 //     extraction (HTML → readable text, JSON passthrough, binary →
-//     metadata only). Adds `WebFetch` + `DefaultWebFetch` here.
+//     metadata only).
 //   * B.31 — Wire the web HTTP seam to `tom_core_kernel.HttpClient`
 //     for retry / circuit-breaker. The `DefaultWebHttpClient` shipped
 //     at B.29 is the placeholder that B.31 swaps; `WebSearch` /
@@ -43,8 +52,11 @@
 //   * B.32 — Conformance tests covering search structure, fetch
 //     budget, large-page truncation, non-200 typed error.
 
+export 'default_web_fetch.dart';
 export 'default_web_search.dart';
 export 'duckduckgo_search_provider.dart';
+export 'html_readable_extractor.dart';
+export 'web_fetch.dart';
 export 'web_http_client.dart';
 export 'web_search.dart';
 export 'web_search_provider.dart';
