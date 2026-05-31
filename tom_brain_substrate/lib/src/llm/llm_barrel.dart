@@ -1,0 +1,52 @@
+// Barrel for the `llm/` module — the *provider-layer* surface of the
+// substrate (B.11 / substrate_specification.md § 4).
+//
+// Module surface:
+//
+//   * `WirePrompt` — the post-role-assembly, post-anchor-injection
+//     prompt that providers consume. Produced only by the role
+//     registry (B.21+ `lib/src/roles/`). Carries `body`,
+//     `anchorHash`, `roleId`, optional `templateSha`.
+//   * `LlmProvider` — abstract interface every provider implements.
+//     At B.11 the surface is `String get id`, `complete(...)`,
+//     `completeStream(...)`. Embedding (`embed`, `embedBatch`) lands
+//     at B.25/26 in the same change that ships the embedding
+//     service. Health (`health()`) lands at B.18 in the same change
+//     that ships the router.
+//
+// Why this barrel is re-exported from the top-level package barrel
+// (and not hidden behind a `lib/src/` deep import):
+//
+//   * Tests (`test/b11_llm_provider_contract_test.dart`) need to
+//     `implement LlmProvider` to construct dummy / fake providers,
+//     and the dart lints/recommended rule forbids
+//     `package:tom_brain_substrate/src/...` self-imports.
+//   * The `mcp_client_barrel.dart` pattern (B.8) is the precedent:
+//     each subfolder owns its own barrel; the top-level package
+//     barrel re-exports each subfolder's barrel; the api/ barrel
+//     and the subfolder barrels stay independent.
+//
+// Why this barrel does NOT pull in api/ types:
+//
+//   * `LlmProvider.complete` and `completeStream` reference
+//     `LlmCallReport`, `LlmOptions`, and `LlmStreamEvent` — those
+//     live in api/ (B.9). Importing the api/ barrel here would
+//     create a (harmless but noisy) circular re-export. The
+//     llm_provider.dart implementation file imports api/ types
+//     directly via relative paths.
+//
+// What this barrel does NOT export:
+//
+//   * Concrete provider implementations (`OllamaLlmProvider`,
+//     `OpenAiPassthroughProvider`, `StubLlmProvider`) — not landed
+//     yet. They arrive at B.14 / B.15 / B.16 and the barrel will
+//     export them then.
+//   * The router or failure classifier — those live under
+//     `lib/src/router/` (B.18+) with their own barrel.
+//   * The role registry — lives under `lib/src/roles/` (B.21+) with
+//     its own barrel. The roles surface is the only producer of
+//     `WirePrompt`; everything else (substrate-internal or test)
+//     consumes the type.
+
+export 'llm_provider.dart';
+export 'wire_prompt.dart';

@@ -37,9 +37,22 @@
 ///   `SubstrateStats`, opaque `SubstrateConfig` placeholder,
 ///   `CancellationToken` / `CancellationTokenSource`). No
 ///   implementations yet — interfaces and value classes only.
-/// - B.10 onwards — provider impls, routing, roles, anchor
-///   injection, embedding service, web tools, config, observability,
-///   in-process client, phase-end review.
+/// - B.10 ✅ — Documented no-op per policy override 5
+///   (`.tom_metadata/tom_master.yaml` is out of scope for Tom Brain).
+/// - B.11 ✅ — `LlmProvider` abstract interface + `WirePrompt`
+///   value class under `lib/src/llm/`. The provider-layer surface:
+///   `String get id`, `complete(WirePrompt, LlmOptions)` returning a
+///   `Future<LlmCallReport>`, `completeStream(WirePrompt, LlmOptions)`
+///   returning a `Stream<LlmStreamEvent>`. `WirePrompt` is the
+///   post-anchor-injection prompt; only the (B.21+) role registry
+///   produces it, only providers consume it. Embedding / health
+///   members of the spec § 4.1 surface land in their owning steps
+///   (B.25/26 / B.18).
+/// - B.12+ onwards — `LlmOptions` ratification, `LlmCallReport`
+///   ratification, provider impls (Ollama / OpenAI passthrough /
+///   stub), routing, roles, anchor injection wiring, embedding
+///   service, web tools, config, observability, in-process facade,
+///   phase-end review.
 ///
 /// Note on plan-text vs. file-comment numbering: the plan numbers the
 /// substep that is "folder layout" as B.8 in the older draft; the
@@ -70,3 +83,15 @@ export 'src/mcp_client/mcp_client_barrel.dart';
 // mcp_client surface — that surface is exported above so the two
 // independent module barrels stay independent.
 export 'src/api/api.dart';
+
+// B.11 — Provider-layer LLM surface (Substrate Spec § 4).
+//
+// `LlmProvider` (abstract) + `WirePrompt` (post-anchor prompt). The
+// router (B.18+) and provider implementations (B.14–B.16) consume
+// this surface; the api/-side `TomBrainSubstrateClient.complete` /
+// `completeStream` (B.9) is the *only* consumer-facing path that
+// dispatches through it. Consumers should not implement `LlmProvider`
+// directly — exposed from the top-level barrel so test fakes and
+// future router code can bind against the contract under the
+// `lints/recommended` "no `package:foo/src/...`" rule.
+export 'src/llm/llm_barrel.dart';
