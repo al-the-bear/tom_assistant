@@ -92,3 +92,15 @@ export 'src/anchor/anchor.dart' show AssistantDedicationAnchor;
 // procedure-author role (Phase E) populate / serialise it without
 // depending on memory.
 export 'src/cognitive_agents/cognitive_agents.dart' show AgentRegistration;
+
+// A.88 — symbolic/ module: `SymbolicFilter`, `SymbolicOp`, `AttrClause`.
+// Shape-only filter primitives used by the memory symbolic retrieval
+// mode. They live in shared because every component that constructs a
+// `RecallQuery` (substrate B.x via web tools, procedure engine C.x via
+// the bridged `recall` primitive, dispatcher D.x as a primitive-act
+// pass-through, access E.x via REST/SSE request mapping) needs to
+// build these without taking a runtime dependency on the memory
+// implementation. The SQL compiler that turns a `SymbolicFilter` into
+// a parameterised `WHERE` clause stays in `tom_brain_memory`.
+export 'src/symbolic/symbolic.dart'
+    show AttrClause, SymbolicFilter, SymbolicOp;

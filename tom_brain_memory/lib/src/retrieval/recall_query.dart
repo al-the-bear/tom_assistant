@@ -6,11 +6,31 @@
 // diversity policies and a wall-clock + per-mode budget. The
 // optional `reRank` hook is the only LLM touchpoint — memory never
 // instantiates an LLM itself.
+//
+// `SymbolicFilter`, `SymbolicOp`, and `AttrClause` are imported from
+// `tom_brain_shared` (Plan step A.88 — reuse extraction). They live in
+// shared because every Tom Brain component that constructs a
+// `RecallQuery` (substrate via web tools, procedure engine via the
+// bridged `recall` primitive, dispatcher as a primitive-act
+// pass-through, access via REST/SSE request mapping) needs to build
+// these without taking a runtime dependency on `tom_brain_memory`. The
+// SQL compiler that turns a `SymbolicFilter` into a parameterised
+// `WHERE` clause stays here in memory (`retrieval/symbolic_recall.dart`).
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show NodeId, SymbolicFilter, Vec;
 
 import '../edges/edge_type.dart';
 import '../nodes/node.dart';
+
+// Re-export the three shared symbolic-filter types so that consumers
+// importing this file directly (the executor, tests, the retrieval
+// barrel) continue to see them on the same import path as before the
+// A.88 relocation. `SymbolicFilter` is exported via the show-list of
+// the import above (it is also used directly here in `RecallQuery`);
+// `AttrClause` and `SymbolicOp` ride the standalone export below.
+export 'package:tom_brain_shared/tom_brain_shared.dart'
+    show AttrClause, SymbolicFilter, SymbolicOp;
 
 /// One of the four retrieval modes (§ 6.1).
 enum RecallMode {
@@ -27,55 +47,10 @@ enum RecallMode {
   symbolic,
 }
 
-/// Comparator operators usable in a `SymbolicFilter` attribute clause.
-enum SymbolicOp {
-  eq,
-  ne,
-  lt,
-  lte,
-  gt,
-  gte,
-  inList,
-  notInList,
-}
-
-/// One attribute clause in a `SymbolicFilter`.
-final class AttrClause {
-  final String field;
-  final SymbolicOp op;
-  final Object? value;
-
-  const AttrClause(this.field, this.op, this.value);
-}
-
-/// Compiled-down `WHERE`-shape used by the symbolic mode.
-///
-/// At A.24 only the shape exists; the compiler that turns this into
-/// SQL lands at A.56.
-final class SymbolicFilter {
-  /// Node type names to include. Empty = no type filter.
-  final Set<String> typeNames;
-
-  /// Lower bound (inclusive) on `createdAt`. `null` = open.
-  final DateTime? createdAfter;
-
-  /// Upper bound (exclusive) on `createdAt`. `null` = open.
-  final DateTime? createdBefore;
-
-  /// Producer-scope filter (a `Scope.producer` value).
-  final String? producer;
-
-  /// Attribute clauses; ANDed together.
-  final List<AttrClause> attributes;
-
-  const SymbolicFilter({
-    this.typeNames = const <String>{},
-    this.createdAfter,
-    this.createdBefore,
-    this.producer,
-    this.attributes = const <AttrClause>[],
-  });
-}
+// `SymbolicOp`, `AttrClause`, and `SymbolicFilter` are re-exported below
+// so that callers importing `package:tom_brain_memory/...recall_query.dart`
+// continue to see the same surface as before the A.88 move. The runtime
+// identity is the shared type — no re-declaration here.
 
 /// Per-recall wall-clock + per-mode caps. Memory enforces these
 /// strictly: a recall that exceeds [wallClockMs] returns what it has
