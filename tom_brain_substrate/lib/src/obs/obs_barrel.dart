@@ -24,13 +24,36 @@
 // the enum + the matching static in `substrate_log.dart`; ad-hoc
 // string categories are not supported on purpose.
 //
-// Pending B.37 follow-ups:
+// B.38 — `substrate_event_bus.dart`: `SubstrateEventBus`, the central
+// broadcast `Stream<SubstrateEvent>` that `TomBrainSubstrateClient.
+// events()` returns. The composition root hands `bus.emit` to every
+// per-subsystem emitter (router, providers, embedding service, web
+// tools, MCP client) so every emission lands on the same fan-out
+// point. Mirrors `MemoryEventBus` (A.85) exactly in shape; the only
+// intentional divergence is the event-base type.
 //
-//   - B.38 will land `SubstrateEvent` stream and the rest of the
-//     observability triple (logger + event stream + stats). Logger
-//     lands first because every other subsystem already imports it
-//     transitively for boot-time status lines.
+// Spec-vs-plan note (B.38): plan step B.38 names five subtypes
+// (`LlmCallStarted`, `LlmCallCompleted`, `ProviderFailover`,
+// `EmbeddingComputed`, `WebFetchCompleted`); spec § 10.2 names
+// twelve (the same five plus seven more — the sealed sum in
+// `api/substrate_event.dart`). The bus is typed on the abstract
+// base, so the same controller fans every variant out without any
+// per-variant code. The divergence is locked in the tests
+// (`b38_substrate_event_bus_test.dart`), not in the bus itself.
+// See Q-B.38.1 in `prototype_implementation_questions.md`.
+//
+// Pending B.38 follow-ups:
+//
 //   - B.39 will pair behavioural tests (config roundtrip + event
-//     ordering + logger categorisation) around the trio.
+//     ordering + logger categorisation) around the full
+//     observability triple (logger + events + stats).
+//   - The third leg of the triple (`SubstrateStats` collection
+//     surface mirroring `MemoryStatsCollector` from A.85) is not
+//     listed as a separate plan step at B.38; it lands when the
+//     B.40+ facade needs to populate the stats snapshot. The
+//     `SubstrateStats` value class itself already exists at B.9
+//     (`api/substrate_stats.dart`) — the collector is the missing
+//     piece.
 
+export 'substrate_event_bus.dart' show SubstrateEventBus;
 export 'substrate_log.dart' show SubstrateLog, SubstrateLogCategory;

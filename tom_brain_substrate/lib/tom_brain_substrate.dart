@@ -266,17 +266,30 @@ export 'src/embed/embed_barrel.dart';
 // has to swap one transport class.
 export 'src/web/web_barrel.dart';
 
-// B.37 — Observability logging surface (Substrate Spec § 10.1).
+// B.37 / B.38 — Observability surface (Substrate Spec § 10.1 / § 10.2).
 //
-// `SubstrateLog` (the const-instance facade) + `SubstrateLogCategory`
-// (the closed enum of six categories — `tom_brain.substrate.llm`,
-// `…roles`, `…embed`, `…web`, `…mcp`, `…router`). Wraps the global
-// `tomLog` instance from `tom_basics` with a category prefix; lazy
-// `() => String` messages are preserved through the wrap. Spec § 10.1
-// is authoritative — plan step B.37 lists five categories; the spec
-// adds `router`. The wrapper carries all six; Q-B.37.1 captures the
-// spec-vs-plan divergence.
+// B.37: `SubstrateLog` (the const-instance facade) +
+// `SubstrateLogCategory` (the closed enum of six categories —
+// `tom_brain.substrate.llm`, `…roles`, `…embed`, `…web`, `…mcp`,
+// `…router`). Wraps the global `tomLog` instance from `tom_basics`
+// with a category prefix; lazy `() => String` messages are preserved
+// through the wrap. Spec § 10.1 is authoritative — plan step B.37
+// lists five categories; the spec adds `router`. The wrapper carries
+// all six; Q-B.37.1 captures the spec-vs-plan divergence.
 //
-// B.38 will land the typed `SubstrateEvent` stream (the second leg of
-// the observability triple); B.39 the behavioural tests across both.
+// B.38: `SubstrateEventBus` — the broadcast `Stream<SubstrateEvent>`
+// the composition root hands to every per-subsystem emitter (router,
+// providers, embedding service, web tools, MCP client) and exposes
+// as `TomBrainSubstrateClient.events()`. Direct shape-mirror of
+// `MemoryEventBus` (A.85): asynchronous broadcast, idempotent
+// close, emit-after-close raises `StateError`. The sealed
+// `SubstrateEvent` sum the bus carries (twelve variants) already
+// ships on the api/ barrel above (B.9). Plan step B.38 names five
+// variants (`LlmCallStarted`, `LlmCallCompleted`, `ProviderFailover`,
+// `EmbeddingComputed`, `WebFetchCompleted`); spec § 10.2 names
+// twelve. The bus is typed on the abstract base, so the divergence
+// is purely a test-side lock (Q-B.38.1).
+//
+// B.39 will land the behavioural tests across both legs (config
+// roundtrip + event ordering + logger categorisation).
 export 'src/obs/obs_barrel.dart';
