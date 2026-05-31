@@ -90,6 +90,23 @@
 //     `StubLlmProvider.splitByWord`) so tests can compose multi-chunk
 //     stream shapes without redefining boilerplate.
 
+// What this barrel adds at B.23:
+//
+//   * `AnchorRegistry` — substrate-side accounting of the assistant-
+//     dedication anchor (the shared layer carries the text; the
+//     substrate computes the sha256 because A.9 forbids
+//     `package:crypto` at the shared-types layer). Static-only
+//     surface: `currentHash` (`sha256:<lowercase-hex>` of
+//     `AssistantDedicationAnchor.text`), `currentVersion`,
+//     `isCurrent(candidate)`.
+//   * `AnchorViolation` — typed exception the substrate raises when
+//     an outbound report's `anchorHash` does not equal
+//     `AnchorRegistry.currentHash`. Spec § 12 fatal event. The
+//     runtime hook lands at the `TomBrainSubstrate` facade (B.40);
+//     B.46 conformance test exercises every emitted report against
+//     the registry.
+
+export 'anchor_registry.dart';
 export 'llm_provider.dart';
 export 'ollama_http_client.dart';
 export 'ollama_llm_provider.dart';

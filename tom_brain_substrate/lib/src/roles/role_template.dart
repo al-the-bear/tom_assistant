@@ -1,8 +1,15 @@
-// B.21 — `RoleTemplate`.
+// B.21 — `RoleTemplate` value class.
+// B.23 — `RoleTemplate.assemble(...)` anchor-injecting producer of
+//        `WirePrompt`. The B.21 forward note ("assemble(...) deferred
+//        to B.23, not co-shipped at B.21") is closed by this step.
 //
 // Plan-step text (verbatim):
 //   "B.21 Implement `RoleTemplate`: persona text, objective,
 //    allowed-action set, budget defaults."
+//   "B.23 Implement `AssistantDedicationAnchor` injection: every
+//    prompt issued by the substrate is wrapped via
+//    `tom_brain_shared.anchor.wrap(...)`. There is no path to bypass
+//    it."
 //
 // `substrate_specification.md` § 6.1 lists eight fields for
 // `RoleTemplate`: `id`, `personaText`, `objective`, `allowedActions`,
@@ -34,48 +41,72 @@
 //                         step. The B.22 forward note records the
 //                         shape this field will take.
 //
-// Why no `assemble(...)` method at B.21:
+// Why `assemble(...)` lands at B.23 (not B.21):
 //
-//   * B.23 (verbatim plan text): "Implement `AssistantDedicationAnchor`
-//     injection: every prompt issued by the substrate is wrapped via
-//     `tom_brain_shared.anchor.wrap(...)`. There is no path to bypass
-//     it." — the assemble path *is* the injection mechanism and is the
-//     subject of its own plan step. Shipping `assemble(...)` at B.21
-//     would either (a) duplicate the wrap call across two steps, or
-//     (b) pre-empt B.23's anchor-enforcement test surface. Keeping
-//     B.21 strictly to the value class leaves B.23 free to land the
-//     producer in one structurally clean change.
+//   * B.21 owns the value class — fields, validation, equality. The
+//     producer of `WirePrompt` (the anchor-injection mechanism) is
+//     B.23's responsibility. Splitting the two steps keeps the audit
+//     trail clean: a reader of the B.21 commit sees only the value
+//     class; a reader of the B.23 commit sees the anchor-injection
+//     producer plus the enforcement test in one structurally clean
+//     change.
 //
-//   * The `wire_prompt.dart` header (B.11) already documents that
-//     "only constructor runs through `RoleTemplate.assemble(...)`,
-//     which calls `tom_brain_shared.anchor.wrap(...)` unconditionally"
-//     — that doc-comment correctly describes the *eventual* layout
-//     after B.23 lands; it does not require B.21 to ship the method.
-//     B.21's forward note in this file's header makes the staged
-//     handoff explicit.
+//   * The `wire_prompt.dart` header (B.11) describes the eventual
+//     layout (the only legitimate producer of `WirePrompt` is the
+//     role registry, which goes through `assemble`). B.21 documents
+//     the deferral; B.23 (this step) closes it.
+//
+// What B.23 adds to this file:
+//
+//   * The [assemble] method on `RoleTemplate`. Composes the prompt
+//     body in the order
+//     `[anchor block] + [persona] + [objective] + [optional output
+//      schema marker] + [inputs]`, runs the result through
+//     [AssistantDedicationAnchor.wrap] (idempotent — wrap re-confirms
+//     the anchor is present), then stamps
+//     [AnchorRegistry.currentHash] on the produced [WirePrompt].
+//
+//   * The structural enforcement of Postulate 3: every [WirePrompt]
+//     this method returns has its [WirePrompt.body] starting with
+//     [AssistantDedicationAnchor.text] (via `wrap`), and its
+//     [WirePrompt.anchorHash] equal to [AnchorRegistry.currentHash].
+//     Tests at `test/b23_anchor_injection_test.dart` pin this for
+//     every bootstrap role and every tampering vector enumerated in
+//     `assistant_dedication_anchor.dart` (already-wrapped input,
+//     empty input, whitespace-only input, inputs that try to inject
+//     before the anchor block).
 //
 // What this file deliberately does NOT own:
 //
-//   * The anchor mechanism. Lives in
+//   * The anchor text. Lives in
 //     `tom_brain_shared/lib/src/anchor/assistant_dedication_anchor.dart`
-//     (A.17). The value class does not import the anchor; only the
-//     B.23 `assemble(...)` method will.
+//     (A.17). B.23's [assemble] imports the constant via the shared-
+//     layer barrel — `AssistantDedicationAnchor.wrap` performs the
+//     idempotent prepend.
 //
-//   * The template body / sha. Lives in B.22's `templateRef`. The
-//     `RoleTemplate` shipped here has no body text — `personaText` and
-//     `objective` are the structured fields the eventual assemble path
-//     will weave with the template body and the user inputs.
+//   * The anchor hash. Lives in
+//     `tom_brain_substrate/lib/src/llm/anchor_registry.dart` (B.23).
+//     The shared layer cannot host the hash because A.9 forbids
+//     `package:crypto` at the shared-types layer.
 //
-//   * The registry that holds `RoleTemplate` instances. Lives at B.22
-//     in `roles_registry.dart` (yet to land). The five prototype
-//     roles are constructed there from YAML / Markdown sources; this
-//     file only provides the value class.
+//   * The template body / sha. Lives in B.36's `templateRef` (the
+//     file-backed loader). [assemble] omits the optional template
+//     body until B.36 lands; the deferral is documented inline in
+//     the method body.
 //
 //   * The dispatcher-side gate that enforces `allowedActions` /
 //     `forbiddenActions` against a procedure's attempted operations.
 //     Lives in Phase D (`tom_brain_procedure_dispatcher`). This file
 //     only *declares* what is allowed; nothing here enforces.
+//
+//   * Per-call options resolution against [budgetDefaults] (router
+//     concern at B.18+). [assemble] does not touch `LlmOptions`.
 
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show AssistantDedicationAnchor;
+
+import '../llm/anchor_registry.dart';
+import '../llm/wire_prompt.dart';
 import 'allowed_action.dart';
 import 'role_budget_defaults.dart';
 
@@ -271,6 +302,136 @@ final class RoleTemplate {
   /// declarations.
   bool permits(AllowedAction action) =>
       allowedActions.contains(action) && !forbiddenActions.contains(action);
+
+  /// Assembles a [WirePrompt] from this role's preamble and the
+  /// caller-supplied [inputs] map.
+  ///
+  /// **Anchor invariant (Postulate 3 / Plan step B.23).** The
+  /// returned [WirePrompt] is guaranteed:
+  ///
+  /// 1. Its [WirePrompt.body] starts with
+  ///    [AssistantDedicationAnchor.text]. This is structural — the
+  ///    assembled body is run through
+  ///    [AssistantDedicationAnchor.wrap], which is idempotent and
+  ///    rejects no-op (empty / whitespace-only) inputs by returning
+  ///    the anchor alone.
+  /// 2. Its [WirePrompt.anchorHash] equals
+  ///    [AnchorRegistry.currentHash]. The hash is stamped here, on
+  ///    every assembled prompt, with no per-role override path.
+  /// 3. Its [WirePrompt.roleId] equals this template's [id], so the
+  ///    trail can correlate the wire prompt with the role that
+  ///    emitted it without reading the body.
+  /// 4. Its [WirePrompt.templateSha] is the file-backed loader's
+  ///    `templateRef` once B.36 lands; for now it is always `null`
+  ///    (bootstrap-in-code roles have no git sha to point at — see
+  ///    Q-B.22.3 in `prototype_implementation_questions.md`).
+  ///
+  /// **Body composition.** The non-anchor body is assembled in a
+  /// fixed order, designed so a reader of the prompt sees the most
+  /// stable framing first and the most call-specific text last:
+  ///
+  /// ```
+  /// <anchor block, from AssistantDedicationAnchor.text>
+  ///
+  /// PERSONA:
+  /// <personaText>
+  ///
+  /// OBJECTIVE:
+  /// <objective>
+  ///
+  /// [OUTPUT SCHEMA (only when outputSchema != null):
+  /// The model MUST respond with a JSON object matching the
+  /// schema declared on this role's outputSchema.]
+  ///
+  /// INPUTS:
+  /// <key>: <value (toString)>
+  /// <key>: <value (toString)>
+  /// ...
+  /// ```
+  ///
+  /// Empty [inputs] is permitted — the `INPUTS:` section then
+  /// contains the literal text `(none)` so the prompt still
+  /// communicates the absence of caller-supplied context (rather
+  /// than an unexplained blank section). The B.36 file-backed
+  /// loader will replace this composition with a Mustache-style
+  /// template render against the role's `<role>.system.md` body;
+  /// the anchor wrap and the hash stamp are unchanged.
+  ///
+  /// **Input value serialisation.** Each input value is converted
+  /// via `Object?.toString()` — the role layer does not enforce
+  /// JSON-encodability here (the api/-layer [LlmCall.inputs] doc
+  /// reserves the right to validate inputs against the role's
+  /// declared schema, which lands at B.36 with `templateRef`). At
+  /// B.23 the only requirement is "produce a prompt body the model
+  /// can read"; `toString` is the minimum that satisfies that.
+  ///
+  /// **No bypass.** This is the only method on the role layer that
+  /// constructs [WirePrompt]. Dart has no friend access (see
+  /// `wire_prompt.dart` header), so the type does not *forbid*
+  /// other construction — but every production path that ends in
+  /// `LlmProvider.complete` goes through [assemble], and the B.46
+  /// conformance test (Plan step B.46) reads every provider
+  /// report's anchor hash and fails the build if it does not
+  /// equal [AnchorRegistry.currentHash]. The combination is the
+  /// structural proof of Postulate 3.
+  WirePrompt assemble({Map<String, Object?> inputs = const {}}) {
+    final assembled = _composeBody(inputs);
+    // Strict prepend, not `AssistantDedicationAnchor.wrap(...)`. The
+    // shared `wrap` keys on `contains(text)` for idempotency, which
+    // gives only the *contains-anchor* guarantee — if an input value
+    // happens to include the anchor text mid-string, `wrap` would
+    // return the assembled body unchanged and the result would start
+    // with `PERSONA:`, violating substrate invariant 1 ("body starts
+    // with anchor"). The substrate's invariant is stronger than the
+    // shared primitive's; `_composeBody` deterministically never
+    // starts with the anchor (it opens with `PERSONA:`), so a
+    // straight prepend is safe and produces the correct starts-with
+    // guarantee for every input shape, including the
+    // "input-value-contains-anchor" tamper vector covered by
+    // `b23_anchor_injection_test.dart`.
+    final wrapped = '${AssistantDedicationAnchor.text}$assembled';
+    return WirePrompt(
+      body: wrapped,
+      anchorHash: AnchorRegistry.currentHash,
+      roleId: id,
+      // templateSha stays null until B.36 lands the file-backed
+      // loader (Q-B.22.3). Documented on the field.
+      templateSha: null,
+    );
+  }
+
+  /// Builds the pre-anchor body. Extracted for readability and so
+  /// the test suite at `b23_anchor_injection_test.dart` can pin the
+  /// individual sections (persona present, objective present,
+  /// output-schema marker present iff `outputSchema != null`, inputs
+  /// rendered in declaration order) independently of the anchor
+  /// wrap.
+  String _composeBody(Map<String, Object?> inputs) {
+    final buf = StringBuffer()
+      ..writeln('PERSONA:')
+      ..writeln(personaText)
+      ..writeln()
+      ..writeln('OBJECTIVE:')
+      ..writeln(objective);
+    if (outputSchema != null) {
+      buf
+        ..writeln()
+        ..writeln('OUTPUT SCHEMA:')
+        ..writeln('The model MUST respond with a JSON object matching the '
+            'schema declared on this role\'s outputSchema.');
+    }
+    buf
+      ..writeln()
+      ..writeln('INPUTS:');
+    if (inputs.isEmpty) {
+      buf.writeln('(none)');
+    } else {
+      for (final entry in inputs.entries) {
+        buf.writeln('${entry.key}: ${entry.value}');
+      }
+    }
+    return buf.toString();
+  }
 
   @override
   bool operator ==(Object other) {

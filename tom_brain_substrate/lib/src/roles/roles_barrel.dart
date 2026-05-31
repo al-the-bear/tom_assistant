@@ -1,7 +1,7 @@
 // Barrel for the `roles/` module — the *role-layer* surface of the
-// substrate (B.21 / B.22 / substrate_specification.md § 6).
+// substrate (B.21 / B.22 / B.23 / substrate_specification.md § 6).
 //
-// Module surface at B.22:
+// Module surface at B.23:
 //
 //   * `AllowedAction`        — closed enum of action tokens a role
 //                              may declare in its allow / forbid sets
@@ -17,8 +17,12 @@
 //   * `RoleTemplate`         — `(id, personaText, objective,
 //                              allowedActions, forbiddenActions,
 //                              outputSchema?, budgetDefaults)`. The
-//                              value class the registry holds (B.22)
-//                              and the assemble path consumes (B.23).
+//                              value class the registry holds (B.22).
+//                              `assemble({inputs})` (B.23) wraps the
+//                              composed body via
+//                              `AssistantDedicationAnchor.wrap(...)`
+//                              and stamps `AnchorRegistry.currentHash`
+//                              on the resulting `WirePrompt`.
 //   * `RoleRegistry`         — *(B.22)* Immutable holder of
 //                              `RoleTemplate` instances. Constructor
 //                              rejects duplicate ids; lookup APIs are
@@ -52,12 +56,8 @@
 //                              layer relies on the same iteration order
 //                              for diagnostic dumps.
 //
-// What this barrel does NOT export at B.22:
+// What this barrel does NOT export at B.23:
 //
-//   * The `assemble(...)` method that produces a `WirePrompt`. Lives
-//     at B.23 (`role_template_assemble.dart` or as an extension on
-//     `RoleTemplate`; B.23 will pick the layout based on whether the
-//     anchor-injection enforcement test needs static-method access).
 //   * A `RoleId` strong type. The spec / api/ layer keep `String` as
 //     the role key for the prototype (see `LlmCall.roleId` doc); a
 //     dedicated id type would force a substrate-wide refactor for
