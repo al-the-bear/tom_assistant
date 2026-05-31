@@ -1,0 +1,3 @@
+# Placeholder so the empty `lib/src/` folder is tracked at B.6.
+# Subfolders (`llm/`, `roles/`, `embed/`, `web/`, `mcp_client/`,
+# `config/`, `api/`) land at B.8 per the prototype implementation plan.

@@ -1,0 +1,21 @@
+name: tom_brain_substrate
+description: Substrate layer for Tom Brain — LLM provider abstraction, role / persona system, embedding service, web tools, MCP client. Every prompt the brain issues passes through this layer wrapped in the assistant-dedication anchor.
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.8
+
+# Dependency discipline (Plan steps B.6 → B.7):
+#
+# B.6 is the scaffold step. Runtime dependencies land in B.7
+# (`tom_brain_shared`, `tom_basics`, `tom_core_kernel`, optionally
+# `tom_core_server`, `dart_mcp`). They are deliberately empty at
+# B.6 so the diff of B.7 is a real dependency-discipline decision,
+# not a one-line bookkeeping change. See the matching A.21 / A.22
+# split in `prototype_implementation_details.md`.
+dependencies:
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
