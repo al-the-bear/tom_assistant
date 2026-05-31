@@ -6,16 +6,79 @@ version: 0.0.1
 environment:
   sdk: ^3.10.8
 
-# Dependency discipline (Plan steps B.6 → B.7):
+# Dependency discipline (Plan step B.7 / Spec § 14):
 #
-# B.6 is the scaffold step. Runtime dependencies land in B.7
-# (`tom_brain_shared`, `tom_basics`, `tom_core_kernel`, optionally
-# `tom_core_server`, `dart_mcp`). They are deliberately empty at
-# B.6 so the diff of B.7 is a real dependency-discipline decision,
-# not a one-line bookkeeping change. See the matching A.21 / A.22
-# split in `prototype_implementation_details.md`.
+# Substrate is the *outbound* edge of Tom Brain. It owns every network
+# call the brain makes to an LLM provider, embedding endpoint, web
+# search / fetch, or remote MCP server, and it owns the role + anchor
+# scaffolding that wraps every one of those calls. The dependency set
+# is shaped by that role:
+#
+#   - tom_brain_shared    — cross-component vocabulary (NodeId, Vec,
+#                           Budget, Result, events, time, version, and
+#                           the `AssistantDedicationAnchor` constants).
+#                           The only Tom-Brain-level library substrate
+#                           imports. Path dep — `publish_to: none`.
+#   - tom_basics          — workspace baseline (UUID, exception types,
+#                           `TomLogger`). Hosted to keep the resolver
+#                           consistent with `tom_core_kernel`, which
+#                           itself depends on `tom_basics: any` from
+#                           pub.dev (see the matching note in
+#                           `tom_brain_memory/pubspec.yaml`).
+#   - tom_core_kernel     — `HttpClient` (every provider + web-tool
+#                           call), retry policies, circuit breaker,
+#                           `BeanLocator` (substrate facade registers
+#                           as a bean per Spec § 11), `TomLogger`
+#                           categories used by Spec § 10.
+#   - tom_core_server     — `TomBearerAuthentication`. Spec § 14
+#                           lists it explicitly and Spec § 1 / § 11
+#                           use it for *outbound* bearer-token
+#                           plumbing on the Streamable HTTP MCP
+#                           transport (Q-B.7.1 — the plan's
+#                           parenthetical "only if needed for inbound;
+#                           not expected" was misread at writing time;
+#                           the spec is authoritative).
+#   - dart_mcp            — outbound MCP client (Spec § 2 / § 11).
+#                           Workspace pin from A.5 (^0.5.0) — keeps
+#                           the substrate and memory components on a
+#                           single resolved dart_mcp.
+#
+# Explicitly NOT here (Spec § 11 "reuse before rebuild"):
+#
+#   - http / dio          — substrate uses `tom_core_kernel.HttpClient`
+#                           for every outbound call. A second HTTP
+#                           client would defeat the retry / circuit
+#                           breaker invariants.
+#   - jose / openid       — substrate does not parse JWTs. Tokens
+#                           arrive through `TomBearerAuthentication`
+#                           and are propagated, not validated.
+#   - logger / logging    — `TomLogger` only. A second logger is not
+#                           permitted at this layer.
+#   - tom_brain_memory    — Spec § 14: no transitive dependency on
+#                           memory. The arrow goes the other way
+#                           (memory imports substrate's
+#                           `EmbeddingService`). Cycle-prevention is
+#                           enforced at pubspec review and at B.45.
+#
+# The dependency-discipline test (`test/dependency_surface_test.dart`)
+# enforces this contract at build time. Adding anything else here
+# without updating that test will fail CI.
 dependencies:
+  tom_brain_shared:
+    path: ../tom_brain_shared
+  tom_basics: ^1.0.0
+  tom_core_kernel:
+    path: ../../tom_ai/core/tom_core_kernel
+  tom_core_server:
+    path: ../../tom_ai/core/tom_core_server
+  dart_mcp: ^0.5.0
 
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
+  # Spec § 14 dev-dep list: `test`, `mocktail`. Mocktail is the
+  # workspace convention for mocking the four provider / tool /
+  # client surfaces that substrate exposes; B.11 onwards will use
+  # it. Pulled in at B.7 so the surface is reserved at the
+  # dependency-discipline step, not retroactively at first use.
+  mocktail: ^1.0.0
