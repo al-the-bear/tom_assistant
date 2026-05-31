@@ -1,6 +1,23 @@
-// B.9 — `LlmCall`, `LlmOptions`, `LlmCallReport`, `ToolCatalogue`.
+// B.9  — `LlmCall`, `LlmOptions`, `LlmCallReport`, `ToolCatalogue`.
 // B.12 — extended `LlmOptions` with the `model` field per plan text
 //        (model, temperature, max tokens, stop sequences, tool catalogue).
+// B.13 — ratified `LlmCallReport` against the plan-step text. The B.9
+//        shape (`providerId`, `modelId`, `anchorHash`, `promptHash`,
+//        `tokensIn`, `tokensOut`, `retries`, `wallClockMs`, `cost?`,
+//        `templateSha?`, `notes`) already covers — and exceeds — the
+//        plan-text "tokens in/out, wall-clock, provider id, model id,
+//        retry count" requirement, so this step adds *no* field and
+//        *no* runtime code. What B.13 lands is (a) a conformance suite
+//        (`test/b13_llm_call_report_test.dart`) that pins the post-B.13
+//        field set, the defaults on the two optional fields, the
+//        constructor-required-vs-optional split, and the
+//        const-canonicalisation of structurally identical instances;
+//        and (b) this header line, recording that the ratification
+//        pass examined the class and accepted the B.9 shape. A future
+//        rename / drop of any field surfaces as a compile failure in
+//        the conformance suite. The plan text's "retry count" maps
+//        verbatim to the `retries` field (Dart-idiomatic plural is
+//        kept rather than introducing a `retryCount` alias).
 //
 // substrate_specification.md § 3.1 names these as the consumer-facing
 // vocabulary of a substrate LLM call:
