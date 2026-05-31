@@ -111,13 +111,28 @@ export 'src/llm/llm_barrel.dart';
 // `TomBrainSubstrateClient.complete` (B.40+) will dispatch through it.
 export 'src/router/router_barrel.dart';
 
-// B.21 — Role-layer surface (Substrate Spec § 6).
+// B.21 / B.22 — Role-layer surface (Substrate Spec § 6).
 //
-// `AllowedAction` (closed enum of action tokens), `RoleBudgetDefaults`
-// (router-side merge target for per-call `LlmOptions`), `RoleTemplate`
-// (the value class the registry holds at B.22 and the assemble path
-// consumes at B.23). At B.21 the registry, the `assemble(...)` →
-// `WirePrompt` mechanism, and the anchor-injection enforcement test
-// are still pending — see the file headers under `lib/src/roles/` for
-// the staged-handoff plan.
+// B.21: `AllowedAction` (closed enum of action tokens),
+// `RoleBudgetDefaults` (router-side merge target for per-call
+// `LlmOptions`), `RoleTemplate` (the value class the registry holds at
+// B.22 and the assemble path consumes at B.23).
+//
+// B.22: `RoleRegistry` (immutable holder of `RoleTemplate` instances
+// with `get` / `lookup` / `contains` / `ids` / `templates` / `length`
+// lookup APIs and a duplicate-id rejection at construction),
+// `RoleTemplateNotFound` (the registry-specific miss exception, distinct
+// from the router's `RoleNotFound`), `bootstrapRoleRegistry` (top-level
+// factory producing the five prototype roles — `assistant_to_user`,
+// `analyser`, `sub_thinker`, `recaller`, `evaluator` — in code; file-
+// backed loading from `_ai/prompts/<role>.system.md` is deferred to
+// B.36 per the bootstrap-file header), `prototypeRoleIds` (the canonical
+// iteration order of those five ids).
+//
+// Still pending at B.22: the `assemble(...)` → `WirePrompt` mechanism
+// and the anchor-injection enforcement test (B.23 / B.24); the
+// `templateRef` git-sha field (lands with the B.36 file-backed loader);
+// the cross-validation step that asserts every routed role id has a
+// registered template (Q-B.22.4). See the file headers under
+// `lib/src/roles/` for the staged-handoff plan.
 export 'src/roles/roles_barrel.dart';
