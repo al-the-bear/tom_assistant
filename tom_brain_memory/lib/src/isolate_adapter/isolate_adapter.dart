@@ -1,9 +1,9 @@
-// Barrel for the `isolate_adapter/` module (Plan step A.23).
+// Barrel for the `isolate_adapter/` module.
 //
 // Owns the procedure-engine bridge described in
-// `memory_specification.md` § 3.3 — the isolate-safe adapter that lets
-// the procedure engine (running in a separate isolate per Phase B+)
-// call the in-process `TomBrainMemory` surface without sharing state
+// `memory_specification.md` § 3.3 — the isolate-safe adapter that
+// lets the procedure engine (Phase B+ in a separate isolate) call
+// the in-process `TomBrainMemory` surface without sharing state
 // across isolate boundaries.
 //
 // Scope:
@@ -25,11 +25,30 @@
 //   - § 5 — stack mutations through the adapter are still transactional
 //     against `memory.db`; the adapter does not buffer them.
 //
-// Wiring across later Phase A steps:
+// Wiring across Phase A steps:
 //
-//   - A.83 — adapter message envelopes + dispatch table.
-//   - A.84 — SendPort wiring + isolate lifecycle.
-//   - A.85 — multi-machine variant (RPC over the canonical-authority
-//             transport described in § 10).
-//
-// At A.23 this folder is intentionally empty. No exports yet.
+//   - A.23 ✅ — folder scaffold (this barrel).
+//   - A.79 ✅ — `TomBrainMemoryIsolateHost` + minimal envelope
+//             skeleton: `IsolateRequest`/`IsolateResponse` base
+//             classes, lifecycle envelopes (`Ping`, `OpenMemory`,
+//             `CloseMemory`), and one dispatch-proof pair
+//             (`MemoryStatsRequest`/`MemoryStatsResponse`) so the
+//             boundary is exercised end-to-end.
+//   - A.80    — `TomBrainMemoryIsolateClient`: the thin
+//               `TomBrainMemoryClient` implementation that wraps
+//               this host.
+//   - A.81    — full envelope catalogue (one per
+//               `TomBrainMemoryClient` method) + cancellation
+//               tokens for `recall`/`stream` + backpressure for
+//               `readTrail`.
+//   - A.82    — round-trip tests for every envelope through a real
+//               isolate.
+//   - A.85    — multi-machine variant (RPC over the canonical-
+//               authority transport described in § 10).
+
+export 'isolate_messages.dart';
+export 'memory_factory.dart';
+export 'tom_brain_memory_isolate_host.dart';
+// `isolate_executor.dart` and `isolate_boot.dart` are intentionally
+// *not* exported. The executor and boot context are construction
+// details owned by the host; consumers should not reference them.
