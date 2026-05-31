@@ -34,9 +34,12 @@
 //             `CloseMemory`), and one dispatch-proof pair
 //             (`MemoryStatsRequest`/`MemoryStatsResponse`) so the
 //             boundary is exercised end-to-end.
-//   - A.80    — `TomBrainMemoryIsolateClient`: the thin
+//   - A.80 ✅ — `TomBrainMemoryIsolateClient`: the thin
 //               `TomBrainMemoryClient` implementation that wraps
-//               this host.
+//               this host. Methods whose envelope is already in
+//               A.79's skeleton (`open`, `close`, `stats`) round-
+//               trip end-to-end; every other method throws an
+//               `EnvelopeNotWiredError` that A.81 will lift.
 //   - A.81    — full envelope catalogue (one per
 //               `TomBrainMemoryClient` method) + cancellation
 //               tokens for `recall`/`stream` + backpressure for
@@ -48,6 +51,7 @@
 
 export 'isolate_messages.dart';
 export 'memory_factory.dart';
+export 'tom_brain_memory_isolate_client.dart';
 export 'tom_brain_memory_isolate_host.dart';
 // `isolate_executor.dart` and `isolate_boot.dart` are intentionally
 // *not* exported. The executor and boot context are construction
