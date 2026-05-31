@@ -30,15 +30,22 @@
 //
 //   - A.75 — server skeleton extending `dart_mcp`'s `MCPServer`.
 //   - A.76 — bearer-token check using `TomBearerAuthentication`.
-//   - A.77 – A.79 — the seven tools, one per step.
+//   - A.77 — seven v1 tools (memory_specification.md § 3.2) registered
+//     when the server is constructed with the optional `memory`
+//     parameter; the closed-set rejection `McpWriteForbidden` and the
+//     `allowedPersistNoteTypeNames` constant ship in
+//     `mcp_write_forbidden.dart`. See Q-A.77.1 for why the seven tools
+//     land in one step rather than three.
 //
 // At A.23 this folder was intentionally empty. A.75 lands the server
 // skeleton + the supported transports; A.76 lands the bearer-token
 // authentication surface (`bearer_auth.dart`) and folds the
-// `initialize`-time check into the server class. Later steps add the
-// seven tools (A.77 – A.79) without changing this barrel's export list
-// (subsequent files are wired into the same modules listed below).
+// `initialize`-time check into the server class. A.77 lands the
+// seven-tool registration helper (`mcp_tools.dart`) and the
+// closed-set rejection exception (`mcp_write_forbidden.dart`).
 
 export 'bearer_auth.dart';
+export 'mcp_tools.dart' show registerMemoryTools;
 export 'mcp_transports.dart';
+export 'mcp_write_forbidden.dart';
 export 'tom_brain_memory_mcp_server.dart';

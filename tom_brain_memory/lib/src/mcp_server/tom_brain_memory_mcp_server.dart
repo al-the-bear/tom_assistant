@@ -1,13 +1,19 @@
 // A.75 — MCP server skeleton.
 // A.76 — Bearer-token authentication folded into `initialize`.
+// A.77 — Seven v1 tools (memory_specification.md § 3.2) registered
+//        when the optional `memory` constructor parameter is supplied.
 //
 // Extends `dart_mcp`'s [MCPServer] (with the [ToolsSupport] mixin) and
 // advertises the Tom Brain memory identity + the v1 read-only contract.
-// This is still the *skeleton* with respect to tool surface: no tools
-// are registered yet. The seven spec § 3.2 tools (`memory.recall`,
+// When constructed with a non-null [TomBrainMemory] argument, the
+// constructor body registers the seven spec § 3.2 tools (`memory.recall`,
 // `memory.get`, `memory.edgesOf`, `memory.stack.list`,
-// `memory.stack.peek`, `memory.classify`, `memory.persistNote`) are
-// reserved by the instructions string but only land at A.77 – A.79.
+// `memory.stack.peek`, `memory.classify`, `memory.persistNote`) via
+// `registerMemoryTools` (see `mcp_tools.dart`). When constructed
+// without a memory argument, no tools are registered — the server stays
+// in the A.75 skeleton shape used by the protocol-only conformance
+// tests. See Q-A.77.4 for the rationale behind the optional-parameter
+// shape.
 //
 // What A.76 adds:
 //
@@ -61,7 +67,9 @@ import 'package:dart_mcp/server.dart';
 import 'package:json_rpc_2/json_rpc_2.dart' show RpcException;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal;
 
+import '../api/tom_brain_memory.dart';
 import 'bearer_auth.dart';
+import 'mcp_tools.dart';
 
 /// The Tom Brain memory MCP server skeleton.
 ///
@@ -129,9 +137,10 @@ Memory-spec invariants honoured at the protocol boundary:
   memory.recall, memory.get, memory.edgesOf, memory.stack.list,
   memory.stack.peek, memory.classify, memory.persistNote.
 
-At A.75 the seven tools are reserved by this contract but not yet
-registered. listTools returns an empty list until A.77 - A.79 land
-the implementations.
+At A.77 the seven tools are registered when the server is
+constructed with the optional `memory` parameter. Without a memory
+binding (the skeleton shape used by the protocol-only conformance
+tests), listTools returns an empty list.
 ''';
 
   /// The optional bearer-token authenticator.
@@ -175,11 +184,19 @@ the implementations.
   /// [StaticBearerTokenAuthenticator] for shared-secret deployments
   /// and tests).
   ///
+  /// [memory] is the in-process memory binding the seven v1 tools
+  /// (`memory.recall`, `memory.get`, `memory.edgesOf`,
+  /// `memory.stack.list`, `memory.stack.peek`, `memory.classify`,
+  /// `memory.persistNote`) forward calls to. When omitted (or
+  /// `null`), no tools are registered — the server stays in the
+  /// A.75 skeleton shape used by protocol-only tests.
+  ///
   /// [protocolLogSink], if provided, receives every incoming and outgoing
   /// JSON-RPC frame for debugging. The caller owns the sink's lifecycle.
   TomBrainMemoryMcpServer(
     super.channel, {
     this.authenticator,
+    TomBrainMemory? memory,
     super.protocolLogSink,
   }) : super.fromStreamChannel(
          implementation: Implementation(
@@ -187,7 +204,15 @@ the implementations.
            version: serverVersion,
          ),
          instructions: readOnlyInstructions,
-       );
+       ) {
+    if (memory != null) {
+      registerMemoryTools(
+        this,
+        memory,
+        resolvePrincipal: () => _principal,
+      );
+    }
+  }
 
   /// Overrides `MCPServer.initialize` to interpose the bearer-token
   /// check before delegating to the base behaviour.
