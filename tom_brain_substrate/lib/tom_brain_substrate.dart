@@ -34,8 +34,11 @@
 ///   sealed `LlmStreamEvent` family, `LlmFailure`,
 ///   `EmbeddingResult`, `EmbeddingModelIdentity`, web-tool result /
 ///   option types, `McpEndpoint`, sealed `SubstrateEvent` family,
-///   `SubstrateStats`, opaque `SubstrateConfig` placeholder,
-///   `CancellationToken` / `CancellationTokenSource`). No
+///   `SubstrateStats`, `CancellationToken` /
+///   `CancellationTokenSource`). The B.9 `SubstrateConfig` placeholder
+///   was replaced at B.36 by the concrete `SubstrateConfig` (rooted in
+///   `lib/src/config/`); the api/ barrel re-exports the config barrel
+///   so the consumer-facing import path is unchanged. No
 ///   implementations yet — interfaces and value classes only.
 /// - B.10 ✅ — Documented no-op per policy override 5
 ///   (`.tom_metadata/tom_master.yaml` is out of scope for Tom Brain).

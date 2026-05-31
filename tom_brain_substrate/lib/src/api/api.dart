@@ -19,8 +19,12 @@
 //     `SubstrateStats`.
 //   * `CancellationToken` / `CancellationTokenSource` — minimal
 //     cancellation primitive used by `LlmCall.cancellationToken`.
-//   * `SubstrateConfig` — opaque placeholder until B.36 lands the
-//     concrete configuration root.
+//   * `SubstrateConfig` — concrete configuration root (B.36).
+//     Re-exported from `../config/config_barrel.dart` so the api/
+//     surface keeps offering the type under the same import path
+//     as it did at B.9 when it was an opaque placeholder. The
+//     loader (`SubstrateConfigLoader`) and the per-section value
+//     types ride along on the same re-export.
 //
 // What this barrel does NOT export:
 //
@@ -57,7 +61,13 @@ export 'embedding_result.dart';
 export 'llm_call.dart';
 export 'llm_stream_event.dart';
 export 'mcp_endpoint.dart';
-export 'substrate_config.dart';
+// B.36 — `SubstrateConfig` migrated from a B.9 placeholder under
+// api/ to the concrete typed model under config/. The api/ barrel
+// re-exports the full config barrel so the consumer-facing import
+// path is unchanged for `SubstrateConfig` and is widened (additive
+// only) to cover `SubstrateConfigLoader` + the per-section value
+// types.
+export '../config/config_barrel.dart';
 export 'substrate_event.dart';
 export 'substrate_stats.dart';
 export 'tom_brain_substrate.dart';

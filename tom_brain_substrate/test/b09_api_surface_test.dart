@@ -518,14 +518,19 @@ void main() {
       expect(s.mcpCalls, equals(0));
     });
 
-    // ─── SubstrateConfig placeholder ────────────────────────────
+    // ─── SubstrateConfig (B.36) ─────────────────────────────────
 
-    test('SubstrateConfig is abstract and subclassable', () {
-      // Cannot instantiate directly (abstract). A test fake
-      // subclasses it; the api/ surface accepts it as the open()
-      // argument type.
-      const SubstrateConfig cfg = _FakeSubstrateConfig();
+    test('SubstrateConfig is the concrete config root', () {
+      // B.36 replaced the B.9 opaque-placeholder with the concrete
+      // typed model. The api/ surface accepts it under the same
+      // import path; constructing it requires every section the
+      // YAML loader produces. The minimal fixture is the smallest
+      // valid value; the full schema is covered in B.36's loader
+      // test suite (`b36_substrate_config_loader_test.dart`).
+      final cfg = _minimalSubstrateConfig();
       expect(cfg, isA<SubstrateConfig>());
+      expect(cfg.providers, isEmpty);
+      expect(cfg.roleRoutes, isEmpty);
     });
 
     // ─── CancellationToken ──────────────────────────────────────
@@ -627,6 +632,25 @@ final class _DummySubstrate extends TomBrainSubstrate {
   SubstrateStats stats() => throw UnimplementedError();
 }
 
-final class _FakeSubstrateConfig extends SubstrateConfig {
-  const _FakeSubstrateConfig();
-}
+// B.36 — `SubstrateConfig` is `final`; tests construct minimal
+// instances directly rather than subclassing. The fixture below
+// is the smallest valid value: empty providers + roleRoutes, a
+// placeholder embedding choice, and default web/MCP/price blocks.
+SubstrateConfig _minimalSubstrateConfig() => SubstrateConfig(
+      providers: const [],
+      roleRoutes: const {},
+      embedding: const EmbeddingChoice(
+        providerId: 'stub',
+        model: 'nomic-embed-text',
+        dims: 768,
+        normalize: true,
+      ),
+      webSearch: const WebSearchConfig(
+        defaultProvider: 'duckduckgo',
+        providers: {
+          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
+        },
+      ),
+      webFetch: const WebFetchConfig(),
+      mcpClient: const McpClientConfigBlock(),
+    );
