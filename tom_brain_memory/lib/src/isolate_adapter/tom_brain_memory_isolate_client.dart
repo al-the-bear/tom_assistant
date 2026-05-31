@@ -1,7 +1,7 @@
 // TomBrainMemoryIsolateClient — the thin consumer-facing client
 // that implements `TomBrainMemoryClient` by translating every
 // method call into an `IsolateRequest` envelope sent through a
-// `TomBrainMemoryIsolateHost` (plan step A.80).
+// `TomBrainMemoryIsolateHost` (plan steps A.80, A.81).
 //
 // Position in the slice (A.78 – A.82):
 //
@@ -9,15 +9,17 @@
 //   * A.79 ✅ — `TomBrainMemoryIsolateHost` + minimal envelope
 //     skeleton (lifecycle envelopes + `MemoryStats` as the one
 //     dispatch-proof pair).
-//   * A.80 (this file) — the client. Implements the full
-//     `TomBrainMemoryClient` surface. Methods whose envelope is
-//     already in the A.79 skeleton (`open`, `close`, `stats`) round-
-//     trip end-to-end. Every other method throws an
-//     [EnvelopeNotWiredError] that names the method and points at
-//     A.81. This makes the not-yet-wired contract a typed,
-//     test-assertable surface rather than a runtime surprise.
-//   * A.81 — expands the envelope catalogue; replaces every
-//     `EnvelopeNotWiredError` with a real `host.send(...)` call.
+//   * A.80 ✅ — the client. Implements the full
+//     `TomBrainMemoryClient` surface. Methods whose envelope was
+//     in A.79's skeleton (`open`, `close`, `stats`) round-trip
+//     end-to-end. Every other method throws an
+//     [EnvelopeNotWiredError].
+//   * A.81 (this file, current step) — adds the two streaming
+//     proofs: `readTrail` (backpressure) and `events`
+//     (cancellation) round-trip through a real isolate via the
+//     host's new stream-router surface. Every other method still
+//     throws [EnvelopeNotWiredError]; A.82 lifts the remaining
+//     restrictions.
 //   * A.82 — round-trips every method through a real isolate.
 //
 // Ownership model:
@@ -56,6 +58,7 @@ import '../retrieval/stream_query.dart';
 import '../stacks/stack_api.dart';
 import '../stacks/stack_types.dart';
 import '../trails/trail.dart';
+import 'isolate_envelopes.dart';
 import 'isolate_messages.dart';
 import 'tom_brain_memory_isolate_host.dart';
 
@@ -63,8 +66,9 @@ import 'tom_brain_memory_isolate_host.dart';
 /// corresponding envelope has not been added to the protocol yet.
 ///
 /// A.79 deliberately ships only the lifecycle envelopes plus one
-/// dispatch-proof pair (`MemoryStats`). The full catalogue lands at
-/// A.81. Until then, calling any unwired method on the client
+/// dispatch-proof pair (`MemoryStats`). A.81 adds streaming proofs
+/// for `readTrail` and `events`. The remaining methods land at
+/// A.82. Until then, calling any unwired method on the client
 /// raises this typed error so callers — and the test suite — get a
 /// loud, identifiable signal rather than an `UnimplementedError`
 /// with no provenance.
@@ -78,12 +82,10 @@ final class EnvelopeNotWiredError extends UnimplementedError {
   /// The `TomBrainMemoryClient` method name, e.g. `'persist'`.
   final String method;
 
-  /// The plan step that will land the envelope (currently always
-  /// `'A.81'`). Carried explicitly so a future change to the
-  /// wiring plan only has to touch one place.
+  /// The plan step that will land the envelope.
   final String step;
 
-  EnvelopeNotWiredError(this.method, {this.step = 'A.81'})
+  EnvelopeNotWiredError(this.method, {this.step = 'A.82'})
       : super(
           'TomBrainMemoryIsolateClient.$method: envelope not wired yet '
           '(lands at $step).',
@@ -96,11 +98,13 @@ final class EnvelopeNotWiredError extends UnimplementedError {
 /// already been `spawn()`-ed. Translates every method call to a
 /// `host.send(...)` of the corresponding envelope.
 ///
-/// Methods whose envelope is already wired in A.79's skeleton:
+/// Methods wired end-to-end as of A.81:
 ///
-///   * [open]    → `host.openMemory(config)`.
-///   * [close]   → `host.closeMemory()`.
-///   * [stats]   → `host.send<MemoryStatsResponse>(...)`.
+///   * [open]      → `host.openMemory(config)`.
+///   * [close]     → `host.closeMemory()`.
+///   * [stats]     → `host.send<MemoryStatsResponse>(...)` (A.79).
+///   * [readTrail] → host stream-router + backpressure (A.81).
+///   * [events]    → host stream-router + cancellation (A.81).
 ///
 /// Every other method throws [EnvelopeNotWiredError]. The stack/
 /// migration getters return proxy objects whose every method
@@ -111,12 +115,22 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
   /// `host.shutdown()` and does not register cleanup hooks.
   final TomBrainMemoryIsolateHost host;
 
+  /// Initial credit allowance for `readTrail` streams. The client
+  /// auto-replenishes one credit per chunk delivered so the
+  /// in-isolate producer keeps a rolling window of this size.
+  /// Tests can lower this to force the executor to pause and
+  /// resume on explicit pulls.
+  final int readTrailInitialCredits;
+
   /// Built lazily so the stack/migration proxies are only allocated
   /// when something asks for them.
   StackApi? _stacks;
   MigrationApi? _migrations;
 
-  TomBrainMemoryIsolateClient(this.host);
+  TomBrainMemoryIsolateClient(
+    this.host, {
+    this.readTrailInitialCredits = 16,
+  });
 
   // ─── Lifecycle ───────────────────────────────────────────────────
 
@@ -128,9 +142,6 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
 
   @override
   Future<void> checkpoint() {
-    // No envelope yet (A.81 will add `CheckpointRequest`). Returning
-    // a failed future rather than throwing synchronously matches the
-    // shape of every other `Future`-returning method on the client.
     return Future<void>.error(EnvelopeNotWiredError('checkpoint'));
   }
 
@@ -287,9 +298,54 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
     return Future<void>.error(EnvelopeNotWiredError('closeTrail'));
   }
 
+  /// A.81 — Backpressure proof.
+  ///
+  /// Allocates a fresh stream id, opens an
+  /// `OpenReadTrailStreamRequest`, and returns the host's stream
+  /// transformed so that one credit is auto-pulled per delivered
+  /// chunk (sliding-window backpressure at
+  /// [readTrailInitialCredits]).
   @override
   Stream<TrailEntry> readTrail(TrailId id) {
-    return Stream<TrailEntry>.error(EnvelopeNotWiredError('readTrail'));
+    final streamId = host.streamIdAllocator.next();
+    final rawStream = host.openStream<TrailEntry>(
+      OpenReadTrailStreamRequest(
+        streamId: streamId,
+        trailId: id,
+        initialCredits: readTrailInitialCredits,
+      ),
+      streamId: streamId,
+      payloadAdapter: (p) => p as TrailEntry,
+    );
+    final out = StreamController<TrailEntry>();
+    StreamSubscription<TrailEntry>? sub;
+    out.onListen = () {
+      sub = rawStream.listen(
+        (entry) {
+          out.add(entry);
+          // Auto-replenish so the producer keeps a steady window.
+          // Errors from a stale stream id are silently swallowed —
+          // the producer may have completed between the chunk's
+          // send and our pull.
+          () async {
+            try {
+              await host.pullCredits(streamId, 1);
+            } on IsolateBoundaryException {
+              // Producer already terminated; nothing to pull.
+            } on StateError {
+              // Host is mid-shutdown.
+            }
+          }();
+        },
+        onError: out.addError,
+        onDone: out.close,
+      );
+    };
+    out.onCancel = () async {
+      await sub?.cancel();
+      await host.closeStream(streamId);
+    };
+    return out.stream;
   }
 
   // ─── Migrations ──────────────────────────────────────────────────
@@ -299,9 +355,42 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
 
   // ─── Observability ───────────────────────────────────────────────
 
+  /// A.81 — Cancellation proof.
+  ///
+  /// Allocates a cancellation token and a stream id, opens an
+  /// `OpenEventsStreamRequest`, and returns the host's stream.
+  /// Cancelling the consumer's subscription cancels the token and
+  /// closes the stream.
   @override
   Stream<MemoryEvent> events() {
-    return Stream<MemoryEvent>.error(EnvelopeNotWiredError('events'));
+    final token = host.cancellationAllocator.next();
+    final streamId = host.streamIdAllocator.next();
+    final rawStream = host.openStream<MemoryEvent>(
+      OpenEventsStreamRequest(streamId: streamId, cancellation: token),
+      streamId: streamId,
+      payloadAdapter: (p) => p as MemoryEvent,
+    );
+    final out = StreamController<MemoryEvent>();
+    StreamSubscription<MemoryEvent>? sub;
+    out.onListen = () {
+      sub = rawStream.listen(
+        out.add,
+        onError: out.addError,
+        onDone: out.close,
+      );
+    };
+    out.onCancel = () async {
+      await sub?.cancel();
+      try {
+        await host.cancel(token);
+      } on IsolateBoundaryException {
+        // Already terminated.
+      } on StateError {
+        // Host is mid-shutdown.
+      }
+      await host.closeStream(streamId);
+    };
+    return out.stream;
   }
 
   @override
@@ -316,7 +405,7 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
 // ─── Proxy stubs for the getter-returned sub-APIs ─────────────────
 //
 // Both `stacks` and `migrations` are exposed as getters that must
-// return a usable object. A.81 will replace these proxies with
+// return a usable object. A.82 will replace these proxies with
 // versions that marshal each call through new envelopes. Until
 // then, every method on the proxy raises [EnvelopeNotWiredError]
 // the same way the top-level methods do. The proxies live in this

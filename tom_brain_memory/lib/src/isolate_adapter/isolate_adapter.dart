@@ -49,7 +49,10 @@
 //   - A.85    — multi-machine variant (RPC over the canonical-
 //               authority transport described in § 10).
 
+export 'isolate_cancellation_protocol.dart';
+export 'isolate_envelopes.dart';
 export 'isolate_messages.dart';
+export 'isolate_stream_protocol.dart';
 export 'memory_factory.dart';
 export 'tom_brain_memory_isolate_client.dart';
 export 'tom_brain_memory_isolate_host.dart';

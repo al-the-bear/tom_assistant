@@ -1,5 +1,5 @@
 // TomBrainMemoryIsolateHost — host-side controller for a
-// memory-hosting isolate (plan step A.79).
+// memory-hosting isolate (plan step A.79, extended in A.81).
 //
 // Owns the worker isolate's lifecycle (`spawn` / `shutdown`) and
 // the host's outbound message dispatch (`send`). The thin client
@@ -8,22 +8,33 @@
 // `TomBrainMemoryClient` translates to a single `host.send(...)`
 // call.
 //
-// The host is *not* a `TomBrainMemoryClient` itself; it exposes a
-// typed-envelope interface. Constraining the host's surface to
-// envelopes keeps the client's responsibility (translating
-// method calls to envelopes) and the host's responsibility
-// (running the isolate, marshalling envelopes) clearly
-// separated. A.80 will land the client.
+// A.81 additions:
+//
+//   * Owns the host-side `CancellationTokenAllocator` and
+//     `StreamIdAllocator` so every cancellable request /
+//     stream-open carries a fresh id.
+//   * Registers a creator-side `TomExecutor` (`_StreamRouter`) on
+//     `TomWorker.executors` that intercepts
+//     `StreamSideChannelMessage`s sent from the isolate via
+//     `sendToCreator(...)` and forwards them to the right
+//     `StreamController`.
+//   * Exposes `openStream` / `closeStream` / `pullCredits` helpers
+//     so the client can drive backpressure without learning the
+//     router's internals.
 
 import 'dart:async';
 
 import 'package:tom_basics/tom_basics.dart'
     show TomEnvironment, TomPlatform, defaultTomEnvironment;
-import 'package:tom_core_kernel/tom_core_kernel.dart' show TomWorker;
+import 'package:tom_core_kernel/tom_core_kernel.dart'
+    show TomExecutor, TomWorker;
 
 import '../config/memory_config.dart';
 import 'isolate_boot.dart';
+import 'isolate_cancellation_protocol.dart';
+import 'isolate_envelopes.dart';
 import 'isolate_messages.dart';
+import 'isolate_stream_protocol.dart';
 import 'memory_factory.dart';
 
 /// Owns a single memory-hosting Dart isolate and provides the
@@ -53,7 +64,20 @@ class TomBrainMemoryIsolateHost {
   final String namePrefix;
   final List<String> args;
 
+  /// A.81 — host-side allocators. Public-getter accessible so the
+  /// client can mint tokens/ids without re-implementing the
+  /// counter.
+  final CancellationTokenAllocator _cancellationAllocator =
+      CancellationTokenAllocator();
+  final StreamIdAllocator _streamIdAllocator = StreamIdAllocator();
+
+  /// A.81 — host-side stream sinks. Keyed by `streamId.id`. The
+  /// `_StreamRouter` puts chunks here; the client consumes them
+  /// from the per-stream `StreamController.stream`.
+  final Map<int, _StreamSink> _streamSinks = <int, _StreamSink>{};
+
   TomWorker? _worker;
+  _StreamRouter? _router;
   bool _spawnRequested = false;
   bool _shutdownStarted = false;
   bool _shutdownComplete = false;
@@ -81,6 +105,12 @@ class TomBrainMemoryIsolateHost {
   /// against caller error; the in-isolate executor is the
   /// authoritative source.
   bool get isMemoryOpen => _memoryOpen;
+
+  /// A.81 — visible to tests.
+  CancellationTokenAllocator get cancellationAllocator =>
+      _cancellationAllocator;
+  StreamIdAllocator get streamIdAllocator => _streamIdAllocator;
+  int get liveStreamCount => _streamSinks.length;
 
   // ─── Lifecycle ────────────────────────────────────────────────
 
@@ -114,6 +144,10 @@ class TomBrainMemoryIsolateHost {
       namePrefix: namePrefix,
     );
     _worker = await TomWorker.spawn(TomWorker.startRemoteIsolate, ctx);
+    // A.81: install the creator-side router so the isolate can push
+    // stream chunks back to us via `sendToCreator(...)`.
+    _router = _StreamRouter(_streamSinks);
+    TomWorker.executors.add(_router!);
   }
 
   /// Shuts the isolate down cleanly.
@@ -147,6 +181,18 @@ class TomBrainMemoryIsolateHost {
         // we still want to close the worker.
         _memoryOpen = false;
       }
+    }
+    // A.81: tear down live streams + remove the router.
+    for (final sink in _streamSinks.values.toList()) {
+      if (!sink.controller.isClosed) {
+        await sink.controller.close();
+      }
+    }
+    _streamSinks.clear();
+    final router = _router;
+    if (router != null) {
+      TomWorker.executors.remove(router);
+      _router = null;
     }
     worker.close();
     _shutdownComplete = true;
@@ -205,6 +251,83 @@ class TomBrainMemoryIsolateHost {
     return raw;
   }
 
+  // ─── A.81: streaming surface ─────────────────────────────────
+
+  /// Opens a stream by sending [openRequest] and registering a
+  /// host-side [StreamController] for chunks of type [T].
+  ///
+  /// [streamId] **must** be the same id carried inside
+  /// [openRequest] (the request envelope carries it because the
+  /// router needs it before the open envelope's reply has even
+  /// been sent — chunks could arrive before the response).
+  ///
+  /// Returns the controller's stream. The caller is responsible
+  /// for calling [closeStream] when done (or pausing the stream
+  /// to trigger backpressure).
+  Stream<T> openStream<T>(
+    IsolateRequest openRequest, {
+    required StreamId streamId,
+    T Function(Object?)? payloadAdapter,
+  }) {
+    if (_shutdownStarted) {
+      throw StateError(
+        'TomBrainMemoryIsolateHost.openStream() called after shutdown().',
+      );
+    }
+    // Pre-register the sink so any chunk that arrives before the
+    // open response has a home.
+    final controller = StreamController<T>();
+    _streamSinks[streamId.id] = _StreamSink(
+      controller: controller,
+      adapter: payloadAdapter ?? ((Object? p) => p as T),
+      onCancel: () => closeStream(streamId),
+    );
+    // Fire the open envelope. We do not await — the consumer can
+    // start listening immediately, and any error in opening will
+    // come back as a stream error.
+    () async {
+      try {
+        await send<StreamOpenedResponse>(openRequest);
+      } catch (e, st) {
+        final sink = _streamSinks.remove(streamId.id);
+        if (sink != null && !sink.controller.isClosed) {
+          sink.controller.addError(e, st);
+          await sink.controller.close();
+        }
+      }
+    }();
+    return controller.stream;
+  }
+
+  /// Tops up backpressure credits for [streamId].
+  Future<void> pullCredits(StreamId streamId, int credits) async {
+    await send<StreamPullResponse>(
+      StreamPullRequest(streamId: streamId, credits: credits),
+    );
+  }
+
+  /// Cancels an open token. The in-flight stream / recall will
+  /// honour the cancellation at its next checkpoint.
+  Future<void> cancel(CancellationToken token) async {
+    await send<CancelResponse>(CancelRequest(token));
+  }
+
+  /// Closes an open stream from the host side. The executor stops
+  /// the producer and the host-side sink is torn down.
+  Future<void> closeStream(StreamId streamId) async {
+    final sink = _streamSinks.remove(streamId.id);
+    try {
+      await send<StreamCloseResponse>(StreamCloseRequest(streamId));
+    } on IsolateBoundaryException {
+      // The producer may have already terminated; ignore.
+    } on StateError {
+      // The host may be mid-shutdown; ignore.
+    }
+    if (sink != null && !sink.controller.isClosed) {
+      await sink.controller.close();
+    }
+  }
+
   // ─── Convenience wrappers ─────────────────────────────────────
 
   /// `send(PingRequest)` with a host-side monotonic timestamp.
@@ -254,4 +377,78 @@ class TomBrainMemoryIsolateHost {
     // (`platformLinux`); we mirror it.
     return const TomPlatform('linux');
   }
+}
+
+/// Per-open-stream host-side state.
+class _StreamSink {
+  final StreamController<dynamic> controller;
+  final dynamic Function(Object?) adapter;
+  final Future<void> Function() onCancel;
+
+  _StreamSink({
+    required this.controller,
+    required this.adapter,
+    required this.onCancel,
+  });
+}
+
+/// Creator-side executor that picks up [StreamSideChannelMessage]
+/// instances sent from the isolate via `TomWorker.sendToCreator`
+/// and routes them to the appropriate host-side [StreamController].
+///
+/// One router per [TomBrainMemoryIsolateHost]. Messages whose
+/// `streamId` is not registered are silently dropped — they belong
+/// to another host that shares the static `TomWorker.executors`
+/// list. Returning [TomExecutor.noResult] would not be right here
+/// because the message is no-one else's either; we just drop it
+/// without emitting a "no result" cascade.
+class _StreamRouter extends TomExecutor {
+  final Map<int, _StreamSink> sinks;
+
+  _StreamRouter(this.sinks);
+
+  @override
+  Object execute(Object command) {
+    if (command is! StreamSideChannelMessage) {
+      return TomExecutor.noResult;
+    }
+    final sink = sinks[command.streamId.id];
+    if (sink == null) {
+      // Belongs to another host (or already torn down). Claim it —
+      // returning noResult would let it cascade through other
+      // executors, which is wrong because the message is a
+      // stream-side-channel envelope and only routers handle them.
+      return _routerHandled;
+    }
+    if (command is StreamChunkEnvelope) {
+      if (!sink.controller.isClosed) {
+        sink.controller.add(sink.adapter(command.payload));
+      }
+    } else if (command is StreamCompleteEnvelope) {
+      sinks.remove(command.streamId.id);
+      if (!sink.controller.isClosed) {
+        // Detach the close call from the executor's synchronous
+        // path so the executor can return immediately.
+        unawaited(sink.controller.close());
+      }
+    } else if (command is StreamErrorEnvelope) {
+      sinks.remove(command.streamId.id);
+      if (!sink.controller.isClosed) {
+        sink.controller.addError(
+          IsolateBoundaryException(command.message, command.exceptionType),
+        );
+        unawaited(sink.controller.close());
+      }
+    } else if (command is StreamCancelledEnvelope) {
+      sinks.remove(command.streamId.id);
+      if (!sink.controller.isClosed) {
+        unawaited(sink.controller.close());
+      }
+    }
+    return _routerHandled;
+  }
+
+  /// Distinct sentinel object so the executor framework does not
+  /// confuse "I handled it" with "no result".
+  static const Object _routerHandled = Object();
 }

@@ -23,7 +23,7 @@
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show NodeId, TrailId, Vec, WriteBudget;
+    show NodeId, Vec, WriteBudget;
 import 'package:test/test.dart';
 
 // ─── Top-level fake + factory (must be top-level to be sendable) ──
@@ -202,7 +202,7 @@ void main() {
       await host.shutdown();
     });
 
-    Matcher throwsEnvelopeNotWired(String method, {String step = 'A.81'}) {
+    Matcher throwsEnvelopeNotWired(String method, {String step = 'A.82'}) {
       return throwsA(
         isA<EnvelopeNotWiredError>()
             .having((e) => e.method, 'method', method)
@@ -310,16 +310,20 @@ void main() {
     });
 
     // ─── Stream-returning methods ────────────────────────────────
+    //
+    // `readTrail()` and `events()` were unwired at A.80; A.81 wires
+    // them end-to-end (backpressure proof + cancellation proof
+    // respectively). The remaining stream-returning methods
+    // (`stream`, `stacks.streamArchived`, `stacks.events`) stay
+    // unwired until A.82.
 
-    test('readTrail() surfaces error on the stream itself', () {
+    test('stream() surfaces error on the stream itself', () {
       expect(
-        client.readTrail(TrailId.generate()),
-        streamErrorsEnvelopeNotWired('readTrail'),
+        client.stream(
+          const StreamQuery(filter: SymbolicFilter()),
+        ),
+        streamErrorsEnvelopeNotWired('stream'),
       );
-    });
-
-    test('events() surfaces error on the stream itself', () {
-      expect(client.events(), streamErrorsEnvelopeNotWired('events'));
     });
 
     // ─── Stack proxy ─────────────────────────────────────────────
