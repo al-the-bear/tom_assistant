@@ -91,13 +91,27 @@ library;
 //     only token-identifying surface allowed in logs.
 export 'src/mcp_client/mcp_client_barrel.dart';
 
-// B.9 — Consumer-facing api/ surface (Substrate Spec § 3.1).
+// B.9 / B.40 — Consumer-facing api/ surface (Substrate Spec § 3.1).
 //
 // `TomBrainSubstrate` (in-process marker), `TomBrainSubstrateClient`
 // (substitutable contract), and every value type listed in spec
 // § 3.1. The api/ barrel intentionally does NOT re-export the
 // mcp_client surface — that surface is exported above so the two
 // independent module barrels stay independent.
+//
+// **B.40 binding rule (engine-bridge contract).** The procedure
+// engine — `MemoryBridge` / `SubstrateBridge` in plan steps
+// C.12–C.14, see `substrate_specification.md` § 16 — holds the
+// substrate as a `TomBrainSubstrateClient`, never as
+// `TomBrainSubstrate` and never as the concrete
+// `InProcessTomBrainSubstrate` (B.41+). The interface is the only
+// substitutable contract; the marker base class reserves an
+// in-process-only seam but at B.40 ships no extra abstract
+// members on top of the client. `test/b40_engine_bridge_contract_
+// test.dart` locks the rule with a structural `_EngineBridgeStub`
+// that takes only `TomBrainSubstrateClient` and exercises every
+// member on the surface — a future widening of the engine to need
+// the marker class or a concrete impl breaks this test first.
 export 'src/api/api.dart';
 
 // B.11 — Provider-layer LLM surface (Substrate Spec § 4).

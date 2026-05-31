@@ -18,6 +18,15 @@
 // in-process facade arrives in incremental steps (B.11+ for the
 // LLM half, B.21+ for roles, B.25+ for embedding, B.29+ for web
 // tools, B.40+ for the in-process facade itself).
+//
+// B.40 status: the engine-bridge contract is locked. The procedure
+// engine binds against [TomBrainSubstrateClient] only. There is no
+// engine-side reference to `TomBrainSubstrate` (the in-process
+// marker), nor to the upcoming `InProcessTomBrainSubstrate` (B.41).
+// Surface drift on this contract breaks the structural test at
+// `test/b40_engine_bridge_contract_test.dart` before any
+// behavioural test runs. See the file header there for the three
+// load-bearing invariants the test pins.
 
 import '../mcp_client/mcp_client_barrel.dart';
 

@@ -28,6 +28,17 @@
 // interface; the seam is reserved for in-process-only fast paths
 // (synchronous route lookup, raw provider injection for tests) that
 // later phases may want without crossing an isolate boundary.
+//
+// B.40 re-asserts the invariant: the marker still ships zero extra
+// abstract members. The structural test at
+// `test/b40_engine_bridge_contract_test.dart` constructs
+// `_FakeInProcessSubstrate extends _FakeSubstrateClient implements
+// TomBrainSubstrate` without overriding any additional member;
+// a future addition surfaces as a compile failure there, prompting
+// an intentional documentation update *and* a matching guarantee
+// on the engine side that the new member is reachable through
+// `TomBrainSubstrateClient` (the engine never narrows to the
+// marker class).
 
 import 'tom_brain_substrate_client.dart';
 
