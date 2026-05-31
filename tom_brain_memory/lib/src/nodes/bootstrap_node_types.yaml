@@ -1,0 +1,463 @@
+# Bootstrap node-type manifest.
+#
+# Source of truth: `memory_specification.md` § 4.1 (the table titled
+# "Bootstrap node types"). This file expresses each of the 21 types as
+# data so the runtime can register them without a code-generation
+# step. It is parsed by `lib/src/nodes/node_type_yaml_loader.dart`
+# (`NodeTypeYamlLoader`).
+#
+# Schema (informal — codified by the loader):
+#
+#   manifest_version:    integer; bumped when the YAML shape itself
+#                        changes. Currently 1.
+#   embedding_defaults:  optional. Provides `model_identity` and
+#                        `dimensions` for types that opt into the
+#                        default embedding. Per-type `embedding:`
+#                        blocks may override.
+#   types:               list of node-type entries. Each entry has:
+#
+#     name:              PascalCase type name; matches NodeType row.
+#     version:           integer ≥ 1; maps to `BrainVersion`.
+#     supersedes:        optional `n_<ulid>` of a predecessor decl;
+#                        omitted at bootstrap.
+#     schema:            map of field name → field spec. Field specs
+#                        are inline maps:
+#
+#         { type: <type>, nullable?: bool, fts?: bool, vector?: bool,
+#           refs?: [TypeName,…], values?: [enum,…] }
+#
+#       `type` is one of:
+#         string | integer | boolean | vec | nodeRef | enum | json
+#       (`enum` is the YAML shorthand for FieldType.enumeration.)
+#
+#       `fts: true` marks the field FTS-eligible (the `index` block
+#       below decides whether it is *actually* indexed). `vector` is
+#       analogous for vector indexing and only meaningful when type
+#       is `vec`. `refs` restricts a `nodeRef`. `values` enumerates
+#       allowed strings for an `enum`.
+#
+#     embedding:         one of:
+#         - the literal string `none` — type has no embedding;
+#         - a map `{ source_fields: [...], model_identity?: ...,
+#                    dimensions?: ... }` — uses embedding_defaults
+#           for any field it omits.
+#
+#     index:             `{ fts_fields: [...], vector_fields: [...],
+#                            fts_tokeniser?: <string> }`.
+#                        Defaults to empty sets when omitted.
+#
+#     retention:         one of:
+#         - the literal string `indefinite` — RetentionPolicy.indefinite
+#           (no horizon, no reinforcement reset, no index demotion);
+#         - a map `{ default_horizon_ms: <int|null>,
+#                    reinforcement_resets_horizon: bool,
+#                    demote_from_indexes: bool }`.
+#
+#     allowed_outgoing:  list of edge wire-names this type may emit.
+#     allowed_incoming:  list of edge wire-names this type may receive.
+#                        Edge wire-names come from EdgeType.wireName
+#                        (see `lib/src/edges/edge_type.dart`).
+#
+#     validator_script_id: optional procedure id; omitted at bootstrap.
+#
+# What this file does NOT carry:
+#
+#   - Classification centroids. Per spec § 7.1 they only exist after
+#     n=8 examples accumulate, so every bootstrap type starts with a
+#     null centroid; cold-started types skip classification until
+#     `dream_recentroid_v1` fills the gap.
+#   - `propose_node_type_v1` provenance. The bootstrap is the
+#     pre-procedure baseline.
+#
+# Per-type edge-permission decisions follow directly from the "Key
+# edges" column in spec § 4.1 plus the edge-direction semantics in
+# `lib/src/edges/edge_type.dart` (e.g. `derived_from` outgoing on the
+# derived node, incoming on the source). The Q-A.32.2 entry in
+# `prototype_implementation_questions.md` captures the rationale for
+# each tightening choice.
+
+manifest_version: 1
+
+embedding_defaults:
+  model_identity: nomic-embed-text@v1.5
+  dimensions: 768
+
+types:
+
+  # 1. Event — immutable record of a happening.
+  - name: Event
+    version: 1
+    schema:
+      summary: { type: string, fts: true }
+      payload: { type: json }
+      occurred_at: { type: string }
+    embedding:
+      source_fields: [summary]
+    index:
+      fts_fields: [summary]
+      vector_fields: []
+    retention: indefinite
+    allowed_outgoing: [caused_by, mentions]
+    allowed_incoming: [caused_by, derived_from, mentions]
+
+  # 2. Claim — a unit of statable knowledge.
+  - name: Claim
+    version: 1
+    schema:
+      statement: { type: string, fts: true }
+    embedding:
+      source_fields: [statement]
+    index:
+      fts_fields: [statement]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: true
+    allowed_outgoing: [evidence_for, contradicts, derived_from, mentions]
+    allowed_incoming: [evidence_for, contradicts, derived_from, mentions, produced_by]
+
+  # 3. Concept — a reusable abstraction (entity, idea, named thing).
+  - name: Concept
+    version: 1
+    schema:
+      name: { type: string, fts: true }
+      description: { type: string, fts: true }
+    embedding:
+      source_fields: [name, description]
+    index:
+      fts_fields: [name, description]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: true
+    allowed_outgoing: [part_of, mentions]
+    allowed_incoming: [part_of, mentions, derived_from]
+
+  # 4. Conclusion — a synthesised answer / position.
+  - name: Conclusion
+    version: 1
+    schema:
+      statement: { type: string, fts: true }
+      rationale: { type: string, fts: true }
+    embedding:
+      source_fields: [statement, rationale]
+    index:
+      fts_fields: [statement, rationale]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: true
+    allowed_outgoing: [evidence_for, derived_from, mentions]
+    allowed_incoming: [satisfied_by, derived_from, produced_by, mentions]
+
+  # 5. Question — an open inquiry.
+  - name: Question
+    version: 1
+    schema:
+      text: { type: string, fts: true }
+    embedding:
+      source_fields: [text]
+    index:
+      fts_fields: [text]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: true
+    allowed_outgoing: [motivates, mentions]
+    allowed_incoming: [satisfied_by, mentions, derived_from]
+
+  # 6. Pattern — a recurring template (event sequence, prompt shape, …).
+  - name: Pattern
+    version: 1
+    schema:
+      signature: { type: string, fts: true }
+      description: { type: string, fts: true }
+    embedding:
+      source_fields: [signature, description]
+    index:
+      fts_fields: [signature, description]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: true
+    allowed_outgoing: [derived_from, mentions]
+    allowed_incoming: [mentions, derived_from]
+
+  # 7. Contradiction — a detected conflict between Claims/Conclusions.
+  - name: Contradiction
+    version: 1
+    schema:
+      summary: { type: string, fts: true }
+    embedding:
+      source_fields: [summary]
+    index:
+      fts_fields: [summary]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: false
+      demote_from_indexes: false
+    allowed_outgoing: [contradicts, mentions]
+    allowed_incoming: [contradicts, mentions, derived_from]
+
+  # 8. Source — external provenance (URL, doc, person).
+  - name: Source
+    version: 1
+    schema:
+      uri: { type: string }
+      title: { type: string, fts: true }
+    embedding:
+      source_fields: [title]
+    index:
+      fts_fields: [title]
+      vector_fields: []
+    retention: indefinite
+    allowed_outgoing: [evidence_for, mentions]
+    allowed_incoming: [mentions, derived_from]
+
+  # 9. Plan — a produced plan.
+  - name: Plan
+    version: 1
+    schema:
+      goal: { type: string, fts: true }
+      summary: { type: string, fts: true }
+    embedding:
+      source_fields: [goal, summary]
+    index:
+      fts_fields: [goal, summary]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: true
+    allowed_outgoing: [targets, mentions, superseded_by]
+    allowed_incoming: [part_of, produced_by, satisfied_by, derived_from, mentions]
+
+  # 10. PlanStep — a node of a plan graph.
+  - name: PlanStep
+    version: 1
+    schema:
+      description: { type: string, fts: true }
+      step_index: { type: integer }
+    embedding:
+      source_fields: [description]
+    index:
+      fts_fields: [description]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: true
+    # `depends_on` is modelled as a `part_of` edge with `attrs.kind=depends_on`
+    # (per spec § 4.1 footnote); no new edge label.
+    allowed_outgoing: [part_of, mentions]
+    allowed_incoming: [part_of, satisfied_by, mentions]
+
+  # 11. Artifact — a created thing (file, snippet, design, document).
+  - name: Artifact
+    version: 1
+    schema:
+      kind: { type: string, fts: true }
+      summary: { type: string, fts: true }
+      content_ref: { type: string, nullable: true }
+    embedding:
+      source_fields: [summary]
+    index:
+      fts_fields: [kind, summary]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: true
+    allowed_outgoing: [produced_by, satisfied_by, targets, mentions]
+    allowed_incoming: [mentions, derived_from]
+
+  # 12. Procedure — a d4rt procedure with versioned content.
+  - name: Procedure
+    version: 1
+    schema:
+      name: { type: string, fts: true }
+      summary: { type: string, fts: true }
+      code: { type: string }
+    embedding:
+      source_fields: [name, summary]
+    index:
+      fts_fields: [name, summary]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: false
+    allowed_outgoing: [superseded_by, authored_by, mentions]
+    allowed_incoming: [satisfied_by, produced_by, motivates, mentions, derived_from]
+
+  # 13. ProcedureRun — one execution of a procedure.
+  - name: ProcedureRun
+    version: 1
+    schema:
+      summary: { type: string, fts: true }
+      started_at: { type: string }
+      ended_at: { type: string, nullable: true }
+    embedding:
+      source_fields: [summary]
+    index:
+      fts_fields: [summary]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: false
+      demote_from_indexes: true
+    allowed_outgoing: [produced_by, derived_from, caused_by, mentions]
+    allowed_incoming: [produced_by, mentions]
+
+  # 14. AutomationIdea — a candidate procedure to author.
+  - name: AutomationIdea
+    version: 1
+    schema:
+      description: { type: string, fts: true }
+      motivation: { type: string, fts: true }
+    embedding:
+      source_fields: [description, motivation]
+    index:
+      fts_fields: [description, motivation]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: true
+    allowed_outgoing: [motivates, derived_from, mentions]
+    allowed_incoming: [satisfied_by, mentions, derived_from]
+
+  # 15. InterestItem — a topic the system is curious about.
+  - name: InterestItem
+    version: 1
+    schema:
+      topic: { type: string, fts: true }
+      why: { type: string, fts: true }
+    embedding:
+      source_fields: [topic, why]
+    index:
+      fts_fields: [topic, why]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: true
+    allowed_outgoing: [motivates, mentions]
+    allowed_incoming: [satisfied_by, mentions, derived_from]
+
+  # 16. NodeType — a node-type declaration.
+  - name: NodeType
+    version: 1
+    schema:
+      type_name: { type: string, fts: true }
+      schema_summary: { type: string, fts: true }
+      declaration_version: { type: integer }
+    embedding:
+      source_fields: [type_name, schema_summary]
+    index:
+      fts_fields: [type_name, schema_summary]
+      vector_fields: []
+    retention: indefinite
+    allowed_outgoing: [superseded_by, derived_from, mentions]
+    allowed_incoming: [superseded_by, derived_from, mentions]
+
+  # 17. Session — a user interaction session.
+  - name: Session
+    version: 1
+    schema:
+      summary: { type: string, fts: true }
+      started_at: { type: string }
+      ended_at: { type: string, nullable: true }
+    embedding:
+      source_fields: [summary]
+    index:
+      fts_fields: [summary]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: false
+      demote_from_indexes: true
+    allowed_outgoing: [caused_by, part_of, mentions]
+    allowed_incoming: [caused_by, authored_by, mentions]
+
+  # 18. Trail — pointer to a JSONL trail file.
+  - name: Trail
+    version: 1
+    schema:
+      summary: { type: string, fts: true }
+      jsonl_path: { type: string }
+    embedding:
+      source_fields: [summary]
+    index:
+      fts_fields: [summary]
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: false
+      demote_from_indexes: true
+    allowed_outgoing: [produced_by, mentions]
+    allowed_incoming: [mentions, derived_from]
+
+  # 19. Stack — a first-class named list.
+  #
+  # Per spec § 4.1: "Stack ... (no outgoing; entries point here)".
+  - name: Stack
+    version: 1
+    schema:
+      name: { type: string, fts: true }
+      summary: { type: string, fts: true }
+    embedding: none
+    index:
+      fts_fields: [name, summary]
+      vector_fields: []
+    retention: indefinite
+    allowed_outgoing: []
+    allowed_incoming: [part_of]
+
+  # 20. StackEntry — membership of a node in a stack with priority/policy.
+  #
+  # Spec § 4.1: "(none) embedded — part_of (to Stack), mentions (to the node)".
+  - name: StackEntry
+    version: 1
+    schema:
+      stack_ref: { type: nodeRef, refs: [Stack] }
+      node_ref: { type: nodeRef }
+      priority: { type: integer }
+      status:
+        type: enum
+        values: [pending, active, completed, dropped]
+    embedding: none
+    index:
+      fts_fields: []
+      vector_fields: []
+    retention:
+      default_horizon_ms: null
+      reinforcement_resets_horizon: true
+      demote_from_indexes: true
+    allowed_outgoing: [part_of, mentions]
+    allowed_incoming: []
+
+  # 21. Tombstone — record of user-explicit deletion.
+  #
+  # Spec § 4.1: "Tombstone is structurally necessary for the 'nothing
+  # is truly lost' invariant when a user explicitly forgets a node."
+  # The edge_type.dart comment locks Tombstone to only emit
+  # `derived_from`.
+  - name: Tombstone
+    version: 1
+    schema:
+      reason: { type: string, fts: true }
+      forgotten_at: { type: string }
+    embedding: none
+    index:
+      fts_fields: [reason]
+      vector_fields: []
+    retention: indefinite
+    allowed_outgoing: [derived_from]
+    allowed_incoming: []

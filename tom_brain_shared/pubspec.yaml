@@ -1,0 +1,24 @@
+name: tom_brain_shared
+description: Shared types and primitives used across all Tom Brain components (memory, substrate, procedure engine, procedure dispatcher, access). Identifier types, embedding vectors, budget, result, event base classes, time, version, and assistant-dedication anchor constants.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.8
+
+# Dependency discipline (Plan step A.9):
+# `tom_brain_shared` carries *pure types and pure helpers only*. No I/O,
+# no networking, no storage, no LLM, no logging side effects. The single
+# runtime dependency permitted at this level is `tom_basics`, which is the
+# workspace baseline (UUID, exception types, lightweight helpers).
+#
+# The dependency-discipline test (`test/dependency_discipline_test.dart`)
+# enforces this contract at build time. Adding anything else here without
+# updating that test will fail CI.
+dependencies:
+  tom_basics: ^1.0.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
+  yaml: ^3.1.2
