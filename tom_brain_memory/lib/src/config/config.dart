@@ -26,5 +26,8 @@
 //   - A.24 ✅ — `MemoryConfig` + sub-config records land here.
 //   - A.26 — consumption in `open()` (paths + WAL config).
 //   - A.76 — bearer-token configuration consumed by the MCP server.
+//   - A.83 ✅ — `MemoryConfigLoader` parses the YAML in spec § 14 into
+//     the typed `MemoryConfig`.
 
 export 'memory_config.dart';
+export 'memory_config_loader.dart';
