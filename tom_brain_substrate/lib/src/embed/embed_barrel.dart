@@ -45,7 +45,19 @@
 //     subsequent vector rows; old vectors keep their old identity
 //     so cross-model vectors are never silently mixed in cosine
 //     math (`memory_specification.md` § 7.4).
-//   * B.28 — Conformance tests across implementations.
+//   * B.28 ✅ — Cross-implementation conformance suite.
+//     `test/b28_embedding_service_conformance_test.dart` registers a
+//     harness-style driver and runs the four plan-specified
+//     guarantees (single + batch embedding, dimension stability,
+//     identity surfaces unchanged across calls) against every
+//     registered implementation. The Ollama harness binds against
+//     `OllamaEmbeddingService` with an in-test HTTP fake; a second
+//     in-test `_InMemoryEmbeddingService` harness anchors the
+//     contract on an impl that has nothing in common with Ollama,
+//     so a future contract assertion that silently bound to
+//     Ollama-only behaviour would fail loudly. A third backend
+//     (OpenAI passthrough, on-device model) plugs in as a one-class
+//     drop-in below `main()` in the test file.
 
 export 'embedding_probe_result.dart';
 export 'embedding_service.dart';

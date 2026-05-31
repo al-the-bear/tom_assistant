@@ -188,6 +188,14 @@ export 'src/roles/roles_barrel.dart';
 // through the `api/` barrel above (B.9); the embedding service is
 // the *producer* of those values.
 //
-// Still pending in the `embed/` module:
-//   * B.28 — Cross-implementation conformance tests.
+// B.28 closes the embed/ module: the cross-implementation conformance
+// suite at `test/b28_embedding_service_conformance_test.dart` runs the
+// four plan-specified guarantees (single + batch embedding, dimension
+// stability, identity surfaces unchanged across calls) against every
+// registered implementation. The Ollama harness binds against
+// `OllamaEmbeddingService` with an in-test HTTP fake; a second in-test
+// `_InMemoryEmbeddingService` harness anchors the contract on an impl
+// that has nothing in common with Ollama (no transport, deterministic
+// per-input output), so a regression to the abstract surface is caught
+// regardless of which production backend ships next.
 export 'src/embed/embed_barrel.dart';
