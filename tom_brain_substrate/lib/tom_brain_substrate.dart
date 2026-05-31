@@ -110,3 +110,14 @@ export 'src/llm/llm_barrel.dart';
 // outside of contract tests; consumer-facing
 // `TomBrainSubstrateClient.complete` (B.40+) will dispatch through it.
 export 'src/router/router_barrel.dart';
+
+// B.21 — Role-layer surface (Substrate Spec § 6).
+//
+// `AllowedAction` (closed enum of action tokens), `RoleBudgetDefaults`
+// (router-side merge target for per-call `LlmOptions`), `RoleTemplate`
+// (the value class the registry holds at B.22 and the assemble path
+// consumes at B.23). At B.21 the registry, the `assemble(...)` →
+// `WirePrompt` mechanism, and the anchor-injection enforcement test
+// are still pending — see the file headers under `lib/src/roles/` for
+// the staged-handoff plan.
+export 'src/roles/roles_barrel.dart';
