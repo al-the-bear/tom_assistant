@@ -299,20 +299,10 @@ void main() {
   });
 
   group('B.25 / EmbeddingService — deferred surfaces', () {
-    test('embedBatch throws UnimplementedError at B.25 (loud contract gap)',
-        () async {
-      final fake = _FakeOllamaHttpClient()..embedResponse = _ramp(768);
-      final service = _newService(fake);
-
-      await expectLater(
-        () => service.embedBatch(const ['a', 'b']),
-        throwsA(isA<UnimplementedError>().having(
-          (e) => e.message ?? '',
-          'message',
-          contains('B.26'),
-        )),
-      );
-    });
+    // Note: the B.25 "embedBatch throws UnimplementedError" test was
+    // removed at B.26 once `embedBatch` was implemented. The
+    // batch-fan-out contract is now exercised end-to-end in
+    // `b26_embedding_service_batch_test.dart`.
 
     test('close() is a no-op on the embedding service (does not touch provider)',
         () async {

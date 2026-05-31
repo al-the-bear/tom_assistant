@@ -22,10 +22,16 @@
 //     `EmbeddingResult` returned by `embed` already carries the
 //     identity stamp; exposing it as a separate getter on the service
 //     surfaces the substrate's commitment without an extra call.
-//   * B.26 — `embedBatch(texts)`. The interface declares it now so
-//     consumers do not have to migrate when B.26 lands; the prototype
-//     implementation throws `UnimplementedError` for `embedBatch`
-//     until then (no silent fan-out shim).
+//   * B.26 ✅ — `embedBatch(texts)` with concurrency-capped fan-out
+//     (default cap 4, per `substrate_specification.md` § 7.3).
+//     Ollama's `/api/embeddings` accepts one input per call, so the
+//     prototype's batching shape is a worker-pool that picks indices
+//     off a shared counter and dispatches `embed()` calls — order in
+//     the returned list matches input order regardless of completion
+//     order. The first failure short-circuits the batch via
+//     `Future.wait(eagerError: true)`; in-flight calls run to
+//     completion (no `embedRaw`-side cancellation yet), but no new
+//     dispatch happens after the failure surfaces.
 //   * B.27 — Identity reporting: `EmbeddingIdentityChanged` event
 //     emission on identity drift detection. The getter surface is
 //     final at B.25; the event-emission wiring lands at B.27 against
@@ -87,11 +93,27 @@ abstract class EmbeddingService {
   /// fan-out otherwise). Every returned result carries the same
   /// identity as [currentModelIdentity] at call time.
   ///
-  /// **B.25 prototype status.** The Ollama implementation throws
-  /// [UnimplementedError] for [embedBatch] until B.26 lands the
-  /// concurrency-capped fan-out. The interface declares the method
-  /// at B.25 so consumers can bind against it without migration
-  /// when B.26 lands.
+  /// **Empty input.** An empty [texts] list returns an empty result
+  /// list immediately; no backend calls are dispatched.
+  ///
+  /// **Order preservation.** The returned list has
+  /// `results.length == texts.length` and `results[i]` is the
+  /// embedding of `texts[i]`, regardless of the order in which the
+  /// underlying calls completed. Consumers can zip the two lists
+  /// without re-sorting.
+  ///
+  /// **Failure semantics.** If the underlying backend surfaces a
+  /// failure on any input (boundary failure from [embed] —
+  /// [EmbeddingDimensionMismatch] / [EmbeddingBackendEmpty] — or a
+  /// transport exception), the future completes with that error.
+  /// In-flight backend calls for other indices run to completion (no
+  /// cancellation token on the prototype's wire path), but their
+  /// results are discarded and no further dispatch happens after the
+  /// failure surfaces. Whether the surfaced error corresponds to the
+  /// first input by index or the first to complete is implementation-
+  /// defined; consumers should treat batch failure as "one or more
+  /// inputs failed" and retry the batch (or fall back to per-input
+  /// [embed] for diagnostics).
   Future<List<EmbeddingResult>> embedBatch(List<String> texts);
 
   /// The model identity stamped on every result this service

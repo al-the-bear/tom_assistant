@@ -24,8 +24,10 @@
 //
 //   * B.25 ✅ — `EmbeddingService.embed(text)` +
 //     `currentModelIdentity` (this barrel).
-//   * B.26 — `EmbeddingService.embedBatch(texts)` with
-//     concurrency-capped fan-out.
+//   * B.26 ✅ — `EmbeddingService.embedBatch(texts)` with
+//     concurrency-capped fan-out (default cap 4 per
+//     `substrate_specification.md` § 7.3). Tunable per service
+//     instance via the `batchConcurrency` constructor argument.
 //   * B.27 — Identity reporting / boot-time identity probe / event
 //     emission on identity drift.
 //   * B.28 — Conformance tests across implementations.

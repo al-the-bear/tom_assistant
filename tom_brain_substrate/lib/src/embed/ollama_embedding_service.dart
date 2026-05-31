@@ -29,10 +29,6 @@
 //     surfaces an `EmbeddingIdentityChanged` event when the new
 //     instance's identity differs from the last one memory stored,
 //     but the identity itself is still constructor-bound.
-//   - Fan out [embedBatch]. Per the interface contract, this lands
-//     at B.26. Until then, [embedBatch] throws `UnimplementedError`
-//     so the contract failure is loud rather than a slow concurrent
-//     loop that obscures the surface gap.
 //   - Validate the configured dimension against the backend's
 //     advertised dimension. Ollama's `/api/embeddings` does not
 //     expose per-model dims through `/api/tags`; the only way to
@@ -78,12 +74,18 @@ import 'embedding_service.dart';
 ///   model: 'nomic-embed-text',
 ///   dims: 768,
 ///   normalize: true,
+///   // Optional: tune the embedBatch fan-out cap. Default 4 matches
+///   // substrate_specification.md § 7.3.
+///   batchConcurrency: 4,
 /// );
 /// final result = await embed.embed('the quick brown fox');
 /// // result.vec.dimension == 768
 /// // result.modelIdentity.providerId == 'ollama:local'
 /// // result.modelIdentity.modelId == 'nomic-embed-text'
 /// // result.modelIdentity.normalized == true
+///
+/// final batch = await embed.embedBatch(['alpha', 'bravo', 'charlie']);
+/// // batch.length == 3, batch[i] == embed(texts[i]) under same identity.
 /// ```
 ///
 /// The service does not own [provider]'s lifetime — [close] does not
@@ -120,11 +122,24 @@ final class OllamaEmbeddingService implements EmbeddingService {
   /// object on every call.
   final bool _normalize;
 
+  /// Worker-pool size for [embedBatch] fan-out.
+  ///
+  /// Per `substrate_specification.md` § 7.3, the default is 4. A
+  /// larger value increases the daemon's per-call load (every worker
+  /// holds one open HTTP connection at a time); a smaller value
+  /// increases the wall-clock for large batches.
+  ///
+  /// The effective worker count for any given batch is
+  /// `min(batchConcurrency, texts.length)` — there is no benefit to
+  /// spinning up more workers than there are inputs.
+  final int batchConcurrency;
+
   OllamaEmbeddingService({
     required this.provider,
     required this.model,
     required int dims,
     required bool normalize,
+    this.batchConcurrency = 4,
   })  : _identity = EmbeddingModelIdentity(
           providerId: provider.id,
           modelId: model,
@@ -144,6 +159,13 @@ final class OllamaEmbeddingService implements EmbeddingService {
         model,
         'model',
         'OllamaEmbeddingService.model must be non-empty',
+      );
+    }
+    if (batchConcurrency <= 0) {
+      throw ArgumentError.value(
+        batchConcurrency,
+        'batchConcurrency',
+        'OllamaEmbeddingService.batchConcurrency must be > 0',
       );
     }
   }
@@ -195,21 +217,64 @@ final class OllamaEmbeddingService implements EmbeddingService {
   }
 
   @override
-  Future<List<EmbeddingResult>> embedBatch(List<String> texts) {
-    // Per spec § 7.3, batching is preferred when the backend supports
-    // it; Ollama's `/api/embeddings` accepts one input per call, so
-    // the prototype's batching is concurrency-capped fan-out. That
-    // pass lands at B.26. Until then this surface throws so callers
-    // see the contract failure loudly rather than silently get a
-    // partial / serial loop.
-    throw UnimplementedError(
-      'EmbeddingService.embedBatch — deferred to B.26. '
-      'Batching for the Ollama backend is concurrency-capped fan-out '
-      'over single-input `/api/embeddings` calls; the prototype '
-      'implementation is owed at B.26 with the configurable '
-      'concurrency cap (default 4) per substrate_specification.md '
-      '§ 7.3. Callers needing per-text embeddings at B.25 should '
-      'invoke `embed()` in a loop until B.26 lands.',
+  Future<List<EmbeddingResult>> embedBatch(List<String> texts) async {
+    // Empty fast-path. Returning a const empty list keeps the contract
+    // ("results.length == texts.length") trivially satisfied without
+    // spinning up workers or touching the backend.
+    if (texts.isEmpty) return const <EmbeddingResult>[];
+
+    // Pre-size the result list so workers can write in any order
+    // without resizing. Holding nullable slots until the worker fills
+    // them lets `List.unmodifiable` at the end produce a tightly
+    // typed `List<EmbeddingResult>` view for callers.
+    final results = List<EmbeddingResult?>.filled(
+      texts.length,
+      null,
+      growable: false,
+    );
+
+    // Shared cursor. Workers atomically pick the next index by
+    // post-incrementing this value. Atomicity is free in Dart's
+    // single-threaded event loop: the `nextIndex++` expression
+    // completes before any `await` runs, so two workers can never
+    // see the same value.
+    var nextIndex = 0;
+
+    // Pool size is bounded by both the constructor knob and the
+    // input length — spinning up a worker per input is fine for
+    // small batches, and a worker that never picks up an index would
+    // be wasted overhead.
+    final workerCount = math.min(batchConcurrency, texts.length);
+
+    Future<void> worker() async {
+      while (true) {
+        final i = nextIndex++;
+        if (i >= texts.length) return;
+        // Per-input failure (EmbeddingDimensionMismatch /
+        // EmbeddingBackendEmpty / transport exception) flows out of
+        // the worker; Future.wait(eagerError: true) surfaces it on
+        // the batch future and stops dispatching new work. Other
+        // in-flight workers run to completion (no embedRaw-side
+        // cancellation yet), but their results are discarded.
+        results[i] = await embed(texts[i]);
+      }
+    }
+
+    await Future.wait(
+      List<Future<void>>.generate(
+        workerCount,
+        (_) => worker(),
+        growable: false,
+      ),
+      eagerError: true,
+    );
+
+    // Every slot is now populated (Future.wait would have surfaced
+    // any failure before we got here). Cast through a fresh list so
+    // the public surface gets a non-nullable element type without
+    // exposing the mutable storage to the caller.
+    return List<EmbeddingResult>.unmodifiable(
+      results.map((r) => r!),
     );
   }
 

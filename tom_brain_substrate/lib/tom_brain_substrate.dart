@@ -155,23 +155,27 @@ export 'src/router/router_barrel.dart';
 // staged-handoff plan.
 export 'src/roles/roles_barrel.dart';
 
-// B.25 — Embedding-service surface (Substrate Spec § 7).
+// B.25 / B.26 — Embedding-service surface (Substrate Spec § 7).
 //
 // `EmbeddingService` (abstract contract; one implementation per
 // backend), `OllamaEmbeddingService` (prototype default backed by
 // Ollama `nomic-embed-text`), and the typed boundary failures
 // `EmbeddingDimensionMismatch` / `EmbeddingBackendEmpty` that
-// `embed()` surfaces on backend defects (dim mismatch ⇒ silent
-// model swap; empty vector ⇒ daemon refused).
+// `embed()` and `embedBatch()` surface on backend defects (dim
+// mismatch ⇒ silent model swap; empty vector ⇒ daemon refused).
+//
+// B.26 fills in `embedBatch(texts)` with concurrency-capped fan-out
+// over the same `embed()` path (Ollama's `/api/embeddings` is
+// per-input). The `batchConcurrency` constructor knob on
+// `OllamaEmbeddingService` (default 4 per spec § 7.3) caps how many
+// `embed()` calls are in flight at once; the returned list preserves
+// input order regardless of completion order.
 //
 // The consumer-facing value types (`EmbeddingResult`,
 // `EmbeddingModelIdentity`) ship through the `api/` barrel above
 // (B.9); the embedding service is the *producer* of those values.
 //
 // Still pending in the `embed/` module:
-//   * B.26 — `embedBatch(texts)` with concurrency-capped fan-out.
-//     Until then the prototype implementation throws
-//     `UnimplementedError` for `embedBatch`.
 //   * B.27 — Boot-time identity probe + `EmbeddingIdentityChanged`
 //     event emission on identity drift.
 //   * B.28 — Cross-implementation conformance tests.
