@@ -95,3 +95,16 @@ export 'src/api/api.dart';
 // future router code can bind against the contract under the
 // `lints/recommended` "no `package:foo/src/...`" rule.
 export 'src/llm/llm_barrel.dart';
+
+// B.18 — Router-layer surface (Substrate Spec § 5).
+//
+// `LlmRouter` (role-keyed dispatch with failover classification and
+// per-credential cooldown), `LlmFailureClassifier` + the closed
+// taxonomy from spec § 5.4, `RouteEntry` (per-row value class — B.19's
+// `RouterPolicy` will compose it), and the typed router errors
+// (`NoRouteAvailable`, `RoleNotFound`, `ContextOverflowError`,
+// `RouteAttempt`). The router is the *only* legitimate consumer of
+// `LlmProvider.complete` / `completeStream` outside of contract tests;
+// consumer-facing `TomBrainSubstrateClient.complete` (B.40+) will
+// dispatch through it.
+export 'src/router/router_barrel.dart';
