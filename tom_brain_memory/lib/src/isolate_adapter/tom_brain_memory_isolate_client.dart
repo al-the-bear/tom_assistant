@@ -1,7 +1,7 @@
 // TomBrainMemoryIsolateClient — the thin consumer-facing client
 // that implements `TomBrainMemoryClient` by translating every
 // method call into an `IsolateRequest` envelope sent through a
-// `TomBrainMemoryIsolateHost` (plan steps A.80, A.81).
+// `TomBrainMemoryIsolateHost` (plan steps A.80–A.82).
 //
 // Position in the slice (A.78 – A.82):
 //
@@ -10,17 +10,18 @@
 //     skeleton (lifecycle envelopes + `MemoryStats` as the one
 //     dispatch-proof pair).
 //   * A.80 ✅ — the client. Implements the full
-//     `TomBrainMemoryClient` surface. Methods whose envelope was
-//     in A.79's skeleton (`open`, `close`, `stats`) round-trip
-//     end-to-end. Every other method throws an
-//     [EnvelopeNotWiredError].
-//   * A.81 (this file, current step) — adds the two streaming
-//     proofs: `readTrail` (backpressure) and `events`
-//     (cancellation) round-trip through a real isolate via the
-//     host's new stream-router surface. Every other method still
-//     throws [EnvelopeNotWiredError]; A.82 lifts the remaining
-//     restrictions.
-//   * A.82 — round-trips every method through a real isolate.
+//     `TomBrainMemoryClient` surface against the host. Methods
+//     wired end-to-end at A.80: `open`, `close`, `stats`.
+//   * A.81 ✅ — streaming + cancellation protocol. `readTrail`
+//     (backpressure) and `events` (cancellation) round-trip
+//     through a real isolate via the host's new stream-router
+//     surface.
+//   * A.82 (this file, current step) — every remaining method on
+//     `TomBrainMemoryClient` round-trips through the boundary,
+//     including the `stacks` and `migrations` sub-APIs and the
+//     remaining three stream-returning methods (`stream`,
+//     `stacks.streamArchived`, `stacks.events`). The
+//     `EnvelopeNotWiredError` transitional surface is gone.
 //
 // Ownership model:
 //
@@ -35,6 +36,14 @@
 //     code that needs the in-process-only seam (synchronous
 //     introspection, direct DB-handle exposure). Implementing only
 //     `TomBrainMemoryClient` keeps that boundary honest.
+//
+// Un-sendable corners:
+//
+//   * `RecallQuery.reRank` is a closure — not sendable across the
+//     SendPort. `recall()` rejects a non-null `reRank` with
+//     `ArgumentError.value` before constructing any envelope. The
+//     caller must run the recall without the hook and re-rank the
+//     returned candidates locally.
 
 import 'dart:async';
 
@@ -58,39 +67,12 @@ import '../retrieval/stream_query.dart';
 import '../stacks/stack_api.dart';
 import '../stacks/stack_types.dart';
 import '../trails/trail.dart';
+import 'isolate_cancellation_protocol.dart';
 import 'isolate_envelopes.dart';
+import 'isolate_envelopes_full.dart';
 import 'isolate_messages.dart';
+import 'isolate_stream_protocol.dart';
 import 'tom_brain_memory_isolate_host.dart';
-
-/// Thrown by [TomBrainMemoryIsolateClient] methods whose
-/// corresponding envelope has not been added to the protocol yet.
-///
-/// A.79 deliberately ships only the lifecycle envelopes plus one
-/// dispatch-proof pair (`MemoryStats`). A.81 adds streaming proofs
-/// for `readTrail` and `events`. The remaining methods land at
-/// A.82. Until then, calling any unwired method on the client
-/// raises this typed error so callers — and the test suite — get a
-/// loud, identifiable signal rather than an `UnimplementedError`
-/// with no provenance.
-///
-/// The error is a subclass of [UnimplementedError] so any caller
-/// that already handles `UnimplementedError` continues to behave
-/// reasonably (logging, surfacing to the user). The additional
-/// fields ([method], [step]) let test assertions pin the contract
-/// to the exact step that will lift the restriction.
-final class EnvelopeNotWiredError extends UnimplementedError {
-  /// The `TomBrainMemoryClient` method name, e.g. `'persist'`.
-  final String method;
-
-  /// The plan step that will land the envelope.
-  final String step;
-
-  EnvelopeNotWiredError(this.method, {this.step = 'A.82'})
-      : super(
-          'TomBrainMemoryIsolateClient.$method: envelope not wired yet '
-          '(lands at $step).',
-        );
-}
 
 /// Cross-isolate implementation of [TomBrainMemoryClient].
 ///
@@ -98,17 +80,13 @@ final class EnvelopeNotWiredError extends UnimplementedError {
 /// already been `spawn()`-ed. Translates every method call to a
 /// `host.send(...)` of the corresponding envelope.
 ///
-/// Methods wired end-to-end as of A.81:
-///
-///   * [open]      → `host.openMemory(config)`.
-///   * [close]     → `host.closeMemory()`.
-///   * [stats]     → `host.send<MemoryStatsResponse>(...)` (A.79).
-///   * [readTrail] → host stream-router + backpressure (A.81).
-///   * [events]    → host stream-router + cancellation (A.81).
-///
-/// Every other method throws [EnvelopeNotWiredError]. The stack/
-/// migration getters return proxy objects whose every method
-/// raises the same error.
+/// Every public method on `TomBrainMemoryClient` round-trips
+/// through the isolate boundary. The five stream-returning methods
+/// (`readTrail`, `events`, `stream`, `stacks.streamArchived`,
+/// `stacks.events`) ride the host's side-channel: backpressured
+/// streams use a sliding window (one credit auto-pulled per
+/// delivered chunk); unbounded streams use cancellation tokens for
+/// termination.
 class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
   /// The host this client dispatches through. Lifetime is owned by
   /// the caller — the client does not call `host.spawn()` or
@@ -122,6 +100,14 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
   /// resume on explicit pulls.
   final int readTrailInitialCredits;
 
+  /// Initial credit allowance for `stream(StreamQuery)` cursor scans.
+  /// Same sliding-window contract as [readTrailInitialCredits].
+  final int streamQueryInitialCredits;
+
+  /// Initial credit allowance for `stacks.streamArchived`. Same
+  /// contract as [readTrailInitialCredits].
+  final int stacksArchivedInitialCredits;
+
   /// Built lazily so the stack/migration proxies are only allocated
   /// when something asks for them.
   StackApi? _stacks;
@@ -130,6 +116,8 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
   TomBrainMemoryIsolateClient(
     this.host, {
     this.readTrailInitialCredits = 16,
+    this.streamQueryInitialCredits = 16,
+    this.stacksArchivedInitialCredits = 16,
   });
 
   // ─── Lifecycle ───────────────────────────────────────────────────
@@ -141,8 +129,8 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
   Future<void> close() => host.closeMemory();
 
   @override
-  Future<void> checkpoint() {
-    return Future<void>.error(EnvelopeNotWiredError('checkpoint'));
+  Future<void> checkpoint() async {
+    await host.send<CheckpointResponse>(const CheckpointRequest());
   }
 
   // ─── WriteBudget enforcement ─────────────────────────────────────
@@ -151,45 +139,59 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
   Future<void> beginRun({
     required String runId,
     required WriteBudget budget,
-  }) {
-    return Future<void>.error(EnvelopeNotWiredError('beginRun'));
+  }) async {
+    await host.send<BeginRunResponse>(
+      BeginRunRequest(runId: runId, budget: budget),
+    );
   }
 
   @override
-  Future<void> endRun(String runId) {
-    return Future<void>.error(EnvelopeNotWiredError('endRun'));
+  Future<void> endRun(String runId) async {
+    await host.send<EndRunResponse>(EndRunRequest(runId));
   }
 
   @override
-  Future<WriteBudget?> remainingBudget(String runId) {
-    return Future<WriteBudget?>.error(EnvelopeNotWiredError('remainingBudget'));
+  Future<WriteBudget?> remainingBudget(String runId) async {
+    final r = await host.send<RemainingBudgetResponse>(
+      RemainingBudgetRequest(runId),
+    );
+    return r.budget;
   }
 
   // ─── Node CRUD ───────────────────────────────────────────────────
 
   @override
-  Future<NodeId> persist(NodeDraft draft, {required Scope scope}) {
-    return Future<NodeId>.error(EnvelopeNotWiredError('persist'));
+  Future<NodeId> persist(NodeDraft draft, {required Scope scope}) async {
+    final r = await host.send<PersistResponse>(
+      PersistRequest(draft: draft, scope: scope),
+    );
+    return r.id;
   }
 
   @override
-  Future<Node?> get(NodeId id) {
-    return Future<Node?>.error(EnvelopeNotWiredError('get'));
+  Future<Node?> get(NodeId id) async {
+    final r = await host.send<GetNodeResponse>(GetNodeRequest(id));
+    return r.node;
   }
 
   @override
-  Future<List<Node>> getMany(List<NodeId> ids) {
-    return Future<List<Node>>.error(EnvelopeNotWiredError('getMany'));
+  Future<List<Node>> getMany(List<NodeId> ids) async {
+    final r = await host.send<GetManyResponse>(GetManyRequest(ids));
+    return r.nodes;
   }
 
   @override
-  Future<void> demote(NodeId id, DemotionReason reason) {
-    return Future<void>.error(EnvelopeNotWiredError('demote'));
+  Future<void> demote(NodeId id, DemotionReason reason) async {
+    await host.send<DemoteResponse>(
+      DemoteRequest(id: id, reason: reason),
+    );
   }
 
   @override
-  Future<void> forget(NodeId id, ForgetReason reason) {
-    return Future<void>.error(EnvelopeNotWiredError('forget'));
+  Future<void> forget(NodeId id, ForgetReason reason) async {
+    await host.send<ForgetResponse>(
+      ForgetRequest(id: id, reason: reason),
+    );
   }
 
   // ─── Edges ───────────────────────────────────────────────────────
@@ -202,8 +204,18 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) {
-    return Future<EdgeId>.error(EnvelopeNotWiredError('edge'));
+  }) async {
+    final r = await host.send<CreateEdgeResponse>(
+      CreateEdgeRequest(
+        from: from,
+        type: type,
+        to: to,
+        scope: scope,
+        weight: weight,
+        attrs: attrs,
+      ),
+    );
+    return r.id;
   }
 
   @override
@@ -211,42 +223,72 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
     NodeId id, {
     EdgeDirection direction = EdgeDirection.both,
     Set<EdgeType>? types,
-  }) {
-    return Future<List<Edge>>.error(EnvelopeNotWiredError('edgesOf'));
+  }) async {
+    final r = await host.send<EdgesOfResponse>(
+      EdgesOfRequest(id: id, direction: direction, types: types),
+    );
+    return r.edges;
   }
 
   // ─── Node-type registry ──────────────────────────────────────────
 
   @override
-  Future<void> registerNodeType(NodeTypeDecl decl) {
-    return Future<void>.error(EnvelopeNotWiredError('registerNodeType'));
-  }
-
-  @override
-  Future<List<NodeTypeDecl>> listNodeTypes() {
-    return Future<List<NodeTypeDecl>>.error(
-      EnvelopeNotWiredError('listNodeTypes'),
+  Future<void> registerNodeType(NodeTypeDecl decl) async {
+    await host.send<RegisterNodeTypeResponse>(
+      RegisterNodeTypeRequest(decl),
     );
   }
 
   @override
-  Future<NodeTypeDecl?> getNodeType(String typeName) {
-    return Future<NodeTypeDecl?>.error(EnvelopeNotWiredError('getNodeType'));
+  Future<List<NodeTypeDecl>> listNodeTypes() async {
+    final r = await host.send<ListNodeTypesResponse>(
+      const ListNodeTypesRequest(),
+    );
+    return r.types;
+  }
+
+  @override
+  Future<NodeTypeDecl?> getNodeType(String typeName) async {
+    final r = await host.send<GetNodeTypeResponse>(
+      GetNodeTypeRequest(typeName),
+    );
+    return r.decl;
   }
 
   // ─── Retrieval ───────────────────────────────────────────────────
 
   @override
-  Future<RecallResult> recall(RecallQuery query) {
-    return Future<RecallResult>.error(EnvelopeNotWiredError('recall'));
+  Future<RecallResult> recall(RecallQuery query) async {
+    if (query.reRank != null) {
+      // Closures cannot cross the SendPort boundary. The contract
+      // explicitly forbids LLM re-ranking through this adapter — the
+      // caller must instead run the recall and re-rank locally on the
+      // returned candidates.
+      throw ArgumentError.value(
+        query.reRank,
+        'query.reRank',
+        'RecallQuery.reRank is not supported across the isolate boundary '
+            '— closures are not sendable. Run recall without reRank, '
+            'then re-rank the returned candidates on the caller side.',
+      );
+    }
+    final r = await host.send<RecallResponse>(RecallRequest(query));
+    return r.result;
   }
 
   @override
   Stream<Node> stream(StreamQuery query) {
-    // Stream-returning methods report failure on the stream itself
-    // so callers using `await for` see a typed error rather than a
-    // silent empty stream.
-    return Stream<Node>.error(EnvelopeNotWiredError('stream'));
+    final streamId = host.streamIdAllocator.next();
+    final rawStream = host.openStream<Node>(
+      OpenStreamQueryRequest(
+        streamId: streamId,
+        query: query,
+        initialCredits: streamQueryInitialCredits,
+      ),
+      streamId: streamId,
+      payloadAdapter: (p) => p as Node,
+    );
+    return _wrapWithAutoCredits(rawStream, streamId);
   }
 
   // ─── Classification ──────────────────────────────────────────────
@@ -255,15 +297,18 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) {
-    return Future<ClassificationResult>.error(
-      EnvelopeNotWiredError('classify'),
+  }) async {
+    final r = await host.send<ClassifyResponse>(
+      ClassifyRequest(embedding: embedding, target: target),
     );
+    return r.result;
   }
 
   @override
-  Future<void> updateCentroid(String forKey, Vec centroid) {
-    return Future<void>.error(EnvelopeNotWiredError('updateCentroid'));
+  Future<void> updateCentroid(String forKey, Vec centroid) async {
+    await host.send<UpdateCentroidResponse>(
+      UpdateCentroidRequest(forKey: forKey, centroid: centroid),
+    );
   }
 
   @override
@@ -272,30 +317,43 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
     required double low,
     required double high,
     int limit = 200,
-  }) {
-    return Future<List<NodeId>>.error(EnvelopeNotWiredError('findUncertain'));
+  }) async {
+    final r = await host.send<FindUncertainResponse>(
+      FindUncertainRequest(
+        forKey: forKey,
+        low: low,
+        high: high,
+        limit: limit,
+      ),
+    );
+    return r.ids;
   }
 
   // ─── Stacks ──────────────────────────────────────────────────────
 
   @override
-  StackApi get stacks => _stacks ??= _UnwiredStackApi();
+  StackApi get stacks => _stacks ??= _IsolateStackApi(this);
 
   // ─── Trails ──────────────────────────────────────────────────────
 
   @override
-  Future<TrailId> openTrail(ProcedureRunRef run) {
-    return Future<TrailId>.error(EnvelopeNotWiredError('openTrail'));
+  Future<TrailId> openTrail(ProcedureRunRef run) async {
+    final r = await host.send<OpenTrailResponse>(OpenTrailRequest(run));
+    return r.id;
   }
 
   @override
-  Future<void> appendTrail(TrailId id, TrailEntry entry) {
-    return Future<void>.error(EnvelopeNotWiredError('appendTrail'));
+  Future<void> appendTrail(TrailId id, TrailEntry entry) async {
+    await host.send<AppendTrailResponse>(
+      AppendTrailRequest(id: id, entry: entry),
+    );
   }
 
   @override
-  Future<void> closeTrail(TrailId id, TrailOutcome outcome) {
-    return Future<void>.error(EnvelopeNotWiredError('closeTrail'));
+  Future<void> closeTrail(TrailId id, TrailOutcome outcome) async {
+    await host.send<TrailCloseResponse>(
+      TrailCloseRequest(id: id, outcome: outcome),
+    );
   }
 
   /// A.81 — Backpressure proof.
@@ -317,16 +375,24 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
       streamId: streamId,
       payloadAdapter: (p) => p as TrailEntry,
     );
-    final out = StreamController<TrailEntry>();
-    StreamSubscription<TrailEntry>? sub;
+    return _wrapWithAutoCredits(rawStream, streamId);
+  }
+
+  /// Returns a stream that mirrors [raw] and auto-pulls one credit
+  /// per delivered chunk. The producer keeps a sliding window equal
+  /// to the open envelope's `initialCredits`.
+  ///
+  /// On consumer cancel, closes the upstream stream via
+  /// `host.closeStream(streamId)`. Errors from a stale stream id on
+  /// the auto-pull are silently swallowed — the producer may have
+  /// completed between the chunk's send and our pull.
+  Stream<T> _wrapWithAutoCredits<T>(Stream<T> raw, StreamId streamId) {
+    final out = StreamController<T>();
+    StreamSubscription<T>? sub;
     out.onListen = () {
-      sub = rawStream.listen(
-        (entry) {
-          out.add(entry);
-          // Auto-replenish so the producer keeps a steady window.
-          // Errors from a stale stream id are silently swallowed —
-          // the producer may have completed between the chunk's
-          // send and our pull.
+      sub = raw.listen(
+        (item) {
+          out.add(item);
           () async {
             try {
               await host.pullCredits(streamId, 1);
@@ -348,10 +414,44 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
     return out.stream;
   }
 
+  /// Returns a stream that mirrors [raw] without credit replenishment —
+  /// for unbounded streams whose only termination signal is cancellation
+  /// (`events`, `stacks.events`).
+  ///
+  /// On consumer cancel, fires `host.cancel(token)` then
+  /// `host.closeStream(streamId)`.
+  Stream<T> _wrapWithCancellation<T>(
+    Stream<T> raw,
+    StreamId streamId,
+    CancellationToken token,
+  ) {
+    final out = StreamController<T>();
+    StreamSubscription<T>? sub;
+    out.onListen = () {
+      sub = raw.listen(
+        out.add,
+        onError: out.addError,
+        onDone: out.close,
+      );
+    };
+    out.onCancel = () async {
+      await sub?.cancel();
+      try {
+        await host.cancel(token);
+      } on IsolateBoundaryException {
+        // Already terminated.
+      } on StateError {
+        // Host is mid-shutdown.
+      }
+      await host.closeStream(streamId);
+    };
+    return out.stream;
+  }
+
   // ─── Migrations ──────────────────────────────────────────────────
 
   @override
-  MigrationApi get migrations => _migrations ??= _UnwiredMigrationApi();
+  MigrationApi get migrations => _migrations ??= _IsolateMigrationApi(this);
 
   // ─── Observability ───────────────────────────────────────────────
 
@@ -370,27 +470,7 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
       streamId: streamId,
       payloadAdapter: (p) => p as MemoryEvent,
     );
-    final out = StreamController<MemoryEvent>();
-    StreamSubscription<MemoryEvent>? sub;
-    out.onListen = () {
-      sub = rawStream.listen(
-        out.add,
-        onError: out.addError,
-        onDone: out.close,
-      );
-    };
-    out.onCancel = () async {
-      await sub?.cancel();
-      try {
-        await host.cancel(token);
-      } on IsolateBoundaryException {
-        // Already terminated.
-      } on StateError {
-        // Host is mid-shutdown.
-      }
-      await host.closeStream(streamId);
-    };
-    return out.stream;
+    return _wrapWithCancellation(rawStream, streamId, token);
   }
 
   @override
@@ -414,32 +494,43 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
 // canonical in-process stack/migration implementations belong in
 // their own modules.
 
-class _UnwiredStackApi implements StackApi {
+/// Concrete [StackApi] for the isolate client — marshals every call
+/// through the parent client's host.
+class _IsolateStackApi implements StackApi {
+  final TomBrainMemoryIsolateClient _client;
+  _IsolateStackApi(this._client);
+
+  TomBrainMemoryIsolateHost get _host => _client.host;
+
   @override
-  Future<List<StackSummary>> list() {
-    return Future<List<StackSummary>>.error(
-      EnvelopeNotWiredError('stacks.list'),
+  Future<List<StackSummary>> list() async {
+    final r = await _host.send<StacksListResponse>(
+      const StacksListRequest(),
+    );
+    return r.summaries;
+  }
+
+  @override
+  Future<StackInfo?> info(String name) async {
+    final r = await _host.send<StacksInfoResponse>(StacksInfoRequest(name));
+    return r.info;
+  }
+
+  @override
+  Future<void> create(StackDecl decl) async {
+    await _host.send<StacksCreateResponse>(StacksCreateRequest(decl));
+  }
+
+  @override
+  Future<void> updatePolicy(String name, StackPolicy policy) async {
+    await _host.send<StacksUpdatePolicyResponse>(
+      StacksUpdatePolicyRequest(name: name, policy: policy),
     );
   }
 
   @override
-  Future<StackInfo?> info(String name) {
-    return Future<StackInfo?>.error(EnvelopeNotWiredError('stacks.info'));
-  }
-
-  @override
-  Future<void> create(StackDecl decl) {
-    return Future<void>.error(EnvelopeNotWiredError('stacks.create'));
-  }
-
-  @override
-  Future<void> updatePolicy(String name, StackPolicy policy) {
-    return Future<void>.error(EnvelopeNotWiredError('stacks.updatePolicy'));
-  }
-
-  @override
-  Future<void> delete(String name) {
-    return Future<void>.error(EnvelopeNotWiredError('stacks.delete'));
+  Future<void> delete(String name) async {
+    await _host.send<StacksDeleteResponse>(StacksDeleteRequest(name));
   }
 
   @override
@@ -449,18 +540,31 @@ class _UnwiredStackApi implements StackApi {
     double priority = 0.0,
     Map<String, Object?>? attrs,
     Scope? scope,
-  }) {
-    return Future<StackEntryId>.error(EnvelopeNotWiredError('stacks.push'));
+  }) async {
+    final r = await _host.send<StacksPushResponse>(
+      StacksPushRequest(
+        name: name,
+        entry: entry,
+        priority: priority,
+        attrs: attrs,
+        scope: scope,
+      ),
+    );
+    return r.id;
   }
 
   @override
-  Future<List<StackEntry>> peek(String name, {int k = 16}) {
-    return Future<List<StackEntry>>.error(EnvelopeNotWiredError('stacks.peek'));
+  Future<List<StackEntry>> peek(String name, {int k = 16}) async {
+    final r = await _host.send<StacksPeekResponse>(
+      StacksPeekRequest(name: name, k: k),
+    );
+    return r.entries;
   }
 
   @override
-  Future<StackEntry?> pop(String name) {
-    return Future<StackEntry?>.error(EnvelopeNotWiredError('stacks.pop'));
+  Future<StackEntry?> pop(String name) async {
+    final r = await _host.send<StacksPopResponse>(StacksPopRequest(name));
+    return r.entry;
   }
 
   @override
@@ -470,60 +574,104 @@ class _UnwiredStackApi implements StackApi {
     double? priority,
     StackEntryStatus? status,
     Map<String, Object?>? attrs,
-  }) {
-    return Future<void>.error(EnvelopeNotWiredError('stacks.update'));
+  }) async {
+    await _host.send<StacksUpdateResponse>(
+      StacksUpdateRequest(
+        name: name,
+        entry: entry,
+        priority: priority,
+        status: status,
+        attrs: attrs,
+      ),
+    );
   }
 
   @override
-  Future<void> remove(String name, NodeId entry) {
-    return Future<void>.error(EnvelopeNotWiredError('stacks.remove'));
+  Future<void> remove(String name, NodeId entry) async {
+    await _host.send<StacksRemoveResponse>(
+      StacksRemoveRequest(name: name, entry: entry),
+    );
   }
 
   @override
   Stream<StackEntry> streamArchived(String name, {int? limit}) {
-    return Stream<StackEntry>.error(
-      EnvelopeNotWiredError('stacks.streamArchived'),
+    final streamId = _host.streamIdAllocator.next();
+    final raw = _host.openStream<StackEntry>(
+      OpenStacksArchivedStreamRequest(
+        streamId: streamId,
+        name: name,
+        limit: limit,
+        initialCredits: _client.stacksArchivedInitialCredits,
+      ),
+      streamId: streamId,
+      payloadAdapter: (p) => p as StackEntry,
     );
+    return _client._wrapWithAutoCredits(raw, streamId);
   }
 
   @override
   Stream<StackEvent> events(String name) {
-    return Stream<StackEvent>.error(EnvelopeNotWiredError('stacks.events'));
+    final token = _host.cancellationAllocator.next();
+    final streamId = _host.streamIdAllocator.next();
+    final raw = _host.openStream<StackEvent>(
+      OpenStacksEventsStreamRequest(
+        streamId: streamId,
+        name: name,
+        cancellation: token,
+      ),
+      streamId: streamId,
+      payloadAdapter: (p) => p as StackEvent,
+    );
+    return _client._wrapWithCancellation(raw, streamId, token);
   }
 }
 
-class _UnwiredMigrationApi implements MigrationApi {
+/// Concrete [MigrationApi] for the isolate client.
+class _IsolateMigrationApi implements MigrationApi {
+  final TomBrainMemoryIsolateClient _client;
+  _IsolateMigrationApi(this._client);
+
+  TomBrainMemoryIsolateHost get _host => _client.host;
+
   @override
-  Future<void> start(MigrationDecl decl) {
-    return Future<void>.error(EnvelopeNotWiredError('migrations.start'));
+  Future<void> start(MigrationDecl decl) async {
+    await _host.send<MigrationsStartResponse>(MigrationsStartRequest(decl));
   }
 
   @override
-  Future<MigrationCursor?> cursor(String migrationId) {
-    return Future<MigrationCursor?>.error(
-      EnvelopeNotWiredError('migrations.cursor'),
+  Future<MigrationCursor?> cursor(String migrationId) async {
+    final r = await _host.send<MigrationsCursorResponse>(
+      MigrationsCursorRequest(migrationId),
     );
+    return r.cursor;
   }
 
   @override
   Future<void> saveCursor(
     String migrationId,
     Map<String, Object?> position,
-  ) {
-    return Future<void>.error(EnvelopeNotWiredError('migrations.saveCursor'));
-  }
-
-  @override
-  Future<MigrationStatus?> status(String migrationId) {
-    return Future<MigrationStatus?>.error(
-      EnvelopeNotWiredError('migrations.status'),
+  ) async {
+    await _host.send<MigrationsSaveCursorResponse>(
+      MigrationsSaveCursorRequest(
+        migrationId: migrationId,
+        position: position,
+      ),
     );
   }
 
   @override
-  Future<List<MigrationStatus>> listInProgress() {
-    return Future<List<MigrationStatus>>.error(
-      EnvelopeNotWiredError('migrations.listInProgress'),
+  Future<MigrationStatus?> status(String migrationId) async {
+    final r = await _host.send<MigrationsStatusResponse>(
+      MigrationsStatusRequest(migrationId),
     );
+    return r.status;
+  }
+
+  @override
+  Future<List<MigrationStatus>> listInProgress() async {
+    final r = await _host.send<MigrationsListInProgressResponse>(
+      const MigrationsListInProgressRequest(),
+    );
+    return r.statuses;
   }
 }

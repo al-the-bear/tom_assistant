@@ -40,17 +40,21 @@
 //               A.79's skeleton (`open`, `close`, `stats`) round-
 //               trip end-to-end; every other method throws an
 //               `EnvelopeNotWiredError` that A.81 will lift.
-//   - A.81    — full envelope catalogue (one per
-//               `TomBrainMemoryClient` method) + cancellation
-//               tokens for `recall`/`stream` + backpressure for
-//               `readTrail`.
-//   - A.82    — round-trip tests for every envelope through a real
-//               isolate.
+//   - A.81 ✅ — streaming + cancellation protocol shape for all
+//               five stream-returning methods, plus end-to-end
+//               wiring for `readTrail` (backpressure) and `events`
+//               (cancellation).
+//   - A.82 ✅ — full envelope catalogue (one per remaining
+//               `TomBrainMemoryClient` method) + every method
+//               (including `stacks` / `migrations` and the
+//               remaining three streams) round-trips through the
+//               isolate boundary. `EnvelopeNotWiredError` retired.
 //   - A.85    — multi-machine variant (RPC over the canonical-
 //               authority transport described in § 10).
 
 export 'isolate_cancellation_protocol.dart';
 export 'isolate_envelopes.dart';
+export 'isolate_envelopes_full.dart';
 export 'isolate_messages.dart';
 export 'isolate_stream_protocol.dart';
 export 'memory_factory.dart';

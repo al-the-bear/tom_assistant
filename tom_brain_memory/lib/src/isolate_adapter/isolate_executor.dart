@@ -46,8 +46,12 @@ import 'package:tom_core_kernel/tom_core_kernel.dart' show TomExecutor, TomWorke
 import '../api/memory_event.dart';
 import '../api/memory_stats.dart';
 import '../api/tom_brain_memory.dart';
+import '../nodes/node.dart';
+import '../retrieval/stream_query.dart';
+import '../stacks/stack_types.dart';
 import 'isolate_cancellation_protocol.dart';
 import 'isolate_envelopes.dart';
+import 'isolate_envelopes_full.dart';
 import 'isolate_messages.dart';
 import 'isolate_stream_protocol.dart';
 import 'memory_factory.dart';
@@ -189,6 +193,270 @@ class MemoryIsolateExecutor extends TomExecutor {
           );
           return StreamOpenedResponse(streamId);
 
+        // ─── A.82: lifecycle rest ────────────────────────────────
+        case CheckpointRequest():
+          await _requireOpenMemory().checkpoint();
+          return const CheckpointResponse();
+
+        // ─── A.82: WriteBudget enforcement ───────────────────────
+        case BeginRunRequest(:final runId, :final budget):
+          await _requireOpenMemory()
+              .beginRun(runId: runId, budget: budget);
+          return const BeginRunResponse();
+
+        case EndRunRequest(:final runId):
+          await _requireOpenMemory().endRun(runId);
+          return const EndRunResponse();
+
+        case RemainingBudgetRequest(:final runId):
+          final b = await _requireOpenMemory().remainingBudget(runId);
+          return RemainingBudgetResponse(b);
+
+        // ─── A.82: node CRUD ─────────────────────────────────────
+        case PersistRequest(:final draft, :final scope):
+          final id = await _requireOpenMemory()
+              .persist(draft, scope: scope);
+          return PersistResponse(id);
+
+        case GetNodeRequest(:final id):
+          final n = await _requireOpenMemory().get(id);
+          return GetNodeResponse(n);
+
+        case GetManyRequest(:final ids):
+          final ns = await _requireOpenMemory().getMany(ids);
+          return GetManyResponse(ns);
+
+        case DemoteRequest(:final id, :final reason):
+          await _requireOpenMemory().demote(id, reason);
+          return const DemoteResponse();
+
+        case ForgetRequest(:final id, :final reason):
+          await _requireOpenMemory().forget(id, reason);
+          return const ForgetResponse();
+
+        // ─── A.82: edges ─────────────────────────────────────────
+        case CreateEdgeRequest(
+              :final from,
+              :final type,
+              :final to,
+              :final scope,
+              :final weight,
+              :final attrs,
+            ):
+          final eid = await _requireOpenMemory().edge(
+            from,
+            type,
+            to,
+            scope: scope,
+            weight: weight,
+            attrs: attrs,
+          );
+          return CreateEdgeResponse(eid);
+
+        case EdgesOfRequest(:final id, :final direction, :final types):
+          final es = await _requireOpenMemory()
+              .edgesOf(id, direction: direction, types: types);
+          return EdgesOfResponse(es);
+
+        // ─── A.82: node-type registry ────────────────────────────
+        case RegisterNodeTypeRequest(:final decl):
+          await _requireOpenMemory().registerNodeType(decl);
+          return const RegisterNodeTypeResponse();
+
+        case ListNodeTypesRequest():
+          final ts = await _requireOpenMemory().listNodeTypes();
+          return ListNodeTypesResponse(ts);
+
+        case GetNodeTypeRequest(:final typeName):
+          final t = await _requireOpenMemory().getNodeType(typeName);
+          return GetNodeTypeResponse(t);
+
+        // ─── A.82: retrieval ─────────────────────────────────────
+        case RecallRequest(:final query):
+          final r = await _requireOpenMemory().recall(query);
+          return RecallResponse(r);
+
+        case OpenStreamQueryRequest(
+              :final streamId,
+              :final query,
+              :final initialCredits,
+              :final cancellation,
+            ):
+          final memory = _requireOpenMemory();
+          _startStreamQueryProducer(
+            streamId: streamId,
+            query: query,
+            initialCredits: initialCredits,
+            cancellation: cancellation,
+            memory: memory,
+          );
+          return StreamOpenedResponse(streamId);
+
+        // ─── A.82: classification ────────────────────────────────
+        case ClassifyRequest(:final embedding, :final target):
+          final r = await _requireOpenMemory()
+              .classify(embedding, target: target);
+          return ClassifyResponse(r);
+
+        case UpdateCentroidRequest(:final forKey, :final centroid):
+          await _requireOpenMemory().updateCentroid(forKey, centroid);
+          return const UpdateCentroidResponse();
+
+        case FindUncertainRequest(
+              :final forKey,
+              :final low,
+              :final high,
+              :final limit,
+            ):
+          final ids = await _requireOpenMemory().findUncertain(
+            forKey: forKey,
+            low: low,
+            high: high,
+            limit: limit,
+          );
+          return FindUncertainResponse(ids);
+
+        // ─── A.82: stacks ────────────────────────────────────────
+        case StacksListRequest():
+          final s = await _requireOpenMemory().stacks.list();
+          return StacksListResponse(s);
+
+        case StacksInfoRequest(:final name):
+          final i = await _requireOpenMemory().stacks.info(name);
+          return StacksInfoResponse(i);
+
+        case StacksCreateRequest(:final decl):
+          await _requireOpenMemory().stacks.create(decl);
+          return const StacksCreateResponse();
+
+        case StacksUpdatePolicyRequest(:final name, :final policy):
+          await _requireOpenMemory().stacks.updatePolicy(name, policy);
+          return const StacksUpdatePolicyResponse();
+
+        case StacksDeleteRequest(:final name):
+          await _requireOpenMemory().stacks.delete(name);
+          return const StacksDeleteResponse();
+
+        case StacksPushRequest(
+              :final name,
+              :final entry,
+              :final priority,
+              :final attrs,
+              :final scope,
+            ):
+          final id = await _requireOpenMemory().stacks.push(
+            name,
+            entry,
+            priority: priority,
+            attrs: attrs,
+            scope: scope,
+          );
+          return StacksPushResponse(id);
+
+        case StacksPeekRequest(:final name, :final k):
+          final es = await _requireOpenMemory().stacks.peek(name, k: k);
+          return StacksPeekResponse(es);
+
+        case StacksPopRequest(:final name):
+          final e = await _requireOpenMemory().stacks.pop(name);
+          return StacksPopResponse(e);
+
+        case StacksUpdateRequest(
+              :final name,
+              :final entry,
+              :final priority,
+              :final status,
+              :final attrs,
+            ):
+          await _requireOpenMemory().stacks.update(
+            name,
+            entry,
+            priority: priority,
+            status: status,
+            attrs: attrs,
+          );
+          return const StacksUpdateResponse();
+
+        case StacksRemoveRequest(:final name, :final entry):
+          await _requireOpenMemory().stacks.remove(name, entry);
+          return const StacksRemoveResponse();
+
+        case OpenStacksArchivedStreamRequest(
+              :final streamId,
+              :final name,
+              :final limit,
+              :final initialCredits,
+              :final cancellation,
+            ):
+          final memory = _requireOpenMemory();
+          _startStacksArchivedProducer(
+            streamId: streamId,
+            name: name,
+            limit: limit,
+            initialCredits: initialCredits,
+            cancellation: cancellation,
+            memory: memory,
+          );
+          return StreamOpenedResponse(streamId);
+
+        case OpenStacksEventsStreamRequest(
+              :final streamId,
+              :final name,
+              :final cancellation,
+            ):
+          final memory = _requireOpenMemory();
+          _startStacksEventsProducer(
+            streamId: streamId,
+            name: name,
+            cancellation: cancellation,
+            memory: memory,
+          );
+          return StreamOpenedResponse(streamId);
+
+        // ─── A.82: trails ────────────────────────────────────────
+        case OpenTrailRequest(:final run):
+          final id = await _requireOpenMemory().openTrail(run);
+          return OpenTrailResponse(id);
+
+        case AppendTrailRequest(:final id, :final entry):
+          await _requireOpenMemory().appendTrail(id, entry);
+          return const AppendTrailResponse();
+
+        case TrailCloseRequest(:final id, :final outcome):
+          await _requireOpenMemory().closeTrail(id, outcome);
+          return const TrailCloseResponse();
+
+        // ─── A.82: migrations ────────────────────────────────────
+        case MigrationsStartRequest(:final decl):
+          await _requireOpenMemory().migrations.start(decl);
+          return const MigrationsStartResponse();
+
+        case MigrationsCursorRequest(:final migrationId):
+          final c = await _requireOpenMemory()
+              .migrations
+              .cursor(migrationId);
+          return MigrationsCursorResponse(c);
+
+        case MigrationsSaveCursorRequest(
+              :final migrationId,
+              :final position,
+            ):
+          await _requireOpenMemory()
+              .migrations
+              .saveCursor(migrationId, position);
+          return const MigrationsSaveCursorResponse();
+
+        case MigrationsStatusRequest(:final migrationId):
+          final s = await _requireOpenMemory()
+              .migrations
+              .status(migrationId);
+          return MigrationsStatusResponse(s);
+
+        case MigrationsListInProgressRequest():
+          final ss =
+              await _requireOpenMemory().migrations.listInProgress();
+          return MigrationsListInProgressResponse(ss);
+
         default:
           return IsolateErrorResponse(
             exceptionType: 'UnknownIsolateRequest',
@@ -293,6 +561,203 @@ class MemoryIsolateExecutor extends TomExecutor {
         _trackers.remove(streamId.id);
         _streamControls.remove(streamId.id);
         handle?.dispose();
+      }
+    }());
+  }
+
+  /// Spawns a backpressured producer over `stream(StreamQuery)`. Same
+  /// shape as `_startReadTrailProducer` (chunk by chunk, credits per
+  /// chunk) — the source happens to be `memory.stream(query)`.
+  void _startStreamQueryProducer({
+    required StreamId streamId,
+    required StreamQuery query,
+    required int initialCredits,
+    required CancellationToken? cancellation,
+    required TomBrainMemory memory,
+  }) {
+    _startBackpressuredProducer<Node>(
+      streamId: streamId,
+      initialCredits: initialCredits,
+      cancellation: cancellation,
+      source: () => memory.stream(query),
+    );
+  }
+
+  /// Spawns a backpressured producer over `stacks.streamArchived`.
+  void _startStacksArchivedProducer({
+    required StreamId streamId,
+    required String name,
+    required int? limit,
+    required int initialCredits,
+    required CancellationToken? cancellation,
+    required TomBrainMemory memory,
+  }) {
+    _startBackpressuredProducer<StackEntry>(
+      streamId: streamId,
+      initialCredits: initialCredits,
+      cancellation: cancellation,
+      source: () => memory.stacks.streamArchived(name, limit: limit),
+    );
+  }
+
+  /// Spawns an unbounded producer over `stacks.events(name)`. Same
+  /// shape as the lifecycle `events()` producer.
+  void _startStacksEventsProducer({
+    required StreamId streamId,
+    required String name,
+    required CancellationToken cancellation,
+    required TomBrainMemory memory,
+  }) {
+    _startUnboundedProducer<StackEvent>(
+      streamId: streamId,
+      cancellation: cancellation,
+      source: () => memory.stacks.events(name),
+    );
+  }
+
+  /// Generic backpressured producer. Pulls one item at a time from
+  /// [source], waits for credit on each push, honors close/cancel at
+  /// every checkpoint. Used by `readTrail`, `stream(query)`, and
+  /// `stacks.streamArchived` — they all share this contract.
+  void _startBackpressuredProducer<T>({
+    required StreamId streamId,
+    required int initialCredits,
+    required CancellationToken? cancellation,
+    required Stream<T> Function() source,
+  }) {
+    final tracker = BackpressureTracker(initialCredits: initialCredits);
+    _trackers[streamId.id] = tracker;
+    final control = _StreamControl();
+    _streamControls[streamId.id] = control;
+
+    CancellationHandle? handle;
+    if (cancellation != null) {
+      handle = _cancellation.register(cancellation);
+    }
+
+    unawaited(() async {
+      var seq = 0;
+      try {
+        await for (final item in source()) {
+          if (control.closeRequested ||
+              (handle?.isCancelled ?? false)) {
+            _sendStreamMessage(StreamCancelledEnvelope(
+              streamId: streamId,
+              token: cancellation,
+            ));
+            return;
+          }
+          try {
+            await tracker.awaitCredit();
+          } on StateError {
+            _sendStreamMessage(StreamCancelledEnvelope(
+              streamId: streamId,
+              token: cancellation,
+            ));
+            return;
+          }
+          if (control.closeRequested ||
+              (handle?.isCancelled ?? false)) {
+            _sendStreamMessage(StreamCancelledEnvelope(
+              streamId: streamId,
+              token: cancellation,
+            ));
+            return;
+          }
+          _sendStreamMessage(StreamChunkEnvelope(
+            streamId: streamId,
+            sequence: seq,
+            payload: item,
+          ));
+          tracker.consume(1);
+          seq += 1;
+        }
+        _sendStreamMessage(StreamCompleteEnvelope(
+          streamId: streamId,
+          sequence: seq,
+        ));
+      } catch (e) {
+        _sendStreamMessage(StreamErrorEnvelope(
+          streamId: streamId,
+          message: e.toString(),
+          exceptionType: e.runtimeType.toString(),
+        ));
+      } finally {
+        if (!tracker.isClosed) tracker.close();
+        _trackers.remove(streamId.id);
+        _streamControls.remove(streamId.id);
+        handle?.dispose();
+      }
+    }());
+  }
+
+  /// Generic unbounded producer. No backpressure tracker; termination
+  /// is purely via cancellation / close / source completion.
+  void _startUnboundedProducer<T>({
+    required StreamId streamId,
+    required CancellationToken cancellation,
+    required Stream<T> Function() source,
+  }) {
+    final control = _StreamControl();
+    _streamControls[streamId.id] = control;
+    final handle = _cancellation.register(cancellation);
+
+    unawaited(() async {
+      var seq = 0;
+      StreamSubscription<T>? sub;
+      try {
+        final controller = Completer<void>();
+        sub = source().listen(
+          (item) {
+            if (control.closeRequested || handle.isCancelled) return;
+            _sendStreamMessage(StreamChunkEnvelope(
+              streamId: streamId,
+              sequence: seq,
+              payload: item,
+            ));
+            seq += 1;
+          },
+          onError: (Object e) {
+            if (!controller.isCompleted) {
+              _sendStreamMessage(StreamErrorEnvelope(
+                streamId: streamId,
+                message: e.toString(),
+                exceptionType: e.runtimeType.toString(),
+              ));
+              controller.complete();
+            }
+          },
+          onDone: () {
+            if (!controller.isCompleted) {
+              _sendStreamMessage(StreamCompleteEnvelope(
+                streamId: streamId,
+                sequence: seq,
+              ));
+              controller.complete();
+            }
+          },
+        );
+        while (!controller.isCompleted) {
+          if (control.closeRequested || handle.isCancelled) {
+            _sendStreamMessage(StreamCancelledEnvelope(
+              streamId: streamId,
+              token: cancellation,
+            ));
+            controller.complete();
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 4));
+        }
+      } catch (e) {
+        _sendStreamMessage(StreamErrorEnvelope(
+          streamId: streamId,
+          message: e.toString(),
+          exceptionType: e.runtimeType.toString(),
+        ));
+      } finally {
+        await sub?.cancel();
+        _streamControls.remove(streamId.id);
+        handle.dispose();
       }
     }());
   }

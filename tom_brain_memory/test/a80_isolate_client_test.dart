@@ -1,29 +1,21 @@
 // A.80 — TomBrainMemoryIsolateClient.
 //
 // Exercises the thin client that wraps a `TomBrainMemoryIsolateHost`
-// and implements `TomBrainMemoryClient`. Three layers of assertions:
+// and implements `TomBrainMemoryClient`. Two layers of assertions:
 //
 //   1. Conformance — the client is a `TomBrainMemoryClient` and
 //      compiles against the interface without `noSuchMethod` or
 //      dynamic dispatch.
-//   2. Wired surface — methods whose envelope exists in A.79's
-//      skeleton (`open`, `close`, `stats`) round-trip through a
-//      real isolate and a top-level fake `TomBrainMemory`.
-//   3. Unwired surface — every other method throws
-//      `EnvelopeNotWiredError` with the right method name. Tested
-//      for the methods whose signatures take primitive arguments;
-//      methods with rich argument types (`persist`, `edge`,
-//      `registerNodeType`, `recall`, `openTrail`, `appendTrail`,
-//      `closeTrail`) are covered by the catalogue test once A.81
-//      ships their envelopes — pulling those into A.80 would couple
-//      this test to schemas owned by other modules. Stream-returning
-//      methods (`stream`, `readTrail`, `events`) surface the error
-//      on the stream itself; the proxy-returned sub-APIs (`stacks`,
-//      `migrations`) raise the same error on every method.
+//   2. Wired surface (at A.80) — methods whose envelope exists in
+//      A.79's skeleton (`open`, `close`, `stats`) round-trip
+//      through a real isolate and a top-level fake `TomBrainMemory`.
+//
+// The "unwired surface" group that lived here at A.80 has been
+// removed at A.82 along with `EnvelopeNotWiredError` — every method
+// is now wired and the full round-trip is verified by
+// `a82_full_catalogue_test.dart`.
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show NodeId, Vec, WriteBudget;
 import 'package:test/test.dart';
 
 // ─── Top-level fake + factory (must be top-level to be sendable) ──
@@ -182,190 +174,4 @@ void main() {
     );
   });
 
-  group('A.80 TomBrainMemoryIsolateClient — unwired surface', () {
-    late TomBrainMemoryIsolateHost host;
-    late TomBrainMemoryIsolateClient client;
-
-    setUp(() async {
-      host = TomBrainMemoryIsolateHost(factory: spawnFakeMemoryForA80);
-      client = TomBrainMemoryIsolateClient(host);
-      await host.spawn();
-      // The unwired methods must throw `EnvelopeNotWiredError`
-      // regardless of memory state — they never reach the host. We
-      // open memory so any accidental dispatch would surface as a
-      // different error (which the test would catch as a type
-      // mismatch).
-      await client.open(_fakeConfig());
-    });
-
-    tearDown(() async {
-      await host.shutdown();
-    });
-
-    Matcher throwsEnvelopeNotWired(String method, {String step = 'A.82'}) {
-      return throwsA(
-        isA<EnvelopeNotWiredError>()
-            .having((e) => e.method, 'method', method)
-            .having((e) => e.step, 'step', step),
-      );
-    }
-
-    Matcher streamErrorsEnvelopeNotWired(String method) {
-      return emitsError(
-        isA<EnvelopeNotWiredError>().having((e) => e.method, 'method', method),
-      );
-    }
-
-    // ─── Future-returning methods with primitive arguments ───────
-    //
-    // Methods whose signatures take rich types (`persist`, `edge`,
-    // `registerNodeType`, `recall`, `openTrail`, `appendTrail`,
-    // `closeTrail`) are covered when A.81 lands their envelopes —
-    // see the file header for the rationale.
-
-    test('checkpoint()', () {
-      expect(client.checkpoint(), throwsEnvelopeNotWired('checkpoint'));
-    });
-
-    test('beginRun()', () {
-      expect(
-        client.beginRun(
-          runId: 'r',
-          budget: WriteBudget(maxNodes: 1, maxEdges: 1, maxStackEntries: 1),
-        ),
-        throwsEnvelopeNotWired('beginRun'),
-      );
-    });
-
-    test('endRun()', () {
-      expect(client.endRun('r'), throwsEnvelopeNotWired('endRun'));
-    });
-
-    test('remainingBudget()', () {
-      expect(
-        client.remainingBudget('r'),
-        throwsEnvelopeNotWired('remainingBudget'),
-      );
-    });
-
-    test('get()', () {
-      expect(client.get(NodeId.generate()), throwsEnvelopeNotWired('get'));
-    });
-
-    test('getMany()', () {
-      expect(
-        client.getMany(const <NodeId>[]),
-        throwsEnvelopeNotWired('getMany'),
-      );
-    });
-
-    test('demote()', () {
-      expect(
-        client.demote(NodeId.generate(), DemotionReason.retentionHorizon),
-        throwsEnvelopeNotWired('demote'),
-      );
-    });
-
-    test('forget()', () {
-      expect(
-        client.forget(NodeId.generate(), ForgetReason.userRequested),
-        throwsEnvelopeNotWired('forget'),
-      );
-    });
-
-    test('edgesOf()', () {
-      expect(
-        client.edgesOf(NodeId.generate()),
-        throwsEnvelopeNotWired('edgesOf'),
-      );
-    });
-
-    test('listNodeTypes()', () {
-      expect(client.listNodeTypes(), throwsEnvelopeNotWired('listNodeTypes'));
-    });
-
-    test('getNodeType()', () {
-      expect(client.getNodeType('x'), throwsEnvelopeNotWired('getNodeType'));
-    });
-
-    test('classify()', () {
-      expect(
-        client.classify(Vec.fromList(const <double>[0.1, 0.2])),
-        throwsEnvelopeNotWired('classify'),
-      );
-    });
-
-    test('updateCentroid()', () {
-      expect(
-        client.updateCentroid('x', Vec.fromList(const <double>[0.1, 0.2])),
-        throwsEnvelopeNotWired('updateCentroid'),
-      );
-    });
-
-    test('findUncertain()', () {
-      expect(
-        client.findUncertain(forKey: 'x', low: 0.1, high: 0.5),
-        throwsEnvelopeNotWired('findUncertain'),
-      );
-    });
-
-    // ─── Stream-returning methods ────────────────────────────────
-    //
-    // `readTrail()` and `events()` were unwired at A.80; A.81 wires
-    // them end-to-end (backpressure proof + cancellation proof
-    // respectively). The remaining stream-returning methods
-    // (`stream`, `stacks.streamArchived`, `stacks.events`) stay
-    // unwired until A.82.
-
-    test('stream() surfaces error on the stream itself', () {
-      expect(
-        client.stream(
-          const StreamQuery(filter: SymbolicFilter()),
-        ),
-        streamErrorsEnvelopeNotWired('stream'),
-      );
-    });
-
-    // ─── Stack proxy ─────────────────────────────────────────────
-
-    test('stacks getter returns a usable proxy', () {
-      final stacks = client.stacks;
-      expect(stacks, isA<StackApi>());
-      // The same proxy is returned on subsequent calls (lazy cache).
-      expect(identical(client.stacks, stacks), isTrue);
-    });
-
-    test('stacks.list()', () {
-      expect(client.stacks.list(), throwsEnvelopeNotWired('stacks.list'));
-    });
-
-    test('stacks.push()', () {
-      expect(
-        client.stacks.push('s', NodeId.generate()),
-        throwsEnvelopeNotWired('stacks.push'),
-      );
-    });
-
-    test('stacks.events() surfaces error on the stream itself', () {
-      expect(
-        client.stacks.events('s'),
-        streamErrorsEnvelopeNotWired('stacks.events'),
-      );
-    });
-
-    // ─── Migration proxy ─────────────────────────────────────────
-
-    test('migrations getter returns a usable proxy', () {
-      final migrations = client.migrations;
-      expect(migrations, isA<MigrationApi>());
-      expect(identical(client.migrations, migrations), isTrue);
-    });
-
-    test('migrations.listInProgress()', () {
-      expect(
-        client.migrations.listInProgress(),
-        throwsEnvelopeNotWired('migrations.listInProgress'),
-      );
-    });
-  });
 }
