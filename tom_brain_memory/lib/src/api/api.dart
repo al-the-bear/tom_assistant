@@ -31,6 +31,9 @@
 //     `Scope` / `DemotionReason` / `ForgetReason` / `MemoryEvent` /
 //     `MemoryStats` lands here.
 //   - A.28+ — concrete `SqliteTomBrainMemory` implementation.
+//   - A.78 ✅ — `TomBrainMemoryClient` consumer-facing interface
+//     hoisted out of `TomBrainMemory`. `TomBrainMemory` is now the
+//     in-process marker base class that `implements` it.
 //
 // `MemoryConfig` (consumed by `open()`) lives under `config/` and is
 // exported from the top-level package barrel; it is intentionally not
@@ -40,3 +43,4 @@ export 'memory_event.dart';
 export 'memory_stats.dart';
 export 'scope.dart';
 export 'tom_brain_memory.dart';
+export 'tom_brain_memory_client.dart';
