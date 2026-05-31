@@ -155,14 +155,15 @@ export 'src/router/router_barrel.dart';
 // staged-handoff plan.
 export 'src/roles/roles_barrel.dart';
 
-// B.25 / B.26 — Embedding-service surface (Substrate Spec § 7).
+// B.25 / B.26 / B.27 — Embedding-service surface (Substrate Spec § 7).
 //
 // `EmbeddingService` (abstract contract; one implementation per
 // backend), `OllamaEmbeddingService` (prototype default backed by
-// Ollama `nomic-embed-text`), and the typed boundary failures
+// Ollama `nomic-embed-text`), the typed boundary failures
 // `EmbeddingDimensionMismatch` / `EmbeddingBackendEmpty` that
 // `embed()` and `embedBatch()` surface on backend defects (dim
-// mismatch ⇒ silent model swap; empty vector ⇒ daemon refused).
+// mismatch ⇒ silent model swap; empty vector ⇒ daemon refused),
+// and `EmbeddingProbeResult` (B.27).
 //
 // B.26 fills in `embedBatch(texts)` with concurrency-capped fan-out
 // over the same `embed()` path (Ollama's `/api/embeddings` is
@@ -171,12 +172,22 @@ export 'src/roles/roles_barrel.dart';
 // `embed()` calls are in flight at once; the returned list preserves
 // input order regardless of completion order.
 //
+// B.27 adds `EmbeddingService.probeIdentity()` — the boot-time
+// round-trip that validates the backend dim against the configured
+// identity and detects identity drift relative to a caller-supplied
+// `previousIdentity`. On drift, the returned `EmbeddingProbeResult`
+// carries a non-null `EmbeddingIdentityChanged` event (spec §
+// 10.2); the substrate facade (B.40+) forwards it onto
+// `events()`. Memory consumes the event to stamp the new identity
+// on subsequent vector rows while keeping old rows under their
+// original identity (`memory_specification.md` § 7.4 — cross-model
+// vectors are never silently mixed in cosine math).
+//
 // The consumer-facing value types (`EmbeddingResult`,
-// `EmbeddingModelIdentity`) ship through the `api/` barrel above
-// (B.9); the embedding service is the *producer* of those values.
+// `EmbeddingModelIdentity`, `EmbeddingIdentityChanged`) ship
+// through the `api/` barrel above (B.9); the embedding service is
+// the *producer* of those values.
 //
 // Still pending in the `embed/` module:
-//   * B.27 — Boot-time identity probe + `EmbeddingIdentityChanged`
-//     event emission on identity drift.
 //   * B.28 — Cross-implementation conformance tests.
 export 'src/embed/embed_barrel.dart';

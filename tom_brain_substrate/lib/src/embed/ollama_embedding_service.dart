@@ -25,17 +25,20 @@
 //
 //   - Hot-swap the model identity. The identity is fixed at
 //     construction; a substrate-side model change requires a new
-//     service instance. B.27 will add a boot-time probe that
-//     surfaces an `EmbeddingIdentityChanged` event when the new
-//     instance's identity differs from the last one memory stored,
-//     but the identity itself is still constructor-bound.
+//     service instance. B.27 added a boot-time probe
+//     ([probeIdentity]) that surfaces an `EmbeddingIdentityChanged`
+//     event when the new instance's identity differs from the last
+//     one memory stored, but the identity itself is still
+//     constructor-bound.
 //   - Validate the configured dimension against the backend's
-//     advertised dimension. Ollama's `/api/embeddings` does not
-//     expose per-model dims through `/api/tags`; the only way to
-//     learn the true dimension is to do an embedding call. B.27's
-//     boot-time probe will round-trip a fixed string and assert
-//     `actualDims == expectedIdentity.dims`; today the first real
-//     `embed()` call's dimension check serves the same role.
+//     advertised dimension at construction time. Ollama's
+//     `/api/embeddings` does not expose per-model dims through
+//     `/api/tags`; the only way to learn the true dimension is to
+//     do an embedding call. B.27's [probeIdentity] is the
+//     boot-time round-trip: it calls `embed(probeText)` and lets
+//     the existing `embed()` dim check surface
+//     `EmbeddingDimensionMismatch` before the first real call
+//     corrupts memory's vector index.
 //   - Cache embeddings. Per-text caching for the inbound classifier
 //     is plan step E.34, owned by the access layer, not by the
 //     substrate. Caching at this layer would mix per-call freshness
@@ -52,7 +55,9 @@ import 'dart:typed_data';
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Vec;
 
 import '../api/embedding_result.dart';
+import '../api/substrate_event.dart' show EmbeddingIdentityChanged;
 import '../llm/ollama_llm_provider.dart';
+import 'embedding_probe_result.dart';
 import 'embedding_service.dart';
 
 /// `EmbeddingService` backed by Ollama's `/api/embeddings` endpoint.
@@ -134,19 +139,34 @@ final class OllamaEmbeddingService implements EmbeddingService {
   /// spinning up more workers than there are inputs.
   final int batchConcurrency;
 
+  /// Clock seam for tests. Used by [probeIdentity] to stamp
+  /// `occurredAt` on the emitted [EmbeddingIdentityChanged] event.
+  /// Defaults to `DateTime.now` (UTC normalisation happens inside
+  /// `BrainEvent`'s constructor). Test code injects a fixed function
+  /// so probe-event timestamps are reproducible.
+  ///
+  /// Kept as a function-typed field rather than a `Clock` interface
+  /// to match the existing substrate convention (`LlmRouter` exposes
+  /// the same shape). The cost of the shared convention is one
+  /// allocation-per-call of `DateTime`; the benefit is a single
+  /// substrate-wide rule for time injection.
+  final DateTime Function() now;
+
   OllamaEmbeddingService({
     required this.provider,
     required this.model,
     required int dims,
     required bool normalize,
     this.batchConcurrency = 4,
+    DateTime Function()? now,
   })  : _identity = EmbeddingModelIdentity(
           providerId: provider.id,
           modelId: model,
           dims: dims,
           normalized: normalize,
         ),
-        _normalize = normalize {
+        _normalize = normalize,
+        now = now ?? DateTime.now {
     if (dims <= 0) {
       throw ArgumentError.value(
         dims,
@@ -275,6 +295,46 @@ final class OllamaEmbeddingService implements EmbeddingService {
     // exposing the mutable storage to the caller.
     return List<EmbeddingResult>.unmodifiable(
       results.map((r) => r!),
+    );
+  }
+
+  @override
+  Future<EmbeddingProbeResult> probeIdentity({
+    EmbeddingModelIdentity? previousIdentity,
+    String probeText = 'tom-brain embedding probe',
+  }) async {
+    // The probe IS an embed call: it exercises the same wire path,
+    // the same dim check, the same empty-vector check. A divergent
+    // probe path would risk masking failures the real path would
+    // hit (e.g. a probe that bypassed normalisation would not catch
+    // a backend whose post-normalisation dim differed from the
+    // pre-normalisation dim). Reusing `embed()` keeps the failure
+    // surface identical between probe and steady-state.
+    final probeResult = await embed(probeText);
+
+    // Drift detection: structural equality on
+    // `(providerId, modelId, dims, normalized)`. `EmbeddingModelIdentity`
+    // overrides `==` to compare all four fields, so two identities
+    // produced by separate service instances with the same
+    // configuration compare equal even though they are not
+    // `identical`. The drift event is built only when the caller
+    // supplied a `previousIdentity` AND it differs from the current
+    // one — first-boot (`previousIdentity == null`) and unchanged
+    // restart (`previousIdentity == _identity`) both return
+    // `driftEvent: null`.
+    EmbeddingIdentityChanged? driftEvent;
+    if (previousIdentity != null && previousIdentity != _identity) {
+      driftEvent = EmbeddingIdentityChanged(
+        occurredAt: now(),
+        fromIdentity: previousIdentity,
+        toIdentity: _identity,
+      );
+    }
+
+    return EmbeddingProbeResult(
+      currentIdentity: _identity,
+      probeResult: probeResult,
+      driftEvent: driftEvent,
     );
   }
 

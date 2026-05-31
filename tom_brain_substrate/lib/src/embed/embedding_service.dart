@@ -32,13 +32,19 @@
 //     `Future.wait(eagerError: true)`; in-flight calls run to
 //     completion (no `embedRaw`-side cancellation yet), but no new
 //     dispatch happens after the failure surfaces.
-//   * B.27 — Identity reporting: `EmbeddingIdentityChanged` event
-//     emission on identity drift detection. The getter surface is
-//     final at B.25; the event-emission wiring lands at B.27 against
-//     the same identity that this step pins.
+//   * B.27 ✅ — Identity reporting: `probeIdentity()` plus
+//     `EmbeddingIdentityChanged` event production. The probe is the
+//     boot-time validator (dim / empty-vector check on a fixed
+//     probe text) and the drift detector (compares
+//     `currentModelIdentity` to a caller-supplied `previousIdentity`,
+//     returning a non-null event on mismatch). Memory invokes the
+//     probe at `TomBrainMemory.open` with the identity it persisted
+//     from the last service instance; the substrate facade (B.40+)
+//     forwards the produced event onto `events()`.
 //   * B.28 — Conformance tests covering both implementations.
 
 import '../api/embedding_result.dart';
+import 'embedding_probe_result.dart';
 
 /// Embedding-substrate contract.
 ///
@@ -120,6 +126,58 @@ abstract class EmbeddingService {
   /// produces. Stable across the service instance's lifetime; see
   /// the class-level docs for the rationale.
   EmbeddingModelIdentity get currentModelIdentity;
+
+  /// Boot-time identity probe. Round-trips [probeText] through the
+  /// backend so the substrate can:
+  ///
+  ///   1. **Validate the backend dimension** matches the
+  ///      constructor-declared [EmbeddingModelIdentity.dims]. A
+  ///      silent backend-side model swap (Ollama re-pulled a tag and
+  ///      got different weights with a different head; the operator
+  ///      pointed `embedding.model` at a different model id) surfaces
+  ///      as [EmbeddingDimensionMismatch] from this call, before the
+  ///      first real `embed()` corrupts memory's vector index.
+  ///   2. **Validate the backend is reachable and functional**.
+  ///      Transport failures (`OllamaHttpException`) propagate
+  ///      verbatim; the [EmbeddingBackendEmpty] case surfaces a
+  ///      daemon-side refusal-to-embed.
+  ///   3. **Detect identity drift** relative to a caller-supplied
+  ///      [previousIdentity]. When the caller supplies the identity
+  ///      memory persisted from the last service instance, the probe
+  ///      compares it to [currentModelIdentity] (value equality on
+  ///      `(providerId, modelId, dims, normalized)`) and, on
+  ///      mismatch, populates [EmbeddingProbeResult.driftEvent] with
+  ///      an [EmbeddingIdentityChanged] carrying `(from: previous,
+  ///      to: current)`. Memory uses the event to stamp the new
+  ///      identity on subsequent rows; old vectors keep their old
+  ///      identity (`memory_specification.md` § 7.4 — cross-model
+  ///      vectors are never silently mixed in cosine math).
+  ///
+  /// When [previousIdentity] is `null` the probe still runs the
+  /// dimension / reachability checks but returns
+  /// `driftEvent: null` — a first-time boot has nothing to compare
+  /// against. When [previousIdentity] equals [currentModelIdentity]
+  /// the probe also returns `driftEvent: null` (no drift).
+  ///
+  /// [probeText] defaults to a short, stable, deployment-independent
+  /// string. The default is deliberately not the empty string —
+  /// some backends refuse to embed empty input. A future
+  /// drift-detection upgrade (Q-B.3.5) will additionally cosine-
+  /// compare the probe vector to a persisted one under the same
+  /// identity to catch silent weight swaps; the result's
+  /// [EmbeddingProbeResult.probeResult] is the seed for that
+  /// upgrade.
+  ///
+  /// **Failure semantics.** The probe surfaces the same boundary
+  /// failures as `embed()`: [EmbeddingDimensionMismatch],
+  /// [EmbeddingBackendEmpty], or any transport exception the
+  /// backend raises. A failed probe is the substrate's loud signal
+  /// that the embedding path is broken — callers should NOT proceed
+  /// to use the service.
+  Future<EmbeddingProbeResult> probeIdentity({
+    EmbeddingModelIdentity? previousIdentity,
+    String probeText = 'tom-brain embedding probe',
+  });
 
   /// Releases any backend resources the service owns (e.g. the
   /// underlying HTTP client when this service constructed it).
