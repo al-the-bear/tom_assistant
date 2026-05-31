@@ -1,15 +1,19 @@
 // Barrel for the `router/` module (B.18 onwards).
 //
-// `substrate_specification.md` § 5 (provider routing). At B.18 the
+// `substrate_specification.md` § 5 (provider routing). At B.19 the
 // module surface is:
 //
 //   * [LlmRouter] — role-keyed dispatch with failover classification
-//     and per-credential cooldown.
+//     and per-credential cooldown. Consumes a [RouterPolicy] + provider
+//     registry on construction.
+//   * [RouterPolicy] — immutable router config (role → chain map,
+//     per-class cooldown durations, in-route retry budget,
+//     overloaded-backoff window). B.36's YAML loader produces it.
 //   * [LlmFailureClassifier] + [LlmFailureClass] + [LlmRouterAction] —
 //     the closed taxonomy from spec § 5.4 plus its routing actions.
 //   * [RouteEntry] + [RouteConditions] — the per-row value class that
-//     a role's `routeChain` is built from. B.19's `RouterPolicy`
-//     formalises the role → chain mapping; B.18 takes the map directly.
+//     a role's `routeChain` is built from; [RouterPolicy.roleRoutes]
+//     composes them per role.
 //   * [NoRouteAvailable], [RoleNotFound], [ContextOverflowError],
 //     [RouteAttempt] — typed router errors.
 //
@@ -21,3 +25,4 @@ export 'llm_failure_classifier.dart';
 export 'llm_router.dart';
 export 'route_entry.dart';
 export 'router_errors.dart';
+export 'router_policy.dart';

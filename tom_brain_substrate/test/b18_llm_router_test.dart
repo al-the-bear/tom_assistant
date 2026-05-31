@@ -185,12 +185,14 @@ void main() {
           primary.id: primary,
           secondary.id: secondary,
         },
-        roleRoutes: <String, List<RouteEntry>>{
-          'analyser': <RouteEntry>[
-            const RouteEntry(providerId: 'primary', model: 'p-model'),
-            const RouteEntry(providerId: 'secondary', model: 's-model'),
-          ],
-        },
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'analyser': <RouteEntry>[
+              const RouteEntry(providerId: 'primary', model: 'p-model'),
+              const RouteEntry(providerId: 'secondary', model: 's-model'),
+            ],
+          },
+        ),
         now: () => clock,
       );
     });
@@ -260,12 +262,14 @@ void main() {
           'free': failing,
           'paid': paid,
         },
-        roleRoutes: <String, List<RouteEntry>>{
-          'analyser': <RouteEntry>[
-            const RouteEntry(providerId: 'free', model: 'free-model'),
-            const RouteEntry(providerId: 'paid', model: 'paid-model'),
-          ],
-        },
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'analyser': <RouteEntry>[
+              const RouteEntry(providerId: 'free', model: 'free-model'),
+              const RouteEntry(providerId: 'paid', model: 'paid-model'),
+            ],
+          },
+        ),
         now: clock.read,
       );
 
@@ -305,12 +309,14 @@ void main() {
       final paid = StubLlmProvider(id: 'paid', defaultModel: 'pm');
       final router = LlmRouter(
         providers: <String, LlmProvider>{'free': failing, 'paid': paid},
-        roleRoutes: <String, List<RouteEntry>>{
-          'r': <RouteEntry>[
-            const RouteEntry(providerId: 'free', model: 'm'),
-            const RouteEntry(providerId: 'paid', model: 'pm'),
-          ],
-        },
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'r': <RouteEntry>[
+              const RouteEntry(providerId: 'free', model: 'm'),
+              const RouteEntry(providerId: 'paid', model: 'pm'),
+            ],
+          },
+        ),
         now: clock.read,
       );
 
@@ -352,13 +358,15 @@ void main() {
           'paid': failing,
           'local': local,
         },
-        roleRoutes: <String, List<RouteEntry>>{
-          'r': <RouteEntry>[
-            const RouteEntry(providerId: 'paid', model: 'm1'),
-            const RouteEntry(providerId: 'paid', model: 'm2'),
-            const RouteEntry(providerId: 'local', model: 'm0'),
-          ],
-        },
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'r': <RouteEntry>[
+              const RouteEntry(providerId: 'paid', model: 'm1'),
+              const RouteEntry(providerId: 'paid', model: 'm2'),
+              const RouteEntry(providerId: 'local', model: 'm0'),
+            ],
+          },
+        ),
         now: clock.read,
       );
 
@@ -399,12 +407,14 @@ void main() {
       );
       final router = LlmRouter(
         providers: <String, LlmProvider>{'paid': failing},
-        roleRoutes: <String, List<RouteEntry>>{
-          'r': <RouteEntry>[
-            const RouteEntry(providerId: 'paid', model: 'm1'),
-            const RouteEntry(providerId: 'paid', model: 'm2'),
-          ],
-        },
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'r': <RouteEntry>[
+              const RouteEntry(providerId: 'paid', model: 'm1'),
+              const RouteEntry(providerId: 'paid', model: 'm2'),
+            ],
+          },
+        ),
         now: clock.read,
       );
 
@@ -441,12 +451,14 @@ void main() {
       final fallback = StubLlmProvider(id: 'fb', defaultModel: 'fbm');
       final router = LlmRouter(
         providers: <String, LlmProvider>{'p': failing, 'fb': fallback},
-        roleRoutes: <String, List<RouteEntry>>{
-          'r': <RouteEntry>[
-            const RouteEntry(providerId: 'p', model: 'm'),
-            const RouteEntry(providerId: 'fb', model: 'fbm'),
-          ],
-        },
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'r': <RouteEntry>[
+              const RouteEntry(providerId: 'p', model: 'm'),
+              const RouteEntry(providerId: 'fb', model: 'fbm'),
+            ],
+          },
+        ),
       );
 
       await expectLater(
@@ -481,14 +493,16 @@ void main() {
       final fallback = StubLlmProvider(id: 'fb', defaultModel: 'fbm');
       final router = LlmRouter(
         providers: <String, LlmProvider>{'p': failing, 'fb': fallback},
-        roleRoutes: <String, List<RouteEntry>>{
-          'r': <RouteEntry>[
-            const RouteEntry(providerId: 'p', model: 'm'),
-            const RouteEntry(providerId: 'fb', model: 'fbm'),
-          ],
-        },
-        retriesPerClass: 1,
-        overloadedBackoff: Duration.zero,
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'r': <RouteEntry>[
+              const RouteEntry(providerId: 'p', model: 'm'),
+              const RouteEntry(providerId: 'fb', model: 'fbm'),
+            ],
+          },
+          retriesPerClass: 1,
+          overloadedBackoff: Duration.zero,
+        ),
       );
 
       final report = await router.dispatch(
@@ -531,14 +545,16 @@ void main() {
       );
       final router = LlmRouter(
         providers: <String, LlmProvider>{'a': f1, 'b': f2},
-        roleRoutes: <String, List<RouteEntry>>{
-          'r': <RouteEntry>[
-            const RouteEntry(providerId: 'a', model: 'm'),
-            const RouteEntry(providerId: 'b', model: 'm'),
-          ],
-        },
-        retriesPerClass: 1,
-        overloadedBackoff: Duration.zero,
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'r': <RouteEntry>[
+              const RouteEntry(providerId: 'a', model: 'm'),
+              const RouteEntry(providerId: 'b', model: 'm'),
+            ],
+          },
+          retriesPerClass: 1,
+          overloadedBackoff: Duration.zero,
+        ),
       );
 
       try {
@@ -563,9 +579,11 @@ void main() {
       final stub = StubLlmProvider(id: 'p', defaultModel: 'm');
       final router = LlmRouter(
         providers: <String, LlmProvider>{'p': stub},
-        roleRoutes: <String, List<RouteEntry>>{
-          'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
-        },
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
+          },
+        ),
       );
       try {
         await router.dispatch(
@@ -604,11 +622,13 @@ void main() {
       );
       final router = LlmRouter(
         providers: <String, LlmProvider>{'p': failing},
-        roleRoutes: <String, List<RouteEntry>>{
-          'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
-        },
-        retriesPerClass: 5,
-        overloadedBackoff: Duration.zero,
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
+          },
+          retriesPerClass: 5,
+          overloadedBackoff: Duration.zero,
+        ),
       );
       // 20 ms budget — far less than the first call's 30 ms.
       try {
@@ -641,9 +661,11 @@ void main() {
       );
       final router = LlmRouter(
         providers: <String, LlmProvider>{'p': stub},
-        roleRoutes: <String, List<RouteEntry>>{
-          'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
-        },
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
+          },
+        ),
       );
 
       final events = await router
@@ -676,10 +698,12 @@ void main() {
       );
       final router = LlmRouter(
         providers: <String, LlmProvider>{'p': failing},
-        roleRoutes: <String, List<RouteEntry>>{
-          'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
-        },
-        retriesPerClass: 0,
+        policy: RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
+          },
+          retriesPerClass: 0,
+        ),
       );
 
       final events = await router

@@ -36,10 +36,6 @@
 //
 // What this file deliberately defers to later steps:
 //
-//   * `RouterPolicy` config object — B.19. B.18 takes the inputs
-//     (role-route map, cooldown durations, retry counts) directly as
-//     constructor parameters. B.19 introduces the named-value object
-//     and the YAML loader.
 //   * Token-spend charging against the [Budget] — B.32+ wires the
 //     full token-spend accounting; B.18 only enforces wall-clock.
 //   * Streaming dispatch (`dispatchStream`) — pinned to the same
@@ -71,6 +67,7 @@ import '../llm/wire_prompt.dart';
 import 'llm_failure_classifier.dart';
 import 'route_entry.dart';
 import 'router_errors.dart';
+import 'router_policy.dart';
 
 /// Routes role-keyed LLM calls across an ordered chain of providers,
 /// with failover classification and per-credential cooldown.
@@ -94,30 +91,23 @@ import 'router_errors.dart';
 /// outlive a process restart).
 class LlmRouter {
   /// Providers keyed by `LlmProvider.id`. Constructed once and passed in.
+  ///
+  /// Kept separate from [policy] because providers are runtime objects
+  /// (they hold `HttpClient` state, credentials, host connections),
+  /// while [policy] is pure data loadable from YAML (spec § 9 / B.36).
   final Map<String, LlmProvider> providers;
 
-  /// Per-role ordered route chain (spec § 5.1). `roleRoutes['analyser']`
-  /// is the chain the router walks when dispatching an `analyser` call.
-  final Map<String, List<RouteEntry>> roleRoutes;
+  /// Immutable routing configuration (B.19).
+  ///
+  /// Carries the role → chain map, per-class cooldown durations, the
+  /// in-route retry budget, and the overloaded-backoff window. The
+  /// router never mutates the policy; replacing routing config means
+  /// constructing a fresh [LlmRouter] with the new policy.
+  final RouterPolicy policy;
 
   /// Classifier used on every caught exception / provider-supplied
   /// failure. Stateless; defaults to [LlmFailureClassifier.shared].
   final LlmFailureClassifier classifier;
-
-  /// Per-class cooldown window. Defaults per spec § 5.3:
-  ///
-  ///   * `rate_limit` — 60 s
-  ///   * `billing` — 24 h
-  ///   * `auth` / `auth_permanent` — effectively permanent
-  ///     (configured as 365 d; reconfiguring a credential is a
-  ///     substrate restart)
-  ///   * `model_not_found` — effectively permanent
-  ///   * other classes — 0 (handled by retry, not cooldown)
-  final Map<LlmFailureClass, Duration> cooldownByClass;
-
-  /// In-route retry count per [LlmRouterAction.retryThenRotate] class.
-  /// Defaults to 1 (one retry on the same route before rotating).
-  final int retriesPerClass;
 
   /// Clock seam for tests. Defaults to [DateTime.now].
   final DateTime Function() now;
@@ -126,9 +116,20 @@ class LlmRouter {
   /// [Random] instance.
   final Random _random;
 
-  /// Backoff base for `overloaded` retries (jittered uniformly between
-  /// `0` and this duration). Defaults to 50 ms.
-  final Duration overloadedBackoff;
+  /// Per-role ordered route chain. Pulled from [policy] for ergonomic
+  /// access inside the dispatch loop; mirrors `policy.roleRoutes`.
+  Map<String, List<RouteEntry>> get roleRoutes => policy.roleRoutes;
+
+  /// Per-class cooldown window. Mirrors `policy.cooldownByClass`.
+  Map<LlmFailureClass, Duration> get cooldownByClass => policy.cooldownByClass;
+
+  /// In-route retry count per [LlmRouterAction.retryThenRotate] class.
+  /// Mirrors `policy.retriesPerClass`.
+  int get retriesPerClass => policy.retriesPerClass;
+
+  /// Backoff base for `overloaded` retries. Mirrors
+  /// `policy.overloadedBackoff`.
+  Duration get overloadedBackoff => policy.overloadedBackoff;
 
   /// Cooldown bookkeeping. Key shape:
   ///
@@ -140,28 +141,19 @@ class LlmRouter {
   /// entry expires by being read past its [DateTime] and re-evaluated.
   final Map<String, DateTime> _cooldownUntil = <String, DateTime>{};
 
+  /// Construct a router from a [RouterPolicy] + provider registry.
+  ///
+  /// `classifier`, `now`, and `random` are test seams; production code
+  /// can leave them at their defaults.
   LlmRouter({
     required this.providers,
-    required this.roleRoutes,
+    required this.policy,
     LlmFailureClassifier? classifier,
-    Map<LlmFailureClass, Duration>? cooldownByClass,
-    this.retriesPerClass = 1,
     DateTime Function()? now,
     Random? random,
-    this.overloadedBackoff = const Duration(milliseconds: 50),
   })  : classifier = classifier ?? LlmFailureClassifier.shared,
-        cooldownByClass = cooldownByClass ?? _defaultCooldowns,
         now = now ?? DateTime.now,
         _random = random ?? Random();
-
-  static final Map<LlmFailureClass, Duration> _defaultCooldowns =
-      <LlmFailureClass, Duration>{
-    LlmFailureClass.rateLimit: const Duration(seconds: 60),
-    LlmFailureClass.billing: const Duration(hours: 24),
-    LlmFailureClass.auth: const Duration(days: 365),
-    LlmFailureClass.authPermanent: const Duration(days: 365),
-    LlmFailureClass.modelNotFound: const Duration(days: 365),
-  };
 
   /// Number of routes currently parked under a cooldown. Useful for
   /// tests and for `SubstrateStats` (B.34+).
@@ -658,9 +650,10 @@ class LlmRouter {
         _cooldownUntil['${entry.providerId}:${entry.model}:${cls.code}'] =
             now().add(dur);
       case LlmRouterAction.retryThenRotate:
-        // No cooldown after a retry-exhausted rotation at B.18; B.19 may
-        // attach a short cool-off via RouterPolicy if a real provider
-        // proves it needs one.
+        // No cooldown after a retry-exhausted rotation. The route stays
+        // dispatchable on the next call; only the in-route retry budget
+        // is consumed. A future policy field could attach a short
+        // cool-off here if a real provider proves it needs one.
         break;
       case LlmRouterAction.surfaceToCaller:
         // No state change; the caller is in charge.
