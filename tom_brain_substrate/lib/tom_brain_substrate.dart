@@ -265,3 +265,18 @@ export 'src/embed/embed_barrel.dart';
 // HTTP seam; B.30 lands the fetch half on the same seam so B.31 only
 // has to swap one transport class.
 export 'src/web/web_barrel.dart';
+
+// B.37 — Observability logging surface (Substrate Spec § 10.1).
+//
+// `SubstrateLog` (the const-instance facade) + `SubstrateLogCategory`
+// (the closed enum of six categories — `tom_brain.substrate.llm`,
+// `…roles`, `…embed`, `…web`, `…mcp`, `…router`). Wraps the global
+// `tomLog` instance from `tom_basics` with a category prefix; lazy
+// `() => String` messages are preserved through the wrap. Spec § 10.1
+// is authoritative — plan step B.37 lists five categories; the spec
+// adds `router`. The wrapper carries all six; Q-B.37.1 captures the
+// spec-vs-plan divergence.
+//
+// B.38 will land the typed `SubstrateEvent` stream (the second leg of
+// the observability triple); B.39 the behavioural tests across both.
+export 'src/obs/obs_barrel.dart';
