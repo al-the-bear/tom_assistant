@@ -154,3 +154,16 @@ Initial project scaffold:
   A final test runs `note` + `yield` + `runProcedure` together in one
   script on one host. No production code changed — C.22 is a test-only step.
   Full suite green at 179/179.
+- C.23 — Procedure store with two backends behind one interface
+  (`lib/src/procedure_store/`, § 9). `ProcedureStore` (the I/O-only
+  interface: `list`, `handles`, `read`) plus three implementations:
+  `DiskProcedureStore` (system + user `.dart` files under `scripts/system/`
+  + `scripts/user/`, missing-user-dir tolerated, deterministic ordering),
+  `MemoryProcedureStore` (brain-authored `Procedure` nodes streamed +
+  read through the `TomBrainMemoryClient` boundary, PE-10), and
+  `CompositeProcedureStore` (fans `list`, routes `read` by `handles`).
+  Value types `ProcedureOrigin` / `ProcedureRef` / `ProcedureSource`.
+  The store traffics in raw source keyed by physical location; header
+  parsing (C.24) and version resolution (C.25) layer on top. 25 unit tests
+  (`test/procedure_store_test.dart`), including a backend-equivalence check
+  through the interface. Full suite green at 204/204.

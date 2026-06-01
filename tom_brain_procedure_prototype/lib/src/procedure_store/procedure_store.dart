@@ -15,9 +15,16 @@
 //
 // Wiring across later Phase C steps:
 //
-//   - C.23 — `ProcedureStore` disk + memory backends.
+//   - C.23 ✅ — `ProcedureStore` interface + disk + memory backends
+//     (+ a composite that presents both as one).
 //   - C.24 — header-parsing loader.
 //   - C.25 — version resolver with fallback chain.
 //   - C.26 — backend-equivalence + malformed-header + resolver tests.
-//
-// At C.8 this folder is intentionally empty. No exports yet.
+
+export 'composite_procedure_store.dart';
+export 'disk_procedure_store.dart';
+export 'memory_procedure_store.dart';
+export 'procedure_origin.dart';
+export 'procedure_ref.dart';
+export 'procedure_source.dart';
+export 'procedure_store_base.dart';
