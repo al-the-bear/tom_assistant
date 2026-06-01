@@ -1,0 +1,61 @@
+# D4rt bridge-generator configuration for tom_brain_procedure_prototype.
+#
+# Plan step C.11 ("Create build.yaml configuring tom_d4rt_generator. Targets:
+# bridges/memory_bridge.dart and bridges/substrate_bridge.dart").
+#
+# Configures tom_d4rt_generator's `d4rt_bridge_builder` (factory
+# `d4rtBridgeBuilder`, dev-dep pinned `^1.8.24` at C.9) to generate the D4rt
+# bridge code for the engine's two bridge source classes:
+#
+#   - lib/src/bridges/memory_bridge.dart     -> MemoryBridge    (authored at C.12)
+#   - lib/src/bridges/substrate_bridge.dart  -> SubstrateBridge (authored at C.13)
+#
+# C.11 ships ONLY this config. The bridge source classes land at C.12/C.13; the
+# generator is first run at C.14 (`dart run build_runner build`), which is the
+# acceptance test for the exact option keys below; the generated-output smoke
+# (a d4rt script calling one method on each bridge against in-memory test
+# doubles) is C.15.
+#
+# Schema provenance (recorded at C.3): every option key below is verified
+# against the LIVE builder source -- `tom_d4rt_generator/lib/src/bridge_config.dart`
+# (`BridgeConfig.fromJson` / `ModuleConfig.fromJson`) -- NOT the partly-stale
+# `doc/bridgegenerator_user_reference.md`. The live schema uses `barrelFiles`
+# (plural list), `outputPath`, `helpersImport`, `generateBarrel`/`barrelPath`,
+# `generateDartscript`/`dartscriptPath`, and `registrationClass`.
+#
+# `@D4rtBridged` is NOT used: it does not exist in the d4rt ecosystem (Q-C.3.1).
+# Selection is config + barrel driven -- the two source files are listed as
+# `barrelFiles`, and the generator bridges every class reachable from them.
+#
+# `excludePatterns` is deliberately OMITTED. The C.3 worked example used
+# `excludePatterns: [_bridge.dart]` to stop the generator re-scanning its own
+# output, but our two source files are themselves named `*_bridge.dart`, so that
+# pattern would exclude exactly the classes we want bridged. Because
+# `barrelFiles` lists the two source files explicitly (no directory glob), the
+# generated `*.b.dart` outputs are never auto-discovered, so no exclude pattern
+# is needed.
+#
+# `importedBridges` is deliberately OMITTED (Q-C.3.3): the bridged primitive-API
+# signatures stay primitive-typed (`num`/`String`/`bool`/`Map`/`List<Object?>`),
+# so the generator never has to bridge the memory/substrate domain-type graph and
+# there is no cross-package bridged type to import.
+
+targets:
+  $default:
+    builders:
+      tom_d4rt_generator:d4rt_bridge_builder:
+        enabled: true
+        options:
+          name: tom_brain_procedure_prototype
+          modules:
+            - name: all
+              barrelFiles:
+                - lib/src/bridges/memory_bridge.dart
+                - lib/src/bridges/substrate_bridge.dart
+              outputPath: lib/src/bridges/brain_bridges.b.dart
+          helpersImport: package:tom_d4rt/tom_d4rt.dart
+          generateBarrel: true
+          barrelPath: lib/src/bridges/d4rt_bridges.b.dart
+          generateDartscript: true
+          dartscriptPath: lib/src/bridges/dartscript.b.dart
+          registrationClass: BrainBridges
