@@ -21,9 +21,19 @@
 //     `export` directives and references to disallowed top-level
 //     identifiers (SDK gateways) via a comment-and-string-aware code
 //     projection. Failures carry `procedure.sandbox.violation`.
-//   - C.29 — contract validator.
+//   - C.29 ✅ — contract validator (`ContractValidator`): checks the
+//     `Future<ProcedureResult> run(ProcedureInputs inputs) async { … }`
+//     entry-point signature (`procedure.contract.invalid`) and that the
+//     declared `requires` set exactly matches the bridged primitives the
+//     body calls (`procedure.requires.mismatch`). The comment-and-string-
+//     aware projection C.28 introduced is now the shared `CodeProjection`.
 //   - C.30 — per-branch malformed-input tests.
 
+export 'bridged_primitive_catalog.dart';
+export 'code_projection.dart';
+export 'contract_validator.dart';
 export 'header_validator.dart';
+export 'procedure_contract_invalid.dart';
+export 'procedure_requires_mismatch.dart';
 export 'procedure_sandbox_violation.dart';
 export 'sandbox_validator.dart';

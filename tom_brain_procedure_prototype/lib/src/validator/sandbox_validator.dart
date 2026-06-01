@@ -27,6 +27,7 @@
 // `prototype_implementation_questions.md`.
 
 import '../procedure_store/procedure_loader.dart';
+import 'code_projection.dart';
 import 'procedure_sandbox_violation.dart';
 
 /// Statically rejects procedure sources that reach outside the bridged
@@ -101,7 +102,7 @@ final class SandboxValidator {
   /// [ProcedureSandboxViolation] on the first violation found (directives
   /// are checked before identifiers).
   void validateSource(String source, {String? procedureId}) {
-    final projection = _codeProjection(source);
+    final projection = CodeProjection.project(source);
     _checkDirectives(projection, procedureId);
     _checkIdentifiers(projection, procedureId);
   }
@@ -130,7 +131,7 @@ final class SandboxValidator {
           'primitive API is the only surface a procedure can touch (PE-1)',
           kind: SandboxViolationKind.forbiddenDirective,
           offender: keyword,
-          line: _lineOf(projection, match.start),
+          line: CodeProjection.lineOf(projection, match.start),
           procedureId: procedureId,
         );
       }
@@ -148,192 +149,10 @@ final class SandboxValidator {
           'a bridged primitive (PE-1)',
           kind: SandboxViolationKind.disallowedIdentifier,
           offender: identifier,
-          line: _lineOf(projection, match.start),
+          line: CodeProjection.lineOf(projection, match.start),
           procedureId: procedureId,
         );
       }
     }
-  }
-
-  /// 1-based line number of [index] within [text].
-  int _lineOf(String text, int index) {
-    var line = 1;
-    for (var i = 0; i < index && i < text.length; i++) {
-      if (text[i] == '\n') line++;
-    }
-    return line;
-  }
-
-  // --- code projection ---------------------------------------------------
-
-  /// Produces a copy of [src] with comment bodies and string-literal text
-  /// blanked to spaces (newlines preserved, so positions and line numbers
-  /// are stable), while keeping the code inside string interpolations.
-  String _codeProjection(String src) {
-    final out = StringBuffer();
-    final n = src.length;
-    var i = 0;
-    while (i < n) {
-      final c = src[i];
-      // line comment
-      if (c == '/' && i + 1 < n && src[i + 1] == '/') {
-        while (i < n && src[i] != '\n') {
-          out.write(' ');
-          i++;
-        }
-        continue;
-      }
-      // block comment (Dart block comments nest)
-      if (c == '/' && i + 1 < n && src[i + 1] == '*') {
-        i = _blankBlockComment(src, i, out);
-        continue;
-      }
-      // string literal (raw or normal, single/double, possibly triple)
-      if (c == '"' || c == "'" || _isRawStringStart(src, i)) {
-        i = _blankString(src, i, out);
-        continue;
-      }
-      out.write(c);
-      i++;
-    }
-    return out.toString();
-  }
-
-  /// Whether the char at [i] begins a raw string (`r"` / `r'`) and is not
-  /// the tail of an identifier (so `recall(` is never mistaken for raw).
-  bool _isRawStringStart(String src, int i) {
-    if (src[i] != 'r') return false;
-    if (i + 1 >= src.length) return false;
-    final next = src[i + 1];
-    if (next != '"' && next != "'") return false;
-    return i == 0 || !_isIdentChar(src[i - 1]);
-  }
-
-  /// Consumes a (possibly nested) block comment starting at [start],
-  /// writing spaces (newlines preserved) to [out]. Returns the index just
-  /// past the comment, or the source length if unterminated.
-  int _blankBlockComment(String src, int start, StringBuffer out) {
-    final n = src.length;
-    var i = start;
-    var depth = 0;
-    while (i < n) {
-      if (src[i] == '/' && i + 1 < n && src[i + 1] == '*') {
-        depth++;
-        out.write('  ');
-        i += 2;
-        continue;
-      }
-      if (src[i] == '*' && i + 1 < n && src[i + 1] == '/') {
-        depth--;
-        out.write('  ');
-        i += 2;
-        if (depth == 0) return i;
-        continue;
-      }
-      out.write(src[i] == '\n' ? '\n' : ' ');
-      i++;
-    }
-    return i;
-  }
-
-  /// Consumes a string literal starting at [start], blanking the literal
-  /// text to spaces (newlines preserved) but copying interpolated code
-  /// (`${ ... }` and `$identifier`) verbatim. Returns the index just past
-  /// the closing delimiter, or the source length if unterminated.
-  int _blankString(String src, int start, StringBuffer out) {
-    final n = src.length;
-    var i = start;
-    var raw = false;
-    if (src[i] == 'r') {
-      raw = true;
-      out.write(' ');
-      i++;
-    }
-    final quote = src[i];
-    final triple =
-        i + 2 < n && src[i + 1] == quote && src[i + 2] == quote;
-    final delimLen = triple ? 3 : 1;
-    out.write(' ' * delimLen);
-    i += delimLen;
-
-    while (i < n) {
-      if (_matchesDelim(src, i, quote, delimLen)) {
-        out.write(' ' * delimLen);
-        return i + delimLen;
-      }
-      final ch = src[i];
-      if (!raw && ch == r'\') {
-        out.write(' ');
-        i++;
-        if (i < n) {
-          out.write(src[i] == '\n' ? '\n' : ' ');
-          i++;
-        }
-        continue;
-      }
-      if (!raw && ch == r'$') {
-        i = _copyInterpolation(src, i, out);
-        continue;
-      }
-      out.write(ch == '\n' ? '\n' : ' ');
-      i++;
-    }
-    return i;
-  }
-
-  /// Whether the [delimLen] chars at [i] are all [quote] (the closing
-  /// delimiter of a string).
-  bool _matchesDelim(String src, int i, String quote, int delimLen) {
-    if (i + delimLen > src.length) return false;
-    for (var k = 0; k < delimLen; k++) {
-      if (src[i + k] != quote) return false;
-    }
-    return true;
-  }
-
-  /// Copies an interpolation starting at the `$` at [start] into [out] as
-  /// code, blanking the `$` (and braces) themselves. Returns the index just
-  /// past the interpolation.
-  int _copyInterpolation(String src, int start, StringBuffer out) {
-    final n = src.length;
-    var i = start + 1; // skip '$'
-    out.write(' ');
-    if (i < n && src[i] == '{') {
-      out.write(' ');
-      i++;
-      var depth = 1;
-      while (i < n && depth > 0) {
-        final cc = src[i];
-        if (cc == '{') {
-          depth++;
-        } else if (cc == '}') {
-          depth--;
-          if (depth == 0) {
-            out.write(' ');
-            i++;
-            break;
-          }
-        }
-        out.write(cc == '\n' ? '\n' : cc);
-        i++;
-      }
-      return i;
-    }
-    // simple `$identifier` interpolation — copy the identifier as code
-    while (i < n && _isIdentChar(src[i])) {
-      out.write(src[i]);
-      i++;
-    }
-    return i;
-  }
-
-  bool _isIdentChar(String ch) {
-    final code = ch.codeUnitAt(0);
-    final isDigit = code >= 0x30 && code <= 0x39;
-    final isUpper = code >= 0x41 && code <= 0x5A;
-    final isLower = code >= 0x61 && code <= 0x7A;
-    final isUnderscore = code == 0x5F;
-    final isDollar = code == 0x24;
-    return isDigit || isUpper || isLower || isUnderscore || isDollar;
   }
 }

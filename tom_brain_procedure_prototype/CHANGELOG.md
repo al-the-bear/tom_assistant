@@ -246,3 +246,24 @@ Initial project scaffold:
   throw `ProcedureSandboxViolation` (wire code `procedure.sandbox.violation`)
   carrying `kind` / `offender` / `line` / `procedureId`. 24 unit tests
   (`test/sandbox_validator_test.dart`). Full suite green at 313/313.
+- C.29 — Contract validator (`lib/src/validator/contract_validator.dart`,
+  `ContractValidator`): the third and final validator layer (§ 7, rows 4–5).
+  Two checks. (1) **Signature** — the source must declare
+  `Future<ProcedureResult> run(ProcedureInputs inputs) async { … }`; a
+  missing entry point, wrong return type, wrong/absent/multiple parameter, or
+  non-`async` function is rejected with `ProcedureContractInvalid` (wire code
+  `procedure.contract.invalid`) carrying a `ContractViolationKind`. (2)
+  **Requires-vs-actual** — the header's declared `requires` set must exactly
+  equal the bridged primitives the body calls; an undeclared call, an unused
+  declaration, or a `requires` entry that names no bridged primitive is
+  rejected with `ProcedureRequiresMismatch` (wire code
+  `procedure.requires.mismatch`) carrying a `RequiresMismatchKind` +
+  `offender`. The bridged-primitive surface is enumerated in a new
+  `BridgedPrimitiveCatalog` (memory + substrate + engine-native + sugar), which
+  also derives the accepted call-site spellings (dotted `stack.push` and
+  camelCase `stackPush` both count, pending the Q-C.12.2 wiring decision). The
+  C.28 comment-and-string-aware projection was extracted into a shared
+  `CodeProjection` and is reused here so a `run(` token in a comment is never
+  the entry point and a primitive name in a string literal is never counted as
+  a call, while a call inside an interpolation is. 25 unit tests
+  (`test/contract_validator_test.dart`). Full suite green at 338/338.
