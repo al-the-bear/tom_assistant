@@ -27,10 +27,15 @@
 //     `PreemptionState` (C.34). Doc framing corrected (the driving
 //     coordinator is Phase D, D.23–D.25; the deadline is C.36) and the
 //     reusable-across-cycles contract pinned.
+//   - C.40 ✅ — the sugar aliases (`think` / `plan` / `create` /
+//     `critique` / `decide`) as fixed-id projections of `runProcedure`
+//     (`sugar_aliases.dart`, § 5.2). Only `think_v1` exists in the
+//     prototype (a no-op stub); the rest surface `ProcedureNotFound`.
 
 export 'native_primitives_installer.dart';
 export 'note_primitive.dart';
 export 'recursion_limit_exceeded.dart';
 export 'run_procedure_primitive.dart';
+export 'sugar_aliases.dart';
 export 'trail_note.dart';
 export 'yield_primitive.dart';

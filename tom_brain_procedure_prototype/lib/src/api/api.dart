@@ -25,7 +25,11 @@
 //   - C.38 ✅ — `ProcedureEngine.invoke` + run handle.
 //   - C.39 ✅ — cancellation + timeout (`run.cancel()`, `invoke(..., timeout:)`;
 //     `RunCancellation`).
-//   - C.40 — sugar aliases (`think_v1` stub; others throw).
+//   - C.40 ✅ — sugar aliases (`think` / `plan` / `create` / `critique` /
+//     `decide`) wired as fixed-id projections of `runProcedure`
+//     (`primitives_native/sugar_aliases.dart`). `think_v1` runs the no-op
+//     stub (`scripts/system/think_v1.dart`); the others surface
+//     `ProcedureNotFound`.
 //   - C.41 — invoke / cancellation / sugar-resolution tests.
 
 export 'procedure_engine.dart';

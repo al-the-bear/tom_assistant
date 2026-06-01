@@ -3,11 +3,13 @@
 // (Plan step C.19; the seam is the C.16 `NativePrimitiveInstaller`).
 //
 // C.19 wired the first primitive: the top-level `runProcedure`. C.20 added
-// `note`; C.21 adds `yield_if_foreground_waiting`. The installer is the
+// `note`; C.21 adds `yield_if_foreground_waiting`; C.40 adds the sugar
+// aliases (`think` / `plan` / `create` / `critique` / `decide`) as fixed-id
+// projections of the same `runProcedure` primitive. The installer is the
 // d4rt-facing half of the native primitives; the recursion-capped logic
-// lives in [RunProcedurePrimitive], the note logic in [NotePrimitive], and
-// the cooperative-checkpoint logic in [YieldPrimitive] (which reads the
-// shared `PreemptionState`).
+// lives in [RunProcedurePrimitive], the note logic in [NotePrimitive], the
+// cooperative-checkpoint logic in [YieldPrimitive] (which reads the shared
+// `PreemptionState`), and the sugar-verb wiring in `sugar_aliases.dart`.
 //
 // ── Why a top-level function, not a bridge method ───────────────────
 //
@@ -38,6 +40,7 @@ import '../api/procedure_inputs.dart';
 import '../api/procedure_result.dart';
 import 'note_primitive.dart';
 import 'run_procedure_primitive.dart';
+import 'sugar_aliases.dart';
 import 'yield_primitive.dart';
 
 /// The library URI a procedure script imports to reach the engine-native
@@ -118,6 +121,12 @@ void Function(D4rt) nativePrimitivesInstaller({
       engineNativeLibrary,
       signature: 'Future<void> yield_if_foreground_waiting()',
     );
+
+    // The convenience sugar (`think` / `plan` / `create` / `critique` /
+    // `decide`) — fixed-id aliases over the same `runProcedure` primitive
+    // (C.40, § 5.2). Registered after the primitives so they share the
+    // engine-native library and the one `RunProcedurePrimitive`.
+    registerSugarAliases(interpreter, runProcedurePrimitive);
   };
 }
 
