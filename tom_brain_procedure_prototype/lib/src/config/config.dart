@@ -30,10 +30,19 @@
 //     `EngineLog.host.status('…')`; the wrapper prepends
 //     `'[tom_brain.engine.<area>] '` and forwards to `tomLog`. Mirrors
 //     `MemoryLog` (A.84) and `SubstrateLog` (B.37).
-//   - C.44 — `EngineEvent` stream.
+//   - C.44 ✅ — `EngineEvent` sealed sum (`engine_event.dart`): the five
+//     typed observability variants (`InvocationStarted`,
+//     `PrimitiveCalled`, `StepYielded`, `InvocationCompleted`,
+//     `InvocationFailed`), each extending `BrainEvent` (shared base) with
+//     a `runId`-required narrowing. The `EngineEventBus`
+//     (`engine_event_bus.dart`) is the broadcast fan-in
+//     (`emit` / `events()` / `close()`) the composition root wires to the
+//     engine. Mirrors `SubstrateEventBus` (B.38) / `MemoryEventBus` (A.85).
 //   - C.45 — config-roundtrip / event-ordering / logger tests.
 
 export 'engine_config.dart';
 export 'engine_config_invalid.dart';
+export 'engine_event.dart';
+export 'engine_event_bus.dart';
 export 'engine_log.dart';
 export 'sandbox_config.dart';
