@@ -1,9 +1,22 @@
 // yield_if_foreground_waiting — the engine-native cooperative-preemption
-// checkpoint primitive (Plan step C.21;
+// checkpoint primitive (Plan steps C.21 + C.35;
 // `tom_brain_procedure_prototype_specification.md` § 5.1, § 9, PE-5;
 // `tom_brain_definition.md` § 7.1, § 14.10).
 //
-// ── What C.21 owns ──────────────────────────────────────────────────
+// ── Step ownership (C.21 → C.35) ────────────────────────────────────
+//
+// The d4rt-facing primitive (the global `yield_if_foreground_waiting()`
+// reachable from a script, and its installer wiring) was first cut at C.21
+// in subphase C.5 ("engine-native primitives"), because the installer
+// needed something to register. C.35 — in subphase C.9 ("cooperative
+// preemption hooks") — is the *owning* step for the checkpoint's behaviour
+// against the finalised [PreemptionState] (C.34): "implement
+// `yield_if_foreground_waiting()` against `PreemptionState`". The two plan
+// items share the same production object; C.35 finalises it alongside the
+// state it reads, the same way C.34 finalised the state object the C.21
+// primitive depended on.
+//
+// ── What C.35 owns ──────────────────────────────────────────────────
 //
 // `yield_if_foreground_waiting()` is the cooperative checkpoint a
 // background procedure calls between steps. It checks the shared
@@ -11,16 +24,20 @@
 // immediately (the background keeps running); if one is waiting it parks
 // on the state's resume signal and resumes only after the foreground run
 // finishes and the coordinator signals resume. A foreground arrival thus
-// preempts the background at its *next* checkpoint, never mid-step.
+// preempts the background at its *next* checkpoint, never mid-step. The
+// checkpoint is reusable across cycles: a background loop calls it between
+// every step, and once a request→resume cycle completes the state is back
+// to idle so the next call returns immediately.
 //
-// ── What C.21 deliberately does NOT own ─────────────────────────────
+// ── What C.35 deliberately does NOT own ─────────────────────────────
 //
 // *Driving* the [PreemptionState] — setting the foreground-waiting flag on
 // arrival and signalling resume on completion — belongs to the Phase D
-// dispatcher's coordinator (C.34's `PreemptionController`). The hard step
-// deadline (C.36) is also out of scope here. C.21 supplies only the
-// read-side checkpoint; the write-side coordinator plugs in later against
-// the same shared state object.
+// dispatcher's `RunCoordinator` / `PreemptionController` (spec § 10.3;
+// build order D.23–D.25), not to C.35. The hard step deadline (C.36) is
+// also out of scope here. C.35 supplies only the read-side checkpoint; the
+// write-side coordinator plugs in later against the same shared state
+// object.
 
 import '../preemption/preemption_state.dart';
 

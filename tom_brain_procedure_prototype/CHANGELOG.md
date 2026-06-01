@@ -321,3 +321,60 @@ Initial project scaffold:
   latencies — it is the run's elapsed, stamped once. 31 accountant unit tests
   (`test/effort_accountant_test.dart`) + 4 recorder-accumulation tests added to
   `test/run_recorder_test.dart`. Full suite green at 444/444.
+- C.33 — Run-recorder ↔ stub-memory integration tests
+  (`test/run_recorder_integration_test.dart`, § 8). Test-only step: where
+  C.31/C.32 drive capture-only stubs, C.33 drives the recorder as a black box
+  against a *stateful* in-memory double of `TomBrainMemoryClient` + `StackApi`
+  that actually models nodes (resolvable by `get`), trails (read back in order
+  via `readTrail`, with `closeTrail` synthesising the `outcome` line), and live
+  stacks (`push`/`peek`/`pop`/`remove`). The four plan-acceptance assertions read
+  the observable store state, not the recorder's mirror: full lifecycle
+  round-trips; trail entries appear in order; `inflight` resolves to a `running`
+  marker mid-run; the final run lands in `recent_runs` (with the accumulated
+  effort) and leaves `inflight` on completion. Two extra integration tests cover
+  two sequential runs landing independently and the `derived_from` edge. 6 new
+  tests. Full suite green at 450/450.
+- C.34 — `PreemptionState` ownership finalised (`lib/src/preemption/`, § 9, PE-5,
+  § 10.3). Opens subphase C.9. The state object (the "foreground waiting" flag +
+  a `Completer` for the resume signal — the contract the engine-native
+  `yield_if_foreground_waiting()` checkpoint reads against) was first cut early as
+  a dependency of the C.21 yield primitive; C.34 is its owning step. No production
+  logic changed — the object already matched the plan text exactly. The C.21-era
+  doc framing in `preemption_state.dart` and the `preemption.dart` barrel is
+  corrected: the `PreemptionController` / `RunCoordinator` that *drive* this state
+  belong to the Phase D dispatcher (spec § 10.3; build order D.23–D.25), not to
+  C.34, and the hard step deadline is C.36; C.34 owns *only* the shared object.
+  The state's unit tests are extracted from `yield_primitive_test.dart` into a
+  dedicated `test/preemption_state_test.dart` (mirroring the lib file), with one
+  added edge case (a redundant `signalResume` after a completed cycle is a no-op):
+  7 tests. Full suite green at 451/451.
+- C.35 — `yield_if_foreground_waiting()` against `PreemptionState`
+  (`lib/src/primitives_native/yield_primitive.dart`, § 5.1, § 9, PE-5). Owning
+  step for the cooperative checkpoint within subphase C.9. The `YieldPrimitive`
+  and its d4rt installer wiring were first cut at C.21 (subphase C.5) so the
+  installer had something to register; C.35 finalises the checkpoint against the
+  C.34-finalised state object, the same way C.34 finalised the state the C.21
+  primitive depended on. No production logic changed. The C.21-era doc framing
+  in `yield_primitive.dart` and the `primitives_native.dart` barrel is corrected:
+  the `RunCoordinator` / `PreemptionController` that *drive* the state belong to
+  the Phase D dispatcher (spec § 10.3; build order D.23–D.25), not to C.34; the
+  hard step deadline is C.36. One new Dart-level edge case pins the
+  reusable-across-cycles contract (a single primitive instance parks during a
+  request→resume cycle, then returns immediately once the state is idle again):
+  4 tests in `yield_primitive_test.dart`. Full suite green at 452/452.
+- C.36 — `StepDeadline` (`lib/src/preemption/step_deadline.dart`, § 9, PE-5;
+  def § 7.1, § 14.10). The hard per-step wall-clock cap (default 60 s,
+  `defaultStepDeadline`) that force-yields a runaway background step. `start`
+  arms an injectable wall-clock timer (`DeadlineTimerFactory`, default
+  `Timer.new`); `guard<T>` races the step future against it and reports a sealed
+  `StepOutcome<T>` — `StepCompleted` (step wins, timer cancelled), `StepTruncated`
+  (deadline wins, carries the breached limit). A step error before the deadline
+  propagates; a late result/error on an abandoned (truncated) step is dropped.
+  The engine step-runner (C.38) maps `StepTruncated` onto
+  `RunCompletion(status: preempted, …)` + a `step_truncated`
+  (`stepTruncatedNoteCategory`) trail note. Independent of `PreemptionState`
+  (C.34): the state bounds the wait to one step *cooperatively*; the deadline
+  bounds the step itself *hard*. Driving the foreground/background coordinator
+  stays with the Phase D dispatcher (spec § 10.3; build order D.23–D.25). 13
+  deterministic unit tests via a `_FakeTimer` double
+  (`test/step_deadline_test.dart`). Full suite green at 465/465.

@@ -1,18 +1,27 @@
 // PreemptionState — the shared object the engine yields against and the
-// dispatcher's coordinator drives (Plan step C.21 needs it; its full owner
-// is C.34; `tom_brain_procedure_prototype_specification.md` § 9, PE-5;
+// dispatcher's coordinator drives (Plan step C.34, opening subphase C.9;
+// `tom_brain_procedure_prototype_specification.md` § 9, PE-5, § 10.3;
 // `tom_brain_definition.md` § 7.1, § 14.10).
 //
-// ── What C.21 owns vs. C.34 ─────────────────────────────────────────
+// ── What C.34 owns ──────────────────────────────────────────────────
 //
-// C.21 implements the cooperative-checkpoint *contract* the engine-native
-// `yield_if_foreground_waiting()` primitive checks against: a "foreground
-// waiting" flag plus a resume signal (a `Completer`) a parked background
-// run awaits. C.34 keeps this same shared object but grows the coordinator
-// machinery around it — the `PreemptionController`, `PreemptionEvent`
-// transitions, and the hard step deadline (C.36). C.21 deliberately stops
-// at the flag + resume signal: that is exactly what the yield primitive
-// (C.21) and its tests (C.22) need, and nothing the deadline owns.
+// C.34 owns exactly this shared object: the cooperative-checkpoint
+// *contract* the engine-native `yield_if_foreground_waiting()` primitive
+// reads against — a "foreground waiting" flag plus a resume signal (a
+// `Completer`) a parked background run awaits. That is the whole C.34
+// deliverable per the plan text ("shared object the engine and dispatcher
+// both reference; carries the foreground-waiting flag + a `Completer` for
+// the resume signal"). The object was first cut early, as a dependency of
+// the C.21 yield primitive, and is finalised here.
+//
+// ── What C.34 deliberately does NOT own ─────────────────────────────
+//
+// The hard step deadline is C.36. The `PreemptionController` /
+// `PreemptionEvent` transition machinery and the FIFO foreground/background
+// `RunCoordinator` that *drives* this state belong to the Phase D
+// dispatcher (spec § 10.3; build order D.23–D.25), not to C.34. C.34 supplies
+// only the shared state; the deadline plugs in at C.36 and the write-side
+// coordinator plugs in at D.23–D.25, both against this same object.
 //
 // The state object is referenced by both the engine (which yields against
 // it) and the Phase D dispatcher (which sets/clears it), so it is a prime

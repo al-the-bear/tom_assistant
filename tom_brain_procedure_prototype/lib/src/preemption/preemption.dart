@@ -19,12 +19,23 @@
 //
 // Wiring across later Phase C steps:
 //
-//   - C.21 ✅ — `PreemptionState` (the flag + resume-signal contract the
-//     yield primitive checks against). The yield primitive itself lives in
-//     `primitives_native/`. C.34 keeps this same object and grows the
-//     coordinator machinery + deadline around it.
-//   - C.34 — `PreemptionController` over `PreemptionState`.
-//   - C.36 — hard step deadline.
+//   - C.34 ✅ — `PreemptionState`: the shared object the engine yields
+//     against and the dispatcher drives — the flag + resume-signal
+//     (`Completer`) contract the yield primitive checks against. First cut
+//     early as a dependency of the C.21 yield primitive (which lives in
+//     `primitives_native/`) and finalised here. C.34 owns *only* this
+//     shared object; the controller and deadline plug in against it later.
+//   - C.36 ✅ — `StepDeadline` (`step_deadline.dart`): the hard per-step
+//     wall-clock cap (default 60 s) that force-yields a runaway step and
+//     reports a `StepTruncated` outcome the engine maps onto a
+//     `RunCompletion(status: preempted, …)` + a `step_truncated` trail note.
+//     Independent of `PreemptionState`: the state bounds the wait to one step
+//     *cooperatively*; the deadline bounds the step itself *hard*.
 //   - C.37 — yield / resume / deadline-truncation tests.
+//
+// The `PreemptionController` / `RunCoordinator` that *drives* this state
+// belong to the Phase D dispatcher (spec § 10.3; build order D.23–D.25),
+// not to Phase C.
 
 export 'preemption_state.dart';
+export 'step_deadline.dart';

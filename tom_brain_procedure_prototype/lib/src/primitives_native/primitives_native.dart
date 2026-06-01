@@ -19,9 +19,14 @@
 //     + the d4rt `installNativePrimitives` wiring.
 //   - C.20 ✅ — `note(category, payload)` (`NotePrimitive`) + `TrailNote`
 //     value + `TrailSink` seam + the d4rt wiring.
-//   - C.21 ✅ — `yield_if_foreground_waiting` (`YieldPrimitive`) against the
-//     shared `PreemptionState` (`preemption/`) + the d4rt wiring.
+//   - C.21 ✅ — `yield_if_foreground_waiting` (`YieldPrimitive`) d4rt wiring
+//     + the first cut of the checkpoint against the shared `PreemptionState`
+//     (`preemption/`).
 //   - C.22 — depth-cap / note / yield tests.
+//   - C.35 ✅ — owning step for the yield checkpoint against the finalised
+//     `PreemptionState` (C.34). Doc framing corrected (the driving
+//     coordinator is Phase D, D.23–D.25; the deadline is C.36) and the
+//     reusable-across-cycles contract pinned.
 
 export 'native_primitives_installer.dart';
 export 'note_primitive.dart';
