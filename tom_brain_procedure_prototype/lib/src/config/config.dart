@@ -22,10 +22,18 @@
 //     switches, and the hard per-step deadline, loaded from a small YAML
 //     document via the `yaml` package. Malformed documents are funnelled
 //     through `EngineConfigInvalid` (`engine_config_invalid.dart`).
-//   - C.43 — `TomLogger` category wiring.
+//   - C.43 ✅ — `TomLogger` category wiring (`engine_log.dart`): the
+//     closed `EngineLogCategory` enum of the five engine categories
+//     (`tom_brain.engine.host`, `…bridge`, `…store`, `…recorder`,
+//     `…preemption`) and the `EngineLog` const-instance facade with the
+//     five `EngineLog.<area>` statics. Call sites use
+//     `EngineLog.host.status('…')`; the wrapper prepends
+//     `'[tom_brain.engine.<area>] '` and forwards to `tomLog`. Mirrors
+//     `MemoryLog` (A.84) and `SubstrateLog` (B.37).
 //   - C.44 — `EngineEvent` stream.
 //   - C.45 — config-roundtrip / event-ordering / logger tests.
 
 export 'engine_config.dart';
 export 'engine_config_invalid.dart';
+export 'engine_log.dart';
 export 'sandbox_config.dart';
