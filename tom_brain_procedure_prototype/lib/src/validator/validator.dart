@@ -27,7 +27,10 @@
 //     declared `requires` set exactly matches the bridged primitives the
 //     body calls (`procedure.requires.mismatch`). The comment-and-string-
 //     aware projection C.28 introduced is now the shared `CodeProjection`.
-//   - C.30 — per-branch malformed-input tests.
+//   - C.30 ✅ — per-branch malformed-input tests + cross-layer gate
+//     (`test/c30_validator_branch_coverage_test.dart`): one malformed case per
+//     documented rejection branch of all three layers, plus the three-layer
+//     gate driven in the engine's order (header → sandbox → contract).
 
 export 'bridged_primitive_catalog.dart';
 export 'code_projection.dart';

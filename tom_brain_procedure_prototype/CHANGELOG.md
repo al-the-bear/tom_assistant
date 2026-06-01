@@ -267,3 +267,16 @@ Initial project scaffold:
   the entry point and a primitive name in a string literal is never counted as
   a call, while a call inside an interpolation is. 25 unit tests
   (`test/contract_validator_test.dart`). Full suite green at 338/338.
+- C.30 — Validator branch-coverage / consolidation acceptance suite
+  (`test/c30_validator_branch_coverage_test.dart`, tests only): one
+  malformed-input case per documented rejection branch of all three validator
+  layers (header required-fields + version-chain, sandbox directive +
+  identifier families, contract signature `ContractViolationKind`s, contract
+  requires `RequiresMismatchKind`s), each asserted on its stable wire code and
+  `kind` / `field` / `offender`. Adds the cross-layer gate test that drives the
+  three validators in the engine's order (header → sandbox → contract) over a
+  loaded set: a clean procedure clears all three; a procedure malformed in one
+  layer is rejected by that layer; layer ordering is proven by sources
+  malformed in two layers surfacing the earlier layer's fault. Per-group
+  coverage guards assert every enum value / required field has a case. 45 new
+  tests. Full suite green at 383/383.
