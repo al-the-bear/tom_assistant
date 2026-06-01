@@ -182,3 +182,19 @@ Initial project scaffold:
   verbatim source). The loader never parses the body and never resolves
   versions (C.25's job). 25 unit tests (`test/procedure_loader_test.dart`).
   Full suite green at 229/229.
+- C.25 — Procedure resolver: indexes loaded procedures by `(id → version)`
+  and resolves a request to one `LoadedProcedure`, exposing the fallback
+  chain `[v_latest, …, v1]` (PE-6)
+  (`lib/src/procedure_store/procedure_resolver.dart`). `ProcedureResolver`
+  groups by id with each group ordered descending by version; `resolve(id)`
+  returns the latest, `resolve(id, version:)` the exact version, and
+  `fallbackChain(id, {from})` the newest-first chain (full, or stepped down
+  from a given version). A duplicate `(id, version)` is rejected at
+  construction with `ArgumentError`; an unknown id/version raises the new
+  `ProcedureNotFound` (code `procedure.not_found`). `fromStore` is the
+  production path — enumerate → read → load → resolve, skipping a ref that
+  reads back `null` (benign list/read race) and propagating a malformed
+  header unchanged. In the prototype only `v1` of any procedure exists, so a
+  chain is a singleton; the chain machinery is present regardless (PE-6). 26
+  unit tests (`test/procedure_resolver_test.dart`). Full suite green at
+  255/255.

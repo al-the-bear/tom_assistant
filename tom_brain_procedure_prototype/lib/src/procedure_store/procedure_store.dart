@@ -19,7 +19,8 @@
 //     (+ a composite that presents both as one).
 //   - C.24 ✅ — header-parsing loader (`ProcedureLoader`, `ProcedureHeader`,
 //     `ProcedureHeaderInvalid`, `LoadedProcedure`).
-//   - C.25 — version resolver with fallback chain.
+//   - C.25 ✅ — version resolver with fallback chain (`ProcedureResolver`,
+//     `ProcedureNotFound`).
 //   - C.26 — backend-equivalence + malformed-header + resolver tests.
 
 export 'composite_procedure_store.dart';
@@ -28,7 +29,9 @@ export 'memory_procedure_store.dart';
 export 'procedure_header.dart';
 export 'procedure_header_invalid.dart';
 export 'procedure_loader.dart';
+export 'procedure_not_found.dart';
 export 'procedure_origin.dart';
 export 'procedure_ref.dart';
+export 'procedure_resolver.dart';
 export 'procedure_source.dart';
 export 'procedure_store_base.dart';
