@@ -214,3 +214,35 @@ Initial project scaffold:
   version on request, and builds the cross-backend `[2, 1]` fallback chain;
   unknown id/version raise `ProcedureNotFound`. 17 acceptance tests; no
   production code changed. Full suite green at 272/272.
+- C.27 — Header validator (`lib/src/validator/header_validator.dart`,
+  `HeaderValidator`): the first of the three validator layers (§ 7, row 1 →
+  `procedure.header.invalid`). Runs before a procedure reaches
+  `draft`/runnable. `validateHeader` re-affirms the five required fields at
+  the header-object boundary (non-empty `id` / `summary` / `successCriterion`,
+  positive `version`, non-empty `budget`) so a brain-authored `Procedure`
+  node built directly in memory — not via the loader — still has a gate; the
+  success-criterion presence check is the explicit § 7 requirement.
+  `validateVersionChain` adds the check the loader cannot make from one
+  header: across an id's whole version set, versions must be positive and
+  strictly increasing (duplicates and zero/negative versions rejected; gaps
+  allowed, since procedures are demoted, never deleted). `validateAll`
+  composes both over a loaded set. Failures throw `ProcedureHeaderInvalid`
+  (wire code `procedure.header.invalid`). 17 unit tests
+  (`test/header_validator_test.dart`). Full suite green at 289/289.
+- C.28 — Sandbox validator (`lib/src/validator/sandbox_validator.dart`,
+  `SandboxValidator`): the second of the three validator layers (§ 7, row 3 →
+  `procedure.sandbox.violation`) — the *static* half of the PE-1 surface
+  lock. Scans a procedure's verbatim source before it reaches the host and
+  rejects any `import`/`export` directive (procedures may not import
+  anything, § 4.2) or reference to a disallowed top-level identifier (the
+  SDK gateways for file system, processes, sockets, isolates, the standard
+  streams, and `eval`). The scan runs over a **code projection** that blanks
+  comment bodies and string-literal text (newlines preserved for line
+  numbers) while keeping interpolated code (`${ ... }` / `$id`), so a banned
+  word in a comment or string literal does not trip the gate but one smuggled
+  through an interpolation does. Only top-level references match
+  (`obj.Process` and `Processor` are not flagged). Deny sets are configurable
+  via the constructor; `SandboxValidator.shared` uses the defaults. Failures
+  throw `ProcedureSandboxViolation` (wire code `procedure.sandbox.violation`)
+  carrying `kind` / `offender` / `line` / `procedureId`. 24 unit tests
+  (`test/sandbox_validator_test.dart`). Full suite green at 313/313.

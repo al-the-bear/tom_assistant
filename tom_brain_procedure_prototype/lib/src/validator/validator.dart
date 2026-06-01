@@ -14,9 +14,16 @@
 //
 // Wiring across later Phase C steps:
 //
-//   - C.27 — header validator.
-//   - C.28 — sandbox validator.
+//   - C.27 ✅ — header validator (`HeaderValidator`): required fields +
+//     success-criterion presence on a single header, version monotonicity
+//     across an id's version set. Failures carry `procedure.header.invalid`.
+//   - C.28 ✅ — sandbox validator (`SandboxValidator`): rejects `import`/
+//     `export` directives and references to disallowed top-level
+//     identifiers (SDK gateways) via a comment-and-string-aware code
+//     projection. Failures carry `procedure.sandbox.violation`.
 //   - C.29 — contract validator.
 //   - C.30 — per-branch malformed-input tests.
-//
-// At C.8 this folder is intentionally empty. No exports yet.
+
+export 'header_validator.dart';
+export 'procedure_sandbox_violation.dart';
+export 'sandbox_validator.dart';
