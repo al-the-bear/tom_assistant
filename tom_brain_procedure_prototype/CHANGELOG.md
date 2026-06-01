@@ -198,3 +198,19 @@ Initial project scaffold:
   chain is a singleton; the chain machinery is present regardless (PE-6). 26
   unit tests (`test/procedure_resolver_test.dart`). Full suite green at
   255/255.
+- C.26 — Procedure store + loader + resolver acceptance suite
+  (`test/procedure_store_acceptance_test.dart`): the dedicated test step for
+  the C.6 subphase, raising the three pillars from the unit level to the
+  integrated `store → loader → resolver` pipeline. Pillar 1 — a disk store
+  and a memory store seeded with the *same* procedure sources produce
+  equivalent resolvers (same ids, versions, and resolved headers), proving
+  the backends behave identically all the way up to a resolved version, not
+  just at the raw `read` layer. Pillar 2 — a table of ten malformed-header
+  shapes is rejected with `ProcedureHeaderInvalid`
+  (`procedure.header.invalid`), and the rejection propagates when a
+  malformed header reaches the loader through `ProcedureResolver.fromStore`.
+  Pillar 3 — over a `CompositeProcedureStore` mixing a disk-backed v1 and a
+  brain-authored v2, the resolver picks the latest by default, the exact
+  version on request, and builds the cross-backend `[2, 1]` fallback chain;
+  unknown id/version raise `ProcedureNotFound`. 17 acceptance tests; no
+  production code changed. Full suite green at 272/272.

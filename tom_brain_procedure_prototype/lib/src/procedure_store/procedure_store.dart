@@ -21,7 +21,10 @@
 //     `ProcedureHeaderInvalid`, `LoadedProcedure`).
 //   - C.25 ✅ — version resolver with fallback chain (`ProcedureResolver`,
 //     `ProcedureNotFound`).
-//   - C.26 — backend-equivalence + malformed-header + resolver tests.
+//   - C.26 ✅ — backend-equivalence + malformed-header + resolver
+//     acceptance suite (`test/procedure_store_acceptance_test.dart`); no
+//     production code, raises the three pillars to the integrated
+//     `store → loader → resolver` pipeline.
 
 export 'composite_procedure_store.dart';
 export 'disk_procedure_store.dart';
