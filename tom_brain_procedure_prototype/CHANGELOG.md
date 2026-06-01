@@ -80,3 +80,12 @@ Initial project scaffold:
   tests (`test/sandbox_config_test.dart`): config value semantics + host
   opt-in behaviour (locked default, per-switch install, missing-installer
   refusal, switch independence, surface-reachable-from-script).
+- C.18 — `D4rtDcliHost` acceptance suite
+  (`test/host_acceptance_test.dart`): the three plan-named criteria as one
+  group each, driven only through the public `host.run(String)` seam under
+  the locked sandbox default (the `answer_with_memory_v1` posture) — host
+  boots (live interpreter + CLI over the same interpreter, trivial script
+  runs), bridges resolve (memory + substrate from string-source scripts;
+  bare interpreter does not — negative control), and a bridged method call
+  returns the expected result (memory recall, substrate llm, and both in
+  one procedure). 8 tests. No production code changed; test-only step.
