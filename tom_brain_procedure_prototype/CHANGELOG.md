@@ -39,3 +39,13 @@ Initial project scaffold:
   folder. 11 generated-bridge contract tests
   (`test/generated_bridges_test.dart`); the C.11 `build_yaml_config_test`
   revised to lock the new (dartscript-off) contract.
+- C.15 — Generator-output round-trip smoke
+  (`test/bridge_roundtrip_test.dart`): a d4rt script imports the bridge
+  libraries, receives a natively-constructed `MemoryBridge` /
+  `SubstrateBridge` as a `main` positional arg, calls a method on it, and
+  reads the flattened primitive result — exercising the generated bridge's
+  primitive⇄domain conversion end-to-end through the interpreter against
+  recording `TomBrainMemoryClient` / `TomBrainSubstrateClient` doubles. 4
+  tests (recall read-path, llm read-path, both-bridges-in-one-script,
+  persist write-path). Native bridge instances are injected as `main`
+  positional args (Q-C.15.1).
