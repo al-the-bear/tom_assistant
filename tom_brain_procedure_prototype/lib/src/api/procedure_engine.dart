@@ -55,11 +55,11 @@ import 'dart:async';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show TomBrainMemoryClient, TrailEntry, TrailOutcomeStatus;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show PreemptionState;
 
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../d4rt_host/d4rt_dcli_host.dart';
-import '../preemption/preemption_state.dart';
 import '../preemption/step_deadline.dart';
 import '../primitives_native/native_primitives_installer.dart';
 import '../primitives_native/note_primitive.dart';

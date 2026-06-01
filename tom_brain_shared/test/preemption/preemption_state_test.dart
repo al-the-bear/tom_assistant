@@ -1,21 +1,19 @@
-// C.34 — `PreemptionState`, the shared cooperative-preemption object the
-// engine yields against and the Phase D dispatcher drives
-// (`tom_brain_procedure_prototype_specification.md` § 9, PE-5, § 10.3;
-// `tom_brain_definition.md` § 7.1, § 14.10).
+// PreemptionState unit tests (moved here at the C.48 reuse-extraction
+// pass from `tom_brain_procedure_prototype`).
 //
 // Dart-level unit tests for the state object in isolation: the
 // foreground-waiting flag, the resume-signal (`Completer`) lifecycle, and
 // the idempotency of both control methods. The read-side checkpoint that
-// *consumes* this object (`YieldPrimitive`) is covered by
-// `yield_primitive_test.dart`; the d4rt-facing wiring by
-// `native_primitives_installer_test.dart`.
+// *consumes* this object (`YieldPrimitive`) and the dispatcher coordinator
+// that drives it live in their owning components; this suite covers only
+// the shared state contract.
 
 import 'package:test/test.dart';
 
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show PreemptionState;
 
 void main() {
-  group('C.34 PreemptionState', () {
+  group('PreemptionState', () {
     test('starts idle: no foreground waiting, no resume signal', () {
       final state = PreemptionState();
       expect(state.isForegroundWaiting, isFalse);

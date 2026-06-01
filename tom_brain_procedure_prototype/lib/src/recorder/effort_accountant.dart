@@ -44,7 +44,7 @@
 // elapsed time, stamped once by `RunRecorder.complete`, not the sum of
 // per-call latencies (which overlap and double-count under concurrency).
 
-import 'effort_metrics.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show EffortMetrics;
 
 /// Classifies a single bridged-primitive call into the [EffortMetrics]
 /// delta it contributed.

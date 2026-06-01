@@ -20,6 +20,7 @@
 import 'package:test/test.dart';
 import 'package:tom_brain_memory/tom_brain_memory.dart' show TrailOutcomeStatus;
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show EffortMetrics;
 
 final DateTime _at = DateTime.utc(2026, 6, 2, 10, 30, 0);
 

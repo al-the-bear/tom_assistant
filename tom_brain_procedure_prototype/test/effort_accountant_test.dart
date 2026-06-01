@@ -6,6 +6,7 @@
 // primitives contribute nothing. Pure tests — no recorder, no memory.
 
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show EffortMetrics;
 import 'package:test/test.dart';
 
 void main() {

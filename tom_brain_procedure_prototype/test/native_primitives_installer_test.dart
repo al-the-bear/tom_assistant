@@ -26,6 +26,7 @@ import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show PreemptionState;
 
 void main() {
   late MemoryBridge memoryBridge;

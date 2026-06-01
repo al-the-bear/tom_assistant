@@ -415,3 +415,21 @@ Initial project scaffold:
   entry-point return is coerced (Q-C.38.2); the validator gate (Q-C.38.1),
   nested-failure propagation (Q-C.38.3), and per-segment deadlines (Q-C.38.4)
   are deferred to Phase D. 9 new tests; full suite green at 478/478.
+- C.48 — reuse-extraction pass: `EffortMetrics` and `PreemptionState` moved
+  to `tom_brain_shared` (v0.3.0). Both are referenced by two distinct
+  components — the recorder produces `EffortMetrics` and the Phase D
+  harvester reads it off `recent_runs`; the engine reads `PreemptionState`
+  and the Phase D coordinator drives it — so they are shared cross-component
+  vocabulary, the promotion criterion. The local
+  `lib/src/recorder/effort_metrics.dart` and
+  `lib/src/preemption/preemption_state.dart` are deleted; consumers import
+  the types from `package:tom_brain_shared/tom_brain_shared.dart`; the
+  `recorder/` and `preemption/` barrels no longer re-export them (no
+  compatibility shim, per hard principle 1). The `preemption_state_test.dart`
+  unit suite moved to `tom_brain_shared/test/preemption/`, which also gained
+  an 11-test `EffortMetrics` suite. Prototype suite green at 588/588 (was
+  595; the 7 moved preemption-state tests now live in shared, at 530/530).
+  The `RunStart` / `RunCompletion` / `ProcedureRunRecord` trail-record types
+  stayed in the prototype: they reference memory's `TrailOutcomeStatus`, so
+  moving them would force `tom_brain_shared` to depend on `tom_brain_memory`
+  and break the A.9 single-dependency contract.

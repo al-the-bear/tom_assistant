@@ -11,9 +11,8 @@
 // #13 `ProcedureRun`; the `inflight` / `recent_runs` bootstrap stacks).
 
 import 'package:tom_brain_memory/tom_brain_memory.dart' show TrailOutcomeStatus;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, TrailId;
-
-import 'effort_metrics.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show EffortMetrics, NodeId, TrailId;
 
 /// The bootstrap stack that holds the currently-running procedure runs
 /// (spec § 8 — pushed at start, removed at completion).

@@ -39,7 +39,7 @@
 // write-side coordinator plugs in later against the same shared state
 // object.
 
-import '../preemption/preemption_state.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show PreemptionState;
 
 /// The engine-native `yield_if_foreground_waiting` primitive.
 ///

@@ -1,32 +1,25 @@
-// PreemptionState — the shared object the engine yields against and the
-// dispatcher's coordinator drives (Plan step C.34, opening subphase C.9;
-// `tom_brain_procedure_prototype_specification.md` § 9, PE-5, § 10.3;
+// PreemptionState — the cooperative single-foreground / single-background
+// preemption state shared across the procedure engine and the dispatcher
+// (`tom_brain_procedure_prototype_specification.md` § 9, PE-5, § 10.3;
 // `tom_brain_definition.md` § 7.1, § 14.10).
 //
-// ── What C.34 owns ──────────────────────────────────────────────────
+// ── Origin: the C.48 reuse-extraction pass ──────────────────────────
 //
-// C.34 owns exactly this shared object: the cooperative-checkpoint
-// *contract* the engine-native `yield_if_foreground_waiting()` primitive
-// reads against — a "foreground waiting" flag plus a resume signal (a
-// `Completer`) a parked background run awaits. That is the whole C.34
-// deliverable per the plan text ("shared object the engine and dispatcher
-// both reference; carries the foreground-waiting flag + a `Completer` for
-// the resume signal"). The object was first cut early, as a dependency of
-// the C.21 yield primitive, and is finalised here.
+// First cut in `tom_brain_procedure_prototype` (Plan step C.34) as the
+// shared object the engine-native `yield_if_foreground_waiting()`
+// primitive reads against. The Phase D dispatcher's coordinator drives
+// the *write* side of the same object (sets / clears the flag, signals
+// resume). Because two distinct components — the engine (reader) and the
+// dispatcher (writer) — reference the identical state contract, it moved
+// here at the Phase C review (C.48). The class is a pure state object
+// (only `dart:async`, no I/O), so it fits the A.9 dependency-discipline
+// contract for `tom_brain_shared`.
 //
-// ── What C.34 deliberately does NOT own ─────────────────────────────
-//
-// The hard step deadline is C.36. The `PreemptionController` /
-// `PreemptionEvent` transition machinery and the FIFO foreground/background
-// `RunCoordinator` that *drives* this state belong to the Phase D
-// dispatcher (spec § 10.3; build order D.23–D.25), not to C.34. C.34 supplies
-// only the shared state; the deadline plugs in at C.36 and the write-side
-// coordinator plugs in at D.23–D.25, both against this same object.
-//
-// The state object is referenced by both the engine (which yields against
-// it) and the Phase D dispatcher (which sets/clears it), so it is a prime
-// candidate for extraction into `tom_brain_shared` at the Phase C review
-// (C.48).
+// What is NOT here: the `PreemptionController` / `RunCoordinator` that
+// *drive* this state belong to the Phase D dispatcher (spec § 10.3; build
+// order D.23–D.25). The engine-native yield primitive and the hard step
+// deadline that read this state stay in the procedure prototype. Shared
+// carries only the state contract both sides agree on.
 
 import 'dart:async';
 

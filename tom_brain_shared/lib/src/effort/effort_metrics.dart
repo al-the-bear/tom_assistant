@@ -1,20 +1,17 @@
 // EffortMetrics — the closed effort-metric set a `ProcedureRun` carries
+// and the dispatcher's harvester later reads
 // (`tom_brain_procedure_prototype_specification.md` § 8;
 // `tom_brain_definition.md` § 7.4).
 //
-// ── What C.31 owns vs. C.32 defers ──────────────────────────────────
+// ── Origin: the C.48 reuse-extraction pass ──────────────────────────
 //
-// C.31 (the run recorder) owns the *shape* of the effort record and
-// persists it onto the `ProcedureRun` node at completion. C.32 owns the
-// *accumulation* — incrementing the counters as each bridged primitive
-// runs (an `llm` call bumps `llmCalls` + `inputTokens` + `outputTokens`,
-// a `recall` bumps `memoryReads`, a `persist`/`edge` bumps
-// `memoryWrites`, etc.). C.31 therefore defines this value as an
-// immutable, zero-defaulted bundle the recorder records verbatim, and
-// gives it the combinators (`plus`, `withWallClockMs`) C.32 needs to
-// build a final total from per-call deltas without re-deriving the
-// shape. Keeping the type here (not in C.32) means the recorder's
-// `complete` signature is stable from the moment the recorder exists.
+// First cut in `tom_brain_procedure_prototype` (Plan step C.31), where
+// the run recorder owns the *shape* and C.32's accountant owns the
+// *accumulation*. Moved here at the Phase C review (C.48): the recorder
+// produces this shape, and the Phase D dispatcher's harvester reads the
+// same shape off the `recent_runs` stack — two distinct components share
+// the metric vocabulary. It is a pure value type (no I/O), so it fits the
+// A.9 dependency-discipline contract for `tom_brain_shared`.
 
 import 'dart:collection';
 

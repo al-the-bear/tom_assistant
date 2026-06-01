@@ -11,6 +11,13 @@
 //   - Effort accounting: `wallClockMs`, `llmCalls`, `inputTokens`,
 //     `outputTokens`, `toolCalls`, `memoryReads`, `memoryWrites`.
 //
+// `EffortMetrics` — the closed effort-metric shape the recorder produces
+// and the Phase D dispatcher's harvester reads off `recent_runs` — was
+// extracted to `tom_brain_shared` at the Phase C review (C.48). Consumers
+// import it from `package:tom_brain_shared/tom_brain_shared.dart`; this
+// module no longer re-exports it. The `EffortAccountant` that classifies
+// a primitive call into an `EffortMetrics` delta stays here.
+//
 // Wiring across later Phase C steps:
 //
 //   - C.31 ✅ — `RunRecorder` + trail/stack integration: opens a memory
@@ -27,6 +34,5 @@
 //     `inflight` then `recent_runs`).
 
 export 'effort_accountant.dart';
-export 'effort_metrics.dart';
 export 'run_records.dart';
 export 'run_recorder.dart';

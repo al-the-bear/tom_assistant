@@ -1,21 +1,20 @@
 // Barrel for the `preemption/` module (Plan step C.8).
 //
-// Owns the cooperative single-foreground / single-background
-// preemption primitives
+// Owns the engine-local hard step deadline
 // (`tom_brain_procedure_prototype_specification.md` § 9, Plan steps
-// C.34–C.37):
+// C.36–C.37):
 //
-//   - `PreemptionState` — the shared object the engine and dispatcher
-//     both reference; carries the "foreground waiting" flag and a
-//     `Completer` for the resume signal.
-//   - `yield_if_foreground_waiting()` implementation against
-//     `PreemptionState`.
 //   - The hard step deadline (default 60 s wall clock) — force-yield +
 //     mark step truncated.
 //
-// `PreemptionState` and any shared effort/trail shapes are flagged for
-// extraction to `tom_brain_shared` at the Phase C review (C.48), since
-// the Phase D dispatcher references the same state object.
+// `PreemptionState` — the cooperative single-foreground / single-
+// background state the engine yields against and the Phase D dispatcher
+// drives — was extracted to `tom_brain_shared` at the Phase C review
+// (C.48), because two distinct components reference the identical state
+// contract. Consumers import it from
+// `package:tom_brain_shared/tom_brain_shared.dart`; this module no longer
+// re-exports it. The engine-native `yield_if_foreground_waiting()`
+// checkpoint that reads the state stays in `primitives_native/`.
 //
 // Wiring across later Phase C steps:
 //
@@ -37,5 +36,4 @@
 // belong to the Phase D dispatcher (spec § 10.3; build order D.23–D.25),
 // not to Phase C.
 
-export 'preemption_state.dart';
 export 'step_deadline.dart';

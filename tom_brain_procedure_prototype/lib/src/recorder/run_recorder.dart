@@ -51,11 +51,11 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
         TrailEntry,
         TrailEntryKind,
         TrailOutcome;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, TrailId;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show EffortMetrics, NodeId, TrailId;
 
 import '../primitives_native/trail_note.dart' show TrailNote, TrailSink;
 import 'effort_accountant.dart';
-import 'effort_metrics.dart';
 import 'run_records.dart';
 
 /// Records one procedure run end-to-end against a [TomBrainMemoryClient].

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 — 2026-06-02 (Phase C.48 — reuse extraction)
+
+Phase-C reuse-extraction pass promotes two types out of
+`tom_brain_procedure_prototype` into the shared cross-component
+vocabulary, each because two distinct components reference the identical
+shape:
+
+- `effort/` — `EffortMetrics`, the closed seven-field effort record
+  (`wallClockMs`, `llmCalls`, `inputTokens`, `outputTokens`, `toolCalls`,
+  `memoryReads`, `memoryWrites`) plus the derived `estimatedTokens`,
+  with the `plus` / `withWallClockMs` combinators and the closed JSON
+  shape. Produced by the run recorder (Plan step C.31) and read by the
+  Phase D dispatcher's harvester off the `recent_runs` stack.
+- `preemption/` — `PreemptionState`, the cooperative single-foreground /
+  single-background preemption state (foreground-waiting flag + resume
+  `Completer`). Read by the engine's `yield_if_foreground_waiting()`
+  (Plan step C.34) and driven by the Phase D dispatcher's coordinator.
+
+Both are pure value / state types (only `dart:async` / `dart:collection`,
+no I/O) so the A.9 single-runtime-dependency contract is unchanged. Unit
+tests for both moved/were added under `test/preemption/` and
+`test/effort/`.
+
 ## 0.1.0 — 2026-05-30 (Phase A.20)
 
 First stable contract release of `tom_brain_shared`. Cuts the v0.1.0 line so
