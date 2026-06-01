@@ -49,3 +49,19 @@ Initial project scaffold:
   tests (recall read-path, llm read-path, both-bridges-in-one-script,
   persist write-path). Native bridge instances are injected as `main`
   positional args (Q-C.15.1).
+- C.16 — `D4rtDcliHost` (`lib/src/d4rt_host/d4rt_dcli_host.dart`): composes
+  one `D4rt` interpreter with the two brain bridges (`BrainBridges.register`),
+  a `D4rtCliApi` (`D4rtCliController`) over the same interpreter, and an
+  `installNativePrimitives` seam for the C.19 engine-native primitives.
+  Bridges reach procedure scripts as the named globals `mem` / `sub`
+  (`registerGlobalVariable` keyed to the bridge library URIs) — the
+  injection convention Q-C.15.1 left open, resolved to named globals because
+  it is the only form compatible with the spec entry point
+  `run(ProcedureInputs)` (Q-C.16.1). Stack surface stays flat (Q-C.16.2).
+  `host.run(source, {entryPoint = 'run', inputs})` executes a script and
+  awaits the entry point. Unix/VS Code reach stays disabled (only
+  `BrainBridges` is registered) — the locked prototype default; the opt-in
+  is C.17. 10 host tests (`test/d4rt_dcli_host_test.dart`): boot +
+  same-interpreter composition, bridge resolve+dispatch with a bare-interp
+  negative control, named-global injection round-trips (mem / sub / both /
+  default+custom entry point), and the native-primitive seam.

@@ -14,8 +14,11 @@
 //
 // Wiring across later Phase C steps:
 //
-//   - C.16 — `D4rtDcliHost` composition.
-//   - C.17 — sandbox switch wiring.
+//   - C.16 ✅ — `D4rtDcliHost` composition (`d4rt_dcli_host.dart`):
+//     one interpreter + the two bridges + a `D4rtCliApi` surface + the
+//     engine-native-primitive seam. Bridges reach scripts as the `mem`
+//     / `sub` named globals (Q-C.15.1 resolved → named globals).
+//   - C.17 — sandbox switch wiring (Unix + VS Code opt-in).
 //   - C.18 — host-boot + bridge-resolution tests.
-//
-// At C.8 this folder is intentionally empty. No exports yet.
+
+export 'd4rt_dcli_host.dart';
