@@ -39,6 +39,24 @@
 # signatures stay primitive-typed (`num`/`String`/`bool`/`Map`/`List<Object?>`),
 # so the generator never has to bridge the memory/substrate domain-type graph and
 # there is no cross-package bridged type to import.
+#
+# `generateDartscript` is deliberately OFF (Q-C.14.1, discovered at C.14). In the
+# pinned generator (`tom_d4rt_generator 1.8.24`) the builder *always* runs the
+# per-package orchestrator path: it writes per-package bridge files plus a
+# delegating barrel via `per_package_orchestrator.dart`
+# `_generateDelegatingBarrelContent`. That delegating barrel does NOT emit a
+# `subPackageBarrels()` method, and the builder never writes a `relaxers.b.dart`.
+# The dartscript template (`file_generators.dart`) nonetheless imports
+# `relaxers.b.dart` and calls `<Module>Bridge.subPackageBarrels()`, so the
+# generated `dartscript.b.dart` does not compile (uri_does_not_exist +
+# undefined_method). Until the generator is fixed and republished, the prototype
+# does not consume the dartscript registration file. Registration is instead
+# provided by the hand-authored `brain_bridges_registrar.dart`
+# (`BrainBridges.register`), which wraps the cleanly-generated
+# `AllBridge.registerBridges` — exactly the two-library-path registration the
+# dartscript template intended, minus the generic-constructor / relaxer /
+# sub-package-barrel calls that are no-ops for this package's two
+# primitive-typed bridges.
 
 targets:
   $default:
@@ -53,9 +71,15 @@ targets:
                 - lib/src/bridges/memory_bridge.dart
                 - lib/src/bridges/substrate_bridge.dart
               outputPath: lib/src/bridges/brain_bridges.b.dart
+          # Keep every generated artifact inside the existing `bridges/`
+          # folder. The builder always runs the per-package orchestrator,
+          # which writes `package_<pkg>_bridges.b.dart` + `bridges_trigger.b.dart`
+          # under `libraryPath` (default: a NEW `lib/src/d4rt_library_bridges/`
+          # folder). Pinning it to `lib/src/bridges` avoids introducing a tenth
+          # `lib/src/` subfolder outside the C.8 engine inventory (the
+          # folder-layout test treats `bridges/`-local `*.b.dart` as generated).
+          libraryPath: lib/src/bridges
           helpersImport: package:tom_d4rt/tom_d4rt.dart
           generateBarrel: true
           barrelPath: lib/src/bridges/d4rt_bridges.b.dart
-          generateDartscript: true
-          dartscriptPath: lib/src/bridges/dartscript.b.dart
-          registrationClass: BrainBridges
+          generateDartscript: false

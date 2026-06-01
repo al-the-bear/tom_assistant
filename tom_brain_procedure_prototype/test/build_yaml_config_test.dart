@@ -15,14 +15,25 @@
 //   3. Both C.11 target source files appear under `barrelFiles` -- the plan's
 //      "Targets: bridges/memory_bridge.dart and bridges/substrate_bridge.dart",
 //      resolved to the C.8 `lib/src/bridges/` layout.
-//   4. The generated-output / barrel / dartscript paths and the
-//      `registrationClass` are present (so C.16's host can call
-//      `BrainBridges.register(d4rt)`).
+//   4. The generated-output and barrel paths are present, and
+//      `generateDartscript` is OFF (revised at C.14 — Q-C.14.1: the 1.8.24
+//      generated dartscript does not compile; registration moved to the
+//      hand-authored `BrainBridges` in `brain_bridges_registrar.dart`).
+//      `libraryPath` is pinned to `lib/src/bridges` so the per-package
+//      generator output does not introduce a tenth `lib/src/` folder.
 //   5. `helpersImport` points at `package:tom_d4rt/tom_d4rt.dart` (C.3
 //      convention 3 -- required for generated code to resolve the `D4` helper).
 //   6. No STALE option keys leak in -- the C.3-flagged deltas (`barrelFile`
 //      singular, the doc-only re-export knobs) must not appear, guarding against
 //      a copy of the stale reference doc.
+//
+// C.14 revision note: the original C.11 contract asserted
+// `generateDartscript: true` + a `dartscriptPath` + `registrationClass:
+// BrainBridges`. C.14 ran the generator and found that combination produces a
+// non-compiling `dartscript.b.dart` in `tom_d4rt_generator 1.8.24` (it imports a
+// never-written `relaxers.b.dart` and calls an unemitted `subPackageBarrels()`).
+// The build.yaml was revised to turn the feature off; this test was revised in
+// the same change to lock the new contract (no backwards-compat).
 //
 // String/regex parsing (no `yaml` dependency) mirrors the C.7 / C.9 manifest
 // contract tests: it keeps C.11 scoped to "create build.yaml" without a
@@ -94,8 +105,7 @@ void main() {
       );
     });
 
-    test('generated output / barrel / dartscript paths + registrationClass set',
-        () {
+    test('generated output + barrel paths set, dartscript OFF (C.14)', () {
       expect(
         buildYaml.contains(RegExp(
             r'^\s*outputPath:\s*lib/src/bridges/brain_bridges\.b\.dart',
@@ -105,23 +115,46 @@ void main() {
       );
       expect(
         buildYaml.contains(
-            RegExp(r'^\s*generateDartscript:\s*true', multiLine: true)),
+            RegExp(r'^\s*generateBarrel:\s*true', multiLine: true)),
         isTrue,
-        reason: 'generateDartscript must be true so a registration class is '
-            'emitted (C.16 calls BrainBridges.register(d4rt)).',
+        reason: 'generateBarrel must be true: the clean d4rt_bridges.b.dart '
+            'barrel re-exports the delegating AllBridge.',
       );
       expect(
         buildYaml.contains(RegExp(
-            r'^\s*dartscriptPath:\s*lib/src/bridges/dartscript\.b\.dart',
+            r'^\s*barrelPath:\s*lib/src/bridges/d4rt_bridges\.b\.dart',
             multiLine: true)),
         isTrue,
-        reason: 'dartscriptPath must be set when generateDartscript is true.',
+        reason: 'barrelPath must be set when generateBarrel is true.',
+      );
+      // C.14 / Q-C.14.1: dartscript generation is OFF because the 1.8.24
+      // generated dartscript does not compile. Registration is provided by
+      // the hand-authored BrainBridges (brain_bridges_registrar.dart).
+      expect(
+        buildYaml.contains(
+            RegExp(r'^\s*generateDartscript:\s*false', multiLine: true)),
+        isTrue,
+        reason: 'generateDartscript must be false (Q-C.14.1): the generated '
+            'dartscript.b.dart does not compile in tom_d4rt_generator 1.8.24.',
+      );
+      expect(
+        buildYaml.contains(RegExp(r'^\s*dartscriptPath:', multiLine: true)),
+        isFalse,
+        reason: 'No dartscriptPath when generateDartscript is off.',
+      );
+      expect(
+        buildYaml.contains(RegExp(r'^\s*registrationClass:', multiLine: true)),
+        isFalse,
+        reason: 'No registrationClass: dartscript is off and BrainBridges is '
+            'hand-authored, not generated.',
       );
       expect(
         buildYaml.contains(
-            RegExp(r'^\s*registrationClass:\s*BrainBridges', multiLine: true)),
+            RegExp(r'^\s*libraryPath:\s*lib/src/bridges', multiLine: true)),
         isTrue,
-        reason: 'registrationClass names the single register() entry point.',
+        reason: 'libraryPath is pinned to lib/src/bridges so per-package '
+            'generator output stays inside the existing folder (keeps the C.8 '
+            'inventory intact).',
       );
     });
 

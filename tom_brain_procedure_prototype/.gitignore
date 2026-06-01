@@ -1,0 +1,7 @@
+# Dart / build_runner
+.dart_tool/
+.packages
+pubspec.lock
+
+# build_runner generator state marker (regenerated on each build)
+lib/d4rt_bridges.g.info

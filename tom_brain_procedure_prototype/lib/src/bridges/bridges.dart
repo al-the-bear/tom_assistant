@@ -13,7 +13,15 @@
 //   - `SubstrateBridge` — plain Dart source class exposing
 //     `llm(prompt, role, budget)`, `embed(text)`,
 //     `search(query, provider, k)`, `fetch(url, budget)`. ✅ C.13.
-//   - The `tom_d4rt_generator`-produced `*.b.dart` companions. ⏳ C.14.
+//   - The `tom_d4rt_generator`-produced `*.b.dart` companions
+//     (`brain_bridges.b.dart` → `AllBridge`,
+//     `package_tom_brain_procedure_prototype_bridges.b.dart`,
+//     `d4rt_bridges.b.dart` barrel). ✅ C.14.
+//   - `BrainBridges.register(d4rt)` — the hand-authored registration
+//     entrypoint over the generated `AllBridge`
+//     (`brain_bridges_registrar.dart`; `generateDartscript` is OFF
+//     because the 1.8.24 generated dartscript does not compile —
+//     Q-C.14.1). ✅ C.14.
 //
 // Hard invariant (PE-7): every prompt the machinery issues carries the
 // assistant-dedication anchor because `SubstrateBridge.llm(...)` always
@@ -24,9 +32,11 @@
 //   - C.11 — `build.yaml` generator config targeting this folder. ✅
 //   - C.12 — `MemoryBridge` source class. ✅
 //   - C.13 — `SubstrateBridge` source class. ✅
-//   - C.14 — `dart run build_runner build` output.
+//   - C.14 — `dart run build_runner build` output + `BrainBridges`
+//     registrar; generated bridges compile and register. ✅
 //   - C.15 — generator-output round-trip tests against in-memory
 //     test doubles.
 
+export 'brain_bridges_registrar.dart';
 export 'memory_bridge.dart';
 export 'substrate_bridge.dart';

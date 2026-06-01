@@ -27,3 +27,15 @@ Initial project scaffold:
   structurally — the bridge supplies a `role` + `inputs`, never a raw wire
   prompt. Plain class, selected by the C.11 `build.yaml`. 13 native
   conversion unit tests (`test/substrate_bridge_test.dart`).
+- C.14 — Ran `dart run build_runner build`: the generated bridges
+  (`brain_bridges.b.dart` → `AllBridge`,
+  `package_tom_brain_procedure_prototype_bridges.b.dart`,
+  `d4rt_bridges.b.dart` barrel, `bridges_trigger.b.dart`) compile and
+  register with the d4rt interpreter. `generateDartscript` turned OFF and
+  registration moved to the hand-authored `BrainBridges.register`
+  (`lib/src/bridges/brain_bridges_registrar.dart`) because the 1.8.24
+  generator's dartscript template does not compile (Q-C.14.1); `libraryPath`
+  pinned to `lib/src/bridges` to keep generated output inside the existing
+  folder. 11 generated-bridge contract tests
+  (`test/generated_bridges_test.dart`); the C.11 `build_yaml_config_test`
+  revised to lock the new (dartscript-off) contract.
