@@ -378,3 +378,20 @@ Initial project scaffold:
   stays with the Phase D dispatcher (spec § 10.3; build order D.23–D.25). 13
   deterministic unit tests via a `_FakeTimer` double
   (`test/step_deadline_test.dart`). Full suite green at 465/465.
+
+- C.37 — cooperative-preemption subphase (C.9) integration tests
+  (`test/cooperative_preemption_test.dart`, § 9, PE-5; plan § C.9). Pins the
+  three behaviours the plan names together: (1) a foreground signal triggers a
+  yield — a background loop calling `yield_if_foreground_waiting()` between
+  steps parks at its next checkpoint when a foreground is waiting; (2) resume
+  after the foreground completes — `signalResume` releases the parked loop,
+  which finishes its remaining steps with the checkpoint now idle; (3) deadline
+  expiry produces a truncated-step trail entry — a step that overruns its
+  `StepDeadline` is force-yielded, and a small test-local step-runner
+  (`_DeadlineStepRunner`) maps the `StepTruncated` onto a `step_truncated`
+  (`stepTruncatedNoteCategory`) trail note carrying the breached limit plus a
+  `preempted` `RunCompletion`, read back off the `RunRecorder`'s trail. The
+  step-runner is a test double, not production code: wiring `StepDeadline.guard`
+  into real `runProcedure` step execution and owning the
+  `StepTruncated → RunCompletion(preempted) + note` mapping is the engine
+  step-runner's job at C.38. 4 new tests; full suite green at 469/469.
