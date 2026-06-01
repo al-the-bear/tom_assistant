@@ -52,6 +52,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import '../api/cancellation.dart';
 
@@ -455,16 +456,22 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
     }
 
     final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, Object?> ||
-        decoded['embedding'] is! List) {
+    if (decoded is! Map<String, Object?>) {
+      throw OllamaHttpException(
+        statusCode: response.statusCode,
+        body: 'Expected JSON object, got: ${response.body}',
+        endpoint: url,
+      );
+    }
+    final vec = JsonShape.readDoubleListN(decoded, 'embedding');
+    if (vec == null) {
       throw OllamaHttpException(
         statusCode: response.statusCode,
         body: 'Expected {embedding: [...]}, got: ${response.body}',
         endpoint: url,
       );
     }
-    final raw = (decoded['embedding'] as List).cast<num>();
-    return raw.map((n) => n.toDouble()).toList(growable: false);
+    return vec;
   }
 
   @override
@@ -494,13 +501,18 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
         endpoint: url,
       );
     }
+    // The top-level shape guard above keeps the "models key missing /
+    // not a list" path on the wire-error code path with an exact
+    // error envelope. `JsonShape.readMapList` then filters out
+    // any non-map entries inside the list — surfacing them as
+    // empty / partial output rather than a hard wire error,
+    // matching the existing semantics.
 
-    return (decoded['models'] as List)
-        .whereType<Map<String, Object?>>()
+    return JsonShape.readMapList(decoded, 'models')
         .map((m) => OllamaTagEntry(
-              name: (m['name'] as String?) ?? '',
-              digest: m['digest'] as String?,
-              sizeBytes: (m['size'] as num?)?.toInt(),
+              name: JsonShape.readString(m, 'name'),
+              digest: JsonShape.readStringN(m, 'digest'),
+              sizeBytes: JsonShape.readIntN(m, 'size'),
             ))
         .toList(growable: false);
   }
@@ -521,30 +533,26 @@ class _OllamaCancelled implements Exception {
 }
 
 OllamaChatResponse _decodeChatResponse(Map<String, Object?> json) {
-  final message = json['message'];
-  final content = message is Map<String, Object?>
-      ? ((message['content'] as String?) ?? '')
-      : '';
+  final message = JsonShape.readMapN(json, 'message');
+  final content = message == null ? '' : JsonShape.readString(message, 'content');
   return OllamaChatResponse(
-    model: (json['model'] as String?) ?? '',
+    model: JsonShape.readString(json, 'model'),
     content: content,
-    promptEvalCount: (json['prompt_eval_count'] as num?)?.toInt(),
-    evalCount: (json['eval_count'] as num?)?.toInt(),
-    totalDurationNs: (json['total_duration'] as num?)?.toInt(),
+    promptEvalCount: JsonShape.readIntN(json, 'prompt_eval_count'),
+    evalCount: JsonShape.readIntN(json, 'eval_count'),
+    totalDurationNs: JsonShape.readIntN(json, 'total_duration'),
   );
 }
 
 OllamaStreamFragment _decodeStreamFragment(Map<String, Object?> json) {
-  final message = json['message'];
-  final delta = message is Map<String, Object?>
-      ? ((message['content'] as String?) ?? '')
-      : '';
+  final message = JsonShape.readMapN(json, 'message');
+  final delta = message == null ? '' : JsonShape.readString(message, 'content');
   return OllamaStreamFragment(
-    model: (json['model'] as String?) ?? '',
+    model: JsonShape.readString(json, 'model'),
     contentDelta: delta,
-    done: (json['done'] as bool?) ?? false,
-    promptEvalCount: (json['prompt_eval_count'] as num?)?.toInt(),
-    evalCount: (json['eval_count'] as num?)?.toInt(),
-    totalDurationNs: (json['total_duration'] as num?)?.toInt(),
+    done: JsonShape.readBool(json, 'done'),
+    promptEvalCount: JsonShape.readIntN(json, 'prompt_eval_count'),
+    evalCount: JsonShape.readIntN(json, 'eval_count'),
+    totalDurationNs: JsonShape.readIntN(json, 'total_duration'),
   );
 }

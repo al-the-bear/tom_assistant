@@ -93,6 +93,15 @@ export 'src/anchor/anchor.dart' show AssistantDedicationAnchor;
 // depending on memory.
 export 'src/cognitive_agents/cognitive_agents.dart' show AgentRegistration;
 
+// B.44 — json_shape/ module: `JsonShape` static-only namespace of
+// pure JSON shape readers (`readString`, `readIntN`, `readMapList`,
+// `readDoubleListN`, …) plus `JsonShapeException`. Extracted at the
+// reuse-extraction pass after the rule-of-three was reached across
+// the substrate's Ollama + OpenAI HTTP clients. Memory's MCP server
+// payload parsing and the planning / creation / procedure on-disk
+// JSON stores will consume the same surface as they ship.
+export 'src/json_shape/json_shape.dart' show JsonShape, JsonShapeException;
+
 // A.88 — symbolic/ module: `SymbolicFilter`, `SymbolicOp`, `AttrClause`.
 // Shape-only filter primitives used by the memory symbolic retrieval
 // mode. They live in shared because every component that constructs a

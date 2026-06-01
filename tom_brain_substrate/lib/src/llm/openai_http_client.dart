@@ -50,6 +50,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import '../api/cancellation.dart';
 
@@ -567,12 +568,11 @@ class DefaultOpenAiHttpClient implements OpenAiHttpClient {
       );
     }
 
-    return (decoded['data'] as List)
-        .whereType<Map<String, Object?>>()
+    return JsonShape.readMapList(decoded, 'data')
         .map((m) => OpenAiModelEntry(
-              id: (m['id'] as String?) ?? '',
-              ownedBy: m['owned_by'] as String?,
-              createdEpochSeconds: (m['created'] as num?)?.toInt(),
+              id: JsonShape.readString(m, 'id'),
+              ownedBy: JsonShape.readStringN(m, 'owned_by'),
+              createdEpochSeconds: JsonShape.readIntN(m, 'created'),
             ))
         .toList(growable: false);
   }
@@ -616,28 +616,26 @@ OpenAiChatResponse _decodeChatResponse(Map<String, Object?> json) {
   // the absence so the router can decide what to do).
   String content = '';
   String? finishReason;
-  final choices = json['choices'];
-  if (choices is List && choices.isNotEmpty) {
+  final choices = JsonShape.readListN(json, 'choices');
+  if (choices != null && choices.isNotEmpty) {
     final first = choices.first;
     if (first is Map<String, Object?>) {
-      final message = first['message'];
-      if (message is Map<String, Object?>) {
-        content = (message['content'] as String?) ?? '';
+      final message = JsonShape.readMapN(first, 'message');
+      if (message != null) {
+        content = JsonShape.readString(message, 'content');
       }
-      finishReason = first['finish_reason'] as String?;
+      finishReason = JsonShape.readStringN(first, 'finish_reason');
     }
   }
 
-  int? promptTokens;
-  int? completionTokens;
-  final usage = json['usage'];
-  if (usage is Map<String, Object?>) {
-    promptTokens = (usage['prompt_tokens'] as num?)?.toInt();
-    completionTokens = (usage['completion_tokens'] as num?)?.toInt();
-  }
+  final usage = JsonShape.readMapN(json, 'usage');
+  final promptTokens =
+      usage == null ? null : JsonShape.readIntN(usage, 'prompt_tokens');
+  final completionTokens =
+      usage == null ? null : JsonShape.readIntN(usage, 'completion_tokens');
 
   return OpenAiChatResponse(
-    model: (json['model'] as String?) ?? '',
+    model: JsonShape.readString(json, 'model'),
     content: content,
     promptTokens: promptTokens,
     completionTokens: completionTokens,
@@ -652,25 +650,23 @@ OpenAiChatResponse _decodeChatResponse(Map<String, Object?> json) {
 OpenAiStreamFragment? _decodeStreamFragment(Map<String, Object?> json) {
   String contentDelta = '';
   String? finishReason;
-  final choices = json['choices'];
-  if (choices is List && choices.isNotEmpty) {
+  final choices = JsonShape.readListN(json, 'choices');
+  if (choices != null && choices.isNotEmpty) {
     final first = choices.first;
     if (first is Map<String, Object?>) {
-      final delta = first['delta'];
-      if (delta is Map<String, Object?>) {
-        contentDelta = (delta['content'] as String?) ?? '';
+      final delta = JsonShape.readMapN(first, 'delta');
+      if (delta != null) {
+        contentDelta = JsonShape.readString(delta, 'content');
       }
-      finishReason = first['finish_reason'] as String?;
+      finishReason = JsonShape.readStringN(first, 'finish_reason');
     }
   }
 
-  int? promptTokens;
-  int? completionTokens;
-  final usage = json['usage'];
-  if (usage is Map<String, Object?>) {
-    promptTokens = (usage['prompt_tokens'] as num?)?.toInt();
-    completionTokens = (usage['completion_tokens'] as num?)?.toInt();
-  }
+  final usage = JsonShape.readMapN(json, 'usage');
+  final promptTokens =
+      usage == null ? null : JsonShape.readIntN(usage, 'prompt_tokens');
+  final completionTokens =
+      usage == null ? null : JsonShape.readIntN(usage, 'completion_tokens');
 
   // Skip frames that carry nothing useful (role-only first frames).
   final hasContent = contentDelta.isNotEmpty;
@@ -679,7 +675,7 @@ OpenAiStreamFragment? _decodeStreamFragment(Map<String, Object?> json) {
   if (!hasContent && !hasFinish && !hasUsage) return null;
 
   return OpenAiStreamFragment(
-    model: (json['model'] as String?) ?? '',
+    model: JsonShape.readString(json, 'model'),
     contentDelta: contentDelta,
     finishReason: finishReason,
     promptTokens: promptTokens,
@@ -691,41 +687,32 @@ OpenAiEmbeddingResponse _decodeEmbeddingResponse(
   Map<String, Object?> json, {
   required String fallbackModel,
 }) {
-  final data = json['data'] as List;
   // Sort by `index` so the response order matches the request order
   // even if the vendor returns frames out of order (some do).
-  final sorted = data
-      .whereType<Map<String, Object?>>()
-      .toList(growable: false)
+  final sorted = JsonShape.readMapList(json, 'data').toList(growable: false)
     ..sort((a, b) {
-      final ai = (a['index'] as num?)?.toInt() ?? 0;
-      final bi = (b['index'] as num?)?.toInt() ?? 0;
+      final ai = JsonShape.readInt(a, 'index');
+      final bi = JsonShape.readInt(b, 'index');
       return ai.compareTo(bi);
     });
 
   final embeddings = <List<double>>[];
   for (final entry in sorted) {
-    final raw = entry['embedding'];
-    if (raw is! List) {
+    final vec = JsonShape.readDoubleListN(entry, 'embedding');
+    if (vec == null) {
       throw FormatException(
         'OpenAI embedding entry missing "embedding" array: $entry',
       );
     }
-    final vec = raw
-        .whereType<num>()
-        .map((n) => n.toDouble())
-        .toList(growable: false);
     embeddings.add(vec);
   }
 
-  int? promptTokens;
-  final usage = json['usage'];
-  if (usage is Map<String, Object?>) {
-    promptTokens = (usage['prompt_tokens'] as num?)?.toInt();
-  }
+  final usage = JsonShape.readMapN(json, 'usage');
+  final promptTokens =
+      usage == null ? null : JsonShape.readIntN(usage, 'prompt_tokens');
 
   return OpenAiEmbeddingResponse(
-    model: (json['model'] as String?) ?? fallbackModel,
+    model: JsonShape.readStringN(json, 'model') ?? fallbackModel,
     embeddings: embeddings,
     promptTokens: promptTokens,
   );
