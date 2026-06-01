@@ -41,11 +41,19 @@ void main() {
   NotePrimitive discardingNotePrimitive() =>
       NotePrimitive(sink: (_) {});
 
+  // A yield primitive over a fresh (idle) PreemptionState — the
+  // runProcedure / note tests below do not yield, but the installer needs
+  // one. Tests that exercise yielding pass their own.
+  YieldPrimitive idleYieldPrimitive() =>
+      YieldPrimitive(state: PreemptionState());
+
   // Boots a host whose native-primitive seam is filled by [primitive]
-  // (plus a discarding note primitive, unless [notePrimitive] is given).
+  // (plus a discarding note primitive and an idle yield primitive, unless
+  // [notePrimitive] / [yieldPrimitive] are given).
   D4rtDcliHost hostFor(
     RunProcedurePrimitive primitive, {
     NotePrimitive? notePrimitive,
+    YieldPrimitive? yieldPrimitive,
   }) =>
       D4rtDcliHost(
         memoryBridge: memoryBridge,
@@ -53,6 +61,7 @@ void main() {
         installNativePrimitives: nativePrimitivesInstaller(
           runProcedurePrimitive: primitive,
           notePrimitive: notePrimitive ?? discardingNotePrimitive(),
+          yieldPrimitive: yieldPrimitive ?? idleYieldPrimitive(),
         ),
       );
 
@@ -251,6 +260,69 @@ run(inputs) {
         ),
       ),
     );
+  });
+
+  // ── yield_if_foreground_waiting() — d4rt wiring (C.21) ─────────────
+
+  test('yield_if_foreground_waiting returns immediately when no foreground '
+      'is waiting', () async {
+    final state = PreemptionState();
+    final host = hostFor(
+      idleRunProcedure(),
+      yieldPrimitive: YieldPrimitive(state: state),
+    );
+
+    // No foreground pending → the script runs straight through and reaches
+    // the line after the checkpoint.
+    final result = await host.run(
+      '''
+import '$engineNativeLibrary';
+
+run(inputs) async {
+  await yield_if_foreground_waiting();
+  return 'past the checkpoint';
+}
+''',
+      inputs: <Object?>[ProcedureInputs.empty()],
+    );
+
+    expect(result, 'past the checkpoint');
+  });
+
+  test('yield_if_foreground_waiting parks the script until the coordinator '
+      'signals resume', () async {
+    final state = PreemptionState()..requestForegroundPreemption();
+    final host = hostFor(
+      idleRunProcedure(),
+      yieldPrimitive: YieldPrimitive(state: state),
+    );
+
+    var resumed = false;
+    final running = host.run(
+      '''
+import '$engineNativeLibrary';
+
+run(inputs) async {
+  await yield_if_foreground_waiting();
+  return 'resumed';
+}
+''',
+      inputs: <Object?>[ProcedureInputs.empty()],
+    ).then((value) {
+      resumed = true;
+      return value;
+    });
+
+    // Let the script reach and park on the checkpoint. It must not complete
+    // while the foreground is still waiting.
+    await Future<void>.delayed(Duration.zero);
+    expect(resumed, isFalse);
+
+    // The coordinator finishes the foreground run → the parked script
+    // resumes.
+    state.signalResume();
+    expect(await running, 'resumed');
+    expect(resumed, isTrue);
   });
 }
 

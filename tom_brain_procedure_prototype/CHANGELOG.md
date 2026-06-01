@@ -123,3 +123,20 @@ Initial project scaffold:
   from a d4rt map literal into `Map<String, Object?>` at the boundary
   (String keys enforced). 10 unit tests (`test/note_primitive_test.dart`) +
   3 d4rt-wiring tests (`test/native_primitives_installer_test.dart`).
+- C.21 — Third engine-native primitive: `yield_if_foreground_waiting()`.
+  `PreemptionState` (`lib/src/preemption/preemption_state.dart`) is the
+  shared cooperative-preemption object: a "foreground waiting" flag plus a
+  `Completer`-backed resume signal, driven by the coordinator
+  (`requestForegroundPreemption` / `signalResume`, both idempotent) and read
+  by the engine (`isForegroundWaiting` / `resumeSignal`). `YieldPrimitive`
+  (`lib/src/primitives_native/yield_primitive.dart`) reads that state: it
+  returns immediately when no foreground is waiting and parks on the resume
+  signal until the coordinator signals resume otherwise (PE-5; definition
+  § 7.1, § 14.10) — a foreground arrival preempts the background at its next
+  checkpoint, never mid-step. The coordinator write-side
+  (`PreemptionController`, deadline) stays with C.34/C.36; C.21 owns only the
+  read-side checkpoint + the shared state contract. `nativePrimitivesInstaller`
+  now takes a third named `yieldPrimitive` parameter and wires
+  `yield_if_foreground_waiting` as a top-level d4rt function. 9 unit tests
+  (`test/yield_primitive_test.dart`) + 2 d4rt-wiring tests
+  (`test/native_primitives_installer_test.dart`).

@@ -19,7 +19,8 @@
 //     + the d4rt `installNativePrimitives` wiring.
 //   - C.20 ✅ — `note(category, payload)` (`NotePrimitive`) + `TrailNote`
 //     value + `TrailSink` seam + the d4rt wiring.
-//   - C.21 — `yield_if_foreground_waiting`.
+//   - C.21 ✅ — `yield_if_foreground_waiting` (`YieldPrimitive`) against the
+//     shared `PreemptionState` (`preemption/`) + the d4rt wiring.
 //   - C.22 — depth-cap / note / yield tests.
 
 export 'native_primitives_installer.dart';
@@ -27,3 +28,4 @@ export 'note_primitive.dart';
 export 'recursion_limit_exceeded.dart';
 export 'run_procedure_primitive.dart';
 export 'trail_note.dart';
+export 'yield_primitive.dart';

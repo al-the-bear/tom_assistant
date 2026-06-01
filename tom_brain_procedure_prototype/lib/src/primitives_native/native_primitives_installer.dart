@@ -2,11 +2,12 @@
 // D4rt interpreter through the host's `installNativePrimitives` seam
 // (Plan step C.19; the seam is the C.16 `NativePrimitiveInstaller`).
 //
-// C.19 wired the first primitive: the top-level `runProcedure`. C.20 adds
-// `note`; `yield_if_foreground_waiting` (C.21) registers here too as it
-// lands. The installer is the d4rt-facing half of the native primitives;
-// the recursion-capped logic lives in [RunProcedurePrimitive] and the
-// note logic in [NotePrimitive].
+// C.19 wired the first primitive: the top-level `runProcedure`. C.20 added
+// `note`; C.21 adds `yield_if_foreground_waiting`. The installer is the
+// d4rt-facing half of the native primitives; the recursion-capped logic
+// lives in [RunProcedurePrimitive], the note logic in [NotePrimitive], and
+// the cooperative-checkpoint logic in [YieldPrimitive] (which reads the
+// shared `PreemptionState`).
 //
 // ── Why a top-level function, not a bridge method ───────────────────
 //
@@ -37,6 +38,7 @@ import '../api/procedure_inputs.dart';
 import '../api/procedure_result.dart';
 import 'note_primitive.dart';
 import 'run_procedure_primitive.dart';
+import 'yield_primitive.dart';
 
 /// The library URI a procedure script imports to reach the engine-native
 /// primitives (`runProcedure`, and later `note` /
@@ -56,8 +58,16 @@ const String runProcedureName = 'runProcedure';
 /// The d4rt global name the `note` primitive is bound to.
 const String noteName = 'note';
 
+/// The d4rt global name the cooperative-preemption checkpoint is bound to.
+///
+/// Spec-cased `snake_case` (`yield_if_foreground_waiting`) per § 5.1; a
+/// background script reaches it as a bare call after importing
+/// [engineNativeLibrary].
+const String yieldIfForegroundWaitingName = 'yield_if_foreground_waiting';
+
 /// Builds an installer that registers the engine-native primitives backed
-/// by [runProcedurePrimitive] and [notePrimitive] onto a D4rt interpreter.
+/// by [runProcedurePrimitive], [notePrimitive], and [yieldPrimitive] onto a
+/// D4rt interpreter.
 ///
 /// Returned as a `void Function(D4rt)` so it slots directly into the
 /// host's `installNativePrimitives` constructor parameter (C.16). Run once
@@ -65,6 +75,7 @@ const String noteName = 'note';
 void Function(D4rt) nativePrimitivesInstaller({
   required RunProcedurePrimitive runProcedurePrimitive,
   required NotePrimitive notePrimitive,
+  required YieldPrimitive yieldPrimitive,
 }) {
   return (D4rt interpreter) {
     interpreter.registertopLevelFunction(
@@ -93,6 +104,19 @@ void Function(D4rt) nativePrimitivesInstaller({
           _invokeNote(notePrimitive, arguments),
       engineNativeLibrary,
       signature: 'void note(String category, Map<String, Object?> payload)',
+    );
+
+    interpreter.registertopLevelFunction(
+      yieldIfForegroundWaitingName,
+      (
+        InterpreterVisitor visitor,
+        List<Object?> arguments,
+        Map<String, Object?> namedArguments,
+        List<RuntimeType>? typeArguments,
+      ) =>
+          yieldPrimitive.yieldIfForegroundWaiting(),
+      engineNativeLibrary,
+      signature: 'Future<void> yield_if_foreground_waiting()',
     );
   };
 }

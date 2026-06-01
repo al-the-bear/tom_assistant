@@ -19,9 +19,12 @@
 //
 // Wiring across later Phase C steps:
 //
-//   - C.34 — `PreemptionState`.
-//   - C.35 — `yield_if_foreground_waiting`.
+//   - C.21 ✅ — `PreemptionState` (the flag + resume-signal contract the
+//     yield primitive checks against). The yield primitive itself lives in
+//     `primitives_native/`. C.34 keeps this same object and grows the
+//     coordinator machinery + deadline around it.
+//   - C.34 — `PreemptionController` over `PreemptionState`.
 //   - C.36 — hard step deadline.
 //   - C.37 — yield / resume / deadline-truncation tests.
-//
-// At C.8 this folder is intentionally empty. No exports yet.
+
+export 'preemption_state.dart';
