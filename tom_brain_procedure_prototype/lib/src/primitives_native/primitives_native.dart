@@ -15,9 +15,12 @@
 //
 // Wiring across later Phase C steps:
 //
-//   - C.19 — `runProcedure` + `RecursionLimitExceeded`.
+//   - C.19 ✅ — `runProcedure` (depth-capped) + `RecursionLimitExceeded`
+//     + the d4rt `installNativePrimitives` wiring.
 //   - C.20 — `note`.
 //   - C.21 — `yield_if_foreground_waiting`.
 //   - C.22 — depth-cap / note / yield tests.
-//
-// At C.8 this folder is intentionally empty. No exports yet.
+
+export 'native_primitives_installer.dart';
+export 'recursion_limit_exceeded.dart';
+export 'run_procedure_primitive.dart';

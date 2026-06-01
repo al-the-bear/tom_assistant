@@ -89,3 +89,21 @@ Initial project scaffold:
   bare interpreter does not — negative control), and a bridged method call
   returns the expected result (memory recall, substrate llm, and both in
   one procedure). 8 tests. No production code changed; test-only step.
+- C.19 — First engine-native primitive: the depth-capped `runProcedure`.
+  `RunProcedurePrimitive` (`lib/src/primitives_native/run_procedure_primitive.dart`)
+  tracks the current frame depth and refuses any `runProcedure(id, inputs,
+  {version, depthDelta})` whose target depth exceeds the hard cap of 10
+  (PE-3; definition § 7.3) with `RecursionLimitExceeded`
+  (`recursion_limit_exceeded.dart`) — the executor is never invoked on a
+  breach. No `request_depth_extension` in v1. Resolution + execution of the
+  target are kept behind an injectable `ProcedureExecutor` seam
+  (`ProcedureCall` value) the store/engine fill at C.23–C.26 / C.38.
+  `nativePrimitivesInstaller` (`native_primitives_installer.dart`) wires
+  `runProcedure` as a top-level d4rt function through the host's
+  `installNativePrimitives` seam (C.16); `ProcedureInputs` / `ProcedureResult`
+  cross the d4rt boundary as opaque host objects (no bridging needed —
+  Q-C.19.2). The typed I/O contract `ProcedureInputs` / `ProcedureResult` /
+  `ProcedureStatus` is introduced in `lib/src/api/` because the primitive
+  needs it (the rest of the `api/` surface lands at C.38–C.41). 19 unit
+  tests (`test/run_procedure_primitive_test.dart`) + 4 d4rt-wiring tests
+  (`test/native_primitives_installer_test.dart`).

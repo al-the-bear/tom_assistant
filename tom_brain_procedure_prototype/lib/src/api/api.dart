@@ -17,9 +17,15 @@
 //
 // Wiring across later Phase C steps:
 //
+//   - C.19 ✅ — the typed procedure I/O contract (`ProcedureInputs`,
+//     `ProcedureResult`, `ProcedureStatus`) that `runProcedure(...)`
+//     consumes and returns (§ 4.3, § 5.3). Introduced here because the
+//     first engine-native primitive (C.19) needs it; the rest of the
+//     surface below builds on it.
 //   - C.38 — `ProcedureEngine.invoke` + run handle.
 //   - C.39 — cancellation + timeout.
 //   - C.40 — sugar aliases (`think_v1` stub; others throw).
 //   - C.41 — invoke / cancellation / sugar-resolution tests.
-//
-// At C.8 this folder is intentionally empty. No exports yet.
+
+export 'procedure_inputs.dart';
+export 'procedure_result.dart';
