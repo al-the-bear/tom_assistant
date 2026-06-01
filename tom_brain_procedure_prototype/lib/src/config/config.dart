@@ -13,9 +13,13 @@
 //
 // Wiring across later Phase C steps:
 //
+//   - C.17 ✅ — `SandboxConfig` (`sandbox_config.dart`): the two host
+//     sandbox switches (`enableUnixCommands`, `enableVsCodeIntegration`),
+//     both disabled by default. The full `EngineConfig` (C.42) will carry
+//     a `SandboxConfig` as its "sandbox switches" field.
 //   - C.42 — `EngineConfig` YAML loader.
 //   - C.43 — `TomLogger` category wiring.
 //   - C.44 — `EngineEvent` stream.
 //   - C.45 — config-roundtrip / event-ordering / logger tests.
-//
-// At C.8 this folder is intentionally empty. No exports yet.
+
+export 'sandbox_config.dart';

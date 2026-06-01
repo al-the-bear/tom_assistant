@@ -18,7 +18,9 @@
 //     one interpreter + the two bridges + a `D4rtCliApi` surface + the
 //     engine-native-primitive seam. Bridges reach scripts as the `mem`
 //     / `sub` named globals (Q-C.15.1 resolved → named globals).
-//   - C.17 — sandbox switch wiring (Unix + VS Code opt-in).
+//   - C.17 ✅ — sandbox switch wiring (`SandboxConfig` + two installer
+//     seams). Both switches off under `SandboxConfig.locked` (the
+//     prototype default); enabling one without its installer throws.
 //   - C.18 — host-boot + bridge-resolution tests.
 
 export 'd4rt_dcli_host.dart';

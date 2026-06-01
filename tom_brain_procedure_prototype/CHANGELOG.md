@@ -65,3 +65,18 @@ Initial project scaffold:
   same-interpreter composition, bridge resolve+dispatch with a bare-interp
   negative control, named-global injection round-trips (mem / sub / both /
   default+custom entry point), and the native-primitive seam.
+- C.17 — Sandbox switches: `SandboxConfig`
+  (`lib/src/config/sandbox_config.dart`) carries two independent flags
+  (`enableUnixCommands`, `enableVsCodeIntegration`), both off by default;
+  `SandboxConfig.locked()` is the prototype's posture. `D4rtDcliHost` gains a
+  `sandbox` parameter plus two pluggable surface installers
+  (`installUnixCommands` / `installVsCodeIntegration`); each switch, when on,
+  runs its installer against the host interpreter at boot, and an enabled
+  switch with no installer throws a `StateError` at construction. The
+  prototype's `answer_with_memory_v1` runs locked (neither surface
+  registered). The choice of which `tom_d4rt_dcli` bridges constitute each
+  surface is left to the engine config (C.42), so the host never pulls the
+  dcli process/network/FS surface into the prototype binary (Q-C.17.1). 14
+  tests (`test/sandbox_config_test.dart`): config value semantics + host
+  opt-in behaviour (locked default, per-switch install, missing-installer
+  refusal, switch independence, surface-reachable-from-script).

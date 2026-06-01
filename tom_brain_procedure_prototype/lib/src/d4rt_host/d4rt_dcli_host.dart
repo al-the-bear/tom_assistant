@@ -47,14 +47,32 @@
 // are what the generated `MemoryBridge` bridge exposes, so flat is the
 // host-facing surface.
 //
-// ── Sandbox posture at C.16 ─────────────────────────────────────────
+// ── Sandbox posture (C.16 baseline + C.17 opt-in) ───────────────────
 //
 // Registering *only* `BrainBridges` (no dcli/unix/vscode bridge) means
 // a procedure script has no filesystem, process, or network reach
 // except through the bridged primitives — the prototype's locked
-// default. The explicit opt-in switch for the Unix + VS Code surface is
-// C.17; the validator's source-level sandbox check is C.27–C.30. C.16
-// only establishes the locked baseline.
+// default. C.16 establishes that baseline.
+//
+// C.17 adds the **opt-in switch**. The host takes a [SandboxConfig] with
+// two independent flags (`enableUnixCommands`, `enableVsCodeIntegration`)
+// and, for each flag that is on, runs the matching surface installer
+// against the interpreter at boot. Both flags are off in
+// [SandboxConfig.locked] — the only configuration the prototype's
+// `answer_with_memory_v1` script ever runs under (§ 6). The concrete
+// surface installers (which `tom_d4rt_dcli` bridges to register) are a
+// higher-level wiring decision the engine config (C.42) supplies; the
+// host only owns the *switch*, not the choice of bridges, so it never
+// pulls the dcli process/network/filesystem surface into the prototype
+// binary it does not use.
+//
+// Enabling a flag without supplying its installer is a misconfiguration:
+// the host throws at construction rather than booting a switch that is
+// "on" but silently grants nothing.
+//
+// The validator's source-level sandbox check (a script importing an SDK
+// library is rejected regardless of host configuration) is C.27–C.30;
+// both layers must agree before any effect is permitted (PE-1).
 
 import 'package:tom_d4rt/d4rt.dart';
 import 'package:tom_d4rt_dcli/tom_d4rt_cli_api.dart';
@@ -62,6 +80,7 @@ import 'package:tom_d4rt_dcli/tom_d4rt_cli_api.dart';
 import '../bridges/brain_bridges_registrar.dart';
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
+import '../config/sandbox_config.dart';
 
 /// Signature for the engine-native-primitive installer (C.19–C.22).
 ///
@@ -70,6 +89,16 @@ import '../bridges/substrate_bridge.dart';
 /// and `yield_if_foreground_waiting` here; at C.16 the prototype passes
 /// `null` (no native primitives exist yet).
 typedef NativePrimitiveInstaller = void Function(D4rt interpreter);
+
+/// Signature for an optional sandbox-surface installer (C.17).
+///
+/// Invoked once at host boot — only when the matching [SandboxConfig]
+/// switch is on — with the host's [D4rt] interpreter, to register the
+/// extra effect surface (`tom_d4rt_dcli`'s Unix-command bridges, or the
+/// `tom_vscode_scripting_api` bridge). The choice of which bridges
+/// constitute each surface is the caller's (engine config, C.42); the
+/// host only decides *whether* to run the installer based on the switch.
+typedef SandboxSurfaceInstaller = void Function(D4rt interpreter);
 
 /// The sandboxed d4rt-DCli host a procedure script runs on.
 ///
@@ -93,14 +122,32 @@ class D4rtDcliHost {
   ///
   /// [installNativePrimitives], when supplied, runs against the
   /// interpreter immediately after the bridges register — the C.19 seam.
+  ///
+  /// [sandbox] selects which optional effect surfaces a procedure may
+  /// reach (C.17). It defaults to [SandboxConfig.locked] — neither the
+  /// Unix-command surface nor the VS Code surface is registered, which is
+  /// the only configuration the prototype's `answer_with_memory_v1`
+  /// script runs under (§ 6). When [sandbox] enables a surface, the
+  /// matching installer ([installUnixCommands] /
+  /// [installVsCodeIntegration]) **must** be supplied; otherwise the host
+  /// throws a [StateError] at construction rather than booting a switch
+  /// that is on but grants nothing.
   D4rtDcliHost({
     required this.memoryBridge,
     required this.substrateBridge,
     String dataDirectory = _defaultDataDirectory,
     NativePrimitiveInstaller? installNativePrimitives,
+    this.sandbox = const SandboxConfig.locked(),
+    SandboxSurfaceInstaller? installUnixCommands,
+    SandboxSurfaceInstaller? installVsCodeIntegration,
   })  : _interpreter = D4rt(),
         _toolName = _hostToolName {
-    _boot(dataDirectory, installNativePrimitives);
+    _boot(
+      dataDirectory,
+      installNativePrimitives,
+      installUnixCommands,
+      installVsCodeIntegration,
+    );
   }
 
   /// The d4rt global name the [MemoryBridge] instance is bound to.
@@ -123,6 +170,10 @@ class D4rtDcliHost {
   /// The substrate bridge injected as the [substrateGlobal] global.
   final SubstrateBridge substrateBridge;
 
+  /// The sandbox switches this host booted under (C.17). Defaults to
+  /// [SandboxConfig.locked] — the prototype's only configuration.
+  final SandboxConfig sandbox;
+
   final D4rt _interpreter;
   final String _toolName;
   late final D4rtCliApi _cli;
@@ -133,16 +184,20 @@ class D4rtDcliHost {
   /// validator gates source *before* it reaches here.
   D4rt get interpreter => _interpreter;
 
-  /// The composed [D4rtCliApi] surface (Unix commands + VS Code reach
-  /// stay disabled for the prototype, C.17). Used for host-side
-  /// introspection and as the C.17 opt-in seam.
+  /// The composed [D4rtCliApi] surface, used for host-side introspection
+  /// (`classes()`, `registeredClasses()`, …). Whether the Unix-command
+  /// and VS Code surfaces are *registered* on the interpreter is governed
+  /// by [sandbox] (C.17); both are off under the prototype default.
   D4rtCliApi get cli => _cli;
 
   void _boot(
     String dataDirectory,
     NativePrimitiveInstaller? installNativePrimitives,
+    SandboxSurfaceInstaller? installUnixCommands,
+    SandboxSurfaceInstaller? installVsCodeIntegration,
   ) {
-    // 1. Bridges: the only effect surface a procedure can touch (PE-1).
+    // 1. Bridges: the only effect surface a procedure can touch by
+    //    default (PE-1).
     BrainBridges.register(_interpreter);
 
     // 2. Inject the bridge instances as named globals under their bridge
@@ -161,14 +216,51 @@ class D4rtDcliHost {
     // 3. Engine-native primitives (C.19–C.22 fill the seam).
     installNativePrimitives?.call(_interpreter);
 
-    // 4. Compose the D4rtCliApi over the same interpreter. No dcli/unix/
-    //    vscode bridges are registered — the locked-down prototype
-    //    default (C.17 adds the opt-in).
+    // 4. Opt-in sandbox surfaces (C.17). Each switch, when on, requires
+    //    its installer; an enabled switch with no installer is a
+    //    misconfiguration we refuse loudly. Both switches are off under
+    //    `SandboxConfig.locked` — the prototype's default — so neither
+    //    installer runs and only `BrainBridges` reaches a script.
+    if (sandbox.enableUnixCommands) {
+      _requireInstaller(
+        installUnixCommands,
+        switchName: 'enableUnixCommands',
+        installerName: 'installUnixCommands',
+      ).call(_interpreter);
+    }
+    if (sandbox.enableVsCodeIntegration) {
+      _requireInstaller(
+        installVsCodeIntegration,
+        switchName: 'enableVsCodeIntegration',
+        installerName: 'installVsCodeIntegration',
+      ).call(_interpreter);
+    }
+
+    // 5. Compose the D4rtCliApi over the same interpreter for host-side
+    //    introspection. The CLI controller does not itself register the
+    //    Unix/VS Code bridges — those come (when enabled) from the
+    //    installers above.
     _cli = D4rtCliController(
       d4rt: _interpreter,
       state: CliState(dataDirectory: dataDirectory),
       toolName: _toolName,
     );
+  }
+
+  /// Returns [installer] or throws a [StateError] naming the switch that
+  /// was enabled without a matching surface installer.
+  static SandboxSurfaceInstaller _requireInstaller(
+    SandboxSurfaceInstaller? installer, {
+    required String switchName,
+    required String installerName,
+  }) {
+    if (installer == null) {
+      throw StateError(
+        'SandboxConfig.$switchName is enabled but no $installerName was '
+        'supplied. Enabling a sandbox surface requires its installer.',
+      );
+    }
+    return installer;
   }
 
   /// Runs a procedure [source] and returns the entry point's result.
