@@ -38,7 +38,11 @@
 //     (`engine_event_bus.dart`) is the broadcast fan-in
 //     (`emit` / `events()` / `close()`) the composition root wires to the
 //     engine. Mirrors `SubstrateEventBus` (B.38) / `MemoryEventBus` (A.85).
-//   - C.45 — config-roundtrip / event-ordering / logger tests.
+//   - C.45 ✅ — config + observability slice-closure conformance suite
+//     (`test/c45_config_and_observability_test.dart`): the three plan-named
+//     properties (config roundtrip, event ordering, logger categorisation)
+//     plus the cross-slice event+log pairing gate, asserted together on the
+//     public surface only. Mirrors substrate's B.39. Subphase C.11 closed.
 
 export 'engine_config.dart';
 export 'engine_config_invalid.dart';
