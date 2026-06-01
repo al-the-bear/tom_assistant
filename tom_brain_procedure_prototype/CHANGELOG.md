@@ -140,3 +140,17 @@ Initial project scaffold:
   `yield_if_foreground_waiting` as a top-level d4rt function. 9 unit tests
   (`test/yield_primitive_test.dart`) + 2 d4rt-wiring tests
   (`test/native_primitives_installer_test.dart`).
+- C.22 — Consolidated acceptance suite for the three engine-native
+  primitives (`test/c22_native_primitives_test.dart`, 8 tests). Drives all
+  three end-to-end through `D4rtDcliHost` against the live production
+  constants and pins the three plan facts: the depth cap is honoured (a
+  self-re-entering chain reaches depth 10, the 11th level errors with
+  `RecursionLimitExceeded` surfaced out of the script, carrying
+  attempted-depth 11 / cap 10 / target id); a `note` appears in the trail
+  (the `RunRecorder`'s `TrailSink` seam modelled by a collecting list) with
+  the right category (`automation_candidate` and free-form, in call order);
+  `yield_if_foreground_waiting` returns immediately when no foreground is
+  waiting and suspends until the coordinator signals resume when one is.
+  A final test runs `note` + `yield` + `runProcedure` together in one
+  script on one host. No production code changed — C.22 is a test-only step.
+  Full suite green at 179/179.
