@@ -280,6 +280,47 @@ export 'src/embed/embed_barrel.dart';
 // has to swap one transport class.
 export 'src/web/web_barrel.dart';
 
+// B.41 — In-process facade surface (Substrate Spec § 3.1 / § 16
+// composition root).
+//
+// `InProcessTomBrainSubstrate` — the concrete v1 facade that extends
+// `TomBrainSubstrate` (the in-process marker base, B.9) and composes
+// the substrate's per-subsystem collaborators: a `RoleRegistry`
+// (B.22), a `Map<String, LlmProvider>` (B.11+ provider impls), an
+// `LlmRouter` (B.18) bound to those providers via a `RouterPolicy`,
+// an `EmbeddingService` (B.25), `WebSearch` / `WebFetch` (B.29 /
+// B.30), a `SubstrateEventBus` (B.38), and a lazy MCP-client cache
+// keyed by `McpEndpoint.id` (B.8 / B.34).
+//
+// The facade is the only authority that:
+//
+//   * Calls `roleRegistry.get(roleId).assemble(...)` to produce
+//     `WirePrompt`s — the assemble path is the only producer of the
+//     anchored prompt body (B.23).
+//   * Enforces `report.anchorHash == AnchorRegistry.currentHash`
+//     on every `LlmCallReport` that crosses the consumer-facing
+//     surface (`complete` + the terminal `LlmStreamCompleted` of
+//     `completeStream`). A mismatch raises `AnchorViolation`
+//     (fatal — spec § 12). The B.46 conformance test pins this.
+//   * Dispatches to `LlmRouter.dispatch` / `dispatchStream` —
+//     there is no provider call path in the facade that bypasses
+//     the router.
+//   * Emits the surface-owned `SubstrateEvent` variants
+//     (`LlmCallCompleted`, `LlmCallFailed`, `EmbeddingComputed`,
+//     `WebSearchCompleted`, `WebFetchCompleted`). Per-subsystem
+//     variants (`LlmCallStarted` / `Chunk`, `ProviderFailover`,
+//     `CredentialCooldownStarted`, `EmbeddingIdentityChanged`,
+//     `McpHandshakeCompleted`, `McpCallCompleted`) are emitted by
+//     their owning layers — see Q-B.41.2 / Q-B.41.3 in
+//     `prototype_implementation_questions.md`.
+//
+// The isolate adapter variant the substrate spec § 16 mentions is
+// deferred to `completion_steps.tom_brain.md`. The engine bridge
+// (plan B.40) binds against `TomBrainSubstrateClient`, so the
+// future isolate adapter ships through the same consumer surface
+// without touching engine code.
+export 'src/facade/facade_barrel.dart';
+
 // B.37 / B.38 — Observability surface (Substrate Spec § 10.1 / § 10.2).
 //
 // B.37: `SubstrateLog` (the const-instance facade) +
