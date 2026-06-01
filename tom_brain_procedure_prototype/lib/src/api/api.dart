@@ -22,8 +22,9 @@
 //     consumes and returns (§ 4.3, § 5.3). Introduced here because the
 //     first engine-native primitive (C.19) needs it; the rest of the
 //     surface below builds on it.
-//   - C.38 — `ProcedureEngine.invoke` + run handle.
-//   - C.39 — cancellation + timeout.
+//   - C.38 ✅ — `ProcedureEngine.invoke` + run handle.
+//   - C.39 ✅ — cancellation + timeout (`run.cancel()`, `invoke(..., timeout:)`;
+//     `RunCancellation`).
 //   - C.40 — sugar aliases (`think_v1` stub; others throw).
 //   - C.41 — invoke / cancellation / sugar-resolution tests.
 
@@ -33,3 +34,4 @@ export 'procedure_invocation.dart';
 export 'procedure_outcome.dart';
 export 'procedure_result.dart';
 export 'procedure_run.dart';
+export 'run_cancellation.dart';

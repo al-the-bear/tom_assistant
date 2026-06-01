@@ -53,6 +53,7 @@ void main() {
     Iterable<LoadedProcedure> procedures, {
     Duration stepDeadline = defaultStepDeadline,
     DeadlineTimerFactory? deadlineTimerFactory,
+    CancellationTimerFactory? cancellationTimerFactory,
   }) =>
       ProcedureEngine(
         resolver: ProcedureResolver(procedures),
@@ -61,7 +62,23 @@ void main() {
         substrateBridge: substrateBridge,
         stepDeadline: stepDeadline,
         deadlineTimerFactory: deadlineTimerFactory,
+        cancellationTimerFactory: cancellationTimerFactory,
         now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
+      );
+
+  /// A procedure whose only step awaits a never-completing `sub.llm(...)`, so
+  /// the step never settles on its own — the C.39 cancel / timeout path must
+  /// be what closes it (mirrors the deadline test's runaway step).
+  LoadedProcedure hangingProcedure(String id) => _procedure(
+        id,
+        '''
+import '${BrainBridges.substrateLibrary}';
+
+Future<Object?> run(inputs) async {
+  await sub.llm('hang forever');
+  return 1;
+}
+''',
       );
 
   group('C.38-1 a trivial procedure roundtrips end-to-end', () {
@@ -291,6 +308,151 @@ Future<Object?> run(inputs) async {
       // Two runs were recorded — the parent and the nested child.
       final recent = await memory.stacks.peek(recentRunsStackName);
       expect(recent, hasLength(2));
+    });
+  });
+
+  group('C.39-1 run.cancel() abandons a run and closes it aborted', () {
+    test('an explicit cancel closes aborted with a run_cancelled note',
+        () async {
+      final engine = engineFor(<LoadedProcedure>[hangingProcedure('hang_v1')]);
+
+      final run = engine.invoke(ProcedureInvocation(procedureId: 'hang_v1'));
+      // Cancel once the run has opened its trail (the invocation entry is the
+      // first thing the recorder emits, before the step race is set up).
+      await run.trail.firstWhere(
+        (TrailEntry e) => e.kind == TrailEntryKind.invocation,
+      );
+      run.cancel();
+      final outcome = await run.outcome;
+
+      expect(outcome.status, TrailOutcomeStatus.aborted);
+      expect(outcome.result, isNull);
+      expect(run.isCancelled, isTrue);
+
+      final cancelNotes = outcome.entries
+          .where((e) => e.kind == TrailEntryKind.note)
+          .where((e) => e.payload['category'] == runCancelledNoteCategory)
+          .toList();
+      expect(cancelNotes, hasLength(1));
+      // A cancel carries no timeout budget.
+      expect(cancelNotes.single.payload['payload'], <String, Object?>{});
+      expect(outcome.entries.last.payload['status'], 'aborted');
+    });
+
+    test('a cancelled run still lands on recent_runs, inflight cleared',
+        () async {
+      final engine = engineFor(<LoadedProcedure>[hangingProcedure('hang_v1')]);
+
+      final run = engine.invoke(ProcedureInvocation(procedureId: 'hang_v1'));
+      await run.trail.firstWhere(
+        (TrailEntry e) => e.kind == TrailEntryKind.invocation,
+      );
+      run.cancel();
+      final outcome = await run.outcome;
+
+      expect(outcome.record.status, TrailOutcomeStatus.aborted);
+      final recent = await memory.stacks.peek(recentRunsStackName);
+      expect(recent, hasLength(1));
+      expect(recent.single.nodeId, outcome.record.runNodeId);
+      final inflight = await memory.stacks.peek(inflightStackName);
+      expect(inflight, isEmpty);
+    });
+  });
+
+  group('C.39-2 an external timeout closes a run aborted', () {
+    test('an elapsed timeout closes aborted with a run_timed_out note',
+        () async {
+      _FakeTimer? scheduled;
+      final armed = Completer<void>();
+
+      final engine = engineFor(
+        <LoadedProcedure>[hangingProcedure('hang_v1')],
+        cancellationTimerFactory: (duration, onExpire) {
+          scheduled = _FakeTimer(duration, onExpire);
+          if (!armed.isCompleted) armed.complete();
+          return scheduled!;
+        },
+      );
+
+      final run = engine.invoke(
+        ProcedureInvocation(procedureId: 'hang_v1'),
+        timeout: const Duration(seconds: 5),
+      );
+      await armed.future; // the timeout timer is now counting down
+      scheduled!.fire(); // force the timeout to elapse
+      final outcome = await run.outcome;
+
+      expect(outcome.status, TrailOutcomeStatus.aborted);
+      expect(outcome.result, isNull);
+      expect(run.isCancelled, isTrue);
+
+      final timeoutNotes = outcome.entries
+          .where((e) => e.kind == TrailEntryKind.note)
+          .where((e) => e.payload['category'] == runTimedOutNoteCategory)
+          .toList();
+      expect(timeoutNotes, hasLength(1));
+      final payload = timeoutNotes.single.payload['payload']! as Map;
+      expect(payload['timeoutMs'], 5 * 1000);
+      expect(outcome.entries.last.payload['status'], 'aborted');
+    });
+
+    test('a run that finishes before its timeout closes normally, timer off',
+        () async {
+      _FakeTimer? scheduled;
+
+      final engine = engineFor(
+        <LoadedProcedure>[
+          _procedure('answer_v1', 'Object? run(inputs) => 1;'),
+        ],
+        cancellationTimerFactory: (duration, onExpire) {
+          scheduled = _FakeTimer(duration, onExpire);
+          return scheduled!;
+        },
+      );
+
+      final run = engine.invoke(
+        ProcedureInvocation(procedureId: 'answer_v1'),
+        timeout: const Duration(seconds: 60),
+      );
+      final outcome = await run.outcome;
+
+      // The run finished on its own: accepted, not aborted.
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(run.isCancelled, isFalse);
+      // The timeout timer was disarmed when the run resolved.
+      expect(scheduled, isNotNull);
+      expect(scheduled!.isActive, isFalse);
+    });
+
+    test('a non-positive timeout is rejected', () {
+      final engine = engineFor(<LoadedProcedure>[
+        _procedure('answer_v1', 'Object? run(inputs) => 1;'),
+      ]);
+
+      expect(
+        () => engine.invoke(
+          ProcedureInvocation(procedureId: 'answer_v1'),
+          timeout: Duration.zero,
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('C.39-3 cancel after the run finished is a no-op', () {
+    test('cancelling a completed run does not change its outcome', () async {
+      final engine = engineFor(<LoadedProcedure>[
+        _procedure('answer_v1', 'Object? run(inputs) => 1;'),
+      ]);
+
+      final run = engine.invoke(ProcedureInvocation(procedureId: 'answer_v1'));
+      final outcome = await run.outcome;
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+
+      // A late cancel is dropped — the run already produced its outcome.
+      run.cancel();
+      expect(run.isCancelled, isFalse);
+      expect((await run.outcome).status, TrailOutcomeStatus.accepted);
     });
   });
 }

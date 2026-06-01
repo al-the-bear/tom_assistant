@@ -26,10 +26,23 @@
 // event queue so a caller can subscribe to `run.trail` before the first
 // entry is emitted.
 //
-// ── What C.38 deliberately does NOT own ─────────────────────────────
+// ── Cancellation + external timeout (C.39) ──────────────────────────
 //
-// Cancellation + an external timeout on the handle are C.39. The sugar
-// aliases (`think`, `plan`, …) are C.40. The header → sandbox → contract
+// `invoke` builds a `RunCancellation` per run and races the run's guarded
+// step against its signal. A caller drives it two ways: explicitly
+// (`run.cancel()`) or by passing `invoke(..., timeout: …)` so an elapsed
+// wall-clock budget fires the signal. Either way the engine stops waiting on
+// the step (the abandoned d4rt work may still finish, its result dropped),
+// records a `run_cancelled` / `run_timed_out` trail note, and closes the run
+// `aborted`. This is the external counterpart to the internal `StepDeadline`
+// (C.36, which closes `preempted`).
+//
+// ── What C.39 deliberately does NOT own ─────────────────────────────
+//
+// Cancelling a parent abandons its whole sub-tree by abandoning the parent's
+// step future; a nested `runProcedure` is not threaded its own cancellation
+// (Q-C.39.2). The sugar aliases (`think`, `plan`, …) are C.40. The
+// header → sandbox → contract
 // validation gate (§ 7, validators built at C.27–C.30) is wired into the
 // run path when `answer_with_memory_v1` lands (Phase D) and the strict
 // `Future<ProcedureResult>` entry-point shape — including ProcedureResult
@@ -62,6 +75,7 @@ import 'procedure_invocation.dart';
 import 'procedure_outcome.dart';
 import 'procedure_result.dart';
 import 'procedure_run.dart';
+import 'run_cancellation.dart';
 
 /// The typed failure class a crashed run is recorded under (§ 10.4).
 const String _runtimeCrashKind = 'procedure.runtime.crash';
@@ -86,8 +100,10 @@ final class ProcedureEngine {
   /// drives (C.34); a fresh one is created when omitted. [stepDeadline] is
   /// the hard per-step wall-clock cap (C.36). [deadlineTimerFactory] is the
   /// injectable timer the deadline arms (tests drive it deterministically).
-  /// [hardDepthCap] bounds the `runProcedure` chain (C.19). [now] /
-  /// [newRunId] are injectable for deterministic tests.
+  /// [hardDepthCap] bounds the `runProcedure` chain (C.19).
+  /// [cancellationTimerFactory] is the injectable timer the external-timeout
+  /// path (C.39) arms (tests drive it deterministically). [now] / [newRunId]
+  /// are injectable for deterministic tests.
   ProcedureEngine({
     required this.resolver,
     required this.memory,
@@ -96,12 +112,14 @@ final class ProcedureEngine {
     PreemptionState? preemptionState,
     Duration stepDeadline = defaultStepDeadline,
     DeadlineTimerFactory? deadlineTimerFactory,
+    CancellationTimerFactory? cancellationTimerFactory,
     int hardDepthCap = RunProcedurePrimitive.defaultHardDepthCap,
     DateTime Function()? now,
     String Function()? newRunId,
   })  : preemptionState = preemptionState ?? PreemptionState(),
         _stepDeadlineLimit = stepDeadline,
         _deadlineTimerFactory = deadlineTimerFactory,
+        _cancellationTimerFactory = cancellationTimerFactory,
         _hardDepthCap = hardDepthCap,
         _now = now ?? DateTime.now,
         _newRunId = newRunId ?? _defaultRunIdGenerator();
@@ -124,6 +142,7 @@ final class ProcedureEngine {
 
   final Duration _stepDeadlineLimit;
   final DeadlineTimerFactory? _deadlineTimerFactory;
+  final CancellationTimerFactory? _cancellationTimerFactory;
   final int _hardDepthCap;
   final DateTime Function() _now;
   final String Function() _newRunId;
@@ -131,15 +150,24 @@ final class ProcedureEngine {
   /// Runs the procedure named by [invocation] and returns its handle.
   ///
   /// The handle's [ProcedureRun.trail] streams trail entries live; its
-  /// [ProcedureRun.outcome] resolves to the terminal [ProcedureOutcome].
-  /// Returns synchronously — the run pipeline is scheduled on the event
-  /// queue so a caller can subscribe to the trail before the run advances.
-  /// An unresolvable procedure id surfaces as an error on the outcome
-  /// future (there is no run to record).
-  ProcedureRun invoke(ProcedureInvocation invocation) {
+  /// [ProcedureRun.outcome] resolves to the terminal [ProcedureOutcome], and
+  /// [ProcedureRun.cancel] abandons the run (C.39). Returns synchronously —
+  /// the run pipeline is scheduled on the event queue so a caller can
+  /// subscribe to the trail before the run advances. An unresolvable
+  /// procedure id surfaces as an error on the outcome future (there is no run
+  /// to record).
+  ///
+  /// When [timeout] is supplied the run is closed `aborted` if it has not
+  /// finished within that wall-clock budget — the external counterpart to the
+  /// internal per-step deadline (C.36). [timeout] must be strictly positive.
+  ProcedureRun invoke(ProcedureInvocation invocation, {Duration? timeout}) {
     final runId = invocation.runId ?? _newRunId();
     final trail = StreamController<TrailEntry>.broadcast();
     final outcome = Completer<ProcedureOutcome>();
+    final cancellation = RunCancellation(
+      timeout: timeout,
+      timerFactory: _cancellationTimerFactory,
+    );
 
     unawaited(
       Future<void>(() async {
@@ -153,11 +181,15 @@ final class ProcedureEngine {
             parentRunId: invocation.parentRunId,
             depth: _topLevelDepth,
             onEntry: trail.add,
+            cancellation: cancellation,
           );
           outcome.complete(result);
         } catch (error, stack) {
           outcome.completeError(error, stack);
         } finally {
+          // Disarm a pending timeout timer once the run has resolved, so it
+          // cannot fire against an already-closed run.
+          cancellation.dispose();
           await trail.close();
         }
       }),
@@ -168,6 +200,7 @@ final class ProcedureEngine {
       procedureId: invocation.procedureId,
       trail: trail.stream,
       outcome: outcome.future,
+      cancellation: cancellation,
     );
   }
 
@@ -175,9 +208,13 @@ final class ProcedureEngine {
   ///
   /// [onEntry] is the live-trail seam — `trail.add` for the top-level run,
   /// `null` for a nested run (a nested run owns its own trail and is not
-  /// surfaced on the parent's stream). Resolution failure propagates (the
+  /// surfaced on the parent's stream). [cancellation] is the C.39 cancel +
+  /// external-timeout control — present for the top-level run, `null` for a
+  /// nested run (cancelling a parent abandons its sub-tree by abandoning the
+  /// parent's step future; see Q-C.39.2). Resolution failure propagates (the
   /// caller turns it into an outcome error); a procedure crash is caught,
-  /// recorded as `errored`, and returned as an outcome carrying the error.
+  /// recorded as `errored`, and returned as an outcome carrying the error; a
+  /// cancelled or timed-out run is closed `aborted`.
   Future<ProcedureOutcome> _runInternal({
     required String runId,
     required String procedureId,
@@ -187,6 +224,7 @@ final class ProcedureEngine {
     required String? parentRunId,
     required int depth,
     void Function(TrailEntry entry)? onEntry,
+    RunCancellation? cancellation,
   }) async {
     final LoadedProcedure loaded = resolver.resolve(procedureId, version: version);
     final recorder = RunRecorder(memory, now: _now, onEntry: onEntry);
@@ -221,10 +259,16 @@ final class ProcedureEngine {
       timerFactory: _deadlineTimerFactory,
     );
 
-    StepOutcome<Object?> step;
+    // Race three outcomes: the deadline-guarded step settling (completed or
+    // truncated), the step throwing (a crash), or the caller's cancellation /
+    // timeout signal firing first (C.39).
+    final _RunRace race;
     try {
-      step = await deadline.guard<Object?>(
-        host.run(loaded.source, inputs: <Object?>[inputs]),
+      race = await _raceCancellable(
+        deadline.guard<Object?>(
+          host.run(loaded.source, inputs: <Object?>[inputs]),
+        ),
+        cancellation,
       );
     } catch (error) {
       // The procedure threw before the deadline: a runtime crash. Record it,
@@ -247,6 +291,27 @@ final class ProcedureEngine {
       );
     }
 
+    if (race is _RaceCancelled) {
+      // The caller cancelled or the run timed out before the step settled.
+      // Disarm the (still-armed) deadline timer — its truncation no longer
+      // matters — note the abandonment, and close the run `aborted`.
+      deadline.cancel();
+      final record = await _recordCancellation(
+        recorder,
+        cause: race.cause,
+        timeout: cancellation?.timeout,
+        procedureId: loaded.header.id,
+      );
+      return _outcomeOf(
+        runId: runId,
+        procedureId: loaded.header.id,
+        record: record,
+        entries: recorder.entries,
+        result: null,
+      );
+    }
+
+    final StepOutcome<Object?> step = (race as _RaceStep).step;
     switch (step) {
       case StepCompleted<Object?>(:final value):
         final result = _coerceResult(value);
@@ -291,6 +356,72 @@ final class ProcedureEngine {
           result: null,
         );
     }
+  }
+
+  /// Races the deadline-guarded [guarded] step against [cancellation].
+  ///
+  /// Returns a [_RaceStep] when the step settles first (completed or
+  /// truncated), or a [_RaceCancelled] when the cancellation / timeout signal
+  /// fires first. A step that throws propagates the error (the caller maps it
+  /// to a crash). When [cancellation] is `null` (a nested run, Q-C.39.2) there
+  /// is nothing to race — the guarded step is awaited directly.
+  Future<_RunRace> _raceCancellable(
+    Future<StepOutcome<Object?>> guarded,
+    RunCancellation? cancellation,
+  ) {
+    if (cancellation == null) {
+      return guarded.then<_RunRace>(_RaceStep.new);
+    }
+    final race = Completer<_RunRace>();
+    unawaited(
+      guarded.then(
+        (StepOutcome<Object?> step) {
+          if (!race.isCompleted) race.complete(_RaceStep(step));
+        },
+        onError: (Object error, StackTrace stack) {
+          if (!race.isCompleted) race.completeError(error, stack);
+        },
+      ),
+    );
+    unawaited(
+      cancellation.signal.then((RunCancelCause cause) {
+        if (!race.isCompleted) race.complete(_RaceCancelled(cause));
+      }),
+    );
+    return race.future;
+  }
+
+  /// Notes the abandonment and closes an aborted run through the recorder.
+  ///
+  /// An explicit cancel records a [runCancelledNoteCategory] note; a timeout
+  /// records a [runTimedOutNoteCategory] note carrying the breached
+  /// `timeoutMs`. Both close the run on [TrailOutcomeStatus.aborted]
+  /// (Q-C.39.1).
+  Future<ProcedureRunRecord> _recordCancellation(
+    RunRecorder recorder, {
+    required RunCancelCause cause,
+    required Duration? timeout,
+    required String procedureId,
+  }) async {
+    final timedOut = cause == RunCancelCause.timedOut;
+    recorder.note(
+      TrailNote(
+        category:
+            timedOut ? runTimedOutNoteCategory : runCancelledNoteCategory,
+        recordedAt: _now(),
+        payload: <String, Object?>{
+          if (timedOut && timeout != null) 'timeoutMs': timeout.inMilliseconds,
+        },
+      ),
+    );
+    return recorder.complete(
+      RunCompletion(
+        status: TrailOutcomeStatus.aborted,
+        summary: timedOut
+            ? 'run $procedureId timed out'
+            : 'run $procedureId cancelled by caller',
+      ),
+    );
   }
 
   /// The `runProcedure` executor: recurses back through the engine to run a
@@ -361,4 +492,32 @@ final class ProcedureEngine {
     var sequence = 0;
     return () => 'run_${DateTime.now().microsecondsSinceEpoch}_${sequence++}';
   }
+}
+
+/// Which side of the cancel race won, for the step run inside `_runInternal`.
+///
+/// A sealed pair so the run path must handle both: the deadline-guarded step
+/// settled ([_RaceStep]) or the cancellation / timeout signal fired first
+/// ([_RaceCancelled]). A step that throws is not modelled here — it propagates
+/// as an error and is caught as a crash.
+sealed class _RunRace {
+  const _RunRace();
+}
+
+/// The deadline-guarded step settled first; [step] is its outcome
+/// (completed or truncated).
+final class _RaceStep extends _RunRace {
+  const _RaceStep(this.step);
+
+  /// The settled step outcome.
+  final StepOutcome<Object?> step;
+}
+
+/// The cancellation / timeout signal fired before the step settled; [cause]
+/// is why the run was abandoned.
+final class _RaceCancelled extends _RunRace {
+  const _RaceCancelled(this.cause);
+
+  /// Why the run was abandoned (explicit cancel vs. elapsed timeout).
+  final RunCancelCause cause;
 }

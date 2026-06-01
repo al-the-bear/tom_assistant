@@ -13,31 +13,37 @@
 //     once it finishes (success, truncation, or crash all resolve it;
 //     the run never leaves a dangling future).
 //
-// Cancellation and an external timeout on the handle are the next step
-// (C.39); the sugar aliases (`think`, `plan`, …) that resolve to
-// `runProcedure('<name>_v1', …)` are C.40. C.38 ships only the handle.
+// Cancellation and an external timeout on the handle are C.39 — wired below
+// through [cancel] and the engine-owned [RunCancellation]. The sugar aliases
+// (`think`, `plan`, …) that resolve to `runProcedure('<name>_v1', …)` are
+// C.40.
 
 import 'package:tom_brain_memory/tom_brain_memory.dart' show TrailEntry;
 
 import 'procedure_outcome.dart';
+import 'run_cancellation.dart';
 
 /// A running (or finished) procedure invocation.
 ///
-/// Constructed by the engine; consumers only read it. The engine drives
-/// [trail] (one event per recorded trail entry) and completes [outcome]
-/// when the run closes. The handle does not own the run's resources — the
-/// engine does — it is purely the consumer-facing view.
+/// Constructed by the engine; consumers read [trail] / [outcome] and may
+/// [cancel] the run. The engine drives [trail] (one event per recorded trail
+/// entry) and completes [outcome] when the run closes. The handle does not
+/// own the run's resources — the engine does — it is the consumer-facing
+/// view plus the cancel lever.
 final class ProcedureRun {
-  /// Builds a handle over a live [trail] stream and an [outcome] future.
+  /// Builds a handle over a live [trail] stream, an [outcome] future, and the
+  /// engine-owned [cancellation] control.
   ///
-  /// The engine supplies both; this type is a thin, immutable bundle.
+  /// The engine supplies all three; this type is a thin, immutable bundle.
   const ProcedureRun({
     required this.runId,
     required this.procedureId,
     required Stream<TrailEntry> trail,
     required Future<ProcedureOutcome> outcome,
+    required RunCancellation cancellation,
   })  : _trail = trail,
-        _outcome = outcome;
+        _outcome = outcome,
+        _cancellation = cancellation;
 
   /// The engine-assigned run id.
   final String runId;
@@ -47,6 +53,7 @@ final class ProcedureRun {
 
   final Stream<TrailEntry> _trail;
   final Future<ProcedureOutcome> _outcome;
+  final RunCancellation _cancellation;
 
   /// The live stream of trail entries this run writes, in order.
   ///
@@ -57,6 +64,17 @@ final class ProcedureRun {
 
   /// Resolves to the run's terminal outcome once it finishes.
   Future<ProcedureOutcome> get outcome => _outcome;
+
+  /// Whether this run was cancelled or timed out before finishing on its own.
+  bool get isCancelled => _cancellation.isSignalled;
+
+  /// Cancels the run on the caller's behalf (cooperative abandonment).
+  ///
+  /// The engine stops waiting on the run's current step and closes it
+  /// `aborted` with a `run_cancelled` trail note; the abandoned work may
+  /// still finish in the background, its result dropped. Idempotent and a
+  /// no-op once the run has already produced its [outcome].
+  void cancel() => _cancellation.cancel();
 
   @override
   String toString() => 'ProcedureRun($procedureId/$runId)';
