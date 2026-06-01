@@ -280,3 +280,44 @@ Initial project scaffold:
   malformed in two layers surfacing the earlier layer's fault. Per-group
   coverage guards assert every enum value / required field has a case. 45 new
   tests. Full suite green at 383/383.
+- C.31 — Run recorder (`lib/src/recorder/`, § 8). `RunRecorder`
+  (`run_recorder.dart`) records one procedure run end-to-end against the
+  `TomBrainMemoryClient` boundary (PE-10): `start` opens a per-run trail
+  (`openTrail`), writes the `invocation` entry, persists a `status: running`
+  `ProcedureRun` marker and pushes its id onto the `inflight` stack;
+  `recordPrimitiveCall` / `recordError` append trail entries; the `note` sink
+  (`noteSink`, the C.20 `TrailSink` seam) appends `TrailEntryKind.note` lines;
+  `complete` persists the authoritative final `ProcedureRun` (status, summary,
+  effort, produced-node ids, startedAt/finishedAt), draws `derived_from` to
+  the procedure node (when memory-resident) and `produced_by` from each result
+  node back to the run, removes the marker from `inflight`, pushes the final
+  record to `recent_runs`, and closes the trail with the outcome. Two
+  append-only records (running marker + final) reconcile "on `inflight` at
+  start" with "final effort on the node" under immutable memory (Q-C.31.1);
+  `derived_from` is conditional on a procedure node id (Q-C.31.2).
+  `EffortMetrics` (`effort_metrics.dart`) carries the closed seven-field metric
+  set (`wallClockMs`, `llmCalls`, `inputTokens`, `outputTokens`, `toolCalls`,
+  `memoryReads`, `memoryWrites`; primary metric `estimatedTokens =
+  inputTokens + outputTokens`) with `plus` / `withWallClockMs` combinators for
+  C.32's per-primitive accumulation. Value types `RunStart` / `RunCompletion` /
+  `ProcedureRunRecord` and the well-known names (`inflight`, `recent_runs`,
+  `ProcedureRun`) in `run_records.dart`. 26 unit tests
+  (`test/run_recorder_test.dart`): EffortMetrics algebra + the full recorder
+  lifecycle against a stub memory/stacks. Full suite green at 409/409.
+- C.32 — Effort accounting (`lib/src/recorder/effort_accountant.dart`, § 8;
+  definition § 7.4). `EffortAccountant` is a pure, stateless classifier that
+  maps one bridged-primitive call to its `EffortMetrics` delta: `llm` →
+  `+1 llmCall` plus `inputTokens`/`outputTokens` read off the call's `report`;
+  `embed`/`search`/`fetch` → `+1 toolCall`; `recall`/`stack.list`/`stack.peek`
+  → `+1 memoryRead`; `persist`/`edge`/`propose_node_type`/`stack.create`/`.push`/
+  `.pop`/`.update`/`.remove` → `+1 memoryWrite`; engine-native control flow
+  (`runProcedure`/`note`/`yield_if_foreground_waiting`) and unrecognised names →
+  zero. Dotted (`stack.push`) and camelCase (`stackPush`) names normalise to the
+  same bucket; malformed/negative token fields degrade to zero. `RunRecorder`
+  now folds each recorded primitive call into a running `accumulatedEffort`
+  (via `EffortMetrics.plus`) and `complete` persists `accumulatedEffort + the
+  caller-supplied completion effort`, stamping the run's measured wall clock
+  unless a non-zero one is injected. `wallClockMs` is never summed from per-call
+  latencies — it is the run's elapsed, stamped once. 31 accountant unit tests
+  (`test/effort_accountant_test.dart`) + 4 recorder-accumulation tests added to
+  `test/run_recorder_test.dart`. Full suite green at 444/444.
