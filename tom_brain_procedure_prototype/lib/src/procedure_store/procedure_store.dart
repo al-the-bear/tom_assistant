@@ -17,13 +17,17 @@
 //
 //   - C.23 ✅ — `ProcedureStore` interface + disk + memory backends
 //     (+ a composite that presents both as one).
-//   - C.24 — header-parsing loader.
+//   - C.24 ✅ — header-parsing loader (`ProcedureLoader`, `ProcedureHeader`,
+//     `ProcedureHeaderInvalid`, `LoadedProcedure`).
 //   - C.25 — version resolver with fallback chain.
 //   - C.26 — backend-equivalence + malformed-header + resolver tests.
 
 export 'composite_procedure_store.dart';
 export 'disk_procedure_store.dart';
 export 'memory_procedure_store.dart';
+export 'procedure_header.dart';
+export 'procedure_header_invalid.dart';
+export 'procedure_loader.dart';
 export 'procedure_origin.dart';
 export 'procedure_ref.dart';
 export 'procedure_source.dart';

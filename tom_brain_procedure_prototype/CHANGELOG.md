@@ -167,3 +167,18 @@ Initial project scaffold:
   parsing (C.24) and version resolution (C.25) layer on top. 25 unit tests
   (`test/procedure_store_test.dart`), including a backend-equivalence check
   through the interface. Full suite green at 204/204.
+
+- C.24 — Procedure loader: parses the structured `/// @procedure`
+  doc-comment header (§ 4.4) into a typed `ProcedureHeader`
+  (`lib/src/procedure_store/procedure_loader.dart`). `ProcedureLoader`
+  extracts the contiguous `///` block at the `@procedure` marker, parses it
+  as YAML (the `yaml` package, promoted from transitive to direct), and
+  builds the header — id, version, summary, successCriterion, inputs,
+  outputs, budget caps, requires. A header missing `id` / `version` /
+  `summary` / `successCriterion` / `budget`, or that fails to parse, is
+  rejected with `ProcedureHeaderInvalid` (code `procedure.header.invalid`).
+  Value types `ProcedureHeader` / `ProcedureBudget` / `ProcedureInputDecl` /
+  `ProcedureOutputDecl` and the `LoadedProcedure` bundle (ref + header +
+  verbatim source). The loader never parses the body and never resolves
+  versions (C.25's job). 25 unit tests (`test/procedure_loader_test.dart`).
+  Full suite green at 229/229.
