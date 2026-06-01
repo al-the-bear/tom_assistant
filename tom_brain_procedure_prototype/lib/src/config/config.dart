@@ -15,11 +15,17 @@
 //
 //   - C.17 ✅ — `SandboxConfig` (`sandbox_config.dart`): the two host
 //     sandbox switches (`enableUnixCommands`, `enableVsCodeIntegration`),
-//     both disabled by default. The full `EngineConfig` (C.42) will carry
+//     both disabled by default. The full `EngineConfig` (C.42) carries
 //     a `SandboxConfig` as its "sandbox switches" field.
-//   - C.42 — `EngineConfig` YAML loader.
+//   - C.42 ✅ — `EngineConfig` YAML loader (`engine_config.dart`): the
+//     `scripts/system/` + `scripts/user/` paths, the `SandboxConfig`
+//     switches, and the hard per-step deadline, loaded from a small YAML
+//     document via the `yaml` package. Malformed documents are funnelled
+//     through `EngineConfigInvalid` (`engine_config_invalid.dart`).
 //   - C.43 — `TomLogger` category wiring.
 //   - C.44 — `EngineEvent` stream.
 //   - C.45 — config-roundtrip / event-ordering / logger tests.
 
+export 'engine_config.dart';
+export 'engine_config_invalid.dart';
 export 'sandbox_config.dart';
