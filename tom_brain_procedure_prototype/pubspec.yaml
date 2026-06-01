@@ -1,0 +1,41 @@
+name: tom_brain_procedure_prototype
+description: Procedure prototype for Tom Brain — a thin d4rt-hosted engine (Phase C) plus a thin dispatcher (Phase D) combined into one project. Runs the single hand-written sequence answer_with_memory_v1 over a sandboxed bridged primitive API that re-exposes tom_brain_memory + tom_brain_substrate.
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.8
+
+# Dependency posture at C.6 (skeleton step).
+#
+# This step is *strictly* the project skeleton — a buildable empty
+# package with a smoke test — mirroring the A.21 (`tom_brain_memory`)
+# and B.6 (`tom_brain_substrate`) decomposition. Per the plan:
+#
+#   - C.6 (this step) — project skeleton only; `dependencies:` stays
+#                       empty. `dart pub get` resolves a dev-only
+#                       closure (`lints` + `test`), so no native
+#                       packages and no cross-component constraint
+#                       negotiation happens here.
+#   - C.7 — runtime dependencies land: `tom_brain_shared`,
+#           `tom_brain_memory` (interface boundary only),
+#           `tom_brain_substrate` (interface boundary only),
+#           `tom_basics`, `tom_core_kernel`, `tom_core_d4rt`,
+#           `tom_d4rt`, `tom_d4rt_dcli: ^1.1.3` (the C.4 pin).
+#   - C.8 — `lib/src/` folder layout (`d4rt_host/`, `bridges/`,
+#           `primitives_native/`, `procedure_store/`, `validator/`,
+#           `recorder/`, `preemption/`, `api/`, `config/`).
+#   - C.9 — `dev_dependencies` gain `tom_d4rt_generator: ^1.8.24`
+#           and `build_runner: ^2.10.4` (the C.5 pins).
+#   - C.10 — `.tom_metadata/tom_master.yaml` wiring is a no-op going
+#            forward (policy override 5).
+#
+# Keeping `dependencies:` empty at C.6 is deliberate (identical
+# rationale to A.21 / B.6): the skeleton's only promise is "buildable
+# package with a smoke test", and folding the dependency add into this
+# step would rob C.7 of its meaningful dependency-discipline diff.
+dependencies:
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
