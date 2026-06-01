@@ -30,7 +30,10 @@
 //     (`primitives_native/sugar_aliases.dart`). `think_v1` runs the no-op
 //     stub (`scripts/system/think_v1.dart`); the others surface
 //     `ProcedureNotFound`.
-//   - C.41 — invoke / cancellation / sugar-resolution tests.
+//   - C.41 ✅ — invoke / cancellation / sugar-resolution tests
+//     (`test/c41_engine_api_consolidation_test.dart`): black-box suite
+//     driving `ProcedureEngine` only, folding the C.38/C.39/C.40 promises
+//     into one contract pass plus cancellation through a sugar call.
 
 export 'procedure_engine.dart';
 export 'procedure_inputs.dart';
