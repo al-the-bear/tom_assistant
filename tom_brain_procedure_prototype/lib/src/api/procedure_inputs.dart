@@ -57,6 +57,14 @@ final class ProcedureInputs {
     return value;
   }
 
+  /// A plain, mutable copy of the backing values.
+  ///
+  /// The engine uses this to derive the trail's `invocation` argument map
+  /// (`RunRecorder` records a `Map<String, Object?>`, not a typed bag) and
+  /// to forward a nested call's inputs when recording the child run. The
+  /// returned map is a fresh copy — mutating it does not touch the bag.
+  Map<String, Object?> toMap() => Map<String, Object?>.of(_values);
+
   /// Returns the value bound to [name] as a [T], or `null` when [name] is
   /// absent or bound to `null`.
   ///

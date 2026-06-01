@@ -68,17 +68,31 @@ final class RunRecorder {
   /// Wraps the interface-boundary [memory] client (PE-10). [now] is the
   /// injectable clock; tests pass a fixed clock to assert deterministic
   /// timestamps and elapsed times.
+  ///
+  /// [onEntry], when supplied, is called with every trail entry the
+  /// recorder records — in the exact order they land on the trail
+  /// (`invocation` first, then each primitive call / note, finally
+  /// `outcome`). It is the observation seam the engine (C.38) wires a live
+  /// `Stream<TrailEntry>` through, so a consumer can watch a run unfold
+  /// without re-reading memory. It never blocks the recorder: the hook
+  /// fires after the in-memory [entries] view is updated and is independent
+  /// of the durable write.
   RunRecorder(
     this.memory, {
     DateTime Function()? now,
     EffortAccountant accountant = const EffortAccountant(),
+    void Function(TrailEntry entry)? onEntry,
   })  : _now = now ?? DateTime.now,
-        _accountant = accountant;
+        _accountant = accountant,
+        _onEntry = onEntry;
 
   /// The memory client every write delegates to.
   final TomBrainMemoryClient memory;
 
   final DateTime Function() _now;
+
+  /// Observation seam: notified of every recorded trail entry, in order.
+  final void Function(TrailEntry entry)? _onEntry;
 
   /// Maps each recorded primitive call to its [EffortMetrics] delta
   /// (C.32). Injectable so a deployment can refine the accounting policy
@@ -231,7 +245,7 @@ final class RunRecorder {
         'payload': note.payload,
       },
     );
-    _entries.add(entry);
+    _track(entry);
     unawaited(memory.appendTrail(trailId, entry));
   }
 
@@ -331,7 +345,7 @@ final class RunRecorder {
       },
       elapsedMs: effort.wallClockMs,
     );
-    _entries.add(TrailEntry.outcome(outcome, at: finishedAt));
+    _track(TrailEntry.outcome(outcome, at: finishedAt));
     await memory.closeTrail(trailId, outcome);
 
     _completed = true;
@@ -349,8 +363,16 @@ final class RunRecorder {
 
   Future<void> _appendEntry(TrailEntry entry) async {
     final trailId = _requireTrailId();
-    _entries.add(entry);
+    _track(entry);
     await memory.appendTrail(trailId, entry);
+  }
+
+  /// Records [entry] in the in-memory view and notifies the [_onEntry]
+  /// observation seam (C.38) in trail order. Kept as one helper so the
+  /// in-memory order and the observed order can never drift apart.
+  void _track(TrailEntry entry) {
+    _entries.add(entry);
+    _onEntry?.call(entry);
   }
 
   /// Write provenance for every memory write the recorder makes:

@@ -395,3 +395,23 @@ Initial project scaffold:
   into real `runProcedure` step execution and owning the
   `StepTruncated → RunCompletion(preempted) + note` mapping is the engine
   step-runner's job at C.38. 4 new tests; full suite green at 469/469.
+- C.38 — engine API surface: `ProcedureEngine.invoke` + run handle
+  (`lib/src/api/`, § 10.1, § 3, § 8; plan § C.10). The dispatcher's entry
+  point. `invoke(ProcedureInvocation)` resolves the procedure (C.25), opens a
+  `RunRecorder` (C.31) whose new `onEntry` seam feeds a live broadcast
+  `Stream<TrailEntry>`, boots a fresh sandboxed `D4rtDcliHost` (C.16) with the
+  two bridges + the engine-native primitives bound to *this* run (`note` →
+  recorder, `runProcedure` → recursion back through the engine, `yield…` →
+  shared `PreemptionState`), runs the source under a single `StepDeadline`
+  (C.36), and returns a `ProcedureRun` handle synchronously (pipeline scheduled
+  on the event queue so a caller can subscribe before the run advances). The
+  handle's `outcome` resolves to a `ProcedureOutcome` — `accepted` /
+  `errored` / `preempted` with the durable `ProcedureRunRecord`, full ordered
+  entries, typed result, and captured error. The C.37 `StepTruncated →
+  step_truncated note + preempted` mapping is now production code in
+  `_runInternal`. New types: `ProcedureInvocation`, `ProcedureRun`,
+  `ProcedureOutcome`, `ProcedureEngine`; `ProcedureInputs.toMap()` added.
+  A d4rt script cannot construct a `ProcedureResult` (not bridged), so the
+  entry-point return is coerced (Q-C.38.2); the validator gate (Q-C.38.1),
+  nested-failure propagation (Q-C.38.3), and per-segment deadlines (Q-C.38.4)
+  are deferred to Phase D. 9 new tests; full suite green at 478/478.

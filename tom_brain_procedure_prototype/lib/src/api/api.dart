@@ -27,5 +27,9 @@
 //   - C.40 — sugar aliases (`think_v1` stub; others throw).
 //   - C.41 — invoke / cancellation / sugar-resolution tests.
 
+export 'procedure_engine.dart';
 export 'procedure_inputs.dart';
+export 'procedure_invocation.dart';
+export 'procedure_outcome.dart';
 export 'procedure_result.dart';
+export 'procedure_run.dart';
