@@ -84,10 +84,11 @@ environment:
 # The dependency-discipline test (`test/dependency_surface_test.dart`)
 # enforces this contract at build time.
 #
-# Forward steps (unchanged from the C.6 posture note):
-#   - C.8  — `lib/src/` folder layout.
+# Forward steps:
+#   - C.8  — `lib/src/` folder layout. ✅
 #   - C.9  — `dev_dependencies` gain `tom_d4rt_generator: ^1.8.24`
-#            and `build_runner: ^2.10.4` (the C.5 pins).
+#            and `build_runner: ^2.10.4` (the C.5 pins). ✅ (see the
+#            dev-dependency-discipline block below).
 #   - C.10 — `.tom_metadata/tom_master.yaml` wiring is a no-op going
 #            forward (policy override 5).
 dependencies:
@@ -105,6 +106,35 @@ dependencies:
   tom_d4rt: ^1.8.19
   tom_d4rt_dcli: ^1.1.3
 
+# Dev-dependency discipline (Plan step C.9 / C.5 authoritative pin record).
+#
+# C.9 adds the D4rt bridge-generation toolchain, consumed only at build
+# time (C.11–C.15) to turn the `MemoryBridge` / `SubstrateBridge` source
+# classes into registered d4rt bridges. Neither pin is a runtime
+# dependency: no `lib/` source imports them, so they cannot leak into the
+# engine's shipped surface.
+#
+#   - tom_d4rt_generator — `^1.8.24`, the latest *published* version (so
+#                          the constraint resolves from pub.dev). The
+#                          caret admits the workspace project's `1.9.0`
+#                          (and any `1.x` uptake) while a `2.0.0` major
+#                          bump trips a re-verify of the C.11 `build.yaml`
+#                          option schema and the C.12–C.13 bridge-source
+#                          authoring conventions. Drives the
+#                          `d4rt_bridge_builder` builder (factory
+#                          `d4rtBridgeBuilder`) C.14 runs via
+#                          `dart run build_runner build`. See Q-C.5.2/3.
+#   - build_runner       — `^2.10.4`, the dominant modern workspace
+#                          constraint. Compatible with the older
+#                          `^2.4.15` D4rt consumers (a single 2.x
+#                          satisfies both), so the prototype introduces no
+#                          resolution skew. The generator's own `^2.4.0`
+#                          floor sits comfortably below.
+#
+# Both pins are adopted verbatim from the C.5 record (the single source of
+# truth) and locked by `test/dev_dependency_surface_test.dart`.
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
+  tom_d4rt_generator: ^1.8.24
+  build_runner: ^2.10.4
