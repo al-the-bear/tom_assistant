@@ -36,11 +36,30 @@ void main() {
     substrateBridge = SubstrateBridge(_StubSubstrateClient());
   });
 
-  // Boots a host whose native-primitive seam is filled by [primitive].
-  D4rtDcliHost hostFor(RunProcedurePrimitive primitive) => D4rtDcliHost(
+  // A note primitive that drops every note — the runProcedure-focused
+  // tests below do not call `note`, but the installer needs one.
+  NotePrimitive discardingNotePrimitive() =>
+      NotePrimitive(sink: (_) {});
+
+  // Boots a host whose native-primitive seam is filled by [primitive]
+  // (plus a discarding note primitive, unless [notePrimitive] is given).
+  D4rtDcliHost hostFor(
+    RunProcedurePrimitive primitive, {
+    NotePrimitive? notePrimitive,
+  }) =>
+      D4rtDcliHost(
         memoryBridge: memoryBridge,
         substrateBridge: substrateBridge,
-        installNativePrimitives: nativePrimitivesInstaller(primitive),
+        installNativePrimitives: nativePrimitivesInstaller(
+          runProcedurePrimitive: primitive,
+          notePrimitive: notePrimitive ?? discardingNotePrimitive(),
+        ),
+      );
+
+  // A runProcedure primitive whose executor is never expected to fire —
+  // the note-focused tests below call only `note`.
+  RunProcedurePrimitive idleRunProcedure() => RunProcedurePrimitive(
+        executor: (call) async => ProcedureResult.succeeded(),
       );
 
   test('runProcedure is callable from a script and returns the executor '
@@ -149,6 +168,88 @@ run(inputs) async {
         inputs: <Object?>[ProcedureInputs.empty()],
       ),
       throwsA(isA<RecursionLimitExceeded>()),
+    );
+  });
+
+  // ── note(category, payload) — d4rt wiring (C.20) ───────────────────
+
+  test('note is callable from a script and reaches the sink with its '
+      'category + payload', () async {
+    final notes = <TrailNote>[];
+    final host = hostFor(
+      idleRunProcedure(),
+      notePrimitive: NotePrimitive(sink: notes.add),
+    );
+
+    await host.run(
+      '''
+import '$engineNativeLibrary';
+
+run(inputs) {
+  note('automation_candidate', {'why': 'repeated prompt', 'count': 3});
+}
+''',
+      inputs: <Object?>[ProcedureInputs.empty()],
+    );
+
+    expect(notes, hasLength(1));
+    expect(notes.single.category, automationCandidateCategory);
+    expect(notes.single.payload['why'], 'repeated prompt');
+    expect(notes.single.payload['count'], 3);
+  });
+
+  test('multiple notes from one script reach the sink in call order',
+      () async {
+    final notes = <TrailNote>[];
+    final host = hostFor(
+      idleRunProcedure(),
+      notePrimitive: NotePrimitive(sink: notes.add),
+    );
+
+    await host.run(
+      '''
+import '$engineNativeLibrary';
+
+run(inputs) {
+  note('first', {'n': 1});
+  note('second', {'n': 2});
+}
+''',
+      inputs: <Object?>[ProcedureInputs.empty()],
+    );
+
+    expect(notes.map((n) => n.category).toList(), <String>['first', 'second']);
+    expect(notes.map((n) => n.payload['n']).toList(), <int>[1, 2]);
+  });
+
+  test('a note with an empty category throws out of the script call',
+      () async {
+    final host = hostFor(
+      idleRunProcedure(),
+      notePrimitive: NotePrimitive(sink: (_) {}),
+    );
+
+    // The category guard is an `ArgumentError`; crossing the d4rt boundary
+    // wraps it (an `Error`, not an `Exception`) in the interpreter's
+    // runtime exception, so we assert on the surfaced message rather than
+    // the wrapped Dart type. The unwrapped `ArgumentError` is pinned at
+    // the Dart level in `note_primitive_test.dart`.
+    await expectLater(
+      host.run(
+        '''
+import '$engineNativeLibrary';
+
+run(inputs) {
+  note('', {'why': 'no category'});
+}
+''',
+        inputs: <Object?>[ProcedureInputs.empty()],
+      ),
+      throwsA(
+        predicate<Object>(
+          (e) => e.toString().contains('non-empty category'),
+        ),
+      ),
     );
   });
 }

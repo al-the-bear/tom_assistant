@@ -2,10 +2,11 @@
 // D4rt interpreter through the host's `installNativePrimitives` seam
 // (Plan step C.19; the seam is the C.16 `NativePrimitiveInstaller`).
 //
-// C.19 wires exactly one primitive: the top-level `runProcedure`. `note`
-// (C.20) and `yield_if_foreground_waiting` (C.21) register here too as
-// they land. The installer is the d4rt-facing half of C.19; the
-// recursion-capped logic lives in [RunProcedurePrimitive].
+// C.19 wired the first primitive: the top-level `runProcedure`. C.20 adds
+// `note`; `yield_if_foreground_waiting` (C.21) registers here too as it
+// lands. The installer is the d4rt-facing half of the native primitives;
+// the recursion-capped logic lives in [RunProcedurePrimitive] and the
+// note logic in [NotePrimitive].
 //
 // ── Why a top-level function, not a bridge method ───────────────────
 //
@@ -24,11 +25,17 @@
 // objects (passed in by the host, returned back to the host) and need no
 // bridging at C.19. The richer engine surface that does construct them
 // (`ProcedureEngine`, the sugar aliases) arrives at C.38–C.41.
+//
+// `note`'s payload, by contrast, is an ordinary d4rt map literal the
+// script builds in-place (`note('automation_candidate', {'why': …})`).
+// The installer coerces that `Map` into a `Map<String, Object?>` at the
+// boundary, validating that every key is a String.
 
 import 'package:tom_d4rt/d4rt.dart';
 
 import '../api/procedure_inputs.dart';
 import '../api/procedure_result.dart';
+import 'note_primitive.dart';
 import 'run_procedure_primitive.dart';
 
 /// The library URI a procedure script imports to reach the engine-native
@@ -46,15 +53,19 @@ const String engineNativeLibrary =
 /// The d4rt global name the `runProcedure` primitive is bound to.
 const String runProcedureName = 'runProcedure';
 
+/// The d4rt global name the `note` primitive is bound to.
+const String noteName = 'note';
+
 /// Builds an installer that registers the engine-native primitives backed
-/// by [runProcedurePrimitive] onto a D4rt interpreter.
+/// by [runProcedurePrimitive] and [notePrimitive] onto a D4rt interpreter.
 ///
 /// Returned as a `void Function(D4rt)` so it slots directly into the
 /// host's `installNativePrimitives` constructor parameter (C.16). Run once
 /// at host boot, after the bridges register.
-void Function(D4rt) nativePrimitivesInstaller(
-  RunProcedurePrimitive runProcedurePrimitive,
-) {
+void Function(D4rt) nativePrimitivesInstaller({
+  required RunProcedurePrimitive runProcedurePrimitive,
+  required NotePrimitive notePrimitive,
+}) {
   return (D4rt interpreter) {
     interpreter.registertopLevelFunction(
       runProcedureName,
@@ -69,6 +80,19 @@ void Function(D4rt) nativePrimitivesInstaller(
       signature:
           'Future<ProcedureResult> runProcedure(String id, ProcedureInputs '
           'inputs, {int? version, int depthDelta})',
+    );
+
+    interpreter.registertopLevelFunction(
+      noteName,
+      (
+        InterpreterVisitor visitor,
+        List<Object?> arguments,
+        Map<String, Object?> namedArguments,
+        List<RuntimeType>? typeArguments,
+      ) =>
+          _invokeNote(notePrimitive, arguments),
+      engineNativeLibrary,
+      signature: 'void note(String category, Map<String, Object?> payload)',
     );
   };
 }
@@ -134,4 +158,56 @@ Future<ProcedureResult> _invokeRunProcedure(
     version: version as int?,
     depthDelta: depthDelta,
   );
+}
+
+/// Marshals a d4rt `note(...)` call onto [primitive].
+///
+/// Positional args: `[0]` the category (String), `[1]` the payload (a
+/// d4rt map literal). The payload is coerced into a `Map<String, Object?>`
+/// — every key must be a String. Returns `null`: `note` is fire-and-forget
+/// from the script's point of view (it appends to the trail and yields no
+/// value the script consumes).
+Object? _invokeNote(
+  NotePrimitive primitive,
+  List<Object?> arguments,
+) {
+  if (arguments.length < 2) {
+    throw ArgumentError(
+      'note expects (String category, Map<String, Object?> payload); '
+      'got ${arguments.length} positional argument(s)',
+    );
+  }
+
+  final category = arguments[0];
+  if (category is! String) {
+    throw ArgumentError.value(
+      category,
+      'category',
+      'note category must be a String',
+    );
+  }
+
+  final payloadArg = arguments[1];
+  if (payloadArg is! Map) {
+    throw ArgumentError.value(
+      payloadArg,
+      'payload',
+      'note payload must be a Map',
+    );
+  }
+
+  final payload = <String, Object?>{};
+  payloadArg.forEach((Object? key, Object? value) {
+    if (key is! String) {
+      throw ArgumentError.value(
+        key,
+        'payload key',
+        'note payload keys must be Strings',
+      );
+    }
+    payload[key] = value;
+  });
+
+  primitive.note(category, payload);
+  return null;
 }

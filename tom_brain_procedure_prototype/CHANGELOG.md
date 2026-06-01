@@ -107,3 +107,19 @@ Initial project scaffold:
   needs it (the rest of the `api/` surface lands at C.38–C.41). 19 unit
   tests (`test/run_procedure_primitive_test.dart`) + 4 d4rt-wiring tests
   (`test/native_primitives_installer_test.dart`).
+- C.20 — Second engine-native primitive: `note(category, payload)`.
+  `NotePrimitive` (`lib/src/primitives_native/note_primitive.dart`) builds a
+  `TrailNote` (`trail_note.dart`) carrying the call's category, a
+  defensively-copied immutable payload, and an injected-clock `recordedAt`,
+  then forwards it to an injectable `TrailSink` seam. The trail itself — its
+  lifecycle, persistence, and the `inflight` / `recent_runs` stacks — stays
+  with the `RunRecorder` (C.31, § 8); C.20 owns only the act of producing a
+  note and handing it to the recorder (same deferral strategy as C.19's
+  `ProcedureExecutor`). `automationCandidateCategory` exposes the
+  `automation_candidate` wire value the dispatcher's harvester keys on
+  (§ 5.1). `nativePrimitivesInstaller` now takes named
+  (`runProcedurePrimitive`, `notePrimitive`) parameters and wires `note` as a
+  top-level d4rt function alongside `runProcedure`; the payload is coerced
+  from a d4rt map literal into `Map<String, Object?>` at the boundary
+  (String keys enforced). 10 unit tests (`test/note_primitive_test.dart`) +
+  3 d4rt-wiring tests (`test/native_primitives_installer_test.dart`).
