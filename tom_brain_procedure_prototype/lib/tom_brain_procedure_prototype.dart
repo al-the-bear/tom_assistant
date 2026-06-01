@@ -17,8 +17,9 @@
 /// prompt the machinery issues carries the assistant-dedication anchor
 /// because `llm(...)` always routes through substrate (PE-7).
 ///
-/// This barrel is intentionally empty at C.6 (the skeleton step). The
-/// public surface lands incrementally:
+/// At C.8 the `lib/src/` folder layout is in place but every subfolder
+/// barrel is intentionally empty — the public surface lands
+/// incrementally across the remaining Phase C steps:
 ///
 /// - C.6 ✅ — Project skeleton (`lib/`, `test/`, `pubspec.yaml`,
 ///   `_copilot_guidelines/`).
@@ -26,7 +27,7 @@
 ///   `tom_brain_memory` interface, `tom_brain_substrate` interface,
 ///   `tom_basics`, `tom_core_kernel`, `tom_core_d4rt`, `tom_d4rt`,
 ///   `tom_d4rt_dcli`).
-/// - C.8 — `lib/src/` folder layout (`d4rt_host/`, `bridges/`,
+/// - C.8 ✅ — `lib/src/` folder layout (`d4rt_host/`, `bridges/`,
 ///   `primitives_native/`, `procedure_store/`, `validator/`,
 ///   `recorder/`, `preemption/`, `api/`, `config/`).
 /// - C.11–C.15 — D4rt bridge-generator config + `MemoryBridge` /
@@ -44,3 +45,21 @@
 /// See `_ai/quests/tom_brain/tom_brain_procedure_prototype_specification.md`
 /// for the authoritative contract this package implements.
 library;
+
+// C.8 — module barrels. Each `src/<folder>/<folder>.dart` is currently
+// an empty barrel; the export here ensures the top-level package
+// surface mirrors the internal layout from day one. As later C-steps
+// add public symbols inside each module, the symbols become visible
+// through `package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart`
+// without further changes here. Order mirrors the engine pipeline:
+// host → bridges → native primitives → store → validator → recorder →
+// preemption → api → config.
+export 'src/d4rt_host/d4rt_host.dart';
+export 'src/bridges/bridges.dart';
+export 'src/primitives_native/primitives_native.dart';
+export 'src/procedure_store/procedure_store.dart';
+export 'src/validator/validator.dart';
+export 'src/recorder/recorder.dart';
+export 'src/preemption/preemption.dart';
+export 'src/api/api.dart';
+export 'src/config/config.dart';
