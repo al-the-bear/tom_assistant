@@ -6,35 +6,104 @@ version: 0.0.1
 environment:
   sdk: ^3.10.8
 
-# Dependency posture at C.6 (skeleton step).
+# Dependency discipline (Plan step C.7 / `tom_brain_procedure_prototype_specification.md`).
 #
-# This step is *strictly* the project skeleton — a buildable empty
-# package with a smoke test — mirroring the A.21 (`tom_brain_memory`)
-# and B.6 (`tom_brain_substrate`) decomposition. Per the plan:
+# The procedure prototype is the *glue* layer: it hosts d4rt scripts
+# that call a bridged primitive API which re-exposes memory + substrate,
+# records every run as a memory trail, and (Phase D) dispatches inbound
+# work. Its dependency set is shaped by that role. C.7 lands exactly the
+# eight runtime dependencies the plan names — no more.
 #
-#   - C.6 (this step) — project skeleton only; `dependencies:` stays
-#                       empty. `dart pub get` resolves a dev-only
-#                       closure (`lints` + `test`), so no native
-#                       packages and no cross-component constraint
-#                       negotiation happens here.
-#   - C.7 — runtime dependencies land: `tom_brain_shared`,
-#           `tom_brain_memory` (interface boundary only),
-#           `tom_brain_substrate` (interface boundary only),
-#           `tom_basics`, `tom_core_kernel`, `tom_core_d4rt`,
-#           `tom_d4rt`, `tom_d4rt_dcli: ^1.1.3` (the C.4 pin).
-#   - C.8 — `lib/src/` folder layout (`d4rt_host/`, `bridges/`,
-#           `primitives_native/`, `procedure_store/`, `validator/`,
-#           `recorder/`, `preemption/`, `api/`, `config/`).
-#   - C.9 — `dev_dependencies` gain `tom_d4rt_generator: ^1.8.24`
-#           and `build_runner: ^2.10.4` (the C.5 pins).
+#   - tom_brain_shared    — cross-component vocabulary (NodeId, Vec,
+#                           Budget, Result, BrainEvent, BrainTime,
+#                           BrainVersion, AssistantDedicationAnchor,
+#                           ProcedureId). The only Tom-Brain library the
+#                           engine imports for shared types. Path dep —
+#                           `publish_to: none`.
+#   - tom_brain_memory    — INTERFACE BOUNDARY ONLY (PE-10). The engine
+#                           consumes `TomBrainMemoryClient` (A.78) — the
+#                           consumer-facing shape — never the concrete
+#                           store and never `lib/src/` internals. The
+#                           MemoryBridge (C.12) wraps this client.
+#   - tom_brain_substrate — INTERFACE BOUNDARY ONLY (PE-10). The engine
+#                           consumes `TomBrainSubstrateClient` (B.40) —
+#                           never `InProcessTomBrainSubstrate` and never
+#                           `lib/src/` internals. The SubstrateBridge
+#                           (C.13) wraps this client.
+#   - tom_basics          — workspace baseline (`TomLogger`/`tomLog`,
+#                           UUID, exception types). Hosted to keep the
+#                           resolver consistent with `tom_core_kernel`
+#                           (which depends on `tom_basics: any` from
+#                           pub.dev) — same convention memory (A.22) and
+#                           substrate (B.7) adopted.
+#   - tom_core_kernel     — `TomBean` (bean-locator surface), `TomLogger`
+#                           categories, isolate utilities. Path dep.
+#   - tom_core_d4rt       — the Tom-Framework D4rt bridge-registration
+#                           layer the generated bridges register against
+#                           (C.14). Path dep — `publish_to: none`.
+#                           NOTE: the workspace copy's generated bridge
+#                           barrel (`dartscript.b.dart`) currently ships
+#                           Windows-backslash imports that do not compile
+#                           on POSIX — see Q-C.7.3. The dependency is
+#                           declared here per the plan; the actual import
+#                           of its bridge barrel is deferred to C.14/C.16
+#                           and is gated on the upstream regeneration
+#                           fix. `dart analyze` on this package is
+#                           unaffected because no prototype source imports
+#                           that barrel yet.
+#   - tom_d4rt            — the sandboxed D4rt interpreter (`D4rt`) the
+#                           host (C.16) runs procedure scripts on. Hosted
+#                           `^1.8.19` — the version published to pub.dev
+#                           and matching the workspace project, keeping
+#                           the d4rt runtime uniform with the hosted
+#                           `tom_d4rt_dcli` below (which pulls `tom_d4rt`
+#                           with an `any` constraint). See Q-C.7.2.
+#   - tom_d4rt_dcli       — `^1.1.3`, the C.4 workspace pin. Provides
+#                           `D4rtCliApi` (`lib/src/api/cli_api.dart`),
+#                           the REPL/CLI base `D4rtDcliHost` (C.16)
+#                           composes. Hosted; the published 1.1.3 bridge
+#                           barrel is correctly generated (forward-slash
+#                           imports), unlike the workspace `tom_core_d4rt`
+#                           copy.
+#
+# Explicitly NOT here (scope discipline):
+#
+#   - tom_core_server     — the engine does no inbound HTTP and no MCP
+#                           server. Memory owns the MCP server (A.75);
+#                           access (Phase E) owns the inbound edge.
+#   - http / dio          — the engine makes no network calls directly;
+#                           all outbound I/O goes through the substrate
+#                           client behind the bridge.
+#   - dart_mcp            — the engine talks to memory through the
+#                           in-process / isolate `TomBrainMemoryClient`,
+#                           not over MCP. The MCP surface is memory's
+#                           (server) and substrate's (client) concern.
+#   - logger / logging    — `tomLog` from tom_basics is the only log
+#                           surface permitted at this layer.
+#
+# The dependency-discipline test (`test/dependency_surface_test.dart`)
+# enforces this contract at build time.
+#
+# Forward steps (unchanged from the C.6 posture note):
+#   - C.8  — `lib/src/` folder layout.
+#   - C.9  — `dev_dependencies` gain `tom_d4rt_generator: ^1.8.24`
+#            and `build_runner: ^2.10.4` (the C.5 pins).
 #   - C.10 — `.tom_metadata/tom_master.yaml` wiring is a no-op going
 #            forward (policy override 5).
-#
-# Keeping `dependencies:` empty at C.6 is deliberate (identical
-# rationale to A.21 / B.6): the skeleton's only promise is "buildable
-# package with a smoke test", and folding the dependency add into this
-# step would rob C.7 of its meaningful dependency-discipline diff.
 dependencies:
+  tom_brain_shared:
+    path: ../tom_brain_shared
+  tom_brain_memory:
+    path: ../tom_brain_memory
+  tom_brain_substrate:
+    path: ../tom_brain_substrate
+  tom_basics: ^1.0.0
+  tom_core_kernel:
+    path: ../../tom_ai/core/tom_core_kernel
+  tom_core_d4rt:
+    path: ../../tom_ai/core/tom_core_d4rt
+  tom_d4rt: ^1.8.19
+  tom_d4rt_dcli: ^1.1.3
 
 dev_dependencies:
   lints: ^6.0.0
