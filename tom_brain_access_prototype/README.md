@@ -6,7 +6,15 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.34 — the **in-process embedding cache** extends
+> **Status:** E.35 — the **`## E.7` test sweep** closes
+> `## E.7 — Cheap kind-hint classifier`. The formal acceptance sweep
+> (`test/heuristic_classifier/e7_kind_hint_sweep_test.dart`) exercises the
+> *integrated* surface — the classifier with its embed seam bound to the cache,
+> as boot wires it — and locks the three plan-named outcomes: confident
+> classification produces a kindHint; uncertain / unknown leaves it null; a
+> cache hit avoids the embed call.
+>
+> E.34 — the **in-process embedding cache** extends
 > `## E.7 — Cheap kind-hint classifier`: `EmbeddingCache` (proto spec § 9.2) is
 > keyed by *exact* inbound text with a 5-min TTL measured from compute time.
 > `EmbeddingCache.embed` is itself a `KindHintEmbedder`, so the cache composes
@@ -14,7 +22,6 @@ streams the answer back through the originating channel.
 > — a cache hit returns the stored embedding and **saves the embed call** (the
 > E.50 smoke and E.55 conformance assert the short-circuit). Only *resolved*
 > embeddings are stored: a throwing embed call propagates and memoises nothing.
-> The classifier test sweep is E.35.
 >
 > E.33 — the **cheap kind-hint classifier** opened
 > `## E.7 — Cheap kind-hint classifier`: `HeuristicKindHintClassifier` runs the

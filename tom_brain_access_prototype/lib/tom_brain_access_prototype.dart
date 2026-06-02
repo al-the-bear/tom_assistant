@@ -255,8 +255,13 @@
 ///   `HeuristicKindHintClassifier` — a cache hit returns the stored embedding
 ///   and saves the embed call (the E.50 smoke and E.55 conformance assert the
 ///   short-circuit). Resolved values only (a throwing embed is not memoised).
-/// - E.35 – E.50 ⏳ — the classifier test sweep, delivery, boot, and the
-///   end-to-end smoke.
+/// - E.35 ✅ — the `## E.7` test sweep
+///   (`test/heuristic_classifier/e7_kind_hint_sweep_test.dart`): the formal
+///   acceptance sweep over the integrated surface (the classifier with its
+///   embed seam bound to the cache, as boot wires it) — confident
+///   classification produces a kindHint; uncertain / unknown leaves it null; a
+///   cache hit avoids the embed call. Closes `## E.7`.
+/// - E.36 – E.50 ⏳ — delivery, boot, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

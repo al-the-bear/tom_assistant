@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.35)
+
+`## E.7 — Cheap kind-hint classifier` test sweep — closes `## E.7`
+(Plan E.35; proto spec § 9.1 + § 9.2; AC-9). The formal acceptance sweep over
+the *integrated* surface: the `HeuristicKindHintClassifier` (E.33) with its
+embed seam bound to the `EmbeddingCache` (E.34), exactly as boot (E.41+) wires
+them.
+
+- `test/heuristic_classifier/e7_kind_hint_sweep_test.dart` — **new** (6 assertions).
+  - Confident classification produces a kindHint (the matched procedure id).
+  - Uncertain / unknown classification leaves the kindHint null (the cheap
+    path is silent; AC-9).
+  - A cache hit avoids the embed call: a repeat of the exact prompt within the
+    TTL short-circuits the substrate embed while still yielding the same hint;
+    a repeat past the TTL re-embeds; a distinct prompt misses.
+
+Suite green at 365 / 365 (359 prior + 6 new E.35). `dart analyze` clean.
+
 ## 0.0.1 — 2026-06-02 (Phase E.34)
 
 In-process embedding cache — extends `## E.7 — Cheap kind-hint classifier`

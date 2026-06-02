@@ -24,7 +24,14 @@
 // `KindHintEmbedder`, so the cache composes *in front of* the substrate seam
 // without touching `HeuristicKindHintClassifier`; a cache hit returns the
 // stored embedding and saves the embed call (the E.50 smoke and E.55
-// conformance assert the short-circuit). The classifier test sweep is E.35.
+// conformance assert the short-circuit).
+//
+// E.35 ✅ — the `## E.7` test sweep (`test/heuristic_classifier/
+// e7_kind_hint_sweep_test.dart`): the formal acceptance sweep over the
+// *integrated* surface (the classifier with its embed seam bound to the
+// cache, as boot wires it). Locks the three plan-named outcomes — confident
+// classification produces a kindHint; uncertain / unknown leaves it null; a
+// cache hit avoids the embed call. Closes `## E.7`.
 
 export 'embedding_cache.dart';
 export 'heuristic_kind_hint_classifier.dart';
