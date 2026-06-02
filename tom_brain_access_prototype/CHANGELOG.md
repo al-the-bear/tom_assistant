@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.36)
+
+`DeliveryRegistry` — opens `## E.8 — Outbound delivery` (Plan E.36; proto spec
+§ 10.1; AC-2). The channel-agnostic outbound-delivery dispatcher: "one
+registry, two delivery paths". It registers one delivery path per channel and
+per inbound request produces the per-`Access` `DeliverCallback` the engine
+streams the answer through; the concrete wire translators (SSE E.37 / Telegram
+E.38) implement the `ChannelDelivery` contract this step defines.
+
+- `lib/src/delivery/channel_delivery.dart` — **new**. `DeliveryBinding` (the
+  per-`Access` channel-bound context built before the `Access`) and
+  `ChannelDelivery` (the contract one channel's delivery path implements:
+  declares its `AccessChannel`, produces a per-`Access` `DeliverCallback` from
+  a binding).
+- `lib/src/delivery/delivery_registry.dart` — **new**. `DeliveryRegistry`
+  (`register` one path per channel — duplicate is a `StateError`; `deliverFor`
+  dispatches to the registered path; `UnknownDeliveryChannel` for an
+  unregistered channel) and the terminal-success `AccessDelivered` emission on
+  the final chunk through an injected `onDelivered` sink (boot wires it to the
+  `AccessEventBus`, E.41).
+- `lib/src/delivery/delivery.dart` — barrel now exports the four symbols.
+- `test/delivery/delivery_registry_test.dart` — **new** (15 assertions):
+  registration (empty → one → two paths; duplicate rejected); dispatch (binds
+  the right path; passes chunks + backpressure through; `UnknownDeliveryChannel`
+  for an unregistered channel); `AccessDelivered` emission (final chunk → one
+  event with the chunk count + correlated identity; no sink → pure dispatcher;
+  no second event after final; non-terminated → no event; UTC `occurredAt`;
+  independent per-`Access` counters).
+
+Suite green at 380 / 380 (365 prior + 15 new E.36). `dart analyze` clean.
+
 ## 0.0.1 — 2026-06-02 (Phase E.35)
 
 `## E.7 — Cheap kind-hint classifier` test sweep — closes `## E.7`

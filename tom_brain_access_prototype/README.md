@@ -6,7 +6,22 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.35 — the **`## E.7` test sweep** closes
+> **Status:** E.36 — the **`DeliveryRegistry`** opens `## E.8 — Outbound
+> delivery`: the channel-agnostic dispatcher, "one registry, two delivery
+> paths" (proto spec § 10.1). It registers one `ChannelDelivery` per
+> `AccessChannel` (rejecting a duplicate per channel) and per inbound request
+> produces the per-`Access` `DeliverCallback` the engine streams the answer
+> through (`deliverFor`, AC-2). An unregistered channel throws
+> `UnknownDeliveryChannel` (a loud boot-wiring fault). The
+> `ChannelDelivery` / `DeliveryBinding` contract is the seam the concrete wire
+> translators fill — SSE (E.37) and Telegram (E.38). As the one
+> channel-agnostic point in the outbound path the registry emits the
+> terminal-success `AccessDelivered` on the answer's final chunk through an
+> injected `onDelivered` sink (boot wires it to the `AccessEventBus`, E.41);
+> with no sink it is a pure dispatcher. Backpressure (`DeliveryStalled`) is
+> E.39 / E.40.
+>
+> E.35 — the **`## E.7` test sweep** closed
 > `## E.7 — Cheap kind-hint classifier`. The formal acceptance sweep
 > (`test/heuristic_classifier/e7_kind_hint_sweep_test.dart`) exercises the
 > *integrated* surface — the classifier with its embed seam bound to the cache,

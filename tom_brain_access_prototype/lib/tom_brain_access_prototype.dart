@@ -261,7 +261,23 @@
 ///   embed seam bound to the cache, as boot wires it) — confident
 ///   classification produces a kindHint; uncertain / unknown leaves it null; a
 ///   cache hit avoids the embed call. Closes `## E.7`.
-/// - E.36 – E.50 ⏳ — delivery, boot, and the end-to-end smoke.
+/// - E.36 ✅ — `DeliveryRegistry` (delivery/), opening `## E.8 — Outbound
+///   delivery`: the channel-agnostic dispatcher — "one registry, two delivery
+///   paths" (§ 10.1). It registers one `ChannelDelivery` per `AccessChannel`
+///   (`register`, rejecting a duplicate per channel), and per inbound request
+///   produces the per-`Access` `DeliverCallback` the engine streams the answer
+///   through (`deliverFor`, AC-2). An unregistered channel throws
+///   `UnknownDeliveryChannel` (a loud boot-wiring fault, never a dropped
+///   answer). The `ChannelDelivery` / `DeliveryBinding` contract is the seam
+///   the concrete wire translators fill — SSE (E.37) and Telegram (E.38). The
+///   registry is the one channel-agnostic point in the outbound path, so it is
+///   where the terminal-success `AccessDelivered` is emitted: on the answer's
+///   final chunk, through an injected `onDelivered` sink (boot wires it to the
+///   `AccessEventBus`, E.41), carrying the chunk count + the correlated
+///   identity. With no sink it is a pure dispatcher. Wire formatting (E.37 /
+///   E.38) and backpressure (`DeliveryStalled`, E.39 / E.40) are later steps.
+/// - E.37 – E.50 ⏳ — the SSE + Telegram delivery paths, backpressure, boot,
+///   and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
