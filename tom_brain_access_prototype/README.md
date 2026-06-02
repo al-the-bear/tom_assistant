@@ -6,7 +6,16 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.28 — bearer-token auth opens `## E.6 — Edge security`: the
+> **Status:** E.29 — per-principal token-bucket rate limiting is the second
+> `## E.6 — Edge security` check: `RateLimiter` owns one continuous-refill
+> `RateLimitPolicy` bucket per non-secret `principalId` and is called once
+> per inbound request, after auth (E.28) and before an `Access` exists
+> (AC-4); `check` consumes one token and returns, or throws
+> `RateLimitExceeded` (carrying a finite `retryAfter`) when the bucket is
+> empty. A failure maps to `rateLimitHttpStatus` (`429`, OpenAI) /
+> `telegramRateLimitMessage` (a graceful "slow down", Telegram). Bucket state
+> is in-process for the prototype; refill is read through an injectable clock.
+> E.28 — bearer-token auth opened `## E.6 — Edge security`: the
 > OpenAI-channel credential check that runs *before* an `Access` exists
 > (AC-4). `BearerTokenAuthenticator` validates a token to a `TomPrincipal`
 > (or throws `BearerAuthFailure` with a `missing` / `malformed` / `rejected`

@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.29)
+
+Per-principal token-bucket rate limiting — the second edge-security check
+(Plan E.29; proto spec § 8; AC-4). Runs after bearer auth (E.28) and before
+an `Access` is constructed; a request that exceeds its principal's bucket
+never becomes an `Access`. A failure surfaces as `429` (OpenAI) / a graceful
+"slow down" message (Telegram).
+
+- `lib/src/edge_security/rate_limiter.dart` — **new**.
+  - `RateLimitPolicy` — immutable bucket config (`capacity` burst,
+    `refillTokens` per `refillPeriod`); validates capacity >= 1,
+    refillTokens > 0, refillPeriod > 0.
+  - `RateLimiter` — one continuous-refill bucket per non-secret
+    `principalId` (never the bearer token); `check(principalId)` consumes one
+    token and returns, or throws `RateLimitExceeded`. Lazy wall-clock refill
+    (no timer); idle principals cost nothing; refill read through an
+    injectable `clock` seam. In-process bucket state for the prototype
+    (Q-E.2.5).
+  - `RateLimitExceeded` — typed failure carrying the non-secret
+    `principalId` and a finite, strictly-positive `retryAfter` (the wait
+    until one token refills; the OpenAI `Retry-After` value). A rejected
+    request is not charged.
+  - `rateLimitHttpStatus` (`429`) and `telegramRateLimitMessage` — the single
+    channel-mapping sources the adapters (E.41+) read.
+- `lib/src/edge_security/edge_security.dart` — `export 'rate_limiter.dart';`
+  + E.29 ✅ note; E.30 / E.31 remain pending.
+- `lib/tom_brain_access_prototype.dart` — E.29 ✅ bullet; pending range
+  advanced E.29 – E.50 → E.30 – E.50.
+- `test/edge_security/rate_limiter_test.dart` — **new** (18 assertions).
+
 ## 0.0.1 — 2026-06-02 (Phase E.28)
 
 Bearer-token auth — the first edge-security check, opening

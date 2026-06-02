@@ -181,8 +181,19 @@
 ///   `bearerAuthHttpStatus` (`401`). Telegram auth is the whitelist (E.22);
 ///   the failure→`Response` wire shaping and the boot wiring of the
 ///   authenticator are E.41+ composition. Mirrors the A.76 bearer contract.
-/// - E.29 – E.50 ⏳ — rate limiting, quota, the anchor pre-check, the
-///   kind-hint classifier, delivery, boot, and the end-to-end smoke.
+/// - E.29 ✅ — per-principal token-bucket rate limiting (edge_security/):
+///   the short-horizon burst throttle, the second edge-security check, run
+///   after auth (E.28) and before an `Access` exists (AC-4). `RateLimiter`
+///   owns one continuous-refill `RateLimitPolicy` bucket per `principalId`
+///   (the non-secret stable id — never the bearer token); `check` consumes
+///   one token and returns, or throws `RateLimitExceeded` (carrying a finite
+///   `retryAfter`) when the bucket is empty. Every failure maps to
+///   `rateLimitHttpStatus` (`429`, OpenAI) / `telegramRateLimitMessage` (a
+///   graceful "slow down", Telegram). Bucket state is in-process for the
+///   prototype (Q-E.2.5); refill is read through an injectable clock. The
+///   failure→wire shaping and the boot wiring of the limiter are E.41+.
+/// - E.30 – E.50 ⏳ — quota, the anchor pre-check, the kind-hint classifier,
+///   delivery, boot, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
