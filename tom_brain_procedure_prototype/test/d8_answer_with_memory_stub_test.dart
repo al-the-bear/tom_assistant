@@ -13,8 +13,8 @@
 //                       and loads from the real store+resolver path with a
 //                       valid `answer_with_memory_v1` v1 header that now
 //                       declares
-//                       `requires: [recall, llm, persist, edge, stack.push]`
-//                       (D.37–D.40).
+//                       `requires: [recall, llm, persist, edge, stack.push,
+//                       note]` (D.37–D.41).
 //   2. RUNS ACCEPTED  — invoking it through the engine with a `text` input
 //                       resolves an accepted outcome and the recorder writes
 //                       the run to `recent_runs`.
@@ -87,11 +87,11 @@ void main() {
       final loaded = resolver.resolve('answer_with_memory_v1');
       expect(loaded.header.id, 'answer_with_memory_v1');
       expect(loaded.header.version, 1);
-      // D.37–D.40 — the body calls `recall`, `llm`, `persist`/`edge`, then the
-      // cold-path `stack.push`, so the header declares exactly those bridged
-      // primitives.
+      // D.37–D.41 — the body calls `recall`, `llm`, `persist`/`edge`, the
+      // cold-path `stack.push`, then the repetition `note`, so the header
+      // declares exactly those bridged primitives.
       expect(loaded.header.requires,
-          <String>['recall', 'llm', 'persist', 'edge', 'stack.push']);
+          <String>['recall', 'llm', 'persist', 'edge', 'stack.push', 'note']);
       // The intended budget caps are declared up front (D.36).
       expect(loaded.header.budget.wallClockMs, 60000);
     });

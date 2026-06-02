@@ -10,7 +10,7 @@
 ///   - { name: text, type: String, required: true }
 /// outputs:
 ///   - { name: answer, type: String }
-/// requires: [ recall, llm, persist, edge, stack.push ]
+/// requires: [ recall, llm, persist, edge, stack.push, note ]
 //
 // answer_with_memory_v1 — the prototype's one real system procedure
 // (`prototype_implementation_plan.md` D.10 / D.36–D.42;
@@ -35,8 +35,16 @@
 // the fourth body step: when the four-mode recall (vector mode included)
 // surfaced nothing, the prompt landed far from anything memory already knows —
 // the brain is curious about a topic it has no memory of — so the body records
-// an `InterestItem` and pushes it onto the `interests` bootstrap stack. The
-// remaining steps (automation note D.41, tests D.42) land next.
+// an `InterestItem` and pushes it onto the `interests` bootstrap stack.
+// D.41 (plan): "Emit a `note('automation_candidate', …)` if the prompt matches
+// a recent identical-shape prompt (cheap repetition check)." This is the fifth
+// body step: step 3 persists every inbound prompt as an `Event` whose
+// `summary` is the prompt text, so when the user asks the *same* thing again
+// the four-mode recall (step 1) surfaces that prior `Event`. The body reads
+// that off the recall it already ran and, on a match, emits an
+// `automation_candidate` note on the run trail — the wire the dispatcher's
+// harvester (D.31) keys on to consider turning a repeated prompt into a
+// procedure. The remaining step (tests D.42) lands next.
 //
 // ── Why the `produced_by` edge is the engine's job, not the body's ──
 //
@@ -90,6 +98,26 @@
 // it would be rejected by the edge-permission table. The interest is recorded
 // and stacked; its run linkage is the trail, not a `produced_by` edge.
 //
+// ── How the identical-shape repetition is detected (Q-D.41.1) ───────
+//
+// The plan asks for the note "if the prompt matches a recent identical-shape
+// prompt (cheap repetition check)". Step 3 already persists every inbound
+// prompt as an immutable `Event` whose `summary` is the prompt text. So the
+// cheapest possible identical-shape signal is: did the four-mode recall in
+// step 1 surface a prior `Event` whose `summary` equals *this* prompt? That
+// is exactly an earlier turn where the user asked the same thing. The body
+// reads it off the recall it already holds — `_isRepeatPrompt(recall, text)`
+// scans the recalled nodes for an `Event` with a matching `summary` — so no
+// second memory query is spent (the "cheap" in the spec). The new `Event` for
+// *this* turn is persisted in step 3, which runs *after* recall, so it can
+// never be the node that matches (no self-match). When a match is found the
+// body emits `note('automation_candidate', {why, signature})`; the dispatcher
+// harvester (D.31) reads that category off the trail. See Q-D.41.1.
+//
+// Cold path and repeat path are mutually exclusive in practice: the cold-path
+// interest (D.40) fires only when recall returned *nothing*, while a repeat
+// requires recall to have surfaced the prior `Event`.
+//
 // ── Token streaming and `Access.deliver` (Q-D.38.1) ─────────────────
 //
 // The plan's "stream tokens back via the `Access.deliver` callback" is a
@@ -117,6 +145,11 @@
 //     scope so `sub.llm(...)` resolves (D.38).
 // `mem.persist(...)` and `mem.edge(...)` (D.39) and `mem.stackPush(...)`
 // (D.40) resolve through the same `memory_bridge.dart` import.
+//   - `…/src/primitives_native/primitives_native.dart` brings the bare
+//     engine-native `note(...)` global into scope so `note('automation_'
+//     'candidate', …)` resolves (D.41). `note` is registered as a top-level
+//     function, not a bridge method, so it is reached by import, not via a
+//     `mem.`/`sub.` receiver (`native_primitives_installer.dart`).
 // These imports are the only surface this body touches; everything else is
 // denied (PE-1). (The static `SandboxValidator` rejects *all* imports per
 // spec § 4.2; that ban contradicts the host's import-to-reach-`mem`/`sub`
@@ -127,13 +160,16 @@
 //
 // The machine-validated header fields track the body, not the summary, so
 // the artifact stays internally coherent (`ContractValidator`, § 7 rows
-// 4–5 — `requires` must match the body's actual calls). As of D.40:
+// 4–5 — `requires` must match the body's actual calls). As of D.41:
 //   - `text` is `required: true` — step 1 reads it for `recall`, step 2
 //     folds it into the assembled prompt, step 3 persists it as the `Event`,
-//     step 4 records it as the `InterestItem.topic` on the cold path;
-//   - `requires` is `[recall, llm, persist, edge, stack.push]` — the bridged
-//     primitives the body calls (memory recall + substrate completion +
-//     node persist + edge creation + the cold-path `interests` stack push);
+//     step 4 records it as the `InterestItem.topic` on the cold path, step 5
+//     uses it as the identical-shape repetition key and the note signature;
+//   - `requires` is `[recall, llm, persist, edge, stack.push, note]` — the
+//     bridged primitives the body calls (memory recall + substrate completion
+//     + node persist + edge creation + the cold-path `interests` stack push +
+//     the repetition `automation_candidate` trail note). The list is a set;
+//     order is immaterial (the validator compares membership, § 7 row 5);
 //   - the only declared output is `answer` (the concatenated LLM answer
 //     text). The body also returns the reserved `producedNodeIds` key, which
 //     the engine consumes (to draw the run's `produced_by` edge) and strips
@@ -154,6 +190,7 @@
 import 'package:tom_brain_procedure_prototype/src/api/procedure_inputs.dart';
 import 'package:tom_brain_procedure_prototype/src/bridges/memory_bridge.dart';
 import 'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart';
+import 'package:tom_brain_procedure_prototype/src/primitives_native/primitives_native.dart';
 
 Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final text = inputs.get('text');
@@ -206,6 +243,23 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     await mem.stackPush('interests', interestId, producer: producer);
   }
 
+  // D.41 — automation-candidate note. The recall in step 1 already ran the
+  // four-mode pipeline; if it surfaced a prior `Event` whose `summary` is
+  // *identical* to this prompt, the user has asked this exact thing before —
+  // an "identical-shape" repetition the dreaming/harvester layer may want to
+  // turn into a procedure. The body surfaces that signal with a
+  // `note('automation_candidate', …)` on the run trail (the wire the
+  // dispatcher's harvester keys on, spec § 5.1 / § 11 step 5). This is a
+  // cheap repetition check — it reads the recall in hand, it does not
+  // re-query memory (Q-D.41.1).
+  if (_isRepeatPrompt(recall, text)) {
+    note('automation_candidate', {
+      'why': 'The inbound prompt is identical to a prior prompt already in '
+          'memory (cheap repetition check) — a candidate for automation.',
+      'signature': text,
+    });
+  }
+
   // The engine reads `producedNodeIds` to drive the run recorder's
   // `produced_by` edge (Conclusion → ProcedureRun), then strips the key so
   // `answer` stays the only surfaced output.
@@ -225,6 +279,27 @@ bool _isColdRecall(Map recall) {
     return nodes.isEmpty;
   }
   return true;
+}
+
+/// Whether the recall surfaced a prior `Event` carrying *exactly* this
+/// prompt — the cheap "identical-shape repetition" check (D.41). Step 3
+/// persists every inbound prompt as an `Event` whose `summary` is the prompt
+/// text, so an earlier identical prompt resurfaces here as a recalled `Event`
+/// node with a matching `summary`. Reading it off the recall already in hand
+/// keeps the check cheap — no second memory query (Q-D.41.1).
+bool _isRepeatPrompt(Map recall, Object? text) {
+  final nodes = recall['nodes'];
+  if (nodes is List) {
+    for (final node in nodes) {
+      if (node is Map && node['typeName'] == 'Event') {
+        final values = node['values'];
+        if (values is Map && values['summary'] == text) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /// Collects the ids of the recalled nodes that fed the answer prompt — the

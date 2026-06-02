@@ -277,7 +277,14 @@
 //     (`d40_answer_with_memory_interest_test.dart`). `requires`→[recall, llm,
 //     persist, edge, stack.push]. Detection reads the recall already in hand;
 //     `embed`/`classify` are not called (Q-D.40.1).
-//   - D.41–D.42 — `answer_with_memory_v1` automation note + tests.
+//   - D.41 ✅ — body step 5 (automation-candidate note): when the step-1
+//     recall surfaced a prior `Event` whose `summary` equals this prompt (an
+//     identical-shape repetition), emits `note('automation_candidate', …)` on
+//     the run trail — the wire the dispatcher harvester (D.31) keys on
+//     (`d41_answer_with_memory_automation_test.dart`). `requires`→[recall,
+//     llm, persist, edge, stack.push, note]. The check reads the recall
+//     already in hand; no second memory query (Q-D.41.1).
+//   - D.42 — `answer_with_memory_v1` consolidated body tests.
 //   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
 //   - D.47–D.50 — `DispatcherConfig` + observability.
 //
