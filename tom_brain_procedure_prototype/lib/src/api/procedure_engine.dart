@@ -80,6 +80,18 @@ import 'run_cancellation.dart';
 /// The typed failure class a crashed run is recorded under (§ 10.4).
 const String _runtimeCrashKind = 'procedure.runtime.crash';
 
+/// Reserved entry-point return key a procedure body uses to report the ids of
+/// the memory nodes it produced (D.39).
+///
+/// A body persists its result nodes itself (it has `mem.persist`), but it
+/// cannot draw the `produced_by` edge to the run record — the authoritative
+/// `ProcedureRun` node is only persisted at `complete()`, after the body
+/// returns (recorder Q-C.31.1). The body therefore returns the produced node
+/// ids under this key; the engine threads them into
+/// `RunCompletion.producedNodeIds` (so the recorder draws the edges) and
+/// strips the key from the procedure's declared outputs.
+const String producedNodeIdsOutputKey = 'producedNodeIds';
+
 /// The depth the top-level procedure of an `invoke` runs at (§ 5.1 / C.19).
 const int _topLevelDepth = 1;
 
@@ -314,6 +326,7 @@ final class ProcedureEngine {
     final StepOutcome<Object?> step = (race as _RaceStep).step;
     switch (step) {
       case StepCompleted<Object?>(:final value):
+        final producedNodeIds = _extractProducedNodeIds(value);
         final result = _coerceResult(value);
         final status = result.isSuccess
             ? TrailOutcomeStatus.accepted
@@ -324,6 +337,7 @@ final class ProcedureEngine {
             summary: result.isSuccess
                 ? 'ran ${loaded.header.id} to completion'
                 : 'procedure ${loaded.header.id} reported failure',
+            producedNodeIds: producedNodeIds,
           ),
         );
         return _outcomeOf(
@@ -460,13 +474,37 @@ final class ProcedureEngine {
     if (raw is ProcedureResult) return raw;
     if (raw is Map) {
       final outputs = <String, Object?>{};
-      raw.forEach((Object? key, Object? value) => outputs['$key'] = value);
+      raw.forEach((Object? key, Object? value) {
+        // The reserved produced-node-ids channel (D.39) is consumed by
+        // `_extractProducedNodeIds` and never surfaced as a declared output.
+        if ('$key' == producedNodeIdsOutputKey) return;
+        outputs['$key'] = value;
+      });
       return ProcedureResult.succeeded(outputs: outputs);
     }
     if (raw == null) return ProcedureResult.succeeded();
     return ProcedureResult.succeeded(
       outputs: <String, Object?>{'value': raw},
     );
+  }
+
+  /// Reads the reserved [producedNodeIdsOutputKey] off a procedure's raw
+  /// return (D.39): the ids of the memory nodes the body produced, which the
+  /// recorder turns into `produced_by` edges to the run record. Returns an
+  /// empty list when the body did not report any (every existing procedure
+  /// other than `answer_with_memory_v1`).
+  List<String> _extractProducedNodeIds(Object? raw) {
+    if (raw is! Map) return const <String>[];
+    for (final entry in raw.entries) {
+      if ('${entry.key}' == producedNodeIdsOutputKey) {
+        final value = entry.value;
+        if (value is List) {
+          return value.whereType<String>().toList(growable: false);
+        }
+        return const <String>[];
+      }
+    }
+    return const <String>[];
   }
 
   ProcedureOutcome _outcomeOf({

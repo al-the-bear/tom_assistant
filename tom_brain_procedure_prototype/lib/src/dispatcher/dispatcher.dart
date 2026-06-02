@@ -263,8 +263,15 @@
 //     output (`d38_answer_with_memory_answer_test.dart`). `outputs`→`answer`,
 //     `requires`→[recall, llm]. Token streaming via `Access.deliver` is a
 //     Phase E concern (Q-D.38.1); `sub.llm` returns the whole answer.
-//   - D.39–D.42 — `answer_with_memory_v1` persist + edges + interest +
-//     automation note + tests.
+//   - D.39 ✅ — body step 3 (persist the exchange): persists the inbound
+//     prompt as an `Event` and the answer as a `Conclusion`, draws a
+//     `derived_from` edge from the `Conclusion` to each recalled node, and
+//     reports the `Conclusion` id under the reserved `producedNodeIds` key so
+//     the recorder draws the `produced_by` edge to the run
+//     (`d39_answer_with_memory_persist_test.dart`). `requires`→[recall, llm,
+//     persist, edge].
+//   - D.40–D.42 — `answer_with_memory_v1` interest push + automation note +
+//     tests.
 //   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
 //   - D.47–D.50 — `DispatcherConfig` + observability.
 //
