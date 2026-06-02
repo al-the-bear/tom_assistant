@@ -160,6 +160,33 @@
 // `recent_runs` accumulates exactly the finished ones, and concurrent
 // foreground + background appears as two distinct `inflight` entries that each
 // migrate to a distinct `recent_runs` node.
+//
+// ── What D.45 adds ──────────────────────────────────────────────────
+//
+// D.45 gives the coordinator the *drain* half of the prototype's shutdown
+// orchestration (`BrainProcessBoot` / `BootedBrain.shutdown`). A graceful
+// shutdown must let the work the coordinator already admitted reach its
+// natural end — so the in-flight run's `RunRecorder` calls `complete()` and
+// closes its trail durably — before memory is flushed and the isolate is
+// closed. [drain] is that quiesce step:
+//
+//   - It flips [isDraining] on, so any *new* [submitForeground] /
+//     [submitBackground] is refused with [CoordinatorDraining] rather than
+//     admitted. This is what lets the drain terminate: once the access layer
+//     is torn down (no new inbound) and the coordinator refuses fresh work,
+//     the live foreground chain (the running run plus everything already in
+//     the FIFO queue) and any live background run can only shrink.
+//   - It then *best-effort* waits for the coordinator to fall fully idle —
+//     the foreground slot free, the FIFO queue empty, and the background slot
+//     free. "Best-effort" is bounded by an optional [Duration] timeout: a run
+//     body that will not finish in time (the same genuinely-hung body the D.21
+//     hard-step-deadline guards) does not hold shutdown hostage. When the
+//     timeout elapses the drain returns; the abandoned body may still run to
+//     completion untracked, exactly as a force-yield leaves it.
+//
+// The drain owns *quiescing the coordinator*; closing memory (which flushes
+// writes + checkpoints the WAL) and the substrate stays
+// [BootedBrain.shutdown]'s job, layered on top of a drained coordinator.
 
 import 'dart:async';
 import 'dart:collection';
@@ -302,6 +329,32 @@ final class RunDeadlineExceeded implements Exception, ClassifiedFailure {
 
   @override
   String toString() => 'RunDeadlineExceeded: $message';
+}
+
+/// Raised when a run is submitted to a coordinator that is draining for
+/// shutdown (D.45).
+///
+/// Once [RunCoordinator.drain] has begun, the coordinator admits no new work
+/// — that refusal is what lets the in-flight foreground chain and any live
+/// background run wind down to idle. A submission that arrives during the
+/// drain (a late inbound that slipped past the access-layer teardown, a
+/// scheduler tick that has not yet been stopped) fails loudly with this rather
+/// than being admitted into a coordinator that is being torn down.
+final class CoordinatorDraining implements Exception {
+  /// Records the [slot] a run was submitted to while the coordinator was
+  /// draining.
+  const CoordinatorDraining(this.slot);
+
+  /// The slot the refused submission targeted.
+  final RunSlot slot;
+
+  /// Human-readable explanation, reused by [toString].
+  String get message =>
+      'the coordinator is draining for shutdown and admits no new '
+      '${slot.name} runs';
+
+  @override
+  String toString() => 'CoordinatorDraining: $message';
 }
 
 /// The dispatcher's foreground / background run coordinator (Plan D.18;
@@ -461,11 +514,24 @@ final class RunCoordinator {
   Future<void>? _foreground;
   Future<void>? _background;
 
+  /// Whether [drain] has begun (D.45). Once set, new submissions are refused
+  /// with [CoordinatorDraining] so the live work can wind down to idle.
+  bool _draining = false;
+
   /// Whether a foreground run is currently live (occupying the slot).
   bool get hasForegroundRun => _foreground != null;
 
   /// Whether a background run is currently live.
   bool get hasBackgroundRun => _background != null;
+
+  /// Whether the coordinator is draining for shutdown (D.45). While `true` it
+  /// admits no new foreground or background work.
+  bool get isDraining => _draining;
+
+  /// Whether the coordinator is fully idle: no foreground run, an empty FIFO
+  /// foreground queue, and no background run. The state [drain] waits to reach.
+  bool get isIdle =>
+      _foreground == null && _foregroundQueue.isEmpty && _background == null;
 
   /// The number of foreground runs currently waiting in the FIFO queue
   /// (excludes the run occupying the slot, D.19).
@@ -498,6 +564,10 @@ final class RunCoordinator {
     String? procedureId,
     int version = 1,
   }) {
+    if (_draining) {
+      // Shutting down: admit no new work so the live chain can drain (D.45).
+      throw const CoordinatorDraining(RunSlot.foreground);
+    }
     final completer = Completer<T>();
     void start() =>
         _runInForegroundSlot(body, completer, procedureId, version);
@@ -542,6 +612,10 @@ final class RunCoordinator {
     String? procedureId,
     int version = 1,
   }) {
+    if (_draining) {
+      // Shutting down: admit no new work so the live run can drain (D.45).
+      throw const CoordinatorDraining(RunSlot.background);
+    }
     if (_background != null) {
       throw const RunSlotBusy(RunSlot.background);
     }
@@ -579,6 +653,56 @@ final class RunCoordinator {
       },
     );
     return completer.future;
+  }
+
+  /// Quiesces the coordinator for shutdown (D.45).
+  ///
+  /// Flips [isDraining] on so any further [submitForeground] /
+  /// [submitBackground] is refused with [CoordinatorDraining], then *best-
+  /// effort* waits for the coordinator to fall fully [isIdle] — the foreground
+  /// slot free, the FIFO queue drained, and the background slot free. The
+  /// in-flight foreground run (and everything already queued behind it) and any
+  /// live background run reach their natural end, so each run's `RunRecorder`
+  /// closes its trail before memory is flushed.
+  ///
+  /// "Best-effort" is bounded by [timeout]: when supplied, a coordinator that
+  /// has not fallen idle within it stops being waited on and [drain] returns
+  /// regardless. The abandoned body may still run to completion untracked —
+  /// a `Future` is not cancellable — exactly as a hard-step-deadline
+  /// force-yield (D.21) leaves it. A `null` [timeout] waits for full idle.
+  ///
+  /// Idempotent: a second call (already draining) re-awaits the current idle
+  /// state, which resolves immediately once the coordinator is idle.
+  Future<void> drain({Duration? timeout}) async {
+    _draining = true;
+    final settled = _awaitSettled();
+    if (timeout == null) {
+      await settled;
+    } else {
+      await settled.timeout(timeout, onTimeout: () {});
+    }
+  }
+
+  /// Completes once the coordinator is fully [isIdle] (D.45).
+  ///
+  /// Awaits whichever slot markers are live; a foreground completion pumps the
+  /// FIFO queue synchronously (re-occupying the slot) *before* this loop's
+  /// continuation runs, so the re-check sees any queued successor and keeps
+  /// waiting until the whole chain — running plus queued — has drained. The
+  /// slot markers complete on both success and error, so this never throws.
+  Future<void> _awaitSettled() async {
+    while (!isIdle) {
+      final live = <Future<void>>[?_foreground, ?_background];
+      // A non-idle coordinator with no live slot marker can only be the
+      // transient in-pump window (queue non-empty, slot momentarily null),
+      // which never persists across an await; with nothing to await, yield a
+      // microtask and re-check rather than busy-spin or block forever.
+      if (live.isEmpty) {
+        await Future<void>.delayed(Duration.zero);
+        continue;
+      }
+      await Future.wait<void>(live);
+    }
   }
 
   /// Occupies the foreground slot with [body], completing [completer] with

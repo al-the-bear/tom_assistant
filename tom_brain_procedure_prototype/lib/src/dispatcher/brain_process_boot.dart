@@ -89,6 +89,24 @@ typedef AccessLayerInstaller =
 /// spelling.
 const String inboundTextArgumentKey = 'text';
 
+/// The default best-effort bound [BootedBrain.shutdown] gives the coordinator
+/// drain (D.45).
+///
+/// A graceful shutdown finishes the in-flight foreground run (and drains the
+/// FIFO queue) so trails close before memory is flushed — but a genuinely-hung
+/// body must not hold the process open forever. This is the wall-clock bound
+/// past which the drain gives up waiting and shutdown proceeds to close memory
+/// and the substrate; the abandoned body, if any, runs on untracked.
+///
+/// Sized to sit *above* the coordinator's own hard step deadline
+/// (`defaultStepDeadline` + `defaultCoordinatorDeadlineGrace` = ~65 s) so the
+/// normal bound on a run is the coordinator's force-yield — which itself frees
+/// the slot and idles the coordinator — and this drain timeout fires only for a
+/// run that bypassed *both* the engine and coordinator deadlines (e.g. an
+/// already-abandoned force-yielded body). The exact value is a config knob D.47
+/// (`DispatcherConfig`) can later surface.
+const Duration defaultShutdownDrainTimeout = Duration(seconds: 90);
+
 /// Declares how to boot the prototype brain process.
 ///
 /// Carries the brought-up-from collaborators (the in-process substrate, the
@@ -190,18 +208,34 @@ final class BootedBrain {
   /// no-op, so it is safe in a `finally` block.
   ///
   /// Order is the reverse of bring-up so nothing is torn down while still in
-  /// use: (1) stop the access layer first (no new inbound arrives), (2) dispose
-  /// memory (the isolate transport flushes writes + checkpoints the WAL before
-  /// closing the worker), (3) close the substrate. The *full* drain — finishing
-  /// the current foreground run best-effort and emptying the foreground queue
-  /// before closing memory/trails — is layered on by D.45; D.44 ships the
-  /// resource teardown the drain wraps.
-  Future<void> shutdown() async {
+  /// use (D.45):
+  ///
+  ///   1. **Stop the access layer first** — no new inbound `Access` arrives,
+  ///      so the coordinator's live work can only shrink.
+  ///   2. **Drain the coordinator** ([RunCoordinator.drain]) — refuse new
+  ///      submissions and best-effort wait for the in-flight foreground run
+  ///      (plus everything already queued behind it) and any live background
+  ///      run to reach their natural end, so each run's `RunRecorder` closes
+  ///      its trail durably *before* memory is flushed. Bounded by
+  ///      [drainTimeout] so a genuinely-hung body cannot hold shutdown hostage.
+  ///   3. **Dispose memory** — the isolate transport flushes writes +
+  ///      checkpoints the WAL before closing the worker, persisting the trails
+  ///      the drain let close.
+  ///   4. **Close the substrate.**
+  ///
+  /// [drainTimeout] bounds step 2's best-effort wait; it defaults to
+  /// [defaultShutdownDrainTimeout]. Pass a `null` timeout
+  /// (`shutdown(drainTimeout: null)`) to wait for the coordinator to fall fully
+  /// idle with no bound.
+  Future<void> shutdown({
+    Duration? drainTimeout = defaultShutdownDrainTimeout,
+  }) async {
     if (_shutDown) return;
     _shutDown = true;
     if (_accessLayerShutdown != null) {
       await _accessLayerShutdown();
     }
+    await coordinator.drain(timeout: drainTimeout);
     await memory.dispose();
     await substrate.close();
   }

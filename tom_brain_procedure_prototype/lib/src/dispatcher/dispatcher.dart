@@ -319,7 +319,17 @@
 //     leaks nothing. Exported below. The full shutdown *drain* (finish current
 //     foreground best-effort, drain queues, close trails) is D.45; the
 //     crash→typed-startup-error guarantee is D.46.
-//   - D.45–D.46 — shutdown drain + crash→typed-startup-error tests.
+//   - D.45 ✅ — shutdown drain orchestration (`run_coordinator.dart` +
+//     `brain_process_boot.dart`): `RunCoordinator.drain({timeout})` flips
+//     `isDraining` on (refusing new `submitForeground` / `submitBackground`
+//     with `CoordinatorDraining`) and best-effort waits for the coordinator to
+//     fall fully `isIdle` — foreground slot free, FIFO queue drained,
+//     background slot free — so each in-flight run's `RunRecorder` closes its
+//     trail before memory is flushed. `BootedBrain.shutdown({drainTimeout})`
+//     now reverse-orders (access layer → drain → memory dispose → substrate
+//     close); `drainTimeout` defaults to `defaultShutdownDrainTimeout` (30 s),
+//     so a genuinely-hung body cannot hold shutdown hostage. Exported below.
+//   - D.46 — crash→typed-startup-error tests.
 //   - D.47–D.50 — `DispatcherConfig` + observability.
 //
 // See `_ai/quests/tom_brain/tom_brain_procedure_prototype_specification.md`
@@ -333,6 +343,7 @@ export 'brain_process_boot.dart'
         BootedBrain,
         BrainProcessBoot,
         BrainProcessConfig,
+        defaultShutdownDrainTimeout,
         inboundTextArgumentKey;
 export 'dispatcher_entry.dart'
     show Dispatcher, DispatchRoute, DispatcherEntryObserver;
@@ -383,6 +394,7 @@ export 'procedure_selector.dart'
     show ProcedureSelector, SystemProcedures, defaultProcedureRouting;
 export 'run_coordinator.dart'
     show
+        CoordinatorDraining,
         ForegroundQueueFull,
         RunBody,
         RunCoordinator,
