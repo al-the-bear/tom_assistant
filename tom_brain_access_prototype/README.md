@@ -6,24 +6,26 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.41 — **`BrainAccessBoot`**, the first step of
-> `## E.9 — Boot + the running process`. `lib/src/boot/` composes the inbound
-> access surface — identity, edge security, the classifier, and outbound
-> delivery — **over a booted `Dispatcher`** (the compose-over-dispatcher
-> decision: the access prototype must not depend on `tom_brain_memory` /
-> `tom_brain_substrate`, so it plugs into the one seam `BrainProcessBoot`
-> exposes, `AccessLayerInstaller`, as bring-up phase 4; substrate / memory reach
-> the classifier only through the injected `KindHintEmbedder` /
-> `KindHintClassifier` function seams). `BrainAccessBoot.install` assembles the
-> surface and returns a `BootedAccessLayer` (the `AccessAssembler` the channel
-> edges drive + the `AccessEventBus`); `BrainAccessBoot.installer` adapts it to
-> the seam. The `AccessAssembler` runs the AC-4 edge chain — auth → identity →
-> rate-limit → quota → anchor → session → classify — then binds delivery, builds
-> the `Access`, emits `AccessCreated`, and dispatches; a rejection emits
-> `AccessFailed` with the mapped failure kind, a classify failure is swallowed
-> (AC-9). The live channel edges (the HTTP serve loop, the Telegram inbound
-> stream) that *drive* the assembler are **E.45**. `## E.9` is open; **E.42
-> (graceful shutdown)** is next.
+> **Status:** E.42 — **graceful shutdown**, the second step of
+> `## E.9 — Boot + the running process`. `lib/src/boot/graceful_shutdown.dart`
+> ships `GracefulShutdown`: it watches OS termination signals (SIGINT / SIGTERM)
+> and runs an async process teardown **to completion before the process exits**,
+> so the in-flight foreground run drains and memory flushes rather than being
+> dropped at the exit (proto spec § 11.2; mirrors D.45). The teardown itself is
+> phase D's `BootedBrain.shutdown` (stop access → drain foreground → dispose
+> memory → close substrate); E.42 wires the signal to it through an injectable
+> `ShutdownAction` (`Future<void> Function()`) seam, so the coordinator imports
+> no concrete boot type and a test drives the whole sequence with synthetic
+> signal streams + a recording terminator (no real signal, no real `exit`). The
+> first signal wins; a second signal mid-drain is logged and ignored; a teardown
+> that throws still exits, with `shutdownExitError`. (`tom_basics` has no
+> signal-handling surface and `tom_core_kernel`'s `TomShutdownCleanup` is
+> synchronous fire-and-forget — it cannot await an async drain — so a
+> purpose-built async coordinator is used; logged in the questions doc.)
+> Prior step E.41 (`BrainAccessBoot`) composes the inbound access surface over a
+> booted `Dispatcher` via the `AccessLayerInstaller` seam. The live channel edges
+> (the HTTP serve loop, the Telegram inbound stream) that *drive* the assembler
+> are **E.45**. `## E.9` is open; **E.43 (`/healthz`)** is next.
 >
 > E.40 — **delivery test sweep**, the final step of
 > `## E.8 — Outbound delivery`. `test/delivery/delivery_sweep_test.dart` is an

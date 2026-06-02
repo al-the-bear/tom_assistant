@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.42)
+
+Graceful shutdown — the second step of `## E.9 — Boot + the running process`
+(Plan E.42; proto spec § 11.2; mirrors D.45). Bridges an OS termination signal
+to the async process teardown so the in-flight foreground run drains and memory
+flushes *before* the process exits.
+
+- `lib/src/boot/graceful_shutdown.dart` — **new.** `GracefulShutdown` watches
+  termination signals (`defaultSignals()` = SIGINT + SIGTERM) and runs an async
+  teardown to completion before terminating. The teardown is an injectable
+  `ShutdownAction` (`Future<void> Function()`) — the running process passes
+  `BootedBrain.shutdown` (stop access → drain foreground → dispose memory →
+  close substrate). The first signal wins (`isTriggered`); a second signal
+  mid-drain is logged and ignored; `completed` resolves with `shutdownExitOk`,
+  or `shutdownExitError` if the teardown threw (a failed drain still exits). The
+  signal streams and the `ProcessTerminator` are injectable so a test drives the
+  whole sequence with no real signal and no real `exit`. `dispose()` stops
+  listening without triggering a shutdown.
+- `lib/src/boot/boot.dart` — exports `GracefulShutdown`, `ShutdownAction`,
+  `ProcessTerminator`, `shutdownExitOk`, `shutdownExitError`; E.42 ✅ roadmap
+  note added.
+- `lib/tom_brain_access_prototype.dart` — E.42 ✅ roadmap entry; pending range
+  advanced `E.42 – E.50 ⏳` → `E.43 – E.50 ⏳`.
+- `test/boot/graceful_shutdown_test.dart` — **new** (6 tests): teardown runs to
+  completion before terminate, with the clean exit code; runs exactly once (a
+  second signal mid-drain is ignored); SIGTERM triggers it; multiple signal
+  sources feed one coordinator; a throwing teardown still terminates with the
+  error code; `dispose` stops listening.
+
+Why a purpose-built async coordinator and not `tom_basics` / `TomShutdownCleanup`:
+`tom_basics` exposes no signal-handling surface, and `tom_core_kernel`'s
+`TomShutdownCleanup` is synchronous fire-and-forget (`void Function(ProcessSignal)`
+over `close()` / `dispose()`) — it cannot *await* an async drain, so it would
+race the exit and drop the in-flight foreground work the spec requires us to
+drain. Logged in the questions doc.
+
 ## 0.0.1 — 2026-06-02 (Phase E.41)
 
 `BrainAccessBoot` — the first step of `## E.9 — Boot + the running process`

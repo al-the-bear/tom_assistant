@@ -16,8 +16,23 @@
 //   the surface over a `Dispatcher`; `installer` adapts it to the
 //   `AccessLayerInstaller` seam). The live HTTP serve loop / Telegram
 //   inbound-stream driving (the edges that *call* the assembler) are E.45.
+// - E.42 ✅ — `GracefulShutdown` (`graceful_shutdown.dart`): watches OS
+//   termination signals (SIGINT / SIGTERM) and runs an async process teardown
+//   to completion before the process exits. The teardown itself is phase D's
+//   `BootedBrain.shutdown` (stop access → drain foreground → close memory →
+//   close substrate); E.42 wires the signal to it via an injectable
+//   `ShutdownAction` seam, so the coordinator depends on no concrete boot type
+//   and is driven in tests with synthetic signal streams + a recording
+//   terminator. Mirrors D.45 shutdown orchestration.
 
 export 'access_assembler.dart' show AccessAssembler;
 export 'access_event_bus.dart' show AccessEventBus;
 export 'brain_access_boot.dart'
     show BootedAccessLayer, BrainAccessBoot, BrainAccessConfig;
+export 'graceful_shutdown.dart'
+    show
+        GracefulShutdown,
+        ProcessTerminator,
+        ShutdownAction,
+        shutdownExitError,
+        shutdownExitOk;

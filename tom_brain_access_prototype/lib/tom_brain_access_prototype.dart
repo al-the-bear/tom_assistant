@@ -352,8 +352,24 @@
 ///   so the terminal `AccessDelivered` lands on the same bus as `AccessCreated` /
 ///   `AccessFailed`. The compose-over-dispatcher decision is logged in the
 ///   questions doc.
-/// - E.42 – E.50 ⏳ — the live channel edges (HTTP serve loop / Telegram inbound
-///   stream), config loading, the running process, and the end-to-end smoke.
+/// - E.42 ✅ — graceful shutdown (boot/): `GracefulShutdown` watches OS
+///   termination signals (SIGINT / SIGTERM) and runs an async process teardown
+///   to completion *before* the process exits — so the in-flight foreground run
+///   drains and memory flushes rather than being dropped at the exit. The
+///   teardown itself is phase D's `BootedBrain.shutdown` (stop access → drain
+///   foreground → dispose memory → close substrate); E.42 wires the signal to it
+///   through an injectable `ShutdownAction` (`Future<void> Function()`) seam, so
+///   the coordinator imports no concrete boot type and a test drives the whole
+///   sequence with synthetic signal streams + a recording terminator (no real
+///   signal, no real `exit`). The first signal wins; a second signal mid-drain
+///   is logged and ignored; a teardown that throws still exits, with
+///   `shutdownExitError`. `tom_basics` has no signal-handling surface and
+///   `tom_core_kernel`'s `TomShutdownCleanup` is synchronous fire-and-forget
+///   (cannot await an async drain), so a purpose-built async coordinator is used
+///   — logged in the questions doc. Mirrors D.45 shutdown orchestration.
+/// - E.43 – E.50 ⏳ — `/healthz`, the whole-process YAML config loader, the live
+///   channel edges (HTTP serve loop / Telegram inbound stream) of the running
+///   process, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
