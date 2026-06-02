@@ -203,6 +203,20 @@
 // to the executor via `monitor.asSink` (fire-and-forget) or call `record`
 // directly. Exported below.
 //
+// D.33 ✅ — free-time scheduler stub (`free_time_scheduler.dart`): the
+// `FreeTimeScheduler` kernel that, on each `tick`, picks at most one entry
+// from the highest-priority *hot* stack (§ 5.3: size above
+// `hotSizeThreshold` OR top priority at/above `hotPriorityThreshold`, among
+// the § 5.1 work stacks `defaultSchedulableStacks`) and submits it as a
+// background run via the same `RunCoordinator` the inbound path drives — but
+// only when no foreground work is pending and the background slot is free. The
+// § 5.3 routing ("research / triage / author / dream_*") is the injected
+// `BackgroundWorkFactory` seam; per Plan D.34 the prototype stub is
+// intentionally weak (no round-robin dreaming yet), so an idle cycle does
+// nothing. A `tick` returns a typed `FreeTimeSchedulerTick`
+// (`foregroundPending` / `backgroundBusy` / `idle` / `scheduled`). Exported
+// below.
+//
 // Intentionally empty at D.6: this step adds the folder + barrel only,
 // matching the C.8 per-folder convention used across the Tom Brain
 // projects (`tom_brain_shared`, `tom_brain_memory`,
@@ -223,7 +237,9 @@
 //     `ProcedureFallback` events; D.31 ✅ — sustained-fallback
 //     `AutomationIdea` push; D.32 ✅ — end-to-end fallback-event +
 //     idea-push-at-threshold tests (`d32_fallback_end_to_end_test.dart`).
-//   - D.33–D.35 — free-time scheduler stub.
+//   - D.33 ✅ — free-time scheduler stub (`free_time_scheduler.dart`);
+//     D.34/D.35 — round-robin dreaming is deferred (no dream scripts yet);
+//     D.35 preemption proof rides on the `tick` background submission.
 //   - D.36–D.42 — `answer_with_memory_v1` procedure script.
 //   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
 //   - D.47–D.50 — `DispatcherConfig` + observability.
@@ -247,6 +263,17 @@ export 'fallback_executor.dart'
         FallbackTrigger,
         VersionAttempt,
         defaultFallbackClassifier;
+export 'free_time_scheduler.dart'
+    show
+        BackgroundWorkFactory,
+        FreeTimeDecision,
+        FreeTimeScheduler,
+        FreeTimeSchedulerTick,
+        ScheduledBackgroundWork,
+        ScheduledPick,
+        defaultHotPriorityThreshold,
+        defaultHotSizeThreshold,
+        defaultSchedulableStacks;
 export 'inbound_classifier.dart'
     show ClassifyFallback, InboundClassifier, InboundKinds, classifyInboundV1;
 export 'preemption_controller.dart'
