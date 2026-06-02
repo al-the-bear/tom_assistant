@@ -32,7 +32,8 @@
 ///   The `api/` barrel now exports the first concrete symbols
 ///   (`accessPrototypeTool`, `AccessServeExecutor`,
 ///   `createAccessPrototypeExecutors`, version constants). The `serve`
-///   command is a not-yet-wired stub; full boot lands at E.41–E.45.
+///   command is fully wired at E.45 (the boot root + the live channel edges);
+///   the standalone binary refuses honestly when no brain is provisioned.
 /// - E.10 ✅ — `.tom_metadata/tom_master.yaml` wiring (documented no-op
 ///   per policy override 5).
 /// - E.11 ✅ — `OpenAiHttpSseAdapter` router scaffold: a raw
@@ -400,8 +401,34 @@
 ///   holder; the boot root (E.45) maps it onto `BrainAccessConfig`, injecting
 ///   the runtime seams (clock, bearer authenticator, classifier embed/classify)
 ///   that are not config.
-/// - E.45 – E.50 ⏳ — the boot root, the live channel edges (HTTP serve loop /
-///   Telegram inbound stream) of the running process, and the end-to-end smoke.
+/// - E.45 ✅ — the boot root that ties the running process together (boot/):
+///   `BrainProvisioner` is the function seam that hands the access process a
+///   booted cognition as a `ProvisionedBrain` (a `Dispatcher`, a
+///   `QueueSnapshotSource`, and a teardown) without importing substrate /
+///   memory — the CLI default `unsupportedBrainProvisioner` refuses, because
+///   only a higher assembly may boot `BrainProcessBoot` (whose
+///   `BrainProcessConfig.substrate` is a forbidden `TomBrainSubstrateClient`,
+///   Q-E.45.1). `OpenAiAccessEdge` is the live, auth-gated `/v1/` channel
+///   driving `AccessAssembler.admitOpenAi` (the SSE sink is captured then
+///   replayed so an edge-gate rejection maps to the right HTTP status before
+///   any `200` byte, Q-E.45.2; a non-streaming body is reconstructed from the
+///   captured frames, Q-E.45.3). `TelegramAccessEdge` drives `admitTelegram`
+///   over the adapter's whitelist-gated inbound stream, recovering the sender
+///   id from the inbound metadata and declining gracefully on a gate failure.
+///   `startBrainAccessProcess` maps `AccessConfig` → `BrainAccessConfig`,
+///   composes the admission core (E.41), stands up the OpenAI + `/healthz`
+///   socket (one `Cascade`, one port) through the injectable `AccessServeSeam`,
+///   optionally stands up the Telegram edge through the `TelegramChatApiFactory`
+///   seam, and installs `GracefulShutdown` (E.42) over the ordered teardown,
+///   returning a `BrainAccessProcess` handle (`port` / `completed` / `stop`).
+///   The `serve` executable wires it: it loads the `AccessConfig` (the
+///   `--config` file, or a permissive default), provisions the cognition
+///   through the injected `BrainProvisioner` (the CLI default refuses), and
+///   serves until a termination signal — reporting cleanly when no provisioner
+///   is wired rather than crashing the tool framework.
+/// - E.46 – E.50 ⏳ — the end-to-end smoke (stub substrate + in-isolate memory
+///   on a local port; streaming / non-streaming OpenAI; Telegram loopback;
+///   kind-hint cache short-circuit).
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

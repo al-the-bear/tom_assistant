@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.45)
+
+The executable + the boot root that ties the running process together — the
+fifth and final step of `## E.9 — Boot + the running process` (Plan E.45; proto
+spec § 11.5 / § 12), which is now **complete**. The standalone binary, the live
+channel edges, and the graceful-shutdown boot root.
+
+- `lib/src/boot/brain_provisioner.dart` — **new.** The substrate-boundary seam.
+  `BrainProvisioner = Future<ProvisionedBrain> Function(AccessConfig)`; the
+  cognition arrives already-booted (a `Dispatcher` + a `QueueSnapshotSource` + a
+  `shutdown` closure — never a substrate / memory type), so the access package
+  keeps its forbidden-import surface clean (Q-E.45.1). `BrainProvisioningException`
+  + the default `unsupportedBrainProvisioner` (throws) — a bare standalone `serve`
+  reports the boundary honestly and exits non-zero.
+- `lib/src/boot/openai_access_edge.dart` — **new.** `OpenAiAccessEdge` — the live
+  auth-gated OpenAI HTTP/SSE edge. `POST /v1/chat/completions` runs the full
+  admission pipeline; the captured answer renders as SSE replay (streaming,
+  terminal `[DONE]`) or a reconstructed `chat.completion` body (non-streaming);
+  each typed edge / dispatch failure maps to its OpenAI status before any 200 byte
+  is sent. `GET /v1/models`, `POST /v1/embeddings` (501), the OpenAI 404 envelope.
+- `lib/src/boot/telegram_access_edge.dart` — **new.** `TelegramAccessEdge` — the
+  live Telegram channel edge. Subscribes to the adapter's whitelist-gated inbound
+  stream, recovers the sender id off the inbound metadata, drives `admitTelegram`,
+  and addresses the answer / graceful decline through the same `ChatApi`.
+  Idempotent `start`; `stop` detaches.
+- `lib/src/boot/brain_access_process.dart` — **new.** `startBrainAccessProcess` /
+  `BrainAccessProcess` — the boot root (bring-up phase 5). Composes the admission
+  core over the booted dispatcher (E.41), maps `AccessConfig` → `BrainAccessConfig`,
+  stands up the OpenAI + `/healthz` socket (one shelf `Cascade`, one port) through
+  the injectable `AccessServeSeam`, optionally the Telegram edge through the
+  `TelegramChatApiFactory` seam, and installs `GracefulShutdown` (E.42) over the
+  idempotent ordered teardown (channels → access layer → cognition).
+- `lib/src/boot/boot.dart` — barrel: exports the four new boot files; E.45 ✅ notes.
+- `lib/src/api/access_serve_executor.dart` — `AccessServeExecutor` wired to
+  `startBrainAccessProcess` through the provisioner / serve / Telegram-factory
+  seams; the default provisioner's `BrainProvisioningException` is caught and
+  rendered as the honest `no brain is wired` refusal.
+- `lib/src/api/access_prototype_tool.dart` — `defaultAccessOpenAiPort = 8080`
+  (the port a `--config`-less `serve` binds, Q-E.45.4); help footer updated.
+- `bin/tom_brain_access_prototype.dart` — header + shim describe the wired `serve`
+  path + the standalone refusal.
+- `lib/tom_brain_access_prototype.dart` — E.45 ✅ roadmap entry.
+- `test/boot/openai_access_edge_test.dart` — **new** (13 tests).
+- `test/boot/telegram_access_edge_test.dart` — **new** (4 tests).
+- `test/boot/brain_access_process_test.dart` — **new** (5 tests).
+- `test/executable_test.dart` — **rewritten** for the E.45 refusal contract +
+  `--config` threading.
+- `README.md` — status block updated E.44 → E.45 (`## E.9` complete).
+- `dart analyze` `No issues found!`; green at **510 / 510** (489 prior + 21 new).
+
 ## 0.0.1 — 2026-06-02 (Phase E.44)
 
 Whole-process YAML config loader — the fourth step of `## E.9 — Boot + the

@@ -34,6 +34,14 @@ const String accessPrototypeVersionString =
 /// Name of the default (and, at E.9, only) command — the run loop.
 const String accessServeCommandName = 'serve';
 
+/// The OpenAI HTTP/SSE port a `--config`-less `serve` invocation binds (E.45).
+///
+/// Only the built-in permissive default ([AccessServeExecutor]'s no-config
+/// path) uses it; a real `--config` file always carries an explicit
+/// `access.openai.port`. `8080` is the conventional local OpenAI-compatible
+/// listener port and collides with nothing else this process opens.
+const int defaultAccessOpenAiPort = 8080;
+
 /// Name of the global `--config` option carrying the process config path.
 const String accessConfigOptionName = 'config';
 
@@ -101,7 +109,9 @@ Running the process:
   tom_brain_access_prototype                 # serve with built-in defaults
   tom_brain_access_prototype --config=PATH   # serve with a YAML config
 
-Status: E.9 ships the entry-point skeleton. Full boot (substrate, memory
-isolate, engine, dispatcher, OpenAI + Telegram adapters, /healthz) lands at
-Plan E.41–E.45.''',
+The access layer (OpenAI HTTP/SSE + Telegram edges, /healthz, graceful
+shutdown) is wired (Plan E.41–E.45). The standalone binary cannot boot the
+cognition itself — substrate + memory are out of this package's dependency
+surface — so a bare `serve` reports that no brain is wired and exits cleanly;
+a higher assembly injects a BrainProvisioner to actually serve.''',
 );

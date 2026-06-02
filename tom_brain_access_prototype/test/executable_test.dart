@@ -1,23 +1,43 @@
-// E.9 executable contract test.
+// E.45 executable contract test.
 //
 // Drives the access-prototype entry point black-box: the `ToolDefinition`
 // shape, the executor map, and the end-to-end `ToolRunner` dispatch for
-// `--version`, `--help`, the default `serve` command (bare invocation),
-// and `--config` plumbing. The same surface `bin/tom_brain_access_prototype
-// .dart` wires is exercised here — `main` is a three-line shim over these
-// symbols, so testing them is testing the executable.
+// `--version`, `--help`, the default `serve` command (bare invocation), and
+// `--config` plumbing. The same surface `bin/tom_brain_access_prototype.dart`
+// wires is exercised here — `main` is a three-line shim over these symbols, so
+// testing them is testing the executable.
 //
-// At E.9 the `serve` command is a not-yet-wired stub (boot lands at
-// E.41–E.45). The contract this test locks is therefore: the entry point
-// parses correctly, reports version/help, routes a bare invocation to the
-// `serve` stub, and threads `--config` through to the executor — nothing
-// is actually served yet.
+// The standalone binary uses the default `unsupportedBrainProvisioner` (it may
+// not import substrate / memory — `dependency_surface_test.dart`), so a bare
+// `serve` cannot boot a cognition: it reports the boundary honestly and exits
+// with a failure, without crashing the tool framework (Q-E.45.1). The contract
+// this test locks is therefore: the entry point parses correctly, reports
+// version/help, routes a bare invocation to the honest refusal, and threads
+// `--config` through to the provisioner (proven with a capturing provisioner
+// that records the loaded `AccessConfig` then refuses). The full serve path —
+// the live socket, the channel edges, graceful shutdown — is proven in
+// `boot/brain_access_process_test.dart` with injected seams.
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart';
 import 'package:tom_build_base/tom_build_base_v2.dart';
 import 'package:test/test.dart';
+
+/// The minimum viable whole-process YAML (only the required `access:` keys),
+/// with a distinctive port so config threading can be asserted.
+const String _minimalConfig = '''
+access:
+  openai:
+    port: 9090
+  rateLimit:
+    capacity: 10
+    refillTokens: 5
+    refillPeriodSeconds: 30
+  quota:
+    dailyCap: 100
+''';
 
 /// Outcome of driving the tool through a `ToolRunner`.
 class _RunOutcome {
@@ -56,8 +76,11 @@ Future<_RunOutcome> _run(List<String> args) async {
   return _RunOutcome(result, frameworkBuffer.toString(), printBuffer.toString());
 }
 
+CliArgs _cliArgs(List<String> args) =>
+    CliArgParser(toolDefinition: accessPrototypeTool).parse(args);
+
 void main() {
-  group('E.9 tool definition shape', () {
+  group('E.45 tool definition shape', () {
     test('identity, version, and mode', () {
       expect(accessPrototypeTool.name, 'tom_brain_access_prototype');
       expect(accessPrototypeTool.version, accessPrototypeVersion);
@@ -88,34 +111,33 @@ void main() {
     });
   });
 
-  group('E.9 executor map', () {
+  group('E.45 executor map', () {
     test('exposes a single serve executor', () {
       final executors = createAccessPrototypeExecutors();
       expect(executors.keys, equals({accessServeCommandName}));
       expect(executors[accessServeCommandName], isA<AccessServeExecutor>());
     });
 
-    test('serve executor is non-traversal (runs once, returns success)', () {
+    test('the default (standalone) serve executor refuses: no brain is wired',
+        () async {
       final executor = AccessServeExecutor();
       // A non-traversal executor's contract entry point is
-      // executeWithoutTraversal; it must return success for the stub.
-      expect(
-        runZoned(
-          () => executor.executeWithoutTraversal(_emptyCliArgs()),
-          zoneSpecification: ZoneSpecification(
-            print: (_, _, _, _) {}, // swallow banner
-          ),
-        ),
-        completion(
-          isA<ToolResult>()
-              .having((r) => r.success, 'success', isTrue)
-              .having((r) => r.processedCount, 'processedCount', 1),
+      // executeWithoutTraversal. With the default unsupported provisioner it
+      // returns failure (it cannot boot substrate + memory), not a throw.
+      final printBuffer = StringBuffer();
+      final result = await runZoned(
+        () => executor.executeWithoutTraversal(_cliArgs(const [])),
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => printBuffer.writeln(line),
         ),
       );
+
+      expect(result.success, isFalse);
+      expect(printBuffer.toString(), contains('no brain is wired'));
     });
   });
 
-  group('E.9 end-to-end dispatch', () {
+  group('E.45 end-to-end dispatch', () {
     test('--version prints the banner and succeeds', () async {
       final outcome = await _run(['--version']);
       expect(outcome.result.success, isTrue);
@@ -130,20 +152,12 @@ void main() {
       expect(outcome.frameworkOutput, contains('Running the process'));
     });
 
-    test('bare invocation routes to the serve stub', () async {
+    test('bare invocation routes to the honest refusal (no brain wired)',
+        () async {
       final outcome = await _run(const []);
-      expect(outcome.result.success, isTrue);
-      expect(outcome.printedOutput, contains('entry-point scaffold'));
-      // No --config supplied → defaults branch.
-      expect(outcome.printedOutput, contains('none supplied'));
-      // The stub must make clear nothing is actually served at E.9.
-      expect(outcome.printedOutput, contains('not yet wired'));
-    });
-
-    test('--config is threaded through to the serve executor', () async {
-      final outcome = await _run(['--config=access.yaml']);
-      expect(outcome.result.success, isTrue);
-      expect(outcome.printedOutput, contains('access.yaml'));
+      // The standalone binary cannot serve: the run reports failure.
+      expect(outcome.result.success, isFalse);
+      expect(outcome.printedOutput, contains('no brain is wired'));
     });
 
     test('an unknown command fails loudly', () async {
@@ -151,8 +165,36 @@ void main() {
       expect(outcome.result.success, isFalse);
     });
   });
-}
 
-/// A minimal parsed-args object for direct executor calls.
-CliArgs _emptyCliArgs() =>
-    CliArgParser(toolDefinition: accessPrototypeTool).parse(const []);
+  group('E.45 --config threading', () {
+    test('a --config file is loaded and threaded to the provisioner',
+        () async {
+      final tempDir = Directory.systemTemp.createTempSync('e45_config_');
+      addTearDown(() => tempDir.deleteSync(recursive: true));
+      final configFile = File('${tempDir.path}/access.yaml')
+        ..writeAsStringSync(_minimalConfig);
+
+      // A capturing provisioner records the loaded config, then refuses — so
+      // the executor returns a clean failure while we observe the threading.
+      AccessConfig? seen;
+      Future<ProvisionedBrain> capturing(AccessConfig config) async {
+        seen = config;
+        throw const BrainProvisioningException('captured; refusing to serve');
+      }
+
+      final executor = AccessServeExecutor(provisioner: capturing);
+      final result = await runZoned(
+        () => executor.executeWithoutTraversal(
+          _cliArgs(['--config=${configFile.path}']),
+        ),
+        zoneSpecification: ZoneSpecification(print: (_, _, _, _) {}),
+      );
+
+      expect(result.success, isFalse);
+      // The YAML's required access section roundtripped into the config the
+      // provisioner received.
+      expect(seen, isNotNull);
+      expect(seen!.openAiPort, 9090);
+    });
+  });
+}

@@ -7,8 +7,13 @@
 // `serve` executor live in the library (`lib/src/api/`) so the same
 // surface is exercised black-box by the tests; `main` only wires them.
 //
-// At E.9 the `serve` command is a not-yet-wired stub (boot lands at
-// E.41–E.45). `--version` and `--help` are fully functional now.
+// The `serve` command is wired (E.41–E.45): it loads the config, provisions
+// the cognition through the injected `BrainProvisioner`, and serves the
+// OpenAI + Telegram + `/healthz` surface until a termination signal drives the
+// graceful teardown. The standalone binary uses the default
+// `unsupportedBrainProvisioner` (it may not import substrate / memory), so a
+// bare `serve` reports the boundary and exits cleanly; a higher assembly that
+// can boot the cognition injects a real provisioner.
 import 'dart:io';
 
 import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart';

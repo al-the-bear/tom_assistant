@@ -33,11 +33,42 @@
 //   only a `Dispatcher`, so the running process — E.45, which owns the
 //   `RunCoordinator` — projects its getters onto the `QueueSnapshot`). The boot
 //   root that mounts it on a live port alongside the `/v1/` routes is E.45.
+// - E.45 ✅ — the boot root that ties the running process together. The
+//   `BrainProvisioner` seam (`brain_provisioner.dart`) hands the access process
+//   a booted cognition as a `ProvisionedBrain` (a `Dispatcher`, a
+//   `QueueSnapshotSource`, and a teardown) without importing substrate / memory
+//   — the CLI default `unsupportedBrainProvisioner` refuses, because only a
+//   higher assembly may boot `BrainProcessBoot`. `OpenAiAccessEdge`
+//   (`openai_access_edge.dart`) is the live, auth-gated `/v1/` channel driving
+//   `AccessAssembler.admitOpenAi`; `TelegramAccessEdge`
+//   (`telegram_access_edge.dart`) drives `admitTelegram` over the adapter's
+//   whitelist-gated inbound stream. `startBrainAccessProcess`
+//   (`brain_access_process.dart`) maps `AccessConfig` → `BrainAccessConfig`,
+//   composes the admission core (E.41), stands up the OpenAI + `/healthz`
+//   socket (one `Cascade`, one port) through the injectable `AccessServeSeam`,
+//   optionally stands up the Telegram edge through the `TelegramChatApiFactory`
+//   seam, and installs `GracefulShutdown` (E.42) over the ordered teardown,
+//   returning a `BrainAccessProcess` handle.
 
 export 'access_assembler.dart' show AccessAssembler;
 export 'access_event_bus.dart' show AccessEventBus;
 export 'brain_access_boot.dart'
     show BootedAccessLayer, BrainAccessBoot, BrainAccessConfig;
+export 'brain_access_process.dart'
+    show
+        AccessServeSeam,
+        AccessServer,
+        BrainAccessProcess,
+        TelegramChatApiFactory,
+        defaultTelegramChatApiFactory,
+        serveWithShelfIo,
+        startBrainAccessProcess;
+export 'brain_provisioner.dart'
+    show
+        BrainProvisioner,
+        BrainProvisioningException,
+        ProvisionedBrain,
+        unsupportedBrainProvisioner;
 export 'graceful_shutdown.dart'
     show
         GracefulShutdown,
@@ -47,3 +78,5 @@ export 'graceful_shutdown.dart'
         shutdownExitOk;
 export 'health_check.dart'
     show HealthCheck, QueueSnapshot, QueueSnapshotSource;
+export 'openai_access_edge.dart' show OpenAiAccessEdge;
+export 'telegram_access_edge.dart' show TelegramAccessEdge;

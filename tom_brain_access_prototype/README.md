@@ -6,30 +6,30 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.44 — **whole-process YAML config loader**, the fourth step of
-> `## E.9 — Boot + the running process`. `lib/src/config/access_config.dart`
-> ships `AccessConfig`: the typed `access:` section of the single whole-process
-> YAML file (OpenAI adapter port + base path, the Telegram bot token + the
-> user-id whitelist as identity bindings, the OpenAI bearer-token bindings, the
-> rate-limit / daily-quota / anchor policies, the persona vocabulary, the session
-> window, the embedding-cache TTL — proto spec § 13.1). `access_config_loader.dart`
-> ships `AccessConfigLoader`, which parses that file the `tom_build_base` way
-> (`package:yaml`'s `loadYaml`, dotted-key-path errors, `${ENV}` substitution,
-> no-I/O-until-`loadFromFile`). The whole-process file carries five sibling
-> top-level sections (`substrate:` / `memory:` / `engine:` / `dispatcher:` /
-> `access:`); the loader validates that top-level shape (rejecting any other root
-> key — AC-12 forward-only) and parses only the `access:` block it owns. The four
-> sibling sections are parsed by their own already-defined loaders at boot wiring
-> (E.45) — the access package never imports substrate / memory (Q-E.44.1).
-> `AccessConfig` is a pure data holder; the boot root (E.45) maps it onto
-> `BrainAccessConfig`, injecting the runtime seams (clock, bearer authenticator,
-> classifier embed/classify) that are not config.
-> Prior step E.43 (`HealthCheck`) ships the `GET /healthz` liveness endpoint;
-> E.42 (`GracefulShutdown`) bridges an OS termination signal to the async process
-> teardown so the in-flight foreground run drains before exit; E.41
-> (`BrainAccessBoot`) composes the inbound access surface over a booted
-> `Dispatcher` via the `AccessLayerInstaller` seam. `## E.9` is open;
-> **E.45 (boot root + the live channel edges)** is next.
+> **Status:** E.45 — **the executable + the boot root that ties the running
+> process together**, the fifth and final step of `## E.9 — Boot + the running
+> process` (now **complete**). `lib/src/boot/brain_access_process.dart` ships
+> `startBrainAccessProcess` / `BrainAccessProcess`: it composes the admission
+> core (E.41) over an already-provisioned cognition, maps `AccessConfig` →
+> `BrainAccessConfig` (injecting the runtime seams), stands up the live channel
+> edges — the auth-gated OpenAI HTTP/SSE edge (`OpenAiAccessEdge`,
+> `openai_access_edge.dart`) and, when a bot token is configured, the Telegram
+> edge (`TelegramAccessEdge`, `telegram_access_edge.dart`) — mounts
+> `HealthCheck.handler` (`GET /healthz`) on the same port via a shelf `Cascade`,
+> and installs `GracefulShutdown` (E.42) over the ordered teardown (channels →
+> access layer → cognition). The cognition arrives through a `BrainProvisioner`
+> seam (`brain_provisioner.dart`) so the access package never imports substrate /
+> memory (Q-E.45.1); the standalone binary supplies the default
+> `unsupportedBrainProvisioner`, so a bare `serve` reports the boundary honestly
+> and exits non-zero. `bin/tom_brain_access_prototype.dart` is a three-line
+> `ToolRunner` shim over `accessPrototypeTool` + the `serve` executor
+> (`--config` / `--version` / `--help`, the `tom_build_base` way).
+> Prior step E.44 ships the whole-process YAML config loader (`AccessConfig` +
+> `AccessConfigLoader`); E.43 (`HealthCheck`) ships the `GET /healthz` liveness
+> endpoint; E.42 (`GracefulShutdown`) bridges an OS termination signal to the
+> async process teardown; E.41 (`BrainAccessBoot`) composes the inbound access
+> surface over a booted `Dispatcher`. **`## E.9 — Boot + the running process` is
+> complete (E.41 – E.45 done).**
 >
 > E.40 — **delivery test sweep**, the final step of
 > `## E.8 — Outbound delivery`. `test/delivery/delivery_sweep_test.dart` is an
