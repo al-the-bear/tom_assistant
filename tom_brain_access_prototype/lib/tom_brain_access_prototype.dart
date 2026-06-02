@@ -426,9 +426,20 @@
 ///   through the injected `BrainProvisioner` (the CLI default refuses), and
 ///   serves until a termination signal — reporting cleanly when no provisioner
 ///   is wired rather than crashing the tool framework.
-/// - E.46 – E.50 ⏳ — the end-to-end smoke (stub substrate + in-isolate memory
+/// - E.46 – E.50 ✅ — the end-to-end smoke (stub substrate + in-isolate memory
 ///   on a local port; streaming / non-streaming OpenAI; Telegram loopback;
-///   kind-hint cache short-circuit).
+///   kind-hint cache short-circuit) — shipped in `tom_brain_smoke_prototype`,
+///   which composes this package with the dispatcher / substrate / memory.
+/// - E.51 ✅ — Phase-E code-review pass E1 (review only; no production change).
+///   Every Phase-E file read against its owning spec section
+///   (`tom_brain_access_prototype_specification.md`); the divergence report
+///   lives in `prototype_implementation_details.md` § E.51. The review's
+///   closed-set conclusions — the persona vocabulary, the OpenAI route set, the
+///   chat-completion / models wire shapes (and the documented wire-format gaps:
+///   no delta `role`, no `system_fingerprint`, no `logprobs`, no model
+///   `permission` / `root`), and the `KindHintDecision` / `AccessChannel` /
+///   `BearerAuthFailureReason` enums + the edge-security status vocabulary — are
+///   pinned by `test/e51_spec_section_attestation_test.dart`.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
