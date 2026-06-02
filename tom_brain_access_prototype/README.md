@@ -6,7 +6,17 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.18 — the OpenAI HTTP/SSE adapter is complete and its
+> **Status:** E.19 — the Telegram adapter scaffold is in place.
+> `TelegramAdapter` is built on `tom_chattools`' `ChatApi` +
+> `TelegramChatConfig` and runs **long-polling**: `start()` initialises the
+> backend and subscribes to its `onMessage` stream (relayed raw on
+> `inboundMessages` for the E.20 mapper); `stop()` cancels and disconnects.
+> `TelegramAdapter.fromConfig` builds the real backend, with a builder seam
+> for the in-process `LoopbackChatApi` test double (E.5). The inbound
+> `ChatMessage` → `InboundRequest` mapping (E.20), outbound consolidation
+> (E.21), and the user-id whitelist (E.22) build on this scaffold.
+>
+> The OpenAI HTTP/SSE adapter (E.11 – E.18) is complete and its
 > wire-format conformance is locked. `OpenAiHttpSseAdapter` router scaffold
 > (E.11), `chat/completions` request parsing (E.12), the SSE streaming response
 > (E.13), the non-streaming JSON response (E.14), the model-id → persona

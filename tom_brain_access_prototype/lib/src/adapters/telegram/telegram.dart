@@ -9,4 +9,10 @@
 // `tom_brain_access_prototype_specification.md` § Telegram adapter and
 // Plan steps E.19 – E.23.
 //
-// At E.8 this folder is intentionally empty. No exports yet.
+// E.19 lands the adapter scaffold: the long-polling lifecycle
+// (`TelegramAdapter.start` / `stop`) over `tom_chattools`' `ChatApi` and
+// the raw inbound relay (`inboundMessages`). The `ChatMessage` →
+// `InboundRequest` mapping (E.20), outbound consolidation (E.21), and the
+// user-id whitelist (E.22) build on it in the following substeps.
+
+export 'telegram_adapter.dart';

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.19)
+
+Telegram adapter scaffold (proto spec § 6.1, Plan E.19). The prototype's
+Telegram channel, built on `tom_chattools`' `ChatApi` + `TelegramChatConfig`,
+running long-polling. Scaffold only — the inbound mapping (E.20), outbound
+consolidation (E.21), and whitelist (E.22) follow.
+
+- `lib/src/adapters/telegram/telegram_adapter.dart` — `TelegramAdapter`:
+  `start()` initialises the backend and subscribes to its `onMessage` stream,
+  relaying each inbound `ChatMessage` to `inboundMessages`; `stop()` cancels
+  the subscription, disconnects, and closes the relay (both idempotent).
+  `TelegramAdapter.fromConfig(config, {buildChatApi})` builds the real backend
+  via `config.createApi(...)` by default, with a builder seam for tests.
+- `lib/src/adapters/telegram/telegram.dart` — barrel now exports the adapter.
+- `test/_support/loopback_chat_api.dart` — `LoopbackChatApi implements ChatApi`
+  in-process double (E.5 decision; first authored here): broadcast `onMessage`
+  + `injectText`/`injectInbound`, outbound recorder, counted lifecycle,
+  `UnimplementedError` on the text-only-out-of-scope surface.
+- `test/adapters/telegram_adapter_test.dart` — 13 contract assertions
+  (lifecycle, idempotency, inbound relay order/close, factory seam).
+- `lib/tom_brain_access_prototype.dart` — E.19 ✅ bullet; pending range
+  narrowed `E.19 – E.50` → `E.20 – E.50`.
+
 ## 0.0.1 — 2026-06-02 (Phase E.18)
 
 OpenAI HTTP/SSE adapter — wire-format conformance suite (AC-6, proto spec

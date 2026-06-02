@@ -90,8 +90,17 @@
 ///   plus the cross-route content-type and error-envelope invariants. This is
 ///   the in-process contract layer; E.53 guards the same invariant over a real
 ///   socket against captured OpenAI fixtures.
-/// - E.19 – E.50 ⏳ — Telegram adapter, identity / session / persona, edge
-///   security, kind-hint classifier, delivery, boot, and the end-to-end smoke.
+/// - E.19 ✅ — Telegram adapter scaffold: `TelegramAdapter` built on
+///   `tom_chattools`' `ChatApi` + `TelegramChatConfig`, running long-polling
+///   (`start` initialises the backend and subscribes to `onMessage`; `stop`
+///   cancels + disconnects). It exposes the raw inbound relay
+///   (`inboundMessages`) the E.20 mapper consumes, and the
+///   `TelegramAdapter.fromConfig` factory (with a builder seam for tests).
+///   The `ChatMessage` → `InboundRequest` mapping (E.20), outbound
+///   consolidation (E.21), and the user-id whitelist (E.22) build on it.
+/// - E.20 – E.50 ⏳ — Telegram inbound/outbound mapping + whitelist, identity /
+///   session / persona, edge security, kind-hint classifier, delivery, boot,
+///   and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
