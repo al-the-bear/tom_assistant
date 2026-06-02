@@ -10,4 +10,21 @@
 // `tom_brain_access_prototype_specification.md` § Kind-hint classifier
 // and Plan steps E.33 – E.35.
 //
-// At E.8 this folder is intentionally empty. No exports yet.
+// E.33 ✅ — the three-step heuristic (`HeuristicKindHintClassifier` +
+// the `KindHintEmbedder` / `KindHintClassifier` injected seams and the
+// access-local `KindHintClassification` / `KindHintDecision` result mirror).
+// Embed the inbound text → `classify(embedding,
+// ClassificationTarget.procedure)` → attach the returned procedure id as
+// `InboundRequest.kindHint` *only* on a `confident` decision (else null,
+// leaving the dispatcher's `classify_inbound_v1` to take over, D.15). The
+// classifier never routes (AC-9) and is allowed to be silent.
+//
+// E.34 ✅ — the in-process embedding cache (`EmbeddingCache`, § 9.2): keyed by
+// *exact* inbound text, TTL 5 min. `EmbeddingCache.embed` is itself a
+// `KindHintEmbedder`, so the cache composes *in front of* the substrate seam
+// without touching `HeuristicKindHintClassifier`; a cache hit returns the
+// stored embedding and saves the embed call (the E.50 smoke and E.55
+// conformance assert the short-circuit). The classifier test sweep is E.35.
+
+export 'embedding_cache.dart';
+export 'heuristic_kind_hint_classifier.dart';

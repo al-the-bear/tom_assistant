@@ -233,7 +233,29 @@
 ///   passes every check, and the first failing check stops the rest (the
 ///   cheaper identity / throttle checks shed load before the content scan).
 ///   No production change — E.32 is purely tests; the boot wiring stays E.41+.
-/// - E.33 – E.50 ⏳ — the kind-hint classifier, delivery, boot, and the
+/// - E.33 ✅ — the cheap kind-hint classifier (heuristic_classifier/): the
+///   three-step heuristic of § 9.1 — embed the inbound text
+///   (`KindHintEmbedder` seam) → `classify(embedding,
+///   ClassificationTarget.procedure)` (`KindHintClassifier` seam, the
+///   `ClassificationTarget.procedure` target fixed *inside* the seam so it
+///   never leaks here) → attach the returned procedure id as
+///   `InboundRequest.kindHint` *only* on a `confident` decision (else `null`,
+///   leaving the dispatcher's `classify_inbound_v1` to take over, D.15).
+///   `HeuristicKindHintClassifier.classifyKindHint` returns the hint value;
+///   the access-local `KindHintClassification` / `KindHintDecision` mirror
+///   memory's `ClassificationResult` / `ClassificationDecision` so the
+///   package depends on neither substrate nor memory (Plan E.7; AC-13). The
+///   classifier never routes (AC-9) and is allowed to be silent — uncertainty
+///   is a `null` hint, not an error. The classifier test sweep is E.35; boot
+///   wiring (and the `access.classify.unavailable` degradation event) is E.41+.
+/// - E.34 ✅ — the in-process embedding cache (`EmbeddingCache`, § 9.2): keyed
+///   by *exact* inbound text, TTL 5 min, absolute from compute time.
+///   `EmbeddingCache.embed` is itself a `KindHintEmbedder`, so the cache
+///   composes *in front of* the substrate seam without touching
+///   `HeuristicKindHintClassifier` — a cache hit returns the stored embedding
+///   and saves the embed call (the E.50 smoke and E.55 conformance assert the
+///   short-circuit). Resolved values only (a throwing embed is not memoised).
+/// - E.35 – E.50 ⏳ — the classifier test sweep, delivery, boot, and the
 ///   end-to-end smoke.
 library;
 

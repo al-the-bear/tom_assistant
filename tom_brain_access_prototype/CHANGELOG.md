@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.34)
+
+In-process embedding cache — extends `## E.7 — Cheap kind-hint classifier`
+(Plan E.34; proto spec § 9.2). `EmbeddingCache` memoises the substrate embed
+call keyed by the *exact* inbound text, TTL 5 min (absolute, from compute
+time). A cache hit returns the stored embedding and **saves the embed call**;
+the cheap path gets cheaper on repeat prompts.
+
+- `lib/src/heuristic_classifier/embedding_cache.dart` — **new**.
+  - `EmbeddingCache.embed(text)` → `Future<List<double>>` is itself a
+    `KindHintEmbedder`, so the cache composes *in front of* the substrate seam
+    without touching `HeuristicKindHintClassifier`: boot binds the real
+    `EmbeddingService` as the wrapped embedder and hands `cache.embed` to the
+    classifier.
+  - Absolute TTL from compute time (not sliding); a `DateTime Function() clock`
+    seam (the edge-security limiter convention) makes expiry testable. A
+    non-positive TTL is rejected at construction.
+  - Resolved values only — a throwing embed call propagates and memoises
+    nothing, so a transient substrate outage is not cached as a stale failure.
+  - `size` (live, post-sweep) and `clear()` for tests / observability;
+    expired entries are swept lazily on each access.
+- `lib/src/heuristic_classifier/heuristic_classifier.dart` — exports
+  `embedding_cache.dart`; E.34 note added.
+- `lib/tom_brain_access_prototype.dart` — E.34 ✅ roadmap note; pending range
+  advanced to `E.35 – E.50 ⏳`.
+- `test/heuristic_classifier/embedding_cache_test.dart` — **new**, 12
+  assertions: hit/miss, exact-text keying, TTL expiry + boundary, failure
+  non-caching, classifier composition (hit saves the classifier's embed call),
+  `size` / `clear`.
+
+## 0.0.1 — 2026-06-02 (Phase E.33)
+
+Cheap kind-hint classifier — opens `## E.7 — Cheap kind-hint classifier`
+(Plan E.33; proto spec § 9.1; AC-9; def § 1.5). `HeuristicKindHintClassifier`
+runs the three steps: embed the inbound text → classify the embedding against
+the procedure centroids → attach the returned procedure id as
+`InboundRequest.kindHint` *only* on a `confident` decision (else `null`,
+leaving the dispatcher's `classify_inbound_v1` to take over). The classifier
+never routes and is allowed to be silent.
+
+- `lib/src/heuristic_classifier/heuristic_kind_hint_classifier.dart` — **new**.
+  - `HeuristicKindHintClassifier.classifyKindHint(text)` → `Future<String?>`:
+    the confident-only hint, trimmed; non-confident → `null`; confident-but-
+    unroutable (null / blank procedure id) → `null`.
+  - `KindHintEmbedder` (text → vector) and `KindHintClassifier`
+    (vector → `KindHintClassification`) injected seams keep the package free
+    of a `tom_brain_substrate` / `tom_brain_memory` import (Plan E.7; AC-13;
+    mirrors the E.16 `EmbeddingSource` decision). The
+    `ClassificationTarget.procedure` target is fixed *inside* the classify
+    seam, so it never leaks here.
+  - `KindHintClassification` / `KindHintDecision` — access-local mirror of
+    memory's `ClassificationResult` / `ClassificationDecision`.
+- `lib/src/heuristic_classifier/heuristic_classifier.dart` — E.33 ✅ note +
+  `export 'heuristic_kind_hint_classifier.dart';`.
+- `lib/tom_brain_access_prototype.dart` — E.33 ✅ bullet; pending range
+  advanced to E.34 – E.50.
+- `test/heuristic_classifier/heuristic_kind_hint_classifier_test.dart` —
+  **new**; 11 assertions (confident hint, trimming, uncertain / unknown
+  silence, confident-but-unroutable degradation, embed→classify step ordering
+  and wiring, seam-failure propagation, the `KindHintClassification` value
+  type). Suite green at 347 / 347.
+- `README.md` — status block updated E.32 → E.33.
+
 ## 0.0.1 — 2026-06-02 (Phase E.32)
 
 Edge-security test sweep — closes `## E.6 — Edge security` on the test axis

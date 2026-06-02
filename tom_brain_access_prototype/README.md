@@ -6,7 +6,33 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.32 — the **edge-security test sweep** closes
+> **Status:** E.34 — the **in-process embedding cache** extends
+> `## E.7 — Cheap kind-hint classifier`: `EmbeddingCache` (proto spec § 9.2) is
+> keyed by *exact* inbound text with a 5-min TTL measured from compute time.
+> `EmbeddingCache.embed` is itself a `KindHintEmbedder`, so the cache composes
+> *in front of* the substrate seam without touching `HeuristicKindHintClassifier`
+> — a cache hit returns the stored embedding and **saves the embed call** (the
+> E.50 smoke and E.55 conformance assert the short-circuit). Only *resolved*
+> embeddings are stored: a throwing embed call propagates and memoises nothing.
+> The classifier test sweep is E.35.
+>
+> E.33 — the **cheap kind-hint classifier** opened
+> `## E.7 — Cheap kind-hint classifier`: `HeuristicKindHintClassifier` runs the
+> three steps of proto spec § 9.1 — embed the inbound text (the `KindHintEmbedder`
+> seam), `classify(embedding, ClassificationTarget.procedure)` (the
+> `KindHintClassifier` seam, with the `ClassificationTarget.procedure` target
+> fixed *inside* the seam so it never leaks into this package), and attach the
+> returned procedure id as `InboundRequest.kindHint` *only* on a `confident`
+> decision (else `null`, leaving the dispatcher's `classify_inbound_v1` to take
+> over, D.15). `classifyKindHint(text)` returns the hint value; the access-local
+> `KindHintClassification` / `KindHintDecision` mirror memory's
+> `ClassificationResult` / `ClassificationDecision`, so the package depends on
+> neither `tom_brain_substrate` nor `tom_brain_memory` (Plan E.7; AC-13). The
+> classifier **never routes** (AC-9) and is allowed to be silent — uncertainty is
+> a `null` hint, not an error; a confident-but-unroutable result (null / blank
+> procedure id) also degrades to `null`. Seam *failures* propagate; the
+> `access.classify.unavailable` graceful-degradation event is boot's (E.41+).
+> E.32 — the **edge-security test sweep** closes
 > `## E.6 — Edge security` on the test axis: a test-only composition of the four
 > E.28 – E.31 checks in the documented chain order (auth → rate-limit → quota →
 > anchor) locks the cross-cutting properties the per-component suites do not —
