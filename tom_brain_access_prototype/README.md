@@ -6,14 +6,19 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.11 — `OpenAiHttpSseAdapter` router scaffold in place: a raw
-> `shelf_router.Router` (Q-E.3.2 strategy 2) mounting `POST
-> /v1/chat/completions`, `POST /v1/embeddings`, and `GET /v1/models` under
-> `/v1/`. At E.11 the routes are inert `501` stubs answering in the OpenAI
-> error envelope; an unmatched path/verb returns the OpenAI `404` envelope.
-> Per-route behaviour (request parsing, SSE streaming, JSON, persona,
-> embeddings, models) lands at E.12 – E.18. Locked by
-> `test/adapters/openai_http_sse_adapter_test.dart`. The `serve` command is
+> **Status:** E.12 — `OpenAiHttpSseAdapter` router scaffold (E.11) plus
+> `chat/completions` request parsing. A raw `shelf_router.Router` (Q-E.3.2
+> strategy 2) mounts `POST /v1/chat/completions`, `POST /v1/embeddings`, and
+> `GET /v1/models` under `/v1/`. The chat route now parses its body
+> (`ChatCompletionRequest`: `messages` → prompt text, `model` → persona id,
+> `stream` → render flag) and returns the OpenAI `400 invalid_request_error`
+> envelope on malformed input; a well-formed request falls through to a
+> `501` until response generation lands (E.13 – E.15). The embeddings and
+> models routes remain `501` stubs; an unmatched path/verb returns the
+> OpenAI `404` envelope. Per-route behaviour (SSE streaming, JSON, persona,
+> embeddings, models) lands at E.13 – E.18. Locked by
+> `test/adapters/openai_http_sse_adapter_test.dart` and
+> `test/adapters/chat_completion_request_test.dart`. The `serve` command is
 > still a not-yet-wired stub; full boot (substrate, memory isolate, engine,
 > dispatcher, adapters wired, `/healthz`) lands at E.41 – E.45.
 

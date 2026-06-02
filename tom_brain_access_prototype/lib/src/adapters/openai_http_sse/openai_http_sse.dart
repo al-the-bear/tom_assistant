@@ -9,6 +9,8 @@
 // Plan steps E.11 – E.18.
 //
 // E.11 lands the router scaffold (`OpenAiHttpSseAdapter`); the per-route
-// behaviour follows in E.12 – E.18.
+// behaviour follows in E.12 – E.18. E.12 adds `ChatCompletionRequest` /
+// `ChatCompletionParseError` — the `chat/completions` request parser.
 
+export 'chat_completion_request.dart';
 export 'openai_http_sse_adapter.dart';

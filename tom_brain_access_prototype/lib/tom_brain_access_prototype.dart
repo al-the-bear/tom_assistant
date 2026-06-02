@@ -39,9 +39,15 @@
 ///   `shelf_router.Router` mounting `POST /v1/chat/completions`,
 ///   `POST /v1/embeddings`, `GET /v1/models` (Q-E.3.2 strategy 2). The
 ///   routes are inert `501` stubs at E.11; behaviour lands at E.12–E.18.
-/// - E.12 – E.50 ⏳ — OpenAI route behaviour, Telegram adapter, identity /
-///   session / persona, edge security, kind-hint classifier, delivery,
-///   boot, and the end-to-end smoke.
+/// - E.12 ✅ — `chat/completions` request parsing: `ChatCompletionRequest` /
+///   `ChatCompletionParseError` decode the JSON body (`messages` → prompt
+///   text, `model` → persona id, `stream` → render flag); a malformed body
+///   returns the OpenAI `400 invalid_request_error` envelope, a well-formed
+///   one falls through to the `501` response path until E.13–E.15 land it.
+/// - E.13 – E.50 ⏳ — OpenAI response generation (SSE + JSON), persona
+///   mapping, embeddings, models, Telegram adapter, identity / session /
+///   persona, edge security, kind-hint classifier, delivery, boot, and the
+///   end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
