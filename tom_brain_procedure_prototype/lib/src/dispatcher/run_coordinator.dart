@@ -85,13 +85,46 @@
 // ([defaultCoordinatorDeadlineGrace]), so under normal operation the engine's
 // in-band truncation always wins the race.
 //
+// ── What D.24 adds ──────────────────────────────────────────────────
+//
+// D.24 wires the supervising [PreemptionController] (D.23) into the
+// coordinator's existing transition points, so the controller's
+// `PreemptionEvent` stream reflects the live coordinator without the
+// controller ever becoming a second writer of [PreemptionState]:
+//
+//   - When a body actually starts in a slot, the coordinator calls
+//     [PreemptionController.recordRunStarted] — never for a rejected
+//     submission ([RunSlotBusy], [ForegroundQueueFull]) nor while a
+//     foreground submission still waits in the FIFO queue.
+//   - When a body finishes, the coordinator calls
+//     [PreemptionController.recordRunFinished] with the mapped
+//     [RunSlotOutcome]: a clean return is `completed`, a thrown error is
+//     `failed`, and a hard-step-deadline force-yield (the [StepTruncated]
+//     outcome surfacing [RunDeadlineExceeded]) is `forceYielded`.
+//   - Each [PreemptionState.requestForegroundPreemption] is mirrored by
+//     [PreemptionController.recordForegroundPreemptionRequested]; each
+//     [PreemptionState.signalResume] by
+//     [PreemptionController.recordBackgroundResumeSignalled]. The controller
+//     mirrors `PreemptionState`'s idempotency on its *own* model, so the
+//     event stream carries one event per true edge even though the
+//     coordinator calls these more than once per real transition.
+//
+// The controller is constructor-injectable (default: a fresh one) so a
+// consumer can supply the same controller it exposes elsewhere; the
+// coordinator surfaces its event stream through [preemptionEvents] so the
+// dispatcher API (this module's barrel) exposes preemption observability
+// without the consumer reaching into the coordinator's internals.
+//
 // ── What the coordinator does NOT own yet (deferred) ────────────────
 //
-// The remaining D.5 substeps plug into this core without changing its
+// The remaining D.5/D.6 substeps plug into this core without changing its
 // submission signatures:
 //
-//   - D.23–D.25 — the supervising `PreemptionController` + its
-//     `PreemptionEvent` stream.
+//   - D.25 — the full event-transition suite driven end-to-end through the
+//     wired coordinator (D.24 ships its own wiring tests; D.25 is the
+//     exhaustive transition matrix).
+//   - D.26 — run ids assigned to scheduled bodies, threaded through the
+//     controller's `record*` `runId` argument.
 
 import 'dart:async';
 import 'dart:collection';
@@ -106,6 +139,8 @@ import '../preemption/step_deadline.dart'
         StepOutcome,
         StepTruncated,
         defaultStepDeadline;
+import 'preemption_controller.dart' show PreemptionController;
+import 'preemption_event.dart' show PreemptionEvent, RunSlotOutcome;
 
 /// The two run slots the coordinator tracks (PE-5).
 ///
@@ -258,12 +293,23 @@ final class RunCoordinator {
   /// (default `Timer.new`), so a test can fire the deadline deterministically
   /// without sleeping for the real limit — mirroring the engine's
   /// [StepDeadline] seam.
+  ///
+  /// [preemptionController] is the supervising observer the coordinator drives
+  /// at each transition point (D.24). It is injectable (default: a fresh
+  /// [PreemptionController]) so a consumer can hand the coordinator the same
+  /// controller it exposes elsewhere — e.g. to a Tom Forge run inspector.
+  /// The coordinator is observe-only towards it: it calls the `record*`
+  /// surface but never reads it back, and the controller never writes
+  /// [preemption]. When the controller is injected, its [close] lifecycle is
+  /// the consumer's; the default-constructed one lives with the coordinator.
   RunCoordinator({
     PreemptionState? preemption,
+    PreemptionController? preemptionController,
     this.foregroundQueueDepth = 4,
     Duration? hardStepDeadline,
     DeadlineTimerFactory? deadlineTimerFactory,
   })  : preemption = preemption ?? PreemptionState(),
+        preemptionController = preemptionController ?? PreemptionController(),
         hardStepDeadline = hardStepDeadline ??
             (defaultStepDeadline + defaultCoordinatorDeadlineGrace),
         _deadlineTimerFactory = deadlineTimerFactory {
@@ -291,6 +337,13 @@ final class RunCoordinator {
   /// signalled (via [PreemptionState.signalResume]) once the foreground
   /// workload fully drains.
   final PreemptionState preemption;
+
+  /// The supervising observer the coordinator drives at each transition point
+  /// (D.24): run start / finish, foreground-preemption request, and resume
+  /// signal. Observe-only — the coordinator calls its `record*` surface but
+  /// never reads it back, and the controller never writes [preemption].
+  /// Consumers subscribe through [preemptionEvents].
+  final PreemptionController preemptionController;
 
   /// The maximum number of foreground runs that may wait behind the running
   /// one in the FIFO queue (excludes the run occupying the slot, D.19).
@@ -327,6 +380,14 @@ final class RunCoordinator {
   /// (excludes the run occupying the slot, D.19).
   int get foregroundQueueLength => _foregroundQueue.length;
 
+  /// The supervising [PreemptionController]'s typed event stream (D.24).
+  ///
+  /// A convenience over `preemptionController.events()`, exposed so the
+  /// dispatcher API can surface preemption observability without a consumer
+  /// reaching into the coordinator's internals. Broadcast: multiple
+  /// subscribers each see every transition; missed events stay missed.
+  Stream<PreemptionEvent> preemptionEvents() => preemptionController.events();
+
   /// Submits [body] as a foreground run (D.18 surface, D.19 queue).
   ///
   /// If the foreground slot is free the body starts immediately. If it is
@@ -356,6 +417,10 @@ final class RunCoordinator {
     // background run keeps the existing resume signal.
     if (_background != null) {
       preemption.requestForegroundPreemption();
+      // Mirror the write onto the supervising observer (D.24). Idempotent on
+      // the controller's own model, so back-to-back foreground arrivals during
+      // one background run emit exactly one ForegroundPreemptionRequested.
+      preemptionController.recordForegroundPreemptionRequested();
     }
     return completer.future;
   }
@@ -375,15 +440,24 @@ final class RunCoordinator {
     // Mark the slot occupied *before* invoking the body, so a re-entrant
     // submission from inside the body sees the slot busy rather than racing.
     _background = marker.future;
+    preemptionController.recordRunStarted(RunSlot.background);
     _guardWithDeadline(body).then(
       (outcome) {
         _background = null;
         marker.complete();
+        preemptionController.recordRunFinished(
+          RunSlot.background,
+          _slotOutcomeOf(outcome),
+        );
         _completeFromOutcome(completer, outcome, RunSlot.background);
       },
       onError: (Object error, StackTrace stackTrace) {
         _background = null;
         marker.complete();
+        preemptionController.recordRunFinished(
+          RunSlot.background,
+          RunSlotOutcome.failed,
+        );
         completer.completeError(error, stackTrace);
       },
     );
@@ -395,10 +469,17 @@ final class RunCoordinator {
   void _runInForegroundSlot<T>(RunBody<T> body, Completer<T> completer) {
     final marker = Completer<void>();
     _foreground = marker.future;
+    preemptionController.recordRunStarted(RunSlot.foreground);
     _guardWithDeadline(body).then(
       (outcome) {
         _foreground = null;
         marker.complete();
+        // Emit the exit *before* pumping the queue, so a queued successor's
+        // RunSlotEntered follows this run's RunSlotExited in the stream.
+        preemptionController.recordRunFinished(
+          RunSlot.foreground,
+          _slotOutcomeOf(outcome),
+        );
         _completeFromOutcome(completer, outcome, RunSlot.foreground);
         _pumpForegroundQueue();
         _resumeBackgroundIfForegroundDrained();
@@ -406,6 +487,10 @@ final class RunCoordinator {
       onError: (Object error, StackTrace stackTrace) {
         _foreground = null;
         marker.complete();
+        preemptionController.recordRunFinished(
+          RunSlot.foreground,
+          RunSlotOutcome.failed,
+        );
         completer.completeError(error, stackTrace);
         _pumpForegroundQueue();
         _resumeBackgroundIfForegroundDrained();
@@ -473,6 +558,20 @@ final class RunCoordinator {
   void _resumeBackgroundIfForegroundDrained() {
     if (_foreground == null && _foregroundQueue.isEmpty) {
       preemption.signalResume();
+      // Mirror the write onto the supervising observer (D.24). Idempotent on
+      // the controller's own model, so a resume with nothing pending (no
+      // background was ever asked to yield) emits nothing.
+      preemptionController.recordBackgroundResumeSignalled();
     }
   }
+
+  /// Maps a [StepDeadline] [outcome] to the [RunSlotOutcome] the controller
+  /// records (D.24): a body that finished within the limit is
+  /// [RunSlotOutcome.completed]; one the coordinator's hard step deadline
+  /// truncated is [RunSlotOutcome.forceYielded]. A body that *threw* never
+  /// reaches here — that path records [RunSlotOutcome.failed] directly.
+  RunSlotOutcome _slotOutcomeOf<T>(StepOutcome<T> outcome) => switch (outcome) {
+        StepCompleted<T>() => RunSlotOutcome.completed,
+        StepTruncated<T>() => RunSlotOutcome.forceYielded,
+      };
 }

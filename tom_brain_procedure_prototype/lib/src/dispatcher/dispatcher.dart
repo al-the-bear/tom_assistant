@@ -107,6 +107,21 @@
 // writes `PreemptionState`. The coordinator wiring (calling the `record*`
 // surface at each transition point) lands in D.24. Exported below.
 //
+// D.24 ✅ — `PreemptionController` wired into the coordinator
+// (`run_coordinator.dart`): the coordinator now drives the controller's
+// `record*` surface at each transition point — `recordRunStarted` when a body
+// starts in a slot, `recordRunFinished` with the mapped `RunSlotOutcome`
+// (`completed` / `failed` / `forceYielded`) when it finishes,
+// `recordForegroundPreemptionRequested` alongside each
+// `requestForegroundPreemption`, and `recordBackgroundResumeSignalled`
+// alongside each `signalResume`. The controller is constructor-injectable
+// (`RunCoordinator(preemptionController: …)`, default: a fresh one) and its
+// event stream is surfaced through `RunCoordinator.preemptionEvents()` so the
+// dispatcher API exposes preemption observability without reaching into the
+// coordinator. The controller stays observe-only — the coordinator remains the
+// single writer of `PreemptionState`. No new public symbol (the controller and
+// its events are already exported from D.23).
+//
 // D.19 ✅ — FIFO foreground queue (`run_coordinator.dart`): a busy
 // foreground slot now *enqueues* the submission (configurable
 // `foregroundQueueDepth`, default 4) and starts queued runs in submission
