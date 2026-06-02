@@ -1,29 +1,31 @@
-// D.8 — `answer_with_memory_v1` stub acceptance suite.
+// D.8 — `answer_with_memory_v1` artifact acceptance suite.
 //
 // Plan step D.8 (verbatim): "Add `scripts/system/answer_with_memory_v1.dart`
-// as a stub."
+// as a stub." D.8 shipped the file as a no-op stub; D.37 replaced the no-op
+// body with the first real step (`recall`). Under no-backwards-compat this
+// suite is migrated in the same change: it no longer asserts the stub shape
+// (empty `requires`, a `stub` marker output) but the D.37 contract. The
+// recall *behaviour* (query text/modes/k) is pinned by the dedicated D.37
+// suite (`d37_answer_with_memory_recall_test.dart`); this suite keeps the
+// artifact-level obligations:
 //
-// The stub is the callable target the Phase D dispatcher routes every
-// inbound `user_prompt` to (D.16); the real recall→answer→persist body lands
-// at D.10 (D.36–D.42). At D.8 the proof obligation is exactly the one the
-// shipped `think_v1` stub carries (mirrored from `sugar_aliases_test.dart`
-// group C.40-4):
-//
-//   1. STUB ON DISK   — `scripts/system/answer_with_memory_v1.dart` exists
+//   1. ON DISK        — `scripts/system/answer_with_memory_v1.dart` exists
 //                       and loads from the real store+resolver path with a
-//                       valid `answer_with_memory_v1` v1 header that requires
-//                       no bridged primitive (a no-op stub).
-//   2. RUNS ACCEPTED  — invoking it through the engine resolves an accepted
-//                       outcome whose result carries the `stub` marker, so we
-//                       know *this* procedure (not some other) ran.
-//   3. COEXISTS       — the real `scripts/system/` directory now ships two
-//                       system stubs (`think_v1` + `answer_with_memory_v1`)
+//                       valid `answer_with_memory_v1` v1 header that now
+//                       declares `requires: [recall, llm]` (D.37/D.38).
+//   2. RUNS ACCEPTED  — invoking it through the engine with a `text` input
+//                       resolves an accepted outcome and the recorder writes
+//                       the run to `recent_runs`.
+//   3. COEXISTS       — the real `scripts/system/` directory ships two
+//                       system procedures (`think_v1` + `answer_with_memory_v1`)
 //                       and the resolver indexes both without clashing.
 //
-// The stub calls only its own (empty) body — never `mem` / `sub` — so the
-// substrate double is inert and the memory double is the same stateful
-// in-memory client the C.38/C.39 engine + C.40 sugar suites use (the
-// recorder still writes a real trail + run record around the run).
+// The body calls `mem.recall` (D.37) and `sub.llm` (D.38), so the substrate
+// double emits a terminal Completed stream (otherwise `sub.llm` never
+// returns) and the memory double is the same stateful in-memory client the
+// C.38/C.39 engine + C.40 sugar suites use, extended here with a
+// recall-capable surface (the recorder still writes a real trail + run
+// record around the run).
 
 import 'dart:async';
 import 'dart:io';
@@ -68,45 +70,50 @@ void main() {
     return ProcedureResolver.fromStore(store);
   }
 
-  group('D.8-1 the stub is on disk and loads with a valid header', () {
+  group('D.8-1 the procedure is on disk and loads with a valid header', () {
     test('scripts/system/answer_with_memory_v1.dart exists', () {
       expect(
         File('scripts/system/answer_with_memory_v1.dart').existsSync(),
         isTrue,
-        reason: 'D.8 must add the answer_with_memory_v1 system stub',
+        reason: 'D.8 must add the answer_with_memory_v1 system procedure',
       );
     });
 
-    test('the disk stub parses with the answer_with_memory_v1 v1 header',
+    test('the disk procedure parses with the answer_with_memory_v1 v1 header',
         () async {
       final resolver = await systemResolver();
-      final stub = resolver.resolve('answer_with_memory_v1');
-      expect(stub.header.id, 'answer_with_memory_v1');
-      expect(stub.header.version, 1);
-      // A pure no-op at D.8: it requires no bridged primitive (the real
-      // recall/llm/persist/edge list arrives with the body at D.10).
-      expect(stub.header.requires, isEmpty);
+      final loaded = resolver.resolve('answer_with_memory_v1');
+      expect(loaded.header.id, 'answer_with_memory_v1');
+      expect(loaded.header.version, 1);
+      // D.37/D.38 — the body calls `recall` then `llm`, so the header now
+      // declares exactly those two bridged primitives.
+      expect(loaded.header.requires, <String>['recall', 'llm']);
       // The intended budget caps are declared up front (D.36).
-      expect(stub.header.budget.wallClockMs, 60000);
+      expect(loaded.header.budget.wallClockMs, 60000);
     });
   });
 
-  group('D.8-2 invoking the stub resolves an accepted outcome', () {
-    test('answer_with_memory_v1 runs to an accepted stub outcome', () async {
+  group('D.8-2 invoking the procedure resolves an accepted outcome', () {
+    test('answer_with_memory_v1 runs to an accepted outcome', () async {
       final resolver = await systemResolver();
       final engine = engineFor(<LoadedProcedure>[
         resolver.resolve('answer_with_memory_v1'),
       ]);
 
       final outcome = await engine
-          .invoke(ProcedureInvocation(procedureId: 'answer_with_memory_v1'))
+          .invoke(ProcedureInvocation(
+            procedureId: 'answer_with_memory_v1',
+            arguments: <String, Object?>{'text': 'how do I back up?'},
+          ))
           .outcome;
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      // The stub's `{'stub': 'answer_with_memory_v1'}` flowed back unchanged.
-      expect(outcome.result!.output<String>('stub'), 'answer_with_memory_v1');
+      // The body called recall (D.37) and fed it into the answer step (D.38),
+      // which surfaces the generated answer as the `answer` output.
+      expect(memory.lastRecallQuery, isNotNull);
+      expect(outcome.result!.outputs.containsKey('answer'), isTrue);
 
-      // The recorder wrote the run to `recent_runs` (one run — the stub).
+      // The recorder wrote the run to `recent_runs` (one run).
       final recent = await memory.stacks.peek(recentRunsStackName);
       expect(recent, hasLength(1));
     });
@@ -123,14 +130,31 @@ void main() {
   });
 }
 
-// ── An inert `TomBrainSubstrateClient` ──────────────────────────────
+// ── A minimal answering `TomBrainSubstrateClient` ──────────────────
 //
-// The stub never calls `sub`, so the substrate double only needs to satisfy
-// the bridge/engine constructor; its members fall through to `noSuchMethod`.
+// The body calls `sub.llm` (D.38), so the double emits a terminal Completed
+// stream — otherwise the body's `sub.llm` would never return and the run
+// would not close. This artifact-acceptance suite only checks the run closes
+// accepted with an `answer` output, so the canned answer is a fixed marker.
 class _InertSubstrate implements TomBrainSubstrateClient {
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      StreamController<LlmStreamEvent>().stream;
+      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
+        const LlmStreamChunk(callId: 'c', text: 'ok'),
+        const LlmStreamCompleted(
+          callId: 'c',
+          report: LlmCallReport(
+            providerId: 'p',
+            modelId: 'm',
+            anchorHash: 'a',
+            promptHash: 'pr',
+            tokensIn: 1,
+            tokensOut: 1,
+            retries: 0,
+            wallClockMs: 1,
+          ),
+        ),
+      ]);
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
@@ -160,8 +184,28 @@ class _StatefulMemory implements TomBrainMemoryClient {
   final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
   final Set<TrailId> _closedTrails = <TrailId>{};
 
+  /// The query the most recent `recall` was called with (D.37).
+  RecallQuery? lastRecallQuery;
+
+  /// The canned result `recall` returns — an empty result by default.
+  RecallResult recallResult = const RecallResult(
+    nodes: <Node>[],
+    report: RecallReport(
+      candidatesPerMode: <RecallMode, int>{},
+      fusionStrategy: FusionStrategy.rrf,
+      diversityStrategy: DiversityStrategy.mmr,
+      elapsedMs: 0,
+    ),
+  );
+
   @override
   StackApi get stacks => _stacks;
+
+  @override
+  Future<RecallResult> recall(RecallQuery query) async {
+    lastRecallQuery = query;
+    return recallResult;
+  }
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {

@@ -248,7 +248,23 @@
 //     real background body; under foreground load the scheduler declines new
 //     background work and a parked background resumes cleanly only after the
 //     whole foreground chain drains.
-//   - D.36–D.42 — `answer_with_memory_v1` procedure script.
+//   - D.36 ✅ — `answer_with_memory_v1` structured header promoted from the
+//     D.8 stub language to the real recall→answer→persist contract (§ 4.4),
+//     proven in `d36_answer_with_memory_header_test.dart`. The
+//     machine-validated header fields (inputs/outputs/`requires`/signature)
+//     track the body and flip with the substep that introduces each
+//     behaviour.
+//   - D.37 ✅ — body step 1 (recall): `mem.recall(text, {bm25, vector}, k:8)`,
+//     proven in `d37_answer_with_memory_recall_test.dart`. `text`→required,
+//     `requires`→[recall].
+//   - D.38 ✅ — body step 2 (answer): assembles a prompt from the recalled
+//     memory + the inbound prompt and runs `sub.llm(prompt,
+//     role: 'assistant_to_user')`, surfacing the answer as the `answer`
+//     output (`d38_answer_with_memory_answer_test.dart`). `outputs`→`answer`,
+//     `requires`→[recall, llm]. Token streaming via `Access.deliver` is a
+//     Phase E concern (Q-D.38.1); `sub.llm` returns the whole answer.
+//   - D.39–D.42 — `answer_with_memory_v1` persist + edges + interest +
+//     automation note + tests.
 //   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
 //   - D.47–D.50 — `DispatcherConfig` + observability.
 //

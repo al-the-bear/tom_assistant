@@ -34,6 +34,7 @@
 
 export 'native_primitives_installer.dart';
 export 'note_primitive.dart';
+export 'procedure_inputs_bridge.dart';
 export 'recursion_limit_exceeded.dart';
 export 'run_procedure_primitive.dart';
 export 'sugar_aliases.dart';

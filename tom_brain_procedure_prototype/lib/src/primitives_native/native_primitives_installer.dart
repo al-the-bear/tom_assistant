@@ -20,14 +20,18 @@
 // function as a bare global via `registertopLevelFunction`; a script
 // reaches it by importing [engineNativeLibrary].
 //
-// ── Opaque pass-through of `ProcedureInputs` / `ProcedureResult` ─────
+// ── `ProcedureInputs`: pass-through then read-surface bridge ─────────
 //
-// A procedure forwards the `inputs` it was handed straight to
-// `runProcedure(id, inputs)`; it never *constructs* a `ProcedureInputs`
-// in-script. So the two types cross the d4rt boundary as opaque host
-// objects (passed in by the host, returned back to the host) and need no
-// bridging at C.19. The richer engine surface that does construct them
-// (`ProcedureEngine`, the sugar aliases) arrives at C.38–C.41.
+// At C.19 a procedure only ever *forwarded* the `inputs` it was handed to
+// `runProcedure(id, inputs)`; it never read a field and never constructed
+// one, so `ProcedureInputs` crossed the d4rt boundary as an opaque host
+// object that needed no bridging. D.37 is the first body step that *reads*
+// an input (`recall(text: …)` needs the inbound prompt), so the installer
+// now also registers `ProcedureInputs`'s read surface
+// ([registerProcedureInputsBridge]) — a script that imports
+// [procedureInputsLibrary] and declares `run(ProcedureInputs inputs)` can
+// then do `inputs.get('text')`. `ProcedureResult` is still not bridged
+// (Q-C.38.2): the entry point returns a `Map` the engine coerces.
 //
 // `note`'s payload, by contrast, is an ordinary d4rt map literal the
 // script builds in-place (`note('automation_candidate', {'why': …})`).
@@ -39,6 +43,7 @@ import 'package:tom_d4rt/d4rt.dart';
 import '../api/procedure_inputs.dart';
 import '../api/procedure_result.dart';
 import 'note_primitive.dart';
+import 'procedure_inputs_bridge.dart';
 import 'run_procedure_primitive.dart';
 import 'sugar_aliases.dart';
 import 'yield_primitive.dart';
@@ -81,6 +86,11 @@ void Function(D4rt) nativePrimitivesInstaller({
   required YieldPrimitive yieldPrimitive,
 }) {
   return (D4rt interpreter) {
+    // The read surface of `ProcedureInputs`, so a body can call
+    // `inputs.get('text')` (D.37). Registered alongside the engine-native
+    // primitives because the engine always installs both on the same host.
+    registerProcedureInputsBridge(interpreter);
+
     interpreter.registertopLevelFunction(
       runProcedureName,
       (

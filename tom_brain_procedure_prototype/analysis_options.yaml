@@ -1,1 +1,13 @@
 include: package:lints/recommended.yaml
+
+analyzer:
+  exclude:
+    # `scripts/` holds d4rt procedure *sources*, not compiled Dart. They are
+    # loaded as strings and run on the sandboxed host, where the bridges
+    # inject the `mem` / `sub` globals and register the bridge libraries the
+    # scripts import (`memory_bridge.dart`, `procedure_inputs.dart`). The
+    # static analyzer cannot see those injections, so it would flag every
+    # bridged call and bridge-library import as an error. Exclude the tree
+    # from analysis; correctness is proven by the engine/host test suites
+    # that execute the scripts. (See Q-D.37.2.)
+    - scripts/**
