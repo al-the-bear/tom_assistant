@@ -27,8 +27,12 @@
 ///   `adapters/telegram/`, `identity/`, `edge_security/`,
 ///   `heuristic_classifier/`, `delivery/`, `boot/`, `config/`, `api/`),
 ///   locked by `test/folder_layout_test.dart`.
-/// - E.9  ⏳ — `bin/tom_brain_access_prototype.dart` executable
+/// - E.9  ✅ — `bin/tom_brain_access_prototype.dart` executable
 ///   (the running process; built via `tom_build_base`'s `ToolDefinition`).
+///   The `api/` barrel now exports the first concrete symbols
+///   (`accessPrototypeTool`, `AccessServeExecutor`,
+///   `createAccessPrototypeExecutors`, version constants). The `serve`
+///   command is a not-yet-wired stub; full boot lands at E.41–E.45.
 /// - E.10 ⏳ — `.tom_metadata/tom_master.yaml` wiring (no-op per
 ///   policy override 5).
 /// - E.11 – E.50 ⏳ — OpenAI adapter, Telegram adapter, identity /

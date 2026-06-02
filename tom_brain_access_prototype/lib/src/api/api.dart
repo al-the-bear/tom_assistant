@@ -10,4 +10,11 @@
 // `tom_brain_access_prototype_specification.md` § API and Plan steps
 // E.9+ (first concrete symbol with the executable) / E.51 – E.52.
 //
-// At E.8 this folder is intentionally empty. No exports yet.
+// E.9 lands the first concrete public symbols: the `tom_build_base`
+// `ToolDefinition` (`accessPrototypeTool`), the `serve` executor
+// (`AccessServeExecutor` + `createAccessPrototypeExecutors`), and the
+// version constants. `bin/tom_brain_access_prototype.dart` is the only
+// consumer today; tests drive the same surface black-box.
+
+export 'access_prototype_tool.dart';
+export 'access_serve_executor.dart';

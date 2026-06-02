@@ -6,11 +6,14 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.8 — `lib/src/` module layout in place (nine leaf modules,
-> two nested under `adapters/`), each carrying an intentionally-empty
-> per-folder barrel re-exported from the top-level barrel, locked by
-> `test/folder_layout_test.dart`. Still no behavioural surface — the
-> executable lands at E.9, the adapters at E.11 – E.50.
+> **Status:** E.9 — `bin/tom_brain_access_prototype.dart` executable in
+> place, the running process built on `tom_build_base`'s `ToolDefinition`
+> / `ToolRunner`. The `serve` command (the default, non-traversal command)
+> is a faithful not-yet-wired stub: it parses `--config`, reports status,
+> and exits cleanly. `--version` / `--help` are fully functional.
+> Locked by `test/executable_test.dart`. Full boot (substrate, memory
+> isolate, engine, dispatcher, OpenAI + Telegram adapters, `/healthz`)
+> lands at E.41 – E.45; the adapters at E.11 – E.50.
 
 ## Role in the quest
 

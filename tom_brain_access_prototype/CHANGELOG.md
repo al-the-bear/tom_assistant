@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.9)
+
+Executable entry point — the running process:
+
+- `bin/tom_brain_access_prototype.dart` — a three-line shim over a
+  `ToolRunner` wired to `accessPrototypeTool` + the serve executor.
+  Non-zero exit on failure.
+- `lib/src/api/access_prototype_tool.dart` — the `tom_build_base`
+  `ToolDefinition` (`multiCommand` mode, default non-traversal `serve`
+  command, framework-reserved `--config` / `-c` global option,
+  version constants, running-process help footer).
+- `lib/src/api/access_serve_executor.dart` — `AccessServeExecutor`
+  (`executeWithoutTraversal` → status banner + `ToolResult.success`);
+  reads `--config` from `CliArgs.configPath` (the framework's reserved
+  field); `createAccessPrototypeExecutors()` factory.
+- `lib/src/api/api.dart` — now exports the first concrete symbols.
+- `pubspec.yaml` — `tom_build_base: ^2.6.21` added (workspace rule: every
+  CLI tool is built on `tom_build_base`).
+- `.gitignore` — `pubspec.lock` no longer ignored (Q-E.6.2: an
+  application package that ships an executable commits its lock).
+- `test/executable_test.dart` — black-box contract test for the tool
+  shape, the executor map, and end-to-end `--version` / `--help` / bare
+  `serve` / `--config` dispatch.
+- `test/package_loads_test.dart` / `test/dependency_surface_test.dart` —
+  updated to reference the first concrete exported symbols and lock the
+  `tom_build_base` v2 framework surface.
+- The `serve` command is a not-yet-wired stub; full boot lands at
+  E.41 – E.45.
+
 ## 0.0.1 — 2026-06-02 (Phase E.8)
 
 `lib/src/` module layout established:

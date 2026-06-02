@@ -67,6 +67,17 @@ environment:
 #                           and `TelegramChatConfig` (long-polling). The
 #                           E.4 pin `^1.0.2` is adopted verbatim — the
 #                           single source of truth recorded at E.4.
+#   - tom_build_base      — ADDED AT E.9. The workspace rule mandates that
+#                           every CLI tool is built on `tom_build_base`'s
+#                           `ToolDefinition` / `ToolRunner` (shared arg
+#                           parsing, `--version` / `--help`, exit codes).
+#                           The access prototype is the *running process*,
+#                           so its `bin/` entry point consumes the v2 tool
+#                           framework (`tom_build_base_v2.dart`). Hosted
+#                           `^2.6.21` — the version already resolved in the
+#                           workspace closure (procedure prototype lock);
+#                           `tom_build_base` is published to pub.dev, so no
+#                           path override is needed (and none is permitted).
 #
 # Explicitly NOT here (scope discipline):
 #
@@ -130,6 +141,7 @@ dependencies:
   tom_core_server:
     path: ../../tom_ai/core/tom_core_server
   tom_chattools: ^1.0.2
+  tom_build_base: ^2.6.21
 
 dev_dependencies:
   lints: ^6.0.0

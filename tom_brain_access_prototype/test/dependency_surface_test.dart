@@ -89,6 +89,8 @@ import 'package:tom_basics/tom_basics.dart' as basics;
 import 'package:tom_core_kernel/tom_core_kernel.dart' as kernel;
 import 'package:tom_core_server/tom_core_server.dart' as server;
 import 'package:tom_chattools/tom_chattools.dart' as chattools;
+// Added at E.9: the CLI tool framework the running process is built on.
+import 'package:tom_build_base/tom_build_base_v2.dart' as buildbase;
 
 import 'package:test/test.dart';
 
@@ -162,6 +164,18 @@ void main() {
       // E.23/E.54 loopback `implements ChatApi` (E.5 decision).
       expect(chattools.ChatApi, isNotNull);
       expect(chattools.TelegramChatConfig, isNotNull);
+    });
+
+    test('tom_build_base exposes the v2 tool framework (added at E.9)', () {
+      // The workspace rule: every CLI tool is built on `tom_build_base`'s
+      // `ToolDefinition` + `ToolRunner`. The access prototype is the
+      // running process, so its `bin/` entry point consumes the v2 tool
+      // framework. Locking these symbols guards the entry point against an
+      // upstream rename.
+      expect(buildbase.ToolDefinition, isNotNull);
+      expect(buildbase.ToolRunner, isNotNull);
+      expect(buildbase.CommandExecutor, isNotNull);
+      expect(buildbase.ToolResult, isNotNull);
     });
   });
 

@@ -1,4 +1,7 @@
 # Dart
 .dart_tool/
 .packages
-pubspec.lock
+
+# pubspec.lock is committed (Q-E.6.2): this package ships an executable
+# (bin/tom_brain_access_prototype.dart, the running process), so it is an
+# application, not a library — the reproducible-build convention applies.
