@@ -221,7 +221,8 @@
 //     `recent_runs` integration (dispatcher half); D.28 ✅ — stack-state tests.
 //   - D.29 ✅ — `FallbackExecutor` version-chain walk; D.30 ✅ —
 //     `ProcedureFallback` events; D.31 ✅ — sustained-fallback
-//     `AutomationIdea` push; D.32 — fallback-event + threshold tests.
+//     `AutomationIdea` push; D.32 ✅ — end-to-end fallback-event +
+//     idea-push-at-threshold tests (`d32_fallback_end_to_end_test.dart`).
 //   - D.33–D.35 — free-time scheduler stub.
 //   - D.36–D.42 — `answer_with_memory_v1` procedure script.
 //   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
