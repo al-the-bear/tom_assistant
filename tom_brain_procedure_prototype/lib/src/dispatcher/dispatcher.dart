@@ -305,13 +305,35 @@
 //     everything downstream is transport-indifferent (the D.53 parity claim).
 //     Exported below. The `BrainProcessBoot` orchestration (D.44), shutdown
 //     drain (D.45), and crash→typed-startup-error (D.46) build on this seam.
-//   - D.44–D.46 — `BrainProcessBoot` boot/shutdown orchestration.
+//   - D.44 ✅ — startup orchestration (`brain_process_boot.dart`):
+//     `BrainProcessBoot.boot(BrainProcessConfig)` brings the process up in the
+//     § 12 order — open the in-process substrate, provision memory (isolate by
+//     default, via the D.43 seam), build the `ProcedureEngine` over both
+//     bridges + the disk procedure store sharing one `PreemptionState` with the
+//     `RunCoordinator`, wrap it in the classify→select→schedule route behind a
+//     single `Dispatcher`, and install the future access layer through an
+//     installer seam (none in the prototype). Returns a `BootedBrain` exposing
+//     the assembled parts and an idempotent `shutdown()` that tears the
+//     brought-up resources down (access layer → memory → substrate). A boot
+//     failure tears already-brought-up resources back down so a failed boot
+//     leaks nothing. Exported below. The full shutdown *drain* (finish current
+//     foreground best-effort, drain queues, close trails) is D.45; the
+//     crash→typed-startup-error guarantee is D.46.
+//   - D.45–D.46 — shutdown drain + crash→typed-startup-error tests.
 //   - D.47–D.50 — `DispatcherConfig` + observability.
 //
 // See `_ai/quests/tom_brain/tom_brain_procedure_prototype_specification.md`
 // for the authoritative contract this module implements.
 library;
 
+export 'brain_process_boot.dart'
+    show
+        AccessLayerInstaller,
+        AccessLayerShutdown,
+        BootedBrain,
+        BrainProcessBoot,
+        BrainProcessConfig,
+        inboundTextArgumentKey;
 export 'dispatcher_entry.dart'
     show Dispatcher, DispatchRoute, DispatcherEntryObserver;
 export 'fallback_executor.dart'
