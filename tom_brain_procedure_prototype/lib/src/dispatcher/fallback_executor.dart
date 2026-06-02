@@ -42,9 +42,14 @@
 // (environmental, or a typed failure outside the four classes) and successes
 // emit nothing. Def § 6: "Every fallback emits a `ProcedureFallback` event."
 //
-// Deferred to D.31 (kept out of this file): push an `AutomationIdea: revise
-// procedure X` to `automation_ideas` on sustained fallback (≥ 3 within 24 h
-// for the same id) — a windowed counter over the [ProcedureFallback] stream.
+// ── What D.31 adds (kept out of this file) ──────────────────────────
+//
+// The aggregate sustained-fallback signal lives in
+// `sustained_fallback_monitor.dart`: `SustainedFallbackMonitor` is a windowed
+// counter over the [ProcedureFallback] stream this executor emits — on ≥ 3
+// fallback edges within 24 h for one procedure id it pushes one
+// `AutomationIdea: revise procedure X` onto the `automation_ideas` stack. Wire
+// it to this executor via `monitor.asSink` as the `onFallback` sink.
 //
 // In the prototype only `v1` of any procedure exists, so a chain is a
 // singleton and a fallback-class failure on it has nowhere to step: the

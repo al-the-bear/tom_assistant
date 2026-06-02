@@ -191,6 +191,18 @@
 // exactly as it will be once multiple versions exist. `run` threads optional
 // `runId` / `causedBy` onto the events. Exported below.
 //
+// D.31 ✅ — sustained-fallback `AutomationIdea` push
+// (`sustained_fallback_monitor.dart`): the aggregate signal on top of the
+// per-edge `ProcedureFallback` events. `SustainedFallbackMonitor` keeps a
+// sliding 24 h window of fallback edges per procedure id (default threshold 3,
+// both injectable) and, the moment a window first crosses the sustained
+// threshold, pushes exactly one `AutomationIdea: revise procedure X` onto the
+// `automation_ideas` bootstrap stack (def § 6). The push fires once per
+// sustained episode — the 4th, 5th, … edge in the same burst do not re-push;
+// the episode re-arms only once activity subsides below the threshold. Wire it
+// to the executor via `monitor.asSink` (fire-and-forget) or call `record`
+// directly. Exported below.
+//
 // Intentionally empty at D.6: this step adds the folder + barrel only,
 // matching the C.8 per-folder convention used across the Tom Brain
 // projects (`tom_brain_shared`, `tom_brain_memory`,
@@ -208,8 +220,8 @@
 //   - D.26 ✅ — `inflight` integration (dispatcher half); D.27 ✅ —
 //     `recent_runs` integration (dispatcher half); D.28 ✅ — stack-state tests.
 //   - D.29 ✅ — `FallbackExecutor` version-chain walk; D.30 ✅ —
-//     `ProcedureFallback` events; D.31–D.32 — sustained-fallback
-//     `AutomationIdea`, tests.
+//     `ProcedureFallback` events; D.31 ✅ — sustained-fallback
+//     `AutomationIdea` push; D.32 — fallback-event + threshold tests.
 //   - D.33–D.35 — free-time scheduler stub.
 //   - D.36–D.42 — `answer_with_memory_v1` procedure script.
 //   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
@@ -260,4 +272,11 @@ export 'run_coordinator.dart'
         RunSlotBusy,
         defaultCoordinatorDeadlineGrace;
 export 'run_registry.dart' show RunOutcome, RunRegistration, RunRegistry;
+export 'sustained_fallback_monitor.dart'
+    show
+        SustainedFallbackMonitor,
+        automationIdeaNodeType,
+        automationIdeasStackName,
+        defaultSustainedFallbackThreshold,
+        defaultSustainedFallbackWindow;
 export 'unsupported_procedure_kind.dart' show UnsupportedProcedureKind;
