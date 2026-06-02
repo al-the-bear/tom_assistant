@@ -12,8 +12,11 @@
 // behaviour follows in E.12 – E.18. E.12 adds `ChatCompletionRequest` /
 // `ChatCompletionParseError` — the `chat/completions` request parser. E.13
 // adds `ChatCompletionSseRenderer` — the SSE streaming-response renderer —
-// and the `ChatAnswerStream` seam on the adapter.
+// and the `ChatAnswerStream` seam on the adapter. E.14 adds
+// `ChatCompletionJsonRenderer` — the non-streaming `chat.completion` JSON
+// body renderer.
 
+export 'chat_completion_json.dart';
 export 'chat_completion_request.dart';
 export 'chat_completion_sse.dart';
 export 'openai_http_sse_adapter.dart';

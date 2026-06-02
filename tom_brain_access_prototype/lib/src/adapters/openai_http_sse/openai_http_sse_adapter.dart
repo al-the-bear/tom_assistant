@@ -1,6 +1,7 @@
 // OpenAI-format HTTP/SSE inbound adapter — router, chat-request parsing,
-// and the SSE streaming response (E.11 scaffold, E.12 request parsing,
-// E.13 streaming render).
+// the SSE streaming response, and the non-streaming JSON response
+// (E.11 scaffold, E.12 request parsing, E.13 streaming render, E.14
+// non-streaming JSON render).
 //
 // `OpenAiHttpSseAdapter` is the inbound edge for OpenAI-format traffic. It
 // exposes a self-contained `shelf_router.Router` (a `shelf.Handler`)
@@ -11,21 +12,22 @@
 // Per-route behaviour lands across substeps; each route names the step that
 // fills it:
 //   - chat/completions request parsing → E.12 (wired)
-//   - SSE streaming response           → E.13 (this step — wired below)
-//   - non-streaming JSON response      → E.14
+//   - SSE streaming response           → E.13 (wired)
+//   - non-streaming JSON response      → E.14 (this step — wired below)
 //   - model-id → persona mapping       → E.15
 //   - `/v1/embeddings` passthrough     → E.16
 //   - `/v1/models` listing             → E.17
 //   - wire-format conformance tests    → E.18
 //
-// At E.13 the chat route renders an actual `text/event-stream` SSE response
-// for a well-formed *streaming* request — provided a chunk source has been
-// injected (the `answerStream` seam). The chunk source itself (the
+// At E.14 the chat route renders a real response for either render mode of a
+// well-formed request — provided a chunk source has been injected (the
+// `answerStream` seam): a *streaming* request (`stream: true`) gets the SSE
+// `text/event-stream` body (E.13); a *non-streaming* request gets a buffered
+// `chat.completion` JSON body (E.14). The chunk source itself (the
 // dispatcher/engine, via the `DeliveryRegistry`) is wired at boot (E.41+);
-// until one is injected a streaming request answers `501`. A well-formed
-// *non-streaming* request still answers `501` (the JSON body is E.14). The
-// embeddings and models routes remain `501` stubs until their own substeps.
-// Every route speaks the OpenAI dialect.
+// until one is injected, *either* render mode answers `501`. The embeddings
+// and models routes remain `501` stubs until their own substeps. Every route
+// speaks the OpenAI dialect.
 
 import 'dart:async';
 import 'dart:convert';
@@ -34,6 +36,7 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
+import 'chat_completion_json.dart';
 import 'chat_completion_request.dart';
 import 'chat_completion_sse.dart';
 
@@ -116,18 +119,19 @@ class OpenAiHttpSseAdapter {
 
   /// `POST /v1/chat/completions`.
   ///
-  /// E.12 wired the **request parsing** half; E.13 wires the **streaming
-  /// response**. Flow:
+  /// E.12 wired the **request parsing** half; E.13 wired the **streaming
+  /// response**; E.14 wires the **non-streaming JSON response**. Flow:
   ///
   ///   * Read and validate the JSON body into a [ChatCompletionRequest]. A
   ///     malformed body returns the OpenAI `400 invalid_request_error`
   ///     envelope carrying the offending `param`.
   ///   * A well-formed **streaming** request (`stream: true`) renders an
   ///     SSE `text/event-stream` response from the injected answer-chunk
-  ///     source ([_answerStream]). With no source wired (the default until
-  ///     boot, E.41+) it answers `501`.
-  ///   * A well-formed **non-streaming** request answers `501` — the JSON
-  ///     `chat.completion` body is E.14.
+  ///     source ([_answerStream]).
+  ///   * A well-formed **non-streaming** request buffers the same source
+  ///     into one `chat.completion` JSON body.
+  ///   * With no source wired (the default until boot, E.41+) *either*
+  ///     render mode answers `501`.
   ///
   /// Persona resolution (E.15) and the real chunk source (boot, E.41+) are
   /// still out of scope here.
@@ -147,7 +151,7 @@ class OpenAiHttpSseAdapter {
 
     return ChatCompletionRequest.parse(json).fold(
       ok: _respondToChatCompletion,
-      err: (ChatCompletionParseError error) => _errorResponse(
+      err: (ChatCompletionParseError error) async => _errorResponse(
         statusCode: 400,
         message: error.message,
         type: 'invalid_request_error',
@@ -159,15 +163,13 @@ class OpenAiHttpSseAdapter {
 
   /// Renders the response for a successfully-parsed chat request.
   ///
-  /// Streaming requests get the E.13 SSE path; non-streaming requests await
-  /// E.14's JSON body and answer `501` for now.
-  Response _respondToChatCompletion(ChatCompletionRequest request) {
-    if (!request.stream) {
-      return _notImplemented(
-        'chat/completions non-streaming JSON response',
-        'E.14',
-      );
-    }
+  /// Both render modes need the injected answer-chunk source; with none
+  /// wired (the default until boot, E.41+) the route answers `501`. A
+  /// streaming request gets the E.13 SSE path; a non-streaming request gets
+  /// the E.14 buffered JSON body.
+  Future<Response> _respondToChatCompletion(
+    ChatCompletionRequest request,
+  ) async {
     final ChatAnswerStream? answerStream = _answerStream;
     if (answerStream == null) {
       return _notImplemented(
@@ -175,7 +177,34 @@ class OpenAiHttpSseAdapter {
         'boot E.41+',
       );
     }
-    return _streamingChatResponse(request, answerStream);
+    if (request.stream) {
+      return _streamingChatResponse(request, answerStream);
+    }
+    return _jsonChatResponse(request, answerStream);
+  }
+
+  /// Builds the OpenAI non-streaming `chat.completion` JSON response (proto
+  /// spec § 5.4).
+  ///
+  /// Buffers every [OutboundChunk] from [answerStream] into one answer body
+  /// via [ChatCompletionJsonRenderer], then returns it as an
+  /// `application/json` response. `usage` token counts are the renderer's
+  /// approximate char/4 estimate (Q-E.2.1) until the run surfaces real
+  /// effort metrics.
+  Future<Response> _jsonChatResponse(
+    ChatCompletionRequest request,
+    ChatAnswerStream answerStream,
+  ) async {
+    final ChatCompletionJsonRenderer renderer =
+        ChatCompletionJsonRenderer.forModel(request.model ?? _defaultModel);
+    final String body = await renderer.render(
+      prompt: request.prompt,
+      chunks: answerStream(request),
+    );
+    return Response.ok(
+      body,
+      headers: <String, String>{'content-type': _jsonContentType},
+    );
   }
 
   /// Builds the OpenAI SSE streaming response (proto spec § 5.3).

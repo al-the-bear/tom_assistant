@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.14)
+
+OpenAI HTTP/SSE adapter — `chat/completions` non-streaming JSON response:
+
+- `lib/src/adapters/openai_http_sse/chat_completion_json.dart` —
+  `ChatCompletionJsonRenderer`, the renderer that **buffers** a
+  `Stream<OutboundChunk>` into one OpenAI `chat.completion` JSON body:
+  `choices[0].message` (`role: "assistant"`, the concatenated answer text),
+  `finish_reason: "stop"`, and a `usage` block. `render(...)` buffers the
+  stream then encodes; `bodyMap(...)` / `bodyJson(...)` are the pure body
+  builders; `estimateTokens(...)` is the approximate char/4 token estimate
+  (Q-E.2.1 — no real effort metrics in the prototype). `forModel(...)` mints
+  a `chatcmpl-<ULID>` id via `tom_brain_shared`'s `Ulid` and stamps
+  Unix-epoch `created`.
+- `lib/src/adapters/openai_http_sse/openai_http_sse_adapter.dart` — the
+  `POST /v1/chat/completions` handler now renders a buffered
+  `application/json` `chat.completion` body for a well-formed *non-streaming*
+  request, sourcing chunks from the same injected `ChatAnswerStream` seam the
+  SSE path uses. With no source wired *either* render mode answers `501`
+  (boot E.41+). `_respondToChatCompletion` is now async; the no-source check
+  moved ahead of the render-mode branch.
+- `test/adapters/chat_completion_json_test.dart` — 11 assertions: renderer
+  body shape, `usage` char/4 estimates, chunk buffering (in-order
+  concatenation, `isFinal` ignored, empty stream), `estimateTokens`,
+  `forModel`, and the adapter non-streaming path (200 + `application/json` +
+  buffered body + `usage` totals; no-source → 501; model echoed).
+- `test/adapters/chat_completion_sse_test.dart` /
+  `test/adapters/openai_http_sse_adapter_test.dart` /
+  `test/adapters/chat_completion_request_test.dart` — re-scoped: the
+  non-streaming-with-source `501` assertion moved to E.14's test (it now
+  renders JSON); the no-source `501` cases are re-labelled "boot E.41+".
+
 ## 0.0.1 — 2026-06-02 (Phase E.13)
 
 OpenAI HTTP/SSE adapter — `chat/completions` SSE streaming response:

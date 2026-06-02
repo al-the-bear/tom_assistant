@@ -10,10 +10,10 @@
 //      synthesised `shelf.Request` passed straight to `handler`, no socket):
 //      a streaming request with an injected chunk source → a
 //      `text/event-stream` body whose frames arrive in order and end with
-//      `[DONE]`; a streaming request with no source → 501; a non-streaming
-//      request → 501 (E.14).
+//      `[DONE]`; a streaming request with no source → 501.
 //
-// The test deliberately does not anticipate E.14+ (JSON body, persona,
+// The non-streaming JSON body is E.14's concern, asserted in its own test;
+// this test deliberately does not anticipate E.14+ (JSON body, persona,
 // embeddings, models) or E.39/E.40 (backpressure).
 
 import 'dart:convert';
@@ -197,16 +197,6 @@ void main() {
           (jsonDecode(await response.readAsString())
               as Map<String, Object?>)['error'] as Map<String, Object?>;
       expect(error['code'], 'not_implemented');
-    });
-
-    test('non-streaming request → 501 (JSON body is E.14)', () async {
-      final OpenAiHttpSseAdapter adapter = OpenAiHttpSseAdapter(
-        answerStream: (_) => const Stream<OutboundChunk>.empty(),
-      );
-      final Response response = await _call(
-          adapter, 'POST', '/v1/chat/completions',
-          body: _chatBody(stream: false));
-      expect(response.statusCode, 501);
     });
   });
 }

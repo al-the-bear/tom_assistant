@@ -8,8 +8,9 @@
 //   2. The same parsing reached black-box through `OpenAiHttpSseAdapter`'s
 //      shelf handler (Q-E.5.2: a synthesised `shelf.Request`, no socket):
 //      a malformed body becomes the OpenAI `400 invalid_request_error`
-//      envelope with the offending `param`; a well-formed non-streaming
-//      body gets past parsing to the not-yet-wired `501` JSON path (E.14).
+//      envelope with the offending `param`; a well-formed body (with no
+//      answer source wired) gets past parsing to the `501` no-source path
+//      (the renders need a chunk source, wired at boot E.41+).
 //
 // E.12 is parsing only: persona resolution (E.15), response generation
 // (the streaming render is E.13, the JSON body E.14), and the dispatcher
@@ -281,8 +282,9 @@ void main() {
       expect(error['param'], 'messages');
     });
 
-    test('well-formed non-streaming request gets past parsing → 501 (E.14)',
-        () async {
+    test(
+        'well-formed non-streaming request gets past parsing → 501 '
+        '(no answer source wired; renders need one — boot E.41+)', () async {
       final Response response = await _call(
         adapter,
         'POST',

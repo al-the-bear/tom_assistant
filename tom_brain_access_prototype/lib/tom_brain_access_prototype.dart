@@ -48,12 +48,16 @@
 ///   `chat.completion.chunk` `data: {…}\n\n` frames terminated by
 ///   `data: [DONE]\n\n`. A well-formed *streaming* request renders a
 ///   `text/event-stream` response from the injected `ChatAnswerStream`
-///   seam (boot wires the real source, E.41+); a non-streaming request
-///   falls through to the `501` JSON path until E.14.
-/// - E.14 – E.50 ⏳ — OpenAI non-streaming JSON response, persona mapping,
-///   embeddings, models, Telegram adapter, identity / session / persona,
-///   edge security, kind-hint classifier, delivery, boot, and the
-///   end-to-end smoke.
+///   seam (boot wires the real source, E.41+).
+/// - E.14 ✅ — `chat/completions` non-streaming JSON response:
+///   `ChatCompletionJsonRenderer` buffers the same `Stream<OutboundChunk>`
+///   into one OpenAI `chat.completion` body (`choices[0].message.content`
+///   + a char/4-estimated `usage` block). A well-formed *non-streaming*
+///   request renders that body from the injected source; with no source
+///   wired *either* render mode answers `501` (boot E.41+).
+/// - E.15 – E.50 ⏳ — persona mapping, embeddings, models, Telegram
+///   adapter, identity / session / persona, edge security, kind-hint
+///   classifier, delivery, boot, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
