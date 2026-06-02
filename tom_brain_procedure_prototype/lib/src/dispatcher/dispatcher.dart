@@ -238,8 +238,12 @@
 //     `AutomationIdea` push; D.32 ✅ — end-to-end fallback-event +
 //     idea-push-at-threshold tests (`d32_fallback_end_to_end_test.dart`).
 //   - D.33 ✅ — free-time scheduler stub (`free_time_scheduler.dart`);
-//     D.34/D.35 — round-robin dreaming is deferred (no dream scripts yet);
-//     D.35 preemption proof rides on the `tick` background submission.
+//     D.34 ✅ — the stub is intentionally weak (round-robin dreaming
+//     deferred — no dream scripts yet) yet still exercises the background
+//     slot; the two contract claims (no dream synthesis on idle; end-to-end
+//     cooperative preemption against the real coordinator) are proven in
+//     `d34_free_time_scheduler_weak_test.dart`. D.35 — the focused
+//     invokes-background + preempts-under-load suite remains.
 //   - D.36–D.42 — `answer_with_memory_v1` procedure script.
 //   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
 //   - D.47–D.50 — `DispatcherConfig` + observability.
