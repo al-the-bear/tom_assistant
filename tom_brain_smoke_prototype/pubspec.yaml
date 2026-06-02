@@ -75,3 +75,11 @@ dev_dependencies:
   # suite registers the standalone (`dart:io`) platform — `IOClient` — once in
   # `setUpAll`. Test-only.
   tom_basics_console: ^1.0.0
+  # The E.55 end-to-end conformance suite inspects the post-run memory graph
+  # *through the memory MCP server* (the brain's real external memory-inspection
+  # surface). It stands `TomBrainMemoryMcpServer` up over an in-memory
+  # `StreamChannel<String>` pair and drives it with a real `dart_mcp` client in
+  # the same isolate. Test-only: production wiring exposes the MCP server through
+  # its own transport; the smoke speaks to it as an embedded client.
+  dart_mcp: ^0.5.0
+  stream_channel: ^2.1.4

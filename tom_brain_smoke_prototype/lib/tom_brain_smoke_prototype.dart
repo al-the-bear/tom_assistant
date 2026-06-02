@@ -32,8 +32,37 @@
 ///   centroid classification attaches a kind-hint the dispatcher accepts
 ///   verbatim — so its `classify_inbound_v1` fallback (the LLM-classifier
 ///   stand-in) is never called.
+/// - E.55 ✅ — End-to-end conformance, inspected via the MCP server:
+///   [standUpSmokeProcess] accepts an `inProcessMemory` ([InspectableSmokeMemory])
+///   that switches the cognition onto the in-process memory transport so the run
+///   and the memory MCP server share one store in the host isolate. A scripted
+///   OpenAI scenario (and, repeated, a Telegram scenario) drives the channel to
+///   an answer, then stands `TomBrainMemoryMcpServer` up over the shared store
+///   and asserts the post-run graph *purely through the MCP read tools*:
+///   `memory.recall` surfaces the run's `Event` (summary == prompt) and
+///   `Conclusion` (statement == answer); `memory.stack.list` shows the cold-path
+///   `interests` stack with one entry; `memory.stack.peek` + `memory.get`
+///   resolve it to an `InterestItem` whose `topic` is the prompt.
+/// - E.58 ✅ — Process-level latency bench: [runProcessLatencyBench] drives N
+///   streaming `POST /v1/chat/completions` requests against a stood-up
+///   [SmokeProcess] and measures inbound-prompt → first-SSE-chunk latency,
+///   summarising p50/p95 ([LatencySummary]) against the plan's
+///   [processBenchP95Target] (p95 ≤ 250 ms) with the stub substrate +
+///   isolate-hosted memory. The pure percentile maths
+///   ([percentileDuration]) and report rendering ([renderLatencyReport]) are
+///   unit-tested; `bin/e58_process_bench.dart` is the runnable entry point.
 library;
 
+export 'src/inspectable_smoke_memory.dart' show InspectableSmokeMemory;
+export 'src/latency_bench.dart'
+    show
+        LatencySummary,
+        defaultBenchPrompt,
+        measureTimeToFirstSseFrame,
+        percentileDuration,
+        processBenchP95Target,
+        renderLatencyReport,
+        runProcessLatencyBench;
 export 'src/smoke_brain.dart'
     show SmokeProcess, smokeBearerToken, standUpSmokeProcess;
 export 'src/smoke_memory.dart' show SmokeMemory, spawnSmokeMemory;

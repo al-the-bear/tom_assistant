@@ -52,7 +52,7 @@ import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
         serveWithShelfIo,
         startBrainAccessProcess;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
-    show MemoryConfig, TomBrainMemoryClient;
+    show MemoryConfig, TomBrainMemory, TomBrainMemoryClient;
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
     show
         BrainProcessBoot,
@@ -84,10 +84,23 @@ final class SmokeProcess {
   /// read-back that crosses the isolate boundary (E.47).
   final TomBrainMemoryClient memory;
 
+  /// The in-process memory store the cognition was booted over, or `null` when
+  /// the harness used the default isolate transport.
+  ///
+  /// Non-null only when [standUpSmokeProcess] was called with an
+  /// `inProcessMemory` (the E.55 path). The cognition and the caller then share
+  /// one [TomBrainMemory] object in the host isolate, so the E.55 conformance
+  /// test can stand the memory MCP server up over *this* reference and inspect
+  /// the post-run graph through the MCP read tools — the cross-isolate
+  /// marshalling client ([memory]) cannot back the MCP server, which forwards
+  /// each tool call to a `TomBrainMemory` directly.
+  final TomBrainMemory? inProcessMemory;
+
   SmokeProcess._({
     required this.process,
     required this.substrate,
     required this.memory,
+    required this.inProcessMemory,
   });
 
   /// The port the OpenAI + `/healthz` socket actually bound (OS-assigned when
@@ -141,6 +154,15 @@ final class SmokeProcess {
 /// prove the fallback is never called when a confident kind-hint is attached.
 /// `null` keeps the dispatcher's default fallback.
 ///
+/// [inProcessMemory] switches the cognition off the default isolate transport
+/// onto the *in-process* transport, booting it over the supplied
+/// [TomBrainMemory] in the host isolate (the E.55 path). When non-null the
+/// cognition and the caller share one memory object, so the caller can stand the
+/// memory MCP server up over the same reference and inspect the post-run graph
+/// through the MCP read tools — the cross-isolate marshalling client cannot back
+/// the MCP server, which forwards each tool call to a `TomBrainMemory` directly.
+/// `null` keeps the isolate transport (the default for E.46–E.54).
+///
 /// No real OS termination signals are watched (an empty `shutdownSignals`
 /// list), so the harness owns the lifecycle entirely through [SmokeProcess.stop].
 Future<SmokeProcess> standUpSmokeProcess({
@@ -153,19 +175,33 @@ Future<SmokeProcess> standUpSmokeProcess({
   KindHintEmbedder? kindHintEmbedder,
   KindHintClassifier? kindHintClassifier,
   ClassifyFallback? classifyFallback,
+  TomBrainMemory? inProcessMemory,
 }) async {
   final SmokeSubstrate smokeSubstrate = substrate ?? SmokeSubstrate();
   final Directory scriptsDir =
       systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
 
-  // ── 1. Boot the cognition: stub substrate + in-isolate memory. ──
+  // ── 1. Boot the cognition: stub substrate + memory. ──
+  //
+  // The default is the production isolate transport (E.46–E.54). When the
+  // caller supplies an [inProcessMemory] (the E.55 path) the boot uses the
+  // in-process transport instead, so the cognition and the caller share one
+  // `TomBrainMemory` object the MCP server can be stood up over.
+  final MemoryProvisioningConfig memoryProvisioning = inProcessMemory == null
+      ? MemoryProvisioningConfig.isolate(
+          factory: spawnSmokeMemory,
+          memoryConfig:
+              MemoryConfig.forTesting(root: 'ztmp/tom_brain_smoke_e46'),
+        )
+      : MemoryProvisioningConfig.inProcess(
+          client: inProcessMemory,
+          memoryConfig:
+              MemoryConfig.forTesting(root: 'ztmp/tom_brain_smoke_e55'),
+        );
   final booted = await BrainProcessBoot.boot(
     BrainProcessConfig(
       substrate: smokeSubstrate,
-      memoryProvisioning: MemoryProvisioningConfig.isolate(
-        factory: spawnSmokeMemory,
-        memoryConfig: MemoryConfig.forTesting(root: 'ztmp/tom_brain_smoke_e46'),
-      ),
+      memoryProvisioning: memoryProvisioning,
       systemScriptsDir: scriptsDir,
       // E.50: the dispatcher's no-hint fallback (the prototype's LLM-classifier
       // stand-in). A confident kind-hint must short-circuit it.
@@ -214,6 +250,7 @@ Future<SmokeProcess> standUpSmokeProcess({
     process: process,
     substrate: smokeSubstrate,
     memory: booted.memory.client,
+    inProcessMemory: inProcessMemory,
   );
 }
 
