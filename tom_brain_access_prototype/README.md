@@ -6,10 +6,11 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.16 — `OpenAiHttpSseAdapter` router scaffold (E.11),
+> **Status:** E.17 — `OpenAiHttpSseAdapter` router scaffold (E.11),
 > `chat/completions` request parsing (E.12), the SSE streaming response
 > (E.13), the non-streaming JSON response (E.14), the model-id → persona
-> mapping (E.15), and the `/v1/embeddings` passthrough (E.16). A raw
+> mapping (E.15), the `/v1/embeddings` passthrough (E.16), and the
+> `/v1/models` listing (E.17). A raw
 > `shelf_router.Router` (Q-E.3.2 strategy 2) mounts
 > `POST /v1/chat/completions`, `POST /v1/embeddings`, and `GET /v1/models`
 > under `/v1/`. The chat route parses its body (`ChatCompletionRequest`:
@@ -36,14 +37,20 @@ streams the answer back through the originating channel.
 > `tom_brain_substrate` dependency) and `EmbeddingsResponseRenderer` renders
 > the OpenAI list body (`data[].embedding`, the substrate model's `model`, a
 > char/4 `usage`); with no source wired a well-formed request answers `501`
-> (boot E.41+). The models route remains a `501` stub; an unmatched path/verb
-> returns the OpenAI `404` envelope. Per-route behaviour (models) lands at
-> E.17. Locked by `test/adapters/openai_http_sse_adapter_test.dart`,
+> (boot E.41+). The `GET /v1/models` route lists the persona vocabulary:
+> `ModelsResponseRenderer` renders the OpenAI models-list body
+> (`object: "list"`, `data[].id`, `object: "model"`, a fixed `created`
+> constant, `owned_by: "tom-brain"`) over exactly
+> `OpenAiPersonaMapping.knownModels`. It needs no injected source (the
+> vocabulary is a static, adapter-owned list), so it always answers `200`,
+> never `501`. An unmatched path/verb returns the OpenAI `404` envelope.
+> Locked by `test/adapters/openai_http_sse_adapter_test.dart`,
 > `test/adapters/chat_completion_request_test.dart`,
 > `test/adapters/chat_completion_sse_test.dart`,
 > `test/adapters/chat_completion_json_test.dart`,
-> `test/adapters/persona_mapping_test.dart`, and
-> `test/adapters/embeddings_test.dart`. The `serve` command is
+> `test/adapters/persona_mapping_test.dart`,
+> `test/adapters/embeddings_test.dart`, and
+> `test/adapters/models_test.dart`. The `serve` command is
 > still a not-yet-wired stub; full boot (substrate, memory isolate, engine,
 > dispatcher, adapters wired, `/healthz`) lands at E.41 – E.45.
 

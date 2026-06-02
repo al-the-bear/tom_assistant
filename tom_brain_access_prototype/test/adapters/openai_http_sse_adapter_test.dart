@@ -5,8 +5,9 @@
 // E.11 is the router + the three `/v1/` routes only, so the contract this
 // test locks is:
 //   - the three routes are mounted under `/v1/` and dispatch by verb+path;
-//   - until their behaviour lands (E.12 – E.17) each answers with a
-//     wire-shaped `501` in the OpenAI error envelope;
+//   - until a cognition / embedding source is wired (boot E.41+) the chat and
+//     embeddings routes answer a wire-shaped `501` in the OpenAI error
+//     envelope; the models route (E.17) needs no source and answers `200`;
 //   - an unknown path/verb returns the OpenAI `404` envelope, not shelf's
 //     plain-text default.
 // Per-route behaviour (parsing, SSE, JSON, persona, embeddings, models) is
@@ -68,7 +69,8 @@ void main() {
       });
     });
 
-    group('mounted routes answer 501 until behaviour lands (E.17)', () {
+    group('chat / embeddings answer 501 until a source is wired (boot E.41+)',
+        () {
       test(
           'POST /v1/chat/completions with a well-formed body and no answer '
           'source → 501 (renders need a chunk source, wired at boot E.41+)',
@@ -119,11 +121,13 @@ void main() {
         expect(error['code'], 'not_implemented');
       });
 
-      test('GET /v1/models → 501 not_implemented', () async {
+      // E.17 wired the models route: it needs no injected source (the
+      // persona vocabulary is static), so it answers 200 — never 501. Its
+      // full body shape is asserted in the E.17 test (models_test.dart); here
+      // we only lock that it is no longer a stub.
+      test('GET /v1/models → 200 (no longer a stub, E.17)', () async {
         final Response response = await _call(adapter, 'GET', '/v1/models');
-        expect(response.statusCode, 501);
-        final Map<String, Object?> error = await _errorObject(response);
-        expect(error['type'], 'not_implemented');
+        expect(response.statusCode, 200);
       });
     });
 

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.17)
+
+OpenAI HTTP/SSE adapter — `GET /v1/models` listing (proto spec § 5.7):
+
+- `lib/src/adapters/openai_http_sse/models_response.dart` —
+  `ModelsResponseRenderer`. Pure, network-free renderer of the OpenAI
+  models-list body: `object: "list"`, and one `data[]` item per id carrying
+  `id`, `object: "model"`, a fixed `created` constant (the personas are
+  static, so the response is byte-for-byte reproducible — no wall-clock read),
+  and `owned_by: "tom-brain"`. Defaults to listing exactly
+  `OpenAiPersonaMapping.knownModels` (E.15), the adapter's persona vocabulary.
+- `lib/src/adapters/openai_http_sse/openai_http_sse_adapter.dart` —
+  `_handleModels` wired: `GET /v1/models` always renders the `200` models
+  list. Unlike the chat / embeddings routes it needs no injected source (the
+  vocabulary is static and adapter-owned), so it never answers `501`. File
+  header + route-table doc updated E.16 → E.17.
+- `lib/src/adapters/openai_http_sse/openai_http_sse.dart` — barrel now also
+  exports `models_response.dart`.
+- `test/adapters/models_test.dart` — 5 assertions: the renderer (default
+  vocabulary in order, per-item OpenAI model shape, deterministic `created`,
+  explicit-list passthrough) and the adapter route (a bare adapter answers a
+  `200` OpenAI models-list body).
+- `test/adapters/openai_http_sse_adapter_test.dart` — the E.11 models stub
+  case re-scoped: `GET /v1/models` → `200` (no longer a `501` stub); group
+  re-labelled to "chat / embeddings answer 501 until a source is wired".
+
 ## 0.0.1 — 2026-06-02 (Phase E.16)
 
 OpenAI HTTP/SSE adapter — `/v1/embeddings` passthrough to substrate's

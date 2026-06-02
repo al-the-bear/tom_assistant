@@ -72,9 +72,16 @@
 ///   (`data[].embedding`, the substrate model's `model`, a char/4-estimated
 ///   `usage`). With no source wired a well-formed request answers `501`
 ///   (boot E.41+).
-/// - E.17 – E.50 ⏳ — models listing, Telegram adapter, identity / session /
-///   persona, edge security, kind-hint classifier, delivery, boot, and the
-///   end-to-end smoke.
+/// - E.17 ✅ — `GET /v1/models` listing (proto spec § 5.7).
+///   `ModelsResponseRenderer` renders the OpenAI models-list body
+///   (`object: "list"`, `data[].id`, `object: "model"`, a fixed `created`
+///   constant, `owned_by: "tom-brain"`) listing exactly
+///   `OpenAiPersonaMapping.knownModels`. Unlike the chat / embeddings routes
+///   the models route needs no injected source — the persona vocabulary is a
+///   static, adapter-owned list — so it always answers `200`, never `501`.
+/// - E.18 – E.50 ⏳ — wire-format conformance tests, Telegram adapter,
+///   identity / session / persona, edge security, kind-hint classifier,
+///   delivery, boot, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

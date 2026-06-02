@@ -19,12 +19,15 @@
 // `EmbeddingsRequest` / `EmbeddingsParseError` (the embeddings request
 // parser), `EmbeddingBatch` / `EmbeddingsResponseRenderer` (the substrate
 // seam result + the OpenAI embeddings body renderer), and the
-// `EmbeddingSource` passthrough seam on the adapter.
+// `EmbeddingSource` passthrough seam on the adapter. E.17 adds
+// `ModelsResponseRenderer` — the OpenAI models-list body renderer that lists
+// `OpenAiPersonaMapping.knownModels` — and wires the `GET /v1/models` route.
 
 export 'chat_completion_json.dart';
 export 'chat_completion_request.dart';
 export 'chat_completion_sse.dart';
 export 'embeddings_request.dart';
 export 'embeddings_response.dart';
+export 'models_response.dart';
 export 'openai_http_sse_adapter.dart';
 export 'persona_mapping.dart';

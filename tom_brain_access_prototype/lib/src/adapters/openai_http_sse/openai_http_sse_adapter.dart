@@ -1,7 +1,9 @@
 // OpenAI-format HTTP/SSE inbound adapter — router, chat-request parsing,
-// the SSE streaming response, the non-streaming JSON response, and the
-// model-id → persona mapping (E.11 scaffold, E.12 request parsing, E.13
-// streaming render, E.14 non-streaming JSON render, E.15 persona mapping).
+// the SSE streaming response, the non-streaming JSON response, the
+// model-id → persona mapping, the embeddings passthrough, and the models
+// listing (E.11 scaffold, E.12 request parsing, E.13 streaming render, E.14
+// non-streaming JSON render, E.15 persona mapping, E.16 embeddings
+// passthrough, E.17 models listing).
 //
 // `OpenAiHttpSseAdapter` is the inbound edge for OpenAI-format traffic. It
 // exposes a self-contained `shelf_router.Router` (a `shelf.Handler`)
@@ -15,8 +17,8 @@
 //   - SSE streaming response           → E.13 (wired)
 //   - non-streaming JSON response      → E.14 (wired)
 //   - model-id → persona mapping       → E.15 (wired)
-//   - `/v1/embeddings` passthrough     → E.16 (this step — wired below)
-//   - `/v1/models` listing             → E.17
+//   - `/v1/embeddings` passthrough     → E.16 (wired)
+//   - `/v1/models` listing             → E.17 (this step — wired below)
 //   - wire-format conformance tests    → E.18
 //
 // At E.14 the chat route renders a real response for either render mode of a
@@ -32,8 +34,15 @@
 // OpenAI `400 invalid_request_error` envelope; a well-formed request with no
 // `EmbeddingSource` injected answers `501` (the same no-source discipline the
 // chat route uses); otherwise the inputs are embedded through the injected
-// source and rendered into the OpenAI `embeddings` list body. The models
-// route remains a `501` stub until E.17.
+// source and rendered into the OpenAI `embeddings` list body.
+//
+// At E.17 the models route is wired (proto spec § 5.7): `GET /v1/models`
+// always renders a `200` OpenAI models-list body listing exactly
+// `OpenAiPersonaMapping.knownModels` (E.15). Unlike the chat and embeddings
+// routes it needs no injected source — the persona vocabulary is a static,
+// adapter-owned list — so it never answers `501`. With E.17 the only routes
+// that can still answer `501` are chat and embeddings, and only when no
+// cognition / embedding source is wired (the default until boot, E.41+).
 //
 // At E.15 the chat route maps the request's `model` string to a `Persona`
 // via `OpenAiPersonaMapping`: the resolved persona's canonical id is the
@@ -54,6 +63,7 @@ import 'chat_completion_request.dart';
 import 'chat_completion_sse.dart';
 import 'embeddings_request.dart';
 import 'embeddings_response.dart';
+import 'models_response.dart';
 import 'persona_mapping.dart';
 
 /// Produces the answer chunk stream for a parsed [ChatCompletionRequest].
@@ -350,8 +360,21 @@ class OpenAiHttpSseAdapter {
     );
   }
 
-  Future<Response> _handleModels(Request request) async =>
-      _notImplemented('models listing', 'E.17');
+  /// `GET /v1/models`.
+  ///
+  /// E.17 wires the **models listing** (proto spec § 5.7). Unlike the chat
+  /// and embeddings routes, this needs no injected source: the persona
+  /// vocabulary ([OpenAiPersonaMapping.knownModels], E.15) is a static,
+  /// adapter-owned list, so the route always renders a `200` OpenAI
+  /// models-list body and never answers `501`. There is no request body to
+  /// parse.
+  Future<Response> _handleModels(Request request) async {
+    final String body = const ModelsResponseRenderer().bodyJson();
+    return Response.ok(
+      body,
+      headers: <String, String>{'content-type': _jsonContentType},
+    );
+  }
 
   /// Fallback for any path/verb the router does not match. Returns the
   /// OpenAI `404` error envelope rather than shelf's plain-text default so
