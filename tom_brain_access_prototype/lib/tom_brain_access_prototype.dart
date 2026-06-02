@@ -450,6 +450,19 @@
 ///   `test/e52_reuse_extraction_test.dart`, which flows the four shared types
 ///   across the access ⇄ dispatcher package boundary. Details in
 ///   `prototype_implementation_details.md` § E.52.
+/// - E.56 ✅ — anchor enforcement at the edge (proof only; no production
+///   change). `test/e56_anchor_enforcement_test.dart` drives real inbound work
+///   through both channel edges (`OpenAiAccessEdge` streaming + non-streaming,
+///   `TelegramAccessEdge` inbound stream) over a recording dispatcher and proves
+///   no inbound prompt reaches the dispatcher without passing the anchor
+///   pre-check (E.31): a disallowed prompt is refused at the anchor on both
+///   channels (400 `content_screened` / graceful `telegramAnchorMessage`),
+///   provably by the anchor (the emitted `AccessFailed.failureKind` is
+///   `access.anchor.precheck.rejected`, with rate-limit/quota wide-open); the
+///   cross-channel invariant pins that no dispatched text ever contains a
+///   disallowed signature; and a disabled-anchor control shows the same
+///   injection text reaches the dispatcher once the gate is removed. Details in
+///   `prototype_implementation_details.md` § E.56.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
