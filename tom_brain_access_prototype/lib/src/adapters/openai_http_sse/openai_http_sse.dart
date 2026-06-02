@@ -14,9 +14,11 @@
 // adds `ChatCompletionSseRenderer` — the SSE streaming-response renderer —
 // and the `ChatAnswerStream` seam on the adapter. E.14 adds
 // `ChatCompletionJsonRenderer` — the non-streaming `chat.completion` JSON
-// body renderer.
+// body renderer. E.15 adds `OpenAiPersonaMapping` — the model-id → `Persona`
+// map whose canonical persona id is stamped into the rendered body.
 
 export 'chat_completion_json.dart';
 export 'chat_completion_request.dart';
 export 'chat_completion_sse.dart';
 export 'openai_http_sse_adapter.dart';
+export 'persona_mapping.dart';

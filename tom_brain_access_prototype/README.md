@@ -6,10 +6,10 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.14 — `OpenAiHttpSseAdapter` router scaffold (E.11),
+> **Status:** E.15 — `OpenAiHttpSseAdapter` router scaffold (E.11),
 > `chat/completions` request parsing (E.12), the SSE streaming response
-> (E.13), and the non-streaming JSON response (E.14). A raw
-> `shelf_router.Router` (Q-E.3.2 strategy 2) mounts
+> (E.13), the non-streaming JSON response (E.14), and the model-id → persona
+> mapping (E.15). A raw `shelf_router.Router` (Q-E.3.2 strategy 2) mounts
 > `POST /v1/chat/completions`, `POST /v1/embeddings`, and `GET /v1/models`
 > under `/v1/`. The chat route parses its body (`ChatCompletionRequest`:
 > `messages` → prompt text, `model` → persona id, `stream` → render flag),
@@ -20,16 +20,20 @@ streams the answer back through the originating channel.
 > with `data: [DONE]\n\n`; a *non-streaming* request renders one buffered
 > `application/json` `chat.completion` body — `ChatCompletionJsonRenderer`
 > concatenates the chunks into `choices[0].message.content` and attaches an
-> approximate (char/4) `usage` block. Both render modes source chunks from
-> the injected `ChatAnswerStream` seam (the real source is wired at boot,
-> E.41+); with no source wired either mode answers `501`. The embeddings and
-> models routes remain `501` stubs; an unmatched path/verb returns the
-> OpenAI `404` envelope. Per-route behaviour (persona, embeddings, models)
-> lands at E.15 – E.18. Locked by
-> `test/adapters/openai_http_sse_adapter_test.dart`,
+> approximate (char/4) `usage` block. The `model` stamped into the rendered
+> body is now the resolved persona's canonical id — `OpenAiPersonaMapping`
+> maps `tom-assistant` / `:terse` / `:verbose` to `Persona` objects (all
+> `assistant_to_user`), normalising an absent/unknown model to
+> `tom-assistant` (AC-5). Both render modes source chunks from the injected
+> `ChatAnswerStream` seam (the real source is wired at boot, E.41+); with no
+> source wired either mode answers `501`. The embeddings and models routes
+> remain `501` stubs; an unmatched path/verb returns the OpenAI `404`
+> envelope. Per-route behaviour (embeddings, models) lands at E.16 – E.17.
+> Locked by `test/adapters/openai_http_sse_adapter_test.dart`,
 > `test/adapters/chat_completion_request_test.dart`,
-> `test/adapters/chat_completion_sse_test.dart`, and
-> `test/adapters/chat_completion_json_test.dart`. The `serve` command is
+> `test/adapters/chat_completion_sse_test.dart`,
+> `test/adapters/chat_completion_json_test.dart`, and
+> `test/adapters/persona_mapping_test.dart`. The `serve` command is
 > still a not-yet-wired stub; full boot (substrate, memory isolate, engine,
 > dispatcher, adapters wired, `/healthz`) lands at E.41 – E.45.
 

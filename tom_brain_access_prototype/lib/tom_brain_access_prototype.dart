@@ -55,9 +55,15 @@
 ///   + a char/4-estimated `usage` block). A well-formed *non-streaming*
 ///   request renders that body from the injected source; with no source
 ///   wired *either* render mode answers `501` (boot E.41+).
-/// - E.15 – E.50 ⏳ — persona mapping, embeddings, models, Telegram
-///   adapter, identity / session / persona, edge security, kind-hint
-///   classifier, delivery, boot, and the end-to-end smoke.
+/// - E.15 ✅ — model-id → persona mapping: `OpenAiPersonaMapping` resolves
+///   the request's `model` string to a `Persona` (`tom-assistant`,
+///   `tom-assistant:terse`, `tom-assistant:verbose` round-trip; an
+///   absent/unknown model normalises to `tom-assistant`, AC-5). The
+///   resolved persona's canonical id is the `model` stamped into both
+///   render paths, replacing E.14's raw request echo.
+/// - E.16 – E.50 ⏳ — embeddings, models, Telegram adapter, identity /
+///   session / persona, edge security, kind-hint classifier, delivery,
+///   boot, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

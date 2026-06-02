@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.15)
+
+OpenAI HTTP/SSE adapter — model-id → persona mapping:
+
+- `lib/src/adapters/openai_http_sse/persona_mapping.dart` —
+  `OpenAiPersonaMapping`, the pure, network-free map from an OpenAI `model`
+  string to a `tom_brain_shared` `Persona`. The closed vocabulary is the
+  three prototype personas (`tom-assistant`, `tom-assistant:terse`,
+  `tom-assistant:verbose`), each carrying that id as its `personaId` and all
+  resolving to the substrate role `assistant_to_user`. An absent or unknown
+  model resolves to `Persona.assistant()` (AC-5 — not an error). Exposes
+  `resolve(...)`, `knownModels`, and `isKnown(...)`.
+- `lib/src/adapters/openai_http_sse/openai_http_sse_adapter.dart` —
+  `_respondToChatCompletion` now resolves the persona via
+  `OpenAiPersonaMapping.resolve(request.model)` and passes the persona's
+  canonical `personaId` to both render paths (`_streamingChatResponse` /
+  `_jsonChatResponse` gained a `modelId` parameter), replacing E.14's raw
+  `request.model` echo. The `_defaultModel` literal placeholder was removed —
+  the mapping owns the default now.
+- `test/adapters/persona_mapping_test.dart` — 11 assertions: the pure
+  mapping (three recognised ids, null / unknown / empty fallback,
+  `knownModels`, `isKnown`) and the adapter stamping the resolved persona's
+  canonical id into the response body (variant round-trips; unknown / absent
+  normalise to `tom-assistant`).
+
 ## 0.0.1 — 2026-06-02 (Phase E.14)
 
 OpenAI HTTP/SSE adapter — `chat/completions` non-streaming JSON response:

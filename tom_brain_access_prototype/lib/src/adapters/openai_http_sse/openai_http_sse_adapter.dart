@@ -1,7 +1,7 @@
 // OpenAI-format HTTP/SSE inbound adapter — router, chat-request parsing,
-// the SSE streaming response, and the non-streaming JSON response
-// (E.11 scaffold, E.12 request parsing, E.13 streaming render, E.14
-// non-streaming JSON render).
+// the SSE streaming response, the non-streaming JSON response, and the
+// model-id → persona mapping (E.11 scaffold, E.12 request parsing, E.13
+// streaming render, E.14 non-streaming JSON render, E.15 persona mapping).
 //
 // `OpenAiHttpSseAdapter` is the inbound edge for OpenAI-format traffic. It
 // exposes a self-contained `shelf_router.Router` (a `shelf.Handler`)
@@ -13,8 +13,8 @@
 // fills it:
 //   - chat/completions request parsing → E.12 (wired)
 //   - SSE streaming response           → E.13 (wired)
-//   - non-streaming JSON response      → E.14 (this step — wired below)
-//   - model-id → persona mapping       → E.15
+//   - non-streaming JSON response      → E.14 (wired)
+//   - model-id → persona mapping       → E.15 (this step — wired below)
 //   - `/v1/embeddings` passthrough     → E.16
 //   - `/v1/models` listing             → E.17
 //   - wire-format conformance tests    → E.18
@@ -26,8 +26,14 @@
 // `chat.completion` JSON body (E.14). The chunk source itself (the
 // dispatcher/engine, via the `DeliveryRegistry`) is wired at boot (E.41+);
 // until one is injected, *either* render mode answers `501`. The embeddings
-// and models routes remain `501` stubs until their own substeps. Every route
-// speaks the OpenAI dialect.
+// and models routes remain `501` stubs until their own substeps.
+//
+// At E.15 the chat route maps the request's `model` string to a `Persona`
+// via `OpenAiPersonaMapping`: the resolved persona's canonical id is the
+// `model` stamped into the rendered body (recognised ids round-trip
+// unchanged; an absent/unknown model normalises to `tom-assistant`, AC-5),
+// replacing E.14's raw `request.model` echo. Every route speaks the OpenAI
+// dialect.
 
 import 'dart:async';
 import 'dart:convert';
@@ -39,6 +45,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'chat_completion_json.dart';
 import 'chat_completion_request.dart';
 import 'chat_completion_sse.dart';
+import 'persona_mapping.dart';
 
 /// Produces the answer chunk stream for a parsed [ChatCompletionRequest].
 ///
@@ -81,11 +88,6 @@ class OpenAiHttpSseAdapter {
   /// SSE media type for the streaming chat-completions response (E.13).
   static const String _eventStreamContentType =
       'text/event-stream; charset=utf-8';
-
-  /// The model id echoed into SSE frames when the request omits `model`.
-  /// This is a literal placeholder, NOT persona resolution — the real
-  /// `model` → `Persona` mapping (and its default) is E.15.
-  static const String _defaultModel = 'tom-assistant';
 
   /// The injected answer-chunk source, or `null` when no cognition is wired
   /// (the prototype's default until boot, E.41+). A streaming request with
@@ -133,8 +135,9 @@ class OpenAiHttpSseAdapter {
   ///   * With no source wired (the default until boot, E.41+) *either*
   ///     render mode answers `501`.
   ///
-  /// Persona resolution (E.15) and the real chunk source (boot, E.41+) are
-  /// still out of scope here.
+  /// E.15 wired persona resolution: the persona's canonical id is stamped
+  /// into the rendered body (see [_respondToChatCompletion]). The real chunk
+  /// source (boot, E.41+) is still out of scope here.
   Future<Response> _handleChatCompletions(Request request) async {
     final Object? json;
     try {
@@ -167,6 +170,13 @@ class OpenAiHttpSseAdapter {
   /// wired (the default until boot, E.41+) the route answers `501`. A
   /// streaming request gets the E.13 SSE path; a non-streaming request gets
   /// the E.14 buffered JSON body.
+  ///
+  /// E.15: the request's `model` string is mapped to a [Persona] via
+  /// [OpenAiPersonaMapping]; the resolved persona's canonical
+  /// [Persona.personaId] — not the raw request echo — is the `model` stamped
+  /// into both render paths. A recognised id round-trips unchanged; an
+  /// absent or unknown model is normalised to the default
+  /// `tom-assistant` (AC-5).
   Future<Response> _respondToChatCompletion(
     ChatCompletionRequest request,
   ) async {
@@ -177,10 +187,11 @@ class OpenAiHttpSseAdapter {
         'boot E.41+',
       );
     }
+    final Persona persona = OpenAiPersonaMapping.resolve(request.model);
     if (request.stream) {
-      return _streamingChatResponse(request, answerStream);
+      return _streamingChatResponse(request, answerStream, persona.personaId);
     }
-    return _jsonChatResponse(request, answerStream);
+    return _jsonChatResponse(request, answerStream, persona.personaId);
   }
 
   /// Builds the OpenAI non-streaming `chat.completion` JSON response (proto
@@ -188,15 +199,17 @@ class OpenAiHttpSseAdapter {
   ///
   /// Buffers every [OutboundChunk] from [answerStream] into one answer body
   /// via [ChatCompletionJsonRenderer], then returns it as an
-  /// `application/json` response. `usage` token counts are the renderer's
+  /// `application/json` response. [modelId] is the resolved persona's
+  /// canonical id (E.15). `usage` token counts are the renderer's
   /// approximate char/4 estimate (Q-E.2.1) until the run surfaces real
   /// effort metrics.
   Future<Response> _jsonChatResponse(
     ChatCompletionRequest request,
     ChatAnswerStream answerStream,
+    String modelId,
   ) async {
     final ChatCompletionJsonRenderer renderer =
-        ChatCompletionJsonRenderer.forModel(request.model ?? _defaultModel);
+        ChatCompletionJsonRenderer.forModel(modelId);
     final String body = await renderer.render(
       prompt: request.prompt,
       chunks: answerStream(request),
@@ -213,12 +226,14 @@ class OpenAiHttpSseAdapter {
   /// `chat.completion.chunk` frame; the stream is terminated by a final
   /// `data: [DONE]\n\n` line. The body is a lazily-rendered UTF-8 byte
   /// stream, so chunks reach the client as the cognition produces them.
+  /// [modelId] is the resolved persona's canonical id (E.15).
   Response _streamingChatResponse(
     ChatCompletionRequest request,
     ChatAnswerStream answerStream,
+    String modelId,
   ) {
     final ChatCompletionSseRenderer renderer =
-        ChatCompletionSseRenderer.forModel(request.model ?? _defaultModel);
+        ChatCompletionSseRenderer.forModel(modelId);
     final Stream<List<int>> body =
         renderer.render(answerStream(request)).transform(utf8.encoder);
     return Response.ok(
