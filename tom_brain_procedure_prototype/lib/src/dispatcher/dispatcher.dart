@@ -376,6 +376,17 @@
 //     order the interleave dictates). A test-local composition-root projector
 //     stands in until the boot-wiring step threads `DispatcherEventBus.emit`
 //     into the entry surface / coordinator / fallback executor.
+//   - D.51 ✅ — Phase-D code review pass D1 (review-only; no `lib/` change).
+//     Every Phase-D file checked against its owning spec section (§ 10–14);
+//     the divergence report is recorded in
+//     `prototype_implementation_details.md` § D.51. Zero critical, one
+//     material (the `answer_with_memory_v1` `Access.deliver` streaming gap,
+//     Q-D.51.1), three cosmetic (all already tracked). The sentinel
+//     `test/d51_spec_section_attestation_test.dart` pins the closed sets —
+//     the seven-variant `DispatcherEvent` sum, the five `DispatcherLog`
+//     categories, the four `FallbackTrigger` wire strings, the sustained
+//     threshold/window, the `user_prompt` routing, the queue-depth default,
+//     and the five-field `Access` shape — so any drift fails loudly.
 //
 // See `_ai/quests/tom_brain/tom_brain_procedure_prototype_specification.md`
 // for the authoritative contract this module implements.
