@@ -31,8 +31,17 @@
 //   every `OutboundChunk` and, on the final chunk, consolidates the answer
 //   (via the E.21 `TelegramOutboundConsolidator`) into the minimum number of
 //   size-compliant messages and sends them in order (§ 6.3; def § Q13).
-// - E.39 / E.40 ⏳ — backpressure (`DeliveryStalled`) + SSE-disconnect
-//   cancellation, and the delivery test sweep.
+// - E.39 ✅ — backpressure: the SSE path surfaces a *terminal* `DeliveryStalled`
+//   (`clientDisconnected`) through `Backpressure.stalled(...)` once its sink
+//   reports `isDisconnected`, so the engine cancels the run instead of
+//   rendering into a dead wire; the buffered Telegram path cannot stall during
+//   streaming, so a rate-limit stall (a transient `DeliveryStalled`) surfaces
+//   at flush through the binding's `delivered` future. The signal types
+//   (`BackpressureSignal` / `DeliveryStalled` / `StallReason`) and the
+//   `Backpressure.clear` / `Backpressure.stalled(...)` builders live in
+//   `tom_brain_shared` (engine + paths share them).
+// - E.40 ⏳ — the delivery test sweep (each path delivers correctly;
+//   backpressure surfaces; a disconnected SSE doesn't leak the run).
 
 export 'channel_delivery.dart' show ChannelDelivery, DeliveryBinding;
 export 'delivery_registry.dart' show DeliveryRegistry, UnknownDeliveryChannel;

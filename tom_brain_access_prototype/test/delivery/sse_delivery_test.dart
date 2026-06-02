@@ -22,8 +22,15 @@ final class _CollectingSseSink implements SseSink {
   final List<String> frames = <String>[];
   bool _closed = false;
 
+  /// Simulates a mid-stream client disconnect — the E.39 SSE path reads this
+  /// before each write. Tests toggle it directly.
+  bool disconnected = false;
+
   @override
   bool get isClosed => _closed;
+
+  @override
+  bool get isDisconnected => disconnected;
 
   @override
   void write(String frame) {

@@ -30,9 +30,10 @@
 //   * No wire formatting. Translating an `OutboundChunk` to an SSE `data:`
 //     frame / a Telegram message flush is the concrete paths' job (E.37 /
 //     E.38). `ChannelDelivery` is the interface they implement.
-//   * No backpressure protocol. `DeliveryStalled` and SSE-disconnect
-//     cancellation are E.39 / E.40; the `DeliverCallback` already returns the
-//     backpressure `Stream<OutboundChunk>` those steps fill in.
+//   * No backpressure detection. The `DeliverCallback` returns the
+//     backpressure `Stream<OutboundChunk>`; the concrete paths (E.39) decide
+//     when to return `Backpressure.clear` vs `Backpressure.stalled(...)`. This
+//     contract file only names the seam.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 

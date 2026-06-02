@@ -27,9 +27,12 @@
 // What this file does NOT do:
 //
 //   * No wire formatting (E.37 / E.38 own it through `ChannelDelivery`).
-//   * No backpressure protocol — `DeliveryStalled` / SSE-disconnect
-//     cancellation is E.39 / E.40. The registry passes the path's backpressure
-//     `Stream<OutboundChunk>` straight through.
+//   * No backpressure detection — the stall signal (`DeliveryStalled`, E.39)
+//     is raised by the concrete paths; the registry passes the path's
+//     backpressure `Stream<OutboundChunk>` straight through, untouched, to the
+//     engine. (The terminal-success `AccessDelivered` it emits keys on
+//     `chunk.isFinal`, so a chunk whose backpressure stream carries a stall is
+//     never counted as delivered.)
 //   * No `Access` construction or boot wiring (E.41+).
 
 import 'package:tom_brain_shared/tom_brain_shared.dart';

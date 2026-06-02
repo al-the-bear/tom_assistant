@@ -44,11 +44,21 @@
 //
 //   * No chunk sourcing — the engine pushes chunks through the produced
 //     `DeliverCallback`; the dispatcher/engine wiring is boot's job (E.41+).
-//   * No backpressure protocol — `DeliveryStalled` (a Telegram rate-limit
-//     stall) is E.39 / E.40. The callback returns an empty backpressure
-//     stream for now.
 //   * No whitelist auth (E.22), identity / session / persona resolution
 //     (E.24–E.27), or `Access` construction (boot, E.41+).
+//
+// Backpressure (E.39): a buffered channel cannot stall *during* streaming —
+// every chunk is appended to the in-memory buffer, never sent — so the
+// per-chunk backpressure stream is always `Backpressure.clear`. The stall a
+// rate limit causes happens at *flush*: a `TelegramSink.send` that the backend
+// throttles throws a transient `DeliveryStalled` (`rateLimited`, with the
+// backend's `retryAfter`), which `_flush` propagates and the binding surfaces
+// through its `delivered` future — the documented Telegram delivery surface
+// (E.38, Q-E.38.1). This asymmetry with the SSE path (which signals
+// per-chunk through the backpressure stream) is the structural consequence of
+// buffered-vs-streamed delivery. Mapping a real televerse 429 to that signal
+// inside `ChatApiTelegramSink` needs televerse's exception shape and is a
+// documented seam (Q-E.39.3).
 
 import 'dart:async';
 
@@ -75,6 +85,12 @@ abstract interface class TelegramSink {
   /// path consolidates and splits it; the sink only transports it. Completes
   /// when the backend has accepted the message; the path awaits each [send]
   /// in turn so the parts arrive in order.
+  ///
+  /// On a backend rate limit a sink throws a transient [DeliveryStalled]
+  /// (`rateLimited`, with the backend's `retryAfter`); the delivery path
+  /// stops sending the remaining parts and surfaces it through the binding's
+  /// `delivered` future (E.39). Any other failure surfaces the same way as a
+  /// plain delivery error.
   Future<void> send(String message);
 }
 
@@ -211,16 +227,21 @@ final class TelegramChannelDelivery implements ChannelDelivery {
         binding._delivered.complete(_flush(binding.sink, parts));
       }
 
-      // No backpressure signalled in the prototype — E.39 / E.40 fill the
-      // `DeliveryStalled` protocol through this returned stream.
-      return const Stream<OutboundChunk>.empty();
+      // A buffered channel cannot stall during streaming — the chunk was
+      // appended to the buffer, not sent. Any rate-limit stall surfaces at
+      // flush through `binding.delivered` (E.39), so every chunk's
+      // backpressure stream is clear.
+      return Backpressure.clear;
     };
   }
 
   /// Sends each consolidated [parts] message through [sink], in order.
   ///
   /// Awaits each send before the next so the parts arrive in order (an empty
-  /// list — an empty answer — sends nothing, Q-E.21.1).
+  /// list — an empty answer — sends nothing, Q-E.21.1). A send that throws —
+  /// a transient [DeliveryStalled] on a rate limit (E.39), or any other
+  /// delivery error — breaks the loop, so the remaining parts are not sent,
+  /// and propagates to the binding's `delivered` future.
   static Future<void> _flush(TelegramSink sink, List<String> parts) async {
     for (final String part in parts) {
       await sink.send(part);

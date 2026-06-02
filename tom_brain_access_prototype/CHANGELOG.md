@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.39)
+
+Delivery backpressure — the two delivery paths now surface a `DeliveryStalled`
+through the `DeliverCallback`'s backpressure `Stream<OutboundChunk>` when the
+channel cannot accept further chunks (Plan E.39; proto spec § 10.1; AC-2). The
+signal types live in `tom_brain_shared` (engine + paths share them); the paths
+produce them, the engine reacts (the engine wiring is a later step).
+
+- `tom_brain_shared` `lib/src/access/backpressure.dart` — **new** (in the
+  shared package). `BackpressureSignal` (sealed, `implements Exception`),
+  `DeliveryStalled` (the one concrete signal — channel wire name, `StallReason`,
+  `isTerminal`, optional `retryAfter`, `detail`; a terminal stall cannot carry a
+  `retryAfter`, a negative `retryAfter` is rejected), `StallReason`
+  (`clientDisconnected` / `rateLimited` / `channelClosed`), and `Backpressure`
+  (`clear` / `stalled(signal)` stream builders). Exported from
+  `tom_brain_shared.dart` and `src/access/access.dart`.
+- `lib/src/delivery/sse_delivery.dart` — `SseSink` gains `isDisconnected`;
+  `StreamControllerSseSink` sets it on a mid-stream subscription cancel (not on
+  a normal close). `SseChannelDelivery.bindDeliver` checks `isDisconnected`
+  before each write and, when set, terminates the binding and returns a
+  *terminal* `DeliveryStalled` (`clientDisconnected`) via `Backpressure.stalled`
+  rather than rendering into a dead wire (no leak).
+- `lib/src/delivery/telegram_delivery.dart` — the buffered path cannot stall
+  mid-stream, so the per-chunk stream is always `Backpressure.clear`; a backend
+  rate limit (a transient `DeliveryStalled`) surfaces at flush through the
+  binding's `delivered` future.
+- `lib/tom_brain_access_prototype.dart` / `lib/src/delivery/delivery.dart` —
+  E.39 roadmap bullet; pending range advanced to `E.40 – E.50 ⏳`.
+- `test/delivery/backpressure_test.dart` — **new**. The E.39 delivery
+  backpressure suite. `tom_brain_shared` `test/access/backpressure_test.dart` —
+  **new**. The shared `DeliveryStalled` / `Backpressure` unit suite.
+
 ## 0.0.1 — 2026-06-02 (Phase E.38)
 
 Telegram delivery path — the second of `## E.8`'s two `ChannelDelivery` slots

@@ -36,13 +36,17 @@
 //
 //   * No chunk sourcing — the engine pushes chunks through the produced
 //     `DeliverCallback`; the dispatcher/engine wiring is boot's job (E.41+).
-//   * No backpressure protocol — `DeliveryStalled` and the richer
-//     SSE-disconnect cancellation land at E.39 / E.40. The callback returns an
-//     empty backpressure stream for now (no stall signalled); a client
-//     disconnect cancels the body subscription, which the runtime sink
-//     surfaces through its controller's `onCancel`.
 //   * No persona resolution — the renderer's `model` is already the resolved
 //     persona-as-model id (E.15), fixed when the binding was built.
+//
+// Backpressure (E.39): the runtime sink tracks a client disconnect (its
+// response-body subscription cancelled) as `isDisconnected`. Before each
+// chunk the path checks it; once disconnected it stops rendering into the dead
+// wire and returns a *terminal* `DeliveryStalled` (`clientDisconnected`)
+// through the backpressure stream (`Backpressure.stalled`) so the engine
+// cancels the run rather than leaking it (E.40). A connected wire returns
+// `Backpressure.clear`. The engine's actual yield/cancel reaction is wired
+// when the `answer_with_memory_v1` streaming gap closes.
 
 import 'dart:async';
 import 'dart:convert';
@@ -75,6 +79,14 @@ abstract interface class SseSink {
 
   /// Whether [close] has been called.
   bool get isClosed;
+
+  /// Whether the client disconnected before the answer finished — the
+  /// response-body subscription was cancelled (E.39). The SSE delivery path
+  /// reads this before each [write]: once `true`, it stops rendering into the
+  /// dead wire and surfaces a terminal [DeliveryStalled] through the
+  /// backpressure stream so the engine cancels the run. A wire that was simply
+  /// [close]d after `[DONE]` is not disconnected.
+  bool get isDisconnected;
 }
 
 /// The runtime [SseSink]: frames are UTF-8 encoded onto a
@@ -83,9 +95,9 @@ abstract interface class SseSink {
 ///
 /// One instance per inbound streaming request. The controller is *not*
 /// broadcast — exactly one consumer (the HTTP response) listens. A client
-/// disconnect cancels that subscription; [onClientDisconnect], when supplied,
-/// fires so a later step (E.39 / E.40) can cancel the run rather than render
-/// into a dead wire.
+/// disconnect cancels that subscription, which sets [isDisconnected] (the
+/// signal the E.39 delivery path reads to surface a terminal stall) and fires
+/// the optional [onClientDisconnect] hook.
 final class StreamControllerSseSink implements SseSink {
   late final StreamController<List<int>> _controller =
       StreamController<List<int>>(
@@ -93,15 +105,18 @@ final class StreamControllerSseSink implements SseSink {
   );
 
   /// Called once when the [body] subscription is cancelled (the SSE client
-  /// disconnected). Optional; the richer cancellation protocol is E.39 / E.40.
+  /// disconnected). Optional; the run-cancellation reaction is the engine's
+  /// (E.39 surfaces the stall signal that drives it).
   final void Function()? _onClientDisconnect;
 
   bool _closed = false;
+  bool _disconnected = false;
 
   /// Builds a runtime SSE sink. [onClientDisconnect] — when supplied — fires
   /// once if the response-body subscription is cancelled before the answer
-  /// finishes (a client disconnect); the prototype leaves the run-cancellation
-  /// reaction to E.39 / E.40.
+  /// finishes (a client disconnect); the engine's run-cancellation reaction is
+  /// driven by the terminal stall the E.39 delivery path surfaces off
+  /// [isDisconnected].
   StreamControllerSseSink({void Function()? onClientDisconnect})
       : _onClientDisconnect = onClientDisconnect;
 
@@ -111,6 +126,9 @@ final class StreamControllerSseSink implements SseSink {
 
   @override
   bool get isClosed => _closed;
+
+  @override
+  bool get isDisconnected => _disconnected;
 
   @override
   void write(String frame) {
@@ -133,10 +151,14 @@ final class StreamControllerSseSink implements SseSink {
   }
 
   void _handleCancel() {
-    final void Function()? onDisconnect = _onClientDisconnect;
-    if (onDisconnect != null && !_closed) {
-      onDisconnect();
+    // A cancel after a normal close (`[DONE]` written) is just teardown, not a
+    // client disconnect. Only a cancel while the answer is still streaming is
+    // a disconnect the delivery path must react to.
+    if (_closed) {
+      return;
     }
+    _disconnected = true;
+    _onClientDisconnect?.call();
   }
 }
 
@@ -211,19 +233,35 @@ final class SseChannelDelivery implements ChannelDelivery {
         );
       }
 
+      if (sink.isDisconnected) {
+        // The client disconnected mid-stream (the response-body subscription
+        // was cancelled, E.37's `onClientDisconnect`). Do not render into the
+        // dead wire; surface a *terminal* stall through the backpressure
+        // stream so the engine cancels the run rather than leaking it (E.40:
+        // "a disconnected SSE doesn't leak the run"). Mark terminated so a
+        // stray later chunk throws loudly rather than being silently dropped.
+        terminated = true;
+        return Backpressure.stalled(
+          DeliveryStalled.terminal(
+            channel: AccessChannel.openai.wireName,
+            reason: StallReason.clientDisconnected,
+            detail: 'SSE client disconnected before the answer finished',
+          ),
+        );
+      }
+
       sink.write(renderer.frameFor(chunk));
       if (chunk.isFinal) {
         terminated = true;
         sink.write(ChatCompletionSseRenderer.doneFrame);
         // The wire close is irreversible and not awaited here: this is the
         // last chunk, and the `DeliverCallback` signature is synchronous in
-        // its return of the (empty, for E.37) backpressure stream.
+        // its return of the backpressure stream.
         unawaited(sink.close());
       }
 
-      // No backpressure signalled in the prototype — E.39 / E.40 fill the
-      // `DeliveryStalled` protocol through this returned stream.
-      return const Stream<OutboundChunk>.empty();
+      // The chunk was accepted and the wire is ready for more — no stall.
+      return Backpressure.clear;
     };
   }
 }

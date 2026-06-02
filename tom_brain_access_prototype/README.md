@@ -6,7 +6,26 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.38 — the **Telegram delivery path** fills the second of the two
+> **Status:** E.39 — **delivery backpressure**: the two delivery paths now
+> surface a `DeliveryStalled` through the `DeliverCallback`'s backpressure
+> `Stream<OutboundChunk>` when the channel cannot accept further chunks (proto
+> spec § 10.1; AC-2). The signal types — `BackpressureSignal` (sealed,
+> `implements Exception`), `DeliveryStalled` (channel wire name, `StallReason`,
+> `isTerminal`, optional `retryAfter`), `StallReason`, and the
+> `Backpressure.clear` / `Backpressure.stalled(...)` stream builders — live in
+> `tom_brain_shared`, because the paths produce them and the engine reacts. The
+> **SSE** path is per-chunk: while connected it returns `Backpressure.clear`;
+> once the sink reports `isDisconnected` (the runtime `StreamControllerSseSink`
+> sets it on a mid-stream subscription cancel, not on a normal close) it
+> terminates the binding and returns a *terminal* `DeliveryStalled`
+> (`clientDisconnected`) instead of rendering into the dead wire — so the engine
+> cancels the run and nothing leaks. The **Telegram** path is buffered and
+> cannot stall mid-stream, so its per-chunk stream is always clear; a backend
+> rate limit is a *transient* `DeliveryStalled` (`rateLimited`, with
+> `retryAfter`) surfaced at flush through the binding's `delivered` future. The
+> engine's *reaction* to the signal (yield / cancel) is a later step.
+>
+> E.38 — the **Telegram delivery path** fills the second of the two
 > `ChannelDelivery` slots `## E.8` opened. `TelegramChannelDelivery` is the path
 > the `DeliveryRegistry` (E.36) dispatches `AccessChannel.telegram` to. Unlike
 > the SSE path (which streams each chunk to the wire as it arrives), Telegram is
@@ -21,8 +40,8 @@ streams the answer back through the originating channel.
 > callback cannot return it; the registry's `AccessDelivered` fires earlier, on
 > the final chunk — Q-E.38.1). `ChatApiTelegramSink` is the runtime sink — each
 > part sent through a `tom_chattools` `ChatApi.sendMessage` as plain text (boot
-> wires it, E.41+). The backpressure (`DeliveryStalled`) protocol is E.39 /
-> E.40.
+> wires it, E.41+). A rate-limit stall surfaces as a transient `DeliveryStalled`
+> through `delivered` (E.39, above).
 >
 > E.37 — the **SSE delivery path** (OpenAI) fills the first of the
 > two `ChannelDelivery` slots `## E.8` opened. `SseChannelDelivery` is the path
@@ -38,8 +57,9 @@ streams the answer back through the originating channel.
 > is the runtime wire — frames UTF-8 encoded onto a `StreamController` whose
 > `body` stream the OpenAI adapter returns as the `text/event-stream` response
 > body (boot wires it, E.41+); a client disconnect fires its optional
-> `onClientDisconnect` seam. The richer cancellation + `DeliveryStalled`
-> backpressure protocol is E.39 / E.40; the Telegram path is E.38.
+> `onClientDisconnect` seam, and a mid-stream cancel sets `isDisconnected` so
+> the SSE path surfaces a terminal `DeliveryStalled` (E.39, above); the Telegram
+> path is E.38.
 >
 > E.36 — the **`DeliveryRegistry`** opened `## E.8 — Outbound delivery`: the
 > channel-agnostic dispatcher, "one registry, two delivery paths" (proto spec

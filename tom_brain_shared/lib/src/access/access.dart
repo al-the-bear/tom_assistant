@@ -43,6 +43,8 @@ import 'session.dart';
 
 export 'access_event.dart'
     show AccessCreated, AccessDelivered, AccessEvent, AccessFailed;
+export 'backpressure.dart'
+    show Backpressure, BackpressureSignal, DeliveryStalled, StallReason;
 export 'inbound_request.dart' show InboundRequest;
 export 'outbound_chunk.dart' show OutboundChunk;
 export 'persona.dart' show Persona;
@@ -54,11 +56,15 @@ export 'session.dart' show Session;
 ///
 /// The engine / `answer_with_memory_v1` answer step calls this once per
 /// [OutboundChunk] (D.38). The returned `Stream<OutboundChunk>` is the
-/// planned backpressure channel: a stalled channel (E.39 `DeliveryStalled`)
-/// surfaces through it so the engine yields rather than buffering without
-/// bound. The signature is kept verbatim from proto spec § 10.1; the
-/// backpressure semantics are finalised when E.39 wires the
-/// `DeliveryRegistry` (Q-D.11.4).
+/// backpressure channel (E.39): it never emits an [OutboundChunk] — it is a
+/// pure signal carrier. It either completes empty ([Backpressure.clear] — the
+/// chunk was accepted, the channel is ready for more) or carries a
+/// [BackpressureSignal] as a stream *error* ([Backpressure.stalled] — the
+/// channel cannot accept further chunks). On a stall the engine yields rather
+/// than pushing into a dead/throttled wire: a terminal [DeliveryStalled] (an
+/// SSE client disconnect) cancels the run; a transient one (a Telegram rate
+/// limit) is retried after its `retryAfter`. The signature is kept verbatim
+/// from proto spec § 10.1; E.39 finalises the semantics (Q-D.11.4 resolved).
 typedef DeliverCallback = Stream<OutboundChunk> Function(OutboundChunk chunk);
 
 /// The one canonical inbound object the dispatcher consumes regardless of

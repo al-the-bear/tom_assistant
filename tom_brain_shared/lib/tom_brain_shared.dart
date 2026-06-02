@@ -149,6 +149,15 @@ export 'src/access/access.dart'
         ResolvedIdentity,
         Session;
 
+// E.39 — access/ backpressure: the `BackpressureSignal` sealed base + its one
+// realisation `DeliveryStalled` (with `StallReason`), plus the `Backpressure`
+// stream builders (`clear` / `stalled`). The `DeliverCallback` backpressure
+// `Stream<OutboundChunk>` is produced by the Phase-E delivery paths (E.37 /
+// E.38) and consumed by the engine, so the signal type is declared once, in
+// shared — joining `OutboundChunk` (D.11) rather than being moved at E.52.
+export 'src/access/backpressure.dart'
+    show Backpressure, BackpressureSignal, DeliveryStalled, StallReason;
+
 // D.12 — access/ observability: the `AccessEvent` sealed sum
 // (`AccessCreated` / `AccessDelivered` / `AccessFailed`) tracing one
 // inbound request from construction through delivery / failure. Lives

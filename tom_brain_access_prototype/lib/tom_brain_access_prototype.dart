@@ -275,7 +275,9 @@
 ///   final chunk, through an injected `onDelivered` sink (boot wires it to the
 ///   `AccessEventBus`, E.41), carrying the chunk count + the correlated
 ///   identity. With no sink it is a pure dispatcher. Wire formatting (E.37 /
-///   E.38) and backpressure (`DeliveryStalled`, E.39 / E.40) are later steps.
+///   E.38) and backpressure (`DeliveryStalled`, E.39) are filled by the
+///   concrete paths; the registry passes the backpressure stream through
+///   untouched.
 /// - E.37 ✅ — the SSE delivery path (delivery/): `SseChannelDelivery` is the
 ///   `ChannelDelivery` the `DeliveryRegistry` (E.36) dispatches
 ///   `AccessChannel.openai` to. Per inbound streaming request its
@@ -290,9 +292,10 @@
 ///   (§ 5.3). `StreamControllerSseSink` is the runtime sink — frames UTF-8
 ///   encoded onto a `StreamController` whose `body` stream the OpenAI adapter
 ///   returns as the `text/event-stream` response body (boot wires it, E.41+);
-///   a client disconnect fires its optional `onClientDisconnect` seam (the
-///   richer cancellation / `DeliveryStalled` protocol is E.39 / E.40). The
-///   backpressure stream the callback returns is empty in the prototype.
+///   a client disconnect cancels its body subscription, which sets
+///   `isDisconnected` (and fires the optional `onClientDisconnect` seam) — the
+///   signal the E.39 backpressure path reads. While connected the callback
+///   returns `Backpressure.clear`.
 /// - E.38 ✅ — the Telegram delivery path (delivery/): `TelegramChannelDelivery`
 ///   is the `ChannelDelivery` the `DeliveryRegistry` (E.36) dispatches
 ///   `AccessChannel.telegram` to. Unlike the SSE path (which streams per
@@ -309,10 +312,19 @@
 ///   `AccessDelivered` fires earlier, on the final chunk — Q-E.38.1).
 ///   `ChatApiTelegramSink` is the runtime sink — each part sent through a
 ///   `tom_chattools` `ChatApi.sendMessage` as plain text (boot wires it,
-///   E.41+). The backpressure stream the callback returns is empty in the
-///   prototype.
-/// - E.39 – E.50 ⏳ — backpressure (`DeliveryStalled`), boot, and the
-///   end-to-end smoke.
+///   E.41+). While streaming the callback returns `Backpressure.clear` (a
+///   buffered channel cannot stall mid-stream).
+/// - E.39 ✅ — backpressure (delivery/ + shared): the `DeliverCallback`
+///   backpressure `Stream<OutboundChunk>` carries a `DeliveryStalled` signal
+///   (built via `Backpressure.stalled(...)`) when a channel cannot accept more
+///   chunks. The SSE path surfaces a *terminal* stall (`clientDisconnected`)
+///   off its sink's `isDisconnected`, so the engine cancels the run rather
+///   than rendering into a dead wire; the buffered Telegram path's rate-limit
+///   stall is *transient* and surfaces at flush through the binding's
+///   `delivered` future. `BackpressureSignal` / `DeliveryStalled` /
+///   `StallReason` and the `Backpressure` builders live in `tom_brain_shared`
+///   (engine + paths share them).
+/// - E.40 – E.50 ⏳ — the delivery test sweep, boot, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
