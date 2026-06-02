@@ -67,6 +67,15 @@
 // and delivers nothing back to the channel. Test-only step — no new public
 // symbol.
 //
+// D.18 ✅ — foreground / background run coordinator core
+// (`run_coordinator.dart`): the *schedule* stage. `RunCoordinator` tracks at
+// most one foreground (`submitForeground`) and one background
+// (`submitBackground`) run, and owns the shared `PreemptionState` the engine
+// yields against (exposed via `coordinator.preemption`). Until D.19's FIFO
+// queue lands, a second concurrent submission into a busy slot is rejected
+// loudly with `RunSlotBusy`. D.18 exposes the preemption state but does not
+// yet drive it (D.20). Exported below.
+//
 // Intentionally empty at D.6: this step adds the folder + barrel only,
 // matching the C.8 per-folder convention used across the Tom Brain
 // projects (`tom_brain_shared`, `tom_brain_memory`,
@@ -98,4 +107,6 @@ export 'inbound_classifier.dart'
     show ClassifyFallback, InboundClassifier, InboundKinds, classifyInboundV1;
 export 'procedure_selector.dart'
     show ProcedureSelector, SystemProcedures, defaultProcedureRouting;
+export 'run_coordinator.dart'
+    show RunBody, RunCoordinator, RunSlot, RunSlotBusy;
 export 'unsupported_procedure_kind.dart' show UnsupportedProcedureKind;
