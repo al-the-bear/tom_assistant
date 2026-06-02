@@ -5,11 +5,12 @@
 // D.18 delivers the coordinator core: the single-foreground /
 // single-background invariant, the `submitForeground` / `submitBackground`
 // surface, and the shared `PreemptionState` the engine yields against. These
-// tests pin exactly that scope — they do NOT exercise the FIFO queue (D.19),
-// the preemption driving (D.20), or the hard deadline (D.21), which land in
-// later substeps. (The full D.22 invariant suite supersedes these once the
-// queue and preemption mechanics exist; D.18 still ships its own tests per
-// the test-first discipline.)
+// tests pin exactly that scope — they do NOT exercise the FIFO foreground
+// queue (D.19, see `d19_foreground_queue_test.dart`), the preemption driving
+// (D.20), or the hard deadline (D.21), which land in later substeps. (The
+// full D.22 invariant suite supersedes these once the queue and preemption
+// mechanics exist; D.18 still ships its own tests per the test-first
+// discipline.)
 //
 // What is pinned here:
 //
@@ -18,9 +19,10 @@
 //     resolves (success and error);
 //   - foreground and background are independent slots — both can be live at
 //     once;
-//   - a second concurrent submission into a busy slot is rejected loudly
-//     with `RunSlotBusy` (the pre-D.19 enforcement of the single-run
-//     invariant), and the existing run is untouched;
+//   - a second concurrent *background* submission is rejected loudly with
+//     `RunSlotBusy` (there is no background queue), and the existing run is
+//     untouched. (The foreground slot no longer rejects since D.19 — it
+//     queues; that behaviour is pinned in `d19_foreground_queue_test.dart`.)
 //   - the coordinator exposes a shared `PreemptionState` (default fresh, or
 //     an injected instance), so the engine and coordinator reference one
 //     object.
@@ -142,25 +144,7 @@ void main() {
     });
   });
 
-  group('D.18 RunCoordinator — single-run invariant (pre-D.19 queue)', () {
-    test('a second concurrent foreground submission is rejected loudly',
-        () async {
-      final coordinator = RunCoordinator();
-      final gate = Completer<int>();
-      final first = coordinator.submitForeground<int>(() => gate.future);
-
-      expect(
-        () => coordinator.submitForeground<int>(() async => 99),
-        throwsA(isA<RunSlotBusy>()
-            .having((e) => e.slot, 'slot', RunSlot.foreground)),
-      );
-
-      // The rejection leaves the live run untouched.
-      expect(coordinator.hasForegroundRun, isTrue);
-      gate.complete(1);
-      expect(await first, 1);
-    });
-
+  group('D.18 RunCoordinator — single-background invariant (no queue)', () {
     test('a second concurrent background submission is rejected loudly',
         () async {
       final coordinator = RunCoordinator();
@@ -178,14 +162,14 @@ void main() {
       expect(await first, 1);
     });
 
-    test('the rejected submission body never runs', () async {
+    test('the rejected background submission body never runs', () async {
       final coordinator = RunCoordinator();
       final gate = Completer<int>();
-      final first = coordinator.submitForeground<int>(() => gate.future);
+      final first = coordinator.submitBackground<int>(() => gate.future);
       var rejectedBodyRan = false;
 
       expect(
-        () => coordinator.submitForeground<int>(() async {
+        () => coordinator.submitBackground<int>(() async {
           rejectedBodyRan = true;
           return 0;
         }),
@@ -198,9 +182,9 @@ void main() {
     });
 
     test('RunSlotBusy.toString names the busy slot', () {
-      const error = RunSlotBusy(RunSlot.foreground);
+      const error = RunSlotBusy(RunSlot.background);
       expect(error.toString(), startsWith('RunSlotBusy:'));
-      expect(error.message, contains('foreground'));
+      expect(error.message, contains('background'));
     });
   });
 

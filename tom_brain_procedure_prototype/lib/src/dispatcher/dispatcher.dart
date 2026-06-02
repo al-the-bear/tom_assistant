@@ -71,10 +71,17 @@
 // (`run_coordinator.dart`): the *schedule* stage. `RunCoordinator` tracks at
 // most one foreground (`submitForeground`) and one background
 // (`submitBackground`) run, and owns the shared `PreemptionState` the engine
-// yields against (exposed via `coordinator.preemption`). Until D.19's FIFO
-// queue lands, a second concurrent submission into a busy slot is rejected
-// loudly with `RunSlotBusy`. D.18 exposes the preemption state but does not
-// yet drive it (D.20). Exported below.
+// yields against (exposed via `coordinator.preemption`). D.18 exposes the
+// preemption state but does not yet drive it (D.20). Exported below.
+//
+// D.19 ✅ — FIFO foreground queue (`run_coordinator.dart`): a busy
+// foreground slot now *enqueues* the submission (configurable
+// `foregroundQueueDepth`, default 4) and starts queued runs in submission
+// order as the slot frees, instead of failing loudly. Overflow (slot busy
+// *and* queue full) raises `ForegroundQueueFull`; `foregroundQueueLength`
+// exposes the current waiting count. The background slot stays single — a
+// concurrent background submission still raises `RunSlotBusy`. Exported
+// below.
 //
 // Intentionally empty at D.6: this step adds the folder + barrel only,
 // matching the C.8 per-folder convention used across the Tom Brain
@@ -108,5 +115,5 @@ export 'inbound_classifier.dart'
 export 'procedure_selector.dart'
     show ProcedureSelector, SystemProcedures, defaultProcedureRouting;
 export 'run_coordinator.dart'
-    show RunBody, RunCoordinator, RunSlot, RunSlotBusy;
+    show ForegroundQueueFull, RunBody, RunCoordinator, RunSlot, RunSlotBusy;
 export 'unsupported_procedure_kind.dart' show UnsupportedProcedureKind;
