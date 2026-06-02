@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.11)
+
+OpenAI HTTP/SSE adapter — router scaffold:
+
+- `lib/src/adapters/openai_http_sse/openai_http_sse_adapter.dart` —
+  `OpenAiHttpSseAdapter`, a raw `shelf_router.Router` (Q-E.3.2 strategy 2)
+  exposing `handler` (a `shelf.Handler`) with `POST /v1/chat/completions`,
+  `POST /v1/embeddings`, and `GET /v1/models` mounted under `/v1/`. Routes
+  are inert `501` stubs in the OpenAI error envelope until E.12 – E.18;
+  unmatched path/verb returns the OpenAI `404` envelope.
+- `lib/src/adapters/openai_http_sse/openai_http_sse.dart` — module barrel
+  now exports the adapter.
+- `pubspec.yaml` — `shelf: ^1.4.2` + `shelf_router: ^1.1.2` added as direct
+  deps (Q-E.3.1 / Q-E.7.1; held out at E.7, decided here).
+- `test/adapters/openai_http_sse_adapter_test.dart` — router-scaffold
+  contract test (route paths, 501 stubs, 404 envelope, verb mismatch).
+- `test/dependency_surface_test.dart` — locks the new `shelf` /
+  `shelf_router` direct deps.
+
 ## 0.0.1 — 2026-06-02 (Phase E.9)
 
 Executable entry point — the running process:

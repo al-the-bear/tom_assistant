@@ -33,9 +33,13 @@
 ///   (`accessPrototypeTool`, `AccessServeExecutor`,
 ///   `createAccessPrototypeExecutors`, version constants). The `serve`
 ///   command is a not-yet-wired stub; full boot lands at E.41–E.45.
-/// - E.10 ⏳ — `.tom_metadata/tom_master.yaml` wiring (no-op per
-///   policy override 5).
-/// - E.11 – E.50 ⏳ — OpenAI adapter, Telegram adapter, identity /
+/// - E.10 ✅ — `.tom_metadata/tom_master.yaml` wiring (documented no-op
+///   per policy override 5).
+/// - E.11 ✅ — `OpenAiHttpSseAdapter` router scaffold: a raw
+///   `shelf_router.Router` mounting `POST /v1/chat/completions`,
+///   `POST /v1/embeddings`, `GET /v1/models` (Q-E.3.2 strategy 2). The
+///   routes are inert `501` stubs at E.11; behaviour lands at E.12–E.18.
+/// - E.12 – E.50 ⏳ — OpenAI route behaviour, Telegram adapter, identity /
 ///   session / persona, edge security, kind-hint classifier, delivery,
 ///   boot, and the end-to-end smoke.
 library;

@@ -8,4 +8,7 @@
 // `tom_brain_access_prototype_specification.md` § OpenAI adapter and
 // Plan steps E.11 – E.18.
 //
-// At E.8 this folder is intentionally empty. No exports yet.
+// E.11 lands the router scaffold (`OpenAiHttpSseAdapter`); the per-route
+// behaviour follows in E.12 – E.18.
+
+export 'openai_http_sse_adapter.dart';

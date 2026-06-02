@@ -81,22 +81,8 @@ environment:
 #
 # Explicitly NOT here (scope discipline):
 #
-#   - shelf / shelf_router — NOT direct deps at E.7. They are present
-#                           transitively (via `tom_core_server`) but not
-#                           re-exported from its barrel (E.3 finding,
-#                           Q-E.3.1). Whether the access prototype takes a
-#                           *direct* `shelf` / `shelf_router` dep depends
-#                           on the E.11 mounting strategy (Q-E.3.2:
-#                           annotation-route classes vs a raw
-#                           `shelf_router.Router` sub-handler) — a decision
-#                           deferred to E.11. The plan's E.7 dependency
-#                           list names neither, so they stay out here; if
-#                           E.11 picks the raw-router strategy they are
-#                           added as direct deps at that step (not by
-#                           widening the `tom_core_server` barrel). The
-#                           E.18 OpenAI loopback (E.5 decision) synthesises
-#                           `shelf.Request` objects in *test* code, where
-#                           `shelf` is available transitively.
+#   (shelf / shelf_router were held out at E.7 and ADDED AT E.11 once the
+#    mounting strategy was decided — see the direct-deps block above.)
 #   - tom_brain_memory / tom_brain_substrate
 #                         — NOT direct deps. The access layer never talks
 #                           to memory or substrate directly; everything
@@ -142,6 +128,19 @@ dependencies:
     path: ../../tom_ai/core/tom_core_server
   tom_chattools: ^1.0.2
   tom_build_base: ^2.6.21
+  # ADDED AT E.11 (Q-E.3.2 strategy 2 / Q-E.3.1 / Q-E.7.1). The OpenAI
+  # `/v1/` adapter is mounted as a raw `shelf_router.Router`, NOT via
+  # `tom_core_server` annotation classes. Strategy 2 matches the plan's
+  # literal "shelf router mounted under /v1/" wording and keeps the bespoke
+  # OpenAI wire surface (non-standard SSE framing + custom JSON shapes)
+  # self-contained in one adapter file, testable in isolation against
+  # captured OpenAI fixtures (E.53). It therefore needs `shelf` +
+  # `shelf_router` as DIRECT deps (the alternative — widening the
+  # `tom_core_server` barrel to re-export shelf — was rejected at Q-E.3.1 as
+  # broader coupling owned by the core-server quest). Pinned to the same
+  # versions `tom_core_server` already resolves so the closure is unchanged.
+  shelf: ^1.4.2
+  shelf_router: ^1.1.2
 
 dev_dependencies:
   lints: ^6.0.0

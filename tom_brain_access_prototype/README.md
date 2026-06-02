@@ -6,14 +6,16 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.9 — `bin/tom_brain_access_prototype.dart` executable in
-> place, the running process built on `tom_build_base`'s `ToolDefinition`
-> / `ToolRunner`. The `serve` command (the default, non-traversal command)
-> is a faithful not-yet-wired stub: it parses `--config`, reports status,
-> and exits cleanly. `--version` / `--help` are fully functional.
-> Locked by `test/executable_test.dart`. Full boot (substrate, memory
-> isolate, engine, dispatcher, OpenAI + Telegram adapters, `/healthz`)
-> lands at E.41 – E.45; the adapters at E.11 – E.50.
+> **Status:** E.11 — `OpenAiHttpSseAdapter` router scaffold in place: a raw
+> `shelf_router.Router` (Q-E.3.2 strategy 2) mounting `POST
+> /v1/chat/completions`, `POST /v1/embeddings`, and `GET /v1/models` under
+> `/v1/`. At E.11 the routes are inert `501` stubs answering in the OpenAI
+> error envelope; an unmatched path/verb returns the OpenAI `404` envelope.
+> Per-route behaviour (request parsing, SSE streaming, JSON, persona,
+> embeddings, models) lands at E.12 – E.18. Locked by
+> `test/adapters/openai_http_sse_adapter_test.dart`. The `serve` command is
+> still a not-yet-wired stub; full boot (substrate, memory isolate, engine,
+> dispatcher, adapters wired, `/healthz`) lands at E.41 – E.45.
 
 ## Role in the quest
 

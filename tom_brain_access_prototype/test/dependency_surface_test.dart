@@ -91,6 +91,11 @@ import 'package:tom_core_server/tom_core_server.dart' as server;
 import 'package:tom_chattools/tom_chattools.dart' as chattools;
 // Added at E.9: the CLI tool framework the running process is built on.
 import 'package:tom_build_base/tom_build_base_v2.dart' as buildbase;
+// Added at E.11 (Q-E.3.2 strategy 2): the OpenAI `/v1/` adapter is mounted
+// as a raw `shelf_router.Router`, so shelf + shelf_router are now DIRECT
+// deps (Q-E.3.1 / Q-E.7.1).
+import 'package:shelf/shelf.dart' as shelf;
+import 'package:shelf_router/shelf_router.dart' as shelf_router;
 
 import 'package:test/test.dart';
 
@@ -177,6 +182,20 @@ void main() {
       expect(buildbase.CommandExecutor, isNotNull);
       expect(buildbase.ToolResult, isNotNull);
     });
+
+    test('shelf + shelf_router expose the routing surface (added at E.11)',
+        () {
+      // The OpenAI `/v1/` adapter (E.11) is mounted as a raw
+      // `shelf_router.Router` (Q-E.3.2 strategy 2), so these are now DIRECT
+      // deps rather than transitive-via-`tom_core_server` (Q-E.3.1 /
+      // Q-E.7.1). Locking `Handler` (the mount contract), `Request` /
+      // `Response` (the wire types the adapter speaks), and `Router` (the
+      // route table) guards the adapter against an upstream rename.
+      expect(shelf.Handler, isNotNull);
+      expect(shelf.Request, isNotNull);
+      expect(shelf.Response, isNotNull);
+      expect(shelf_router.Router, isNotNull);
+    });
   });
 
   group('E.7 forbidden surface', () {
@@ -185,9 +204,9 @@ void main() {
     // only outbound path), a second logger (`tomLog` only), a direct
     // `tom_brain_memory` / `tom_brain_substrate` dep (everything flows
     // through the dispatcher), and a direct `dart_mcp` dep (the edge
-    // speaks OpenAI + Telegram only). `shelf` / `shelf_router` are
-    // deliberately NOT direct deps at E.7 — the E.11 mounting strategy
-    // (Q-E.3.2) decides whether they are added later.
+    // speaks OpenAI + Telegram only). `shelf` / `shelf_router` WERE held
+    // out at E.7 and added as direct deps at E.11 once the mounting
+    // strategy (Q-E.3.2 strategy 2) was decided.
     //
     // We do not assert non-existence at the import level (Dart has no
     // clean compile-time check for "this package is NOT in pubspec.yaml").
