@@ -34,7 +34,11 @@
 //     preemption can be proven end-to-end.
 //   - `inflight` / `recent_runs` stack integration (PE-4 dispatcher half).
 //   - Inter-isolate transport + boot/shutdown orchestration (§ 12):
-//     instantiates the Phase A isolate-hosted memory by default.
+//     instantiates the Phase A isolate-hosted memory by default. The
+//     provisioning seam (`MemoryProvisioner`, D.43) adopts the Phase A
+//     `TomBrainMemoryIsolateHost` + `…Client` pair and exposes the
+//     isolate (default) / in-process (test flag) `MemoryTransport`
+//     choice; `BrainProcessBoot` (D.44+) drives it.
 //
 // D.14 ✅ — `Dispatcher.accept(Access)` entry surface
 // (`dispatcher_entry.dart`): the single entry point, the `DispatchRoute`
@@ -291,7 +295,17 @@
 //     `derived_from`/`produced_by` edges, plus the cold-path `interests` push
 //     when applicable), proving the D.37–D.41 steps compose
 //     (`d42_answer_with_memory_consolidated_test.dart`). No body change.
-//   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
+//   - D.43 ✅ — inter-isolate transport seam (`memory_provisioning.dart`):
+//     adopts Phase A's `TomBrainMemoryIsolateHost` + `TomBrainMemoryIsolateClient`
+//     pair. `MemoryProvisioner.provision()` instantiates one isolate-hosted
+//     memory by default (spawn → openMemory → wrap in the isolate client) and
+//     an in-process client when the `MemoryTransport` config flag selects it
+//     (tests inject a fake `TomBrainMemoryClient`). Both transports return a
+//     uniform `ProvisionedMemory` (opened client + idempotent `dispose`), so
+//     everything downstream is transport-indifferent (the D.53 parity claim).
+//     Exported below. The `BrainProcessBoot` orchestration (D.44), shutdown
+//     drain (D.45), and crash→typed-startup-error (D.46) build on this seam.
+//   - D.44–D.46 — `BrainProcessBoot` boot/shutdown orchestration.
 //   - D.47–D.50 — `DispatcherConfig` + observability.
 //
 // See `_ai/quests/tom_brain/tom_brain_procedure_prototype_specification.md`
@@ -326,6 +340,12 @@ export 'free_time_scheduler.dart'
         defaultSchedulableStacks;
 export 'inbound_classifier.dart'
     show ClassifyFallback, InboundClassifier, InboundKinds, classifyInboundV1;
+export 'memory_provisioning.dart'
+    show
+        MemoryProvisioner,
+        MemoryProvisioningConfig,
+        MemoryTransport,
+        ProvisionedMemory;
 export 'preemption_controller.dart'
     show PreemptionClock, PreemptionController;
 export 'preemption_event.dart'
