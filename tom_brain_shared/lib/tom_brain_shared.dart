@@ -129,3 +129,22 @@ export 'src/preemption/preemption.dart' show PreemptionState;
 // a parameterised `WHERE` clause stays in `tom_brain_memory`.
 export 'src/symbolic/symbolic.dart'
     show AttrClause, SymbolicFilter, SymbolicOp;
+
+// D.11 — access/ module: the canonical `Access` object the dispatcher
+// consumes regardless of channel, plus the field types it references —
+// `InboundRequest`, `OutboundChunk`, the minimal `ResolvedIdentity` /
+// `Session` / `Persona` handles, and the `DeliverCallback` typedef.
+// Declared in shared because Phase D consumes the shape and Phase E
+// produces instances of it (def § 1.5; proto spec § 10.1). The rich
+// session window, the kernel identity, and the persona enrichment stay
+// with their owners (memory, `tom_core_kernel`, the substrate role map);
+// shared carries only the cross-phase shape.
+export 'src/access/access.dart'
+    show
+        Access,
+        DeliverCallback,
+        InboundRequest,
+        OutboundChunk,
+        Persona,
+        ResolvedIdentity,
+        Session;
