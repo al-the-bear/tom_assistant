@@ -1,0 +1,18 @@
+{
+  "id": "chatcmpl-B9MHDbslfkBeAs8l4bebGdFOJ6PeG",
+  "object": "chat.completion.chunk",
+  "created": 1741570283,
+  "model": "gpt-4o-2024-08-06",
+  "system_fingerprint": "fp_44709d6fcb",
+  "choices": [
+    {
+      "index": 0,
+      "delta": {
+        "role": "assistant",
+        "content": "The"
+      },
+      "logprobs": null,
+      "finish_reason": null
+    }
+  ]
+}
