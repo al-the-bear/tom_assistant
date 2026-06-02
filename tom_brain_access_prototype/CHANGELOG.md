@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.23)
+
+Telegram channel conformance suite (proto spec § 6, Plan E.23). The whole
+Telegram surface is now exercised end-to-end through the in-process
+`LoopbackChatApi` double — the black-box conformance the substep tests
+(E.19 – E.22) build toward.
+
+- `test/adapters/telegram_roundtrip_conformance_test.dart` — **new** (9
+  assertions). Three groups:
+  - **Roundtrip** (2): a whitelisted message round-trips
+    inbound→authorise→outbound on one running adapter (the mapped
+    `InboundRequest` is answered on its own conversation via `sendAnswer`,
+    plain text, no decline); the roundtrip survives the full lifecycle
+    (nothing after `stop()`, one disconnect).
+  - **Whitelist enforcement** (3): a non-whitelisted sender is declined and
+    never produces a request; mixed traffic passes only whitelisted senders
+    with one decline each; the default (unconfigured) whitelist rejects
+    everyone (fail-closed, Q-E.22.1).
+  - **Large-answer chunking at the real 4096 limit** (4): a 10000-unit answer
+    splits into the minimum 3 size-compliant messages (lossless, same
+    receiver, plain text); a many-chunk over-limit answer chunks correctly
+    after buffering; an astral-heavy (emoji) over-limit answer never splits a
+    character and stays within the limit; an answer exactly at the limit is
+    one message.
+- No production code changed — E.23 is a tests-only conformance step. Suite
+  green at 188 / 188 (179 prior + 9 new). `dart analyze` clean.
+
 ## 0.0.1 — 2026-06-02 (Phase E.22)
 
 Telegram edge auth gate — the user-id whitelist (proto spec § 6.4 / § 8,

@@ -126,9 +126,13 @@
 ///   non-whitelisted sender is rejected at the edge: the graceful
 ///   `telegramNotAuthorisedMessage` is sent back and the request dropped, so
 ///   no `Access` is ever built (AC-3, AC-4; proto spec § 6.4 / § 8).
-/// - E.23 – E.50 ⏳ — Telegram roundtrip/conformance tests, identity /
-///   session / persona, edge security, kind-hint classifier, delivery, boot,
-///   and the end-to-end smoke.
+/// - E.23 ✅ — Telegram conformance suite (tests-only): a whitelisted message
+///   round-trips inbound→authorise→outbound on one running adapter; whitelist
+///   enforcement holds end-to-end; a large answer driven through `sendAnswer`
+///   at the real 4096 limit splits into the minimum number of size-compliant
+///   messages (whole-character, lossless). All through `LoopbackChatApi`.
+/// - E.24 – E.50 ⏳ — identity / session / persona, edge security, kind-hint
+///   classifier, delivery, boot, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

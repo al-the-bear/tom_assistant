@@ -1,5 +1,8 @@
 // LoopbackChatApi — the in-process Telegram channel test double (E.5
-// decision; first authored here at E.19, extended at E.23 / E.54).
+// decision; first authored here at E.19, reused unchanged by the E.23
+// roundtrip / conformance suite — its inbound injector + outbound recorder +
+// counted lifecycle were already exactly what the end-to-end conformance
+// needs).
 //
 // `tom_chattools` ships only the abstract `ChatApi` plus its single
 // televerse-backed Telegram implementation — there is no fake (E.4 /
