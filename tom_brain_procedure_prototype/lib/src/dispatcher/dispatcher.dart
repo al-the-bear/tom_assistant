@@ -74,6 +74,39 @@
 // yields against (exposed via `coordinator.preemption`). D.18 exposes the
 // preemption state but does not yet drive it (D.20). Exported below.
 //
+// D.20 ✅ — cooperative preemption driving (`run_coordinator.dart`): the
+// coordinator now writes the shared `PreemptionState`. A foreground
+// submission admitted while a background run is live calls
+// `requestForegroundPreemption()` (the background yields at its next
+// `yield_if_foreground_waiting()` checkpoint, never mid-step); once the
+// foreground workload fully drains (slot free *and* FIFO queue empty) the
+// coordinator calls `signalResume()`. Both writes are idempotent, so
+// back-to-back foreground arrivals resume the background exactly once. An
+// overflowing submission (`ForegroundQueueFull`) is not admitted and does
+// not drive preemption. No new public symbol.
+//
+// D.21 ✅ — hard step deadline cross-check (`run_coordinator.dart`): the
+// coordinator now races every admitted run body (foreground *and*
+// background) against its own `StepDeadline`, an independent backstop to the
+// engine's per-step deadline (C.36). The coordinator limit defaults to the
+// engine's `defaultStepDeadline` plus `defaultCoordinatorDeadlineGrace`, so
+// the engine's in-band truncation wins under normal operation; the
+// coordinator fires only when the engine failed to bound the run, force-
+// yielding the slot (pump queue / resume background) and surfacing
+// `RunDeadlineExceeded` (`procedure.deadline.exceeded`). `hardStepDeadline`
+// and the timer seam are constructor-injectable. Exported below.
+//
+// D.23 ✅ — supervising `PreemptionController` (`preemption_controller.dart`
+// + `preemption_event.dart`): the observe-only supervisor over the
+// coordinator's two run slots. It maintains a small model of slot occupancy
+// + whether a foreground preemption is pending and emits a typed
+// `PreemptionEvent` (`RunSlotEntered`, `RunSlotExited`,
+// `ForegroundPreemptionRequested`, `BackgroundResumeSignalled`) on every
+// transition, mirroring `PreemptionState`'s idempotency so the stream
+// reflects true transitions rather than redundant coordinator calls. It never
+// writes `PreemptionState`. The coordinator wiring (calling the `record*`
+// surface at each transition point) lands in D.24. Exported below.
+//
 // D.19 ✅ — FIFO foreground queue (`run_coordinator.dart`): a busy
 // foreground slot now *enqueues* the submission (configurable
 // `foregroundQueueDepth`, default 4) and starts queued runs in submission
@@ -112,8 +145,25 @@ export 'dispatcher_entry.dart'
     show Dispatcher, DispatchRoute, DispatcherEntryObserver;
 export 'inbound_classifier.dart'
     show ClassifyFallback, InboundClassifier, InboundKinds, classifyInboundV1;
+export 'preemption_controller.dart'
+    show PreemptionClock, PreemptionController;
+export 'preemption_event.dart'
+    show
+        BackgroundResumeSignalled,
+        ForegroundPreemptionRequested,
+        PreemptionEvent,
+        RunSlotEntered,
+        RunSlotExited,
+        RunSlotOutcome;
 export 'procedure_selector.dart'
     show ProcedureSelector, SystemProcedures, defaultProcedureRouting;
 export 'run_coordinator.dart'
-    show ForegroundQueueFull, RunBody, RunCoordinator, RunSlot, RunSlotBusy;
+    show
+        ForegroundQueueFull,
+        RunBody,
+        RunCoordinator,
+        RunDeadlineExceeded,
+        RunSlot,
+        RunSlotBusy,
+        defaultCoordinatorDeadlineGrace;
 export 'unsupported_procedure_kind.dart' show UnsupportedProcedureKind;

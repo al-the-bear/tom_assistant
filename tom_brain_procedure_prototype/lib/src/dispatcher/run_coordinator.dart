@@ -35,20 +35,61 @@
 // second concurrent background submission still fails loudly with
 // [RunSlotBusy].
 //
+// ── What D.20 adds ──────────────────────────────────────────────────
+//
+// D.20 makes the coordinator *drive* the shared [PreemptionState] it has
+// owned since D.18. The engine reads that state through
+// `yield_if_foreground_waiting()`; D.20 supplies the write side, so a
+// foreground arrival actually causes a live background run to step aside:
+//
+//   - When a foreground submission is *admitted* (started immediately or
+//     enqueued) while a background run is live, the coordinator calls
+//     [PreemptionState.requestForegroundPreemption]. The background run
+//     parks at its *next* cooperative checkpoint — never mid-step.
+//   - When the foreground workload fully drains (the slot is free *and* the
+//     FIFO queue is empty), the coordinator calls
+//     [PreemptionState.signalResume], releasing any parked background run.
+//
+// Both writes are idempotent (a redundant request keeps the existing resume
+// signal; a resume with nothing pending is a no-op), so back-to-back
+// foreground arrivals during one background run resume the background
+// exactly once, when the *whole* foreground chain has drained. A foreground
+// submission that *overflows* the queue ([ForegroundQueueFull]) is not
+// admitted and therefore does not drive preemption.
+//
+// ── What D.21 adds ──────────────────────────────────────────────────
+//
+// D.21 makes the coordinator enforce a *hard step deadline* as an
+// independent cross-check of the engine's own per-step deadline (C.36,
+// `preemption/step_deadline.dart`). Every admitted run body — foreground or
+// background — is raced against a coordinator-owned [StepDeadline] using the
+// same mechanism the engine uses internally. The two deadlines are
+// defence-in-depth on the same wall clock:
+//
+//   - The engine's [StepDeadline] (default 60 s) fires *inside* the run body
+//     and closes the run cleanly as truncated; from the coordinator's vantage
+//     the body simply *completes*, so the coordinator's timer is cancelled and
+//     never fires. This is the normal path.
+//   - The coordinator's deadline fires only when the run body does *not*
+//     complete within the limit — i.e. the engine's deadline failed to bound
+//     the run at all (a genuinely hung body, a run that bypassed the engine,
+//     or a misconfigured engine deadline). The coordinator then *force-yields*
+//     the run: it frees the slot, pumps the foreground queue / resumes a
+//     parked background, and surfaces [RunDeadlineExceeded]
+//     (`procedure.deadline.exceeded`, spec § 14) to the caller. The abandoned
+//     body may still run to completion untracked — a `Future` is not
+//     cancellable — but its result and any late error are dropped.
+//
+// To keep the cross-check a *backstop* rather than a competitor, the
+// coordinator's default limit is the engine's default plus a grace margin
+// ([defaultCoordinatorDeadlineGrace]), so under normal operation the engine's
+// in-band truncation always wins the race.
+//
 // ── What the coordinator does NOT own yet (deferred) ────────────────
 //
 // The remaining D.5 substeps plug into this core without changing its
 // submission signatures:
 //
-//   - D.20 — cooperative preemption: driving [PreemptionState] (setting the
-//     foreground-waiting flag when a foreground arrives during a live
-//     background run, signalling resume when the foreground finishes). The
-//     coordinator *exposes* the state but does not yet drive it; the
-//     engine-native `yield_if_foreground_waiting()` checkpoint already reads
-//     it.
-//   - D.21 — the hard step deadline cross-check (the engine owns the
-//     mechanism in `preemption/step_deadline.dart`; the coordinator-level
-//     enforcement lands here later).
 //   - D.23–D.25 — the supervising `PreemptionController` + its
 //     `PreemptionEvent` stream.
 
@@ -56,6 +97,15 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show PreemptionState;
+
+import '../preemption/step_deadline.dart'
+    show
+        DeadlineTimerFactory,
+        StepCompleted,
+        StepDeadline,
+        StepOutcome,
+        StepTruncated,
+        defaultStepDeadline;
 
 /// The two run slots the coordinator tracks (PE-5).
 ///
@@ -129,6 +179,49 @@ final class ForegroundQueueFull implements Exception {
   String toString() => 'ForegroundQueueFull: $message';
 }
 
+/// The grace the coordinator's hard-step-deadline cross-check (D.21) adds
+/// over the engine's own per-step deadline ([defaultStepDeadline], C.36).
+///
+/// The coordinator's default limit is the engine's default *plus* this grace,
+/// so the engine's in-band truncation closes a runaway run first under normal
+/// operation and the coordinator's harder abort fires only when the engine
+/// failed to bound the run at all. Keeping the cross-check strictly more
+/// lenient than the thing it checks is what makes it a backstop rather than a
+/// competitor.
+const Duration defaultCoordinatorDeadlineGrace = Duration(seconds: 5);
+
+/// Raised through a submission's future when the coordinator's hard step
+/// deadline (D.21) force-yields a run whose body did not complete in time.
+///
+/// This is the coordinator-level half of the spec's `procedure.deadline.exceeded`
+/// failure (§ 14: detected by "Coordinator + engine wall clock"). It surfaces
+/// only when the engine's own [StepDeadline] failed to bound the run — under
+/// normal operation the engine truncates the run *inside* the body, the body
+/// completes, and this is never thrown. [failureKind] carries the typed class
+/// so the Phase D fallback executor (D.29) can classify it.
+final class RunDeadlineExceeded implements Exception {
+  /// Records which [slot] held the run that breached the [limit].
+  const RunDeadlineExceeded(this.slot, this.limit);
+
+  /// The slot whose run was force-yielded by the coordinator deadline.
+  final RunSlot slot;
+
+  /// The coordinator's hard step deadline the run exceeded.
+  final Duration limit;
+
+  /// The typed failure class this surfaces (spec § 14), so a fallback
+  /// executor can classify it without string-matching the message.
+  String get failureKind => 'procedure.deadline.exceeded';
+
+  /// Human-readable explanation, reused by [toString].
+  String get message =>
+      'the ${slot.name} run exceeded the coordinator hard step deadline '
+      '(${limit.inMilliseconds} ms) and was force-yielded';
+
+  @override
+  String toString() => 'RunDeadlineExceeded: $message';
+}
+
 /// The dispatcher's foreground / background run coordinator (Plan D.18;
 /// spec § 10.3, PE-5).
 ///
@@ -152,8 +245,28 @@ final class RunCoordinator {
   /// *wait* behind the running one; it excludes the run currently occupying
   /// the slot. A depth of 0 disables queueing entirely (a busy foreground
   /// slot then overflows immediately). Throws [ArgumentError] if negative.
-  RunCoordinator({PreemptionState? preemption, this.foregroundQueueDepth = 4})
-      : preemption = preemption ?? PreemptionState() {
+  ///
+  /// [hardStepDeadline] is the coordinator-level cross-check of the engine's
+  /// per-step deadline (D.21). Every admitted run body is raced against it;
+  /// a body that does not complete in time is force-yielded and its
+  /// submission future fails with [RunDeadlineExceeded]. Defaults to the
+  /// engine's [defaultStepDeadline] plus [defaultCoordinatorDeadlineGrace] so
+  /// the engine's in-band truncation wins under normal operation. Throws
+  /// [ArgumentError] if not strictly positive.
+  ///
+  /// [deadlineTimerFactory] is the injectable timer seam the cross-check uses
+  /// (default `Timer.new`), so a test can fire the deadline deterministically
+  /// without sleeping for the real limit — mirroring the engine's
+  /// [StepDeadline] seam.
+  RunCoordinator({
+    PreemptionState? preemption,
+    this.foregroundQueueDepth = 4,
+    Duration? hardStepDeadline,
+    DeadlineTimerFactory? deadlineTimerFactory,
+  })  : preemption = preemption ?? PreemptionState(),
+        hardStepDeadline = hardStepDeadline ??
+            (defaultStepDeadline + defaultCoordinatorDeadlineGrace),
+        _deadlineTimerFactory = deadlineTimerFactory {
     if (foregroundQueueDepth < 0) {
       throw ArgumentError.value(
         foregroundQueueDepth,
@@ -161,18 +274,39 @@ final class RunCoordinator {
         'must be zero or greater',
       );
     }
+    if (this.hardStepDeadline <= Duration.zero) {
+      throw ArgumentError.value(
+        this.hardStepDeadline,
+        'hardStepDeadline',
+        'a coordinator hard step deadline must be strictly positive',
+      );
+    }
   }
 
   /// The shared cooperative-preemption state the engine yields against.
   ///
-  /// D.18 exposes it; D.20 begins driving it (setting the foreground-waiting
-  /// flag on a foreground arrival during a live background run, signalling
-  /// resume when the foreground finishes).
+  /// D.18 exposes it; D.20 drives it: the foreground-waiting flag is set
+  /// (via [PreemptionState.requestForegroundPreemption]) when a foreground
+  /// submission is admitted while a background run is live, and resume is
+  /// signalled (via [PreemptionState.signalResume]) once the foreground
+  /// workload fully drains.
   final PreemptionState preemption;
 
   /// The maximum number of foreground runs that may wait behind the running
   /// one in the FIFO queue (excludes the run occupying the slot, D.19).
   final int foregroundQueueDepth;
+
+  /// The coordinator-level hard step deadline (D.21): every admitted run body
+  /// is raced against this wall-clock cap as an independent cross-check of the
+  /// engine's own per-step deadline. A body that does not complete in time is
+  /// force-yielded with [RunDeadlineExceeded]. Defaults to the engine's
+  /// [defaultStepDeadline] plus [defaultCoordinatorDeadlineGrace].
+  final Duration hardStepDeadline;
+
+  /// The injectable timer seam each per-run [StepDeadline] cross-check uses
+  /// (null ⇒ `Timer.new`). Kept for the cross-check's whole lifetime because a
+  /// fresh `StepDeadline` is built per submitted run.
+  final DeadlineTimerFactory? _deadlineTimerFactory;
 
   /// FIFO queue of foreground starters waiting for the slot to free up. Each
   /// starter, when invoked, re-occupies the foreground slot and runs its body
@@ -209,11 +343,19 @@ final class RunCoordinator {
       // Slot free: start immediately.
       start();
     } else if (_foregroundQueue.length >= foregroundQueueDepth) {
-      // Slot busy and the queue is full: overflow.
+      // Slot busy and the queue is full: overflow. Not admitted, so it does
+      // not drive preemption.
       throw ForegroundQueueFull(foregroundQueueDepth);
     } else {
       // Slot busy with queue capacity: wait FIFO behind the running run.
       _foregroundQueue.add(start);
+    }
+    // The submission is admitted (started or queued). If a background run is
+    // live, ask it to yield at its next cooperative checkpoint (D.20). The
+    // request is idempotent, so a second foreground arrival during the same
+    // background run keeps the existing resume signal.
+    if (_background != null) {
+      preemption.requestForegroundPreemption();
     }
     return completer.future;
   }
@@ -233,11 +375,11 @@ final class RunCoordinator {
     // Mark the slot occupied *before* invoking the body, so a re-entrant
     // submission from inside the body sees the slot busy rather than racing.
     _background = marker.future;
-    Future<T>.sync(body).then(
-      (value) {
+    _guardWithDeadline(body).then(
+      (outcome) {
         _background = null;
         marker.complete();
-        completer.complete(value);
+        _completeFromOutcome(completer, outcome, RunSlot.background);
       },
       onError: (Object error, StackTrace stackTrace) {
         _background = null;
@@ -253,20 +395,57 @@ final class RunCoordinator {
   void _runInForegroundSlot<T>(RunBody<T> body, Completer<T> completer) {
     final marker = Completer<void>();
     _foreground = marker.future;
-    Future<T>.sync(body).then(
-      (value) {
+    _guardWithDeadline(body).then(
+      (outcome) {
         _foreground = null;
         marker.complete();
-        completer.complete(value);
+        _completeFromOutcome(completer, outcome, RunSlot.foreground);
         _pumpForegroundQueue();
+        _resumeBackgroundIfForegroundDrained();
       },
       onError: (Object error, StackTrace stackTrace) {
         _foreground = null;
         marker.complete();
         completer.completeError(error, stackTrace);
         _pumpForegroundQueue();
+        _resumeBackgroundIfForegroundDrained();
       },
     );
+  }
+
+  /// Races [body] against a fresh per-run [StepDeadline] (D.21).
+  ///
+  /// Reuses the engine's deadline mechanism (C.36) so the coordinator's
+  /// cross-check and the engine's own per-step guard share one implementation.
+  /// The returned future resolves to a [StepCompleted] when the body finishes
+  /// within [hardStepDeadline] (the timer is cancelled) or a [StepTruncated]
+  /// when the deadline fires first; it propagates the body's error unchanged
+  /// when the body throws before the deadline.
+  Future<StepOutcome<T>> _guardWithDeadline<T>(RunBody<T> body) {
+    final deadline = StepDeadline(
+      limit: hardStepDeadline,
+      timerFactory: _deadlineTimerFactory,
+    );
+    return deadline.guard<T>(Future<T>.sync(body));
+  }
+
+  /// Completes [completer] from a [StepDeadline] [outcome] (D.21): the body's
+  /// value on [StepCompleted], or a [RunDeadlineExceeded] failure naming the
+  /// [slot] on [StepTruncated].
+  void _completeFromOutcome<T>(
+    Completer<T> completer,
+    StepOutcome<T> outcome,
+    RunSlot slot,
+  ) {
+    switch (outcome) {
+      case StepCompleted<T>(:final value):
+        completer.complete(value);
+      case StepTruncated<T>(:final limit):
+        completer.completeError(
+          RunDeadlineExceeded(slot, limit),
+          StackTrace.current,
+        );
+    }
   }
 
   /// Starts the next waiting foreground run, re-occupying the freed slot.
@@ -280,5 +459,20 @@ final class RunCoordinator {
       return;
     }
     _foregroundQueue.removeFirst()();
+  }
+
+  /// Releases a parked background run once the foreground workload has fully
+  /// drained — the slot is free *and* the FIFO queue is empty (D.20).
+  ///
+  /// Called after a foreground run completes and the queue has been pumped:
+  /// if the pump started a queued successor the slot is busy again and this
+  /// is a no-op (the background stays preempted until the *whole* foreground
+  /// chain drains). [PreemptionState.signalResume] is itself idempotent, so a
+  /// call with no preemption pending (no background was ever asked to yield)
+  /// is harmless.
+  void _resumeBackgroundIfForegroundDrained() {
+    if (_foreground == null && _foregroundQueue.isEmpty) {
+      preemption.signalResume();
+    }
   }
 }
