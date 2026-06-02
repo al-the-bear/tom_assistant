@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.44)
+
+Whole-process YAML config loader — the fourth step of `## E.9 — Boot + the
+running process` (Plan E.44; proto spec § 11.4 / § 13.1; AC-11 / AC-12). The
+single whole-process YAML file's `access:` section, parsed the `tom_build_base`
+way.
+
+- `lib/src/config/access_config.dart` — **new.** `AccessConfig`: the typed
+  `access:` section — OpenAI adapter port + base path, the Telegram bot token +
+  the user-id whitelist (expressed as identity bindings, one source of truth via
+  `telegramWhitelist`), the OpenAI bearer-token bindings, the rate-limit /
+  daily-quota / anchor policies (the concrete edge-security policy objects), the
+  persona vocabulary (or `null` for the default), the session window, and the
+  embedding-cache TTL. A pure data holder — builds no runtime collaborator;
+  validates port > 0, sessionMaxWindowTurns >= 1, embeddingCacheTtl > 0, and
+  takes unmodifiable copies of the binding maps. Also `AccessConfigException`
+  (dotted-key-path message, mirrors `SubstrateConfigException`).
+- `lib/src/config/access_config_loader.dart` — **new.** `AccessConfigLoader`
+  (namespace-only `abstract final class`): `parse(content, {envVars})` +
+  `loadFromFile(path, {envVars})`. Validates the document's top-level shape (the
+  five sibling sections `substrate:` / `memory:` / `engine:` / `dispatcher:` /
+  `access:` are tolerated; any other root key is rejected — AC-12 forward-only),
+  requires the `access:` block, rejects unknown keys at every level, and builds
+  the concrete edge-security policies + identity bindings. `${NAME}` tokens in
+  string secrets (bearer-token keys, the Telegram bot token) expand from the
+  caller-supplied env map; Telegram user ids are verbatim (not secrets). No I/O
+  until `loadFromFile`, no `Platform.environment` read — deterministic for
+  tests. The four sibling sections are parsed by their own already-defined
+  loaders at boot wiring (E.45) — the access package never imports substrate /
+  memory (Q-E.44.1).
+- `lib/src/config/config.dart` — barrel: exports `access_config.dart` +
+  `access_config_loader.dart`; E.44 ✅ notes added.
+- `lib/tom_brain_access_prototype.dart` — E.44 ✅ roadmap entry; pending range
+  advanced `E.44 – E.50 ⏳` → `E.45 – E.50 ⏳`.
+- `pubspec.yaml` — `yaml: ^3.1.3` added as a direct dep (was transitive); the
+  `tom_build_base` way of parsing YAML (AC-11), the same plumbing every sibling
+  Tom Brain loader uses.
+- `test/config/access_config_loader_test.dart` — **new** (32 tests): full
+  five-section document roundtrip; defaults (basePath `/v1`, no Telegram, empty
+  anchor, default persona vocabulary, default session window, 5-minute cache
+  TTL); forward-only schema (unknown top-level section / unknown key within
+  `access:` / unknown key within a subsection all rejected); `${ENV}`
+  substitution (bearer-token keys + bot token expand; undefined token is a loud
+  error; Telegram user ids verbatim); dotted-key-path errors; and `AccessConfig`
+  construction guards.
+- `test/dependency_surface_test.dart` — locks the `yaml` config-loader surface
+  (`loadYaml`, `YamlMap`) added at E.44.
+
 ## 0.0.1 — 2026-06-02 (Phase E.43)
 
 Health check — the third step of `## E.9 — Boot + the running process`

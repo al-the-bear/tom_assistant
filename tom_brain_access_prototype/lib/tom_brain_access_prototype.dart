@@ -382,9 +382,26 @@
 ///   (E.45, which owns the `RunCoordinator` via `BrainProcessBoot`) supplies a
 ///   closure that projects the coordinator's getters onto the `QueueSnapshot`;
 ///   a test supplies a probe. Mounting it on a live port is E.45.
-/// - E.44 – E.50 ⏳ — the whole-process YAML config loader, the live channel
-///   edges (HTTP serve loop / Telegram inbound stream) of the running process,
-///   and the end-to-end smoke.
+/// - E.44 ✅ — whole-process YAML config loader (config/): `AccessConfig` is
+///   the typed `access:` section of the single whole-process YAML file —
+///   OpenAI adapter port + base path, the Telegram bot token + the user-id
+///   whitelist (expressed as identity bindings, one source of truth), the
+///   OpenAI bearer-token bindings, the rate-limit / daily-quota / anchor
+///   policies, the persona vocabulary, the session window, and the
+///   embedding-cache TTL. `AccessConfigLoader` parses that file the
+///   `tom_build_base` way (`package:yaml`'s `loadYaml`, dotted-key-path
+///   errors, `${ENV}` substitution, no-I/O-until-`loadFromFile`), validating
+///   the document's top-level shape (the five sibling sections `substrate:` /
+///   `memory:` / `engine:` / `dispatcher:` / `access:` are tolerated; any other
+///   root key is rejected — AC-12 forward-only) and parsing only the `access:`
+///   block it owns. The four sibling sections are parsed by their own
+///   already-defined loaders at boot wiring (E.45) — the access package never
+///   imports substrate / memory (Q-E.44.1). `AccessConfig` is a pure data
+///   holder; the boot root (E.45) maps it onto `BrainAccessConfig`, injecting
+///   the runtime seams (clock, bearer authenticator, classifier embed/classify)
+///   that are not config.
+/// - E.45 – E.50 ⏳ — the boot root, the live channel edges (HTTP serve loop /
+///   Telegram inbound stream) of the running process, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

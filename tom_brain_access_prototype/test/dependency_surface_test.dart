@@ -96,6 +96,10 @@ import 'package:tom_build_base/tom_build_base_v2.dart' as buildbase;
 // deps (Q-E.3.1 / Q-E.7.1).
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf_router/shelf_router.dart' as shelf_router;
+// Added at E.44: the whole-process YAML config loader parses its `access:`
+// section via `package:yaml` (the way every other Tom Brain loader, and
+// `tom_build_base` itself, parses YAML — AC-11). Now a DIRECT dep.
+import 'package:yaml/yaml.dart' as yaml;
 
 import 'package:test/test.dart';
 
@@ -181,6 +185,16 @@ void main() {
       expect(buildbase.ToolRunner, isNotNull);
       expect(buildbase.CommandExecutor, isNotNull);
       expect(buildbase.ToolResult, isNotNull);
+    });
+
+    test('yaml exposes the config-loader surface (added at E.44)', () {
+      // The whole-process YAML config loader (`AccessConfigLoader`, E.44)
+      // parses its `access:` section via `loadYaml` / `YamlMap` — the same
+      // plumbing substrate / memory / engine / dispatcher loaders use, and
+      // the way `tom_build_base` itself parses YAML (AC-11). Locking these
+      // guards the loader against an upstream rename.
+      expect(yaml.loadYaml, isNotNull);
+      expect(yaml.YamlMap, isNotNull);
     });
 
     test('shelf + shelf_router expose the routing surface (added at E.11)',
