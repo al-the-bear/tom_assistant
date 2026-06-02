@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.40)
+
+Delivery test sweep — the final step of `## E.8 — Outbound delivery` (Plan E.40;
+proto spec § 10.1; AC-2). An integration-level sweep over both delivery paths,
+wired the way boot wires them (through the `DeliveryRegistry`, over the runtime
+sinks), complementing the per-step E.37 / E.38 / E.39 unit suites.
+
+- `test/delivery/delivery_sweep_test.dart` — **new** (6 tests). (1) Each path
+  delivers correctly: a multi-chunk SSE answer through `StreamControllerSseSink`
+  arrives on the decoded UTF-8 wire in order, `[DONE]`-terminated, with a
+  correlated `AccessDelivered`; a buffered, overflowing Telegram answer through
+  `ChatApiTelegramSink` arrives as ordered plain-text messages with a correlated
+  `AccessDelivered`. (2) The backpressure signal surfaces on both paths
+  (terminal SSE stall through the backpressure stream; transient Telegram stall
+  through `delivered`). (3) A disconnected SSE does not leak the run: cancelling
+  the runtime sink's body subscription sets `isDisconnected`, fires
+  `onClientDisconnect`, makes the next chunk stall terminally without rendering
+  into the dead wire, and terminates the run (a later chunk throws); no
+  `AccessDelivered` is emitted for the un-shipped answer.
+- `lib/tom_brain_access_prototype.dart` / `lib/src/delivery/delivery.dart` —
+  E.40 roadmap bullet flipped to ✅; pending range advanced to `E.41 – E.50 ⏳`.
+  `## E.8 — Outbound delivery` is complete.
+
 ## 0.0.1 — 2026-06-02 (Phase E.39)
 
 Delivery backpressure — the two delivery paths now surface a `DeliveryStalled`

@@ -40,8 +40,13 @@
 //   (`BackpressureSignal` / `DeliveryStalled` / `StallReason`) and the
 //   `Backpressure.clear` / `Backpressure.stalled(...)` builders live in
 //   `tom_brain_shared` (engine + paths share them).
-// - E.40 ⏳ — the delivery test sweep (each path delivers correctly;
-//   backpressure surfaces; a disconnected SSE doesn't leak the run).
+// - E.40 ✅ — the delivery test sweep (`test/delivery/delivery_sweep_test.dart`):
+//   an integration-level sweep over both paths wired the way boot wires them
+//   (through the `DeliveryRegistry`, over the *runtime* sinks) proving each path
+//   delivers a full multi-chunk answer correctly, both backpressure signals
+//   surface, and a real subscription cancel on the SSE runtime sink propagates
+//   to a terminal stall without leaking the run. `## E.8 — Outbound delivery`
+//   is complete.
 
 export 'channel_delivery.dart' show ChannelDelivery, DeliveryBinding;
 export 'delivery_registry.dart' show DeliveryRegistry, UnknownDeliveryChannel;

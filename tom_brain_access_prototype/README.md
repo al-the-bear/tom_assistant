@@ -6,7 +6,26 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.39 — **delivery backpressure**: the two delivery paths now
+> **Status:** E.40 — **delivery test sweep**, the final step of
+> `## E.8 — Outbound delivery`. `test/delivery/delivery_sweep_test.dart` is an
+> integration-level sweep over both delivery paths wired the way boot wires them
+> — through the `DeliveryRegistry`, over the *runtime* sinks
+> (`StreamControllerSseSink` / `ChatApiTelegramSink`), not the in-memory fakes
+> the per-step E.37 / E.38 / E.39 suites use. It locks the three things the plan
+> names (proto spec § 10.1; AC-2): **(1)** each path delivers correctly — a full
+> multi-chunk SSE answer arrives on the decoded UTF-8 wire in order,
+> `[DONE]`-terminated, with a correlated `AccessDelivered`, and a buffered,
+> overflowing Telegram answer arrives as ordered plain-text messages through the
+> real `ChatApi` sink; **(2)** the backpressure signal surfaces — the SSE path
+> raises a terminal `DeliveryStalled` through the backpressure stream, the
+> Telegram path a transient one through `delivered`; **(3)** a disconnected SSE
+> does not leak the run — cancelling the runtime sink's body subscription (a real
+> client disconnect) sets `isDisconnected`, fires `onClientDisconnect`, and makes
+> the next chunk stall terminally instead of rendering into the dead wire, after
+> which the run is terminated (a later chunk throws). `## E.8 — Outbound
+> delivery` is complete; **E.41 (boot)** is next.
+>
+> E.39 — **delivery backpressure**: the two delivery paths now
 > surface a `DeliveryStalled` through the `DeliverCallback`'s backpressure
 > `Stream<OutboundChunk>` when the channel cannot accept further chunks (proto
 > spec § 10.1; AC-2). The signal types — `BackpressureSignal` (sealed,

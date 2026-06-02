@@ -324,7 +324,13 @@
 ///   `delivered` future. `BackpressureSignal` / `DeliveryStalled` /
 ///   `StallReason` and the `Backpressure` builders live in `tom_brain_shared`
 ///   (engine + paths share them).
-/// - E.40 – E.50 ⏳ — the delivery test sweep, boot, and the end-to-end smoke.
+/// - E.40 ✅ — the delivery test sweep (`test/delivery/delivery_sweep_test.dart`):
+///   an integration sweep over both paths through the `DeliveryRegistry` and the
+///   runtime sinks — each path delivers a full answer correctly, both
+///   backpressure signals surface, and a real SSE subscription cancel propagates
+///   to a terminal stall without leaking the run. `## E.8 — Outbound delivery`
+///   is complete.
+/// - E.41 – E.50 ⏳ — boot + the running process, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
