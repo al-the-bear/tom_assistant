@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.24)
+
+`IdentityResolver` — the first of the three `Access`-filling resolvers
+(proto spec § 7.1, Plan E.24, AC-7). Maps an inbound credential to a
+`ResolvedIdentity` once at the edge; the dispatcher reads only
+`identity.principalId` and never re-authenticates.
+
+- `lib/src/identity/identity_resolver.dart` — **new**. Three symbols:
+  - `IdentityResolver` — `resolveOpenAiBearer(token)` /
+    `resolveTelegramUser(userId)` look the credential up in a per-channel
+    registry, build a `tom_core_kernel` `TomPrincipal`, and project it to a
+    `tom_brain_shared` `ResolvedIdentity`.
+  - `IdentityBinding` — the prototype principal-facts record per known
+    credential: a stable, non-secret `principalId` (never derived from the
+    bearer token), `username` (defaults to `principalId`), `numericId`,
+    optional `displayName`, unmodifiable `claims`.
+  - `IdentityResolutionException` — typed failure for an unbound credential
+    (config drift between auth and identity), carrying a non-secret detail
+    (the OpenAI variant never echoes the token).
+- `lib/src/identity/identity.dart` — barrel now exports the resolver.
+- `lib/tom_brain_access_prototype.dart` — E.24 ✅ bullet; pending range
+  narrowed to E.25 – E.50.
+- `test/identity/identity_resolver_test.dart` — **new** (12 assertions):
+  binding guards/defaults/defensive-copy; bearer-token resolution + the
+  no-token-leak guard; Telegram resolution + the unbound-throw; cross-channel
+  identity (one binding on both channels yields one `ResolvedIdentity`,
+  AC-7); empty resolver throws for every credential.
+
+Tests: 200 passed (188 prior + 12 new). `dart analyze` clean.
+
 ## 0.0.1 — 2026-06-02 (Phase E.23)
 
 Telegram channel conformance suite (proto spec § 6, Plan E.23). The whole

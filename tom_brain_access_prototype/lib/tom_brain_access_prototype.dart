@@ -131,7 +131,16 @@
 ///   enforcement holds end-to-end; a large answer driven through `sendAnswer`
 ///   at the real 4096 limit splits into the minimum number of size-compliant
 ///   messages (whole-character, lossless). All through `LoopbackChatApi`.
-/// - E.24 – E.50 ⏳ — identity / session / persona, edge security, kind-hint
+/// - E.24 ✅ — `IdentityResolver` (identity/): maps an OpenAI bearer token /
+///   a Telegram user id → an internal `tom_core_kernel` `TomPrincipal` → a
+///   `tom_brain_shared` `ResolvedIdentity`, the minimal handle the dispatcher
+///   threads into the memory scope (AC-7). Resolution is a registry lookup
+///   (`IdentityBinding` per known credential) — a non-secret `principalId`
+///   chosen at config time, never derived from the bearer token. An unbound
+///   credential throws `IdentityResolutionException` (the auth step E.22/E.28
+///   validates the credential first; an unbound one here is a config drift,
+///   surfaced loudly, not a fabricated identity).
+/// - E.25 – E.50 ⏳ — session / persona, edge security, kind-hint
 ///   classifier, delivery, boot, and the end-to-end smoke.
 library;
 

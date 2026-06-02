@@ -6,9 +6,10 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.23 — the Telegram channel surface is conformance-locked
-> (roundtrip + whitelist enforcement + large-answer chunking), end-to-end
-> through the in-process `LoopbackChatApi`.
+> **Status:** E.24 — `IdentityResolver` resolves an inbound credential to a
+> `ResolvedIdentity` once at the edge (AC-7). The Telegram channel surface is
+> conformance-locked (roundtrip + whitelist enforcement + large-answer
+> chunking), end-to-end through the in-process `LoopbackChatApi`.
 > `TelegramAdapter` is built on `tom_chattools`' `ChatApi` +
 > `TelegramChatConfig` and runs **long-polling**: `start()` initialises the
 > backend and subscribes to its `onMessage` stream (relayed raw on
@@ -41,8 +42,15 @@ streams the answer back through the originating channel.
 > message round-trips inbound→authorise→outbound on one running adapter; the
 > whitelist is enforced end-to-end; and a large answer driven through
 > `sendAnswer` at the real 4096 limit is split into the minimum number of
-> size-compliant messages (whole-character, lossless). Identity / session /
-> persona resolution (E.24+) builds on this.
+> size-compliant messages (whole-character, lossless). E.24 adds the first
+> of the three `Access`-filling resolvers: `IdentityResolver` maps an OpenAI
+> bearer token / a Telegram user id → an internal `tom_core_kernel`
+> `TomPrincipal` → a `tom_brain_shared` `ResolvedIdentity` (the minimal
+> handle threaded into the memory scope, AC-7). Resolution is a registry
+> lookup (`IdentityBinding` per known credential) — a non-secret
+> `principalId` chosen at config time, never derived from the bearer token;
+> an unbound credential throws `IdentityResolutionException`. Session /
+> persona resolution (E.25+) builds on this.
 >
 > The OpenAI HTTP/SSE adapter (E.11 – E.18) is complete and its
 > wire-format conformance is locked. `OpenAiHttpSseAdapter` router scaffold

@@ -8,4 +8,9 @@
 // `tom_brain_access_prototype_specification.md` § Identity and Plan
 // steps E.24 – E.27.
 //
-// At E.8 this folder is intentionally empty. No exports yet.
+// E.24 ✅ — `IdentityResolver` (+ `IdentityBinding`,
+// `IdentityResolutionException`): credential → `TomPrincipal` →
+// `ResolvedIdentity`, resolved once at the edge (AC-7).
+// E.25 – E.27 ⏳ — `SessionManager`, `PersonaResolver`.
+
+export 'identity_resolver.dart';

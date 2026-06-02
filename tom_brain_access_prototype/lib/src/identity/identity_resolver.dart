@@ -1,0 +1,212 @@
+// `IdentityResolver` — the edge step that resolves *who* an inbound request
+// is, exactly once (E.24).
+//
+// What this file owns (Plan § Phase E, substep E.24; proto spec § 7.1;
+// AC-7):
+//
+//   * `IdentityBinding` — the prototype's principal-facts record: the
+//     stable principal id plus the human-readable facts used to build a
+//     `tom_core_kernel` `TomPrincipal`. Boot (E.41+) loads these from
+//     configuration, one per known credential.
+//   * `IdentityResolutionException` — the typed failure when a credential
+//     reaches the resolver with no binding. A credential is validated by
+//     the edge "Auth" step (bearer auth E.28 / Telegram whitelist E.22)
+//     *before* the resolver runs; an unbound credential here is a
+//     configuration mismatch, surfaced loudly rather than silently scoping
+//     memory to a fabricated identity.
+//   * `IdentityResolver` — maps an OpenAI bearer token / a Telegram user id
+//     → an internal `TomPrincipal` (via the kernel identity primitives) →
+//     a `tom_brain_shared` `ResolvedIdentity` (the minimal handle the
+//     dispatcher threads into the memory scope, § 4.3). Resolution happens
+//     once per request; the handle rides the `Access` (AC-7), and the
+//     dispatcher never re-authenticates — it reads only
+//     `identity.principalId`.
+//
+// Why a binding registry (not credential-derived identities):
+//
+//   A bearer token is a secret — deriving a `principalId` from it would
+//   leak the secret into the memory scope and the logs. The registry maps
+//   a credential to a *stable, non-secret* principal id chosen at config
+//   time. Telegram user ids are public, but they go through the same
+//   registry so the same person's OpenAI and Telegram credentials can map
+//   to one principal id (the channel distinction is the `SessionManager`'s
+//   job, E.25, not the identity's).
+//
+// Why build a real `TomPrincipal` in the middle:
+//
+//   `tom_brain_shared` may not import `tom_core_kernel` (it is the pure
+//   types layer), so `ResolvedIdentity` is deliberately minimal. The
+//   access prototype depends on both, so it is the layer that turns the
+//   kernel's rich `TomPrincipal` into the dispatcher-facing handle. Doing
+//   the projection here keeps the kernel coupling out of the shared types
+//   while still satisfying "via tom_core_kernel's identity primitives".
+//
+// Scope discipline (per the strict per-substep log). E.24 is the
+// credential → principal → identity resolver only. It does NOT:
+//
+//   * resolve sessions (E.25, `SessionManager`) or personas (E.26,
+//     `PersonaResolver`) — the other two resolvers that fill an `Access`.
+//   * validate credentials — that is the edge "Auth" step (bearer auth
+//     E.28 / whitelist E.22); the resolver consumes an already-validated
+//     credential.
+//   * construct an `Access` or wire boot (E.41+).
+
+import 'package:tom_brain_shared/tom_brain_shared.dart';
+import 'package:tom_core_kernel/tom_core_kernel.dart';
+
+/// The prototype's principal-facts record for one known credential.
+///
+/// Immutable value object. Boot (E.41+) builds one per configured
+/// credential and hands the set to the [IdentityResolver]. It carries the
+/// facts needed to construct a `tom_core_kernel` [TomPrincipal] and the
+/// stable [principalId] that flows — non-secret — into the memory scope.
+final class IdentityBinding {
+  /// The stable, non-secret principal identifier. Non-empty — an empty id
+  /// would silently scope memory writes to nothing. This is the value that
+  /// becomes [ResolvedIdentity.principalId]; it is chosen at config time
+  /// and is never derived from a secret credential.
+  final String principalId;
+
+  /// The principal's login username (the kernel [TomUser.username]).
+  /// Defaults to [principalId] when a deployment has no separate username.
+  final String username;
+
+  /// The principal's numeric kernel id ([TomUser.id]). Defaults to `-1`
+  /// (the kernel's "unset" sentinel) — the prototype keys identity on the
+  /// string [principalId], not the numeric id.
+  final int numericId;
+
+  /// Optional human-readable display name (the kernel [TomUser.firstname]),
+  /// surfaced on [ResolvedIdentity.displayName] for logs / persona
+  /// enrichment. Never load-bearing for authorization.
+  final String? displayName;
+
+  /// Opaque, config-sourced claims (roles, scopes, quota refs) carried onto
+  /// [ResolvedIdentity.claims]. The dispatcher does not interpret them.
+  final Map<String, Object?> claims;
+
+  /// Builds an immutable binding. [principalId] must be non-empty.
+  IdentityBinding({
+    required this.principalId,
+    String? username,
+    this.numericId = -1,
+    this.displayName,
+    Map<String, Object?> claims = const {},
+  })  : username = username ?? principalId,
+        claims = Map.unmodifiable(claims) {
+    if (principalId.isEmpty) {
+      throw ArgumentError.value(
+        principalId,
+        'principalId',
+        'must be non-empty',
+      );
+    }
+  }
+}
+
+/// Thrown when a credential reaches the resolver with no [IdentityBinding].
+///
+/// The edge "Auth" step (bearer auth E.28 / Telegram whitelist E.22)
+/// validates a credential *before* the resolver runs, so an unbound
+/// credential here means the identity registry and the auth configuration
+/// have drifted apart. Surfaced as a typed failure rather than a fabricated
+/// identity so the mismatch is loud, not silent.
+final class IdentityResolutionException implements Exception {
+  /// Names the channel whose credential could not be resolved
+  /// (`'openai'` / `'telegram'`).
+  final String channel;
+
+  /// A non-secret description of what failed. For Telegram this is the user
+  /// id; for OpenAI it is a redacted note — the bearer token itself is
+  /// never put in the message.
+  final String detail;
+
+  /// Builds the exception for [channel] with the non-secret [detail].
+  const IdentityResolutionException(this.channel, this.detail);
+
+  @override
+  String toString() =>
+      'IdentityResolutionException($channel): no identity binding — $detail';
+}
+
+/// Resolves an inbound credential to a [ResolvedIdentity], exactly once at
+/// the edge (AC-7).
+///
+/// Two channels, two credential kinds: an OpenAI bearer token and a
+/// Telegram user id. Each is looked up in its own binding map, built into a
+/// `tom_core_kernel` [TomPrincipal] (the "internal principal" of proto spec
+/// § 7.1), and projected to the minimal [ResolvedIdentity] the dispatcher
+/// threads into the memory scope. Stateless after construction; the binding
+/// maps are immutable.
+final class IdentityResolver {
+  /// OpenAI bearer token → binding. The token is a secret used only as a
+  /// lookup key; the resulting [ResolvedIdentity.principalId] is the
+  /// binding's non-secret id, never the token.
+  final Map<String, IdentityBinding> _byBearerToken;
+
+  /// Telegram user id → binding.
+  final Map<String, IdentityBinding> _byTelegramUserId;
+
+  /// Builds a resolver over the given credential → binding maps. Both maps
+  /// are copied defensively into unmodifiable views so the registry cannot
+  /// be mutated after construction.
+  IdentityResolver({
+    Map<String, IdentityBinding> bearerTokenBindings = const {},
+    Map<String, IdentityBinding> telegramUserIdBindings = const {},
+  })  : _byBearerToken = Map.unmodifiable(bearerTokenBindings),
+        _byTelegramUserId = Map.unmodifiable(telegramUserIdBindings);
+
+  /// Resolves an OpenAI [bearerToken] to its [ResolvedIdentity].
+  ///
+  /// Throws [IdentityResolutionException] when the token has no binding. The
+  /// token is treated as a secret — it is never echoed into the exception
+  /// or the resolved identity.
+  ResolvedIdentity resolveOpenAiBearer(String bearerToken) {
+    final binding = _byBearerToken[bearerToken];
+    if (binding == null) {
+      throw const IdentityResolutionException(
+        'openai',
+        'unrecognised bearer token',
+      );
+    }
+    return _project(binding);
+  }
+
+  /// Resolves a Telegram [userId] to its [ResolvedIdentity].
+  ///
+  /// Throws [IdentityResolutionException] (carrying the public [userId])
+  /// when the user id has no binding.
+  ResolvedIdentity resolveTelegramUser(String userId) {
+    final binding = _byTelegramUserId[userId];
+    if (binding == null) {
+      throw IdentityResolutionException(
+        'telegram',
+        'unrecognised user id $userId',
+      );
+    }
+    return _project(binding);
+  }
+
+  /// Builds a kernel [TomPrincipal] from [binding] and projects it to the
+  /// minimal [ResolvedIdentity].
+  ///
+  /// The intermediate `TomPrincipal` is the "internal principal" proto spec
+  /// § 7.1 requires; the projection reads the principal's facts back out so
+  /// the handle is genuinely derived *through* the kernel primitive, not
+  /// assembled beside it.
+  ResolvedIdentity _project(IdentityBinding binding) {
+    final principal = TomPrincipal(
+      user: TomUser(
+        id: binding.numericId,
+        username: binding.username,
+        firstname: binding.displayName,
+      ),
+      authenticated: true,
+    );
+    return ResolvedIdentity(
+      principalId: binding.principalId,
+      displayName: principal.user.firstname,
+      claims: binding.claims,
+    );
+  }
+}
