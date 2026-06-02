@@ -192,7 +192,20 @@
 ///   graceful "slow down", Telegram). Bucket state is in-process for the
 ///   prototype (Q-E.2.5); refill is read through an injectable clock. The
 ///   failure→wire shaping and the boot wiring of the limiter are E.41+.
-/// - E.30 – E.50 ⏳ — quota, the anchor pre-check, the kind-hint classifier,
+/// - E.30 ✅ — per-principal daily LLM-call quota (edge_security/): the
+///   long-horizon cap, the third edge-security check, run after the burst
+///   throttle (E.29) and before an `Access` exists (AC-4). `DailyQuotaLimiter`
+///   owns one calendar-day counter per `principalId` (the non-secret stable
+///   id — never the bearer token) under a single `DailyQuotaPolicy.dailyCap`;
+///   `check` counts one call and returns, or throws `DailyQuotaExceeded`
+///   (carrying a `retryAfter` until the next day boundary) once the cap is
+///   reached. A rejected request is not counted; the counter resets on the
+///   day roll-over read through an injectable clock. Every failure maps to
+///   `quotaHttpStatus` (`429`, the same status the burst throttle uses,
+///   OpenAI) / `telegramQuotaMessage` (a graceful "daily limit reached",
+///   Telegram). Counter state is in-process for the prototype (Q-E.2.5 /
+///   Q-E.30.1). The failure→wire shaping and the boot wiring are E.41+.
+/// - E.31 – E.50 ⏳ — the anchor pre-check, the kind-hint classifier,
 ///   delivery, boot, and the end-to-end smoke.
 library;
 

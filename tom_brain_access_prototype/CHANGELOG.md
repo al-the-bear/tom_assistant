@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.30)
+
+Per-principal daily LLM-call quota — the third edge-security check
+(Plan E.30; proto spec § 8; AC-4). Runs after the token-bucket rate limiter
+(E.29) and before an `Access` is constructed; a request that has spent its
+principal's daily allowance never becomes an `Access`. A failure surfaces as
+`429` (OpenAI) / a graceful "daily limit reached" message (Telegram).
+
+- `lib/src/edge_security/quota.dart` — **new**.
+  - `DailyQuotaPolicy` — immutable cap config (`dailyCap`); validates
+    `dailyCap >= 1`.
+  - `DailyQuotaLimiter` — one calendar-day counter per non-secret
+    `principalId` (never the bearer token); `check(principalId)` counts one
+    call and returns, or throws `DailyQuotaExceeded`. The counter resets on
+    the calendar-day roll-over (in the clock's zone); a rejected request is
+    not counted. Day boundary read through an injectable `clock` seam.
+    In-process counter state for the prototype (Q-E.2.5 / Q-E.30.1).
+  - `DailyQuotaExceeded` — typed failure carrying the non-secret
+    `principalId` and a strictly-positive `retryAfter` (the wait until the
+    next day boundary).
+  - `quotaHttpStatus` (`429`, aliasing the rate limiter's
+    `rateLimitHttpStatus` — one underlying source) / `telegramQuotaMessage`
+    — the single channel-mapping constants the adapters (E.41+) read.
+- `lib/src/edge_security/edge_security.dart` — exports `quota.dart`
+  (E.30 ✅; E.31 still pending).
+- `lib/tom_brain_access_prototype.dart` — E.30 ✅ note; pending range
+  advanced `E.30 – E.50 ⏳` → `E.31 – E.50 ⏳`.
+- `test/edge_security/quota_test.dart` — **new**, 16 assertions
+  (policy validation, daily allowance, per-principal isolation, day-boundary
+  reset, `retryAfter`, UTC day boundary, argument validation, channel-mapping
+  constants + barrel surface). Suite green at 303 / 303.
+
 ## 0.0.1 — 2026-06-02 (Phase E.29)
 
 Per-principal token-bucket rate limiting — the second edge-security check

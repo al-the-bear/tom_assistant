@@ -6,7 +6,18 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.29 — per-principal token-bucket rate limiting is the second
+> **Status:** E.30 — the per-principal daily LLM-call quota is the third
+> `## E.6 — Edge security` check: `DailyQuotaLimiter` owns one calendar-day
+> counter per non-secret `principalId` under a single `DailyQuotaPolicy.dailyCap`
+> and is called once per inbound request, after the burst throttle (E.29) and
+> before an `Access` exists (AC-4); `check` counts one call and returns, or
+> throws `DailyQuotaExceeded` (carrying a `retryAfter` until the next day
+> boundary) once the cap is reached. A rejected request is not counted; the
+> counter resets on the day roll-over read through an injectable clock. A
+> failure maps to `quotaHttpStatus` (`429`, the same status the burst throttle
+> uses, OpenAI) / `telegramQuotaMessage` (a graceful "daily limit reached",
+> Telegram). Counter state is in-process for the prototype.
+> E.29 — per-principal token-bucket rate limiting is the second
 > `## E.6 — Edge security` check: `RateLimiter` owns one continuous-refill
 > `RateLimitPolicy` bucket per non-secret `principalId` and is called once
 > per inbound request, after auth (E.28) and before an `Access` exists

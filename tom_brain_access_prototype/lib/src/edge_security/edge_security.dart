@@ -22,8 +22,15 @@
 // the non-secret `principalId`, run after auth and before an `Access`
 // exists; a failure maps to `429` (OpenAI) / a graceful "slow down" message
 // (Telegram). In-process bucket state for the prototype (Q-E.2.5).
-// E.30 ⏳ — per-principal daily LLM-call quota.
+// E.30 ✅ — per-principal daily LLM-call quota (`DailyQuotaLimiter` +
+// `DailyQuotaPolicy`, `DailyQuotaExceeded`, `quotaHttpStatus` /
+// `telegramQuotaMessage`): the long-horizon cap — at most `dailyCap` admitted
+// calls per calendar day — keyed on the non-secret `principalId`, run after
+// the burst throttle (E.29) and before an `Access` exists; a failure maps to
+// `429` (OpenAI) / a graceful "daily limit reached" message (Telegram).
+// In-process counter state for the prototype (Q-E.2.5 / Q-E.30.1).
 // E.31 ⏳ — the anchor pre-check.
 
 export 'bearer_auth.dart';
 export 'rate_limiter.dart';
+export 'quota.dart';
