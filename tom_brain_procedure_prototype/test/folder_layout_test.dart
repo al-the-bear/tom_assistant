@@ -1,14 +1,16 @@
-// C.8 folder-layout contract test.
+// Folder-layout contract test (C.8 engine layout + D.6 dispatcher half).
 //
-// Locks the `lib/src/<folder>/` subfolder inventory required by Plan
-// step C.8 (the nine engine subfolders), the per-folder barrel-file
-// convention used across the Tom Brain projects (siblings:
-// `tom_brain_shared`, `tom_brain_memory`, `tom_brain_substrate`), and
-// the top-level barrel re-export.
+// Locks the `lib/src/<folder>/` subfolder inventory: the nine engine
+// subfolders required by Plan step C.8 plus the `dispatcher/` subfolder
+// added by Plan step D.6 (the first dispatcher-half addition to this
+// project). It also locks the per-folder barrel-file convention used
+// across the Tom Brain projects (siblings: `tom_brain_shared`,
+// `tom_brain_memory`, `tom_brain_substrate`) and the top-level barrel
+// re-export.
 //
 // What this test asserts:
 //
-//   1. Each of the nine subfolders exists under `lib/src/`.
+//   1. Each of the ten subfolders exists under `lib/src/`.
 //   2. Each subfolder contains a `<folder>.dart` barrel file.
 //   3. The top-level barrel `lib/tom_brain_procedure_prototype.dart`
 //      re-exports every one of those subfolder barrels (one `export`
@@ -32,13 +34,15 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 const _requiredSubfolders = <String>[
-  // Per Plan step C.8 — order matters only as documentation; the test
-  // checks the set, not the order. Subsequent plan steps may extend
-  // the inventory (and must update this list, which forces review).
+  // Per Plan steps C.8 (engine half) + D.6 (dispatcher half) — order
+  // matters only as documentation; the test checks the set, not the
+  // order. Subsequent plan steps may extend the inventory (and must
+  // update this list, which forces review).
   'api', // C.38–C.41 — ProcedureEngine surface
   'bridges', // C.11–C.15 — MemoryBridge / SubstrateBridge
   'config', // C.42–C.45 — EngineConfig + observability
   'd4rt_host', // C.16–C.18 — D4rtDcliHost
+  'dispatcher', // D.6–D.50 — Dispatcher.accept + coordinator + fallback
   'preemption', // C.34–C.37 — PreemptionState + deadline
   'primitives_native', // C.19–C.22 — runProcedure / note / yield
   'procedure_store', // C.23–C.26 — store + loader + resolver
@@ -47,13 +51,13 @@ const _requiredSubfolders = <String>[
 ];
 
 void main() {
-  group('C.8 folder layout', () {
+  group('folder layout (C.8 engine + D.6 dispatcher)', () {
     test('subfolder inventory matches the expected size and is unique', () {
       // Sanity-check the list itself so that a stray edit to
       // `_requiredSubfolders` cannot silently shrink or duplicate the
-      // contract. C.8 seeds 9.
-      expect(_requiredSubfolders, hasLength(9));
-      expect(_requiredSubfolders.toSet(), hasLength(9),
+      // contract. C.8 seeds 9; D.6 adds `dispatcher/` for 10.
+      expect(_requiredSubfolders, hasLength(10));
+      expect(_requiredSubfolders.toSet(), hasLength(10),
           reason: 'subfolder list must be free of duplicates');
     });
 

@@ -53,7 +53,7 @@ library;
 // through `package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart`
 // without further changes here. Order mirrors the engine pipeline:
 // host → bridges → native primitives → store → validator → recorder →
-// preemption → api → config.
+// preemption → api → config, then the Phase D dispatcher half on top.
 export 'src/d4rt_host/d4rt_host.dart';
 export 'src/bridges/bridges.dart';
 export 'src/primitives_native/primitives_native.dart';
@@ -63,3 +63,9 @@ export 'src/recorder/recorder.dart';
 export 'src/preemption/preemption.dart';
 export 'src/api/api.dart';
 export 'src/config/config.dart';
+
+// D.6 — dispatcher half. The dispatcher consumes the engine surface
+// above (`ProcedureEngine`) and adds the `accept(Access)` entry point,
+// the foreground/background coordinator, fallback, and the free-time
+// scheduler. Empty barrel at D.6; symbols land across D.11–D.50.
+export 'src/dispatcher/dispatcher.dart';
