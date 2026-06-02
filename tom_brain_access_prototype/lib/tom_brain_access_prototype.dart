@@ -440,6 +440,16 @@
 ///   `permission` / `root`), and the `KindHintDecision` / `AccessChannel` /
 ///   `BearerAuthFailureReason` enums + the edge-security status vocabulary — are
 ///   pinned by `test/e51_spec_section_attestation_test.dart`.
+/// - E.52 ✅ — Phase-E reuse-extraction pass (confirmation only; no production
+///   change). The four plan-named types — `OutboundChunk`, `InboundRequest`,
+///   `DeliveryStalled`, `BackpressureSignal` — already live exactly once in
+///   `tom_brain_shared` (the move was pulled forward at D.11 / E.39 per D.4); a
+///   survey of the Phase-E surface found no further cross-phase type to
+///   promote (no access-defined type is referenced by the dispatcher / engine
+///   package). The single home is pinned by
+///   `test/e52_reuse_extraction_test.dart`, which flows the four shared types
+///   across the access ⇄ dispatcher package boundary. Details in
+///   `prototype_implementation_details.md` § E.52.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
