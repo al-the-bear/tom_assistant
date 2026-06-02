@@ -44,7 +44,8 @@
 // that off the recall it already ran and, on a match, emits an
 // `automation_candidate` note on the run trail — the wire the dispatcher's
 // harvester (D.31) keys on to consider turning a repeated prompt into a
-// procedure. The remaining step (tests D.42) lands next.
+// procedure. D.42 then proves the whole body composes end-to-end (the
+// consolidated post-condition bundle, `d42_answer_with_memory_consolidated_test.dart`).
 //
 // ── Why the `produced_by` edge is the engine's job, not the body's ──
 //

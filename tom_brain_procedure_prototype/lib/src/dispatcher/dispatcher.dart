@@ -284,7 +284,13 @@
 //     (`d41_answer_with_memory_automation_test.dart`). `requires`→[recall,
 //     llm, persist, edge, stack.push, note]. The check reads the recall
 //     already in hand; no second memory query (Q-D.41.1).
-//   - D.42 — `answer_with_memory_v1` consolidated body tests.
+//   - D.42 ✅ — `answer_with_memory_v1` consolidated body proof: one synthetic
+//     inbound prompt is driven through the engine against the shipped disk
+//     procedure and a single run is asserted to satisfy the whole
+//     post-condition bundle (streamed answer + `Event` + `Conclusion` +
+//     `derived_from`/`produced_by` edges, plus the cold-path `interests` push
+//     when applicable), proving the D.37–D.41 steps compose
+//     (`d42_answer_with_memory_consolidated_test.dart`). No body change.
 //   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
 //   - D.47–D.50 — `DispatcherConfig` + observability.
 //
