@@ -25,19 +25,7 @@
 // rejects everything else with `UnsupportedProcedureKind`, so an unknown
 // kind fails loudly at selection rather than silently here.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show Access;
-
-/// Well-known inbound kinds.
-///
-/// The classifier emits open kind strings; only [userPrompt] carries
-/// meaning in the prototype (it is the one kind D.16 selection routes).
-/// This holder exists so the stub fallback and D.16 selection share one
-/// spelling of the token instead of duplicating a magic string.
-abstract final class InboundKinds {
-  /// A plain user prompt — the only kind the prototype routes
-  /// (`user_prompt` → `answer_with_memory_v1`, D.16).
-  static const String userPrompt = 'user_prompt';
-}
+import 'package:tom_brain_shared/tom_brain_shared.dart' show Access, InboundKinds;
 
 /// The fallback classifier invoked when an [Access] carries no kind-hint.
 ///

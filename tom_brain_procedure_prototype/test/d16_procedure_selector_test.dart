@@ -13,11 +13,11 @@ import 'package:test/test.dart';
 
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
     show
-        InboundKinds,
         ProcedureSelector,
         SystemProcedures,
         UnsupportedProcedureKind,
         defaultProcedureRouting;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show InboundKinds;
 
 void main() {
   group('D.16 selection — accept and route', () {

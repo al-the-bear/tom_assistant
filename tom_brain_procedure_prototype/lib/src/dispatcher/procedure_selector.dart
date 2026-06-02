@@ -14,7 +14,8 @@
 // unanticipated kind fails loudly (Q-D.15.1) instead of being silently
 // dropped or guessed.
 
-import 'inbound_classifier.dart' show InboundKinds;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show InboundKinds;
+
 import 'unsupported_procedure_kind.dart';
 
 /// Well-known system-procedure ids the dispatcher selects.

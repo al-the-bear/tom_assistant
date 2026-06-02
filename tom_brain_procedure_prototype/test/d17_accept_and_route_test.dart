@@ -39,7 +39,6 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
     show
         Dispatcher,
         InboundClassifier,
-        InboundKinds,
         ProcedureSelector,
         SystemProcedures,
         UnsupportedProcedureKind;
@@ -47,6 +46,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
         Access,
         DeliverCallback,
+        InboundKinds,
         InboundRequest,
         OutboundChunk,
         Persona,

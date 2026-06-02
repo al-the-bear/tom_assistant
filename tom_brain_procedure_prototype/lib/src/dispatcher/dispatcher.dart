@@ -50,8 +50,8 @@
 // the pipeline. `InboundClassifier.classify(Access)` accepts the Phase-E
 // kind-hint verbatim when present and falls back to the prototype's
 // `classify_inbound_v1` stub (every un-hinted inbound → `user_prompt`)
-// otherwise. Kinds are open strings; `InboundKinds.userPrompt` is the one
-// the prototype routes. Exported below.
+// otherwise. Kinds are open strings; `InboundKinds.userPrompt` (in
+// `tom_brain_shared` since D.52) is the one the prototype routes.
 //
 // D.16 ✅ — procedure selection (`procedure_selector.dart` +
 // `unsupported_procedure_kind.dart`): stage three of the pipeline.
@@ -388,6 +388,17 @@
 //     threshold/window, the `user_prompt` routing, the queue-depth default,
 //     and the five-field `Access` shape — so any drift fails loudly.
 //
+//   - D.52 ✅ — reuse-extraction pass. `InboundKinds` (the inbound-kind
+//     vocabulary) promoted to `tom_brain_shared` (`access/inbound_kinds.dart`)
+//     beside the `InboundRequest.kindHint` field it names: Phase E produces
+//     the hint, Phase D consumes it, so the spelling belongs to the shared
+//     layer. The dispatcher classifier / selector now import it from shared;
+//     `SystemProcedures` (the procedure-id holder) stays here — Phase E never
+//     selects a procedure. `RunSlot` / `RunOutcome` stay coordinator-internal
+//     (observed transitively via `DispatcherEvent`, not produced by the edge).
+//     Pinned by `test/d52_reuse_extraction_test.dart`. See § D.52 in
+//     `prototype_implementation_details.md`.
+//
 // See `_ai/quests/tom_brain/tom_brain_procedure_prototype_specification.md`
 // for the authoritative contract this module implements.
 library;
@@ -440,8 +451,11 @@ export 'free_time_scheduler.dart'
         defaultHotPriorityThreshold,
         defaultHotSizeThreshold,
         defaultSchedulableStacks;
+// `InboundKinds` moved to `tom_brain_shared` at the D.52 reuse-extraction
+// pass (Phase E produces the hint, Phase D consumes it); consumers import
+// it from `package:tom_brain_shared/tom_brain_shared.dart`.
 export 'inbound_classifier.dart'
-    show ClassifyFallback, InboundClassifier, InboundKinds, classifyInboundV1;
+    show ClassifyFallback, InboundClassifier, classifyInboundV1;
 export 'memory_provisioning.dart'
     show
         MemoryProvisioner,

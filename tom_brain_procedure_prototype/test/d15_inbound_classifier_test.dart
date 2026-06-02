@@ -15,10 +15,10 @@ import 'dart:async';
 import 'package:test/test.dart';
 
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
-    show InboundClassifier, InboundKinds, classifyInboundV1;
+    show InboundClassifier, classifyInboundV1;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show Access, InboundRequest, OutboundChunk, Persona, ResolvedIdentity,
-        Session;
+    show Access, InboundKinds, InboundRequest, OutboundChunk, Persona,
+        ResolvedIdentity, Session;
 
 /// Builds a synthetic [Access]. The deliver callback is inert: the
 /// classifier never touches it.

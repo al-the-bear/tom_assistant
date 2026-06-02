@@ -158,3 +158,15 @@ export 'src/access/access.dart'
 // counts only — never the prompt text or the answer body.
 export 'src/access/access.dart'
     show AccessCreated, AccessDelivered, AccessEvent, AccessFailed;
+
+// D.52 — access/ inbound-kind vocabulary: `InboundKinds` names the
+// well-known inbound kind strings the Phase-E heuristic classifier (E.33)
+// writes into `InboundRequest.kindHint` and the Phase-D dispatcher
+// classifier (D.15) reads back. Promoted from
+// `tom_brain_procedure_prototype` at the Phase-D review reuse-extraction
+// pass (D.51 surfaced it; D.52 moves it) so the edge producer and the
+// dispatcher consumer share one spelling without Phase E depending on the
+// dispatcher package for a single constant. The procedure-id holder
+// (`SystemProcedures`) stays with the dispatcher — Phase E never selects a
+// procedure.
+export 'src/access/inbound_kinds.dart' show InboundKinds;

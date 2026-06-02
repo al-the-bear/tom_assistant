@@ -27,6 +27,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         Access,
         BrainEvent,
         DeliverCallback,
+        InboundKinds,
         InboundRequest,
         OutboundChunk,
         Persona,
