@@ -43,7 +43,7 @@
 // symbols land incrementally across the remaining Phase D steps:
 //
 //   - D.6  ✅ — `dispatcher/` sub-folder + barrel (this file).
-//   - D.7  — `scripts/system/` + `scripts/user/` tree.
+//   - D.7  ✅ — `scripts/system/` + `scripts/user/` tree.
 //   - D.8  — `answer_with_memory_v1.dart` stub.
 //   - D.11–D.13 — the `Access` class (declared in `tom_brain_shared`)
 //     and its consumption boundary here.
