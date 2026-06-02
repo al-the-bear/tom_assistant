@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.13)
+
+OpenAI HTTP/SSE adapter — `chat/completions` SSE streaming response:
+
+- `lib/src/adapters/openai_http_sse/chat_completion_sse.dart` —
+  `ChatCompletionSseRenderer`, the pure wire-format renderer. `render(...)`
+  maps a `Stream<OutboundChunk>` onto OpenAI `chat.completion.chunk`
+  `data: {…}\n\n` frames (one per chunk, `choices[0].delta.content`,
+  `finish_reason: "stop"` on the final chunk) terminated by a single
+  `data: [DONE]\n\n` line. `forModel(...)` mints a `chatcmpl-<ULID>` id via
+  `tom_brain_shared`'s `Ulid` generator and stamps Unix-epoch `created`.
+- `lib/src/adapters/openai_http_sse/openai_http_sse_adapter.dart` — the
+  `POST /v1/chat/completions` handler now renders a `text/event-stream`
+  response for a well-formed *streaming* request, sourcing chunks from the
+  injected `ChatAnswerStream` seam (a new constructor parameter). With no
+  source wired it answers `501`; a non-streaming request answers `501`
+  (the JSON body is E.14). Adds the `ChatAnswerStream` typedef and the
+  `text/event-stream` content type.
+- `test/adapters/chat_completion_sse_test.dart` — 9 assertions: renderer
+  frame shape (content / final / empty-final / `forModel`), stream
+  ordering + `[DONE]` terminator, and the adapter streaming path
+  (200 + `text/event-stream` + ordered frames; no-source → 501;
+  non-streaming → 501).
+
 ## 0.0.1 — 2026-06-02 (Phase E.12)
 
 OpenAI HTTP/SSE adapter — `chat/completions` request parsing:

@@ -42,11 +42,17 @@
 /// - E.12 ✅ — `chat/completions` request parsing: `ChatCompletionRequest` /
 ///   `ChatCompletionParseError` decode the JSON body (`messages` → prompt
 ///   text, `model` → persona id, `stream` → render flag); a malformed body
-///   returns the OpenAI `400 invalid_request_error` envelope, a well-formed
-///   one falls through to the `501` response path until E.13–E.15 land it.
-/// - E.13 – E.50 ⏳ — OpenAI response generation (SSE + JSON), persona
-///   mapping, embeddings, models, Telegram adapter, identity / session /
-///   persona, edge security, kind-hint classifier, delivery, boot, and the
+///   returns the OpenAI `400 invalid_request_error` envelope.
+/// - E.13 ✅ — `chat/completions` SSE streaming response:
+///   `ChatCompletionSseRenderer` maps a `Stream<OutboundChunk>` onto OpenAI
+///   `chat.completion.chunk` `data: {…}\n\n` frames terminated by
+///   `data: [DONE]\n\n`. A well-formed *streaming* request renders a
+///   `text/event-stream` response from the injected `ChatAnswerStream`
+///   seam (boot wires the real source, E.41+); a non-streaming request
+///   falls through to the `501` JSON path until E.14.
+/// - E.14 – E.50 ⏳ — OpenAI non-streaming JSON response, persona mapping,
+///   embeddings, models, Telegram adapter, identity / session / persona,
+///   edge security, kind-hint classifier, delivery, boot, and the
 ///   end-to-end smoke.
 library;
 

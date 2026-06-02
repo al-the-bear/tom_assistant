@@ -8,11 +8,12 @@
 //   2. The same parsing reached black-box through `OpenAiHttpSseAdapter`'s
 //      shelf handler (Q-E.5.2: a synthesised `shelf.Request`, no socket):
 //      a malformed body becomes the OpenAI `400 invalid_request_error`
-//      envelope with the offending `param`; a well-formed body gets past
-//      parsing to the not-yet-wired `501` response path (E.13 – E.15).
+//      envelope with the offending `param`; a well-formed non-streaming
+//      body gets past parsing to the not-yet-wired `501` JSON path (E.14).
 //
 // E.12 is parsing only: persona resolution (E.15), response generation
-// (E.13 / E.14), and the dispatcher (boot, E.41+) are not asserted here.
+// (the streaming render is E.13, the JSON body E.14), and the dispatcher
+// (boot, E.41+) are not asserted here.
 
 import 'dart:convert';
 
@@ -280,7 +281,7 @@ void main() {
       expect(error['param'], 'messages');
     });
 
-    test('well-formed request gets past parsing → 501 (E.13 – E.15)',
+    test('well-formed non-streaming request gets past parsing → 501 (E.14)',
         () async {
       final Response response = await _call(
         adapter,

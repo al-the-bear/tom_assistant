@@ -10,7 +10,10 @@
 //
 // E.11 lands the router scaffold (`OpenAiHttpSseAdapter`); the per-route
 // behaviour follows in E.12 – E.18. E.12 adds `ChatCompletionRequest` /
-// `ChatCompletionParseError` — the `chat/completions` request parser.
+// `ChatCompletionParseError` — the `chat/completions` request parser. E.13
+// adds `ChatCompletionSseRenderer` — the SSE streaming-response renderer —
+// and the `ChatAnswerStream` seam on the adapter.
 
 export 'chat_completion_request.dart';
+export 'chat_completion_sse.dart';
 export 'openai_http_sse_adapter.dart';

@@ -1,5 +1,6 @@
-// OpenAI-format HTTP/SSE inbound adapter — router + chat-request parsing
-// (E.11 scaffold, E.12 chat/completions request parsing).
+// OpenAI-format HTTP/SSE inbound adapter — router, chat-request parsing,
+// and the SSE streaming response (E.11 scaffold, E.12 request parsing,
+// E.13 streaming render).
 //
 // `OpenAiHttpSseAdapter` is the inbound edge for OpenAI-format traffic. It
 // exposes a self-contained `shelf_router.Router` (a `shelf.Handler`)
@@ -9,27 +10,43 @@
 //
 // Per-route behaviour lands across substeps; each route names the step that
 // fills it:
-//   - chat/completions request parsing → E.12 (this step — wired below)
-//   - SSE streaming response           → E.13
+//   - chat/completions request parsing → E.12 (wired)
+//   - SSE streaming response           → E.13 (this step — wired below)
 //   - non-streaming JSON response      → E.14
 //   - model-id → persona mapping       → E.15
 //   - `/v1/embeddings` passthrough     → E.16
 //   - `/v1/models` listing             → E.17
 //   - wire-format conformance tests    → E.18
 //
-// At E.12 the chat route validates its request body (returning the OpenAI
-// `400 invalid_request_error` envelope on malformed input) and then, having
-// nowhere yet to send a well-formed request, answers `501` naming the
-// response substeps. The embeddings and models routes remain `501` stubs
-// until their own substeps. Every route speaks the OpenAI dialect.
+// At E.13 the chat route renders an actual `text/event-stream` SSE response
+// for a well-formed *streaming* request — provided a chunk source has been
+// injected (the `answerStream` seam). The chunk source itself (the
+// dispatcher/engine, via the `DeliveryRegistry`) is wired at boot (E.41+);
+// until one is injected a streaming request answers `501`. A well-formed
+// *non-streaming* request still answers `501` (the JSON body is E.14). The
+// embeddings and models routes remain `501` stubs until their own substeps.
+// Every route speaks the OpenAI dialect.
 
 import 'dart:async';
 import 'dart:convert';
 
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import 'chat_completion_request.dart';
+import 'chat_completion_sse.dart';
+
+/// Produces the answer chunk stream for a parsed [ChatCompletionRequest].
+///
+/// This is the seam between the adapter (which owns the OpenAI wire format)
+/// and the cognition that produces the answer. At boot (E.41+) it is wired
+/// to the dispatcher/engine through the `DeliveryRegistry` (E.36); in tests
+/// it is a synthetic stream of [OutboundChunk]s. The adapter never produces
+/// chunks itself — it only renders them.
+typedef ChatAnswerStream = Stream<OutboundChunk> Function(
+  ChatCompletionRequest request,
+);
 
 /// The OpenAI-format HTTP/SSE inbound adapter.
 ///
@@ -55,11 +72,31 @@ class OpenAiHttpSseAdapter {
   /// `GET` — the persona-as-model listing (E.17).
   static const String modelsPath = '$basePath/models';
 
-  /// JSON media type for every response this adapter emits.
+  /// JSON media type for every JSON response this adapter emits.
   static const String _jsonContentType = 'application/json; charset=utf-8';
 
-  /// Builds the adapter with an empty (stub) routing table.
-  OpenAiHttpSseAdapter();
+  /// SSE media type for the streaming chat-completions response (E.13).
+  static const String _eventStreamContentType =
+      'text/event-stream; charset=utf-8';
+
+  /// The model id echoed into SSE frames when the request omits `model`.
+  /// This is a literal placeholder, NOT persona resolution — the real
+  /// `model` → `Persona` mapping (and its default) is E.15.
+  static const String _defaultModel = 'tom-assistant';
+
+  /// The injected answer-chunk source, or `null` when no cognition is wired
+  /// (the prototype's default until boot, E.41+). A streaming request with
+  /// no source answers `501`.
+  final ChatAnswerStream? _answerStream;
+
+  /// Builds the adapter.
+  ///
+  /// [answerStream] is the seam to the cognition that produces answer
+  /// chunks. When omitted, the chat route has no chunk source and a
+  /// streaming request answers `501`; boot (E.41+) supplies the real
+  /// dispatcher-backed producer, and tests supply a synthetic one.
+  OpenAiHttpSseAdapter({ChatAnswerStream? answerStream})
+      : _answerStream = answerStream;
 
   late final Router _router = _buildRouter();
 
@@ -79,14 +116,21 @@ class OpenAiHttpSseAdapter {
 
   /// `POST /v1/chat/completions`.
   ///
-  /// E.12 wires the **request parsing** half: read and validate the JSON
-  /// body into a [ChatCompletionRequest] (`messages` → prompt text, `model`
-  /// → persona id, `stream` → render flag). A malformed body returns the
-  /// OpenAI `400 invalid_request_error` envelope carrying the offending
-  /// `param`. A *well-formed* request currently has nowhere to go — response
-  /// generation (E.13 / E.14), persona resolution (E.15), and the dispatcher
-  /// wiring (boot, E.41+) are not yet in place — so it answers `501`, now
-  /// naming the response substeps rather than the parsing one.
+  /// E.12 wired the **request parsing** half; E.13 wires the **streaming
+  /// response**. Flow:
+  ///
+  ///   * Read and validate the JSON body into a [ChatCompletionRequest]. A
+  ///     malformed body returns the OpenAI `400 invalid_request_error`
+  ///     envelope carrying the offending `param`.
+  ///   * A well-formed **streaming** request (`stream: true`) renders an
+  ///     SSE `text/event-stream` response from the injected answer-chunk
+  ///     source ([_answerStream]). With no source wired (the default until
+  ///     boot, E.41+) it answers `501`.
+  ///   * A well-formed **non-streaming** request answers `501` — the JSON
+  ///     `chat.completion` body is E.14.
+  ///
+  /// Persona resolution (E.15) and the real chunk source (boot, E.41+) are
+  /// still out of scope here.
   Future<Response> _handleChatCompletions(Request request) async {
     final Object? json;
     try {
@@ -102,10 +146,7 @@ class OpenAiHttpSseAdapter {
     }
 
     return ChatCompletionRequest.parse(json).fold(
-      ok: (_) => _notImplemented(
-        'chat/completions response generation',
-        'E.13 – E.15',
-      ),
+      ok: _respondToChatCompletion,
       err: (ChatCompletionParseError error) => _errorResponse(
         statusCode: 400,
         message: error.message,
@@ -113,6 +154,50 @@ class OpenAiHttpSseAdapter {
         code: error.code,
         param: error.param,
       ),
+    );
+  }
+
+  /// Renders the response for a successfully-parsed chat request.
+  ///
+  /// Streaming requests get the E.13 SSE path; non-streaming requests await
+  /// E.14's JSON body and answer `501` for now.
+  Response _respondToChatCompletion(ChatCompletionRequest request) {
+    if (!request.stream) {
+      return _notImplemented(
+        'chat/completions non-streaming JSON response',
+        'E.14',
+      );
+    }
+    final ChatAnswerStream? answerStream = _answerStream;
+    if (answerStream == null) {
+      return _notImplemented(
+        'chat/completions answer source (no cognition wired)',
+        'boot E.41+',
+      );
+    }
+    return _streamingChatResponse(request, answerStream);
+  }
+
+  /// Builds the OpenAI SSE streaming response (proto spec § 5.3).
+  ///
+  /// Each [OutboundChunk] from [answerStream] becomes one `data: {…}\n\n`
+  /// `chat.completion.chunk` frame; the stream is terminated by a final
+  /// `data: [DONE]\n\n` line. The body is a lazily-rendered UTF-8 byte
+  /// stream, so chunks reach the client as the cognition produces them.
+  Response _streamingChatResponse(
+    ChatCompletionRequest request,
+    ChatAnswerStream answerStream,
+  ) {
+    final ChatCompletionSseRenderer renderer =
+        ChatCompletionSseRenderer.forModel(request.model ?? _defaultModel);
+    final Stream<List<int>> body =
+        renderer.render(answerStream(request)).transform(utf8.encoder);
+    return Response.ok(
+      body,
+      headers: <String, String>{
+        'content-type': _eventStreamContentType,
+        'cache-control': 'no-cache',
+      },
     );
   }
 

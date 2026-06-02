@@ -68,15 +68,16 @@ void main() {
       });
     });
 
-    group('mounted routes answer 501 until behaviour lands (E.13 – E.17)',
+    group('mounted routes answer 501 until behaviour lands (E.14 – E.17)',
         () {
       test(
-          'POST /v1/chat/completions with a well-formed body → 501 '
-          '(parsing done E.12; response generation lands E.13 – E.15)',
-          () async {
-        // E.12 now parses the body; a *valid* request gets past parsing and
-        // hits the not-yet-wired response path, still a 501. (A malformed
-        // body would be a 400 — asserted in the E.12 test.)
+          'POST /v1/chat/completions with a well-formed non-streaming body '
+          '→ 501 (parsing done E.12; the JSON body lands E.14)', () async {
+        // E.12 parses the body and E.13 renders the *streaming* response;
+        // this body omits `stream` (defaults to non-streaming), so it gets
+        // past parsing and hits the not-yet-wired JSON path — still a 501.
+        // (A malformed body would be a 400 — asserted in the E.12 test; a
+        // streaming body is asserted in the E.13 test.)
         final Response response = await _call(
           adapter,
           'POST',
