@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.32)
+
+Edge-security test sweep — closes `## E.6 — Edge security` on the test axis
+(Plan E.32; proto spec § "Edge-security tests"; AC-4). The four E.28 – E.31
+components each ship a per-component conformance suite; this sweep composes
+them in the documented chain order (auth → rate-limit → quota → anchor) and
+locks the cross-cutting properties those suites do not: auth failures
+surfacing in each channel's own dialect, the throttle / quota `429` and anchor
+`400`, the distinctness of the three OpenAI statuses, and the short-circuit
+invariant — no request becomes an `Access` unless every check passes, and the
+first failing check stops the rest. Purely tests; no production behaviour
+changes.
+
+- `test/edge_security/edge_security_sweep_test.dart` — **new**; 17 assertions.
+  - A test-local `runOpenAiEdgeChain` / `runTelegramEdgeChain` composes the
+    public E.28 – E.31 surface exactly as boot (E.41+) will, recording the
+    visited stages per run to prove the short-circuit.
+  - Happy path (both channels pass all four checks); per-channel auth failure
+    (OpenAI `401` vs. Telegram whitelist decline); rate-limit trigger (`429` /
+    slow-down message); daily-quota trigger (`429` / daily-limit message);
+    anchor rejection of every configured test signature (`400` / cannot-process
+    message); chain-ordering proofs (an anchor-tripping prompt from an
+    unauthenticated / throttled caller fails earlier and never reaches the
+    content scan); the three OpenAI statuses are distinct and the four Telegram
+    messages are distinct + non-empty.
+- `lib/src/edge_security/edge_security.dart` — E.32 ✅ note.
+- `lib/tom_brain_access_prototype.dart` — E.32 ✅ bullet; pending range
+  advanced to E.33 – E.50.
+- `README.md` — status block updated E.31 → E.32.
+
+## 0.0.1 — 2026-06-02 (Phase E.31)
+
+Anchor pre-check — the fourth and last edge-security check (Plan E.31;
+proto spec § 8 / § 14.5; AC-3). Runs after the daily quota (E.30) and before
+an `Access` is constructed; a prompt that trips a disallowed signature is
+refused at the edge and never becomes an `Access`. This is the access-side
+half of the assistant-dedication safety lever (the substrate-side injection
+half is B.46). A rejection surfaces as `400` (OpenAI — a structurally bad
+request, never the `429` of the rate/quota gates) / a graceful, signature-blind
+"cannot process" message (Telegram).
+
+- `lib/src/edge_security/anchor_precheck.dart` — **new**.
+  - `AnchorPolicy` — immutable, defensively-copied config holding the
+    configurable list of disallowed prompt-fragment signatures; validates
+    each signature is non-empty (an empty signature would match all traffic);
+    the list itself may be empty (the screen is then disabled). Pre-folds the
+    signatures to lower case once for case-insensitive matching.
+  - `AnchorPreCheck` — stateless, content-keyed screen (no per-principal state,
+    no clock, no I/O). `check(promptText)` returns normally when nothing
+    matches (or the screen is disabled), or throws `AnchorPreCheckRejected`
+    naming the first matching signature. Matching is case-insensitive substring.
+  - `AnchorPreCheckRejected` — typed failure carrying the matched signature
+    (config, non-secret — safe to log); never carries the rejected prompt text.
+  - `anchorPreCheckHttpStatus` (`400`) and `telegramAnchorMessage` (a graceful,
+    signature-blind "cannot process") — the single channel-mapping sources.
+- `lib/src/edge_security/edge_security.dart` — exports `anchor_precheck.dart`;
+  E.31 ✅ note (E.32 is the edge-security test sweep).
+- `lib/tom_brain_access_prototype.dart` — E.31 ✅ bullet; pending range
+  advanced to E.32 – E.50.
+- `test/edge_security/anchor_precheck_test.dart` — **new**; 16 assertions
+  (policy validation + immutability, reject/pass, case-insensitive substring
+  matching, configured-casing reporting, disabled screen, first-match
+  short-circuit, channel-mapping constants + barrel surface).
+
 ## 0.0.1 — 2026-06-02 (Phase E.30)
 
 Per-principal daily LLM-call quota — the third edge-security check

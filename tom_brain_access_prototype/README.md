@@ -6,7 +6,30 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.30 — the per-principal daily LLM-call quota is the third
+> **Status:** E.32 — the **edge-security test sweep** closes
+> `## E.6 — Edge security` on the test axis: a test-only composition of the four
+> E.28 – E.31 checks in the documented chain order (auth → rate-limit → quota →
+> anchor) locks the cross-cutting properties the per-component suites do not —
+> auth failures surfacing per channel (OpenAI `401` vs. the Telegram whitelist
+> decline), the rate-limit / quota `429` and anchor `400`, the distinctness of
+> the three OpenAI statuses, and the short-circuit invariant (AC-4): no request
+> becomes an `Access` unless it passes every check, and the first failing check
+> stops the rest so the cheaper identity / throttle checks shed load before the
+> content scan. E.32 is purely tests (no production change); boot wiring is E.41+.
+> E.31 — the anchor pre-check is the fourth and last
+> `## E.6 — Edge security` check: `AnchorPreCheck` is a stateless, content-keyed
+> screen over an `AnchorPolicy`'s configurable list of disallowed prompt-fragment
+> signatures (obvious prompt-injection patterns), matched case-insensitively as
+> substrings. It runs last in the edge chain (after auth / rate-limit / quota) and
+> before an `Access` exists (AC-3); `check` returns normally when nothing matches
+> (or the screen is disabled — an empty list), or throws `AnchorPreCheckRejected`
+> naming the matched signature. A rejection maps to `anchorPreCheckHttpStatus`
+> (`400` — a structurally bad request, never the `429` of the rate/quota gates,
+> OpenAI) / `telegramAnchorMessage` (a graceful, signature-blind "cannot process",
+> Telegram). This is the access-side half of the assistant-dedication safety lever
+> (def § 14.5); the substrate-side injection half is B.46; E.56 proves no inbound
+> prompt reaches the dispatcher without passing it.
+> E.30 — the per-principal daily LLM-call quota is the third
 > `## E.6 — Edge security` check: `DailyQuotaLimiter` owns one calendar-day
 > counter per non-secret `principalId` under a single `DailyQuotaPolicy.dailyCap`
 > and is called once per inbound request, after the burst throttle (E.29) and

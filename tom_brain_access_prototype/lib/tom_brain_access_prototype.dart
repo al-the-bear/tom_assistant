@@ -205,8 +205,36 @@
 ///   OpenAI) / `telegramQuotaMessage` (a graceful "daily limit reached",
 ///   Telegram). Counter state is in-process for the prototype (Q-E.2.5 /
 ///   Q-E.30.1). The failure→wire shaping and the boot wiring are E.41+.
-/// - E.31 – E.50 ⏳ — the anchor pre-check, the kind-hint classifier,
-///   delivery, boot, and the end-to-end smoke.
+/// - E.31 ✅ — the anchor pre-check (edge_security/): the content screen, the
+///   fourth and last edge-security check, run after the quota (E.30) and
+///   before an `Access` exists (AC-3). `AnchorPreCheck` is stateless and
+///   content-keyed (not principal-keyed) — it screens the prompt *text*
+///   against an `AnchorPolicy`'s configurable list of disallowed
+///   prompt-fragment signatures (obvious prompt-injection patterns), matched
+///   case-insensitively as substrings. `check` returns normally when nothing
+///   matches (or the screen is disabled — an empty list), or throws
+///   `AnchorPreCheckRejected` naming the matched signature. A rejection maps to
+///   `anchorPreCheckHttpStatus` (`400` — a structurally bad request, never the
+///   `429` of the rate/quota gates, OpenAI) / `telegramAnchorMessage` (a
+///   graceful, signature-blind "cannot process", Telegram). This is the
+///   access-side half of the assistant-dedication safety lever (def § 14.5);
+///   the substrate-side injection half is B.46; E.56 proves no inbound prompt
+///   reaches the dispatcher without passing it. The failure-to-wire shaping,
+///   the boot wiring, and the `access.anchor.precheck.rejected` event are
+///   E.41+.
+/// - E.32 ✅ — the edge-security test sweep (test/edge_security/
+///   edge_security_sweep_test.dart): a test-only composition of the four
+///   E.28 – E.31 components in the documented chain order (auth → rate-limit
+///   → quota → anchor) that locks the cross-cutting properties the
+///   per-component suites do not — auth failures surfacing per channel
+///   (OpenAI `401` vs. the Telegram whitelist decline), the rate-limit / quota
+///   `429` and anchor `400`, the distinctness of the three statuses, and the
+///   short-circuit invariant (AC-4): no request becomes an `Access` unless it
+///   passes every check, and the first failing check stops the rest (the
+///   cheaper identity / throttle checks shed load before the content scan).
+///   No production change — E.32 is purely tests; the boot wiring stays E.41+.
+/// - E.33 – E.50 ⏳ — the kind-hint classifier, delivery, boot, and the
+///   end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

@@ -29,8 +29,24 @@
 // the burst throttle (E.29) and before an `Access` exists; a failure maps to
 // `429` (OpenAI) / a graceful "daily limit reached" message (Telegram).
 // In-process counter state for the prototype (Q-E.2.5 / Q-E.30.1).
-// E.31 ⏳ — the anchor pre-check.
+// E.31 ✅ — the anchor pre-check (`AnchorPreCheck` + `AnchorPolicy`,
+// `AnchorPreCheckRejected`, `anchorPreCheckHttpStatus` /
+// `telegramAnchorMessage`): the stateless content screen — a configurable
+// list of disallowed prompt-fragment signatures (obvious prompt-injection
+// patterns), matched case-insensitively — run last in the edge chain (after
+// auth / rate-limit / quota) and before an `Access` exists. A rejected prompt
+// maps to `400` (OpenAI, a structurally bad request, never `429`) / a graceful
+// "cannot process" message (Telegram). The access-side half of the
+// assistant-dedication safety lever (def § 14.5; the substrate-side injection
+// half is B.46; anchor-at-edge proof is E.56).
+// E.32 ✅ — the edge-security test sweep (test/edge_security/
+// edge_security_sweep_test.dart): a test-only composition of all four checks in
+// the documented chain order, locking that the four behave as one gate (AC-4) —
+// auth failures surface per channel, the rate-limit / quota `429` and anchor
+// `400` are distinct, and the first failing check short-circuits the rest. No
+// production change here — E.32 is purely tests; boot wiring is E.41+.
 
 export 'bearer_auth.dart';
 export 'rate_limiter.dart';
 export 'quota.dart';
+export 'anchor_precheck.dart';
