@@ -25,13 +25,25 @@
 // Stage-1: no edits, typing indicators, or inline buttons; Q-E.2.6 split) —
 // and sends them to the receiver through the backend's `sendMessage`.
 //
-// Scope discipline (Q-E.11.2 carried forward — same per-substep posture as
-// the OpenAI adapter's E.11 router scaffold). Through E.21 the adapter is
-// the lifecycle + inbound relay + inbound mapping + outbound consolidation,
-// nothing downstream:
+// E.22 adds the edge auth gate: [authorizedInboundRequests] is
+// [inboundRequests] filtered through the injected `TelegramWhitelist`
+// (telegram_whitelist.dart). A whitelisted sender's text message surfaces as
+// an `InboundRequest`; a non-whitelisted sender is rejected **at the edge** —
+// `telegramNotAuthorisedMessage` is sent back and the request is dropped, so
+// no `InboundRequest` surfaces and no `Access` is ever built for it (AC-3,
+// AC-4; proto spec § 6.4 / § 8). [inboundRequests] stays exposed as the
+// ungated mapped view (observability); boot (E.41) consumes the gated
+// [authorizedInboundRequests].
 //
-//   * NO whitelist auth. Rejecting a non-whitelisted sender at the edge
-//     is E.22.
+// Scope discipline (Q-E.11.2 carried forward — same per-substep posture as
+// the OpenAI adapter's E.11 router scaffold). Through E.22 the adapter is
+// the lifecycle + inbound relay + inbound mapping + outbound consolidation +
+// the whitelist gate, nothing downstream:
+//
+//   * NO rate limiting / quota / anchor pre-check. Those are the remaining
+//     edge-security checks (E.29 – E.31), owned by `edge_security/`.
+//   * NO identity / session / persona resolution (E.24 – E.27): the gate
+//     decides *whether* a sender proceeds, not *who* the principal is.
 //   * NO `DeliveryRegistry` wiring. Translating per-`Access` chunks to the
 //     channel and owning both delivery paths is E.36 – E.38; backpressure /
 //     `DeliveryStalled` is E.39 – E.40; boot (E.41+) is what constructs the
@@ -50,6 +62,7 @@ import 'package:tom_chattools/tom_chattools.dart';
 
 import 'telegram_inbound_mapping.dart';
 import 'telegram_outbound_mapping.dart';
+import 'telegram_whitelist.dart';
 
 /// Builds the concrete [ChatApi] a [TelegramAdapter] drives, from its
 /// [TelegramChatConfig].
@@ -69,16 +82,24 @@ typedef TelegramChatApiBuilder = ChatApi Function(TelegramChatConfig config);
 /// [inboundMessages]; [stop] cancels that subscription, disconnects the
 /// backend, and closes the relay.
 ///
-/// Through E.21 the adapter handles inbound (raw relay + mapped
-/// [inboundRequests]) and outbound ([sendAnswer] — consolidate a streamed
-/// answer into one, or on overflow the minimum number of, Telegram
-/// message(s)). The user-id whitelist (E.22) and the `DeliveryRegistry`
-/// wiring (E.36+) are later substeps that build on this.
+/// Through E.22 the adapter handles inbound (raw relay + mapped
+/// [inboundRequests] + whitelist-gated [authorizedInboundRequests]) and
+/// outbound ([sendAnswer] — consolidate a streamed answer into one, or on
+/// overflow the minimum number of, Telegram message(s)). The
+/// `DeliveryRegistry` wiring (E.36+) is a later substep that builds on this.
 final class TelegramAdapter {
   /// The chat backend this adapter drives. Injected so the adapter is
   /// testable against a loopback double; in production it is the real
   /// Telegram implementation built by [fromConfig].
   final ChatApi _chatApi;
+
+  /// The edge auth gate (E.22): the configured set of allowed Telegram
+  /// user ids. [authorizedInboundRequests] consults it before a request can
+  /// become an `Access`; a non-whitelisted sender is rejected at the edge.
+  /// Injected so a test can supply a known set; defaults to the closed
+  /// `TelegramWhitelist.empty()` (allows no one — Q-E.22.1), which boot
+  /// replaces with the configured set.
+  final TelegramWhitelist _whitelist;
 
   /// Buffers an answer's `OutboundChunk` stream and splits it into the
   /// size-compliant Telegram message(s) [sendAnswer] sends (E.21). Injected
@@ -108,12 +129,18 @@ final class TelegramAdapter {
   /// Telegram message(s) (E.21); it defaults to the real 4096-code-unit
   /// limit and is injectable so a test can force the overflow split with a
   /// small budget.
+  ///
+  /// [whitelist] is the edge auth gate (E.22); it defaults to the closed
+  /// `TelegramWhitelist.empty()` (allows no one — Q-E.22.1) and is injectable
+  /// so a test (and boot) can supply the configured set of allowed user ids.
   TelegramAdapter({
     required ChatApi chatApi,
     TelegramOutboundConsolidator outboundConsolidator =
         const TelegramOutboundConsolidator(),
+    TelegramWhitelist whitelist = const TelegramWhitelist.empty(),
   })  : _chatApi = chatApi,
-        _outbound = outboundConsolidator;
+        _outbound = outboundConsolidator,
+        _whitelist = whitelist;
 
   /// Builds an adapter over the Telegram backend described by [config].
   ///
@@ -126,12 +153,14 @@ final class TelegramAdapter {
     TelegramChatApiBuilder? buildChatApi,
     TelegramOutboundConsolidator outboundConsolidator =
         const TelegramOutboundConsolidator(),
+    TelegramWhitelist whitelist = const TelegramWhitelist.empty(),
   }) {
     final TelegramChatApiBuilder builder =
         buildChatApi ?? _buildTelegramChatApi;
     return TelegramAdapter(
       chatApi: builder(config),
       outboundConsolidator: outboundConsolidator,
+      whitelist: whitelist,
     );
   }
 
@@ -178,6 +207,51 @@ final class TelegramAdapter {
       .map((m) => m.toInboundRequest())
       .where((r) => r.isOk)
       .map((r) => (r as Ok<InboundRequest, TelegramInboundError>).value);
+
+  /// The whitelist-gated inbound `InboundRequest` stream (E.22).
+  ///
+  /// Each raw [inboundMessages] message is checked against the configured
+  /// [TelegramWhitelist] **before** it can become an `Access`:
+  ///
+  ///   * A **whitelisted** sender's text message is mapped (E.20) and
+  ///     surfaces here — exactly the requests boot (E.41) turns into
+  ///     `Access` objects. A whitelisted sender's non-text Stage-1 message
+  ///     is dropped silently (def § Q13), as on [inboundRequests].
+  ///   * A **non-whitelisted** sender is rejected at the edge:
+  ///     [telegramNotAuthorisedMessage] is sent back through the backend's
+  ///     `sendMessage`, and the request is dropped — nothing surfaces here,
+  ///     so no `Access` is ever built for it (AC-3, AC-4; proto spec
+  ///     § 6.4 / § 8).
+  ///
+  /// The auth check is the **outermost** gate: it runs before the inbound
+  /// text mapping, so even a non-text message from a non-whitelisted sender
+  /// draws the graceful decline (you authenticate the sender before you look
+  /// at the content). [inboundRequests] stays exposed as the ungated mapped
+  /// view for observability; boot consumes this gated stream. Broadcast:
+  /// safe to attach a listener before [start].
+  Stream<InboundRequest> get authorizedInboundRequests =>
+      _inbound.stream.asyncExpand(_gateInbound);
+
+  /// Applies the whitelist gate to one raw inbound [message] (E.22).
+  ///
+  /// Sends the graceful decline and emits nothing for a non-whitelisted
+  /// sender; otherwise maps the message (E.20) and emits the `InboundRequest`
+  /// for a whitelisted sender's text message (dropping a non-text one).
+  Stream<InboundRequest> _gateInbound(ChatMessage message) async* {
+    final String senderId = message.sender.id;
+    if (!_whitelist.isAllowed(senderId)) {
+      await _chatApi.sendMessage(
+        ChatReceiver.id(senderId),
+        telegramNotAuthorisedMessage,
+      );
+      return;
+    }
+    final Result<InboundRequest, TelegramInboundError> mapped =
+        message.toInboundRequest();
+    if (mapped.isOk) {
+      yield (mapped as Ok<InboundRequest, TelegramInboundError>).value;
+    }
+  }
 
   /// Consolidates a streamed [answer] and sends it to [receiver] as the
   /// Stage-1 Telegram outbound message(s) (E.21; proto spec § 6.3).

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.22)
+
+Telegram edge auth gate — the user-id whitelist (proto spec § 6.4 / § 8,
+Plan E.22). A non-whitelisted sender is rejected before any `Access` is
+constructed.
+
+- `lib/src/adapters/telegram/telegram_whitelist.dart` — `TelegramWhitelist`:
+  the pure, immutable configured set of allowed Telegram user ids;
+  `isAllowed(senderId)` is an exact, case-sensitive match. `.empty()` (and a
+  whitelist built from no ids) allows no one — a fail-closed default
+  (Q-E.22.1). Public constant `telegramNotAuthorisedMessage` (the graceful
+  plain-text decline).
+- `lib/src/adapters/telegram/telegram_adapter.dart` — adds the injectable
+  `whitelist` (constructor + `fromConfig`, default `TelegramWhitelist.empty()`)
+  and the `authorizedInboundRequests` stream: `inboundRequests` gated by the
+  whitelist via `asyncExpand`. A non-whitelisted sender draws
+  `telegramNotAuthorisedMessage` (sent back through `sendMessage`) and the
+  request is dropped — nothing surfaces, so no `Access` is built (AC-3, AC-4).
+  Auth is the outermost gate (runs before the inbound text mapping). The
+  ungated `inboundRequests` stays exposed for observability.
+- `test/adapters/telegram_whitelist_test.dart` — the E.22 contract test (13
+  assertions: pure-policy membership / closed default / defensive copy /
+  unmodifiable view; adapter gate — surface, decline, interleaving, silent
+  non-text drop, auth-outermost, default-closed, ungated view unaffected).
+
 ## 0.0.1 — 2026-06-02 (Phase E.21)
 
 Telegram outbound mapping (proto spec § 6.3, Plan E.21). An answer's

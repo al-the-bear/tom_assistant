@@ -16,9 +16,12 @@
 // surfaced on the adapter as `inboundRequests`). E.21 adds the outbound
 // mapping (`TelegramOutboundConsolidator`, surfaced on the adapter as
 // `sendAnswer`): a streamed answer → one consolidated message, or on
-// overflow the minimum number of size-compliant messages. The user-id
-// whitelist (E.22) builds on it in the following substep.
+// overflow the minimum number of size-compliant messages. E.22 adds the
+// edge auth gate (`TelegramWhitelist`, surfaced on the adapter as
+// `authorizedInboundRequests`): a non-whitelisted sender is rejected at the
+// edge with a graceful decline, before any `Access` is constructed.
 
 export 'telegram_adapter.dart';
 export 'telegram_inbound_mapping.dart';
 export 'telegram_outbound_mapping.dart';
+export 'telegram_whitelist.dart';

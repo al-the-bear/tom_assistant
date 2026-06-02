@@ -6,7 +6,7 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.21 — the Telegram outbound mapping is in place.
+> **Status:** E.22 — the Telegram edge auth gate is in place.
 > `TelegramAdapter` is built on `tom_chattools`' `ChatApi` +
 > `TelegramChatConfig` and runs **long-polling**: `start()` initialises the
 > backend and subscribes to its `onMessage` stream (relayed raw on
@@ -28,7 +28,15 @@ streams the answer back through the originating channel.
 > whole-character messages when it overflows (def § Q13 "no edits" preserved
 > — N append-only messages). The adapter surfaces it as `sendAnswer`
 > (plain-text sends: no `parseMode`, typing indicator, or inline buttons).
-> The user-id whitelist (E.22) builds on this.
+> E.22 adds the edge auth gate: `TelegramWhitelist` is the pure configured
+> set of allowed Telegram user ids (`isAllowed`); an empty whitelist allows
+> no one (closed default, Q-E.22.1). The adapter surfaces it as
+> `authorizedInboundRequests` — `inboundRequests` gated by the whitelist
+> *before* a request can become an `Access`. A non-whitelisted sender is
+> rejected at the edge: the graceful `telegramNotAuthorisedMessage` is sent
+> back and the request dropped, so no `Access` is ever built (proto spec
+> § 6.4 / § 8). Identity / session / persona resolution (E.24+) builds on
+> this.
 >
 > The OpenAI HTTP/SSE adapter (E.11 – E.18) is complete and its
 > wire-format conformance is locked. `OpenAiHttpSseAdapter` router scaffold

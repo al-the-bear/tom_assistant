@@ -118,9 +118,17 @@
 ///   edit). The adapter surfaces it as `TelegramAdapter.sendAnswer`
 ///   (plain-text sends: no `parseMode`, typing indicator, or inline
 ///   buttons — Stage-1, def § Q13).
-/// - E.22 – E.50 ⏳ — Telegram whitelist, identity / session / persona, edge
-///   security, kind-hint classifier, delivery, boot, and the end-to-end
-///   smoke.
+/// - E.22 ✅ — Telegram edge auth gate: `TelegramWhitelist` is the pure
+///   configured set of allowed Telegram user ids (`isAllowed`); an empty
+///   whitelist allows no one (closed default, Q-E.22.1). The adapter surfaces
+///   it as `TelegramAdapter.authorizedInboundRequests` — `inboundRequests`
+///   gated by the whitelist *before* a request can become an `Access`. A
+///   non-whitelisted sender is rejected at the edge: the graceful
+///   `telegramNotAuthorisedMessage` is sent back and the request dropped, so
+///   no `Access` is ever built (AC-3, AC-4; proto spec § 6.4 / § 8).
+/// - E.23 – E.50 ⏳ — Telegram roundtrip/conformance tests, identity /
+///   session / persona, edge security, kind-hint classifier, delivery, boot,
+///   and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
