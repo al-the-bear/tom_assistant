@@ -175,9 +175,21 @@
 // (`defaultFallbackClassifier`); `RunDeadlineExceeded` now implements the
 // `ClassifiedFailure` marker so the deadline path classifies without
 // string-matching. Each version attempt is recorded in the returned
-// `FallbackOutcome` so D.30 (`ProcedureFallback` events) and D.31 (sustained-
-// fallback `AutomationIdea` push) build on top without re-walking the chain.
-// Exported below.
+// `FallbackOutcome` so D.31 (sustained-fallback `AutomationIdea` push) builds
+// on top without re-walking the chain. Exported below.
+//
+// D.30 ✅ — `ProcedureFallback` event emission (`procedure_fallback_event.dart`
+// + `fallback_executor.dart`): the executor now takes an optional
+// `FallbackEventSink` (+ injectable `FallbackClock`) and emits one
+// `ProcedureFallback` on **every** fallback-class failure (def § 6: "Every
+// fallback emits a `ProcedureFallback` event"). A step-down carries the
+// next-older `toVersion` (`surfaced: false`); a fallback-class failure on the
+// oldest version surfaces with `toVersion: null` (`surfaced: true`).
+// Non-fallback failures (environmental / outside the four classes) and
+// successes emit nothing. In the prototype the singleton `[v1]` chain always
+// surfaces, but the event still fires — the observability surface is exercised
+// exactly as it will be once multiple versions exist. `run` threads optional
+// `runId` / `causedBy` onto the events. Exported below.
 //
 // Intentionally empty at D.6: this step adds the folder + barrel only,
 // matching the C.8 per-folder convention used across the Tom Brain
@@ -195,8 +207,9 @@
 //   - D.18–D.25 — `RunCoordinator` + `PreemptionController`.
 //   - D.26 ✅ — `inflight` integration (dispatcher half); D.27 ✅ —
 //     `recent_runs` integration (dispatcher half); D.28 ✅ — stack-state tests.
-//   - D.29 ✅ — `FallbackExecutor` version-chain walk; D.30–D.32 —
-//     `ProcedureFallback` events, sustained-fallback `AutomationIdea`, tests.
+//   - D.29 ✅ — `FallbackExecutor` version-chain walk; D.30 ✅ —
+//     `ProcedureFallback` events; D.31–D.32 — sustained-fallback
+//     `AutomationIdea`, tests.
 //   - D.33–D.35 — free-time scheduler stub.
 //   - D.36–D.42 — `answer_with_memory_v1` procedure script.
 //   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
@@ -214,6 +227,8 @@ export 'fallback_executor.dart'
         EnvironmentalFailure,
         FailureClassifier,
         FallbackAttempt,
+        FallbackClock,
+        FallbackEventSink,
         FallbackExecutor,
         FallbackOutcome,
         FallbackTrigger,
@@ -231,6 +246,7 @@ export 'preemption_event.dart'
         RunSlotEntered,
         RunSlotExited,
         RunSlotOutcome;
+export 'procedure_fallback_event.dart' show ProcedureFallback;
 export 'procedure_selector.dart'
     show ProcedureSelector, SystemProcedures, defaultProcedureRouting;
 export 'run_coordinator.dart'

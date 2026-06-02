@@ -22,27 +22,39 @@
 // so stepping down would only burn budget on a doomed retry. They surface
 // immediately.
 //
-// ── What D.29 implements (this file) ────────────────────────────────
+// ── What D.29 implements ────────────────────────────────────────────
 //
 // The stepping mechanism itself: classify each version's failure, and on
 // a fallback-class failure with an older version available, re-attempt at
 // the next version down; otherwise surface the failure. Each attempt is
-// recorded in the returned [FallbackOutcome] so the D.30 `ProcedureFallback`
-// event emitter and the D.31 sustained-fallback `AutomationIdea` push can be
-// built directly on top without re-deriving the chain walk.
+// recorded in the returned [FallbackOutcome] so the D.31 sustained-fallback
+// `AutomationIdea` push can be built directly on top without re-deriving the
+// chain walk.
 //
-// Deferred to later substeps (kept out of this file deliberately):
-//   - D.30 — emit a `ProcedureFallback` event per fallback edge.
-//   - D.31 — push an `AutomationIdea: revise procedure X` on sustained
-//     fallback (≥ 3 within 24 h for the same id).
+// ── What D.30 adds (this file + `procedure_fallback_event.dart`) ─────
+//
+// The `ProcedureFallback` event emission. The executor takes an optional
+// [FallbackEventSink]; on **every** fallback-class failure (a
+// [FallbackTrigger] fired) it emits one [ProcedureFallback] — `surfaced:
+// false` carrying `toVersion` when an older version exists (a step-down),
+// `surfaced: true` with `toVersion: null` when the failing version is the
+// oldest in the chain (the failure surfaces). Non-fallback failures
+// (environmental, or a typed failure outside the four classes) and successes
+// emit nothing. Def § 6: "Every fallback emits a `ProcedureFallback` event."
+//
+// Deferred to D.31 (kept out of this file): push an `AutomationIdea: revise
+// procedure X` to `automation_ideas` on sustained fallback (≥ 3 within 24 h
+// for the same id) — a windowed counter over the [ProcedureFallback] stream.
 //
 // In the prototype only `v1` of any procedure exists, so a chain is a
 // singleton and a fallback-class failure on it has nowhere to step: the
-// executor surfaces the failure (D.30), but the *machinery* — classify,
-// walk, record — runs exactly as it will once multiple versions exist.
+// executor surfaces the failure, but still emits one [ProcedureFallback]
+// (`surfaced: true`), so the observability surface is exercised exactly as it
+// will be once multiple versions exist.
 
 import '../procedure_store/procedure_loader.dart' show LoadedProcedure;
 import '../procedure_store/procedure_resolver.dart' show ProcedureResolver;
+import 'procedure_fallback_event.dart' show ProcedureFallback;
 
 /// The four typed run-failure classes that step the fallback chain down to
 /// an older version (def § 6, spec § 10.4, PE-6).
@@ -108,6 +120,20 @@ typedef FailureClassifier = FallbackTrigger? Function(Object error);
 /// Attempts one [version] of a procedure, completing with its value or
 /// throwing the failure the executor classifies.
 typedef VersionAttempt<T> = Future<T> Function(LoadedProcedure version);
+
+/// Sink the executor calls with each [ProcedureFallback] it emits (D.30).
+///
+/// Injected into [FallbackExecutor]; the composition root wires it to the
+/// dispatcher's event bus, and the D.31 sustained-fallback counter subscribes
+/// to the same stream. `null` (the default) disables emission.
+typedef FallbackEventSink = void Function(ProcedureFallback event);
+
+/// Clock the executor stamps onto every emitted event's `occurredAt` (D.30).
+///
+/// Must return a UTC `DateTime` (`BrainEvent.toJson` asserts the invariant).
+/// Injectable so a test can stamp deterministic timestamps instead of the
+/// wall clock — the same seam as `PreemptionController`'s `PreemptionClock`.
+typedef FallbackClock = DateTime Function();
 
 /// The default [FailureClassifier] (def § 6, § 14).
 ///
@@ -251,9 +277,20 @@ final class FallbackOutcome<T> {
 /// try next when a fallback-class failure occurs.
 final class FallbackExecutor {
   /// Builds an executor over [resolver]. [classifier] decides which failures
-  /// step the chain (default: [defaultFallbackClassifier]).
-  FallbackExecutor(this.resolver, {FailureClassifier? classifier})
-      : classify = classifier ?? defaultFallbackClassifier;
+  /// step the chain (default: [defaultFallbackClassifier]). [onFallback], when
+  /// supplied, receives a [ProcedureFallback] on every fallback-class failure
+  /// (D.30); [clock] stamps those events' `occurredAt` (default: the UTC wall
+  /// clock).
+  FallbackExecutor(
+    this.resolver, {
+    FailureClassifier? classifier,
+    FallbackEventSink? onFallback,
+    FallbackClock? clock,
+  })  : classify = classifier ?? defaultFallbackClassifier,
+        _onFallback = onFallback,
+        _clock = clock ?? _utcNow;
+
+  static DateTime _utcNow() => DateTime.now().toUtc();
 
   /// Resolves a procedure id to its fallback chain (C.25).
   final ProcedureResolver resolver;
@@ -261,8 +298,17 @@ final class FallbackExecutor {
   /// Decides which failures step the chain and which surface (PE-6).
   final FailureClassifier classify;
 
+  /// Sink for [ProcedureFallback] events, or `null` to disable emission.
+  final FallbackEventSink? _onFallback;
+
+  /// Stamps `occurredAt` on every emitted [ProcedureFallback].
+  final FallbackClock _clock;
+
   /// Walks the fallback chain for [procedureId], attempting each version with
   /// [attempt] until one succeeds or the chain is exhausted / surfaces.
+  ///
+  /// [runId] / [causedBy] are threaded onto every emitted [ProcedureFallback]
+  /// so a consumer can stitch the fallback into the run's causal trace.
   ///
   /// Throws [ProcedureNotFound] (from [ProcedureResolver.fallbackChain]) when
   /// [procedureId] is unknown — there is no chain to walk. Otherwise always
@@ -271,6 +317,8 @@ final class FallbackExecutor {
   Future<FallbackOutcome<T>> run<T>({
     required String procedureId,
     required VersionAttempt<T> attempt,
+    String? runId,
+    String? causedBy,
   }) async {
     final chain = resolver.fallbackChain(procedureId);
     final attempts = <FallbackAttempt>[];
@@ -286,6 +334,19 @@ final class FallbackExecutor {
         final trigger = classify(error);
         attempts.add(FallbackAttempt.failed(version, trigger, error));
         final stepsDown = trigger != null && hasOlderVersion;
+        // D.30: every fallback-class failure emits a `ProcedureFallback` —
+        // a step-down carries the next-older `toVersion`; a fallback-class
+        // failure on the oldest version surfaces with `toVersion: null`.
+        if (trigger != null) {
+          _emitFallback(
+            procedureId: procedureId,
+            fromVersion: version,
+            toVersion: stepsDown ? chain[i + 1].header.version : null,
+            trigger: trigger,
+            runId: runId,
+            causedBy: causedBy,
+          );
+        }
         if (!stepsDown) {
           return FallbackOutcome<T>._failure(
             procedureId,
@@ -302,5 +363,27 @@ final class FallbackExecutor {
     // list for a known one, so the loop always returns above. This guards a
     // future change to that contract.
     throw StateError('fallback chain for "$procedureId" was empty');
+  }
+
+  /// Builds and emits one [ProcedureFallback] when a sink is wired (D.30).
+  void _emitFallback({
+    required String procedureId,
+    required int fromVersion,
+    required int? toVersion,
+    required FallbackTrigger trigger,
+    required String? runId,
+    required String? causedBy,
+  }) {
+    final sink = _onFallback;
+    if (sink == null) return;
+    sink(ProcedureFallback(
+      occurredAt: _clock(),
+      runId: runId,
+      causedBy: causedBy,
+      procedureId: procedureId,
+      fromVersion: fromVersion,
+      toVersion: toVersion,
+      trigger: trigger,
+    ));
   }
 }
