@@ -6,6 +6,41 @@ version: 0.0.1
 environment:
   sdk: ^3.10.8
 
+# Project structure manifest (Plan step D.9 — wire the new sub-folders
+# into the project manifest).
+#
+# For a Dart package the *project manifest* is this `pubspec.yaml`. D.6–D.8
+# added three sub-folders to the project; D.9 records them here so the
+# project's declared structure is explicit at the manifest level. A
+# pure-Dart package has no `flutter: assets:` section, so the new folders
+# need no structural pubspec field — `lib/` auto-ships, and the root-level
+# `scripts/` tree ships because it is git-tracked and not excluded. This
+# block is the manifest record; it is locked by
+# `test/d9_manifest_wiring_test.dart` (manifest ⇄ on-disk consistency).
+#
+#   - lib/src/dispatcher/   (D.6) — the dispatcher half's module folder.
+#                           Auto-included in the package surface (every
+#                           path under `lib/` ships) and re-exported from
+#                           the top-level barrel
+#                           (`lib/tom_brain_procedure_prototype.dart`).
+#   - scripts/system/       (D.7) — well-known shipped procedures
+#                           (`think_v1`, `answer_with_memory_v1`). Runtime
+#                           data the engine reads via
+#                           `EngineConfig.defaultSystemScriptsPath`
+#                           (`scripts/system`). Ships with the package
+#                           (not gitignored).
+#   - scripts/user/         (D.7) — optional user-authored procedures
+#                           (empty in the prototype). Runtime data read
+#                           via `EngineConfig.defaultUserScriptsPath`
+#                           (`scripts/user`).
+#   - scripts/system/answer_with_memory_v1.dart (D.8) — the stub every
+#                           inbound `user_prompt` resolves to (D.16); the
+#                           recall→answer→persist body lands at D.10.
+#
+# The `.tom_metadata/tom_master.yaml` reading of "the project manifest" is
+# a NO-OP per policy override 5 ("tom_master.yaml is out of scope for Tom
+# Brain"). The pubspec is the only manifest D.9 touches.
+
 # Dependency discipline (Plan step C.7 / `tom_brain_procedure_prototype_specification.md`).
 #
 # The procedure prototype is the *glue* layer: it hosts d4rt scripts
