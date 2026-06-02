@@ -11,6 +11,10 @@
 // E.24 ✅ — `IdentityResolver` (+ `IdentityBinding`,
 // `IdentityResolutionException`): credential → `TomPrincipal` →
 // `ResolvedIdentity`, resolved once at the edge (AC-7).
-// E.25 – E.27 ⏳ — `SessionManager`, `PersonaResolver`.
+// E.25 ✅ — `SessionManager` (+ `AccessChannel`, `SessionKey`,
+// `SessionTurn`, `SessionNode`): a sliding window keyed by (principal,
+// channel, conversation id); reuse-by-key, not re-creation (AC-8).
+// E.26 – E.27 ⏳ — `PersonaResolver`.
 
 export 'identity_resolver.dart';
+export 'session_manager.dart';

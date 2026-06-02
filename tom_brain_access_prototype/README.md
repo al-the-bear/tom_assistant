@@ -6,8 +6,9 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.24 — `IdentityResolver` resolves an inbound credential to a
-> `ResolvedIdentity` once at the edge (AC-7). The Telegram channel surface is
+> **Status:** E.25 — `SessionManager` resolves an inbound request to a
+> sliding-window session keyed by (principal, channel, conversation id).
+> The Telegram channel surface is
 > conformance-locked (roundtrip + whitelist enforcement + large-answer
 > chunking), end-to-end through the in-process `LoopbackChatApi`.
 > `TelegramAdapter` is built on `tom_chattools`' `ChatApi` +
@@ -49,8 +50,18 @@ streams the answer back through the originating channel.
 > handle threaded into the memory scope, AC-7). Resolution is a registry
 > lookup (`IdentityBinding` per known credential) — a non-secret
 > `principalId` chosen at config time, never derived from the bearer token;
-> an unbound credential throws `IdentityResolutionException`. Session /
-> persona resolution (E.25+) builds on this.
+> an unbound credential throws `IdentityResolutionException`. E.25 adds the
+> second resolver: `SessionManager` resolves an inbound request to a
+> sliding-window session keyed by (principal, channel, conversation id) —
+> `AccessChannel` (the channel discriminator), `SessionKey` (the
+> record-keyed triple), `SessionTurn` / `SessionNode` (the window). Reuse is
+> *by key, not by re-creation* (AC-8): a second request on the same key
+> returns the same node (same `sessionId`) with the new turn appended and the
+> window slid at `maxWindowTurns`; the node projects onto the shared
+> `Session` handle. The node store is in-process for the prototype — the
+> access layer never depends on `tom_brain_memory`, so the memory-node
+> persistence is wired through the dispatcher at E.27 / E.55. Persona
+> resolution (E.26+) builds on this.
 >
 > The OpenAI HTTP/SSE adapter (E.11 – E.18) is complete and its
 > wire-format conformance is locked. `OpenAiHttpSseAdapter` router scaffold

@@ -140,8 +140,18 @@
 ///   credential throws `IdentityResolutionException` (the auth step E.22/E.28
 ///   validates the credential first; an unbound one here is a config drift,
 ///   surfaced loudly, not a fabricated identity).
-/// - E.25 – E.50 ⏳ — session / persona, edge security, kind-hint
-///   classifier, delivery, boot, and the end-to-end smoke.
+/// - E.25 ✅ — `SessionManager` (identity/): resolves an inbound request to
+///   a sliding-window session keyed by (principal, channel, conversation id)
+///   — `AccessChannel` (the channel discriminator), `SessionKey` (the
+///   record-keyed triple), `SessionTurn` / `SessionNode` (the window). Reuse
+///   is *by key, not by re-creation* (AC-8): the second request on the same
+///   key returns the same node (same `sessionId`) with the new turn appended
+///   and the window slid at `maxWindowTurns`. The node projects onto the
+///   shared `Session` handle (§ 4.4); the node store is in-process for the
+///   prototype (memory-node persistence is wired through the dispatcher at
+///   E.27 / E.55 — the access layer never depends on `tom_brain_memory`).
+/// - E.26 – E.50 ⏳ — persona, edge security, kind-hint classifier,
+///   delivery, boot, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

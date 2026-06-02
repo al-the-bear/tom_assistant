@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.25)
+
+`SessionManager` — the second of the three `Access`-filling resolvers
+(proto spec § 7.2, Plan E.25, AC-8). Resolves an inbound request to a
+sliding-window session keyed by (principal, channel, conversation id);
+reuse is *by key, not by re-creation*.
+
+- `lib/src/identity/session_manager.dart` — **new**. Symbols:
+  - `SessionManager` — `resolve({identity, channel, envelope})` builds the
+    key from `identity.principalId` + `channel` + `envelope.conversationId`,
+    reuses the existing node (appending the turn, sliding the window) or
+    creates one, and returns the node. `peek(key)` reads without mutating.
+    Injectable `sessionIdFactory` and `now` clock for deterministic tests;
+    `maxWindowTurns` (default 20) caps the window.
+  - `AccessChannel` — the channel discriminator (`openai` / `telegram`),
+    the second key component; wire names match E.24's `channel` strings.
+  - `SessionKey` — the (principal, channel, conversation id) triple; a Dart
+    `record` form keys the store so distinct triples never collide.
+  - `SessionTurn` / `SessionNode` — one recorded turn and the rich
+    sliding-window node; `toSessionHandle()` projects onto the shared
+    `Session`. The node store is in-process (the access layer never depends
+    on `tom_brain_memory`; memory-node persistence is wired through the
+    dispatcher at E.27 / E.55).
+- `lib/src/identity/identity.dart` — barrel now exports the session manager.
+- `lib/tom_brain_access_prototype.dart` — E.25 ✅ bullet; pending range
+  narrowed to E.26 – E.50.
+- `test/identity/session_manager_test.dart` — **new** (20 assertions):
+  channel wire names; key guards / equality / record-collision-safety;
+  create / reuse-by-key (AC-8); channel + conversation-id key splitting;
+  null-conversation rolling session; sliding window at capacity with
+  running `totalTurns`; `Session` handle projection; construction guards;
+  injected clock + id factory; `peek`.
+
 ## 0.0.1 — 2026-06-02 (Phase E.24)
 
 `IdentityResolver` — the first of the three `Access`-filling resolvers
