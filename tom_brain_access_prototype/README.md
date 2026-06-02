@@ -6,7 +6,26 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.40 — **delivery test sweep**, the final step of
+> **Status:** E.41 — **`BrainAccessBoot`**, the first step of
+> `## E.9 — Boot + the running process`. `lib/src/boot/` composes the inbound
+> access surface — identity, edge security, the classifier, and outbound
+> delivery — **over a booted `Dispatcher`** (the compose-over-dispatcher
+> decision: the access prototype must not depend on `tom_brain_memory` /
+> `tom_brain_substrate`, so it plugs into the one seam `BrainProcessBoot`
+> exposes, `AccessLayerInstaller`, as bring-up phase 4; substrate / memory reach
+> the classifier only through the injected `KindHintEmbedder` /
+> `KindHintClassifier` function seams). `BrainAccessBoot.install` assembles the
+> surface and returns a `BootedAccessLayer` (the `AccessAssembler` the channel
+> edges drive + the `AccessEventBus`); `BrainAccessBoot.installer` adapts it to
+> the seam. The `AccessAssembler` runs the AC-4 edge chain — auth → identity →
+> rate-limit → quota → anchor → session → classify — then binds delivery, builds
+> the `Access`, emits `AccessCreated`, and dispatches; a rejection emits
+> `AccessFailed` with the mapped failure kind, a classify failure is swallowed
+> (AC-9). The live channel edges (the HTTP serve loop, the Telegram inbound
+> stream) that *drive* the assembler are **E.45**. `## E.9` is open; **E.42
+> (graceful shutdown)** is next.
+>
+> E.40 — **delivery test sweep**, the final step of
 > `## E.8 — Outbound delivery`. `test/delivery/delivery_sweep_test.dart` is an
 > integration-level sweep over both delivery paths wired the way boot wires them
 > — through the `DeliveryRegistry`, over the *runtime* sinks

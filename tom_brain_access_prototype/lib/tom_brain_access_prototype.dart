@@ -330,7 +330,30 @@
 ///   backpressure signals surface, and a real SSE subscription cancel propagates
 ///   to a terminal stall without leaking the run. `## E.8 — Outbound delivery`
 ///   is complete.
-/// - E.41 – E.50 ⏳ — boot + the running process, and the end-to-end smoke.
+/// - E.41 ✅ — boot composition (boot/): `BrainAccessBoot` composes the inbound
+///   access layer over a *booted dispatcher* — not over substrate / memory /
+///   engine directly, which the dependency surface forbids (the access layer
+///   depends on neither `tom_brain_memory` nor `tom_brain_substrate`). It plugs
+///   into the one seam `BrainProcessBoot` (D.44) exposes for exactly this, the
+///   `AccessLayerInstaller` (`Future<AccessLayerShutdown> Function(Dispatcher)`):
+///   `BrainAccessBoot.installer(config)` returns that closure; `install(...)`
+///   returns the full `BootedAccessLayer` for E.45 / tests to drive. Substrate
+///   (the embed call) and memory (the procedure-centroid classify) reach the
+///   classifier only through the injected `KindHintEmbedder` / `KindHintClassifier`
+///   seams (E.33), wrapped in the E.34 `EmbeddingCache` when both are present.
+///   `AccessAssembler` is the per-request admission pipeline: auth → identity →
+///   rate-limit → quota → anchor → session → classify → bind delivery → build
+///   `Access` → emit `AccessCreated` → `dispatcher.accept`; any edge failure
+///   emits a correlated `AccessFailed` (its `failureKind` mapped from the thrown
+///   type) and rethrows for the channel edge (E.45) to map onto the wire, while a
+///   classifier outage degrades gracefully to no hint (AC-9) without an
+///   `AccessFailed`. `AccessEventBus` is the `AccessEvent` fan-in (broadcast,
+///   `sync: false`); the `DeliveryRegistry`'s `onDelivered` sink is wired to it
+///   so the terminal `AccessDelivered` lands on the same bus as `AccessCreated` /
+///   `AccessFailed`. The compose-over-dispatcher decision is logged in the
+///   questions doc.
+/// - E.42 – E.50 ⏳ — the live channel edges (HTTP serve loop / Telegram inbound
+///   stream), config loading, the running process, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

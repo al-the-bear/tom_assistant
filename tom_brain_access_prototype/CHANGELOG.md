@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.41)
+
+`BrainAccessBoot` — the first step of `## E.9 — Boot + the running process`
+(Plan E.41; proto spec § 11 / § 12; AC-2 / AC-3 / AC-4). Composes the inbound
+access surface **over a booted `Dispatcher`** rather than composing substrate /
+memory / engine directly: the access prototype must not depend on
+`tom_brain_memory` / `tom_brain_substrate`, so it plugs into the
+`AccessLayerInstaller` seam `BrainProcessBoot` exposes (bring-up phase 4), and
+substrate / memory reach the classifier only through injected function seams.
+
+- `lib/src/boot/access_event_bus.dart` — **new.** `AccessEventBus`, the access
+  edge's `AccessEvent` fan-in (broadcast; `emit` / `events` / idempotent
+  `close`), carrying `AccessCreated` / `AccessFailed` / `AccessDelivered`.
+- `lib/src/boot/access_assembler.dart` — **new.** `AccessAssembler`, the
+  per-request admission pipeline: `admitOpenAi` / `admitTelegram` run the AC-4
+  edge chain (auth → identity → rate-limit → quota → anchor → session →
+  classify), bind delivery, build the `Access`, emit `AccessCreated`, and
+  dispatch. A rejection emits `AccessFailed` with the mapped failure kind; a
+  classify failure is swallowed (AC-9).
+- `lib/src/boot/brain_access_boot.dart` — **new.** `BrainAccessConfig`,
+  `BootedAccessLayer`, and `BrainAccessBoot` (`install` over a `Dispatcher`,
+  `installer` adapting to the `AccessLayerInstaller` seam, `_buildClassifier`
+  building the cheap classifier only when both seams are supplied — embed seam
+  wrapped in the E.34 `EmbeddingCache`).
+- `lib/src/boot/boot.dart` — rewritten from placeholder to the E.41 barrel.
+- `lib/tom_brain_access_prototype.dart` — E.41 ✅ roadmap entry; pending range
+  advanced to `E.42 – E.50 ⏳`.
+- `test/boot/brain_access_boot_test.dart` — **new** (14 tests): composition +
+  full-chain dispatch, the six edge-chain short-circuits, classification
+  (attach / skip-on-preset / degrade-on-throw / single-seam-disabled), and the
+  installer + idempotent shutdown. The live channel edges (HTTP serve loop /
+  Telegram inbound stream) that drive the assembler are E.45.
+
+`dart analyze` clean; 443 / 443 (14 new). `## E.9` is open; E.42 is next.
+
 ## 0.0.1 — 2026-06-02 (Phase E.40)
 
 Delivery test sweep — the final step of `## E.8 — Outbound delivery` (Plan E.40;
