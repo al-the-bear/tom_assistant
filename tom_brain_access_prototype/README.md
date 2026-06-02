@@ -6,20 +6,51 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.36 — the **`DeliveryRegistry`** opens `## E.8 — Outbound
-> delivery`: the channel-agnostic dispatcher, "one registry, two delivery
-> paths" (proto spec § 10.1). It registers one `ChannelDelivery` per
-> `AccessChannel` (rejecting a duplicate per channel) and per inbound request
-> produces the per-`Access` `DeliverCallback` the engine streams the answer
-> through (`deliverFor`, AC-2). An unregistered channel throws
-> `UnknownDeliveryChannel` (a loud boot-wiring fault). The
-> `ChannelDelivery` / `DeliveryBinding` contract is the seam the concrete wire
-> translators fill — SSE (E.37) and Telegram (E.38). As the one
-> channel-agnostic point in the outbound path the registry emits the
-> terminal-success `AccessDelivered` on the answer's final chunk through an
-> injected `onDelivered` sink (boot wires it to the `AccessEventBus`, E.41);
-> with no sink it is a pure dispatcher. Backpressure (`DeliveryStalled`) is
-> E.39 / E.40.
+> **Status:** E.38 — the **Telegram delivery path** fills the second of the two
+> `ChannelDelivery` slots `## E.8` opened. `TelegramChannelDelivery` is the path
+> the `DeliveryRegistry` (E.36) dispatches `AccessChannel.telegram` to. Unlike
+> the SSE path (which streams each chunk to the wire as it arrives), Telegram is
+> **buffered**: the per-`Access` `DeliverCallback` accumulates every
+> `OutboundChunk`'s text and, on the final chunk (`isFinal`), consolidates the
+> buffered answer (via the E.21 `TelegramOutboundConsolidator`) into the minimum
+> number of size-compliant messages and sends them in order — one consolidated
+> message, or N append-only overflow parts, never an edit (def § Q13 / Q-E.2.6);
+> an empty answer sends nothing (Q-E.21.1). Its `TelegramDeliveryBinding`
+> carries the wire (`TelegramSink`) and exposes a `delivered` future that
+> completes once the buffered answer has been fully sent (the synchronous
+> callback cannot return it; the registry's `AccessDelivered` fires earlier, on
+> the final chunk — Q-E.38.1). `ChatApiTelegramSink` is the runtime sink — each
+> part sent through a `tom_chattools` `ChatApi.sendMessage` as plain text (boot
+> wires it, E.41+). The backpressure (`DeliveryStalled`) protocol is E.39 /
+> E.40.
+>
+> E.37 — the **SSE delivery path** (OpenAI) fills the first of the
+> two `ChannelDelivery` slots `## E.8` opened. `SseChannelDelivery` is the path
+> the `DeliveryRegistry` (E.36) dispatches `AccessChannel.openai` to; per
+> inbound streaming request its `SseDeliveryBinding` carries the wire
+> (`SseSink`) and the E.13 `ChatCompletionSseRenderer` (bound per-`Access`, so
+> its `id` / `created` repeat across every chunk as the OpenAI shape requires;
+> its `model` is the resolved persona-as-model id, E.15). `bindDeliver` mints
+> the per-`Access` `DeliverCallback`: each `OutboundChunk` becomes one
+> `chat.completion.chunk` `data: …\n\n` frame written to the sink; the final
+> chunk additionally writes the terminal `data: [DONE]\n\n` line and closes the
+> wire, so `[DONE]` is always last (proto spec § 5.3). `StreamControllerSseSink`
+> is the runtime wire — frames UTF-8 encoded onto a `StreamController` whose
+> `body` stream the OpenAI adapter returns as the `text/event-stream` response
+> body (boot wires it, E.41+); a client disconnect fires its optional
+> `onClientDisconnect` seam. The richer cancellation + `DeliveryStalled`
+> backpressure protocol is E.39 / E.40; the Telegram path is E.38.
+>
+> E.36 — the **`DeliveryRegistry`** opened `## E.8 — Outbound delivery`: the
+> channel-agnostic dispatcher, "one registry, two delivery paths" (proto spec
+> § 10.1). It registers one `ChannelDelivery` per `AccessChannel` (rejecting a
+> duplicate per channel) and per inbound request produces the per-`Access`
+> `DeliverCallback` the engine streams the answer through (`deliverFor`, AC-2).
+> An unregistered channel throws `UnknownDeliveryChannel` (a loud boot-wiring
+> fault). As the one channel-agnostic point in the outbound path the registry
+> emits the terminal-success `AccessDelivered` on the answer's final chunk
+> through an injected `onDelivered` sink (boot wires it to the
+> `AccessEventBus`, E.41); with no sink it is a pure dispatcher.
 >
 > E.35 — the **`## E.7` test sweep** closed
 > `## E.7 — Cheap kind-hint classifier`. The formal acceptance sweep

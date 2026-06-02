@@ -276,8 +276,43 @@
 ///   `AccessEventBus`, E.41), carrying the chunk count + the correlated
 ///   identity. With no sink it is a pure dispatcher. Wire formatting (E.37 /
 ///   E.38) and backpressure (`DeliveryStalled`, E.39 / E.40) are later steps.
-/// - E.37 – E.50 ⏳ — the SSE + Telegram delivery paths, backpressure, boot,
-///   and the end-to-end smoke.
+/// - E.37 ✅ — the SSE delivery path (delivery/): `SseChannelDelivery` is the
+///   `ChannelDelivery` the `DeliveryRegistry` (E.36) dispatches
+///   `AccessChannel.openai` to. Per inbound streaming request its
+///   `SseDeliveryBinding` carries the wire (`SseSink`) and the E.13
+///   `ChatCompletionSseRenderer` (bound per-`Access`, so its `id` / `created`
+///   repeat across every chunk as the OpenAI shape requires; its `model` is
+///   the resolved persona-as-model id, E.15). `bindDeliver` mints the
+///   per-`Access` `DeliverCallback`: each `OutboundChunk` is rendered to one
+///   `chat.completion.chunk` `data: …\n\n` frame and written to the sink; the
+///   final chunk (`isFinal`) additionally writes the terminal
+///   `data: [DONE]\n\n` line and closes the wire, so `[DONE]` is always last
+///   (§ 5.3). `StreamControllerSseSink` is the runtime sink — frames UTF-8
+///   encoded onto a `StreamController` whose `body` stream the OpenAI adapter
+///   returns as the `text/event-stream` response body (boot wires it, E.41+);
+///   a client disconnect fires its optional `onClientDisconnect` seam (the
+///   richer cancellation / `DeliveryStalled` protocol is E.39 / E.40). The
+///   backpressure stream the callback returns is empty in the prototype.
+/// - E.38 ✅ — the Telegram delivery path (delivery/): `TelegramChannelDelivery`
+///   is the `ChannelDelivery` the `DeliveryRegistry` (E.36) dispatches
+///   `AccessChannel.telegram` to. Unlike the SSE path (which streams per
+///   chunk), Telegram is **buffered**: the per-`Access` `DeliverCallback`
+///   accumulates every `OutboundChunk`'s text and, on the final chunk
+///   (`isFinal`), consolidates the buffered answer (via the E.21
+///   `TelegramOutboundConsolidator`) into the minimum number of
+///   size-compliant messages and sends them in order — one consolidated
+///   message, or N append-only overflow parts, never an edit (def § Q13 /
+///   Q-E.2.6); an empty answer sends nothing (Q-E.21.1). Its
+///   `TelegramDeliveryBinding` carries the wire (`TelegramSink`) and exposes a
+///   `delivered` future that completes once the buffered answer has been fully
+///   sent (the synchronous callback cannot return it; the registry's
+///   `AccessDelivered` fires earlier, on the final chunk — Q-E.38.1).
+///   `ChatApiTelegramSink` is the runtime sink — each part sent through a
+///   `tom_chattools` `ChatApi.sendMessage` as plain text (boot wires it,
+///   E.41+). The backpressure stream the callback returns is empty in the
+///   prototype.
+/// - E.39 – E.50 ⏳ — backpressure (`DeliveryStalled`), boot, and the
+///   end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

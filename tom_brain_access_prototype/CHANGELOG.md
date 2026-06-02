@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.38)
+
+Telegram delivery path — the second of `## E.8`'s two `ChannelDelivery` slots
+(Plan E.38; proto spec § 6.3 / § 10.1; AC-2). The concrete delivery path the
+`DeliveryRegistry` (E.36) dispatches `AccessChannel.telegram` to. Unlike the
+SSE path (which streams per chunk), Telegram is **buffered**: the callback
+accumulates every `OutboundChunk` and, on the final chunk, consolidates the
+answer into the minimum number of size-compliant messages and sends them in
+order (one consolidated message, or N append-only overflow parts — def § Q13 /
+Q-E.2.6).
+
+- `lib/src/delivery/telegram_delivery.dart` — **new**. `TelegramChannelDelivery`
+  (the `ChannelDelivery` for `AccessChannel.telegram`; `bindDeliver` mints the
+  buffered per-`Access` `DeliverCallback`, holding the E.21
+  `TelegramOutboundConsolidator` as channel policy), `TelegramDeliveryBinding`
+  (its `DeliveryBinding` subtype carrying the `TelegramSink` and exposing a
+  `delivered` future for actual-send completion), `TelegramSink` (the wire
+  abstraction) and `ChatApiTelegramSink` (the runtime sink — each part sent
+  through `tom_chattools` `ChatApi.sendMessage` as plain text). A chunk after
+  the final one throws `StateError`; an empty answer sends nothing (Q-E.21.1).
+  The returned backpressure stream is empty in the prototype (`DeliveryStalled`
+  is E.39 / E.40).
+- `lib/src/delivery/delivery.dart` — barrel now also exports the four E.38
+  symbols.
+- `lib/tom_brain_access_prototype.dart` — E.38 roadmap bullet; pending range
+  advanced to `E.39 – E.50 ⏳`.
+- `test/delivery/telegram_delivery_test.dart` — **new**. The E.38 contract
+  suite (16 assertions).
+
+## 0.0.1 — 2026-06-02 (Phase E.37)
+
+SSE delivery path (OpenAI) — the first of `## E.8`'s two `ChannelDelivery`
+slots (Plan E.37; proto spec § 5.3 / § 10.1; AC-2). The concrete delivery path
+the `DeliveryRegistry` (E.36) dispatches `AccessChannel.openai` to: each
+`OutboundChunk` becomes one `chat.completion.chunk` `data: …\n\n` frame; the
+final chunk additionally writes `data: [DONE]\n\n` and closes the wire.
+
+- `lib/src/delivery/sse_delivery.dart` — **new**. `SseChannelDelivery` (the
+  `ChannelDelivery` for `AccessChannel.openai`; `bindDeliver` mints the
+  per-`Access` `DeliverCallback`), `SseDeliveryBinding` (its `DeliveryBinding`
+  subtype carrying the `SseSink` + the E.13 `ChatCompletionSseRenderer`, the
+  latter bound per-`Access` so `id` / `created` repeat across the completion),
+  `SseSink` (the wire abstraction) and `StreamControllerSseSink` (the runtime
+  sink — UTF-8 frames onto a `StreamController` whose `body` is the
+  `text/event-stream` response body; `onClientDisconnect` fires on body
+  cancel). A chunk after the final one throws `StateError` (the wire is gone).
+  The returned backpressure stream is empty in the prototype (`DeliveryStalled`
+  is E.39 / E.40).
+- `lib/src/delivery/delivery.dart` — barrel now also exports
+  `SseChannelDelivery`, `SseDeliveryBinding`, `SseSink`,
+  `StreamControllerSseSink`.
+- `test/delivery/sse_delivery_test.dart` — **new** (17 assertions): path /
+  binding channel; one content frame per non-final chunk with the OpenAI
+  envelope (id / model / created repeated, `finish_reason` null); the final
+  chunk writes its frame + `[DONE]` + closes; `[DONE]` is the last and only
+  terminator line; single consolidated final chunk; empty backpressure stream;
+  post-final `StateError`; per-`Access` independent termination; the runtime
+  sink's UTF-8 body ordering, idempotent close, write-after-close `StateError`,
+  and the client-disconnect callback; and dispatch + `AccessDelivered` through
+  the E.36 registry.
+
+Suite green at 397 / 397 (380 prior + 17 new E.37). `dart analyze` clean.
+
 ## 0.0.1 — 2026-06-02 (Phase E.36)
 
 `DeliveryRegistry` — opens `## E.8 — Outbound delivery` (Plan E.36; proto spec
