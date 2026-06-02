@@ -24,6 +24,15 @@
 //   `ShutdownAction` seam, so the coordinator depends on no concrete boot type
 //   and is driven in tests with synthetic signal streams + a recording
 //   terminator. Mirrors D.45 shutdown orchestration.
+// - E.43 ✅ — `HealthCheck` (`health_check.dart`): the `GET /healthz` liveness
+//   endpoint. Exposes a mountable `shelf` handler rendering
+//   `{ status, uptime_s, queues }` — `status` is `ok` while serving and
+//   `draining` once the coordinator is draining (E.42), `uptime_s` is whole
+//   seconds since construction, `queues` is the live coordinator snapshot read
+//   through an injectable `QueueSnapshotSource` seam (the access layer holds
+//   only a `Dispatcher`, so the running process — E.45, which owns the
+//   `RunCoordinator` — projects its getters onto the `QueueSnapshot`). The boot
+//   root that mounts it on a live port alongside the `/v1/` routes is E.45.
 
 export 'access_assembler.dart' show AccessAssembler;
 export 'access_event_bus.dart' show AccessEventBus;
@@ -36,3 +45,5 @@ export 'graceful_shutdown.dart'
         ShutdownAction,
         shutdownExitError,
         shutdownExitOk;
+export 'health_check.dart'
+    show HealthCheck, QueueSnapshot, QueueSnapshotSource;

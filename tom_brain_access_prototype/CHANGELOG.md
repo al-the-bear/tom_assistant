@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.43)
+
+Health check — the third step of `## E.9 — Boot + the running process`
+(Plan E.43; proto spec § 11.3). The `GET /healthz` liveness endpoint that lets a
+load balancer / supervisor read the running process's state at a glance.
+
+- `lib/src/boot/health_check.dart` — **new.** `HealthCheck` exposes a mountable
+  `shelf` handler for `GET /healthz`, rendering `{ status, uptime_s, queues }`.
+  `status` is `ok` while serving and `draining` once the coordinator is draining
+  (E.42); `uptime_s` is whole seconds since construction (clamped at zero against
+  a non-monotonic clock); `queues` is the live coordinator snapshot. The access
+  layer holds only a `Dispatcher` (no coordinator getters) and must not reach
+  past it, so the snapshot arrives through an injectable `QueueSnapshotSource`
+  (`QueueSnapshot Function()`) seam — the running process (E.45, which owns the
+  `RunCoordinator`) projects the coordinator's getters (`hasForegroundRun`,
+  `foregroundQueueLength`, `foregroundQueueDepth`, `hasBackgroundRun`,
+  `isDraining`) onto the `QueueSnapshot`; a test passes a probe. `QueueSnapshot`
+  carries the foreground/background slot state + the FIFO depth and renders the
+  `queues` object. Mounting it on a live port is E.45.
+- `lib/src/boot/boot.dart` — exports `HealthCheck`, `QueueSnapshot`,
+  `QueueSnapshotSource`; E.43 ✅ roadmap note added.
+- `lib/tom_brain_access_prototype.dart` — E.43 ✅ roadmap entry; pending range
+  advanced `E.43 – E.50 ⏳` → `E.44 – E.50 ⏳`.
+- `test/boot/health_check_test.dart` — **new** (7 tests): the spec body shape
+  (`status: "ok"`, `uptime_s`, `queues`); `uptime_s` counts whole seconds since
+  construction; uptime clamps at zero against a backward clock; a draining
+  coordinator flips `status` to `draining`; the `queues` payload re-reads the
+  live snapshot each call; `GET /healthz` answers `200 application/json`; any
+  other route is a `404`.
+
 ## 0.0.1 — 2026-06-02 (Phase E.42)
 
 Graceful shutdown — the second step of `## E.9 — Boot + the running process`

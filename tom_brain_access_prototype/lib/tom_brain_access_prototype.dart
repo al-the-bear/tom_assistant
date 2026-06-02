@@ -367,9 +367,24 @@
 ///   `tom_core_kernel`'s `TomShutdownCleanup` is synchronous fire-and-forget
 ///   (cannot await an async drain), so a purpose-built async coordinator is used
 ///   — logged in the questions doc. Mirrors D.45 shutdown orchestration.
-/// - E.43 – E.50 ⏳ — `/healthz`, the whole-process YAML config loader, the live
-///   channel edges (HTTP serve loop / Telegram inbound stream) of the running
-///   process, and the end-to-end smoke.
+/// - E.43 ✅ — health check (boot/): `HealthCheck` is the `GET /healthz`
+///   liveness endpoint, a mountable `shelf` handler rendering
+///   `{ status, uptime_s, queues }`. `status` is `ok` while the process serves
+///   and `draining` once a graceful shutdown (E.42) has begun; `uptime_s` is
+///   whole seconds since construction (process start at boot, E.45); `queues`
+///   is the live dispatcher-coordinator snapshot — which run slots are busy and
+///   how deep the foreground FIFO queue is. Spec § 11.3 says the queue summary
+///   "reads the dispatcher's coordinator state", but the access layer holds
+///   only a `Dispatcher` (single surface `accept(Access)`, no coordinator
+///   getters) and must not reach past it, so the snapshot arrives through an
+///   injectable `QueueSnapshotSource` seam — the same anti-dependency
+///   discipline as E.16 / E.33 / E.42's `ShutdownAction`. The running process
+///   (E.45, which owns the `RunCoordinator` via `BrainProcessBoot`) supplies a
+///   closure that projects the coordinator's getters onto the `QueueSnapshot`;
+///   a test supplies a probe. Mounting it on a live port is E.45.
+/// - E.44 – E.50 ⏳ — the whole-process YAML config loader, the live channel
+///   edges (HTTP serve loop / Telegram inbound stream) of the running process,
+///   and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

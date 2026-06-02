@@ -6,26 +6,28 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.42 — **graceful shutdown**, the second step of
-> `## E.9 — Boot + the running process`. `lib/src/boot/graceful_shutdown.dart`
-> ships `GracefulShutdown`: it watches OS termination signals (SIGINT / SIGTERM)
-> and runs an async process teardown **to completion before the process exits**,
-> so the in-flight foreground run drains and memory flushes rather than being
-> dropped at the exit (proto spec § 11.2; mirrors D.45). The teardown itself is
-> phase D's `BootedBrain.shutdown` (stop access → drain foreground → dispose
-> memory → close substrate); E.42 wires the signal to it through an injectable
-> `ShutdownAction` (`Future<void> Function()`) seam, so the coordinator imports
-> no concrete boot type and a test drives the whole sequence with synthetic
-> signal streams + a recording terminator (no real signal, no real `exit`). The
-> first signal wins; a second signal mid-drain is logged and ignored; a teardown
-> that throws still exits, with `shutdownExitError`. (`tom_basics` has no
-> signal-handling surface and `tom_core_kernel`'s `TomShutdownCleanup` is
-> synchronous fire-and-forget — it cannot await an async drain — so a
-> purpose-built async coordinator is used; logged in the questions doc.)
-> Prior step E.41 (`BrainAccessBoot`) composes the inbound access surface over a
-> booted `Dispatcher` via the `AccessLayerInstaller` seam. The live channel edges
-> (the HTTP serve loop, the Telegram inbound stream) that *drive* the assembler
-> are **E.45**. `## E.9` is open; **E.43 (`/healthz`)** is next.
+> **Status:** E.43 — **health check**, the third step of
+> `## E.9 — Boot + the running process`. `lib/src/boot/health_check.dart` ships
+> `HealthCheck`: the `GET /healthz` liveness endpoint, a mountable `shelf`
+> handler rendering `{ status, uptime_s, queues }` (proto spec § 11.3).
+> `status` is `ok` while the process serves and `draining` once a graceful
+> shutdown (E.42) has begun; `uptime_s` is whole seconds since construction
+> (process start at boot, E.45); `queues` is the live dispatcher-coordinator
+> snapshot — which run slots are busy and how deep the foreground FIFO queue is.
+> Spec § 11.3 says the queue summary "reads the dispatcher's coordinator state",
+> but the access layer holds only a `Dispatcher` (single surface
+> `accept(Access)`, no coordinator getters) and must not reach past it — so the
+> snapshot arrives through an injectable `QueueSnapshotSource` seam, the same
+> anti-dependency discipline as E.16 / E.33 and E.42's `ShutdownAction`. The
+> running process (E.45, which owns the `RunCoordinator` via `BrainProcessBoot`)
+> supplies a closure projecting the coordinator's getters onto a `QueueSnapshot`;
+> a test supplies a probe. Mounting it on a live port alongside the `/v1/` routes
+> is **E.45**.
+> Prior step E.42 (`GracefulShutdown`) bridges an OS termination signal to the
+> async process teardown so the in-flight foreground run drains before exit;
+> E.41 (`BrainAccessBoot`) composes the inbound access surface over a booted
+> `Dispatcher` via the `AccessLayerInstaller` seam. `## E.9` is open;
+> **E.44 (whole-process YAML config loader)** is next.
 >
 > E.40 — **delivery test sweep**, the final step of
 > `## E.8 — Outbound delivery`. `test/delivery/delivery_sweep_test.dart` is an
