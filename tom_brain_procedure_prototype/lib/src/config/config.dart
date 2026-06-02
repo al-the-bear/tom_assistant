@@ -43,7 +43,26 @@
 //     properties (config roundtrip, event ordering, logger categorisation)
 //     plus the cross-slice event+log pairing gate, asserted together on the
 //     public surface only. Mirrors substrate's B.39. Subphase C.11 closed.
+//   - D.47 ✅ — `DispatcherConfig` YAML loader (`dispatcher_config.dart`): the
+//     dispatcher's four knobs — the `scripts/system/` + `scripts/user/` paths,
+//     the foreground queue depth, the coordinator hard step deadline, and the
+//     free-time-scheduler enabled flag — loaded from a small YAML document via
+//     the `yaml` package, mirroring `EngineConfig` (C.42). Malformed documents
+//     are funnelled through `DispatcherConfigInvalid`
+//     (`dispatcher_config_invalid.dart`).
+//   - D.48 ✅ — `TomLogger` dispatcher-category wiring
+//     (`dispatcher_log.dart`): the closed `DispatcherLogCategory` enum of
+//     the five dispatcher categories (`tom_brain.dispatcher.entry`,
+//     `…coordinator`, `…fallback`, `…scheduler`, `…boot`) and the
+//     `DispatcherLog` const-instance facade with the five
+//     `DispatcherLog.<area>` statics. Call sites use
+//     `DispatcherLog.entry.status('…')`; the wrapper prepends
+//     `'[tom_brain.dispatcher.<area>] '` and forwards to `tomLog`. Mirrors
+//     `EngineLog` (C.43).
 
+export 'dispatcher_config.dart';
+export 'dispatcher_config_invalid.dart';
+export 'dispatcher_log.dart';
 export 'engine_config.dart';
 export 'engine_config_invalid.dart';
 export 'engine_event.dart';

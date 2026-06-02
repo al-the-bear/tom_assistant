@@ -202,6 +202,9 @@ void main() {
   group('D.44-4 failure hygiene — a failed boot leaks nothing', () {
     test('a throwing access-layer installer tears down memory + substrate',
         () async {
+      // D.46 contract: a bring-up failure surfaces as a typed `BrainStartupError`
+      // tagged with the phase it failed in (here `accessLayer`), with the
+      // original error preserved in `cause`.
       await expectLater(
         BrainProcessBoot.boot(
           configWith(
@@ -210,7 +213,11 @@ void main() {
                 throw StateError('install failed'),
           ),
         ),
-        throwsA(isA<StateError>()),
+        throwsA(
+          isA<BrainStartupError>()
+              .having((e) => e.phase, 'phase', BootPhase.accessLayer)
+              .having((e) => e.cause, 'cause', isA<StateError>()),
+        ),
       );
 
       // The substrate was opened, the memory provisioned — both must be torn

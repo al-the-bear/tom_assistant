@@ -329,8 +329,53 @@
 //     now reverse-orders (access layer → drain → memory dispose → substrate
 //     close); `drainTimeout` defaults to `defaultShutdownDrainTimeout` (30 s),
 //     so a genuinely-hung body cannot hold shutdown hostage. Exported below.
-//   - D.46 — crash→typed-startup-error tests.
-//   - D.47–D.50 — `DispatcherConfig` + observability.
+//   - D.46 ✅ — typed startup error + crash tests (`brain_process_boot.dart` +
+//     `memory_provisioning.dart`): `BrainProcessBoot.boot` now wraps every
+//     bring-up failure in a `BrainStartupError` tagging the `BootPhase`
+//     (`substrate` / `memory` / `engine` / `accessLayer`) it failed in and
+//     preserving the original `cause` — so a memory-isolate spawn/open crash
+//     surfaces as `BrainStartupError(phase: BootPhase.memory, …)` rather than a
+//     bare transport exception. `MemoryProvisioner` now tears the spawned host
+//     down on a failed `openMemory` so a crashing factory leaks no worker
+//     isolate. `d46_boot_lifecycle_test.dart` proves the boot→submit→shutdown
+//     sequence completes, a mid-flight foreground run finishes before memory
+//     closes, and an isolate-factory crash surfaces as the typed error.
+//     `BrainStartupError` + `BootPhase` exported below.
+//   - D.47 ✅ — `DispatcherConfig` YAML loader. Lives in the `config/` module
+//     (`config/dispatcher_config.dart`) alongside `EngineConfig`, exported from
+//     the top-level barrel via `config/config.dart`; carries the foreground
+//     queue depth, the coordinator hard step deadline, the scheduler
+//     enabled/disabled flag, and the scripts paths.
+//   - D.48 ✅ — `TomLogger` dispatcher categories. Lives in the `config/`
+//     module (`config/dispatcher_log.dart`) alongside `EngineLog`, exported
+//     from the top-level barrel via `config/config.dart`; the
+//     `DispatcherLogCategory` enum + `DispatcherLog` const-instance facade for
+//     `tom_brain.dispatcher.entry`, `…coordinator`, `…fallback`,
+//     `…scheduler`, `…boot`.
+//   - D.49 ✅ — `DispatcherEvent` sealed sum (`dispatcher_event.dart`) +
+//     `DispatcherEventBus` (`dispatcher_event_bus.dart`): the seven typed
+//     observability variants spec § 13 names — `AccessAccepted`,
+//     `ProcedureSelected`, `ForegroundQueued`, `Preempted`, `Resumed`,
+//     `RunCompleted`, `FallbackTried` — each extending `BrainEvent`, plus the
+//     broadcast fan-in bus the composition root wires to the entry surface,
+//     the coordinator, and the fallback executor. Mirrors `EngineEvent` /
+//     `EngineEventBus` (C.44). Unlike `EngineEvent`, `runId` stays nullable
+//     (access-scoped variants fire before a run id is minted); only
+//     `RunCompleted` narrows it to required. `FallbackTried` is the
+//     dispatcher-stream representation of the executor's `ProcedureFallback`
+//     (D.30) — build one with `FallbackTried.fromProcedureFallback`. Lives in
+//     this `dispatcher/` folder (beside `PreemptionEvent` / `ProcedureFallback`),
+//     not `config/`, so it reuses the runtime types without a `config/ →
+//     dispatcher/` edge. Exported below.
+//   - D.50 ✅ — observability conformance (`test/d50_dispatcher_conformance_test.dart`,
+//     tests-only): closes the config-roundtrip half at the config↔runtime
+//     boundary (a round-tripped `DispatcherConfig` drives a `RunCoordinator`
+//     with identical operative knobs) and the event-ordering half through the
+//     live coordinator (a background→foreground preemption interleave and a
+//     queued-foreground chain produce the `DispatcherEvent` stream in the exact
+//     order the interleave dictates). A test-local composition-root projector
+//     stands in until the boot-wiring step threads `DispatcherEventBus.emit`
+//     into the entry surface / coordinator / fallback executor.
 //
 // See `_ai/quests/tom_brain/tom_brain_procedure_prototype_specification.md`
 // for the authoritative contract this module implements.
@@ -340,13 +385,26 @@ export 'brain_process_boot.dart'
     show
         AccessLayerInstaller,
         AccessLayerShutdown,
+        BootPhase,
         BootedBrain,
         BrainProcessBoot,
         BrainProcessConfig,
+        BrainStartupError,
         defaultShutdownDrainTimeout,
         inboundTextArgumentKey;
 export 'dispatcher_entry.dart'
     show Dispatcher, DispatchRoute, DispatcherEntryObserver;
+export 'dispatcher_event.dart'
+    show
+        AccessAccepted,
+        DispatcherEvent,
+        FallbackTried,
+        ForegroundQueued,
+        Preempted,
+        ProcedureSelected,
+        Resumed,
+        RunCompleted;
+export 'dispatcher_event_bus.dart' show DispatcherEventBus;
 export 'fallback_executor.dart'
     show
         ClassifiedFailure,

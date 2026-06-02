@@ -27,11 +27,20 @@
 // that exposes the assembled parts and a `shutdown()` that tears the brought-up
 // resources down cleanly. The *full* shutdown drain — finish the current
 // foreground best-effort, drain the foreground queue, close trails — is D.45,
-// which layers on the minimal teardown here. The guarantee that a
-// memory-isolate spawn crash surfaces as a *typed startup error* is D.46. D.44
-// keeps boot's failure behaviour honest (a failure after a resource is up tears
-// that resource back down so a failed boot leaks nothing) but does not yet wrap
-// the failure in a typed class.
+// which layers on the minimal teardown here.
+//
+// ── What D.46 adds — the typed startup error ──────────────────────────
+//
+// D.44 kept boot's failure behaviour honest (a failure after a resource is up
+// tears that resource back down so a failed boot leaks nothing) but let the raw
+// failure propagate untyped. D.46 wraps every bring-up failure in a
+// [BrainStartupError] that names the [BootPhase] it failed in and carries the
+// original `cause` (+ its stack trace). A memory-isolate spawn/open crash now
+// surfaces as `BrainStartupError(phase: BootPhase.memory, cause: …)` rather than
+// a bare `IsolateBoundaryException`, so a caller can branch on *which* part of
+// the bring-up failed without string-matching. The failure-hygiene teardown is
+// unchanged — the wrapping happens around it, so a failed boot still leaks
+// nothing.
 //
 // ── Why the engine and coordinator share one PreemptionState ──────────
 //
@@ -106,6 +115,57 @@ const String inboundTextArgumentKey = 'text';
 /// already-abandoned force-yielded body). The exact value is a config knob D.47
 /// (`DispatcherConfig`) can later surface.
 const Duration defaultShutdownDrainTimeout = Duration(seconds: 90);
+
+/// Which stage of [BrainProcessBoot.boot]'s § 12 bring-up sequence failed.
+///
+/// Carried by a [BrainStartupError] so a caller can tell a substrate failure
+/// from a memory-isolate crash from an engine-build failure from an
+/// access-layer install failure without inspecting the wrapped cause.
+enum BootPhase {
+  /// Opening the in-process substrate (`substrate.open(substrateConfig)`).
+  substrate,
+
+  /// Provisioning memory through the D.43 seam (`MemoryProvisioner.provision`)
+  /// — the phase a spawned-isolate crash surfaces in.
+  memory,
+
+  /// Building the engine + coordinator + dispatcher (resolving the procedure
+  /// store, wiring the bridges, assembling the route).
+  engine,
+
+  /// Installing the inbound access layer (`installAccessLayer(dispatcher)`).
+  accessLayer,
+}
+
+/// A bring-up failure, tagged with the [BootPhase] it occurred in.
+///
+/// [BrainProcessBoot.boot] wraps every failure raised while bringing the
+/// process up in this type (D.46), so a memory-isolate spawn/open crash
+/// surfaces as `BrainStartupError(phase: BootPhase.memory, …)` rather than a
+/// bare transport exception. The original failure is preserved in [cause] (with
+/// its [causeStackTrace]) so nothing is lost by the wrapping.
+final class BrainStartupError implements Exception {
+  /// The bring-up stage that failed.
+  final BootPhase phase;
+
+  /// The original error that caused the bring-up to fail (e.g. the
+  /// `IsolateBoundaryException` from a crashing memory factory).
+  final Object cause;
+
+  /// The stack trace captured where [cause] was caught, or `null` when none was
+  /// available.
+  final StackTrace? causeStackTrace;
+
+  /// Wraps [cause] (raised in [phase]) as a typed startup error.
+  BrainStartupError({
+    required this.phase,
+    required this.cause,
+    this.causeStackTrace,
+  });
+
+  @override
+  String toString() => 'BrainStartupError(phase: ${phase.name}): $cause';
+}
 
 /// Declares how to boot the prototype brain process.
 ///
@@ -256,77 +316,137 @@ abstract final class BrainProcessBoot {
   ///
   /// Failure hygiene: a failure *after* a resource is up tears that resource
   /// back down before the error propagates, so a failed boot leaks neither an
-  /// open substrate nor a spawned memory isolate. (Wrapping the failure in a
-  /// typed startup error is D.46.)
+  /// open substrate nor a spawned memory isolate.
+  ///
+  /// Typed failure (D.46): every bring-up failure is wrapped in a
+  /// [BrainStartupError] that names the [BootPhase] it failed in (the original
+  /// error is preserved in [BrainStartupError.cause]). A memory-isolate
+  /// spawn/open crash therefore surfaces as
+  /// `BrainStartupError(phase: BootPhase.memory, …)`.
   static Future<BootedBrain> boot(BrainProcessConfig config) async {
-    // ── 1. Substrate (in-process), opened first. ──
     final substrate = config.substrate;
+
+    // ── 1. Substrate (in-process), opened first. ──
     if (config.substrateConfig != null) {
-      await substrate.open(config.substrateConfig!);
+      await _inPhase(
+        BootPhase.substrate,
+        () => substrate.open(config.substrateConfig!),
+      );
     }
 
-    // From here a failure must close the substrate before rethrowing.
+    // From here a failure must close the substrate (and any provisioned memory)
+    // before rethrowing.
     ProvisionedMemory? memory;
     try {
       // ── 2. Memory (isolate by default), via the D.43 seam. ──
-      memory = await MemoryProvisioner(config.memoryProvisioning).provision();
+      final provisioned = await _inPhase(
+        BootPhase.memory,
+        () => MemoryProvisioner(config.memoryProvisioning).provision(),
+      );
+      memory = provisioned;
 
       // ── 3. Engine + dispatcher (main isolate). ──
-      final resolver = await ProcedureResolver.fromStore(
-        DiskProcedureStore(
-          systemDir: config.systemScriptsDir,
-          userDir: config.userScriptsDir,
-        ),
-      );
-
-      // One shared preemption state for the engine (yields against it) and the
-      // coordinator (drives it) — see the file header.
-      final preemption = PreemptionState();
-
-      final engine = ProcedureEngine(
-        resolver: resolver,
-        memory: memory.client,
-        memoryBridge: MemoryBridge(memory.client),
-        substrateBridge: SubstrateBridge(substrate),
-        preemptionState: preemption,
-      );
-
-      final coordinator = RunCoordinator(
-        preemption: preemption,
-        foregroundQueueDepth: config.foregroundQueueDepth,
-      );
-
-      final classifier = InboundClassifier();
-      final selector = ProcedureSelector();
-
-      final dispatcher = Dispatcher(
-        route: _buildRoute(
-          classifier: classifier,
-          selector: selector,
-          coordinator: coordinator,
-          engine: engine,
-        ),
+      final built = await _inPhase(
+        BootPhase.engine,
+        () => _buildEngine(config: config, memory: provisioned, substrate: substrate),
       );
 
       // ── 4. The future access layer (Phase E), via the installer seam. ──
-      final accessLayerShutdown =
-          await config.installAccessLayer?.call(dispatcher);
+      final accessLayerShutdown = await _inPhase<AccessLayerShutdown?>(
+        BootPhase.accessLayer,
+        () async {
+          final installer = config.installAccessLayer;
+          if (installer == null) return null;
+          return installer(built.dispatcher);
+        },
+      );
 
       return BootedBrain._(
-        dispatcher: dispatcher,
-        engine: engine,
-        coordinator: coordinator,
-        memory: memory,
+        dispatcher: built.dispatcher,
+        engine: built.engine,
+        coordinator: built.coordinator,
+        memory: provisioned,
         substrate: substrate,
         accessLayerShutdown: accessLayerShutdown,
       );
     } catch (_) {
       // Bring-up failed after a resource was up: tear the brought-up resources
-      // back down (reverse order) so a failed boot leaks nothing, then rethrow.
+      // back down (reverse order) so a failed boot leaks nothing, then rethrow
+      // (the error is already a `BrainStartupError` from `_inPhase`).
       await memory?.dispose();
       await substrate.close();
       rethrow;
     }
+  }
+
+  /// Runs one bring-up [phase] and wraps any non-[BrainStartupError] failure it
+  /// raises in a [BrainStartupError] tagged with [phase] (D.46).
+  ///
+  /// An already-typed [BrainStartupError] propagates unchanged (never
+  /// double-wrapped), so a phase that itself called `boot` would surface the
+  /// inner phase tag.
+  static Future<T> _inPhase<T>(
+    BootPhase phase,
+    Future<T> Function() body,
+  ) async {
+    try {
+      return await body();
+    } on BrainStartupError {
+      rethrow;
+    } catch (error, stackTrace) {
+      throw BrainStartupError(
+        phase: phase,
+        cause: error,
+        causeStackTrace: stackTrace,
+      );
+    }
+  }
+
+  /// Builds the engine + coordinator + dispatcher over the provisioned [memory]
+  /// and the open [substrate] (bring-up phase 3).
+  ///
+  /// The engine and coordinator share *one* [PreemptionState] (the engine
+  /// yields against it; the coordinator drives it — see the file header).
+  static Future<({Dispatcher dispatcher, ProcedureEngine engine, RunCoordinator coordinator})>
+      _buildEngine({
+    required BrainProcessConfig config,
+    required ProvisionedMemory memory,
+    required TomBrainSubstrateClient substrate,
+  }) async {
+    final resolver = await ProcedureResolver.fromStore(
+      DiskProcedureStore(
+        systemDir: config.systemScriptsDir,
+        userDir: config.userScriptsDir,
+      ),
+    );
+
+    // One shared preemption state for the engine (yields against it) and the
+    // coordinator (drives it).
+    final preemption = PreemptionState();
+
+    final engine = ProcedureEngine(
+      resolver: resolver,
+      memory: memory.client,
+      memoryBridge: MemoryBridge(memory.client),
+      substrateBridge: SubstrateBridge(substrate),
+      preemptionState: preemption,
+    );
+
+    final coordinator = RunCoordinator(
+      preemption: preemption,
+      foregroundQueueDepth: config.foregroundQueueDepth,
+    );
+
+    final dispatcher = Dispatcher(
+      route: _buildRoute(
+        classifier: InboundClassifier(),
+        selector: ProcedureSelector(),
+        coordinator: coordinator,
+        engine: engine,
+      ),
+    );
+
+    return (dispatcher: dispatcher, engine: engine, coordinator: coordinator);
   }
 
   /// Builds the `classify → select → schedule` route the [Dispatcher] hands

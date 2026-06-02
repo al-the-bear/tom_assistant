@@ -194,7 +194,17 @@ class MemoryProvisioner {
           namePrefix: config.isolateNamePrefix,
         );
         await host.spawn();
-        await host.openMemory(config.memoryConfig);
+        // Open inside the spawned isolate. If the factory crashes (or the open
+        // otherwise fails) the host is *already spawned*, so tear it down here
+        // before rethrowing — otherwise provisioning would leak a live worker
+        // isolate (the failure is wrapped by `BrainProcessBoot` into a
+        // `BrainStartupError(phase: memory)`, D.46).
+        try {
+          await host.openMemory(config.memoryConfig);
+        } catch (_) {
+          await host.shutdown();
+          rethrow;
+        }
         final client = TomBrainMemoryIsolateClient(host);
         return ProvisionedMemory._(
           client: client,
