@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.16)
+
+OpenAI HTTP/SSE adapter — `/v1/embeddings` passthrough to substrate's
+embedding service (proto spec § 5.6, Q-E.2.2 — direct-to-substrate default):
+
+- `lib/src/adapters/openai_http_sse/embeddings_request.dart` —
+  `EmbeddingsRequest` / `EmbeddingsParseError`. Parses the `POST
+  /v1/embeddings` JSON body: `input` (a string or an array of strings) →
+  one-or-more non-empty texts; `model` (informational) → optional string;
+  `encoding_format` must be `float` (base64 rejected). Token-id inputs are a
+  reported `400` (the prototype embeds text, not pre-tokenised ids). Pure —
+  returns a `Result`, never throws on bad input.
+- `lib/src/adapters/openai_http_sse/embeddings_response.dart` —
+  `EmbeddingBatch` (the substrate-agnostic seam result: one float vector per
+  input + the substrate model id) and `EmbeddingsResponseRenderer` (renders
+  the OpenAI list body — `object: "list"`, `data[].embedding`, the substrate
+  model's `model`, a char/4-estimated `usage` with `total == prompt` and no
+  `completion_tokens`). A vector-count / input-count mismatch is an
+  `ArgumentError` (a seam-wiring bug, not a silent truncation).
+- `lib/src/adapters/openai_http_sse/openai_http_sse_adapter.dart` —
+  the `EmbeddingSource` passthrough seam (`Future<EmbeddingBatch>
+  Function(List<String>)`) injected via the new `embeddingSource` constructor
+  parameter; `_handleEmbeddings` parses the body (400 on malformed) and
+  `_respondToEmbeddings` answers `501` when no source is wired, else embeds
+  and renders the list body. Keeping the seam a function (not a
+  `tom_brain_substrate` type) preserves the E.7 dependency set.
+- `test/adapters/embeddings_test.dart` — 15 assertions: the pure parser
+  (string / array inputs, model, encoding_format; invalid_body /
+  missing_input / invalid_input / token-id rejection / invalid_model /
+  invalid_encoding_format), the pure renderer (list shape, usage, count
+  mismatch → ArgumentError), and the adapter black-box (injected source →
+  200 list body echoing the substrate model; malformed → 400 with the source
+  untouched; no source → 501).
+- `test/adapters/openai_http_sse_adapter_test.dart` — the E.11 embeddings
+  stub case re-scoped: a well-formed body with no source → 501 (mirroring the
+  chat no-source case); the group label narrowed to `(E.17)`.
+
 ## 0.0.1 — 2026-06-02 (Phase E.15)
 
 OpenAI HTTP/SSE adapter — model-id → persona mapping:

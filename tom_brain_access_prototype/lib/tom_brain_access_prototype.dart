@@ -61,9 +61,20 @@
 ///   absent/unknown model normalises to `tom-assistant`, AC-5). The
 ///   resolved persona's canonical id is the `model` stamped into both
 ///   render paths, replacing E.14's raw request echo.
-/// - E.16 – E.50 ⏳ — embeddings, models, Telegram adapter, identity /
-///   session / persona, edge security, kind-hint classifier, delivery,
-///   boot, and the end-to-end smoke.
+/// - E.16 ✅ — `/v1/embeddings` passthrough to substrate's embedding service
+///   (proto spec § 5.6, Q-E.2.2 — direct-to-substrate default).
+///   `EmbeddingsRequest` / `EmbeddingsParseError` parse the JSON body
+///   (`input` → one-or-more text strings, `model` informational); a malformed
+///   body returns the OpenAI `400 invalid_request_error` envelope. The inputs
+///   are embedded through the injected `EmbeddingSource` seam (which keeps the
+///   package free of a `tom_brain_substrate` dependency) and rendered by
+///   `EmbeddingsResponseRenderer` into the OpenAI `embeddings` list body
+///   (`data[].embedding`, the substrate model's `model`, a char/4-estimated
+///   `usage`). With no source wired a well-formed request answers `501`
+///   (boot E.41+).
+/// - E.17 – E.50 ⏳ — models listing, Telegram adapter, identity / session /
+///   persona, edge security, kind-hint classifier, delivery, boot, and the
+///   end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

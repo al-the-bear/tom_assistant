@@ -14,8 +14,8 @@
 //   - chat/completions request parsing → E.12 (wired)
 //   - SSE streaming response           → E.13 (wired)
 //   - non-streaming JSON response      → E.14 (wired)
-//   - model-id → persona mapping       → E.15 (this step — wired below)
-//   - `/v1/embeddings` passthrough     → E.16
+//   - model-id → persona mapping       → E.15 (wired)
+//   - `/v1/embeddings` passthrough     → E.16 (this step — wired below)
 //   - `/v1/models` listing             → E.17
 //   - wire-format conformance tests    → E.18
 //
@@ -25,8 +25,15 @@
 // `text/event-stream` body (E.13); a *non-streaming* request gets a buffered
 // `chat.completion` JSON body (E.14). The chunk source itself (the
 // dispatcher/engine, via the `DeliveryRegistry`) is wired at boot (E.41+);
-// until one is injected, *either* render mode answers `501`. The embeddings
-// and models routes remain `501` stubs until their own substeps.
+// until one is injected, *either* render mode answers `501`.
+//
+// At E.16 the embeddings route is wired as a passthrough to substrate's
+// embedding service (proto spec § 5.6, Q-E.2.2): a malformed body returns the
+// OpenAI `400 invalid_request_error` envelope; a well-formed request with no
+// `EmbeddingSource` injected answers `501` (the same no-source discipline the
+// chat route uses); otherwise the inputs are embedded through the injected
+// source and rendered into the OpenAI `embeddings` list body. The models
+// route remains a `501` stub until E.17.
 //
 // At E.15 the chat route maps the request's `model` string to a `Persona`
 // via `OpenAiPersonaMapping`: the resolved persona's canonical id is the
@@ -45,6 +52,8 @@ import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'chat_completion_json.dart';
 import 'chat_completion_request.dart';
 import 'chat_completion_sse.dart';
+import 'embeddings_request.dart';
+import 'embeddings_response.dart';
 import 'persona_mapping.dart';
 
 /// Produces the answer chunk stream for a parsed [ChatCompletionRequest].
@@ -56,6 +65,21 @@ import 'persona_mapping.dart';
 /// chunks itself — it only renders them.
 typedef ChatAnswerStream = Stream<OutboundChunk> Function(
   ChatCompletionRequest request,
+);
+
+/// Produces the embeddings for a parsed [EmbeddingsRequest]'s inputs.
+///
+/// This is the passthrough seam between the adapter (which owns the OpenAI
+/// embeddings wire format) and substrate's `EmbeddingService` (proto spec
+/// § 5.6, Q-E.2.2). Embeddings are not a cognition, so the default routes
+/// straight to substrate rather than through the dispatcher; boot (E.41+)
+/// adapts the real `EmbeddingService.embedBatch` into this function, and
+/// tests supply a synthetic one. Keeping it a function — not a
+/// `tom_brain_substrate` type — is what keeps the access prototype free of a
+/// substrate dependency (Plan E.7). It returns one vector per input, in input
+/// order, plus the model identity that produced them.
+typedef EmbeddingSource = Future<EmbeddingBatch> Function(
+  List<String> inputs,
 );
 
 /// The OpenAI-format HTTP/SSE inbound adapter.
@@ -76,7 +100,8 @@ class OpenAiHttpSseAdapter {
   /// `POST` — the primary chat-completions surface (streaming + not).
   static const String chatCompletionsPath = '$basePath/chat/completions';
 
-  /// `POST` — the embeddings passthrough to substrate (E.16).
+  /// `POST` — the embeddings passthrough to substrate's embedding service
+  /// (E.16).
   static const String embeddingsPath = '$basePath/embeddings';
 
   /// `GET` — the persona-as-model listing (E.17).
@@ -94,14 +119,27 @@ class OpenAiHttpSseAdapter {
   /// no source answers `501`.
   final ChatAnswerStream? _answerStream;
 
+  /// The injected embeddings passthrough source, or `null` when no substrate
+  /// embedding service is wired (the prototype's default until boot, E.41+).
+  /// A well-formed embeddings request with no source answers `501`.
+  final EmbeddingSource? _embeddingSource;
+
   /// Builds the adapter.
   ///
   /// [answerStream] is the seam to the cognition that produces answer
   /// chunks. When omitted, the chat route has no chunk source and a
   /// streaming request answers `501`; boot (E.41+) supplies the real
   /// dispatcher-backed producer, and tests supply a synthetic one.
-  OpenAiHttpSseAdapter({ChatAnswerStream? answerStream})
-      : _answerStream = answerStream;
+  ///
+  /// [embeddingSource] is the passthrough seam to substrate's
+  /// `EmbeddingService` (E.16). When omitted, a well-formed embeddings
+  /// request answers `501`; boot (E.41+) supplies the real substrate-backed
+  /// producer, and tests supply a synthetic one.
+  OpenAiHttpSseAdapter({
+    ChatAnswerStream? answerStream,
+    EmbeddingSource? embeddingSource,
+  })  : _answerStream = answerStream,
+        _embeddingSource = embeddingSource;
 
   late final Router _router = _buildRouter();
 
@@ -245,8 +283,72 @@ class OpenAiHttpSseAdapter {
     );
   }
 
-  Future<Response> _handleEmbeddings(Request request) async =>
-      _notImplemented('embeddings passthrough', 'E.16');
+  /// `POST /v1/embeddings`.
+  ///
+  /// E.16 wires the **passthrough to substrate's embedding service** (proto
+  /// spec § 5.6, Q-E.2.2). Flow:
+  ///
+  ///   * Read and validate the JSON body into an [EmbeddingsRequest]. A
+  ///     malformed body returns the OpenAI `400 invalid_request_error`
+  ///     envelope carrying the offending `param`.
+  ///   * With no [EmbeddingSource] wired (the default until boot, E.41+) a
+  ///     well-formed request answers `501` — the same no-source discipline
+  ///     the chat route uses.
+  ///   * Otherwise the inputs are embedded through the injected source and
+  ///     rendered into the OpenAI `embeddings` JSON body
+  ///     ([EmbeddingsResponseRenderer]).
+  Future<Response> _handleEmbeddings(Request request) async {
+    final Object? json;
+    try {
+      final String raw = await request.readAsString();
+      json = raw.trim().isEmpty ? null : jsonDecode(raw);
+    } on FormatException catch (e) {
+      return _errorResponse(
+        statusCode: 400,
+        message: 'Request body is not valid JSON: ${e.message}',
+        type: 'invalid_request_error',
+        code: 'invalid_body',
+      );
+    }
+
+    return EmbeddingsRequest.parse(json).fold(
+      ok: _respondToEmbeddings,
+      err: (EmbeddingsParseError error) async => _errorResponse(
+        statusCode: 400,
+        message: error.message,
+        type: 'invalid_request_error',
+        code: error.code,
+        param: error.param,
+      ),
+    );
+  }
+
+  /// Renders the response for a successfully-parsed embeddings request.
+  ///
+  /// With no [EmbeddingSource] wired (the default until boot, E.41+) the
+  /// route answers `501`. Otherwise the inputs are embedded through the
+  /// injected source and rendered into the OpenAI list body. The response
+  /// `model` is the substrate embedding model's actual identity (from the
+  /// batch), not the request's informational `model` string (proto
+  /// spec § 5.6).
+  Future<Response> _respondToEmbeddings(EmbeddingsRequest request) async {
+    final EmbeddingSource? embeddingSource = _embeddingSource;
+    if (embeddingSource == null) {
+      return _notImplemented(
+        'embeddings passthrough (no embedding service wired)',
+        'boot E.41+',
+      );
+    }
+    final EmbeddingBatch batch = await embeddingSource(request.inputs);
+    final String body = const EmbeddingsResponseRenderer().bodyJson(
+      inputs: request.inputs,
+      batch: batch,
+    );
+    return Response.ok(
+      body,
+      headers: <String, String>{'content-type': _jsonContentType},
+    );
+  }
 
   Future<Response> _handleModels(Request request) async =>
       _notImplemented('models listing', 'E.17');

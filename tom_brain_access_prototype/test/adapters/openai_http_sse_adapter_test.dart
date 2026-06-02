@@ -68,8 +68,7 @@ void main() {
       });
     });
 
-    group('mounted routes answer 501 until behaviour lands (E.16 – E.17)',
-        () {
+    group('mounted routes answer 501 until behaviour lands (E.17)', () {
       test(
           'POST /v1/chat/completions with a well-formed body and no answer '
           'source → 501 (renders need a chunk source, wired at boot E.41+)',
@@ -99,12 +98,25 @@ void main() {
         expect(error['code'], 'not_implemented');
       });
 
-      test('POST /v1/embeddings → 501 not_implemented', () async {
-        final Response response =
-            await _call(adapter, 'POST', '/v1/embeddings', body: '{}');
+      test(
+          'POST /v1/embeddings with a well-formed body and no embedding '
+          'source → 501 (passthrough needs a substrate source, wired at boot '
+          'E.41+)', () async {
+        // E.16 parses the body; the embeddings render needs an injected
+        // `EmbeddingSource`. This adapter has no source wired, so a
+        // well-formed request answers 501 naming boot (E.41+). (A malformed
+        // body would be a 400 — asserted in the E.16 test, which also injects
+        // a source to assert the rendered list body.)
+        final Response response = await _call(
+          adapter,
+          'POST',
+          '/v1/embeddings',
+          body: jsonEncode(<String, Object?>{'input': 'hello'}),
+        );
         expect(response.statusCode, 501);
         final Map<String, Object?> error = await _errorObject(response);
         expect(error['type'], 'not_implemented');
+        expect(error['code'], 'not_implemented');
       });
 
       test('GET /v1/models → 501 not_implemented', () async {

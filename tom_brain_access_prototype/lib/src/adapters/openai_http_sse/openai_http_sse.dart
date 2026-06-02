@@ -15,10 +15,16 @@
 // and the `ChatAnswerStream` seam on the adapter. E.14 adds
 // `ChatCompletionJsonRenderer` — the non-streaming `chat.completion` JSON
 // body renderer. E.15 adds `OpenAiPersonaMapping` — the model-id → `Persona`
-// map whose canonical persona id is stamped into the rendered body.
+// map whose canonical persona id is stamped into the rendered body. E.16 adds
+// `EmbeddingsRequest` / `EmbeddingsParseError` (the embeddings request
+// parser), `EmbeddingBatch` / `EmbeddingsResponseRenderer` (the substrate
+// seam result + the OpenAI embeddings body renderer), and the
+// `EmbeddingSource` passthrough seam on the adapter.
 
 export 'chat_completion_json.dart';
 export 'chat_completion_request.dart';
 export 'chat_completion_sse.dart';
+export 'embeddings_request.dart';
+export 'embeddings_response.dart';
 export 'openai_http_sse_adapter.dart';
 export 'persona_mapping.dart';

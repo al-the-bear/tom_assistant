@@ -6,10 +6,11 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.15 — `OpenAiHttpSseAdapter` router scaffold (E.11),
+> **Status:** E.16 — `OpenAiHttpSseAdapter` router scaffold (E.11),
 > `chat/completions` request parsing (E.12), the SSE streaming response
-> (E.13), the non-streaming JSON response (E.14), and the model-id → persona
-> mapping (E.15). A raw `shelf_router.Router` (Q-E.3.2 strategy 2) mounts
+> (E.13), the non-streaming JSON response (E.14), the model-id → persona
+> mapping (E.15), and the `/v1/embeddings` passthrough (E.16). A raw
+> `shelf_router.Router` (Q-E.3.2 strategy 2) mounts
 > `POST /v1/chat/completions`, `POST /v1/embeddings`, and `GET /v1/models`
 > under `/v1/`. The chat route parses its body (`ChatCompletionRequest`:
 > `messages` → prompt text, `model` → persona id, `stream` → render flag),
@@ -26,14 +27,23 @@ streams the answer back through the originating channel.
 > `assistant_to_user`), normalising an absent/unknown model to
 > `tom-assistant` (AC-5). Both render modes source chunks from the injected
 > `ChatAnswerStream` seam (the real source is wired at boot, E.41+); with no
-> source wired either mode answers `501`. The embeddings and models routes
-> remain `501` stubs; an unmatched path/verb returns the OpenAI `404`
-> envelope. Per-route behaviour (embeddings, models) lands at E.16 – E.17.
-> Locked by `test/adapters/openai_http_sse_adapter_test.dart`,
+> source wired either mode answers `501`. The `POST /v1/embeddings` route is a
+> **passthrough** to substrate's embedding service (proto spec § 5.6,
+> Q-E.2.2 — direct-to-substrate by default): `EmbeddingsRequest` parses
+> `input` (a string or array of strings) into one-or-more texts, returning the
+> OpenAI `400` envelope on a malformed body; the inputs are embedded through
+> the injected `EmbeddingSource` seam (which keeps the package free of a
+> `tom_brain_substrate` dependency) and `EmbeddingsResponseRenderer` renders
+> the OpenAI list body (`data[].embedding`, the substrate model's `model`, a
+> char/4 `usage`); with no source wired a well-formed request answers `501`
+> (boot E.41+). The models route remains a `501` stub; an unmatched path/verb
+> returns the OpenAI `404` envelope. Per-route behaviour (models) lands at
+> E.17. Locked by `test/adapters/openai_http_sse_adapter_test.dart`,
 > `test/adapters/chat_completion_request_test.dart`,
 > `test/adapters/chat_completion_sse_test.dart`,
-> `test/adapters/chat_completion_json_test.dart`, and
-> `test/adapters/persona_mapping_test.dart`. The `serve` command is
+> `test/adapters/chat_completion_json_test.dart`,
+> `test/adapters/persona_mapping_test.dart`, and
+> `test/adapters/embeddings_test.dart`. The `serve` command is
 > still a not-yet-wired stub; full boot (substrate, memory isolate, engine,
 > dispatcher, adapters wired, `/healthz`) lands at E.41 – E.45.
 
