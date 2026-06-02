@@ -10,4 +10,14 @@
 // `tom_brain_access_prototype_specification.md` § Edge security and Plan
 // steps E.28 – E.32 (anchor-at-the-edge proof: E.56).
 //
-// At E.8 this folder is intentionally empty. No exports yet.
+// E.28 ✅ — bearer-token auth (`BearerTokenAuthenticator` +
+// `JwtBearerTokenAuthenticator` / `StaticBearerTokenAuthenticator`,
+// `BearerAuthFailure` / `BearerAuthFailureReason`, `parseBearerHeader` /
+// `authenticateBearerHeader`): the OpenAI-channel credential check, run
+// before an `Access` exists; a failure maps to `401` (AC-4). Telegram auth
+// is the whitelist (E.22, in the Telegram adapter).
+// E.29 ⏳ — per-principal token-bucket rate limiting.
+// E.30 ⏳ — per-principal daily LLM-call quota.
+// E.31 ⏳ — the anchor pre-check.
+
+export 'bearer_auth.dart';

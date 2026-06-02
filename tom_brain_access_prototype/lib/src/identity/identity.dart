@@ -14,7 +14,10 @@
 // E.25 ✅ — `SessionManager` (+ `AccessChannel`, `SessionKey`,
 // `SessionTurn`, `SessionNode`): a sliding window keyed by (principal,
 // channel, conversation id); reuse-by-key, not re-creation (AC-8).
-// E.26 – E.27 ⏳ — `PersonaResolver`.
+// E.26 ✅ — `PersonaResolver`: model-id-or-default → `Persona`, reusing the
+// shared `OpenAiPersonaMapping.knownModels` vocabulary (AC-5).
+// E.27 ⏳ — the resolution-test sweep (token / user-id / session / persona).
 
 export 'identity_resolver.dart';
+export 'persona_resolver.dart';
 export 'session_manager.dart';

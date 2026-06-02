@@ -1,5 +1,91 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.28)
+
+Bearer-token auth — the first edge-security check, opening
+`## E.6 — Edge security` (Plan E.28; proto spec § 8; AC-4). The
+OpenAI-channel credential check runs *before* an `Access` is constructed; a
+failure maps to `401` and the request never becomes an `Access`. Mirrors the
+Phase-A A.76 bearer contract (same interface / failure taxonomy / `Jwt…` +
+`Static…` implementations), re-implemented here because the access prototype
+must not depend on `tom_brain_memory` (a phase-end E.52 extraction into
+`tom_brain_shared` is the place to unify them — Q-E.28.2).
+
+- `lib/src/edge_security/bearer_auth.dart` — **new**.
+  - `BearerTokenAuthenticator` — the synchronous validate-or-throw contract
+    (`authenticate(token) → TomPrincipal`).
+  - `StaticBearerTokenAuthenticator` — the prototype default; a closed,
+    defensively-copied token→principal map (opaque shared secrets).
+  - `JwtBearerTokenAuthenticator` — the canonical
+    `TomBearerAuthentication.convertTokenPayloadToPrincipal` path; rejects
+    guest / non-authenticated principals.
+  - `BearerAuthFailure` / `BearerAuthFailureReason` (`missing` / `malformed`
+    / `rejected`) — the closed failure taxonomy; the token string never
+    appears in the message (no token-introspection side channel).
+  - `parseBearerHeader` — lifts the token out of `Authorization: Bearer
+    <token>` (scheme matched case-insensitively); `authenticateBearerHeader`
+    composes parse + authenticate.
+  - `bearerAuthHttpStatus` (`401`), `bearerScheme`, `authorizationHeaderName`
+    — the single-source constants the OpenAI adapter (E.41+) reads.
+- `lib/src/edge_security/edge_security.dart` — exports `bearer_auth.dart`;
+  E.28 ✅ note + the E.29 – E.31 pending list.
+- `lib/tom_brain_access_prototype.dart` — E.28 ✅ bullet; pending range
+  advanced to E.29 – E.50.
+- `test/edge_security/bearer_auth_test.dart` — **new**. 23 assertions:
+  header parsing (every missing / malformed shape, case-insensitive scheme,
+  no header echo), the static + JWT authenticators, the composed
+  `authenticateBearerHeader`, the `401` / scheme / barrel-surface contract,
+  and the no-token-leak guarantee.
+
+## 0.0.1 — 2026-06-02 (Phase E.27)
+
+Resolution-test sweep — the cross-resolver suite closing
+`## E.5 — Identity, session, persona` (Plan E.27). Tests-only; no new
+source.
+
+- `test/identity/identity_resolution_sweep_test.dart` — **new**. 13
+  assertions across four groups, exercising the three resolvers
+  (`IdentityResolver` E.24, `SessionManager` E.25, `PersonaResolver` E.26)
+  the way the edge composes them:
+  - **token / user-id resolution** — a bound bearer token and a bound
+    Telegram user id each resolve to the configured identity; both channels
+    of one person resolve to the *same* `ResolvedIdentity` (AC-7); the
+    principal id never echoes the secret token; an unbound credential throws
+    `IdentityResolutionException` with the right channel.
+  - **session reuse across calls** — repeated calls on one identity +
+    channel + conversation reuse the same node (AC-8); the channel splits one
+    person into two sessions; different conversations are different sessions.
+  - **persona defaulting** — a recognised model id round-trips; `null` and an
+    unrecognised id both fall back to `Persona.assistant()` (AC-5).
+  - **cohesion** — a multi-turn conversation keeps identity + persona stable
+    while the session accumulates turns and stays keyed by the resolved
+    principal id; the `Session` handle projection carries the resolved
+    conversation id.
+
+## 0.0.1 — 2026-06-02 (Phase E.26)
+
+`PersonaResolver` — the third and last of the three `Access`-filling
+resolvers (proto spec § 7.3, Plan E.26, AC-5). Maps a model id (or its
+absence) to the `Persona` the dispatcher hands to substrate.
+
+- `lib/src/identity/persona_resolver.dart` — **new**. Symbol:
+  - `PersonaResolver` — `resolve(String? modelId)` yields a `Persona`
+    carrying the recognised id and the prototype substrate role
+    `assistant_to_user`; a `null` or unrecognised id falls back to
+    `Persona.assistant()` (AC-5 — an unknown model is not an error).
+    `isKnown(String?)` mirrors the recognition test. `knownModels` defaults
+    to the shared `OpenAiPersonaMapping.knownModels` (the single id-list
+    source of truth E.15 established) and is injectable + copied
+    unmodifiable for the `AccessConfig` persona vocabulary at boot (E.41+).
+- `lib/src/identity/identity.dart` — barrel now exports the persona resolver.
+- `lib/tom_brain_access_prototype.dart` — E.26 ✅ bullet; pending range
+  narrowed to E.27 – E.50.
+- `test/identity/persona_resolver_test.dart` — **new** (13 assertions):
+  default vocabulary is the shared list + unmodifiable; each of the three
+  ids round-trips to `assistant_to_user`; `null` / unknown / empty default
+  to `Persona.assistant()`; `isKnown` matches; an injected vocabulary
+  widens/narrows the recognised set and is copied unmodifiable.
+
 ## 0.0.1 — 2026-06-02 (Phase E.25)
 
 `SessionManager` — the second of the three `Access`-filling resolvers

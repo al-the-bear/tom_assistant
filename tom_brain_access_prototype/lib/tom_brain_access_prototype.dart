@@ -150,8 +150,39 @@
 ///   shared `Session` handle (§ 4.4); the node store is in-process for the
 ///   prototype (memory-node persistence is wired through the dispatcher at
 ///   E.27 / E.55 — the access layer never depends on `tom_brain_memory`).
-/// - E.26 – E.50 ⏳ — persona, edge security, kind-hint classifier,
-///   delivery, boot, and the end-to-end smoke.
+/// - E.26 ✅ — `PersonaResolver` (identity/): resolves a model id (or its
+///   absence) to the `Persona` the dispatcher hands to substrate. The three
+///   persona-as-model ids (`tom-assistant`, `tom-assistant:terse`,
+///   `tom-assistant:verbose`) round-trip — each carrying that id and the
+///   single prototype substrate role `assistant_to_user`; a `null` or
+///   unknown model id falls back to `Persona.assistant()` (AC-5: an unknown
+///   model is not an error, it defaults). The resolver's default vocabulary
+///   is the shared `OpenAiPersonaMapping.knownModels` (the single id-list
+///   source of truth E.15 established), with an injectable seam for the
+///   `AccessConfig` persona vocabulary at boot (E.41+). It is the third and
+///   last of the three `Access`-filling resolvers (identity E.24, session
+///   E.25, persona E.26).
+/// - E.27 ✅ — resolution-test sweep (tests-only): the cross-resolver suite
+///   exercising identity (E.24), session (E.25) and persona (E.26) the way
+///   the edge composes them — token / user-id resolution, session reuse
+///   across calls (same node by key, AC-8), and persona defaulting when no
+///   model id is named (AC-5) — plus the cohesion check that the session is
+///   keyed by the resolved principal id while persona varies per turn. No new
+///   source; closes `## E.5 — Identity, session, persona`.
+/// - E.28 ✅ — bearer-token auth (edge_security/): the OpenAI-channel
+///   credential check that runs *before* an `Access` exists (AC-4).
+///   `BearerTokenAuthenticator` validates a token to a `TomPrincipal` (or
+///   throws `BearerAuthFailure` with a `missing` / `malformed` / `rejected`
+///   reason); `StaticBearerTokenAuthenticator` (the prototype default,
+///   opaque shared secrets) and `JwtBearerTokenAuthenticator` (via
+///   `TomBearerAuthentication.convertTokenPayloadToPrincipal`) ship.
+///   `parseBearerHeader` / `authenticateBearerHeader` lift the token out of
+///   the `Authorization: Bearer <token>` header; every failure maps to
+///   `bearerAuthHttpStatus` (`401`). Telegram auth is the whitelist (E.22);
+///   the failure→`Response` wire shaping and the boot wiring of the
+///   authenticator are E.41+ composition. Mirrors the A.76 bearer contract.
+/// - E.29 – E.50 ⏳ — rate limiting, quota, the anchor pre-check, the
+///   kind-hint classifier, delivery, boot, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

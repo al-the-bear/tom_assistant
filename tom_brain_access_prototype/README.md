@@ -6,8 +6,25 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.25 — `SessionManager` resolves an inbound request to a
-> sliding-window session keyed by (principal, channel, conversation id).
+> **Status:** E.28 — bearer-token auth opens `## E.6 — Edge security`: the
+> OpenAI-channel credential check that runs *before* an `Access` exists
+> (AC-4). `BearerTokenAuthenticator` validates a token to a `TomPrincipal`
+> (or throws `BearerAuthFailure` with a `missing` / `malformed` / `rejected`
+> reason); `StaticBearerTokenAuthenticator` (the prototype default — opaque
+> shared secrets) and `JwtBearerTokenAuthenticator` (via
+> `TomBearerAuthentication`) ship. `parseBearerHeader` /
+> `authenticateBearerHeader` lift the token out of the
+> `Authorization: Bearer <token>` header; every failure maps to
+> `bearerAuthHttpStatus` (`401`). Telegram auth is the whitelist (E.22); the
+> failure→`Response` wire shaping and the boot wiring are E.41+. Mirrors the
+> A.76 bearer contract. E.27 — the identity / session / persona resolution
+> sweep closes `## E.5`: a cross-resolver test suite locks token / user-id
+> resolution, session reuse across calls (same node by key, AC-8), and
+> persona defaulting when no model id is named (AC-5), plus the cohesion
+> check that the session is keyed by the resolved principal id while persona
+> varies per turn. E.26 — `PersonaResolver` completes the three
+> `Access`-filling resolvers, mapping a model id (or its absence) to a
+> `Persona`.
 > The Telegram channel surface is
 > conformance-locked (roundtrip + whitelist enforcement + large-answer
 > chunking), end-to-end through the in-process `LoopbackChatApi`.
@@ -60,8 +77,16 @@ streams the answer back through the originating channel.
 > window slid at `maxWindowTurns`; the node projects onto the shared
 > `Session` handle. The node store is in-process for the prototype — the
 > access layer never depends on `tom_brain_memory`, so the memory-node
-> persistence is wired through the dispatcher at E.27 / E.55. Persona
-> resolution (E.26+) builds on this.
+> persistence is wired through the dispatcher at E.27 / E.55. E.26 adds the
+> third and last resolver: `PersonaResolver` maps a model id (or its
+> absence) to the `Persona` the dispatcher hands to substrate — the three
+> persona-as-model ids (`tom-assistant`, `:terse`, `:verbose`) round-trip,
+> each carrying that id and the single substrate role `assistant_to_user`;
+> a `null` or unknown model id falls back to `Persona.assistant()` (AC-5).
+> Its default vocabulary is the shared `OpenAiPersonaMapping.knownModels`
+> (the single id-list source of truth E.15 established), with an injectable
+> seam for the `AccessConfig` persona vocabulary at boot (E.41+). The
+> resolution-test sweep (E.27) builds on the three resolvers.
 >
 > The OpenAI HTTP/SSE adapter (E.11 – E.18) is complete and its
 > wire-format conformance is locked. `OpenAiHttpSseAdapter` router scaffold
