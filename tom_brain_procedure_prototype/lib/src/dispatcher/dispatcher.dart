@@ -270,8 +270,14 @@
 //     the recorder draws the `produced_by` edge to the run
 //     (`d39_answer_with_memory_persist_test.dart`). `requires`→[recall, llm,
 //     persist, edge].
-//   - D.40–D.42 — `answer_with_memory_v1` interest push + automation note +
-//     tests.
+//   - D.40 ✅ — body step 4 (cold-classification interest push): when recall
+//     comes back empty (the proxy for "prompt embedding far from any
+//     centroid"), persists an `InterestItem` and pushes it onto the
+//     `interests` bootstrap stack
+//     (`d40_answer_with_memory_interest_test.dart`). `requires`→[recall, llm,
+//     persist, edge, stack.push]. Detection reads the recall already in hand;
+//     `embed`/`classify` are not called (Q-D.40.1).
+//   - D.41–D.42 — `answer_with_memory_v1` automation note + tests.
 //   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
 //   - D.47–D.50 — `DispatcherConfig` + observability.
 //

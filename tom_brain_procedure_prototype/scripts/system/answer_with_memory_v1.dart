@@ -10,7 +10,7 @@
 ///   - { name: text, type: String, required: true }
 /// outputs:
 ///   - { name: answer, type: String }
-/// requires: [ recall, llm, persist, edge ]
+/// requires: [ recall, llm, persist, edge, stack.push ]
 //
 // answer_with_memory_v1 — the prototype's one real system procedure
 // (`prototype_implementation_plan.md` D.10 / D.36–D.42;
@@ -29,8 +29,14 @@
 // `Event`, the answer as a `Conclusion`), draws a `derived_from` edge from the
 // `Conclusion` to every recalled node that fed the prompt, and reports the
 // `Conclusion` id back to the engine so the run recorder draws the
-// `produced_by` edge to the run record. The remaining steps (interest push
-// D.40, automation note D.41, tests D.42) land next.
+// `produced_by` edge to the run record.
+// D.40 (plan): "Push an `InterestItem` to `interests` if the prompt embedding
+// lands far from any existing centroid (cold-classification path)." This is
+// the fourth body step: when the four-mode recall (vector mode included)
+// surfaced nothing, the prompt landed far from anything memory already knows —
+// the brain is curious about a topic it has no memory of — so the body records
+// an `InterestItem` and pushes it onto the `interests` bootstrap stack. The
+// remaining steps (automation note D.41, tests D.42) land next.
 //
 // ── Why the `produced_by` edge is the engine's job, not the body's ──
 //
@@ -58,6 +64,32 @@
 // recorder's own writes carry the full `engine:<procedureId>:<runId>`
 // provenance.
 //
+// ── How the cold-classification path is detected (Q-D.40.1) ─────────
+//
+// The plan phrases the trigger as "the prompt embedding lands far from any
+// existing centroid (cold-classification path)". The body does not re-embed
+// the prompt or call `classify`: the spec § 4.4 header pins this procedure's
+// `requires` to `[recall, llm, persist, edge, note, stack.push]` — neither
+// `embed` nor `classify` is in that set, and `classify` is not even part of
+// the bridged primitive surface (`BridgedPrimitiveCatalog`). The cold signal
+// is therefore read off the recall the body already ran: recall step 1 runs
+// the four-mode pipeline *including vector mode*, which embeds the prompt and
+// looks for neighbours. When that recall surfaces **no nodes at all**, the
+// prompt embedding found nothing close in memory — the operational proxy for
+// "far from any existing centroid". A topic memory knows nothing about is
+// exactly what the brain should grow curious about, so the body persists an
+// `InterestItem` (`topic` = the prompt, `why` = the cold-path reason) and
+// pushes it onto the `interests` bootstrap stack. See Q-D.40.1.
+//
+// ── Why the `InterestItem` is not reported in `producedNodeIds` (Q-D.40.2) ──
+//
+// Unlike the `Conclusion`, the `InterestItem` is *not* added to the reserved
+// `producedNodeIds` channel: the bootstrap `InterestItem` schema's
+// `allowed_incoming` is `[satisfied_by, mentions, derived_from]` — it does not
+// permit `produced_by`, so asking the recorder to draw a `produced_by` edge to
+// it would be rejected by the edge-permission table. The interest is recorded
+// and stacked; its run linkage is the trail, not a `produced_by` edge.
+//
 // ── Token streaming and `Access.deliver` (Q-D.38.1) ─────────────────
 //
 // The plan's "stream tokens back via the `Access.deliver` callback" is a
@@ -83,8 +115,8 @@
 //     so `mem.recall(...)` resolves (`brain_bridges_registrar.dart`);
 //   - `…/src/bridges/substrate_bridge.dart` brings the `sub` global into
 //     scope so `sub.llm(...)` resolves (D.38).
-// `mem.persist(...)` and `mem.edge(...)` (D.39) resolve through the same
-// `memory_bridge.dart` import.
+// `mem.persist(...)` and `mem.edge(...)` (D.39) and `mem.stackPush(...)`
+// (D.40) resolve through the same `memory_bridge.dart` import.
 // These imports are the only surface this body touches; everything else is
 // denied (PE-1). (The static `SandboxValidator` rejects *all* imports per
 // spec § 4.2; that ban contradicts the host's import-to-reach-`mem`/`sub`
@@ -95,12 +127,13 @@
 //
 // The machine-validated header fields track the body, not the summary, so
 // the artifact stays internally coherent (`ContractValidator`, § 7 rows
-// 4–5 — `requires` must match the body's actual calls). As of D.39:
+// 4–5 — `requires` must match the body's actual calls). As of D.40:
 //   - `text` is `required: true` — step 1 reads it for `recall`, step 2
-//     folds it into the assembled prompt, step 3 persists it as the `Event`;
-//   - `requires` is `[recall, llm, persist, edge]` — the four bridged
+//     folds it into the assembled prompt, step 3 persists it as the `Event`,
+//     step 4 records it as the `InterestItem.topic` on the cold path;
+//   - `requires` is `[recall, llm, persist, edge, stack.push]` — the bridged
 //     primitives the body calls (memory recall + substrate completion +
-//     node persist + edge creation);
+//     node persist + edge creation + the cold-path `interests` stack push);
 //   - the only declared output is `answer` (the concatenated LLM answer
 //     text). The body also returns the reserved `producedNodeIds` key, which
 //     the engine consumes (to draw the run's `produced_by` edge) and strips
@@ -153,6 +186,26 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     await mem.edge(conclusionId, 'derived_from', nodeId, producer: producer);
   }
 
+  // D.40 — cold-classification interest push. When the four-mode recall
+  // (vector mode included) surfaced nothing, the prompt landed far from any
+  // existing memory/centroid: the brain is curious about a topic it knows
+  // nothing about, so it records an InterestItem and pushes it onto the
+  // `interests` bootstrap stack. The InterestItem is intentionally not added
+  // to `producedNodeIds` — its schema does not permit an incoming
+  // `produced_by` edge (Q-D.40.2).
+  if (_isColdRecall(recall)) {
+    final interestId = await mem.persist(
+      'InterestItem',
+      {
+        'topic': text,
+        'why': 'The prompt matched no existing memory on recall '
+            '(cold-classification path).',
+      },
+      producer: producer,
+    );
+    await mem.stackPush('interests', interestId, producer: producer);
+  }
+
   // The engine reads `producedNodeIds` to drive the run recorder's
   // `produced_by` edge (Conclusion → ProcedureRun), then strips the key so
   // `answer` stays the only surfaced output.
@@ -160,6 +213,18 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     'answer': answer,
     'producedNodeIds': [conclusionId],
   };
+}
+
+/// Whether the recall came back empty — the operational proxy for "the prompt
+/// embedding landed far from any existing centroid" (the cold-classification
+/// path). The four-mode recall runs vector mode, so an empty result means the
+/// prompt found no close neighbour in memory. See Q-D.40.1.
+bool _isColdRecall(Map recall) {
+  final nodes = recall['nodes'];
+  if (nodes is List) {
+    return nodes.isEmpty;
+  }
+  return true;
 }
 
 /// Collects the ids of the recalled nodes that fed the answer prompt — the
