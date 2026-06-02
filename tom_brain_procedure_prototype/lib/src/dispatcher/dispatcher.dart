@@ -131,6 +131,54 @@
 // concurrent background submission still raises `RunSlotBusy`. Exported
 // below.
 //
+// D.26 ✅ — `inflight` integration, dispatcher half (`run_registry.dart` +
+// `run_coordinator.dart`): the coordinator now assigns a run id to every run
+// the moment it occupies a slot (an injectable `RunIdMint`, default a
+// monotonic per-coordinator counter) and threads it into the controller's
+// `recordRunStarted` / `recordRunFinished` calls, so the slot enter/exit
+// `PreemptionEvent`s carry a non-null `runId`. When a `RunRegistry` (over the
+// memory client) is wired and a submission names the `procedureId` it
+// executes, the coordinator pushes a `status: running` `ProcedureRun` marker
+// onto the `inflight` bootstrap stack on run start — the dispatcher half of
+// PE-4, distinct from the engine-side `RunRecorder` (C.31). Exported below.
+//
+// D.27 ✅ — `recent_runs` integration, dispatcher half (`run_registry.dart` +
+// `run_coordinator.dart`): the run-end half of the PE-4 dispatcher tracking.
+// The coordinator now holds the per-slot `inflight` handle D.26 created and,
+// when a run ends (success, failure, *or* a hard-step-deadline force-yield),
+// calls `RunRegistry.recordEnd` — which removes the running marker from
+// `inflight` and pushes a terminal `ProcedureRun` marker
+// (`status: completed` / `failed` / `force_yielded`) onto `recent_runs`. The
+// run-end write is fired without blocking the completion path, and the held
+// handle is cleared the moment the run ends. `RunOutcome` (the terminal-status
+// enum) is exported below.
+//
+// D.28 ✅ — stack-state-reflects-the-runtime tests
+// (`test/d28_stack_state_runtime_test.dart`): a tests-only step that locks the
+// PE-4 dispatcher-half lifecycle by asserting the live *membership* of the two
+// bootstrap stacks (read through `StackApi.peek`), not just the registry's call
+// history — `inflight` holds exactly the runs the coordinator currently has
+// live, `recent_runs` accumulates exactly the finished ones, and concurrent
+// foreground + background appears as two distinct `inflight` entries that each
+// migrate to a *distinct* `recent_runs` node (the store is append-only). No
+// production change.
+//
+// D.29 ✅ — fallback executor, version-chain walk (`fallback_executor.dart`):
+// the first FallbackExecutor (PE-6) addition. `FallbackExecutor.run` resolves
+// a procedure's fallback chain `[v_latest, …, v1]` (C.25
+// `ProcedureResolver.fallbackChain`) and attempts each version via a
+// caller-supplied `VersionAttempt`. On the four typed run-failure classes
+// (`FallbackTrigger`: contract violation, critique rejected, deadline
+// exceeded, runtime crash) it steps down to the next-older version; an
+// `EnvironmentalFailure` or any non-fallback failure surfaces without
+// stepping. Failures classify through `FailureClassifier`
+// (`defaultFallbackClassifier`); `RunDeadlineExceeded` now implements the
+// `ClassifiedFailure` marker so the deadline path classifies without
+// string-matching. Each version attempt is recorded in the returned
+// `FallbackOutcome` so D.30 (`ProcedureFallback` events) and D.31 (sustained-
+// fallback `AutomationIdea` push) build on top without re-walking the chain.
+// Exported below.
+//
 // Intentionally empty at D.6: this step adds the folder + barrel only,
 // matching the C.8 per-folder convention used across the Tom Brain
 // projects (`tom_brain_shared`, `tom_brain_memory`,
@@ -145,8 +193,10 @@
 //   - D.14–D.17 — `Dispatcher.accept` entry surface + classification +
 //     selection.
 //   - D.18–D.25 — `RunCoordinator` + `PreemptionController`.
-//   - D.26–D.28 — `inflight` / `recent_runs` integration.
-//   - D.29–D.32 — `FallbackExecutor`.
+//   - D.26 ✅ — `inflight` integration (dispatcher half); D.27 ✅ —
+//     `recent_runs` integration (dispatcher half); D.28 ✅ — stack-state tests.
+//   - D.29 ✅ — `FallbackExecutor` version-chain walk; D.30–D.32 —
+//     `ProcedureFallback` events, sustained-fallback `AutomationIdea`, tests.
 //   - D.33–D.35 — free-time scheduler stub.
 //   - D.36–D.42 — `answer_with_memory_v1` procedure script.
 //   - D.43–D.46 — inter-isolate transport + `BrainProcessBoot`.
@@ -158,6 +208,17 @@ library;
 
 export 'dispatcher_entry.dart'
     show Dispatcher, DispatchRoute, DispatcherEntryObserver;
+export 'fallback_executor.dart'
+    show
+        ClassifiedFailure,
+        EnvironmentalFailure,
+        FailureClassifier,
+        FallbackAttempt,
+        FallbackExecutor,
+        FallbackOutcome,
+        FallbackTrigger,
+        VersionAttempt,
+        defaultFallbackClassifier;
 export 'inbound_classifier.dart'
     show ClassifyFallback, InboundClassifier, InboundKinds, classifyInboundV1;
 export 'preemption_controller.dart'
@@ -178,7 +239,9 @@ export 'run_coordinator.dart'
         RunBody,
         RunCoordinator,
         RunDeadlineExceeded,
+        RunIdMint,
         RunSlot,
         RunSlotBusy,
         defaultCoordinatorDeadlineGrace;
+export 'run_registry.dart' show RunOutcome, RunRegistration, RunRegistry;
 export 'unsupported_procedure_kind.dart' show UnsupportedProcedureKind;

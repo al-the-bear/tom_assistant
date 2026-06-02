@@ -25,8 +25,9 @@
 // On top of the matrix this suite pins the cross-cutting contracts each event
 // must satisfy when emitted through the live coordinator: the kebab-case
 // `kind` discriminator, the `payloadJson()` shape, the UTC `occurredAt` stamp
-// (via an injected deterministic clock), the nullable `runId` (still null in
-// the prototype — D.26 assigns ids), and the stream ordering invariants
+// (via an injected deterministic clock), the `runId` (D.26: the slot
+// enter/exit events carry the coordinator-assigned id; the state-transition
+// events stay id-less), and the stream ordering invariants
 // (enter-before-its-own-exit, exit-before-a-successor's-enter, and the
 // background bracketing a preempting foreground chain).
 //
@@ -464,12 +465,29 @@ void main() {
       }
     });
 
-    test('runId stays null in the prototype (D.26 assigns ids)', () async {
+    test('D.26: slot enter/exit carry the run id, transitions stay id-less',
+        () async {
       final coordinator = build();
+      final bgGate = Completer<int>();
+
+      // Background live, then a foreground arrives (drives a preemption
+      // request) and drains (drives a resume) — exercises all four variants.
+      coordinator.submitBackground<int>(() => bgGate.future);
       await coordinator.submitForeground<int>(() async => 1);
       await pumpEventQueue();
+      bgGate.complete(0);
+      await pumpEventQueue();
 
-      for (final event in events) {
+      // Slot enter/exit events carry the coordinator-assigned id.
+      for (final event
+          in events.where((e) => e is RunSlotEntered || e is RunSlotExited)) {
+        expect(event.runId, isNotNull);
+        expect(event.runId, startsWith('disp-'));
+      }
+      // The state-transition events describe a transition, not a single run.
+      for (final event in events.where((e) =>
+          e is ForegroundPreemptionRequested ||
+          e is BackgroundResumeSignalled)) {
         expect(event.runId, isNull);
       }
     });
@@ -488,8 +506,8 @@ void main() {
       final entered = events.whereType<RunSlotEntered>().first.toJson();
       expect(entered['kind'], 'dispatcher.run-slot-entered');
       expect(entered['occurredAt'], frozenNow.toIso8601String());
-      expect(entered.containsKey('runId'), isFalse,
-          reason: 'null runId is omitted from the wire shape');
+      expect(entered['runId'], startsWith('disp-'),
+          reason: 'D.26: the slot enter event carries the run id');
       expect(entered['payload'], isA<Map<String, Object?>>());
 
       final exited = events.whereType<RunSlotExited>().first.toJson();

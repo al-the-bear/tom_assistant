@@ -31,11 +31,12 @@
 // Each variant inherits `BrainEvent` (from `tom_brain_shared`), the
 // universal observability base carrying `occurredAt` (UTC) + `runId` +
 // `causedBy`, the `payloadJson()` serialisation contract, and the kebab-case
-// `kind` discriminator (`<component>.<event-name>`). `runId` is nullable here
-// (the base default): the prototype coordinator does not yet assign run ids
-// to the bodies it schedules — that arrives with the `inflight` /
-// `recent_runs` integration (D.26), at which point the coordinator passes the
-// run id through to the controller's record methods.
+// `kind` discriminator (`<component>.<event-name>`). Since D.26 the
+// coordinator assigns a run id to every run the moment it occupies a slot and
+// threads it through, so [RunSlotEntered] / [RunSlotExited] carry a non-null
+// `runId`. The state-transition events ([ForegroundPreemptionRequested] /
+// [BackgroundResumeSignalled]) keep a null `runId` (the base default): they
+// describe a *transition* of the shared preemption state, not a single run.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 
@@ -68,8 +69,8 @@ enum RunSlotOutcome {
 sealed class PreemptionEvent extends BrainEvent {
   /// Builds the base of a preemption event.
   ///
-  /// [runId] stays nullable (the `BrainEvent` default): the prototype
-  /// coordinator does not yet assign run ids (D.26 adds them).
+  /// [runId] is the coordinator-assigned run id (D.26) for the slot
+  /// enter/exit events, and null for the state-transition events.
   PreemptionEvent({
     required super.occurredAt,
     super.runId,

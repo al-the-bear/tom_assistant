@@ -115,21 +115,57 @@
 // dispatcher API (this module's barrel) exposes preemption observability
 // without the consumer reaching into the coordinator's internals.
 //
-// ── What the coordinator does NOT own yet (deferred) ────────────────
+// ── What D.26 adds ──────────────────────────────────────────────────
 //
-// The remaining D.5/D.6 substeps plug into this core without changing its
-// submission signatures:
+// D.26 gives the coordinator two new responsibilities the preceding steps
+// flagged as deferred:
 //
-//   - D.25 — the full event-transition suite driven end-to-end through the
-//     wired coordinator (D.24 ships its own wiring tests; D.25 is the
-//     exhaustive transition matrix).
-//   - D.26 — run ids assigned to scheduled bodies, threaded through the
-//     controller's `record*` `runId` argument.
+//   - **Run ids.** Every run is assigned an id the moment it occupies a slot
+//     (an injectable [RunIdMint], default a monotonic per-coordinator
+//     counter). The id is threaded into the controller's `recordRunStarted` /
+//     `recordRunFinished` calls, so the `PreemptionEvent` slot enter/exit
+//     events now carry a non-null `runId`. (The preemption-request / resume
+//     events stay id-less — they are about a *transition* of the shared state,
+//     not a single run.)
+//   - **`inflight` integration (PE-4 dispatcher half).** When a [runRegistry]
+//     is wired and a submission named the [procedureId] it executes, the
+//     coordinator pushes a `status: running` `ProcedureRun` marker onto the
+//     `inflight` bootstrap stack the moment the run occupies its slot. The
+//     push is fired without blocking the body, preserving the coordinator's
+//     synchronous admission semantics.
+//
+// ── What D.27 adds ──────────────────────────────────────────────────
+//
+// D.27 closes the loop the D.26 `inflight` push opened: the run-end half of
+// the PE-4 dispatcher tracking.
+//
+//   - The coordinator holds the per-slot `inflight` handle D.26 created (the
+//     `Future<NodeId>` marker plus the [RunRegistration] facts). When a run
+//     ends — success, failure, *or* a hard-step-deadline force-yield — the
+//     coordinator awaits that handle and calls [RunRegistry.recordEnd], which
+//     removes the running marker from `inflight` and pushes a terminal
+//     `ProcedureRun` marker (`status: completed` / `failed` / `force_yielded`)
+//     onto `recent_runs`.
+//   - The run-end write, like the start write, is fired without blocking the
+//     completion path so the coordinator's slot-freeing timing is unchanged.
+//     The held handle is cleared the moment the run ends, so the coordinator
+//     never carries dead state for a finished run.
+//
+// ── What D.28 locks ─────────────────────────────────────────────────
+//
+// D.28 is a tests-only step (`test/d28_stack_state_runtime_test.dart`): no
+// coordinator change. It pins the PE-4 dispatcher-half lifecycle by asserting
+// the live *membership* of the `inflight` / `recent_runs` bootstrap stacks —
+// `inflight` reflects exactly the runs the coordinator currently has live,
+// `recent_runs` accumulates exactly the finished ones, and concurrent
+// foreground + background appears as two distinct `inflight` entries that each
+// migrate to a distinct `recent_runs` node.
 
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show PreemptionState;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show NodeId, PreemptionState;
 
 import '../preemption/step_deadline.dart'
     show
@@ -139,8 +175,17 @@ import '../preemption/step_deadline.dart'
         StepOutcome,
         StepTruncated,
         defaultStepDeadline;
+import 'fallback_executor.dart' show ClassifiedFailure;
 import 'preemption_controller.dart' show PreemptionController;
 import 'preemption_event.dart' show PreemptionEvent, RunSlotOutcome;
+import 'run_registry.dart' show RunOutcome, RunRegistration, RunRegistry;
+
+/// Mints a run id for a freshly-started run in [slot] (D.26).
+///
+/// Injectable so a deployment (or a test) can supply UUIDs or a
+/// deterministic sequence; the coordinator's default is a monotonic
+/// per-coordinator counter.
+typedef RunIdMint = String Function(RunSlot slot);
 
 /// The two run slots the coordinator tracks (PE-5).
 ///
@@ -233,8 +278,9 @@ const Duration defaultCoordinatorDeadlineGrace = Duration(seconds: 5);
 /// only when the engine's own [StepDeadline] failed to bound the run — under
 /// normal operation the engine truncates the run *inside* the body, the body
 /// completes, and this is never thrown. [failureKind] carries the typed class
-/// so the Phase D fallback executor (D.29) can classify it.
-final class RunDeadlineExceeded implements Exception {
+/// (via [ClassifiedFailure]) so the Phase D [FallbackExecutor] (D.29)
+/// classifies it as `procedure.deadline.exceeded` and steps the version chain.
+final class RunDeadlineExceeded implements Exception, ClassifiedFailure {
   /// Records which [slot] held the run that breached the [limit].
   const RunDeadlineExceeded(this.slot, this.limit);
 
@@ -244,8 +290,9 @@ final class RunDeadlineExceeded implements Exception {
   /// The coordinator's hard step deadline the run exceeded.
   final Duration limit;
 
-  /// The typed failure class this surfaces (spec § 14), so a fallback
-  /// executor can classify it without string-matching the message.
+  /// The typed failure class this surfaces (spec § 14), so the
+  /// [FallbackExecutor] can classify it without string-matching the message.
+  @override
   String get failureKind => 'procedure.deadline.exceeded';
 
   /// Human-readable explanation, reused by [toString].
@@ -302,14 +349,29 @@ final class RunCoordinator {
   /// surface but never reads it back, and the controller never writes
   /// [preemption]. When the controller is injected, its [close] lifecycle is
   /// the consumer's; the default-constructed one lives with the coordinator.
+  ///
+  /// [runRegistry] is the dispatcher-half `inflight` tracker (D.26). When
+  /// supplied, every run the coordinator starts in a slot is pushed onto the
+  /// `inflight` bootstrap stack as a `status: running` `ProcedureRun` marker
+  /// via the memory client. When omitted (the default) the coordinator runs
+  /// without memory-side run tracking — the posture every coordinator test
+  /// before D.26 uses.
+  ///
+  /// [runIdMint] assigns a run id to each freshly-started run (D.26),
+  /// threaded into the [PreemptionController] record calls and the
+  /// [runRegistry] push. Defaults to a monotonic per-coordinator counter
+  /// (`disp-<slot>-run-<n>`).
   RunCoordinator({
     PreemptionState? preemption,
     PreemptionController? preemptionController,
+    this.runRegistry,
+    RunIdMint? runIdMint,
     this.foregroundQueueDepth = 4,
     Duration? hardStepDeadline,
     DeadlineTimerFactory? deadlineTimerFactory,
   })  : preemption = preemption ?? PreemptionState(),
         preemptionController = preemptionController ?? PreemptionController(),
+        _runIdMint = runIdMint,
         hardStepDeadline = hardStepDeadline ??
             (defaultStepDeadline + defaultCoordinatorDeadlineGrace),
         _deadlineTimerFactory = deadlineTimerFactory {
@@ -344,6 +406,35 @@ final class RunCoordinator {
   /// never reads it back, and the controller never writes [preemption].
   /// Consumers subscribe through [preemptionEvents].
   final PreemptionController preemptionController;
+
+  /// The dispatcher-half `inflight` tracker (D.26), or `null` when the
+  /// coordinator runs without memory-side run tracking. When non-null the
+  /// coordinator pushes a `status: running` `ProcedureRun` marker onto the
+  /// `inflight` stack the moment a run starts in a slot — but only for a
+  /// submission that named the [procedureId] it executes (an opaque body with
+  /// no procedure identity is not a memory-trackable run).
+  final RunRegistry? runRegistry;
+
+  /// The run-id mint (D.26). `null` ⇒ the default monotonic counter
+  /// ([_mintRunId]). Each run is assigned an id the moment it occupies a
+  /// slot; the id is threaded into the [preemptionController] record calls
+  /// and the [runRegistry] push.
+  final RunIdMint? _runIdMint;
+
+  /// Backing counter for the default run-id mint.
+  int _runSeq = 0;
+
+  /// The live `inflight` handle for the foreground run, or `null` when no
+  /// foreground run is being memory-tracked (D.27). Set by [_registerInflight]
+  /// when a registry is wired and the submission named a procedure id; cleared
+  /// by [_finishInflight] at run end. Holds the `recordStart` marker future and
+  /// the [RunRegistration] facts so the run-end transition can await the marker
+  /// and close it out.
+  _InflightHandle? _foregroundInflight;
+
+  /// The live `inflight` handle for the background run, or `null` (D.27). Same
+  /// lifecycle as [_foregroundInflight], for the background slot.
+  _InflightHandle? _backgroundInflight;
 
   /// The maximum number of foreground runs that may wait behind the running
   /// one in the FIFO queue (excludes the run occupying the slot, D.19).
@@ -396,9 +487,20 @@ final class RunCoordinator {
   /// [ForegroundQueueFull] synchronously only when the slot is busy *and* the
   /// queue is already at [foregroundQueueDepth]. The returned future carries
   /// the body's own result (or error) whenever the run eventually executes.
-  Future<T> submitForeground<T>(RunBody<T> body) {
+  ///
+  /// [procedureId] / [version] name the procedure this run executes; when a
+  /// [runRegistry] is wired and [procedureId] is supplied, the run is pushed
+  /// onto `inflight` the moment it occupies the slot (D.26). They are captured
+  /// at submission time and applied when a queued run is later pumped into the
+  /// freed slot.
+  Future<T> submitForeground<T>(
+    RunBody<T> body, {
+    String? procedureId,
+    int version = 1,
+  }) {
     final completer = Completer<T>();
-    void start() => _runInForegroundSlot(body, completer);
+    void start() =>
+        _runInForegroundSlot(body, completer, procedureId, version);
 
     if (_foreground == null) {
       // Slot free: start immediately.
@@ -431,7 +533,15 @@ final class RunCoordinator {
   /// there is no background queue. Otherwise the body starts immediately, the
   /// background slot is marked occupied until the body completes, and the
   /// returned future carries the body's own result (or error).
-  Future<T> submitBackground<T>(RunBody<T> body) {
+  ///
+  /// [procedureId] / [version] name the procedure this run executes; when a
+  /// [runRegistry] is wired and [procedureId] is supplied, the run is pushed
+  /// onto `inflight` the moment it occupies the slot (D.26).
+  Future<T> submitBackground<T>(
+    RunBody<T> body, {
+    String? procedureId,
+    int version = 1,
+  }) {
     if (_background != null) {
       throw const RunSlotBusy(RunSlot.background);
     }
@@ -440,15 +550,20 @@ final class RunCoordinator {
     // Mark the slot occupied *before* invoking the body, so a re-entrant
     // submission from inside the body sees the slot busy rather than racing.
     _background = marker.future;
-    preemptionController.recordRunStarted(RunSlot.background);
+    final runId = _nextRunId(RunSlot.background);
+    preemptionController.recordRunStarted(RunSlot.background, runId: runId);
+    _registerInflight(RunSlot.background, runId, procedureId, version);
     _guardWithDeadline(body).then(
       (outcome) {
         _background = null;
         marker.complete();
+        final slotOutcome = _slotOutcomeOf(outcome);
         preemptionController.recordRunFinished(
           RunSlot.background,
-          _slotOutcomeOf(outcome),
+          slotOutcome,
+          runId: runId,
         );
+        _finishInflight(RunSlot.background, slotOutcome);
         _completeFromOutcome(completer, outcome, RunSlot.background);
       },
       onError: (Object error, StackTrace stackTrace) {
@@ -457,7 +572,9 @@ final class RunCoordinator {
         preemptionController.recordRunFinished(
           RunSlot.background,
           RunSlotOutcome.failed,
+          runId: runId,
         );
+        _finishInflight(RunSlot.background, RunSlotOutcome.failed);
         completer.completeError(error, stackTrace);
       },
     );
@@ -466,20 +583,30 @@ final class RunCoordinator {
 
   /// Occupies the foreground slot with [body], completing [completer] with
   /// the body's result, then pumps the next queued foreground run (if any).
-  void _runInForegroundSlot<T>(RunBody<T> body, Completer<T> completer) {
+  void _runInForegroundSlot<T>(
+    RunBody<T> body,
+    Completer<T> completer,
+    String? procedureId,
+    int version,
+  ) {
     final marker = Completer<void>();
     _foreground = marker.future;
-    preemptionController.recordRunStarted(RunSlot.foreground);
+    final runId = _nextRunId(RunSlot.foreground);
+    preemptionController.recordRunStarted(RunSlot.foreground, runId: runId);
+    _registerInflight(RunSlot.foreground, runId, procedureId, version);
     _guardWithDeadline(body).then(
       (outcome) {
         _foreground = null;
         marker.complete();
         // Emit the exit *before* pumping the queue, so a queued successor's
         // RunSlotEntered follows this run's RunSlotExited in the stream.
+        final slotOutcome = _slotOutcomeOf(outcome);
         preemptionController.recordRunFinished(
           RunSlot.foreground,
-          _slotOutcomeOf(outcome),
+          slotOutcome,
+          runId: runId,
         );
+        _finishInflight(RunSlot.foreground, slotOutcome);
         _completeFromOutcome(completer, outcome, RunSlot.foreground);
         _pumpForegroundQueue();
         _resumeBackgroundIfForegroundDrained();
@@ -490,7 +617,9 @@ final class RunCoordinator {
         preemptionController.recordRunFinished(
           RunSlot.foreground,
           RunSlotOutcome.failed,
+          runId: runId,
         );
+        _finishInflight(RunSlot.foreground, RunSlotOutcome.failed);
         completer.completeError(error, stackTrace);
         _pumpForegroundQueue();
         _resumeBackgroundIfForegroundDrained();
@@ -565,6 +694,108 @@ final class RunCoordinator {
     }
   }
 
+  /// Mints the run id for a run just admitted into [slot] (D.26), using the
+  /// injected [RunIdMint] when present and the default monotonic counter
+  /// ([_mintRunId]) otherwise.
+  String _nextRunId(RunSlot slot) =>
+      _runIdMint != null ? _runIdMint(slot) : _mintRunId(slot);
+
+  /// The default run-id mint: a monotonic per-coordinator counter,
+  /// `disp-<slot>-run-<n>` (n is one-based, shared across both slots so every
+  /// id within a coordinator is unique).
+  String _mintRunId(RunSlot slot) => 'disp-${slot.name}-run-${++_runSeq}';
+
+  /// Pushes a `status: running` `ProcedureRun` marker onto `inflight` for a
+  /// run just admitted into [slot] (D.26) and holds the handle for run-end
+  /// close-out (D.27).
+  ///
+  /// A no-op when no [runRegistry] is wired or the submission did not name the
+  /// [procedureId] it executes — an opaque body has no procedure identity to
+  /// record. The push is fired without blocking the run body: the coordinator
+  /// keeps its synchronous admission semantics (a submission occupies its slot
+  /// immediately), and the memory write proceeds concurrently. The
+  /// `recordStart` marker future and the [RunRegistration] facts are stored in
+  /// the slot's [_InflightHandle] so [_finishInflight] can remove the marker
+  /// from `inflight` and push to `recent_runs` when the run ends.
+  void _registerInflight(
+    RunSlot slot,
+    String runId,
+    String? procedureId,
+    int version,
+  ) {
+    final registry = runRegistry;
+    if (registry == null || procedureId == null) {
+      return;
+    }
+    final registration = RunRegistration(
+      runId: runId,
+      procedureId: procedureId,
+      version: version,
+      slot: slot,
+    );
+    // Fire the start push without blocking; keep the future as the run-end
+    // handle.
+    final markerFuture = registry.recordStart(registration);
+    final handle = _InflightHandle(markerFuture, registration);
+    switch (slot) {
+      case RunSlot.foreground:
+        _foregroundInflight = handle;
+      case RunSlot.background:
+        _backgroundInflight = handle;
+    }
+  }
+
+  /// Closes out the `inflight` handle for a run just ended in [slot] (D.27):
+  /// removes the running marker from `inflight` and pushes a terminal
+  /// `ProcedureRun` marker (mapped from [outcome]) onto `recent_runs`.
+  ///
+  /// A no-op when the slot has no live handle (no registry wired, or an opaque
+  /// body that was never tracked). The held handle is cleared *before* the
+  /// memory write is fired, so the coordinator carries no dead state for a
+  /// finished run, and the run-end write — like the start write — proceeds
+  /// without blocking the completion path.
+  void _finishInflight(RunSlot slot, RunSlotOutcome outcome) {
+    final registry = runRegistry;
+    final handle = switch (slot) {
+      RunSlot.foreground => _foregroundInflight,
+      RunSlot.background => _backgroundInflight,
+    };
+    if (registry == null || handle == null) {
+      return;
+    }
+    switch (slot) {
+      case RunSlot.foreground:
+        _foregroundInflight = null;
+      case RunSlot.background:
+        _backgroundInflight = null;
+    }
+    unawaited(_closeInflight(registry, handle, outcome));
+  }
+
+  /// Awaits the start-push marker future and hands the run-end facts to the
+  /// registry (D.27). Split out so [_finishInflight] stays synchronous.
+  Future<void> _closeInflight(
+    RunRegistry registry,
+    _InflightHandle handle,
+    RunSlotOutcome outcome,
+  ) async {
+    final NodeId markerId = await handle.markerFuture;
+    await registry.recordEnd(
+      handle.registration,
+      markerId: markerId,
+      outcome: _runOutcomeOf(outcome),
+    );
+  }
+
+  /// Maps the preemption-controller [RunSlotOutcome] (D.24) to the registry's
+  /// [RunOutcome] (D.27) so the finished `recent_runs` marker carries the
+  /// matching terminal status.
+  RunOutcome _runOutcomeOf(RunSlotOutcome outcome) => switch (outcome) {
+        RunSlotOutcome.completed => RunOutcome.completed,
+        RunSlotOutcome.failed => RunOutcome.failed,
+        RunSlotOutcome.forceYielded => RunOutcome.forceYielded,
+      };
+
   /// Maps a [StepDeadline] [outcome] to the [RunSlotOutcome] the controller
   /// records (D.24): a body that finished within the limit is
   /// [RunSlotOutcome.completed]; one the coordinator's hard step deadline
@@ -574,4 +805,22 @@ final class RunCoordinator {
         StepCompleted<T>() => RunSlotOutcome.completed,
         StepTruncated<T>() => RunSlotOutcome.forceYielded,
       };
+}
+
+/// The coordinator's live `inflight` tracking for one run (D.27).
+///
+/// Holds the [markerFuture] returned by [RunRegistry.recordStart] (the
+/// running marker's eventual node id, fired without blocking the body) and
+/// the [registration] facts, so the run-end transition can await the marker,
+/// remove it from `inflight`, and push a terminal marker onto `recent_runs`.
+final class _InflightHandle {
+  /// Wraps the start-push [markerFuture] and the [registration] facts.
+  const _InflightHandle(this.markerFuture, this.registration);
+
+  /// The running marker node id, eventually — the handle the run-end
+  /// transition removes from `inflight`.
+  final Future<NodeId> markerFuture;
+
+  /// The launch facts the registry needs to write the finished marker.
+  final RunRegistration registration;
 }
