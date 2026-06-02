@@ -1,0 +1,24 @@
+name: tom_brain_access_prototype
+description: Prototype access layer for Tom Brain — the inbound surface (OpenAI HTTP/SSE + Telegram), Access-object production, identity / session / persona resolution, edge security, the cheap kind-hint classifier, and outbound delivery. This phase ships the actual running process.
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.8
+
+# Dependency discipline (Plan step E.6 vs E.7):
+#
+# E.6 is *strictly* the project skeleton — a buildable empty package with a
+# smoke test, mirroring the A.7 / A.21 / B.6 / C.6 scaffold steps. The
+# runtime dependency block is intentionally EMPTY at E.6; the full set
+# (`tom_brain_shared`, `tom_brain_procedure_prototype`, `tom_basics`,
+# `tom_core_kernel`, `tom_core_server`, `tom_chattools`) lands at E.7, the
+# `lib/` folder layout at E.8, the `bin/` executable at E.9, and the
+# `.tom_metadata/tom_master.yaml` wiring (E.10) is a no-op per policy
+# override 5 (2026-05-31). Keeping dependencies out of E.6 keeps
+# `dart pub get` fast and makes E.7's diff the meaningful
+# dependency-discipline decision rather than bookkeeping folded into E.6.
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
