@@ -1,0 +1,61 @@
+name: tom_brain_smoke_prototype
+description: End-to-end smoke harness for the Tom Brain prototype — the higher assembly that boots a whole cognition (stub substrate + in-isolate memory) and stands the access process up on a local port. Lives above the access / procedure / substrate / memory packages so it may legally wire them together.
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.8
+
+# Why this project exists (Plan step E.46 / `prototype_implementation_plan.md`
+# § E.10 — End-to-end smoke).
+#
+# The access prototype (`tom_brain_access_prototype`) is forbidden to import
+# `tom_brain_substrate` / `tom_brain_memory` (its pubspec scope discipline +
+# `dependency_surface_test.dart`). It therefore receives an *already-booted*
+# cognition through the `BrainProvisioner` seam, whose CLI default refuses —
+# only "a higher assembly (Tom Assistant integration, or a test) that may
+# legally import substrate + memory" can supply a real provisioner (see
+# `brain_provisioner.dart`).
+#
+# `tom_brain_smoke_prototype` is that higher assembly for the prototype's own
+# end-to-end smoke. It sits above all four brain packages and is the *only*
+# place that wires them together: it boots `BrainProcessBoot` (which imports
+# substrate + memory), projects the resulting `RunCoordinator` onto a
+# `QueueSnapshot`, hands back a `ProvisionedBrain`, and calls
+# `startBrainAccessProcess` to bind the OpenAI + `/healthz` socket on a local
+# port. Keeping this wiring in its own package is what lets the access package
+# stay free of the forbidden imports while the smoke still exercises the real
+# boot path.
+#
+#   - tom_brain_access_prototype — the running process: `startBrainAccessProcess`,
+#                                   `ProvisionedBrain`, `QueueSnapshot`,
+#                                   `AccessConfig`, the edge-security policies.
+#   - tom_brain_procedure_prototype — `BrainProcessBoot` / `BrainProcessConfig`
+#                                   (boots substrate → memory → engine →
+#                                   dispatcher), `MemoryProvisioningConfig`,
+#                                   `Dispatcher`, `RunCoordinator`.
+#   - tom_brain_substrate         — `TomBrainSubstrateClient` + the LLM/embed
+#                                   value types the stub substrate implements.
+#   - tom_brain_memory            — `TomBrainMemory` + `MemoryConfig` for the
+#                                   in-isolate memory double + its factory.
+#   - tom_brain_shared            — the cross-component vocabulary (`Vec`,
+#                                   `NodeId`, the id types, `WriteBudget`).
+#   - tom_basics                  — workspace baseline (`tomLog`); hosted to
+#                                   keep the resolver consistent with the rest
+#                                   of the closure.
+dependencies:
+  tom_brain_access_prototype:
+    path: ../tom_brain_access_prototype
+  tom_brain_procedure_prototype:
+    path: ../tom_brain_procedure_prototype
+  tom_brain_substrate:
+    path: ../tom_brain_substrate
+  tom_brain_memory:
+    path: ../tom_brain_memory
+  tom_brain_shared:
+    path: ../tom_brain_shared
+  tom_basics: ^1.0.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6

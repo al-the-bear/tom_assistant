@@ -1,0 +1,6 @@
+ID,Groups,Description,Baseline [06-02 18:43]
+,E.46 stand-up smoke,binds a real local port,OK/OK
+,E.46 stand-up smoke,GET /healthz answers 200 with the liveness body,OK/OK
+,E.46 stand-up smoke,GET /v1/models answers 200 with the models-list body,OK/OK
+,E.46 stand-up smoke,the stub substrate is opened lazily — boot skips the open with no substrate config,OK/OK
+,E.46 clean teardown,stop() closes the substrate exactly once and is idempotent,OK/OK

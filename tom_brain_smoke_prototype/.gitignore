@@ -1,0 +1,7 @@
+# Dart
+.dart_tool/
+.packages
+
+# pubspec.lock is NOT committed: this package is a library + test harness (no
+# bin/ executable), so the standard library convention applies.
+pubspec.lock

@@ -1,0 +1,39 @@
+{"protocolVersion":"0.1.1","runnerVersion":"1.31.1","pid":685343,"type":"start","time":0}
+{"suite":{"id":0,"platform":"vm","path":"test/e46_stand_up_smoke_test.dart"},"type":"suite","time":0}
+{"test":{"id":1,"name":"loading test/e46_stand_up_smoke_test.dart","suiteID":0,"groupIDs":[],"metadata":{"skip":false,"skipReason":null},"line":null,"column":null,"url":null},"type":"testStart","time":1}
+{"count":1,"time":8,"type":"allSuites"}
+{"testID":1,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":2149}
+{"group":{"id":2,"suiteID":0,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":5,"line":null,"column":null,"url":null},"type":"group","time":2151}
+{"group":{"id":3,"suiteID":0,"parentID":2,"name":"E.46 stand-up smoke","metadata":{"skip":false,"skipReason":null},"testCount":4,"line":48,"column":3,"url":"file:///srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_assistant/tom_brain_smoke_prototype/test/e46_stand_up_smoke_test.dart"},"type":"group","time":2152}
+{"test":{"id":4,"name":"E.46 stand-up smoke binds a real local port","suiteID":0,"groupIDs":[2,3],"metadata":{"skip":false,"skipReason":null},"line":59,"column":5,"url":"file:///srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_assistant/tom_brain_smoke_prototype/test/e46_stand_up_smoke_test.dart"},"type":"testStart","time":2152}
+2026-06-02 18:43:58.645144 - INFO    Isolate ready to handle messages: TomBrainMemory000  [TomWorker._handleCommandsToIsolate]
+{"testID":4,"messageType":"print","message":"2026-06-02 18:43:58.646325 - INFO    finished initialization of creator/worker test_suite:file:///tmp/dart_test.kernel.XSDHBJ/test.dart_1.dill, took 0ms  [TomWorker.spawn]","type":"print","time":2204}
+{"testID":4,"messageType":"print","message":"2026-06-02 18:43:58.653941 - STATUS  [tom_brain.memory.isolate] isolate host spawned (namePrefix=TomBrainMemory)  [MemoryLog.status]","type":"print","time":2208}
+{"testID":4,"messageType":"print","message":"2026-06-02 18:43:58.710078 - STATUS  [tom_brain.memory.isolate] isolate host shut down  [MemoryLog.status]","type":"print","time":2263}
+{"testID":4,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2265}
+{"test":{"id":5,"name":"E.46 stand-up smoke GET /healthz answers 200 with the liveness body","suiteID":0,"groupIDs":[2,3],"metadata":{"skip":false,"skipReason":null},"line":63,"column":5,"url":"file:///srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_assistant/tom_brain_smoke_prototype/test/e46_stand_up_smoke_test.dart"},"type":"testStart","time":2266}
+2026-06-02 18:43:58.714366 - INFO    Isolate ready to handle messages: TomBrainMemory001  [TomWorker._handleCommandsToIsolate]
+{"testID":5,"messageType":"print","message":"2026-06-02 18:43:58.714631 - INFO    finished initialization of creator/worker test_suite:file:///tmp/dart_test.kernel.XSDHBJ/test.dart_1.dill, took 0ms  [TomWorker.spawn]","type":"print","time":2268}
+{"testID":5,"messageType":"print","message":"2026-06-02 18:43:58.715109 - STATUS  [tom_brain.memory.isolate] isolate host spawned (namePrefix=TomBrainMemory)  [MemoryLog.status]","type":"print","time":2269}
+{"testID":5,"messageType":"print","message":"2026-06-02 18:43:58.794262 - STATUS  [tom_brain.memory.isolate] isolate host shut down  [MemoryLog.status]","type":"print","time":2348}
+{"testID":5,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2348}
+{"test":{"id":6,"name":"E.46 stand-up smoke GET /v1/models answers 200 with the models-list body","suiteID":0,"groupIDs":[2,3],"metadata":{"skip":false,"skipReason":null},"line":79,"column":5,"url":"file:///srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_assistant/tom_brain_smoke_prototype/test/e46_stand_up_smoke_test.dart"},"type":"testStart","time":2348}
+2026-06-02 18:43:58.796163 - INFO    Isolate ready to handle messages: TomBrainMemory002  [TomWorker._handleCommandsToIsolate]
+{"testID":6,"messageType":"print","message":"2026-06-02 18:43:58.796674 - INFO    finished initialization of creator/worker test_suite:file:///tmp/dart_test.kernel.XSDHBJ/test.dart_1.dill, took 0ms  [TomWorker.spawn]","type":"print","time":2350}
+{"testID":6,"messageType":"print","message":"2026-06-02 18:43:58.797133 - STATUS  [tom_brain.memory.isolate] isolate host spawned (namePrefix=TomBrainMemory)  [MemoryLog.status]","type":"print","time":2350}
+{"testID":6,"messageType":"print","message":"2026-06-02 18:43:58.802718 - STATUS  [tom_brain.memory.isolate] isolate host shut down  [MemoryLog.status]","type":"print","time":2356}
+{"testID":6,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2356}
+{"test":{"id":7,"name":"E.46 stand-up smoke the stub substrate is opened lazily — boot skips the open with no substrate config","suiteID":0,"groupIDs":[2,3],"metadata":{"skip":false,"skipReason":null},"line":93,"column":5,"url":"file:///srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_assistant/tom_brain_smoke_prototype/test/e46_stand_up_smoke_test.dart"},"type":"testStart","time":2357}
+2026-06-02 18:43:58.805116 - INFO    Isolate ready to handle messages: TomBrainMemory003  [TomWorker._handleCommandsToIsolate]
+{"testID":7,"messageType":"print","message":"2026-06-02 18:43:58.805489 - INFO    finished initialization of creator/worker test_suite:file:///tmp/dart_test.kernel.XSDHBJ/test.dart_1.dill, took 0ms  [TomWorker.spawn]","type":"print","time":2359}
+{"testID":7,"messageType":"print","message":"2026-06-02 18:43:58.805914 - STATUS  [tom_brain.memory.isolate] isolate host spawned (namePrefix=TomBrainMemory)  [MemoryLog.status]","type":"print","time":2359}
+{"testID":7,"messageType":"print","message":"2026-06-02 18:43:58.807935 - STATUS  [tom_brain.memory.isolate] isolate host shut down  [MemoryLog.status]","type":"print","time":2361}
+{"testID":7,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2362}
+{"group":{"id":8,"suiteID":0,"parentID":2,"name":"E.46 clean teardown","metadata":{"skip":false,"skipReason":null},"testCount":1,"line":102,"column":3,"url":"file:///srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_assistant/tom_brain_smoke_prototype/test/e46_stand_up_smoke_test.dart"},"type":"group","time":2362}
+{"test":{"id":9,"name":"E.46 clean teardown stop() closes the substrate exactly once and is idempotent","suiteID":0,"groupIDs":[2,8],"metadata":{"skip":false,"skipReason":null},"line":103,"column":5,"url":"file:///srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_assistant/tom_brain_smoke_prototype/test/e46_stand_up_smoke_test.dart"},"type":"testStart","time":2362}
+2026-06-02 18:43:58.810313 - INFO    Isolate ready to handle messages: TomBrainMemory004  [TomWorker._handleCommandsToIsolate]
+{"testID":9,"messageType":"print","message":"2026-06-02 18:43:58.810725 - INFO    finished initialization of creator/worker test_suite:file:///tmp/dart_test.kernel.XSDHBJ/test.dart_1.dill, took 0ms  [TomWorker.spawn]","type":"print","time":2364}
+{"testID":9,"messageType":"print","message":"2026-06-02 18:43:58.811139 - STATUS  [tom_brain.memory.isolate] isolate host spawned (namePrefix=TomBrainMemory)  [MemoryLog.status]","type":"print","time":2364}
+{"testID":9,"messageType":"print","message":"2026-06-02 18:43:58.812631 - STATUS  [tom_brain.memory.isolate] isolate host shut down  [MemoryLog.status]","type":"print","time":2366}
+{"testID":9,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":2366}
+{"success":true,"type":"done","time":2380}
