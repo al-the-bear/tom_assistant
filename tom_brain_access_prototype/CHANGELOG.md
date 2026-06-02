@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.21)
+
+Telegram outbound mapping (proto spec § 6.3, Plan E.21). An answer's
+streamed `Stream<OutboundChunk>` is consolidated into one Telegram message —
+or, on overflow, the minimum number of size-compliant messages.
+
+- `lib/src/adapters/telegram/telegram_outbound_mapping.dart` —
+  `TelegramOutboundConsolidator`: `consolidate(Stream<OutboundChunk>)`
+  buffers every chunk's `textDelta` into the full answer (symmetric with
+  `ChatCompletionJsonRenderer`, E.14), then `split(String)` packs whole
+  Unicode characters greedily by **UTF-16 code-unit** length into the fewest
+  messages each ≤ `telegramMaxMessageLength` (4096) — never cutting a
+  character, minimal among character-safe splits. An empty answer yields no
+  messages (Q-E.21.1). Public constant `telegramMaxMessageLength`.
+- `lib/src/adapters/telegram/telegram_adapter.dart` — adds
+  `Future<List<ChatMessage>> sendAnswer({receiver, answer})`: consolidates
+  the answer and sends each part through `ChatApi.sendMessage` as plain text
+  (no `parseMode`, typing indicator, or inline buttons — Stage-1, def § Q13).
+  The `TelegramOutboundConsolidator` is injectable on the constructor /
+  `fromConfig` (default: the real 4096 limit; tests lower it).
+- `test/adapters/telegram_outbound_mapping_test.dart` — 14 assertions: pure
+  split (empty, fit, one-over, minimal count, whole-rune safety, UTF-16
+  counting), chunk buffering (concat, final-chunk text, empty stream / empty
+  deltas, overflow), and `sendAnswer` (plain-text single send, minimum-count
+  overflow send to one receiver, empty-answer-sends-nothing).
+
+## 0.0.1 — 2026-06-02 (Phase E.20)
+
+Telegram inbound mapping (proto spec § 6.2, Plan E.20). A Telegram
+`ChatMessage` is projected onto the channel-agnostic `InboundRequest` the
+dispatcher consumes.
+
+- `lib/src/adapters/telegram/telegram_inbound_mapping.dart` —
+  `TelegramInboundMapping.toInboundRequest()` (extension on `ChatMessage`):
+  `text` from the body, `messageId` from `platformMessageId ?? id`,
+  `conversationId` from `rawData['telegram_chat_id']` (falling back to the
+  sender id for a private chat — Q-E.20.1), the sender id on
+  `metadata[telegramSenderIdMetadataKey]` for `IdentityResolver` (E.24,
+  Q-E.20.2), `streaming: false`. A non-text Stage-1 message returns
+  `Err(TelegramInboundError)` with `TelegramInboundRejection.noText` (ignored
+  + logged, proto spec § 12). Public constants `telegramSenderIdMetadataKey`
+  and `telegramChatIdRawDataKey`.
+- `lib/src/adapters/telegram/telegram_adapter.dart` — adds
+  `Stream<InboundRequest> get inboundRequests`: `inboundMessages` projected
+  through the mapping, emitting one request per text message and dropping
+  non-text messages.
+- `lib/src/adapters/telegram/telegram.dart` — barrel now also exports the
+  inbound mapping.
+- `test/adapters/telegram_inbound_mapping_test.dart` — 11 assertions (field
+  mapping, private-chat fallback, message-id fallback, unmodifiable metadata,
+  non-text rejection, and the adapter's mapped/filtered `inboundRequests`).
+- `lib/tom_brain_access_prototype.dart` — E.20 ✅ bullet; pending range
+  narrowed `E.20 – E.50` → `E.21 – E.50`.
+
 ## 0.0.1 — 2026-06-02 (Phase E.19)
 
 Telegram adapter scaffold (proto spec § 6.1, Plan E.19). The prototype's

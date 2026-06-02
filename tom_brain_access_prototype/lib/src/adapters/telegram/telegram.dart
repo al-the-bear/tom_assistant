@@ -11,8 +11,14 @@
 //
 // E.19 lands the adapter scaffold: the long-polling lifecycle
 // (`TelegramAdapter.start` / `stop`) over `tom_chattools`' `ChatApi` and
-// the raw inbound relay (`inboundMessages`). The `ChatMessage` →
-// `InboundRequest` mapping (E.20), outbound consolidation (E.21), and the
-// user-id whitelist (E.22) build on it in the following substeps.
+// the raw inbound relay (`inboundMessages`). E.20 adds the `ChatMessage` →
+// `InboundRequest` mapping (`TelegramInboundMapping.toInboundRequest`,
+// surfaced on the adapter as `inboundRequests`). E.21 adds the outbound
+// mapping (`TelegramOutboundConsolidator`, surfaced on the adapter as
+// `sendAnswer`): a streamed answer → one consolidated message, or on
+// overflow the minimum number of size-compliant messages. The user-id
+// whitelist (E.22) builds on it in the following substep.
 
 export 'telegram_adapter.dart';
+export 'telegram_inbound_mapping.dart';
+export 'telegram_outbound_mapping.dart';

@@ -98,9 +98,29 @@
 ///   `TelegramAdapter.fromConfig` factory (with a builder seam for tests).
 ///   The `ChatMessage` → `InboundRequest` mapping (E.20), outbound
 ///   consolidation (E.21), and the user-id whitelist (E.22) build on it.
-/// - E.20 – E.50 ⏳ — Telegram inbound/outbound mapping + whitelist, identity /
-///   session / persona, edge security, kind-hint classifier, delivery, boot,
-///   and the end-to-end smoke.
+/// - E.20 ✅ — Telegram inbound mapping: `ChatMessage.toInboundRequest()`
+///   (`TelegramInboundMapping`) projects a Telegram message onto the
+///   channel-agnostic `InboundRequest` — `text` from the body, `messageId`
+///   from the Telegram message id, `conversationId` from the chat id, the
+///   sender id on `metadata[telegramSenderIdMetadataKey]` (for
+///   `IdentityResolver`, E.24), `streaming: false` (Telegram is
+///   single-message, def § Q13). A non-text Stage-1 message returns
+///   `Err(TelegramInboundError)` (ignored + logged, proto spec § 12). The
+///   adapter surfaces the mapped, dropped-on-rejection view as
+///   `TelegramAdapter.inboundRequests`.
+/// - E.21 ✅ — Telegram outbound mapping: `TelegramOutboundConsolidator`
+///   buffers an answer's `Stream<OutboundChunk>` into the full text and
+///   splits it into the **minimum number of size-compliant Telegram
+///   messages** — one consolidated message when it fits Telegram's
+///   per-message limit (`telegramMaxMessageLength`, 4096 UTF-16 code units),
+///   the fewest whole-character messages when it overflows (Q-E.2.6;
+///   def § Q13 "no edits" preserved — N append-only messages, never an
+///   edit). The adapter surfaces it as `TelegramAdapter.sendAnswer`
+///   (plain-text sends: no `parseMode`, typing indicator, or inline
+///   buttons — Stage-1, def § Q13).
+/// - E.22 – E.50 ⏳ — Telegram whitelist, identity / session / persona, edge
+///   security, kind-hint classifier, delivery, boot, and the end-to-end
+///   smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →

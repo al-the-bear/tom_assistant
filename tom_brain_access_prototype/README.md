@@ -6,15 +6,29 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.19 — the Telegram adapter scaffold is in place.
+> **Status:** E.21 — the Telegram outbound mapping is in place.
 > `TelegramAdapter` is built on `tom_chattools`' `ChatApi` +
 > `TelegramChatConfig` and runs **long-polling**: `start()` initialises the
 > backend and subscribes to its `onMessage` stream (relayed raw on
-> `inboundMessages` for the E.20 mapper); `stop()` cancels and disconnects.
+> `inboundMessages`); `stop()` cancels and disconnects.
 > `TelegramAdapter.fromConfig` builds the real backend, with a builder seam
-> for the in-process `LoopbackChatApi` test double (E.5). The inbound
-> `ChatMessage` → `InboundRequest` mapping (E.20), outbound consolidation
-> (E.21), and the user-id whitelist (E.22) build on this scaffold.
+> for the in-process `LoopbackChatApi` test double (E.5). E.20 added
+> `ChatMessage.toInboundRequest()` (`TelegramInboundMapping`): a Telegram
+> message → the channel-agnostic `InboundRequest` — `text` from the body,
+> `messageId` from the Telegram message id, `conversationId` from the chat id
+> (sender-id fallback for a private chat), the sender id on
+> `metadata[telegramSenderIdMetadataKey]` for `IdentityResolver`,
+> `streaming: false`. A non-text Stage-1 message is rejected
+> (`Err(TelegramInboundError)`, ignored + logged). The adapter surfaces the
+> mapped, dropped-on-rejection view as `inboundRequests`. E.21 adds the
+> outbound mapping: `TelegramOutboundConsolidator` buffers an answer's
+> `Stream<OutboundChunk>` and splits it into the **minimum number of
+> size-compliant messages** — one consolidated message when it fits
+> Telegram's 4096-code-unit limit (`telegramMaxMessageLength`), the fewest
+> whole-character messages when it overflows (def § Q13 "no edits" preserved
+> — N append-only messages). The adapter surfaces it as `sendAnswer`
+> (plain-text sends: no `parseMode`, typing indicator, or inline buttons).
+> The user-id whitelist (E.22) builds on this.
 >
 > The OpenAI HTTP/SSE adapter (E.11 – E.18) is complete and its
 > wire-format conformance is locked. `OpenAiHttpSseAdapter` router scaffold

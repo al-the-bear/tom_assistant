@@ -1,131 +1,168 @@
-ID,Groups,Description,Baseline [06-02 12:23],[06-02 12:32],[06-02 12:34],[06-02 12:38],[06-02 12:40],[06-02 12:44]
-,ChatCompletionJsonRenderer (E.14) — body shape,builds a chat.completion body with a single assistant message,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/adapters/openai_http_sse/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/adapters/openai_http_sse/openai_http_sse.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/adapters/telegram/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/adapters/telegram/telegram.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/identity/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/identity/identity.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/edge_security/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/edge_security/edge_security.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/heuristic_classifier/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/heuristic_classifier/heuristic_classifier.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/delivery/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/delivery/delivery.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/boot/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/boot/boot.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/config/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/config/config.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/api/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),lib/src/api/api.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),top-level barrel re-exports every leaf-module barrel,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),stale E.6 placeholder lib/src/.gitkeep is gone,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),no unexpected directories are present under lib/src/,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),no unexpected directories are present under lib/src/adapters/,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiPersonaMapping (E.15) — pure unit,recognised base model maps to the tom-assistant persona,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiPersonaMapping (E.15) — pure unit,"terse variant keeps the variant id, default substrate role",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiPersonaMapping (E.15) — pure unit,"verbose variant keeps the variant id, default substrate role",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiPersonaMapping (E.15) — pure unit,null model falls back to the default persona,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiPersonaMapping (E.15) — pure unit,unknown model falls back to the default persona (not an error),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiPersonaMapping (E.15) — pure unit,empty model string falls back to the default persona,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiPersonaMapping (E.15) — pure unit,knownModels lists exactly the three prototype persona ids,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiPersonaMapping (E.15) — pure unit,isKnown is true only for recognised ids,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter persona stamping (E.15),a recognised variant model round-trips into the body model,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter persona stamping (E.15),an unknown model is normalised to tom-assistant in the body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,folder layout (E.8 access modules),leaf-module inventory matches the expected size and is unique,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.7 dependency surface,tom_brain_shared exposes the cross-component vocabulary,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.7 dependency surface,tom_brain_procedure_prototype exposes the Dispatcher entry,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.7 dependency surface,tom_basics exposes TomLogger (the only log surface),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.7 dependency surface,tom_core_kernel exposes TomBean and TomBearerAuthentication,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.7 dependency surface,tom_core_server exposes the endpoint pipeline surface,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.7 dependency surface,tom_chattools exposes ChatApi + TelegramChatConfig,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.7 dependency surface,tom_build_base exposes the v2 tool framework (added at E.9),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.7 dependency surface,shelf + shelf_router expose the routing surface (added at E.11),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.7 forbidden surface,policy is documented (no enforcement target at E.7 yet),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter persona stamping (E.15),an absent model defaults to tom-assistant in the body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionJsonRenderer (E.14) — body shape,usage carries char/4 token estimates summing to the total,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionJsonRenderer (E.14) — body shape,empty content yields zero completion tokens and an empty message,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionJsonRenderer (E.14) — body shape,estimateTokens is ceil(length/4) with empty counting as zero,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionSseRenderer (E.13) — frame shape,forModel mints a chatcmpl- id and epoch-seconds created,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionJsonRenderer (E.14) — chunk buffering,concatenates chunk text in order into the message content,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionJsonRenderer (E.14) — chunk buffering,buffers an answer with no final-marked chunk,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionJsonRenderer (E.14) — chunk buffering,an empty chunk stream yields an empty answer,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter non-streaming response (E.14),POST /v1/chat/completions with stream:false and an injected source → 200 application/json chat.completion body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter non-streaming response (E.14),non-streaming request with no injected source → 501,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter non-streaming response (E.14),the response model echoes the request model,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter router scaffold (E.11) > route table shape,every prototype route hangs under the /v1 base path,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter router scaffold (E.11) > route table shape,handler is a callable shelf handler,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter router scaffold (E.11) > mounted routes answer 501 until behaviour lands (E.16 – E.17),"POST /v1/chat/completions with a well-formed body and no answer source → 501 (renders need a chunk source, wired at boot E.41+)",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.toInboundRequest (E.12),carries optional channel identity when supplied,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ModelsResponseRenderer (E.17 — pure),an explicit model list is rendered as given,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter router scaffold (E.11) > unmatched requests return the OpenAI 404 envelope,unknown path under /v1/ → 404 not_found,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter router scaffold (E.11) > unmatched requests return the OpenAI 404 envelope,a path entirely outside /v1/ → 404 not_found,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter router scaffold (E.11) > unmatched requests return the OpenAI 404 envelope,wrong verb on a known path is not served by its stub,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — field extraction (E.12),"reads model, last user prompt, and stream flag",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — field extraction (E.12),stream defaults to false when absent,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — field extraction (E.12),model is null when omitted (default persona resolves at E.15),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.9 end-to-end dispatch,an unknown command fails loudly,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — field extraction (E.12),content-part array form concatenates its text parts,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — failure branches (E.12),"non-object body → invalid_body, no param",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — failure branches (E.12),missing messages → missing_messages on the messages param,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — failure branches (E.12),empty messages array → invalid_messages,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — failure branches (E.12),messages not an array → invalid_messages,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — failure branches (E.12),no user message → no_user_message,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — failure branches (E.12),user message with whitespace-only content → no_user_message,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — failure branches (E.12),non-string model → invalid_model,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — failure branches (E.12),non-bool stream → invalid_stream,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.toInboundRequest (E.12),maps prompt → text and stream → streaming,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.9 end-to-end dispatch,--help lists the serve command and the running-process footer,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionSseRenderer (E.13) — frame shape,a content chunk renders a chat.completion.chunk data frame,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionSseRenderer (E.13) — frame shape,"a final chunk sets finish_reason to ""stop""",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionSseRenderer (E.13) — frame shape,an empty final chunk renders an empty delta object,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionSseRenderer (E.13) — stream rendering,"emits one frame per chunk in order, then [DONE] last",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionSseRenderer (E.13) — stream rendering,terminates with [DONE] even without a final-marked chunk,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter chat/completions parsing (E.12),invalid JSON body → 400 invalid_body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter chat/completions parsing (E.12),empty body → 400 invalid_body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter chat/completions parsing (E.12),missing messages → 400 with messages param,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.18 wire-format conformance — cross-route invariants,an unknown route conforms to the OpenAI 404 error envelope,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
-,,package loads and exports the tool definition,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter streaming response (E.13),"POST /v1/chat/completions with stream:true and an injected source → 200 text/event-stream, ordered frames, [DONE] last",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter streaming response (E.13),streaming request with no injected source → 501,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.9 tool definition shape,"identity, version, and mode",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.9 tool definition shape,"serve is the default, non-traversal command",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.9 tool definition shape,--config global option is declared,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.9 executor map,exposes a single serve executor,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.9 executor map,"serve executor is non-traversal (runs once, returns success)",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.9 end-to-end dispatch,--version prints the banner and succeeds,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter /v1/embeddings (E.16 — black-box),a well-formed request with no source wired → 501,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.9 end-to-end dispatch,bare invocation routes to the serve stub,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,E.9 end-to-end dispatch,--config is threaded through to the serve executor,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ChatCompletionRequest.parse — field extraction (E.12),the prompt is trimmed,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,EmbeddingsRequest.parse (E.16 — pure),a bare string input becomes a single-element input list,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,EmbeddingsRequest.parse (E.16 — pure),an array of strings is preserved in order,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-encoding_format,EmbeddingsRequest.parse (E.16 — pure),float is accepted,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,EmbeddingsRequest.parse (E.16 — pure),a non-object body → invalid_body,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,EmbeddingsRequest.parse (E.16 — pure),a missing input → missing_input,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,EmbeddingsRequest.parse (E.16 — pure),an empty string input → invalid_input,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,EmbeddingsRequest.parse (E.16 — pure),an empty array input → invalid_input,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,EmbeddingsRequest.parse (E.16 — pure),token-id (integer-array) input is rejected → invalid_input,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,EmbeddingsRequest.parse (E.16 — pure),a non-string model → invalid_model,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-encoding_format,EmbeddingsRequest.parse (E.16 — pure),base64 is rejected → invalid_encoding_format,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,EmbeddingsResponseRenderer (E.16 — pure),renders the OpenAI list shape with one item per input,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,EmbeddingsResponseRenderer (E.16 — pure),a vector-count mismatch is a programming error → ArgumentError,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter /v1/embeddings (E.16 — black-box),a well-formed request with an injected source renders the body,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter /v1/embeddings (E.16 — black-box),a malformed body → 400 invalid_request_error (source untouched),--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter router scaffold (E.11) > mounted routes answer 501 until behaviour lands (E.17),"POST /v1/embeddings with a well-formed body and no embedding source → 501 (passthrough needs a substrate source, wired at boot E.41+)",--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,ModelsResponseRenderer (E.17 — pure),created is a fixed deterministic constant (no wall-clock read),--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter router scaffold (E.11) > chat / embeddings answer 501 until a source is wired (boot E.41+),"GET /v1/models → 200 (no longer a stub, E.17)",--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,ModelsResponseRenderer (E.17 — pure),defaults to the recognised persona vocabulary in order,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,ModelsResponseRenderer (E.17 — pure),each item carries the OpenAI model shape,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter /v1/models (E.17 — black-box),GET /v1/models → 200 OpenAI models-list body (no source needed),--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,E.18 wire-format conformance — cross-route invariants,a malformed chat body conforms to the OpenAI 400 error envelope,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
-,E.18 wire-format conformance — cross-route invariants,every JSON route answers application/json; the SSE route answers text/event-stream,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
-,E.18 wire-format conformance — POST /v1/chat/completions (non-streaming),the full chat.completion envelope conforms to the OpenAI shape,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
-,E.18 wire-format conformance — POST /v1/chat/completions (non-streaming),the parsed request reaches the answer seam unchanged,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
-,E.18 wire-format conformance — POST /v1/chat/completions (streaming),"streaming chunks arrive in order, each a chat.completion.chunk, and [DONE] is the last SSE line",--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
-cache-control,E.18 wire-format conformance — POST /v1/chat/completions (streaming),no-cache accompanies the event stream,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
-,E.18 wire-format conformance — POST /v1/embeddings,the full embeddings list envelope conforms to the OpenAI shape,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
-,E.18 wire-format conformance — GET /v1/models,the full models-list envelope conforms to the OpenAI shape,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
-,OpenAiHttpSseAdapter chat/completions parsing (E.12),well-formed non-streaming request gets past parsing → 501 (no answer source wired; renders need one — boot E.41+),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,OpenAiHttpSseAdapter router scaffold (E.11) > mounted routes answer 501 until behaviour lands (E.16 – E.17),GET /v1/models → 501 not_implemented,OK/OK,OK/OK,OK/OK,--/OK,--/OK,--/OK
-,OpenAiHttpSseAdapter router scaffold (E.11) > mounted routes answer 501 until behaviour lands (E.16 – E.17),POST /v1/embeddings → 501 not_implemented,OK/OK,--/OK,--/OK,--/OK,--/OK,--/OK
+ID,Groups,Description,Baseline [06-02 12:23],[06-02 12:32],[06-02 12:34],[06-02 12:38],[06-02 12:40],[06-02 12:44],[06-02 13:02],[06-02 13:04],[06-02 13:10],[06-02 13:12]
+,ChatCompletionJsonRenderer (E.14) — body shape,builds a chat.completion body with a single assistant message,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/adapters/openai_http_sse/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/adapters/openai_http_sse/openai_http_sse.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/adapters/telegram/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/adapters/telegram/telegram.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/identity/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/identity/identity.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/edge_security/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/edge_security/edge_security.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/heuristic_classifier/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/heuristic_classifier/heuristic_classifier.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/delivery/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/delivery/delivery.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/boot/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/boot/boot.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/config/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/config/config.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/api/ exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),lib/src/api/api.dart exists,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),top-level barrel re-exports every leaf-module barrel,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),stale E.6 placeholder lib/src/.gitkeep is gone,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),no unexpected directories are present under lib/src/,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),no unexpected directories are present under lib/src/adapters/,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiPersonaMapping (E.15) — pure unit,recognised base model maps to the tom-assistant persona,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiPersonaMapping (E.15) — pure unit,"terse variant keeps the variant id, default substrate role",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiPersonaMapping (E.15) — pure unit,"verbose variant keeps the variant id, default substrate role",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiPersonaMapping (E.15) — pure unit,null model falls back to the default persona,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiPersonaMapping (E.15) — pure unit,unknown model falls back to the default persona (not an error),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiPersonaMapping (E.15) — pure unit,empty model string falls back to the default persona,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiPersonaMapping (E.15) — pure unit,knownModels lists exactly the three prototype persona ids,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiPersonaMapping (E.15) — pure unit,isKnown is true only for recognised ids,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter persona stamping (E.15),a recognised variant model round-trips into the body model,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter persona stamping (E.15),an unknown model is normalised to tom-assistant in the body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,folder layout (E.8 access modules),leaf-module inventory matches the expected size and is unique,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.7 dependency surface,tom_brain_shared exposes the cross-component vocabulary,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.7 dependency surface,tom_brain_procedure_prototype exposes the Dispatcher entry,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.7 dependency surface,tom_basics exposes TomLogger (the only log surface),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.7 dependency surface,tom_core_kernel exposes TomBean and TomBearerAuthentication,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.7 dependency surface,tom_core_server exposes the endpoint pipeline surface,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.7 dependency surface,tom_chattools exposes ChatApi + TelegramChatConfig,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.7 dependency surface,tom_build_base exposes the v2 tool framework (added at E.9),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.7 dependency surface,shelf + shelf_router expose the routing surface (added at E.11),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.7 forbidden surface,policy is documented (no enforcement target at E.7 yet),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter persona stamping (E.15),an absent model defaults to tom-assistant in the body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionJsonRenderer (E.14) — body shape,usage carries char/4 token estimates summing to the total,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionJsonRenderer (E.14) — body shape,empty content yields zero completion tokens and an empty message,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionJsonRenderer (E.14) — body shape,estimateTokens is ceil(length/4) with empty counting as zero,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionSseRenderer (E.13) — frame shape,forModel mints a chatcmpl- id and epoch-seconds created,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionJsonRenderer (E.14) — chunk buffering,concatenates chunk text in order into the message content,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionJsonRenderer (E.14) — chunk buffering,buffers an answer with no final-marked chunk,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionJsonRenderer (E.14) — chunk buffering,an empty chunk stream yields an empty answer,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter non-streaming response (E.14),POST /v1/chat/completions with stream:false and an injected source → 200 application/json chat.completion body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter non-streaming response (E.14),non-streaming request with no injected source → 501,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter non-streaming response (E.14),the response model echoes the request model,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter router scaffold (E.11) > route table shape,every prototype route hangs under the /v1 base path,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter router scaffold (E.11) > route table shape,handler is a callable shelf handler,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter router scaffold (E.11) > mounted routes answer 501 until behaviour lands (E.16 – E.17),"POST /v1/chat/completions with a well-formed body and no answer source → 501 (renders need a chunk source, wired at boot E.41+)",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.toInboundRequest (E.12),carries optional channel identity when supplied,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ModelsResponseRenderer (E.17 — pure),an explicit model list is rendered as given,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter router scaffold (E.11) > unmatched requests return the OpenAI 404 envelope,unknown path under /v1/ → 404 not_found,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter router scaffold (E.11) > unmatched requests return the OpenAI 404 envelope,a path entirely outside /v1/ → 404 not_found,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter router scaffold (E.11) > unmatched requests return the OpenAI 404 envelope,wrong verb on a known path is not served by its stub,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — field extraction (E.12),"reads model, last user prompt, and stream flag",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — field extraction (E.12),stream defaults to false when absent,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — field extraction (E.12),model is null when omitted (default persona resolves at E.15),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.9 end-to-end dispatch,an unknown command fails loudly,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — field extraction (E.12),content-part array form concatenates its text parts,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — failure branches (E.12),"non-object body → invalid_body, no param",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — failure branches (E.12),missing messages → missing_messages on the messages param,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — failure branches (E.12),empty messages array → invalid_messages,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — failure branches (E.12),messages not an array → invalid_messages,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — failure branches (E.12),no user message → no_user_message,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — failure branches (E.12),user message with whitespace-only content → no_user_message,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — failure branches (E.12),non-string model → invalid_model,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — failure branches (E.12),non-bool stream → invalid_stream,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.toInboundRequest (E.12),maps prompt → text and stream → streaming,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.9 end-to-end dispatch,--help lists the serve command and the running-process footer,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionSseRenderer (E.13) — frame shape,a content chunk renders a chat.completion.chunk data frame,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionSseRenderer (E.13) — frame shape,"a final chunk sets finish_reason to ""stop""",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionSseRenderer (E.13) — frame shape,an empty final chunk renders an empty delta object,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionSseRenderer (E.13) — stream rendering,"emits one frame per chunk in order, then [DONE] last",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionSseRenderer (E.13) — stream rendering,terminates with [DONE] even without a final-marked chunk,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter chat/completions parsing (E.12),invalid JSON body → 400 invalid_body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter chat/completions parsing (E.12),empty body → 400 invalid_body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter chat/completions parsing (E.12),missing messages → 400 with messages param,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.18 wire-format conformance — cross-route invariants,an unknown route conforms to the OpenAI 404 error envelope,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,,package loads and exports the tool definition,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter streaming response (E.13),"POST /v1/chat/completions with stream:true and an injected source → 200 text/event-stream, ordered frames, [DONE] last",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter streaming response (E.13),streaming request with no injected source → 501,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.9 tool definition shape,"identity, version, and mode",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.9 tool definition shape,"serve is the default, non-traversal command",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.9 tool definition shape,--config global option is declared,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.9 executor map,exposes a single serve executor,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.9 executor map,"serve executor is non-traversal (runs once, returns success)",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.9 end-to-end dispatch,--version prints the banner and succeeds,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter /v1/embeddings (E.16 — black-box),a well-formed request with no source wired → 501,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.9 end-to-end dispatch,bare invocation routes to the serve stub,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.9 end-to-end dispatch,--config is threaded through to the serve executor,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatCompletionRequest.parse — field extraction (E.12),the prompt is trimmed,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,EmbeddingsRequest.parse (E.16 — pure),a bare string input becomes a single-element input list,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,EmbeddingsRequest.parse (E.16 — pure),an array of strings is preserved in order,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+encoding_format,EmbeddingsRequest.parse (E.16 — pure),float is accepted,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,EmbeddingsRequest.parse (E.16 — pure),a non-object body → invalid_body,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,EmbeddingsRequest.parse (E.16 — pure),a missing input → missing_input,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,EmbeddingsRequest.parse (E.16 — pure),an empty string input → invalid_input,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,EmbeddingsRequest.parse (E.16 — pure),an empty array input → invalid_input,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,EmbeddingsRequest.parse (E.16 — pure),token-id (integer-array) input is rejected → invalid_input,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,EmbeddingsRequest.parse (E.16 — pure),a non-string model → invalid_model,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+encoding_format,EmbeddingsRequest.parse (E.16 — pure),base64 is rejected → invalid_encoding_format,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,EmbeddingsResponseRenderer (E.16 — pure),renders the OpenAI list shape with one item per input,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,EmbeddingsResponseRenderer (E.16 — pure),a vector-count mismatch is a programming error → ArgumentError,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter /v1/embeddings (E.16 — black-box),a well-formed request with an injected source renders the body,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter /v1/embeddings (E.16 — black-box),a malformed body → 400 invalid_request_error (source untouched),--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter router scaffold (E.11) > mounted routes answer 501 until behaviour lands (E.17),"POST /v1/embeddings with a well-formed body and no embedding source → 501 (passthrough needs a substrate source, wired at boot E.41+)",--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ModelsResponseRenderer (E.17 — pure),created is a fixed deterministic constant (no wall-clock read),--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter router scaffold (E.11) > chat / embeddings answer 501 until a source is wired (boot E.41+),"GET /v1/models → 200 (no longer a stub, E.17)",--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ModelsResponseRenderer (E.17 — pure),defaults to the recognised persona vocabulary in order,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ModelsResponseRenderer (E.17 — pure),each item carries the OpenAI model shape,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter /v1/models (E.17 — black-box),GET /v1/models → 200 OpenAI models-list body (no source needed),--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.18 wire-format conformance — cross-route invariants,a malformed chat body conforms to the OpenAI 400 error envelope,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.18 wire-format conformance — cross-route invariants,every JSON route answers application/json; the SSE route answers text/event-stream,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.18 wire-format conformance — POST /v1/chat/completions (non-streaming),the full chat.completion envelope conforms to the OpenAI shape,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.18 wire-format conformance — POST /v1/chat/completions (non-streaming),the parsed request reaches the answer seam unchanged,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.18 wire-format conformance — POST /v1/chat/completions (streaming),"streaming chunks arrive in order, each a chat.completion.chunk, and [DONE] is the last SSE line",--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+cache-control,E.18 wire-format conformance — POST /v1/chat/completions (streaming),no-cache accompanies the event stream,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.18 wire-format conformance — POST /v1/embeddings,the full embeddings list envelope conforms to the OpenAI shape,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,E.18 wire-format conformance — GET /v1/models,the full models-list envelope conforms to the OpenAI shape,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter chat/completions parsing (E.12),well-formed non-streaming request gets past parsing → 501 (no answer source wired; renders need one — boot E.41+),OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter.fromConfig — factory seam,builds an adapter from a TelegramChatConfig via the builder seam,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter — inbound relay,a relay listener may attach before start() without missing events,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatMessage.toInboundRequest — text mapping,maps body / message id / chat id / sender / streaming,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatMessage.toInboundRequest — text mapping,falls back to the sender id for conversationId in a private chat,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatMessage.toInboundRequest — text mapping,"uses platformMessageId for messageId, falling back to id",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatMessage.toInboundRequest — text mapping,metadata carrying the sender id is unmodifiable,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatMessage.toInboundRequest — non-text rejection,rejects a message with null text (Stage-1 is text-only),--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatMessage.toInboundRequest — non-text rejection,rejects an empty-string body,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatMessage.toInboundRequest — non-text rejection,rejects a whitespace-only body,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,ChatMessage.toInboundRequest — non-text rejection,the rejection message names the message id and never throws,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter.inboundRequests — mapped stream,"emits one InboundRequest per text message, in arrival order",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter.inboundRequests — mapped stream,drops non-text messages from the mapped stream,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter.inboundRequests — mapped stream,derives conversationId from the loopback chat id,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter — lifecycle (long-polling),is not running before start(),--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter — lifecycle (long-polling),start() initialises the backend exactly once and marks running,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter — lifecycle (long-polling),start() is idempotent — a second call does not re-initialise,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter — lifecycle (long-polling),stop() disconnects the backend and clears running,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter — lifecycle (long-polling),stop() before start() is a no-op (no disconnect),--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter — lifecycle (long-polling),platform delegates to the underlying backend,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter — inbound relay,relays an injected message to inboundMessages while running,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter — inbound relay,relays multiple messages in arrival order,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter — inbound relay,inboundMessages closes after stop(),--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter.fromConfig — factory seam,the factory-built adapter drives the injected backend,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,TelegramAdapter.sendAnswer — consolidate + send,sends the minimum number of messages for an overflowing answer,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramAdapter.sendAnswer — consolidate + send,sends one plain-text message for a fitting answer,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramOutboundConsolidator.split — pure splitting,an empty answer produces no messages (nothing to send),--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramOutboundConsolidator.split — pure splitting,"an answer within the limit is one message, verbatim",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramOutboundConsolidator.split — pure splitting,an answer one character over the limit splits into two,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramOutboundConsolidator.split — pure splitting,the split is minimal: ceil(len / limit) messages,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramOutboundConsolidator.split — pure splitting,never splits a character: astral runes stay whole,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramOutboundConsolidator.split — pure splitting,"counts UTF-16 code units, not runes, against the limit",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramOutboundConsolidator.consolidate — chunk buffering,buffers all chunk deltas into one message when they fit,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramOutboundConsolidator.consolidate — chunk buffering,includes text carried on the final-marked chunk,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramOutboundConsolidator.consolidate — chunk buffering,an empty stream yields no messages,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramOutboundConsolidator.consolidate — chunk buffering,a stream of only empty deltas yields no messages,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramOutboundConsolidator.consolidate — chunk buffering,buffered overflow splits into the minimum count,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,TelegramAdapter.sendAnswer — consolidate + send,sends nothing for an empty answer,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+,OpenAiHttpSseAdapter router scaffold (E.11) > mounted routes answer 501 until behaviour lands (E.16 – E.17),GET /v1/models → 501 not_implemented,OK/OK,OK/OK,OK/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK
+,OpenAiHttpSseAdapter router scaffold (E.11) > mounted routes answer 501 until behaviour lands (E.16 – E.17),POST /v1/embeddings → 501 not_implemented,OK/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK
