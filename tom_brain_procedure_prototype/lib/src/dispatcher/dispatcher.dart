@@ -36,6 +36,28 @@
 //   - Inter-isolate transport + boot/shutdown orchestration (§ 12):
 //     instantiates the Phase A isolate-hosted memory by default.
 //
+// D.14 ✅ — `Dispatcher.accept(Access)` entry surface
+// (`dispatcher_entry.dart`): the single entry point, the `DispatchRoute`
+// seam it hands an admitted access to (classify→select→schedule, built in
+// D.15+), and the `DispatcherEntryObserver` hook the D.48 logger / D.49
+// event stream will drive. Exported below.
+//
+// D.15 ✅ — inbound classifier (`inbound_classifier.dart`): stage two of
+// the pipeline. `InboundClassifier.classify(Access)` accepts the Phase-E
+// kind-hint verbatim when present and falls back to the prototype's
+// `classify_inbound_v1` stub (every un-hinted inbound → `user_prompt`)
+// otherwise. Kinds are open strings; `InboundKinds.userPrompt` is the one
+// the prototype routes. Exported below.
+//
+// D.16 ✅ — procedure selection (`procedure_selector.dart` +
+// `unsupported_procedure_kind.dart`): stage three of the pipeline.
+// `ProcedureSelector.select(kind)` maps the classifier's inbound-kind
+// string to a procedure id — `user_prompt` → `answer_with_memory_v1`
+// (`SystemProcedures.answerWithMemoryV1`); anything else is rejected loudly
+// with `UnsupportedProcedureKind`. The routing table is injectable
+// (`defaultProcedureRouting` is the prototype's single entry). Exported
+// below.
+//
 // Intentionally empty at D.6: this step adds the folder + barrel only,
 // matching the C.8 per-folder convention used across the Tom Brain
 // projects (`tom_brain_shared`, `tom_brain_memory`,
@@ -60,3 +82,11 @@
 // See `_ai/quests/tom_brain/tom_brain_procedure_prototype_specification.md`
 // for the authoritative contract this module implements.
 library;
+
+export 'dispatcher_entry.dart'
+    show Dispatcher, DispatchRoute, DispatcherEntryObserver;
+export 'inbound_classifier.dart'
+    show ClassifyFallback, InboundClassifier, InboundKinds, classifyInboundV1;
+export 'procedure_selector.dart'
+    show ProcedureSelector, SystemProcedures, defaultProcedureRouting;
+export 'unsupported_procedure_kind.dart' show UnsupportedProcedureKind;
