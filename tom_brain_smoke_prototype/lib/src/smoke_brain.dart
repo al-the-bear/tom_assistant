@@ -33,6 +33,7 @@
 // placeholder. The real bound port is read back from [SmokeProcess.port].
 
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
     show
@@ -40,14 +41,24 @@ import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
         AnchorPolicy,
         BrainAccessProcess,
         DailyQuotaPolicy,
+        IdentityBinding,
+        KindHintClassifier,
+        KindHintEmbedder,
         ProvisionedBrain,
         QueueSnapshot,
         RateLimitPolicy,
+        TelegramChatApiFactory,
+        defaultTelegramChatApiFactory,
         serveWithShelfIo,
         startBrainAccessProcess;
-import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryConfig;
+import 'package:tom_brain_memory/tom_brain_memory.dart'
+    show MemoryConfig, TomBrainMemoryClient;
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
-    show BrainProcessBoot, BrainProcessConfig, MemoryProvisioningConfig;
+    show
+        BrainProcessBoot,
+        BrainProcessConfig,
+        ClassifyFallback,
+        MemoryProvisioningConfig;
 
 import 'smoke_memory.dart';
 import 'smoke_substrate.dart';
@@ -67,7 +78,17 @@ final class SmokeProcess {
   /// so a later smoke step can set [SmokeSubstrate.answerChunks] before a run.
   final SmokeSubstrate substrate;
 
-  SmokeProcess._({required this.process, required this.substrate});
+  /// The host-side handle to the in-isolate memory (the marshalling client over
+  /// the production isolate transport). Exposed so a smoke step can read the
+  /// store's post-run state back through [TomBrainMemoryClient.stats] — the one
+  /// read-back that crosses the isolate boundary (E.47).
+  final TomBrainMemoryClient memory;
+
+  SmokeProcess._({
+    required this.process,
+    required this.substrate,
+    required this.memory,
+  });
 
   /// The port the OpenAI + `/healthz` socket actually bound (OS-assigned when
   /// the harness requested the ephemeral port `0`).
@@ -86,9 +107,39 @@ final class SmokeProcess {
 /// ephemeral port (read it back from [SmokeProcess.port]). [substrate] lets a
 /// caller pass a pre-configured stub (default: a fresh [SmokeSubstrate]).
 /// [systemScriptsDir] points the disk procedure store at a system-scripts
-/// directory; the default (`null`) leaves `BrainProcessBoot`'s own default
-/// (`scripts/system`), which resolves to an empty procedure set when absent —
-/// enough for a stand-up smoke that runs no procedure.
+/// directory; the default (`null`) resolves the *procedure prototype's* shipped
+/// `scripts/system` directory (where `answer_with_memory_v1` lives) so a run can
+/// resolve the real procedure. The directory is found by resolving the
+/// procedure-prototype package URI, so it works regardless of the caller's
+/// working directory (the smoke runs from its own package root, not the
+/// procedure prototype's).
+///
+/// When [telegramBotToken] is non-null the harness also stands up the Telegram
+/// edge (E.49): the access process drives a long-polling `TelegramAdapter` whose
+/// backend is built by [telegramChatApiFactory]. A smoke test injects a loopback
+/// `ChatApi` through that factory (and holds its own reference to inject inbound
+/// messages and read the sent answers back), so the Telegram channel is
+/// exercised end-to-end with no Telegram network. [telegramWhitelist] is the set
+/// of allowed sender ids; each becomes both a whitelist key (the adapter's edge
+/// gate) and an identity binding (so a whitelisted sender resolves a principal),
+/// keeping the whitelist a single source of truth. A sender outside the set is
+/// declined at the edge before any `Access` is built.
+///
+/// When [kindHintEmbedder] and [kindHintClassifier] are both supplied the access
+/// process wires the cheap kind-hint classifier (E.33) in front of the
+/// dispatcher: each inbound prompt is embedded (through the E.34 in-process
+/// cache that wraps [kindHintEmbedder]) and the embedding classified against the
+/// procedure centroids; a confident classification attaches the result as the
+/// `Access.envelope.kindHint`, which the dispatcher accepts verbatim instead of
+/// running its `classify_inbound_v1` fallback. The E.50 smoke injects a counting
+/// embedder + a confident classifier here to prove the repeated-prompt
+/// short-circuit. Leaving either `null` disables the classifier (the dispatcher
+/// classifies every request) — the default for E.46–E.49.
+///
+/// [classifyFallback] replaces the dispatcher's no-hint fallback
+/// (`classify_inbound_v1`). The E.50 smoke injects a spy here so the test can
+/// prove the fallback is never called when a confident kind-hint is attached.
+/// `null` keeps the dispatcher's default fallback.
 ///
 /// No real OS termination signals are watched (an empty `shutdownSignals`
 /// list), so the harness owns the lifecycle entirely through [SmokeProcess.stop].
@@ -96,8 +147,16 @@ Future<SmokeProcess> standUpSmokeProcess({
   int port = 0,
   SmokeSubstrate? substrate,
   Directory? systemScriptsDir,
+  String? telegramBotToken,
+  Set<String> telegramWhitelist = const <String>{},
+  TelegramChatApiFactory? telegramChatApiFactory,
+  KindHintEmbedder? kindHintEmbedder,
+  KindHintClassifier? kindHintClassifier,
+  ClassifyFallback? classifyFallback,
 }) async {
   final SmokeSubstrate smokeSubstrate = substrate ?? SmokeSubstrate();
+  final Directory scriptsDir =
+      systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
 
   // ── 1. Boot the cognition: stub substrate + in-isolate memory. ──
   final booted = await BrainProcessBoot.boot(
@@ -107,7 +166,10 @@ Future<SmokeProcess> standUpSmokeProcess({
         factory: spawnSmokeMemory,
         memoryConfig: MemoryConfig.forTesting(root: 'ztmp/tom_brain_smoke_e46'),
       ),
-      systemScriptsDir: systemScriptsDir,
+      systemScriptsDir: scriptsDir,
+      // E.50: the dispatcher's no-hint fallback (the prototype's LLM-classifier
+      // stand-in). A confident kind-hint must short-circuit it.
+      classifyFallback: classifyFallback,
     ),
   );
 
@@ -126,22 +188,81 @@ Future<SmokeProcess> standUpSmokeProcess({
 
   // ── 3. Stand the access process up on the local port. ──
   final BrainAccessProcess process = await startBrainAccessProcess(
-    config: _smokeAccessConfig(port),
+    config: _smokeAccessConfig(
+      port,
+      telegramBotToken: telegramBotToken,
+      telegramWhitelist: telegramWhitelist,
+    ),
     brain: provisioned,
     // The serve seam binds [port] directly (0 ⇒ ephemeral); `config.openAiPort`
-    // is the satisfy-validation placeholder (see the file header).
+    // is the satisfy-validation placeholder (see the file header). The Telegram
+    // factory is the loopback double a smoke test injects; the CLI default
+    // (the real long-polling backend) is never reached in the smoke.
     serve: (handler, _) => serveWithShelfIo(handler, port),
+    telegramChatApiFactory:
+        telegramChatApiFactory ?? defaultTelegramChatApiFactory,
+    // E.33/E.34: the substrate + memory edges of the cheap kind-hint
+    // classifier. Supplied together (or not at all) — the access boot builds
+    // the classifier only when both are present, wrapping the embedder in the
+    // E.34 cache.
+    kindHintEmbedder: kindHintEmbedder,
+    kindHintClassifier: kindHintClassifier,
     shutdownSignals: const <Stream<ProcessSignal>>[],
   );
 
-  return SmokeProcess._(process: process, substrate: smokeSubstrate);
+  return SmokeProcess._(
+    process: process,
+    substrate: smokeSubstrate,
+    memory: booted.memory.client,
+  );
 }
 
-/// The permissive access config the smoke binds: no bearer bindings (every
-/// `/v1/` request is admitted without auth pre-validation), no rate / quota
-/// caps, and an empty anchor policy (every prompt admitted). `openAiPort` is a
-/// placeholder — the harness's serve seam binds the real port.
-AccessConfig _smokeAccessConfig(int port) => AccessConfig(
+/// Resolves the procedure prototype's shipped `scripts/system` directory.
+///
+/// The smoke depends on `tom_brain_procedure_prototype`, whose `scripts/system`
+/// folder ships the `answer_with_memory_v1` procedure. Resolving the package
+/// URI (rather than a working-directory-relative path) lets the harness find
+/// those scripts no matter where the test process was launched from.
+Future<Directory> _resolveProcedurePrototypeScripts() async {
+  final Uri? libUri = await Isolate.resolvePackageUri(
+    Uri.parse(
+      'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart',
+    ),
+  );
+  if (libUri == null) {
+    throw StateError(
+      'cannot resolve the tom_brain_procedure_prototype package URI — '
+      'is it on the package config?',
+    );
+  }
+  // libUri → <package-root>/lib/tom_brain_procedure_prototype.dart;
+  // the scripts live a sibling of lib/, at <package-root>/scripts/system.
+  return Directory.fromUri(libUri.resolve('../scripts/system'));
+}
+
+/// The bearer token the smoke client authenticates with. A request must carry
+/// `Authorization: Bearer $smokeBearerToken` to resolve an identity — the
+/// access edge resolves identity by looking the token up in the config's
+/// bindings, and an unbound token is a `401` (see [IdentityResolver]).
+const String smokeBearerToken = 'smoke-token';
+
+/// The permissive access config the smoke binds: one bearer binding (the
+/// [smokeBearerToken] → a `smoke-user` principal, so a request resolves an
+/// identity and reaches the dispatcher), no rate / quota caps, and an empty
+/// anchor policy (every prompt admitted). `openAiPort` is a placeholder — the
+/// harness's serve seam binds the real port.
+///
+/// When [telegramBotToken] is non-null the config also carries a Telegram
+/// channel (E.49): `hasTelegram` becomes true so the boot stands the Telegram
+/// edge up, and each [telegramWhitelist] sender id becomes a
+/// `telegramUserIdBindings` entry — its key is the whitelist (the adapter's edge
+/// gate) and its value the principal a whitelisted sender resolves to.
+AccessConfig _smokeAccessConfig(
+  int port, {
+  String? telegramBotToken,
+  Set<String> telegramWhitelist = const <String>{},
+}) =>
+    AccessConfig(
       openAiPort: port > 0 ? port : 1,
       rateLimitPolicy: RateLimitPolicy(
         capacity: 1000000,
@@ -150,4 +271,12 @@ AccessConfig _smokeAccessConfig(int port) => AccessConfig(
       ),
       dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: 1000000),
       anchorPolicy: AnchorPolicy(disallowedSignatures: const <String>[]),
+      bearerTokenBindings: <String, IdentityBinding>{
+        smokeBearerToken: IdentityBinding(principalId: 'smoke-user'),
+      },
+      telegramBotToken: telegramBotToken,
+      telegramUserIdBindings: <String, IdentityBinding>{
+        for (final String userId in telegramWhitelist)
+          userId: IdentityBinding(principalId: 'tg-$userId'),
+      },
     );

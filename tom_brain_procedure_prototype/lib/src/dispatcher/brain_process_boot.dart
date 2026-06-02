@@ -56,10 +56,12 @@ import 'dart:io';
 
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, TomBrainSubstrateClient;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show Access, PreemptionState;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show Access, OutboundChunk, PreemptionState;
 
 import '../api/procedure_engine.dart';
 import '../api/procedure_invocation.dart';
+import '../api/procedure_outcome.dart';
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../procedure_store/disk_procedure_store.dart';
@@ -209,6 +211,18 @@ final class BrainProcessConfig {
   /// for the prototype default (no channel). See [AccessLayerInstaller].
   final AccessLayerInstaller? installAccessLayer;
 
+  /// The fallback the dispatcher's [InboundClassifier] runs when an admitted
+  /// [Access] carries no kind-hint, or `null` for the default
+  /// ([classifyInboundV1] — every un-hinted inbound is a `user_prompt`, D.15).
+  ///
+  /// `classify_inbound_v1` is the prototype's stand-in for the LLM classifier
+  /// path: an access edge that attaches a confident kind-hint (E.33) makes the
+  /// dispatcher take the pass-through branch and *not* call this fallback. The
+  /// seam is exposed here so the E.50 end-to-end smoke can inject a spy and
+  /// prove that short-circuit — the `InboundClassifier` itself has always taken
+  /// an injectable fallback; this only threads it through boot.
+  final ClassifyFallback? classifyFallback;
+
   /// Builds a boot config.
   BrainProcessConfig({
     required this.substrate,
@@ -218,6 +232,7 @@ final class BrainProcessConfig {
     this.userScriptsDir,
     this.foregroundQueueDepth = 4,
     this.installAccessLayer,
+    this.classifyFallback,
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
 }
 
@@ -439,7 +454,12 @@ abstract final class BrainProcessBoot {
 
     final dispatcher = Dispatcher(
       route: _buildRoute(
-        classifier: InboundClassifier(),
+        // The kind-hint pass-through is unconditional; only the no-hint
+        // fallback is configurable. A `null` fallback keeps the D.15 default
+        // (`classify_inbound_v1`).
+        classifier: config.classifyFallback == null
+            ? InboundClassifier()
+            : InboundClassifier(fallback: config.classifyFallback!),
         selector: ProcedureSelector(),
         coordinator: coordinator,
         engine: engine,
@@ -457,10 +477,17 @@ abstract final class BrainProcessBoot {
   /// (`user_prompt` → `answer_with_memory_v1`, else `UnsupportedProcedureKind`,
   /// D.16), and schedules the run on the foreground slot of the shared
   /// [coordinator] (D.18). The procedure reads the inbound prompt off the
-  /// `text` argument; per Q-D.38.1/Q-D.42.1 the answer reaches the channel
-  /// through `Access.deliver` only once the access layer (Phase E) wires
-  /// delivery — the prototype route runs the procedure to completion and the
-  /// answer lands in memory + the run outcome.
+  /// `text` argument.
+  ///
+  /// Outbound delivery (Q-D.38.1 / Q-D.42.1, resolved at E.47). The prototype's
+  /// one procedure produces the *whole* answer as a single `answer` output (the
+  /// substrate bridge concatenates the token stream, Q-C.13.1), so once the run
+  /// completes the route hands that answer back to the originating channel as a
+  /// single final [OutboundChunk] through `Access.deliver`. The returned stream
+  /// is the backpressure channel (E.39): the route drains it to surface a
+  /// delivery stall as a thrown error and otherwise ignores it. A run that
+  /// produced no usable result (truncated by the step deadline, or crashed)
+  /// delivers nothing — the answer simply never reaches the channel.
   static DispatchRoute _buildRoute({
     required InboundClassifier classifier,
     required ProcedureSelector selector,
@@ -471,7 +498,7 @@ abstract final class BrainProcessBoot {
       final kind = classifier.classify(access);
       // `UnsupportedProcedureKind` propagates unchanged through accept (D.16).
       final procedureId = selector.select(kind);
-      await coordinator.submitForeground(
+      final ProcedureOutcome outcome = await coordinator.submitForeground(
         () => engine
             .invoke(
               ProcedureInvocation(
@@ -484,6 +511,13 @@ abstract final class BrainProcessBoot {
             .outcome,
         procedureId: procedureId,
       );
+
+      final String? answer = outcome.result?.output<String>('answer');
+      if (answer != null) {
+        await access
+            .deliver(OutboundChunk(textDelta: answer, isFinal: true))
+            .drain<void>();
+      }
     };
   }
 }

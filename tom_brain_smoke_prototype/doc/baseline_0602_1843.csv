@@ -1,6 +1,14 @@
-ID,Groups,Description,Baseline [06-02 18:43]
-,E.46 stand-up smoke,binds a real local port,OK/OK
-,E.46 stand-up smoke,GET /healthz answers 200 with the liveness body,OK/OK
-,E.46 stand-up smoke,GET /v1/models answers 200 with the models-list body,OK/OK
-,E.46 stand-up smoke,the stub substrate is opened lazily — boot skips the open with no substrate config,OK/OK
-,E.46 clean teardown,stop() closes the substrate exactly once and is idempotent,OK/OK
+ID,Groups,Description,Baseline [06-02 18:43],[06-02 19:04],[06-02 19:07],[06-02 19:11]
+,E.46 stand-up smoke,binds a real local port,OK/OK,OK/OK,OK/OK,OK/OK
+,E.46 stand-up smoke,GET /healthz answers 200 with the liveness body,OK/OK,OK/OK,OK/OK,OK/OK
+,E.46 stand-up smoke,GET /v1/models answers 200 with the models-list body,OK/OK,OK/OK,OK/OK,OK/OK
+,E.46 stand-up smoke,the stub substrate is opened lazily — boot skips the open with no substrate config,OK/OK,OK/OK,OK/OK,OK/OK
+,E.46 clean teardown,stop() closes the substrate exactly once and is idempotent,OK/OK,OK/OK,OK/OK,OK/OK
+,E.47 chat-completion roundtrip,POST /v1/chat/completions (stream=false) returns the OpenAI body,--/OK,OK/OK,OK/OK,OK/OK
+,E.47 chat-completion roundtrip,the run persists an Event + a Conclusion + a produced_by edge,--/OK,OK/OK,OK/OK,OK/OK
+,E.47 chat-completion roundtrip,a fresh memory takes the cold path — InterestItem + interests push,--/OK,OK/OK,OK/OK,OK/OK
+,E.47 auth gate,an unbound bearer token is a 401 and writes nothing,--/OK,OK/OK,OK/OK,OK/OK
+,E.48 streaming chat-completion roundtrip,the response carries the text/event-stream content-type,--/OK,--/OK,--/OK,OK/OK
+,E.48 streaming chat-completion roundtrip,every data frame is a chat.completion.chunk in order,--/OK,--/OK,--/OK,OK/OK
+,E.48 streaming chat-completion roundtrip,the wire is terminated by a final data: [DONE] line,--/OK,--/OK,--/OK,OK/OK
+,E.48 streaming auth gate,"an unbound bearer token is a 401 JSON error, not an SSE stream",--/OK,--/OK,--/OK,OK/OK
