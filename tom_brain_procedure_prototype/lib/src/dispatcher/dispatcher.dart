@@ -58,6 +58,15 @@
 // (`defaultProcedureRouting` is the prototype's single entry). Exported
 // below.
 //
+// D.17 ✅ — accept-and-route integration tests
+// (`test/d17_accept_and_route_test.dart`): prove the three stages compose
+// through the single `Dispatcher.accept` entry point. `user_prompt`
+// (explicit hint, un-hinted fallback, or padded/blank hint) routes end to
+// end to `answer_with_memory_v1`; any unknown kind raises
+// `UnsupportedProcedureKind` unchanged through `accept`, never schedules,
+// and delivers nothing back to the channel. Test-only step — no new public
+// symbol.
+//
 // Intentionally empty at D.6: this step adds the folder + barrel only,
 // matching the C.8 per-folder convention used across the Tom Brain
 // projects (`tom_brain_shared`, `tom_brain_memory`,
