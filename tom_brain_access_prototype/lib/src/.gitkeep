@@ -1,4 +1,0 @@
-# Placeholder so the empty `lib/src/` folder is tracked.
-# The module subfolders (adapters/openai_http_sse/, adapters/telegram/,
-# identity/, edge_security/, heuristic_classifier/, delivery/, boot/,
-# config/, api/) land at E.8.
