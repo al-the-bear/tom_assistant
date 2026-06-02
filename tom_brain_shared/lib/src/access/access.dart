@@ -41,6 +41,8 @@ import 'persona.dart';
 import 'resolved_identity.dart';
 import 'session.dart';
 
+export 'access_event.dart'
+    show AccessCreated, AccessDelivered, AccessEvent, AccessFailed;
 export 'inbound_request.dart' show InboundRequest;
 export 'outbound_chunk.dart' show OutboundChunk;
 export 'persona.dart' show Persona;

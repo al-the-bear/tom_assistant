@@ -148,3 +148,13 @@ export 'src/access/access.dart'
         Persona,
         ResolvedIdentity,
         Session;
+
+// D.12 — access/ observability: the `AccessEvent` sealed sum
+// (`AccessCreated` / `AccessDelivered` / `AccessFailed`) tracing one
+// inbound request from construction through delivery / failure. Lives
+// beside the `Access` shape it observes (D.11): Phase E emits the events
+// from the edge, the dispatcher / a Forge inspector observe them off the
+// shared `BrainEvent` base. The variants carry routing identity and
+// counts only — never the prompt text or the answer body.
+export 'src/access/access.dart'
+    show AccessCreated, AccessDelivered, AccessEvent, AccessFailed;
