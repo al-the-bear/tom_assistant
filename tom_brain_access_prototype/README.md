@@ -6,11 +6,20 @@ inbound work, produces the `Access` object the dispatcher consumes, runs
 `answer_with_memory_v1` through `tom_brain_procedure_prototype`, and
 streams the answer back through the originating channel.
 
-> **Status:** E.17 — `OpenAiHttpSseAdapter` router scaffold (E.11),
-> `chat/completions` request parsing (E.12), the SSE streaming response
+> **Status:** E.18 — the OpenAI HTTP/SSE adapter is complete and its
+> wire-format conformance is locked. `OpenAiHttpSseAdapter` router scaffold
+> (E.11), `chat/completions` request parsing (E.12), the SSE streaming response
 > (E.13), the non-streaming JSON response (E.14), the model-id → persona
 > mapping (E.15), the `/v1/embeddings` passthrough (E.16), and the
-> `/v1/models` listing (E.17). A raw
+> `/v1/models` listing (E.17). E.18 adds the consolidated
+> **wire-format conformance suite** (AC-6):
+> `test/adapters/openai_wire_format_conformance_test.dart` drives one
+> fully-wired adapter black-box through `handler` and asserts the complete
+> OpenAI envelope of every route (`chat.completion` /
+> `chat.completion.chunk` / embeddings-list / models-list), that streaming
+> chunks arrive in order, that the non-streaming body completes, that
+> `data: [DONE]` is the last SSE line, and the cross-route content-type and
+> error-envelope invariants. A raw
 > `shelf_router.Router` (Q-E.3.2 strategy 2) mounts
 > `POST /v1/chat/completions`, `POST /v1/embeddings`, and `GET /v1/models`
 > under `/v1/`. The chat route parses its body (`ChatCompletionRequest`:
@@ -49,8 +58,9 @@ streams the answer back through the originating channel.
 > `test/adapters/chat_completion_sse_test.dart`,
 > `test/adapters/chat_completion_json_test.dart`,
 > `test/adapters/persona_mapping_test.dart`,
-> `test/adapters/embeddings_test.dart`, and
-> `test/adapters/models_test.dart`. The `serve` command is
+> `test/adapters/embeddings_test.dart`,
+> `test/adapters/models_test.dart`, and
+> `test/adapters/openai_wire_format_conformance_test.dart`. The `serve` command is
 > still a not-yet-wired stub; full boot (substrate, memory isolate, engine,
 > dispatcher, adapters wired, `/healthz`) lands at E.41 – E.45.
 

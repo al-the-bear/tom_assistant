@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.0.1 — 2026-06-02 (Phase E.18)
+
+OpenAI HTTP/SSE adapter — wire-format conformance suite (AC-6, proto spec
+§ 13). No production code change; E.18 is the consolidated contract suite
+proving the whole adapter speaks the OpenAI wire format through its public
+`handler`.
+
+- `test/adapters/openai_wire_format_conformance_test.dart` — 9 black-box
+  assertions over one fully-wired adapter (both the `ChatAnswerStream` and the
+  `EmbeddingSource` seams injected): the full `chat.completion` non-streaming
+  envelope + buffered-body completeness + seam pass-through; the streaming
+  path's ordered `chat.completion.chunk` frames, repeated completion id,
+  per-chunk `finish_reason`, terminal `data: [DONE]`, and `cache-control`;
+  the embeddings list envelope (substrate `model` echo); the models-list
+  envelope (exactly the persona vocabulary); and the cross-route invariants
+  (per-route content-type; the OpenAI `400` / `404` error envelope shape).
+- `lib/tom_brain_access_prototype.dart` — E.18 ✅ bullet added; trailing
+  pending range narrowed `E.18 – E.50` → `E.19 – E.50`.
+- `lib/src/adapters/openai_http_sse/openai_http_sse_adapter.dart` — file-header
+  route map notes E.18 is proven (no code change).
+- `README.md` — status block E.17 → E.18 (the conformance suite + the new
+  test file in the lock list).
+
 ## 0.0.1 — 2026-06-02 (Phase E.17)
 
 OpenAI HTTP/SSE adapter — `GET /v1/models` listing (proto spec § 5.7):

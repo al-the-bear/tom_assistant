@@ -18,8 +18,10 @@
 //   - non-streaming JSON response      → E.14 (wired)
 //   - model-id → persona mapping       → E.15 (wired)
 //   - `/v1/embeddings` passthrough     → E.16 (wired)
-//   - `/v1/models` listing             → E.17 (this step — wired below)
-//   - wire-format conformance tests    → E.18
+//   - `/v1/models` listing             → E.17 (wired below)
+//   - wire-format conformance tests    → E.18 (proven, no code change —
+//     `test/adapters/openai_wire_format_conformance_test.dart` asserts AC-6
+//     across the whole adapter through this public `handler`)
 //
 // At E.14 the chat route renders a real response for either render mode of a
 // well-formed request — provided a chunk source has been injected (the

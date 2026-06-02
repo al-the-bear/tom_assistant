@@ -79,9 +79,19 @@
 ///   `OpenAiPersonaMapping.knownModels`. Unlike the chat / embeddings routes
 ///   the models route needs no injected source — the persona vocabulary is a
 ///   static, adapter-owned list — so it always answers `200`, never `501`.
-/// - E.18 – E.50 ⏳ — wire-format conformance tests, Telegram adapter,
-///   identity / session / persona, edge security, kind-hint classifier,
-///   delivery, boot, and the end-to-end smoke.
+/// - E.18 ✅ — OpenAI wire-format conformance suite (AC-6).
+///   `test/adapters/openai_wire_format_conformance_test.dart` drives one
+///   fully-wired adapter (both the `ChatAnswerStream` and the
+///   `EmbeddingSource` seams injected) black-box through `handler` and proves
+///   the complete OpenAI envelope of every route: the `chat.completion` /
+///   `chat.completion.chunk` / embeddings-list / models-list shapes, that
+///   streaming chunks arrive in order, that the non-streaming body completes
+///   (full buffered text), and that `data: [DONE]` is the last SSE line —
+///   plus the cross-route content-type and error-envelope invariants. This is
+///   the in-process contract layer; E.53 guards the same invariant over a real
+///   socket against captured OpenAI fixtures.
+/// - E.19 – E.50 ⏳ — Telegram adapter, identity / session / persona, edge
+///   security, kind-hint classifier, delivery, boot, and the end-to-end smoke.
 library;
 
 // Module barrels, in request-flow order: inbound adapters → identity →
