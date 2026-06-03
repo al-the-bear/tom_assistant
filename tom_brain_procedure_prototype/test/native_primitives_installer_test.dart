@@ -50,11 +50,13 @@ void main() {
 
   // Boots a host whose native-primitive seam is filled by [primitive]
   // (plus a discarding note primitive and an idle yield primitive, unless
-  // [notePrimitive] / [yieldPrimitive] are given).
+  // [notePrimitive] / [yieldPrimitive] are given). [emitPrimitive] defaults
+  // to a sink-less (no-op) emit; the emit-focused tests pass their own.
   D4rtDcliHost hostFor(
     RunProcedurePrimitive primitive, {
     NotePrimitive? notePrimitive,
     YieldPrimitive? yieldPrimitive,
+    EmitPrimitive? emitPrimitive,
   }) =>
       D4rtDcliHost(
         memoryBridge: memoryBridge,
@@ -63,6 +65,7 @@ void main() {
           runProcedurePrimitive: primitive,
           notePrimitive: notePrimitive ?? discardingNotePrimitive(),
           yieldPrimitive: yieldPrimitive ?? idleYieldPrimitive(),
+          emitPrimitive: emitPrimitive ?? EmitPrimitive(),
         ),
       );
 
@@ -324,6 +327,79 @@ run(inputs) async {
     state.signalResume();
     expect(await running, 'resumed');
     expect(resumed, isTrue);
+  });
+
+  // ── emit(textDelta) — d4rt wiring (P1.3 #8) ─────────────────────────
+
+  test('emit is callable from a script and streams each delta to the sink '
+      'in order', () async {
+    final deltas = <String>[];
+    final host = hostFor(
+      idleRunProcedure(),
+      emitPrimitive: EmitPrimitive(sink: (delta) async => deltas.add(delta)),
+    );
+
+    await host.run(
+      '''
+import '$engineNativeLibrary';
+
+run(inputs) async {
+  await emit('Hel');
+  await emit('lo, ');
+  await emit('world');
+}
+''',
+      inputs: <Object?>[ProcedureInputs.empty()],
+    );
+
+    expect(deltas, <String>['Hel', 'lo, ', 'world']);
+  });
+
+  test('emit with no bound sink is a no-op a background body can call '
+      'blindly', () async {
+    // The default emit primitive `hostFor` installs has no sink (the
+    // internal / free-time path). A script that emits must still complete.
+    final host = hostFor(idleRunProcedure());
+
+    final result = await host.run(
+      '''
+import '$engineNativeLibrary';
+
+run(inputs) async {
+  await emit('dropped');
+  return 'completed';
+}
+''',
+      inputs: <Object?>[ProcedureInputs.empty()],
+    );
+
+    expect(result, 'completed');
+  });
+
+  test('emit with a non-String delta throws out of the script call',
+      () async {
+    final host = hostFor(
+      idleRunProcedure(),
+      emitPrimitive: EmitPrimitive(sink: (_) async {}),
+    );
+
+    await expectLater(
+      host.run(
+        '''
+import '$engineNativeLibrary';
+
+run(inputs) async {
+  await emit(42);
+}
+''',
+        inputs: <Object?>[ProcedureInputs.empty()],
+      ),
+      throwsA(
+        predicate<Object>(
+          (e) => e.toString().contains('emit textDelta must be a String'),
+        ),
+      ),
+    );
   });
 }
 

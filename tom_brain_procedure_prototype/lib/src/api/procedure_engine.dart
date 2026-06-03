@@ -69,6 +69,7 @@ import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../d4rt_host/d4rt_dcli_host.dart';
 import '../preemption/step_deadline.dart';
+import '../primitives_native/emit_primitive.dart';
 import '../primitives_native/native_primitives_installer.dart';
 import '../primitives_native/note_primitive.dart';
 import '../primitives_native/run_procedure_primitive.dart';
@@ -192,7 +193,21 @@ final class ProcedureEngine {
   /// When [timeout] is supplied the run is closed `aborted` if it has not
   /// finished within that wall-clock budget — the external counterpart to the
   /// internal per-step deadline (C.36). [timeout] must be strictly positive.
-  ProcedureRun invoke(ProcedureInvocation invocation, {Duration? timeout}) {
+  ///
+  /// When [tokenSink] is supplied (the external/user request path, P1.3 #8)
+  /// the engine binds it both to the per-run substrate bridge (every
+  /// `sub.llm(...)` chunk is forwarded as it arrives) and to the `emit`
+  /// primitive (text the body authors itself), so the run streams its answer
+  /// increment-by-increment rather than only returning a whole-text result.
+  /// Left `null` for an internal secondary / free-time run, where the
+  /// substrate forwarding and `emit` both fall back to buffer-only no-ops.
+  /// A [tokenSink] is bound only to the top-level run; nested `runProcedure`
+  /// calls do not inherit it (the answer is streamed by the top-level body).
+  ProcedureRun invoke(
+    ProcedureInvocation invocation, {
+    Duration? timeout,
+    OutboundDeltaSink? tokenSink,
+  }) {
     final runId = invocation.runId ?? _newRunId();
     final trail = StreamController<TrailEntry>.broadcast();
     final outcome = Completer<ProcedureOutcome>();
@@ -214,6 +229,7 @@ final class ProcedureEngine {
             depth: _topLevelDepth,
             onEntry: trail.add,
             cancellation: cancellation,
+            tokenSink: tokenSink,
           );
           outcome.complete(result);
         } catch (error, stack) {
@@ -247,6 +263,11 @@ final class ProcedureEngine {
   /// caller turns it into an outcome error); a procedure crash is caught,
   /// recorded as `errored`, and returned as an outcome carrying the error; a
   /// cancelled or timed-out run is closed `aborted`.
+  ///
+  /// [tokenSink] is the per-run outbound channel (P1.3 #8) — bound to the
+  /// substrate bridge's `onToken` and the `emit` primitive's sink for the
+  /// top-level external run, `null` for a nested run (the top-level body owns
+  /// the answer stream; a nested `runProcedure` does not re-stream).
   Future<ProcedureOutcome> _runInternal({
     required String runId,
     required String procedureId,
@@ -257,6 +278,7 @@ final class ProcedureEngine {
     required int depth,
     void Function(TrailEntry entry)? onEntry,
     RunCancellation? cancellation,
+    OutboundDeltaSink? tokenSink,
   }) async {
     final LoadedProcedure loaded = resolver.resolve(procedureId, version: version);
 
@@ -277,8 +299,16 @@ final class ProcedureEngine {
     final recordCall = recorder.recordPrimitiveCall;
     final runMemoryBridge =
         MemoryBridge(memoryBridge.client, onCall: recordCall);
-    final runSubstrateBridge =
-        SubstrateBridge(substrateBridge.client, onCall: recordCall);
+    // Bind the run's outbound channel (P1.3 #8) to both halves of the
+    // streaming seam: the substrate bridge forwards each `sub.llm(...)` chunk
+    // through `onToken`, and the `emit` primitive forwards text the body
+    // authors itself — the same closure on both so they share one ordered
+    // wire. `null` on a nested or internal run leaves both buffer-only.
+    final runSubstrateBridge = SubstrateBridge(
+      substrateBridge.client,
+      onCall: recordCall,
+      onToken: tokenSink,
+    );
 
     final runPrimitive = RunProcedurePrimitive(
       executor: (call) => _executeNested(call, parentRunId: runId),
@@ -292,6 +322,7 @@ final class ProcedureEngine {
         runProcedurePrimitive: runPrimitive,
         notePrimitive: NotePrimitive(sink: recorder.noteSink, now: _now),
         yieldPrimitive: YieldPrimitive(state: preemptionState),
+        emitPrimitive: EmitPrimitive(sink: tokenSink),
       ),
     );
 

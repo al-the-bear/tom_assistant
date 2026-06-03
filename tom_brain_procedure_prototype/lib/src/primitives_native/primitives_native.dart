@@ -32,8 +32,10 @@
 //     (`sugar_aliases.dart`, § 5.2). Only `think_v1` exists in the
 //     prototype (a no-op stub); the rest surface `ProcedureNotFound`.
 
+export 'emit_primitive.dart' show EmitPrimitive, OutboundDeltaSink;
 export 'native_primitives_installer.dart'
     show
+        emitName,
         engineNativeLibrary,
         nativePrimitivesInstaller,
         noteName,

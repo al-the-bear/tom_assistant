@@ -119,17 +119,19 @@
 // interest (D.40) fires only when recall returned *nothing*, while a repeat
 // requires recall to have surfaced the prior `Event`.
 //
-// ── Token streaming and `Access.deliver` (Q-D.38.1) ─────────────────
+// ── Token streaming and `Access.deliver` (Q-D.38.1; P1.3 #8) ────────
 //
-// The plan's "stream tokens back via the `Access.deliver` callback" is a
-// Phase E (`tom_brain_access`) concern: the `Access` object — its session,
-// persona, and `deliver` outbound callback — does not exist in the procedure
-// prototype, which only ever sees a `ProcedureInputs` bag. The substrate
-// bridge's `llm` already drains the substrate stream and returns the
-// *concatenated* answer text (Q-C.13.1), so the prototype's body produces the
-// whole answer as the `answer` output; per-token delivery to a live caller is
-// wired when the dispatcher/access layer threads a deliver sink through the
-// run (Q-D.38.1).
+// This body does not change to stream — it streams *automatically*. The
+// engine binds a per-run token sink to the substrate bridge's `onToken`
+// (`engine.invoke(tokenSink: …)`, threaded by the dispatcher route from
+// `Access.deliver`), so each substrate chunk this body's `sub.llm(...)` call
+// pulls is forwarded to the live caller as it arrives — while `sub.llm` still
+// returns the *concatenated* `answer` text (Q-C.13.1) the body hands back as
+// its `answer` output. On the external/user path the route streams those
+// deltas and closes with an empty final marker; on an internal / free-time
+// run no sink is bound and `sub.llm` falls back to buffer-only. A body that
+// needs to stream text it authors *outside* an `sub.llm` call uses the `emit`
+// primitive, which shares the same per-run sink; this body has no such text.
 //
 // ── How the body reaches its inputs and the bridges ─────────────────
 //

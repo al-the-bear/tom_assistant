@@ -550,6 +550,66 @@ Future<Object?> run(inputs) async {
       expect(outcome.result!.output<Object?>('value'), 1);
     });
   });
+
+  group('P1.3 #8 the per-run token sink streams sub.llm + emit deltas', () {
+    // A procedure that authors a delta with `emit`, then pulls a two-chunk
+    // substrate completion through `sub.llm`. The whole answer is still
+    // returned (the bridge concatenates), so the route can mark the stream
+    // end without re-sending text.
+    ProcedureEngine streamingEngine(_StreamingSubstrate streaming) =>
+        ProcedureEngine(
+          resolver: ProcedureResolver(<LoadedProcedure>[
+            _procedure(
+              'stream_v1',
+              '''
+import '${BrainBridges.substrateLibrary}';
+import '$engineNativeLibrary';
+
+Future<Object?> run(inputs) async {
+  await emit('[start] ');
+  final res = await sub.llm('prompt');
+  return {'answer': res['text']};
+}
+''',
+            ),
+          ]),
+          memory: memory,
+          memoryBridge: memoryBridge,
+          substrateBridge: SubstrateBridge(streaming),
+          now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
+        );
+
+    test('an external run (tokenSink supplied) forwards both the emit delta '
+        'and each sub.llm chunk in body order', () async {
+      final engine = streamingEngine(_StreamingSubstrate(<String>['He', 'llo']));
+
+      final deltas = <String>[];
+      final outcome = await engine
+          .invoke(
+            ProcedureInvocation(procedureId: 'stream_v1'),
+            tokenSink: (delta) async => deltas.add(delta),
+          )
+          .outcome;
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      // The emit delta first (authored before the llm call), then the two
+      // substrate chunks, in order — both halves share the one sink.
+      expect(deltas, <String>['[start] ', 'He', 'llo']);
+      // The buffered answer still carries the concatenated completion.
+      expect(outcome.result!.output<String>('answer'), 'Hello');
+    });
+
+    test('an internal run (no tokenSink) streams nothing but still completes '
+        'with the full answer', () async {
+      final engine = streamingEngine(_StreamingSubstrate(<String>['He', 'llo']));
+
+      final outcome =
+          await engine.invoke(ProcedureInvocation(procedureId: 'stream_v1')).outcome;
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(outcome.result!.output<String>('answer'), 'Hello');
+    });
+  });
 }
 
 /// Builds a [LoadedProcedure] from [body], wrapping it in a minimal valid
@@ -614,6 +674,52 @@ class _ControllableSubstrate implements TomBrainSubstrateClient {
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) =>
       StreamController<LlmStreamEvent>().stream;
+
+  @override
+  Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
+        vec: Vec(Float32List.fromList(<double>[0.0])),
+        modelIdentity: const EmbeddingModelIdentity(
+          providerId: 'p',
+          modelId: 'm',
+          dims: 1,
+          normalized: true,
+        ),
+      );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
+}
+
+// ── A streaming `TomBrainSubstrateClient` ───────────────────────────
+//
+// `completeStream` emits one `LlmStreamChunk` per configured chunk and then
+// completes — so a procedure that awaits `sub.llm(...)` gets the concatenated
+// text back while each chunk is forwarded live to the per-run token sink
+// (P1.3 #8). Used by the token-sink streaming tests.
+class _StreamingSubstrate implements TomBrainSubstrateClient {
+  _StreamingSubstrate(this.chunks);
+
+  final List<String> chunks;
+
+  @override
+  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
+      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
+        for (final chunk in chunks) LlmStreamChunk(callId: 'c', text: chunk),
+        const LlmStreamCompleted(
+          callId: 'c',
+          report: LlmCallReport(
+            providerId: 'p',
+            modelId: 'm',
+            anchorHash: 'a',
+            promptHash: 'pr',
+            tokensIn: 1,
+            tokensOut: 1,
+            retries: 0,
+            wallClockMs: 1,
+          ),
+        ),
+      ]);
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(

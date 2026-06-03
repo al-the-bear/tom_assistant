@@ -42,6 +42,7 @@ import 'package:tom_d4rt/d4rt.dart';
 
 import '../api/procedure_inputs.dart';
 import '../api/procedure_result.dart';
+import 'emit_primitive.dart';
 import 'note_primitive.dart';
 import 'procedure_inputs_bridge.dart';
 import 'run_procedure_primitive.dart';
@@ -66,6 +67,13 @@ const String runProcedureName = 'runProcedure';
 /// The d4rt global name the `note` primitive is bound to.
 const String noteName = 'note';
 
+/// The d4rt global name the `emit` outbound-delta primitive is bound to.
+///
+/// A procedure reaches it as a bare `await emit(textDelta)` call after
+/// importing [engineNativeLibrary]; it streams one increment of the answer
+/// back to the originating channel (P1.3 #8, § 11 step 2).
+const String emitName = 'emit';
+
 /// The d4rt global name the cooperative-preemption checkpoint is bound to.
 ///
 /// Spec-cased `snake_case` (`yield_if_foreground_waiting`) per § 5.1; a
@@ -84,6 +92,7 @@ void Function(D4rt) nativePrimitivesInstaller({
   required RunProcedurePrimitive runProcedurePrimitive,
   required NotePrimitive notePrimitive,
   required YieldPrimitive yieldPrimitive,
+  required EmitPrimitive emitPrimitive,
 }) {
   return (D4rt interpreter) {
     // The read surface of `ProcedureInputs`, so a body can call
@@ -130,6 +139,19 @@ void Function(D4rt) nativePrimitivesInstaller({
           yieldPrimitive.yieldIfForegroundWaiting(),
       engineNativeLibrary,
       signature: 'Future<void> yield_if_foreground_waiting()',
+    );
+
+    interpreter.registertopLevelFunction(
+      emitName,
+      (
+        InterpreterVisitor visitor,
+        List<Object?> arguments,
+        Map<String, Object?> namedArguments,
+        List<RuntimeType>? typeArguments,
+      ) =>
+          _invokeEmit(emitPrimitive, arguments),
+      engineNativeLibrary,
+      signature: 'Future<void> emit(String textDelta)',
     );
 
     // The convenience sugar (`think` / `plan` / `create` / `critique` /
@@ -270,4 +292,32 @@ Object? _invokeNote(
 
   primitive.note(category, payload);
   return null;
+}
+
+/// Marshals a d4rt `emit(...)` call onto [primitive].
+///
+/// Positional args: `[0]` the text delta (String). Returns the primitive's
+/// `Future<void>`, which the script awaits so the downstream channel's
+/// backpressure reaches the body (P1.3 #8). On an internal / free-time run the
+/// primitive has no bound sink and the future resolves immediately (a no-op).
+Future<void> _invokeEmit(
+  EmitPrimitive primitive,
+  List<Object?> arguments,
+) {
+  if (arguments.isEmpty) {
+    throw ArgumentError(
+      'emit expects (String textDelta); got 0 positional arguments',
+    );
+  }
+
+  final textDelta = arguments[0];
+  if (textDelta is! String) {
+    throw ArgumentError.value(
+      textDelta,
+      'textDelta',
+      'emit textDelta must be a String',
+    );
+  }
+
+  return primitive.emit(textDelta);
 }

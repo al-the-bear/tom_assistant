@@ -47,6 +47,7 @@ void main() {
     RunProcedurePrimitive? runProcedure,
     NotePrimitive? note,
     YieldPrimitive? yieldPrimitive,
+    EmitPrimitive? emit,
   }) =>
       D4rtDcliHost(
         memoryBridge: memoryBridge,
@@ -59,6 +60,7 @@ void main() {
           notePrimitive: note ?? NotePrimitive(sink: (_) {}),
           yieldPrimitive:
               yieldPrimitive ?? YieldPrimitive(state: PreemptionState()),
+          emitPrimitive: emit ?? EmitPrimitive(),
         ),
       );
 

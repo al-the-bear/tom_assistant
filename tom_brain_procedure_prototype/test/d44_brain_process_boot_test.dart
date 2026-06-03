@@ -149,6 +149,43 @@ void main() {
       expect(memory.closeCount, 1);
       expect(substrate.closeCount, 1);
     });
+
+    test('the route streams the answer as deltas then an empty final marker '
+        '(P1.3 #8)', () async {
+      // Two substrate chunks → two non-final delta chunks reach the channel
+      // live, then the route closes the stream with an empty final marker.
+      substrate.answerChunks = <String>['Hello, ', 'world.'];
+      final booted = await BrainProcessBoot.boot(configWith());
+      addTearDown(booted.shutdown);
+
+      final delivered = <OutboundChunk>[];
+      final access = Access(
+        envelope: InboundRequest(text: 'greet me', kindHint: 'user_prompt'),
+        identity: ResolvedIdentity(principalId: 'p1'),
+        session: Session(sessionId: 's1'),
+        persona: Persona.assistant(),
+        deliver: (chunk) {
+          delivered.add(chunk);
+          return Stream<OutboundChunk>.value(chunk);
+        },
+      );
+
+      await booted.dispatcher.accept(access);
+
+      // The substrate deltas arrived as non-final chunks, in order.
+      final nonFinal = delivered.where((c) => !c.isFinal).toList();
+      expect(nonFinal.map((c) => c.textDelta).toList(),
+          <String>['Hello, ', 'world.']);
+
+      // The stream was terminated by exactly one empty final marker — the
+      // deltas already carried the text, so the terminator re-sends nothing.
+      final finals = delivered.where((c) => c.isFinal).toList();
+      expect(finals, hasLength(1));
+      expect(finals.single.textDelta, isEmpty);
+
+      // The final marker is last.
+      expect(delivered.last.isFinal, isTrue);
+    });
   });
 
   group('D.44-3 shutdown teardown order + idempotency', () {

@@ -535,15 +535,19 @@ abstract final class BrainProcessBoot {
   /// [coordinator] (D.18). The procedure reads the inbound prompt off the
   /// `text` argument.
   ///
-  /// Outbound delivery (Q-D.38.1 / Q-D.42.1, resolved at E.47). The prototype's
-  /// one procedure produces the *whole* answer as a single `answer` output (the
-  /// substrate bridge concatenates the token stream, Q-C.13.1), so once the run
-  /// completes the route hands that answer back to the originating channel as a
-  /// single final [OutboundChunk] through `Access.deliver`. The returned stream
-  /// is the backpressure channel (E.39): the route drains it to surface a
-  /// delivery stall as a thrown error and otherwise ignores it. A run that
-  /// produced no usable result (truncated by the step deadline, or crashed)
-  /// delivers nothing — the answer simply never reaches the channel.
+  /// Outbound delivery (Q-D.38.1 / Q-D.42.1, resolved at E.47; P1.3 #8). The
+  /// external/user request path streams its answer increment-by-increment: the
+  /// route binds a per-run token sink to `engine.invoke(tokenSink: …)`, so each
+  /// `sub.llm(...)` chunk (and any `emit(...)` the body authors) reaches the
+  /// originating channel as a non-final [OutboundChunk] through `Access.deliver`
+  /// *while the run is still in flight*. Each delivery's returned stream is the
+  /// backpressure channel (E.39): the sink drains it so a delivery stall
+  /// surfaces as a thrown error that pushes back into the body's own pacing.
+  /// Once the run completes successfully the route sends a single empty
+  /// terminator chunk (`textDelta: '', isFinal: true`) — the deltas already
+  /// carried the text, so the terminator only marks the end of the stream. A
+  /// run that produced no usable result (truncated by the step deadline, or
+  /// crashed) sends no terminator — the stream simply stops where it stalled.
   static DispatchRoute _buildRoute({
     required InboundClassifier classifier,
     required ProcedureSelector selector,
@@ -554,6 +558,14 @@ abstract final class BrainProcessBoot {
       final kind = classifier.classify(access);
       // `UnsupportedProcedureKind` propagates unchanged through accept (D.16).
       final procedureId = selector.select(kind);
+
+      // The per-run outbound channel (P1.3 #8): each delta the run streams is
+      // delivered as a non-final chunk and drained for backpressure so a
+      // stalled channel pushes back into the body's pacing.
+      Future<void> streamDelta(String textDelta) => access
+          .deliver(OutboundChunk(textDelta: textDelta, isFinal: false))
+          .drain<void>();
+
       final ProcedureOutcome outcome = await coordinator.submitForeground(
         () => engine
             .invoke(
@@ -563,15 +575,18 @@ abstract final class BrainProcessBoot {
                   inboundTextArgumentKey: access.envelope.text,
                 },
               ),
+              tokenSink: streamDelta,
             )
             .outcome,
         procedureId: procedureId,
       );
 
-      final String? answer = outcome.result?.output<String>('answer');
-      if (answer != null) {
+      // The run completed: terminate the stream. The deltas already carried the
+      // answer text, so the terminator is an empty final marker. A run that
+      // produced no usable result (truncated / crashed) sends nothing.
+      if (outcome.result?.output<String>('answer') != null) {
         await access
-            .deliver(OutboundChunk(textDelta: answer, isFinal: true))
+            .deliver(OutboundChunk(textDelta: '', isFinal: true))
             .drain<void>();
       }
     };
