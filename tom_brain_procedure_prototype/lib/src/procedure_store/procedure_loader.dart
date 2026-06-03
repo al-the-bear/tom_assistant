@@ -77,15 +77,30 @@ final class ProcedureLoader {
 
   /// Parses [source]'s structured header into a [ProcedureHeader].
   ///
+  /// Two stages: [_extractHeaderYaml] lifts the `/// @procedure`
+  /// doc-comment block out of the full d4rt source (extraction), then
+  /// [parseHeaderYaml] turns that YAML body into the validated, typed
+  /// header (validate + assemble).
+  ///
   /// Throws [ProcedureHeaderInvalid] when the source has no `@procedure`
   /// header block, the block is not valid YAML, or a required field (`id`,
   /// `version`, `summary`, `successCriterion`, `budget`) is missing or
   /// ill-typed.
-  ProcedureHeader parse(String source) {
-    final yamlText = _extractHeaderYaml(source);
-    final node = _parseYaml(yamlText);
-    return _buildHeader(node);
-  }
+  ProcedureHeader parse(String source) =>
+      parseHeaderYaml(_extractHeaderYaml(source));
+
+  /// Parses an already-extracted header YAML body — the doc-comment block
+  /// with its `/// ` prefixes stripped — into a validated [ProcedureHeader].
+  ///
+  /// This is the second half of [parse]: the contract layer. It is exposed
+  /// so the field-level checks (required fields present, correct types,
+  /// non-empty budget) can be unit-tested from a small YAML string without
+  /// wrapping it in a `/// @procedure` doc-comment block.
+  ///
+  /// Throws [ProcedureHeaderInvalid] when [yamlText] is empty, is not valid
+  /// YAML, is not a mapping, or violates the field contract.
+  ProcedureHeader parseHeaderYaml(String yamlText) =>
+      _buildHeader(_parseYaml(yamlText));
 
   /// Parses [src]'s header and bundles it with the ref + verbatim source.
   ///

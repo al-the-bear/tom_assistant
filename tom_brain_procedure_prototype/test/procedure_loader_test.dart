@@ -315,6 +315,63 @@ class Foo {
     });
   });
 
+  group('E.4.3 ProcedureLoader.parseHeaderYaml — contract checks in isolation',
+      () {
+    // The validation half of `parse`, exercised straight from a bare YAML
+    // body — no `/// @procedure` doc-comment wrapper required.
+    test('builds a header from a minimal YAML body', () {
+      final header = loader.parseHeaderYaml(
+        'id: bare_v1\n'
+        'version: 3\n'
+        'summary: Bare.\n'
+        'successCriterion: Ok.\n'
+        'budget: { wallClockMs: 500 }\n',
+      );
+      expect(header.id, 'bare_v1');
+      expect(header.version, 3);
+      expect(header.budget.wallClockMs, 500);
+    });
+
+    test('rejects a missing required field without a doc-comment block', () {
+      expect(
+        () => loader.parseHeaderYaml(
+          'id: bare_v1\n'
+          'summary: Bare.\n'
+          'successCriterion: Ok.\n'
+          'budget: { wallClockMs: 500 }\n',
+        ),
+        throwsA(isA<ProcedureHeaderInvalid>()
+            .having((e) => e.field, 'field', 'version')
+            .having((e) => e.code, 'code', 'procedure.header.invalid')),
+      );
+    });
+
+    test('rejects an empty YAML body', () {
+      expect(
+        () => loader.parseHeaderYaml('   '),
+        throwsA(isA<ProcedureHeaderInvalid>()),
+      );
+    });
+
+    test('parse composes extraction with parseHeaderYaml', () {
+      // The same field body, reached the two ways, yields equal headers.
+      final viaParse = loader.parse(_validSource);
+      final viaYaml = loader.parseHeaderYaml(
+        'id: answer_with_memory_v1\n'
+        'version: 1\n'
+        'summary: ${viaParse.summary}\n'
+        'successCriterion: ${viaParse.successCriterion}\n'
+        'inputs:\n'
+        '  - { name: text, type: String, required: true }\n'
+        'outputs:\n'
+        '  - { name: answer, type: String }\n'
+        'budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 12, memoryWrites: 6 }\n'
+        'requires: [ recall, llm, persist, edge, note, stack.push ]\n',
+      );
+      expect(viaYaml, equals(viaParse));
+    });
+  });
+
   group('C.24 ProcedureLoader.load — bundles ref + source', () {
     test('load attaches the ref and keeps verbatim source', () {
       const ref = ProcedureRef.system('/scripts/system/answer.dart');
