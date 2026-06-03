@@ -89,17 +89,10 @@ import 'run_cancellation.dart';
 /// The typed failure class a crashed run is recorded under (§ 10.4).
 const String _runtimeCrashKind = 'procedure.runtime.crash';
 
-/// Reserved entry-point return key a procedure body uses to report the ids of
-/// the memory nodes it produced (D.39).
-///
-/// A body persists its result nodes itself (it has `mem.persist`), but it
-/// cannot draw the `produced_by` edge to the run record — the authoritative
-/// `ProcedureRun` node is only persisted at `complete()`, after the body
-/// returns (recorder Q-C.31.1). The body therefore returns the produced node
-/// ids under this key; the engine threads them into
-/// `RunCompletion.producedNodeIds` (so the recorder draws the edges) and
-/// strips the key from the procedure's declared outputs.
-const String producedNodeIdsOutputKey = 'producedNodeIds';
+// `producedNodeIdsOutputKey` — the reserved produced-node-ids key the engine
+// splits off a body's outputs — is owned by `recorder/run_records.dart` (the
+// recorder writes the matching `ProcedureRun` field), and is in scope here
+// through the `run_records.dart` import above.
 
 /// The depth the top-level procedure of an `invoke` runs at (§ 5.1 / C.19).
 const int _topLevelDepth = 1;

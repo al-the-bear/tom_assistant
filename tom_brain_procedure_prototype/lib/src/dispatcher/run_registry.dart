@@ -52,7 +52,11 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import '../recorder/run_records.dart'
-    show inflightStackName, procedureRunNodeType, recentRunsStackName;
+    show
+        inflightStackName,
+        procedureRunNodeType,
+        recentRunsStackName,
+        runStatusRunning;
 import 'run_coordinator.dart' show RunSlot;
 
 /// The launch facts the coordinator hands the registry when a run begins
@@ -157,7 +161,7 @@ final class RunRegistry {
           'slot': registration.slot.name,
           if (registration.parentRunId != null)
             'parentRunId': registration.parentRunId,
-          'status': 'running',
+          'status': runStatusRunning,
           'startedAt': _now().toUtc().toIso8601String(),
         },
       ),

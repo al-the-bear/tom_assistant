@@ -41,5 +41,7 @@ export 'run_records.dart'
         RunStart,
         inflightStackName,
         procedureRunNodeType,
-        recentRunsStackName;
+        producedNodeIdsOutputKey,
+        recentRunsStackName,
+        runStatusRunning;
 export 'run_recorder.dart' show RunRecorder;

@@ -23,6 +23,28 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 export 'package:tom_brain_memory/tom_brain_memory.dart'
     show inflightStackName, procedureRunNodeType, recentRunsStackName;
 
+/// Reserved entry-point return key a procedure body uses to report the ids
+/// of the memory nodes it produced (D.39), and the matching `ProcedureRun`
+/// node field the recorder writes them to.
+///
+/// A body persists its result nodes itself (it has `mem.persist`), but it
+/// cannot draw the `produced_by` edge to the run record — the authoritative
+/// `ProcedureRun` node is only persisted at `complete()`, after the body
+/// returns (recorder Q-C.31.1). The body therefore returns the produced node
+/// ids under this key; the engine threads them into [RunCompletion.
+/// producedNodeIds] (so the recorder draws the edges) and strips the key
+/// from the procedure's declared outputs. Owned here so the engine (which
+/// splits the key off the outputs) and the recorder (which writes the field)
+/// share one literal rather than re-typing it.
+const String producedNodeIdsOutputKey = 'producedNodeIds';
+
+/// The `status` value of an in-flight run's `ProcedureRun` marker, written
+/// when the run begins and rewritten to the terminal status at completion
+/// (`completion.status.name` / `RunOutcome`). Shared by the recorder's
+/// in-flight marker and the dispatcher's run registry so the one
+/// protocol-significant literal is not re-typed at each site.
+const String runStatusRunning = 'running';
+
 /// The launch facts captured when a procedure run begins.
 ///
 /// The engine assigns [runId] before the recorder is involved (the run

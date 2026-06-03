@@ -195,7 +195,7 @@ final class RunRecorder {
           'version': info.version,
           'runId': info.runId,
           if (info.parentRunId != null) 'parentRunId': info.parentRunId,
-          'status': 'running',
+          'status': runStatusRunning,
           'startedAt': startedAt.toUtc().toIso8601String(),
           'trailId': trailId.value,
         },
@@ -401,7 +401,7 @@ final class RunRecorder {
         'startedAt': startedAt.toUtc().toIso8601String(),
         'finishedAt': finishedAt.toUtc().toIso8601String(),
         'effort': effort.toJson(),
-        'producedNodeIds':
+        producedNodeIdsOutputKey:
             List<String>.unmodifiable(completion.producedNodeIds),
         'trailId': trailId.value,
       };
@@ -446,7 +446,7 @@ final class RunRecorder {
           ...completion.details,
           'effort': effort.toJson(),
           if (completion.producedNodeIds.isNotEmpty)
-            'producedNodeIds':
+            producedNodeIdsOutputKey:
                 List<String>.unmodifiable(completion.producedNodeIds),
         },
         elapsedMs: effort.wallClockMs,
