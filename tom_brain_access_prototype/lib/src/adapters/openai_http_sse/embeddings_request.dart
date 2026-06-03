@@ -28,8 +28,12 @@
 
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
+import 'openai_request_fields.dart';
+
 /// A decoded JSON object — the shape `jsonDecode` produces for an object
-/// body. Aliased so the type checks below read as intent.
+/// body. Aliased so the type checks below read as intent. Identical to
+/// [JsonObject]; kept as a file-local name for the `input` reads that stay
+/// in this file.
 typedef _Json = Map<String, Object?>;
 
 /// A typed `embeddings` request-parsing failure.
@@ -109,14 +113,15 @@ final class EmbeddingsRequest {
   ///
   /// This method is pure: no I/O, no throwing on malformed input.
   static Result<EmbeddingsRequest, EmbeddingsParseError> parse(Object? body) {
-    if (body is! _Json) {
-      return const Err(EmbeddingsParseError(
-        message: 'Request body must be a JSON object.',
-        code: 'invalid_body',
-      ));
+    final _Json json;
+    switch (requireJsonObject(body, EmbeddingsParseError.new)) {
+      case Err(:final error):
+        return Err(error);
+      case Ok(:final value):
+        json = value;
     }
 
-    if (!body.containsKey('input')) {
+    if (!json.containsKey('input')) {
       return const Err(EmbeddingsParseError(
         message: "Missing required parameter: 'input'.",
         code: 'missing_input',
@@ -124,22 +129,23 @@ final class EmbeddingsRequest {
       ));
     }
 
-    final Result<List<String>, EmbeddingsParseError> inputs =
-        _parseInput(body['input']);
-    if (inputs is Err<List<String>, EmbeddingsParseError>) {
-      return Err(inputs.error);
+    final List<String> inputs;
+    switch (_parseInput(json['input'])) {
+      case Err(:final error):
+        return Err(error);
+      case Ok(:final value):
+        inputs = value;
     }
 
-    final Object? rawModel = body['model'];
-    if (rawModel != null && rawModel is! String) {
-      return const Err(EmbeddingsParseError(
-        message: "'model' must be a string.",
-        code: 'invalid_model',
-        param: 'model',
-      ));
+    final String? model;
+    switch (optionalStringField(json, 'model', EmbeddingsParseError.new)) {
+      case Err(:final error):
+        return Err(error);
+      case Ok(:final value):
+        model = value;
     }
 
-    final Object? rawFormat = body['encoding_format'];
+    final Object? rawFormat = json['encoding_format'];
     if (rawFormat != null && rawFormat != 'float') {
       return const Err(EmbeddingsParseError(
         message: "'encoding_format' must be 'float'; the prototype does not "
@@ -149,10 +155,7 @@ final class EmbeddingsRequest {
       ));
     }
 
-    return Ok(EmbeddingsRequest(
-      inputs: (inputs as Ok<List<String>, EmbeddingsParseError>).value,
-      model: rawModel as String?,
-    ));
+    return Ok(EmbeddingsRequest(inputs: inputs, model: model));
   }
 
   /// Reduces the OpenAI `input` value to a non-empty `List<String>`.

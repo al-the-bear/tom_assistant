@@ -49,6 +49,7 @@ import '../boot/access_assembler.dart';
 import '../delivery/sse_delivery.dart';
 import '../edge_security/edge_security.dart';
 import '../identity/identity_resolver.dart';
+import 'json_response.dart';
 
 /// The live, auth-gated OpenAI HTTP/SSE channel (E.45).
 ///
@@ -62,9 +63,6 @@ import '../identity/identity_resolver.dart';
 class OpenAiAccessEdge {
   /// The base path every route hangs under. Defaults to the adapter's `/v1`.
   final String basePath;
-
-  /// JSON media type for every JSON response.
-  static const String _jsonContentType = 'application/json; charset=utf-8';
 
   /// SSE media type for the streaming response.
   static const String _eventStreamContentType =
@@ -210,10 +208,7 @@ class OpenAiAccessEdge {
       prompt: envelope.text,
       content: content.toString(),
     );
-    return Response.ok(
-      body,
-      headers: <String, String>{'content-type': _jsonContentType},
-    );
+    return jsonResponse(body);
   }
 
   /// Decodes one `data: {…}\n\n` SSE frame to its JSON payload, or `null` for
@@ -247,10 +242,7 @@ class OpenAiAccessEdge {
   /// `GET /v1/models` — the static persona listing (no auth, no body).
   Future<Response> _handleModels(Request request) async {
     final String body = const ModelsResponseRenderer().bodyJson(models: _models);
-    return Response.ok(
-      body,
-      headers: <String, String>{'content-type': _jsonContentType},
-    );
+    return jsonResponse(body);
   }
 
   /// Any unmatched route → the OpenAI `404` envelope.
@@ -335,11 +327,7 @@ class OpenAiAccessEdge {
         'code': code,
       },
     };
-    return Response(
-      statusCode,
-      body: jsonEncode(body),
-      headers: <String, String>{'content-type': _jsonContentType},
-    );
+    return jsonResponse(jsonEncode(body), status: statusCode);
   }
 }
 

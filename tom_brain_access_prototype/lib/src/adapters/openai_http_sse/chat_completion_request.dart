@@ -26,10 +26,13 @@
 
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
+import 'openai_request_fields.dart';
+
 /// A decoded JSON object — the shape `jsonDecode` produces for an object
 /// body and for each message / content-part entry. Aliased so the type
 /// checks below read as intent (`body is! _Json`) rather than the verbose
-/// `Map<String, Object?>`.
+/// `Map<String, Object?>`. Identical to [JsonObject]; kept as a file-local
+/// name for the message/content-part reads that stay in this file.
 typedef _Json = Map<String, Object?>;
 
 /// A typed `chat/completions` request-parsing failure.
@@ -142,14 +145,15 @@ final class ChatCompletionRequest {
   static Result<ChatCompletionRequest, ChatCompletionParseError> parse(
     Object? body,
   ) {
-    if (body is! _Json) {
-      return const Err(ChatCompletionParseError(
-        message: 'Request body must be a JSON object.',
-        code: 'invalid_body',
-      ));
+    final _Json json;
+    switch (requireJsonObject(body, ChatCompletionParseError.new)) {
+      case Err(:final error):
+        return Err(error);
+      case Ok(:final value):
+        json = value;
     }
 
-    final Object? rawMessages = body['messages'];
+    final Object? rawMessages = json['messages'];
     if (rawMessages == null) {
       return const Err(ChatCompletionParseError(
         message: "Missing required parameter: 'messages'.",
@@ -174,28 +178,26 @@ final class ChatCompletionRequest {
       ));
     }
 
-    final Object? rawModel = body['model'];
-    if (rawModel != null && rawModel is! String) {
-      return const Err(ChatCompletionParseError(
-        message: "'model' must be a string.",
-        code: 'invalid_model',
-        param: 'model',
-      ));
+    final String? model;
+    switch (optionalStringField(json, 'model', ChatCompletionParseError.new)) {
+      case Err(:final error):
+        return Err(error);
+      case Ok(:final value):
+        model = value;
     }
 
-    final Object? rawStream = body['stream'];
-    if (rawStream != null && rawStream is! bool) {
-      return const Err(ChatCompletionParseError(
-        message: "'stream' must be a boolean.",
-        code: 'invalid_stream',
-        param: 'stream',
-      ));
+    final bool? stream;
+    switch (optionalBoolField(json, 'stream', ChatCompletionParseError.new)) {
+      case Err(:final error):
+        return Err(error);
+      case Ok(:final value):
+        stream = value;
     }
 
     return Ok(ChatCompletionRequest(
       prompt: prompt,
-      model: rawModel as String?,
-      stream: (rawStream as bool?) ?? false,
+      model: model,
+      stream: stream ?? false,
     ));
   }
 

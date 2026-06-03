@@ -43,6 +43,8 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
 
+import 'json_response.dart';
+
 /// A point-in-time read of the dispatcher coordinator's run-slot + queue state
 /// (E.43), the `queues` payload of the health body.
 ///
@@ -130,9 +132,6 @@ class HealthCheck {
   /// traffic to a process that is winding down.
   static const String statusDraining = 'draining';
 
-  /// JSON media type for the health response.
-  static const String _jsonContentType = 'application/json; charset=utf-8';
-
   final QueueSnapshotSource _queueSnapshot;
   final DateTime Function() _clock;
   final DateTime _startedAt;
@@ -187,9 +186,6 @@ class HealthCheck {
 
   /// `GET /healthz` → `200` with the JSON health body.
   Response _handleHealthz(Request request) {
-    return Response.ok(
-      jsonEncode(currentBody()),
-      headers: <String, String>{'content-type': _jsonContentType},
-    );
+    return jsonResponse(jsonEncode(currentBody()));
   }
 }
