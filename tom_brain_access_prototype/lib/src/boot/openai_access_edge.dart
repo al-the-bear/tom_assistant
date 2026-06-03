@@ -19,20 +19,32 @@
 // OpenAI dialect (it reuses `ChatCompletionRequest`, the SSE / JSON
 // renderers, the models renderer, and the same error-envelope shape).
 //
-// ── Why the SSE sink is captured, then replayed ──────────────────────
+// ── How the two response paths differ (streaming vs buffered) ────────
 //
 // `AccessAssembler.admitOpenAi` always binds an `SseDeliveryBinding` (E.37)
-// and `await`s `dispatcher.accept`, so the answer is fully delivered into
-// the sink by the time `admitOpenAi` returns. The edge-security gates all
-// run *before* delivery and throw on rejection, so awaiting the whole
-// `admitOpenAi` lets the edge map a rejection onto the correct HTTP status
-// *before* any byte of a `200` body is sent — the price is that streaming is
-// buffered-then-replayed rather than truly incremental. For the prototype
-// that trade (correct status codes over incremental flush) is the right one;
-// it is logged in the questions doc (Q-E.45.2). A non-streaming request
-// reconstructs the one `chat.completion` body from the captured frames
-// (Q-E.45.3).
+// and `await`s `dispatcher.accept`, so the answer is fully delivered into the
+// sink by the time `admitOpenAi` returns. The edge-security gates (auth →
+// identity → rate-limit → quota → anchor) all run *before* the first
+// `OutboundChunk` is delivered and throw on rejection, so a rejection always
+// fires before any frame is written. The edge exploits exactly that ordering:
+//
+//   * A *streaming* request (`stream: true`, P1.3 #9) gets true per-token
+//     latency. The edge writes into a live `StreamControllerSseSink` and
+//     returns its `body` stream as the `200 text/event-stream` response —
+//     but only once it has *committed* to the `200`. It commits by racing two
+//     outcomes: the first frame written to the sink (gates passed, delivery
+//     started → `200` stream) against `admitOpenAi` throwing (a gate / pre-
+//     delivery dispatch failure → the matching `4xx`/`500` envelope). Because
+//     a gate rejection always precedes the first frame, the status is still
+//     correct *before* any byte of the `200` body is on the wire. A failure
+//     *after* the first frame is a mid-run failure: the `200` is already
+//     committed, so the edge can only terminate the wire, not change status.
+//
+//   * A *non-streaming* request still buffers: it captures every frame into a
+//     `_CapturingSseSink` and reconstructs the one `chat.completion` body from
+//     them (Q-E.45.3), because the JSON shape needs the whole answer at once.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:shelf/shelf.dart';
@@ -103,10 +115,11 @@ class OpenAiAccessEdge {
   /// `POST /v1/chat/completions` — the auth-gated chat surface.
   ///
   /// Lifts the bearer token from the `Authorization` header, parses the body,
-  /// drives [AccessAssembler.admitOpenAi] through a capturing SSE sink, and
-  /// renders the captured answer (SSE replay for a streaming request, a
-  /// reconstructed `chat.completion` body otherwise). A failure at any edge
-  /// gate (or in dispatch) is mapped to the matching OpenAI error envelope.
+  /// and drives [AccessAssembler.admitOpenAi]. A streaming request
+  /// (`stream: true`) streams the answer live as SSE; a non-streaming request
+  /// captures the frames and reconstructs the one `chat.completion` body. A
+  /// failure at any edge gate (or in pre-delivery dispatch) is mapped to the
+  /// matching OpenAI error envelope before any `200` byte is sent.
   Future<Response> _handleChatCompletions(Request request) async {
     // ── 1. Bearer credential (E.28). A missing / malformed header is a 401
     //    before we even parse the body. ──
@@ -146,8 +159,102 @@ class OpenAiAccessEdge {
     );
   }
 
-  /// Drives the admission pipeline and renders the captured answer.
+  /// Drives the admission pipeline and renders the answer for [request].
+  ///
+  /// A streaming request takes the live SSE path ([_admitStreaming]); a
+  /// non-streaming request takes the buffered path ([_admitBuffered]).
   Future<Response> _admitAndRespond(
+    String bearerToken,
+    ChatCompletionRequest request,
+  ) {
+    return request.stream
+        ? _admitStreaming(bearerToken, request)
+        : _admitBuffered(bearerToken, request);
+  }
+
+  /// Streams the answer live as SSE, emitting real per-token frames (P1.3 #9).
+  ///
+  /// The edge cannot send a `200` body until the edge-security gates have
+  /// passed, because a rejected gate must map onto its `4xx` envelope before
+  /// any byte of a success body is on the wire. The gates all run *before* the
+  /// first [OutboundChunk] is delivered, so the edge races two outcomes: the
+  /// first frame written to the live sink (gates passed, delivery started →
+  /// commit to the `200` stream) against [AccessAssembler.admitOpenAi] throwing
+  /// (a gate / pre-delivery dispatch failure → the error envelope). Whichever
+  /// resolves first decides the status. A throw *after* the first frame is a
+  /// mid-run failure: the `200` is already committed, so the edge only
+  /// terminates the wire (the half-written stream) rather than changing status.
+  Future<Response> _admitStreaming(
+    String bearerToken,
+    ChatCompletionRequest request,
+  ) async {
+    // Completes when delivery has begun (first frame), or with the gate error
+    // when admission throws before any frame — the status-decision race.
+    final Completer<void> committed = Completer<void>();
+    final StreamControllerSseSink sink = StreamControllerSseSink(
+      onFirstFrame: () {
+        if (!committed.isCompleted) committed.complete();
+      },
+    );
+    final InboundRequest envelope = request.toInboundRequest();
+
+    // Run admission concurrently with the race. It is not awaited here: the
+    // edge returns as soon as the status is decided and the run keeps streaming
+    // into `sink` behind the already-returned `body`.
+    unawaited(
+      _assembler
+          .admitOpenAi(
+        bearerToken: bearerToken,
+        modelId: request.model,
+        envelope: envelope,
+        sink: sink,
+      )
+          .then(
+        (_) {
+          // Delivery finished. A successful run always writes at least the
+          // terminal chunk, so the race is normally already won by the first
+          // frame; release it here only to cover a run that produced none.
+          if (!committed.isCompleted) committed.complete();
+        },
+        onError: (Object error, StackTrace _) {
+          if (!committed.isCompleted) {
+            // Failure before any frame → a gate / pre-delivery dispatch
+            // rejection: lose the race so the edge sends the error envelope.
+            committed.completeError(error);
+          } else {
+            // Failure after the `200` began: the status is already on the wire
+            // and cannot change. Terminate the half-written stream so the
+            // client is not left hanging on an open, never-closed wire.
+            unawaited(sink.close());
+          }
+        },
+      ),
+    );
+
+    try {
+      await committed.future;
+    } catch (error) {
+      return _errorFor(error);
+    }
+
+    // Gates passed and delivery began: commit to the live SSE stream. The
+    // `buffer_output: false` context disables shelf's response buffering so
+    // each frame flushes to the socket as it is written (true first-chunk
+    // latency); frames written before shelf subscribes are buffered on the
+    // controller and flushed on subscription, so none are lost.
+    return Response.ok(
+      sink.body,
+      headers: <String, String>{
+        'content-type': _eventStreamContentType,
+        'cache-control': 'no-cache',
+      },
+      context: const <String, Object>{'shelf.io.buffer_output': false},
+    );
+  }
+
+  /// Buffers the captured frames and reconstructs one `chat.completion` body
+  /// (the non-streaming path, Q-E.45.3).
+  Future<Response> _admitBuffered(
     String bearerToken,
     ChatCompletionRequest request,
   ) async {
@@ -162,16 +269,6 @@ class OpenAiAccessEdge {
       );
     } catch (error) {
       return _errorFor(error);
-    }
-
-    if (request.stream) {
-      return Response.ok(
-        sink.frames.join(),
-        headers: <String, String>{
-          'content-type': _eventStreamContentType,
-          'cache-control': 'no-cache',
-        },
-      );
     }
     return _jsonFromFrames(envelope, sink.frames, request.model);
   }
@@ -335,9 +432,11 @@ class OpenAiAccessEdge {
 /// live socket (E.45).
 ///
 /// `AccessAssembler.admitOpenAi` always binds an SSE delivery (E.37); for the
-/// buffered-then-replayed edge (Q-E.45.2) the frames are captured here and
-/// rendered after `admitOpenAi` returns. Never disconnected (there is no live
-/// client to drop), so delivery runs to its natural `[DONE]`.
+/// non-streaming request the frames are captured here and reconstructed into
+/// one `chat.completion` body after `admitOpenAi` returns (Q-E.45.3). A
+/// streaming request uses the live [StreamControllerSseSink] instead (P1.3 #9).
+/// Never disconnected (there is no live client to drop), so delivery runs to
+/// its natural `[DONE]`.
 class _CapturingSseSink implements SseSink {
   /// The frames written by the SSE delivery, in order, including the terminal
   /// `data: [DONE]\n\n`.

@@ -2,17 +2,17 @@
 //
 // `OpenAiAccessEdge` drives the booted `AccessAssembler` (E.41) over the
 // OpenAI wire dialect: every `POST /v1/chat/completions` runs the full
-// admission pipeline; the answer is captured into an SSE sink and rendered
-// (SSE replay for a streaming request, a reconstructed `chat.completion` body
-// otherwise — Q-E.45.2 / Q-E.45.3); an edge-gate or dispatch failure maps to
-// the matching OpenAI error envelope *before* any 200 byte is sent. These
-// tests build the edge over a real booted layer wired to a recording
-// dispatcher (the same fake `route` seam the boot composition sweep uses), so
-// the edge's own job — HTTP translation, auth gating, status mapping, the
-// models / embeddings / 404 routes — is exercised end-to-end with no socket.
+// admission pipeline; a streaming request streams the answer live as SSE
+// (true per-token frames, P1.3 #9), a non-streaming request reconstructs one
+// `chat.completion` JSON body (Q-E.45.3); an edge-gate or pre-delivery dispatch
+// failure maps to the matching OpenAI error envelope *before* any 200 byte is
+// sent. These tests build the edge over a real booted layer wired to a
+// recording dispatcher (the same fake `route` seam the boot composition sweep
+// uses), so the edge's own job — HTTP translation, auth gating, status mapping,
+// the models / embeddings / 404 routes — is exercised end-to-end with no socket.
 //
 // What is proven:
-//   1. A streaming request through valid auth replays the captured SSE frames
+//   1. A streaming request through valid auth streams the SSE frames
 //      (terminal `[DONE]`) as `text/event-stream`.
 //   2. A non-streaming request reconstructs one `chat.completion` JSON body
 //      from the same frames.
@@ -23,7 +23,13 @@
 //   6. `GET /v1/models` lists the persona vocabulary; `POST /v1/embeddings` is
 //      501; an unknown route is the OpenAI 404 envelope.
 //   7. A malformed JSON body is a 400 invalid_request_error.
+//   8. A streaming request commits the 200 stream on the first frame — it
+//      returns *before* the still-in-flight run finishes (true latency), and
+//      emits one frame per chunk in body order.
+//   9. A streaming request whose gates reject (rate-limit) maps to the 429
+//      envelope, not a 200 stream; a pre-delivery dispatch failure maps to 500.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:shelf/shelf.dart';
@@ -123,7 +129,7 @@ Future<Map<String, Object?>> _json(Response response) async =>
 
 void main() {
   group('OpenAiAccessEdge — chat completions', () {
-    test('a streaming request replays the captured SSE frames', () async {
+    test('a streaming request streams the SSE frames', () async {
       final d = _answeringDispatcher();
       final f = _edge(dispatcher: d.dispatcher);
       addTearDown(f.booted.shutdown);
@@ -138,6 +144,100 @@ void main() {
       expect(wire.trimRight(), endsWith('data: [DONE]'));
       // The admission pipeline actually ran and dispatched.
       expect(d.routed.single.identity.principalId, 'principal-1');
+    });
+
+    test(
+        'a streaming request commits the 200 on the first frame — it returns '
+        'before the still-in-flight run finishes (P1.3 #9)', () async {
+      // The route delivers a first chunk, then parks on `release` (the run is
+      // still in flight), then delivers the final chunk once released.
+      final release = Completer<void>();
+      final dispatcher = Dispatcher(
+        route: (access) async {
+          access.deliver(OutboundChunk(textDelta: 'first ', isFinal: false));
+          await release.future;
+          access.deliver(OutboundChunk(textDelta: 'second', isFinal: true));
+        },
+      );
+      final f = _edge(dispatcher: dispatcher);
+      addTearDown(f.booted.shutdown);
+
+      // The edge returns as soon as the first frame is written — while the run
+      // is still parked on `release`. If it buffered, this `await` would hang.
+      final response = await _postChat(f.edge, text: 'hi', stream: true);
+      expect(response.statusCode, 200);
+      expect(response.headers['content-type'], contains('text/event-stream'));
+      expect(release.isCompleted, isFalse,
+          reason: 'the 200 must commit before the run finishes');
+
+      // Let the parked run deliver its final chunk and close the wire.
+      release.complete();
+      final wire = await response.readAsString();
+      expect(wire, contains('first '));
+      expect(wire, contains('second'));
+      expect(wire.indexOf('first '), lessThan(wire.indexOf('second')));
+      expect(wire.trimRight(), endsWith('data: [DONE]'));
+    });
+
+    test('a streaming request emits one frame per chunk in body order',
+        () async {
+      final dispatcher = Dispatcher(
+        route: (access) async {
+          access.deliver(OutboundChunk(textDelta: 'Hel', isFinal: false));
+          access.deliver(OutboundChunk(textDelta: 'lo ', isFinal: false));
+          access.deliver(OutboundChunk(textDelta: 'world', isFinal: true));
+        },
+      );
+      final f = _edge(dispatcher: dispatcher);
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postChat(f.edge, text: 'hi', stream: true);
+      expect(response.statusCode, 200);
+      final wire = await response.readAsString();
+      final contentFrames = wire
+          .split('\n\n')
+          .where((frame) => frame.contains('"content"'))
+          .toList();
+      expect(contentFrames, hasLength(3));
+      expect(wire.indexOf('Hel'), lessThan(wire.indexOf('lo ')));
+      expect(wire.indexOf('lo '), lessThan(wire.indexOf('world')));
+      expect(wire.trimRight(), endsWith('data: [DONE]'));
+    });
+
+    test(
+        'a streaming request with an exhausted rate limit maps to 429, not a '
+        '200 stream', () async {
+      final d = _answeringDispatcher();
+      final f = _edge(
+        dispatcher: d.dispatcher,
+        rateLimitPolicy: RateLimitPolicy(
+          capacity: 1,
+          refillTokens: 1,
+          refillPeriod: const Duration(hours: 1),
+        ),
+      );
+      addTearDown(f.booted.shutdown);
+
+      await _postChat(f.edge, text: 'first', stream: true, messageId: 'm1');
+      final response =
+          await _postChat(f.edge, text: 'second', stream: true, messageId: 'm2');
+
+      expect(response.statusCode, rateLimitHttpStatus);
+      expect(response.headers['content-type'], contains('application/json'));
+      final error = (await _json(response))['error'] as Map<String, Object?>;
+      expect(error['type'], 'rate_limit_exceeded');
+    });
+
+    test('a streaming dispatch failure before any frame maps to 500', () async {
+      final f = _edge(dispatcher: _throwingDispatcher());
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postChat(f.edge, text: 'hi', stream: true);
+
+      expect(response.statusCode, 500);
+      expect(response.headers['content-type'], contains('application/json'));
+      final error = (await _json(response))['error'] as Map<String, Object?>;
+      expect(error['code'], 'dispatch_failed');
     });
 
     test('a non-streaming request reconstructs one chat.completion body',

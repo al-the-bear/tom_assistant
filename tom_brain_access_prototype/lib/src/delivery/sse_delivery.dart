@@ -99,6 +99,12 @@ abstract interface class SseSink {
 /// disconnect cancels that subscription, which sets [isDisconnected] (the
 /// signal the E.39 delivery path reads to surface a terminal stall) and fires
 /// the optional [onClientDisconnect] hook.
+///
+/// The optional [onFirstFrame] hook fires once, when the first frame is
+/// written. The live edge (E.45) uses it to commit to a `200` streamed body
+/// only after the edge-security gates have passed: the gates all run *before*
+/// the first `OutboundChunk` is delivered, so the first frame is the signal
+/// that delivery has begun and the status can no longer be a `4xx` (P1.3 #9).
 final class StreamControllerSseSink implements SseSink {
   late final StreamController<List<int>> _controller =
       StreamController<List<int>>(
@@ -110,16 +116,25 @@ final class StreamControllerSseSink implements SseSink {
   /// (E.39 surfaces the stall signal that drives it).
   final void Function()? _onClientDisconnect;
 
+  /// Called once, on the first [write]. Optional; the live edge uses it to
+  /// race "delivery started" against a gate rejection (P1.3 #9).
+  final void Function()? _onFirstFrame;
+
   bool _closed = false;
   bool _disconnected = false;
+  bool _firstFrameWritten = false;
 
   /// Builds a runtime SSE sink. [onClientDisconnect] — when supplied — fires
   /// once if the response-body subscription is cancelled before the answer
   /// finishes (a client disconnect); the engine's run-cancellation reaction is
   /// driven by the terminal stall the E.39 delivery path surfaces off
-  /// [isDisconnected].
-  StreamControllerSseSink({void Function()? onClientDisconnect})
-      : _onClientDisconnect = onClientDisconnect;
+  /// [isDisconnected]. [onFirstFrame] — when supplied — fires once on the first
+  /// [write], signalling the edge that delivery has begun (P1.3 #9).
+  StreamControllerSseSink({
+    void Function()? onClientDisconnect,
+    void Function()? onFirstFrame,
+  })  : _onClientDisconnect = onClientDisconnect,
+        _onFirstFrame = onFirstFrame;
 
   /// The UTF-8 byte stream of SSE frames — the OpenAI `text/event-stream`
   /// response body. Single-subscription: the one HTTP response listens.
@@ -138,6 +153,10 @@ final class StreamControllerSseSink implements SseSink {
         'SSE frame written after the wire was closed — the OpenAI delivery '
         'path must not write past the terminal `[DONE]` frame',
       );
+    }
+    if (!_firstFrameWritten) {
+      _firstFrameWritten = true;
+      _onFirstFrame?.call();
     }
     _controller.add(utf8.encode(frame));
   }
