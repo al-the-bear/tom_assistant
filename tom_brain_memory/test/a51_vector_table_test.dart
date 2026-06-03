@@ -674,7 +674,8 @@ void main() {
       // This is the production-failure tell: a DB that has not loaded
       // the vec0 extension rejects `CREATE VIRTUAL TABLE … USING vec0`
       // with "no such module: vec0". The exception itself is the
-      // contract A.50's `loadVecExtensionWithFailOpen` gates against;
+      // contract A.50's `loadVecExtensionOrRefuseToBoot` guards against
+      // (it refuses to boot before this backend is ever constructed);
       // we lock the failure shape here so a future sqlite-vec syntax
       // change is detected.
       final db = sqlite3.openInMemory();

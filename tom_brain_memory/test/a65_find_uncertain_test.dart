@@ -80,7 +80,7 @@
 // Tests run against `sqlite3.openInMemory()` (memory.db) + a second
 // `sqlite3.openInMemory()` for `vectors.db` + `PlainBlobTableBackend`,
 // the same pattern A.55 uses. The vec0 backend is the production
-// substitute and is wired by `loadVecExtensionWithFailOpen` at boot;
+// substitute and is wired by `loadVecExtensionOrRefuseToBoot` at boot;
 // the contract this file pins is backend-agnostic.
 
 import 'package:sqlite3/sqlite3.dart';

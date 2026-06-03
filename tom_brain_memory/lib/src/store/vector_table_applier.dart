@@ -151,11 +151,11 @@ import 'vector_table.dart';
 ///
 /// Today the adapter is consumed by the A.52 integration tests
 /// directly; the production assembly arrives with the concrete
-/// `SqliteTomBrainMemory.open()` at A.28+ (which will pick the
-/// backend per spec § 2.1 — `Vec0VirtualTableBackend` when
-/// `loadVecExtensionWithFailOpen` returns `loaded`, `PlainBlobTableBackend`
-/// otherwise — and install indexes for every model in the substrate
-/// configuration).
+/// `SqliteTomBrainMemory.open()` at A.28+. Production always uses
+/// `Vec0VirtualTableBackend` — `loadVecExtensionOrRefuseToBoot` aborts
+/// boot when vec0 is absent, so there is no BM25-only fallback.
+/// `PlainBlobTableBackend` is the test-only stand-in. The open() path
+/// installs indexes for every model in the substrate configuration.
 final class VectorTableApplier implements VectorApplier {
   /// The per-model vector table that owns `vectors.db`.
   final VectorTable _vectorTable;

@@ -1,76 +1,67 @@
 // VecExtensionLoader — boot-time loader for the sqlite-vec (vec0)
 // shared-library extension (Plan step A.50).
 //
-// Plan step A.50:
-//   "Add the `vec0` shared-library loader. Boot-time check fails open
-//    (BM25-only) and emits `VectorIndexUnavailable` if the extension
-//    is absent."
+// Vector search is mandatory inside this quest (Q-A.6.1, re-ratified
+// 2026-06-03): "the system only works if vector search is possible.
+// The memory system must be able to run with vector always." The
+// earlier fail-open ruling (boot BM25-only when vec0 is absent) is
+// revoked. The brain now **refuses to boot** when the extension is
+// not loadable.
 //
 // Role in the open path (will be wired at A.28+ when the concrete
 // `SqliteTomBrainMemory.open()` lands; today the loader is wired into
 // the storage open path via integration tests and the wiring helper
-// `loadVecExtensionWithFailOpen`):
+// `loadVecExtensionOrRefuseToBoot`):
 //
 //   1. Host calls `MemoryDirectory.openOrCreate(config)`.
 //   2. Host opens `memory.db` and runs `BootIntegrityCheck`.
-//   3. Host calls `loadVecExtensionWithFailOpen(...)`:
+//   3. Host calls `loadVecExtensionOrRefuseToBoot(...)`:
 //        a. The loader resolves `config.sqliteVec.extensionPath`.
 //        b. If the path is empty, missing, or points at a file that
-//           fails to load / register, a `VectorIndexUnavailable`
-//           event is pushed onto the memory event sink and the result
-//           is returned without raising.
-//        c. If the load succeeds, the result is returned silently
-//           (success-only emission — see `vec_extension_events.dart`).
-//   4. Host stores the result. A.51+ uses
-//      `result.outcome == VecLoadOutcome.loaded` as the gate for
-//      every vector-mode write (`persist` with embedding) and every
-//      vector-mode recall path.
+//           fails to load / register, a `VectorRuntimeUnavailable`
+//           exception is thrown and `open()` aborts. There is no
+//           BM25-only fallback.
+//        c. If the load succeeds, the typed result is returned and
+//           `open()` proceeds.
+//   4. A.51+ relies on the load having succeeded for every vector-mode
+//      write (`persist` with embedding) and every vector-mode recall
+//      path — there is no degraded mode to gate against.
 //
-// Why "fail open" is the engineered default at A.50:
+// Why refuse-to-boot is the engineered behaviour:
 //
-//   The prototype timeline (`tom_brain_definition.md`) accepts a
-//   degraded-mode boot when the vec0 binary is unavailable so that
-//   developer machines without the binary still produce a working
-//   memory subsystem on BM25 alone. The alternative (refuse to boot)
-//   would block every Phase-A step that doesn't touch vectors,
-//   including the substrate gateway (Phase B) and the dispatcher
-//   smoke tests (Phase D). The decision is **not** "fail open in
-//   production" — production wiring is expected to *assert* that the
-//   loader returned `loaded` after open() returns. See Q-A.50.1.
+//   A memory subsystem that silently drops to BM25-only mode answers
+//   recalls with a strictly weaker index than the one the rest of the
+//   brain assumes. Per principle 6 ("no event is ever truly lost") and
+//   the data-integrity ruling, a degraded boot is a defect, not a
+//   configuration choice. Failing loudly at boot forces the operator
+//   to publish the binary (Plan step A.6) before the brain serves a
+//   single recall.
 //
-// Why the loader is event-free and the wiring helper emits:
+// Why the loader is exception-free and the wiring helper raises:
 //
 //   The loader is reused by the BootIntegrityCheck path (A.29 today
 //   under a different probe), by integration tests, and (later) by
-//   the open() path. Each of those call sites has a different "what
-//   to do on degraded outcome" policy: tests assert on the result
-//   object directly; production wiring emits an event AND records
-//   the outcome on `MemoryStats`; an MCP-only readout path would
-//   neither emit nor assert. Coupling the loader to event emission
-//   would force every consumer through the event sink even when it
-//   has no use for it. Keeping emission in a thin wrapper preserves
-//   the loader as a pure value-returning function.
+//   the open() path. Tests assert on the typed result object directly;
+//   the open() path wants a hard refuse-to-boot. Keeping the raise in
+//   a thin wrapper preserves the loader as a pure value-returning
+//   function whose every branch is inspectable without a try/catch.
 //
 // Why dependency injection (opener / lookup / registrar):
 //
 //   The success path of the loader requires a real vec0 binary on
-//   disk. The current developer machines do not ship that binary
-//   (see Q-A.50.2). Without injection points, the failure paths
-//   would also be untestable because every test would have to
-//   provide a real shared library that *fails* on dlopen or symbol
-//   lookup in a controlled way. The injected functions make every
-//   branch deterministic and platform-neutral; production wiring
-//   uses the defaults.
+//   disk. Until the binary is published into `tom_binaries/sqlite_vec/`
+//   (Plan step A.6), the failure paths would also be untestable because
+//   every test would have to provide a real shared library that *fails*
+//   on dlopen or symbol lookup in a controlled way. The injected
+//   functions make every branch deterministic and platform-neutral;
+//   production wiring uses the defaults.
 
 import 'dart:ffi';
 import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart' show defaultNowUtc;
 
-import '../api/memory_event.dart';
 import '../config/memory_config.dart';
-import 'vec_extension_events.dart';
 
 /// Outcome of one `VecExtensionLoader.load(...)` call.
 ///
@@ -81,20 +72,19 @@ import 'vec_extension_events.dart';
 ///                     `Database` opened through the same `Sqlite3`
 ///                     instance will receive vec0 functions.
 ///   * `unavailable` — the extension is not present (configuration
-///                     empty, file missing). The brain falls back to
-///                     BM25-only mode; this is a configuration choice,
-///                     not a defect.
+///                     empty, file missing). The binary has not been
+///                     published yet; the brain refuses to boot.
 ///   * `failed`      — the extension is present but could not be
 ///                     loaded (broken binary, wrong arch, missing
 ///                     entrypoint, registration error). The brain
-///                     still falls back to BM25-only mode, but the
-///                     outcome indicates a *fix* is required, not a
-///                     configuration choice.
+///                     refuses to boot; a *fix* is required.
 ///
-/// The distinction between `unavailable` and `failed` matters for the
-/// operator UI: a freshly-cloned workspace on a machine without the
-/// binary is `unavailable` and should not raise an alarm; a CI
-/// environment with a broken binary is `failed` and should.
+/// Both non-`loaded` outcomes abort boot via [VectorRuntimeUnavailable].
+/// The distinction still matters for the operator UI: a freshly-cloned
+/// workspace on a machine without the binary is `unavailable` (publish
+/// the binary); a CI environment with a broken binary is `failed`
+/// (fix the binary). The exception's `wasError` flag carries the
+/// distinction.
 enum VecLoadOutcome { loaded, unavailable, failed }
 
 /// Categorical reason a load did not reach [VecLoadOutcome.loaded].
@@ -256,10 +246,10 @@ final class VecExtensionLoader {
   /// Contract:
   ///
   ///   * Never throws. Every error path is captured as a typed
-  ///     [VecExtensionLoadResult] with `outcome != loaded`.
-  ///   * Does not emit any event. The wiring helper
-  ///     [loadVecExtensionWithFailOpen] is the dedicated event-
-  ///     emitting wrapper for the open() path.
+  ///     [VecExtensionLoadResult] with `outcome != loaded`. The wiring
+  ///     helper [loadVecExtensionOrRefuseToBoot] is the dedicated
+  ///     refuse-to-boot wrapper for the open() path; it translates a
+  ///     non-`loaded` result into [VectorRuntimeUnavailable].
   ///   * Side effect on success: `sqlite_auto_extension` carries the
   ///     loaded extension for every future `Database` opened through
   ///     the same `Sqlite3` instance.
@@ -278,7 +268,7 @@ final class VecExtensionLoader {
         extensionPath: path,
         reason: VecUnavailableReason.notConfigured,
         summary: 'sqlite-vec extensionPath is empty in MemoryConfig; '
-            'BM25-only mode',
+            'vector runtime unavailable',
       );
     }
 
@@ -287,7 +277,8 @@ final class VecExtensionLoader {
         outcome: VecLoadOutcome.unavailable,
         extensionPath: path,
         reason: VecUnavailableReason.fileMissing,
-        summary: 'sqlite-vec binary not found at $path; BM25-only mode',
+        summary: 'sqlite-vec binary not found at $path; '
+            'vector runtime unavailable',
       );
     }
 
@@ -340,40 +331,91 @@ final class VecExtensionLoader {
   }
 }
 
+/// Raised by [loadVecExtensionOrRefuseToBoot] when the sqlite-vec
+/// (vec0) extension cannot be loaded at boot time.
+///
+/// Vector search is mandatory inside this quest (Q-A.6.1): a memory
+/// subsystem that cannot serve vector recall is not allowed to run.
+/// There is no BM25-only fallback. The host's `open()` propagates this
+/// exception and the brain refuses to boot until the binary is
+/// published (Plan step A.6) or the configuration is corrected.
+///
+/// Carries the same context the loader's [VecExtensionLoadResult]
+/// produced, so the operator UI (and crash logs) can name the
+/// configured path, the categorical [reason], the human-readable
+/// [summary], whether the cause was a hard error ([wasError]), and the
+/// originating exception ([cause]).
+final class VectorRuntimeUnavailable implements Exception {
+  /// The configured `MemoryConfig.sqliteVec.extensionPath` at the
+  /// moment of the load attempt. May be the empty string when [reason]
+  /// is [VecUnavailableReason.notConfigured].
+  final String extensionPath;
+
+  /// Categorical reason the load did not reach [VecLoadOutcome.loaded].
+  final VecUnavailableReason reason;
+
+  /// One-line human-readable summary produced by the loader.
+  final String summary;
+
+  /// `true` when the load reached [VecLoadOutcome.failed] (a hard error
+  /// during open / lookup / register), `false` when it reached
+  /// [VecLoadOutcome.unavailable] (the binary was simply absent or not
+  /// configured). The distinction tells the operator whether to fix a
+  /// broken binary or publish a missing one.
+  final bool wasError;
+
+  /// Originating exception when [wasError] is `true`; `null` for the
+  /// `unavailable` branch.
+  final Object? cause;
+
+  const VectorRuntimeUnavailable({
+    required this.extensionPath,
+    required this.reason,
+    required this.summary,
+    required this.wasError,
+    this.cause,
+  });
+
+  /// Builds the exception from a non-`loaded` [VecExtensionLoadResult].
+  ///
+  /// Precondition: `result.isLoaded` is `false` (the result carries a
+  /// non-null [VecExtensionLoadResult.reason]).
+  factory VectorRuntimeUnavailable.fromResult(VecExtensionLoadResult result) =>
+      VectorRuntimeUnavailable(
+        extensionPath: result.extensionPath,
+        reason: result.reason!,
+        summary: result.summary,
+        wasError: result.isFailed,
+        cause: result.cause,
+      );
+
+  @override
+  String toString() =>
+      'VectorRuntimeUnavailable(reason: ${reason.name}, '
+      'extensionPath: $extensionPath): $summary';
+}
+
 /// Production wiring helper for the open() path.
 ///
 /// Drives [VecExtensionLoader.load] and, on every non-`loaded`
-/// outcome, emits a [VectorIndexUnavailable] event onto [emit]
-/// before returning the result. The `loaded` branch does not emit
-/// (success-only emission — see `vec_extension_events.dart`).
+/// outcome, throws [VectorRuntimeUnavailable] so the host's `open()`
+/// aborts. Vector search is mandatory inside this quest (Q-A.6.1):
+/// there is no BM25-only fallback. On the `loaded` branch the typed
+/// result is returned and `open()` proceeds.
 ///
-/// Designed to be the single call site in the open() pipeline:
-/// callers do not need to discriminate on the outcome before deciding
-/// to emit. The returned result is still the authoritative gate for
-/// downstream vector-mode wiring (A.51+).
-///
-/// `now` defaults to `DateTime.now().toUtc()` and is overridable for
-/// tests that assert on `occurredAt`.
-VecExtensionLoadResult loadVecExtensionWithFailOpen({
+/// Designed to be the single call site in the open() pipeline: callers
+/// do not need to discriminate on the outcome — a normal return means
+/// vector mode is available.
+VecExtensionLoadResult loadVecExtensionOrRefuseToBoot({
   required Sqlite3 sqlite,
   required MemoryConfig config,
-  required void Function(MemoryEvent event) emit,
   VecExtensionLoader? loader,
-  DateTime Function()? now,
 }) {
   final activeLoader = loader ?? VecExtensionLoader();
-  final clock = now ?? defaultNowUtc;
   final result = activeLoader.load(sqlite: sqlite, config: config);
 
   if (!result.isLoaded) {
-    emit(VectorIndexUnavailable(
-      extensionPath: result.extensionPath,
-      reason: result.reason!,
-      summary: result.summary,
-      wasError: result.isFailed,
-      occurredAt: clock(),
-      cause: result.cause,
-    ));
+    throw VectorRuntimeUnavailable.fromResult(result);
   }
 
   return result;

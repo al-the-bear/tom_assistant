@@ -4,8 +4,8 @@
 //   "Implement `vector` mode against sqlite-vec."
 //
 // What A.50 – A.54 already covered:
-//   * A.50 — vec0 shared-library loader (fail-open + VectorIndexUnavailable
-//            event).
+//   * A.50 — vec0 shared-library loader (refuse-to-boot via
+//            `loadVecExtensionOrRefuseToBoot` + `VectorRuntimeUnavailable`).
 //   * A.51 — VectorTable + Vec0VirtualTableBackend + PlainBlobTableBackend
 //            with per-model index layout.
 //   * A.52 — VectorTableApplier wires the two-DB coordinator into

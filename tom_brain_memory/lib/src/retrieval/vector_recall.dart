@@ -43,12 +43,13 @@
 //   - The `RecallReport` cost row. The recall executor at A.59 will
 //     compose this output with the report (and, per spec § 6.4, will
 //     count `embeddingsCallouts` when it had to embed on behalf).
-//   - Degraded-mode signalling. The `VectorIndexUnavailable` event is
-//     emitted at boot by `loadVecExtensionWithFailOpen` (A.50). The
-//     recall executor at A.59 will set `RecallReport.degraded` when
-//     vector mode is in the requested set but no vector backend is
-//     available. The executor at this layer just returns empty when
-//     no installed index can serve the query.
+//   - Degraded-mode signalling. In production the brain refuses to
+//     boot when vec0 is absent (`loadVecExtensionOrRefuseToBoot`,
+//     A.50), so vector mode is always available. The recall executor
+//     at A.59 still sets `RecallReport.degraded` when it was
+//     constructed without a vector backend (a test-only path). The
+//     executor at this layer just returns empty when no installed
+//     index can serve the query.
 //
 // Wire contract:
 //
@@ -183,9 +184,9 @@ final class VectorRecall {
   ///     conservative branch — boot-side wiring is the install path
   ///     (`VectorTable.installIndex` from
   ///     `SqliteTomBrainMemory.open`), and a missing index means
-  ///     either the operator has not installed yet (a setup mistake
-  ///     already reported elsewhere) or the boot path failed open
-  ///     (BM25-only mode, see `loadVecExtensionWithFailOpen`).
+  ///     the operator has not installed the index yet (a setup mistake
+  ///     already reported elsewhere); a missing vec0 binary itself
+  ///     would have aborted boot (`loadVecExtensionOrRefuseToBoot`).
   ///   * [perModeK] caps the *post-merge* count, not the per-model
   ///     count: each model group is queried with `k = perModeK`,
   ///     then the merged result is truncated to `perModeK`. This

@@ -35,9 +35,11 @@ final class RecallReport {
   /// Whether the caller-supplied re-rank hook ran.
   final bool reRankInvoked;
 
-  /// True when the recall ran in degraded mode (e.g. vector mode
-  /// disabled because the extension failed to load — see § 15
-  /// `VectorIndexUnavailable`).
+  /// True when the recall ran in degraded mode (e.g. the executor was
+  /// constructed without a vector backend). In production the brain
+  /// refuses to boot when vec0 is absent
+  /// (`loadVecExtensionOrRefuseToBoot`), so this flag is only set by
+  /// tests that omit the vector backend.
   final bool degraded;
 
   const RecallReport({

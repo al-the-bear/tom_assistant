@@ -84,8 +84,8 @@
 //
 // The production backend only works when the vec0 shared library is
 // loaded into the host `Sqlite3` instance (Plan step A.50 + the
-// `loadVecExtensionWithFailOpen` wiring). On a developer machine
-// without the binary — which is every machine today (Q-A.50.2) — the
+// `loadVecExtensionOrRefuseToBoot` wiring, which aborts boot when the
+// binary is absent). On a developer machine without the binary the
 // `vec0` module is absent and `CREATE VIRTUAL TABLE … USING vec0` is
 // rejected by SQLite with "no such module: vec0".
 //
@@ -264,10 +264,10 @@ abstract interface class VectorIndexBackend {
 /// Requires the vec0 shared library to be loaded into the host
 /// `Sqlite3` instance (Plan step A.50). Without the extension, the
 /// CREATE statement fails with `SqliteException: no such module:
-/// vec0`. That failure is *expected* on a developer machine without
-/// the binary (Q-A.50.2); the caller above (`SqliteTomBrainMemory.open`,
-/// landing at A.28+) gates on `loadVecExtensionWithFailOpen` returning
-/// `loaded` before constructing this backend.
+/// vec0`. The caller above (`SqliteTomBrainMemory.open`, landing at
+/// A.28+) calls `loadVecExtensionOrRefuseToBoot`, which aborts boot
+/// with `VectorRuntimeUnavailable` when the binary is absent, so this
+/// backend is only constructed once the extension is loaded.
 ///
 /// SQL shapes:
 ///

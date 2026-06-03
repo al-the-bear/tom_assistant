@@ -18,21 +18,20 @@
 //      - dlopen-failure branch never calls lookup / registrar.
 //      - lookup-failure branch never calls registrar.
 //
-//   3. `VectorIndexUnavailable` event shape
-//      - kind == 'memory.vector-index-unavailable'
-//      - payloadJson carries extensionPath / reason / summary /
-//        wasError, includes cause iff the originating outcome was
-//        `failed`.
-//      - is a `MemoryEvent` (so the spec § 16 stream typing holds).
+//   3. `VectorRuntimeUnavailable` exception shape
+//      - carries extensionPath / reason / summary / wasError, includes
+//        cause iff the originating outcome was `failed`.
+//      - `fromResult` maps a non-loaded result onto the exception.
+//      - `toString` names the reason and the path.
 //
-//   4. `loadVecExtensionWithFailOpen` wiring helper
-//      - emits exactly one event on every non-loaded outcome.
-//      - emits zero events on the loaded outcome.
-//      - the emitted event matches the loader's result (path /
+//   4. `loadVecExtensionOrRefuseToBoot` wiring helper
+//      - throws `VectorRuntimeUnavailable` on every non-loaded outcome
+//        (vector search is mandatory — Q-A.6.1; no BM25-only fallback).
+//      - the thrown exception matches the loader's result (path /
 //        reason / summary / cause).
 //      - `wasError` matches the result.isFailed band (true for
 //        failed, false for unavailable).
-//      - injected `now` is used verbatim for `occurredAt`.
+//      - returns the typed result on the loaded outcome.
 //
 //   5. Defaults
 //      - `entrypointSymbol` defaults to `sqlite3_vec_init` (the
@@ -97,7 +96,7 @@ void main() {
       expect(result.isLoaded, isFalse);
       expect(result.cause, isNull);
       expect(result.extensionPath, equals(''));
-      expect(result.summary, contains('BM25-only mode'));
+      expect(result.summary, contains('vector runtime unavailable'));
     });
 
     test('missing-on-disk path returns unavailable / fileMissing', () {
@@ -115,7 +114,7 @@ void main() {
       expect(result.reason, equals(VecUnavailableReason.fileMissing));
       expect(result.extensionPath, equals(ghost));
       expect(result.summary, contains(ghost));
-      expect(result.summary, contains('BM25-only mode'));
+      expect(result.summary, contains('vector runtime unavailable'));
       expect(result.cause, isNull);
     });
 
@@ -324,126 +323,122 @@ void main() {
     });
   });
 
-  group('A.50 VectorIndexUnavailable event', () {
-    test('is a MemoryEvent with the documented discriminator', () {
-      final event = VectorIndexUnavailable(
-        extensionPath: '',
-        reason: VecUnavailableReason.notConfigured,
-        summary: 'not configured',
-        wasError: false,
-        occurredAt: DateTime.utc(2026, 5, 30, 12, 0, 0),
+  group('A.50 VectorRuntimeUnavailable exception', () {
+    test('fromResult maps an unavailable result onto the exception', () {
+      final result = VecExtensionLoader().load(
+        sqlite: sqlite3,
+        config: _configWithExtensionPath(''),
       );
 
-      expect(event, isA<MemoryEvent>());
-      expect(event.kind, equals('memory.vector-index-unavailable'));
+      final ex = VectorRuntimeUnavailable.fromResult(result);
+
+      expect(ex, isA<Exception>());
+      expect(ex.reason, equals(VecUnavailableReason.notConfigured));
+      expect(ex.extensionPath, equals(''));
+      expect(ex.summary, equals(result.summary));
+      expect(ex.wasError, isFalse);
+      expect(ex.cause, isNull);
     });
 
-    test('payloadJson carries every field, omits cause when null', () {
-      final event = VectorIndexUnavailable(
+    test('fromResult carries the cause and wasError for a failed result',
+        () {
+      final root = _tempDir('tbm_a50_ex_fail_');
+      final stub = _writeStubFile(root, 'fake.bin', 'x');
+      final brokenLoader = VecExtensionLoader(
+        openDynamicLibrary: (path) =>
+            throw ArgumentError('synthetic open failure for $path'),
+      );
+
+      final result = brokenLoader.load(
+        sqlite: sqlite3,
+        config: _configWithExtensionPath(stub),
+      );
+      final ex = VectorRuntimeUnavailable.fromResult(result);
+
+      expect(ex.reason, equals(VecUnavailableReason.dynamicLibraryError));
+      expect(ex.wasError, isTrue);
+      expect(ex.cause, isA<ArgumentError>());
+    });
+
+    test('toString names the reason and the path', () {
+      const ex = VectorRuntimeUnavailable(
         extensionPath: '/x/vec0.so',
         reason: VecUnavailableReason.fileMissing,
         summary: 'not on disk',
         wasError: false,
-        occurredAt: DateTime.utc(2026, 5, 30, 12, 0, 0),
       );
 
-      final payload = event.payloadJson();
-      expect(payload['extensionPath'], equals('/x/vec0.so'));
-      expect(payload['reason'], equals('fileMissing'));
-      expect(payload['summary'], equals('not on disk'));
-      expect(payload['wasError'], isFalse);
-      expect(payload.containsKey('cause'), isFalse);
-    });
-
-    test('payloadJson includes cause when wasError is true', () {
-      final cause = StateError('boom');
-      final event = VectorIndexUnavailable(
-        extensionPath: '/x/vec0.so',
-        reason: VecUnavailableReason.registrationFailed,
-        summary: 'register threw',
-        wasError: true,
-        cause: cause,
-        occurredAt: DateTime.utc(2026, 5, 30, 12, 0, 0),
-      );
-
-      final payload = event.payloadJson();
-      expect(payload['wasError'], isTrue);
-      expect(payload['cause'], equals(cause.toString()));
+      final text = ex.toString();
+      expect(text, contains('fileMissing'));
+      expect(text, contains('/x/vec0.so'));
+      expect(text, contains('not on disk'));
     });
   });
 
-  group('A.50 loadVecExtensionWithFailOpen wiring helper', () {
-    test('emits one event on unavailable / notConfigured', () {
-      final events = <MemoryEvent>[];
-      final now = DateTime.utc(2026, 5, 30, 9, 30, 0);
-
-      final result = loadVecExtensionWithFailOpen(
-        sqlite: sqlite3,
-        config: _configWithExtensionPath(''),
-        emit: events.add,
-        now: () => now,
+  group('A.50 loadVecExtensionOrRefuseToBoot wiring helper', () {
+    test('refuses to boot on unavailable / notConfigured', () {
+      expect(
+        () => loadVecExtensionOrRefuseToBoot(
+          sqlite: sqlite3,
+          config: _configWithExtensionPath(''),
+        ),
+        throwsA(
+          isA<VectorRuntimeUnavailable>()
+              .having((e) => e.reason, 'reason',
+                  VecUnavailableReason.notConfigured)
+              .having((e) => e.wasError, 'wasError', isFalse)
+              .having((e) => e.extensionPath, 'extensionPath', ''),
+        ),
       );
-
-      expect(result.isUnavailable, isTrue);
-      expect(events, hasLength(1));
-      final event = events.single as VectorIndexUnavailable;
-      expect(event.reason, equals(VecUnavailableReason.notConfigured));
-      expect(event.wasError, isFalse);
-      expect(event.extensionPath, equals(''));
-      expect(event.summary, equals(result.summary));
-      expect(event.occurredAt, equals(now));
-      expect(event.cause, isNull);
     });
 
-    test('emits one event on unavailable / fileMissing', () {
+    test('refuses to boot on unavailable / fileMissing', () {
       final ghost =
           '${_tempDir('tbm_a50_helper_ghost_').path}${Platform.pathSeparator}vec0.so';
-      final events = <MemoryEvent>[];
 
-      final result = loadVecExtensionWithFailOpen(
-        sqlite: sqlite3,
-        config: _configWithExtensionPath(ghost),
-        emit: events.add,
+      expect(
+        () => loadVecExtensionOrRefuseToBoot(
+          sqlite: sqlite3,
+          config: _configWithExtensionPath(ghost),
+        ),
+        throwsA(
+          isA<VectorRuntimeUnavailable>()
+              .having((e) => e.reason, 'reason',
+                  VecUnavailableReason.fileMissing)
+              .having((e) => e.wasError, 'wasError', isFalse)
+              .having((e) => e.extensionPath, 'extensionPath', ghost),
+        ),
       );
-
-      expect(result.isUnavailable, isTrue);
-      expect(events, hasLength(1));
-      final event = events.single as VectorIndexUnavailable;
-      expect(event.reason, equals(VecUnavailableReason.fileMissing));
-      expect(event.wasError, isFalse);
-      expect(event.extensionPath, equals(ghost));
     });
 
-    test('emits one event on failed branches and sets wasError=true', () {
+    test('refuses to boot on a failed branch with wasError=true', () {
       final root = _tempDir('tbm_a50_helper_fail_');
       final stub = _writeStubFile(root, 'fake.bin', 'x');
-      final events = <MemoryEvent>[];
 
       final brokenLoader = VecExtensionLoader(
         openDynamicLibrary: (path) =>
             throw ArgumentError('synthetic open failure for $path'),
       );
 
-      final result = loadVecExtensionWithFailOpen(
-        sqlite: sqlite3,
-        config: _configWithExtensionPath(stub),
-        emit: events.add,
-        loader: brokenLoader,
+      expect(
+        () => loadVecExtensionOrRefuseToBoot(
+          sqlite: sqlite3,
+          config: _configWithExtensionPath(stub),
+          loader: brokenLoader,
+        ),
+        throwsA(
+          isA<VectorRuntimeUnavailable>()
+              .having((e) => e.reason, 'reason',
+                  VecUnavailableReason.dynamicLibraryError)
+              .having((e) => e.wasError, 'wasError', isTrue)
+              .having((e) => e.cause, 'cause', isA<ArgumentError>()),
+        ),
       );
-
-      expect(result.isFailed, isTrue);
-      expect(events, hasLength(1));
-      final event = events.single as VectorIndexUnavailable;
-      expect(event.wasError, isTrue);
-      expect(event.reason, equals(VecUnavailableReason.dynamicLibraryError));
-      expect(event.cause, isA<ArgumentError>());
-      expect(event.summary, equals(result.summary));
     });
 
-    test('emits zero events on the loaded branch', () {
+    test('returns the loaded result on the loaded branch', () {
       final root = _tempDir('tbm_a50_helper_happy_');
       final stub = _writeStubFile(root, 'fake_vec0.bin', 'x');
-      final events = <MemoryEvent>[];
 
       final happyLoader = VecExtensionLoader(
         openDynamicLibrary: (_) => DynamicLibrary.process(),
@@ -451,15 +446,14 @@ void main() {
         registerExtension: (_, _) {},
       );
 
-      final result = loadVecExtensionWithFailOpen(
+      final result = loadVecExtensionOrRefuseToBoot(
         sqlite: sqlite3,
         config: _configWithExtensionPath(stub),
-        emit: events.add,
         loader: happyLoader,
       );
 
       expect(result.isLoaded, isTrue);
-      expect(events, isEmpty);
+      expect(result.extensionPath, equals(stub));
     });
   });
 }

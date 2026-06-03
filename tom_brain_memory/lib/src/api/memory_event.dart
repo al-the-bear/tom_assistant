@@ -16,9 +16,8 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 /// StackPushed, StackPopped, StackOverflow, TrailOpened,
 /// TrailEntryAppended, TrailClosed, TrailEntryCorrupted,
 /// RecallCompleted, ClassificationComputed, CentroidUpdated,
-/// MigrationProgressed, ShakingEvent, VectorIndexUnavailable,
-/// AuthorityUnreachable) live in their owning sub-modules and
-/// arrive incrementally across Phase A.
+/// MigrationProgressed, ShakingEvent, AuthorityUnreachable) live in
+/// their owning sub-modules and arrive incrementally across Phase A.
 ///
 /// Leaves landed so far:
 ///   * A.33 — `NodeTypeRegistered`
@@ -27,8 +26,6 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 ///   * A.38 — `NodeDemoted`, `NodeForgotten` (the remaining
 ///     node-lifecycle leaves; rounds out the set Plan step A.38
 ///     committed to emitting)
-///   * A.50 — `VectorIndexUnavailable` (sqlite-vec extension load
-///     fell back to BM25-only mode at boot time)
 ///   * A.69 — `ShakingEvent` sealed family + the four sub-kinds
 ///     (`ContradictionDetected`, `CentroidDriftDetected`,
 ///     `RetrievalConflict`, `CritiqueRejected`) named in spec § 9.4 /

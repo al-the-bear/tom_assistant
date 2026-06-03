@@ -218,11 +218,12 @@ final class RecallExecutor {
   /// BM25 mode executor function. Always required.
   final Bm25ModeFn _bm25;
 
-  /// Vector mode executor function. May be `null` when the boot path
-  /// detected no vector backend (`loadVecExtensionWithFailOpen` failed
-  /// open — see A.50). When `null` and `RecallMode.vector` is
-  /// requested, the mode is degraded; `RecallReport.degraded` is set
-  /// true.
+  /// Vector mode executor function. In production it is always
+  /// supplied — the brain refuses to boot when vec0 is absent
+  /// (`loadVecExtensionOrRefuseToBoot`, A.50). It may be `null` only in
+  /// tests that construct the executor without a vector backend; when
+  /// `null` and `RecallMode.vector` is requested, the mode is degraded
+  /// and `RecallReport.degraded` is set true.
   final VectorModeFn? _vector;
 
   /// Symbolic mode executor function. Always required.
@@ -550,9 +551,11 @@ final class RecallExecutor {
   _ModeResult _runVector(RecallQuery query) {
     final vector = _vector;
     if (vector == null) {
-      // Boot detected no vector backend. Spec § 15
-      // `VectorIndexUnavailable` was already emitted; the recall
-      // surface degrades silently.
+      // No vector backend was wired into this executor. In production
+      // the brain refuses to boot when vec0 is absent
+      // (`loadVecExtensionOrRefuseToBoot`), so this branch is reached
+      // only by tests that construct the executor without a vector
+      // backend; the recall surface degrades silently for them.
       return const _ModeResult(
         candidateCount: 0,
         ranked: <NodeId>[],

@@ -58,16 +58,18 @@
 // `kEmbeddingModelMarkerFileName` / `embeddingModelMarkerPath`
 // convention for the marker file A.50+ will own.
 //
-// A.50 — `vec_extension_loader.dart` + `vec_extension_events.dart`:
-// the sqlite-vec (vec0) shared-library loader. Owns
-// `VecExtensionLoader` (the load pipeline with injection points for
-// open / lookup / register), `VecExtensionLoadResult` (the outcome
-// record), `VecLoadOutcome` / `VecUnavailableReason` (per-outcome
-// value types), the `DynamicLibraryOpener` /
-// `DynamicLibrarySymbolLookup` / `ExtensionRegistrar` typedefs (for
-// test injection), the `loadVecExtensionWithFailOpen` wiring helper
-// for the open() path, and the `VectorIndexUnavailable`
-// `MemoryEvent` leaf emitted on every non-`loaded` outcome.
+// A.50 — `vec_extension_loader.dart`: the sqlite-vec (vec0)
+// shared-library loader. Owns `VecExtensionLoader` (the load pipeline
+// with injection points for open / lookup / register),
+// `VecExtensionLoadResult` (the outcome record), `VecLoadOutcome` /
+// `VecUnavailableReason` (per-outcome value types), the
+// `DynamicLibraryOpener` / `DynamicLibrarySymbolLookup` /
+// `ExtensionRegistrar` typedefs (for test injection), the
+// `loadVecExtensionOrRefuseToBoot` wiring helper for the open() path,
+// and the `VectorRuntimeUnavailable` exception it throws on every
+// non-`loaded` outcome. Vector search is mandatory inside this quest
+// (Q-A.6.1): the loader refuses to boot rather than fall back to
+// BM25-only mode.
 //
 // A.51 — `vector_table.dart` + `vector_table_exception.dart`: the
 // `vectors.db` side of the storage stack. Owns `VectorTable` (the
@@ -128,7 +130,6 @@ export 'two_db_coordinator.dart'
         TwoDbReplayFailure,
         TwoDbReplayReport,
         VectorApplier;
-export 'vec_extension_events.dart' show VectorIndexUnavailable;
 export 'vec_extension_loader.dart'
     show
         DynamicLibraryOpener,
@@ -138,7 +139,8 @@ export 'vec_extension_loader.dart'
         VecExtensionLoader,
         VecLoadOutcome,
         VecUnavailableReason,
-        loadVecExtensionWithFailOpen;
+        VectorRuntimeUnavailable,
+        loadVecExtensionOrRefuseToBoot;
 export 'vector_table.dart'
     show
         PlainBlobTableBackend,

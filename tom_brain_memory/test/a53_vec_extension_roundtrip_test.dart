@@ -101,20 +101,15 @@ void main() {
     });
 
     test('synthetic loaded boot → install → insert → query → remove '
-        'is a clean roundtrip with zero degraded-mode events', () {
-      final events = <MemoryEvent>[];
-
-      final result = loadVecExtensionWithFailOpen(
+        'is a clean roundtrip', () {
+      final result = loadVecExtensionOrRefuseToBoot(
         sqlite: sqlite3,
         config: _configWithExistingStubFile(),
-        emit: events.add,
         loader: _syntheticLoadedLoader(),
       );
 
       expect(result.isLoaded, isTrue,
           reason: 'A.53 roundtrip premise — boot must reach loaded');
-      expect(events, isEmpty,
-          reason: 'success-only emission — no event on loaded boot');
 
       final table = VectorTable(
         vectorsDb: vectorsDb,
@@ -154,17 +149,13 @@ void main() {
     test('end-to-end: synthetic loaded boot → coordinator persist '
         'with embedding → applier writes vectors.db → queryNearest '
         'finds the row; pending row is drained', () {
-      final events = <MemoryEvent>[];
-
       // Boot — synthetic-loaded.
-      final result = loadVecExtensionWithFailOpen(
+      final result = loadVecExtensionOrRefuseToBoot(
         sqlite: sqlite3,
         config: _configWithExistingStubFile(),
-        emit: events.add,
         loader: _syntheticLoadedLoader(),
       );
       expect(result.isLoaded, isTrue);
-      expect(events, isEmpty);
 
       // memory.db with the canonical schema applied — gives us the
       // `nodes` and `pending_vector_writes` tables the coordinator
