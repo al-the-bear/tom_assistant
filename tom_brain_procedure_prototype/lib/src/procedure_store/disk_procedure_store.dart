@@ -6,6 +6,13 @@
 // (user-authored). Each procedure is a `.dart` file; the file's contents
 // are the verbatim source the loader (C.24) later parses for its header.
 //
+// Of the shipped `scripts/system/` procedures, only `answer_with_memory_v1`
+// is a behavioural example that meaningfully exercises the bridges.
+// `think_v1` is a *machinery fixture*, not a behavioural example: a pure
+// no-op (`requires: []`, touches no effect surface) that exists solely to
+// give the `think(…)` sugar verb and the depth-cap / fallback machinery a
+// real callable target until the Phase-D thinking loop lands (Q-C.2.1).
+//
 // The backend is pure I/O. It does NOT derive a procedure's id/version
 // from the filename — identity lives in the in-source header and is the
 // loader's concern. It addresses procedures purely by file path, which

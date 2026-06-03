@@ -16,6 +16,10 @@
 // think_v1 — the prototype's no-op stub procedure
 // (`tom_brain_procedure_prototype_specification.md` § 1.4, § 5.2; Q-C.2.1).
 //
+// This is a machinery fixture, not a behavioural example. Its `requires: []`
+// cannot be exercised because it calls no primitive; for an end-to-end
+// procedure that meaningfully drives the bridges, see `answer_with_memory_v1`.
+//
 // § 5.2: `think(…)` is sugar over `runProcedure('think_v1', …)`. The
 // prototype ships only this stub so the sugar verb has a real target and
 // the depth-cap / fallback machinery can exercise a callable procedure
