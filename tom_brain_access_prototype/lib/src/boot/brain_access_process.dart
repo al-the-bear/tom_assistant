@@ -202,19 +202,79 @@ Future<BrainAccessProcess> startBrainAccessProcess({
   Duration shutdownDeadline = defaultShutdownDeadline,
   DateTime Function()? clock,
 }) async {
-  // ── Phase 5a: compose the admission core over the booted dispatcher. ──
-  final BootedAccessLayer booted = BrainAccessBoot.install(
-    dispatcher: brain.dispatcher,
-    config: _toBrainAccessConfig(
-      config,
-      bearerAuthenticator: bearerAuthenticator,
-      kindHintEmbedder: kindHintEmbedder,
-      kindHintClassifier: kindHintClassifier,
-      clock: clock,
-    ),
+  // The proto spec § 12 phase 5 sequence, one extracted step each:
+  final BootedAccessLayer booted = _composeAccessLayer(
+    brain: brain,
+    config: config,
+    bearerAuthenticator: bearerAuthenticator,
+    kindHintEmbedder: kindHintEmbedder,
+    kindHintClassifier: kindHintClassifier,
+    clock: clock,
+  );
+  final AccessServer server = await _serveOpenAiAndHealth(
+    booted: booted,
+    brain: brain,
+    config: config,
+    serve: serve,
+    clock: clock,
+  );
+  final _TelegramEdge telegram = await _startTelegram(
+    booted: booted,
+    config: config,
+    telegramChatApiFactory: telegramChatApiFactory,
+  );
+  final (GracefulShutdown gracefulShutdown, Future<void> Function() teardown) =
+      _installShutdown(
+    server: server,
+    booted: booted,
+    brain: brain,
+    telegram: telegram,
+    shutdownSignals: shutdownSignals,
+    terminate: terminate,
+    shutdownDeadline: shutdownDeadline,
   );
 
-  // ── Phase 5b: the live OpenAI + health socket (one Cascade, one port). ──
+  return BrainAccessProcess._(
+    port: server.port,
+    gracefulShutdown: gracefulShutdown,
+    teardown: teardown,
+  );
+}
+
+/// Phase 5a — compose the admission core over the already-booted dispatcher
+/// (E.41). Maps [config] + the injected runtime seams onto the
+/// [BrainAccessConfig] and installs the access layer over `brain.dispatcher`.
+BootedAccessLayer _composeAccessLayer({
+  required ProvisionedBrain brain,
+  required AccessConfig config,
+  required BearerTokenAuthenticator? bearerAuthenticator,
+  required KindHintEmbedder? kindHintEmbedder,
+  required KindHintClassifier? kindHintClassifier,
+  required DateTime Function()? clock,
+}) =>
+    BrainAccessBoot.install(
+      dispatcher: brain.dispatcher,
+      config: _toBrainAccessConfig(
+        config,
+        bearerAuthenticator: bearerAuthenticator,
+        kindHintEmbedder: kindHintEmbedder,
+        kindHintClassifier: kindHintClassifier,
+        clock: clock,
+      ),
+    );
+
+/// Phase 5b — stand up the live OpenAI + health socket on one port (E.43 /
+/// E.45). A shelf `Cascade` lets the health router answer `/healthz` and 404
+/// the rest, cascading to the OpenAI edge (which owns the OpenAI 404 envelope
+/// for any other unmatched route); the bound server is returned through the
+/// [serve] seam.
+Future<AccessServer> _serveOpenAiAndHealth({
+  required BootedAccessLayer booted,
+  required ProvisionedBrain brain,
+  required AccessConfig config,
+  required AccessServeSeam serve,
+  required DateTime Function()? clock,
+}) async {
   final OpenAiAccessEdge openAiEdge = OpenAiAccessEdge(
     assembler: booted.assembler,
     basePath: config.openAiBasePath,
@@ -224,51 +284,70 @@ Future<BrainAccessProcess> startBrainAccessProcess({
     queueSnapshot: brain.queueSnapshot,
     clock: clock,
   );
-  // Health answers `/healthz` and 404s the rest, cascading to the OpenAI edge
-  // (which owns the OpenAI 404 envelope for any other unmatched route).
   final Handler handler = Cascade()
       .add(healthCheck.handler)
       .add(openAiEdge.handler)
       .handler;
-  final AccessServer server = await serve(handler, config.openAiPort);
+  return serve(handler, config.openAiPort);
+}
 
-  // ── Phase 5c: the optional Telegram edge. ──
-  TelegramAdapter? telegramAdapter;
-  TelegramAccessEdge? telegramEdge;
-  if (config.hasTelegram) {
-    final ChatApi chatApi = telegramChatApiFactory(config.telegramBotToken!);
-    telegramAdapter = TelegramAdapter(
-      chatApi: chatApi,
-      whitelist: TelegramWhitelist(config.telegramWhitelist),
-    );
-    await telegramAdapter.start();
-    telegramEdge = TelegramAccessEdge(
-      assembler: booted.assembler,
-      chatApi: chatApi,
-      authorizedInbound: telegramAdapter.authorizedInboundRequests,
-    );
-    telegramEdge.start();
+/// Phase 5c — stand up the optional Telegram edge (E.45). When [config] has a
+/// bot token, builds the `ChatApi` through [telegramChatApiFactory], starts
+/// the long-polling adapter, and wires the edge that feeds the admission core;
+/// otherwise returns [_TelegramEdge.none].
+Future<_TelegramEdge> _startTelegram({
+  required BootedAccessLayer booted,
+  required AccessConfig config,
+  required TelegramChatApiFactory telegramChatApiFactory,
+}) async {
+  if (!config.hasTelegram) {
+    return _TelegramEdge.none;
   }
+  final ChatApi chatApi = telegramChatApiFactory(config.telegramBotToken!);
+  final TelegramAdapter adapter = TelegramAdapter(
+    chatApi: chatApi,
+    whitelist: TelegramWhitelist(config.telegramWhitelist),
+  );
+  await adapter.start();
+  final TelegramAccessEdge edge = TelegramAccessEdge(
+    assembler: booted.assembler,
+    chatApi: chatApi,
+    authorizedInbound: adapter.authorizedInboundRequests,
+  );
+  edge.start();
+  return _TelegramEdge(adapter, edge);
+}
 
-  // ── Phase 5d: the ordered teardown (idempotent — signal path and `stop`
-  //    share it, and it must run at most once). Stop new work arriving first
-  //    (channels), then dispose the access layer, then the cognition. ──
+/// Phase 5d — build the ordered, idempotent teardown and install the
+/// graceful-shutdown coordinator over it (E.42 / G.3.6).
+///
+/// The teardown stops new work arriving first (the channels), then disposes
+/// the access layer, then the cognition; it runs at most once (the signal path
+/// and [BrainAccessProcess.stop] share it). The whole teardown is bounded by
+/// [shutdownDeadline]: a hung step otherwise leaves [BrainAccessProcess.completed]
+/// unresolved and the serve executor blocked on exit. On the deadline a
+/// `TimeoutException` propagates; the coordinator catches it and terminates
+/// with the error exit code, so the process exits either way. Returns the
+/// coordinator and the bounded teardown (the process handle needs both).
+(GracefulShutdown, Future<void> Function()) _installShutdown({
+  required AccessServer server,
+  required BootedAccessLayer booted,
+  required ProvisionedBrain brain,
+  required _TelegramEdge telegram,
+  required List<Stream<ProcessSignal>>? shutdownSignals,
+  required ProcessTerminator? terminate,
+  required Duration shutdownDeadline,
+}) {
   bool tornDown = false;
   Future<void> teardown() async {
     if (tornDown) return;
     tornDown = true;
-    await telegramEdge?.stop();
-    await telegramAdapter?.stop();
+    await telegram.stop();
     await server.close();
     await booted.shutdown();
     await brain.shutdown();
   }
 
-  // The whole teardown is bounded by [shutdownDeadline] (G.3.6): a hung
-  // teardown step otherwise leaves `completed` unresolved and the serve
-  // executor blocked on exit. On the deadline a `TimeoutException` propagates;
-  // the graceful coordinator catches it and terminates with the error exit
-  // code, so the process exits either way.
   Future<void> boundedTeardown() => teardown().timeout(shutdownDeadline);
 
   final GracefulShutdown gracefulShutdown = terminate == null
@@ -282,11 +361,29 @@ Future<BrainAccessProcess> startBrainAccessProcess({
           terminate: terminate,
         );
 
-  return BrainAccessProcess._(
-    port: server.port,
-    gracefulShutdown: gracefulShutdown,
-    teardown: boundedTeardown,
-  );
+  return (gracefulShutdown, boundedTeardown);
+}
+
+/// The optional Telegram edge the process stands up (E.45 phase 5c): the
+/// long-polling [adapter] and the [edge] that feeds the admission core. Both
+/// are `null` when no bot token is configured ([none]). Bundled so phase 5c
+/// can return the pair and the teardown can stop them in order through one
+/// [stop].
+final class _TelegramEdge {
+  final TelegramAdapter? adapter;
+  final TelegramAccessEdge? edge;
+
+  const _TelegramEdge(this.adapter, this.edge);
+
+  /// The no-Telegram case: both halves absent, [stop] a no-op.
+  static const _TelegramEdge none = _TelegramEdge(null, null);
+
+  /// Stops the edge then the adapter (stop feeding the core before stopping
+  /// the poll); each half is a no-op when absent.
+  Future<void> stop() async {
+    await edge?.stop();
+    await adapter?.stop();
+  }
 }
 
 /// Maps the on-disk [AccessConfig] onto the [BrainAccessConfig] composition
