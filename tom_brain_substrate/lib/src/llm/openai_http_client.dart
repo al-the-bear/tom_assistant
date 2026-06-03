@@ -49,7 +49,11 @@
 import 'dart:convert';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart';
-import 'package:tom_core_agentic/tom_core_agentic.dart';
+// Hide the top-level `decodeJsonObject`: this client relies on the richer
+// inherited `DefaultWireHttpClientBase.decodeJsonObject` (status + endpoint
+// + shape taxonomy). In Dart an imported top-level name shadows an
+// inherited member, so it must be hidden for the instance method to bind.
+import 'package:tom_core_agentic/tom_core_agentic.dart' hide decodeJsonObject;
 
 import 'wire_http_transport.dart';
 
