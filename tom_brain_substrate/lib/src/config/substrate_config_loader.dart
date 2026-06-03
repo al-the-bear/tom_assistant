@@ -57,6 +57,7 @@
 
 import 'dart:io';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 import 'package:yaml/yaml.dart';
 
 import '../mcp_client/mcp_auth.dart' show McpAuthConfig;
@@ -961,208 +962,59 @@ abstract final class SubstrateConfigLoader {
   }
 
   // ---------------------------------------------------------------
-  // Field helpers (mirrors `MemoryConfigLoader`'s shape).
+  // Field helpers + `${NAME}` substitution now live in
+  // tom_core_agentic's `YamlConfigReader`. These thin wrappers keep
+  // the loader's private vocabulary and bind the
+  // `SubstrateConfigException` factory, so every existing call site is
+  // unchanged. The shared reader is the consolidation of the
+  // line-for-line-identical helper blocks this loader and
+  // `MemoryConfigLoader` grew independently.
+  //
+  // `_types` carries an empty env because the type-coercion helpers
+  // never expand `${NAME}`; `_expandEnv` builds a per-call reader with
+  // the caller's env, matching the original signature that threads
+  // `env` through the parse tree.
   // ---------------------------------------------------------------
 
-  static String _requireString(
-    YamlMap node,
-    String key,
-    String path,
-  ) {
-    final v = node[key];
-    if (v == null) {
-      throw SubstrateConfigException('Missing required field: $path');
-    }
-    if (v is! String) {
-      throw SubstrateConfigException(
-        '$path must be a string (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static final YamlConfigReader _types = YamlConfigReader(
+    env: const {},
+    errorFactory: SubstrateConfigException.new,
+  );
 
-  static String? _optionalString(
-    YamlMap node,
-    String key,
-    String path,
-  ) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! String) {
-      throw SubstrateConfigException(
-        '$path must be a string (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static String _requireString(YamlMap node, String key, String path) =>
+      _types.requireString(node, key, path);
 
-  static int _requireInt(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) {
-      throw SubstrateConfigException('Missing required field: $path');
-    }
-    if (v is! int) {
-      throw SubstrateConfigException(
-        '$path must be an integer (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static String? _optionalString(YamlMap node, String key, String path) =>
+      _types.optionalString(node, key, path);
 
-  static int? _optionalInt(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! int) {
-      throw SubstrateConfigException(
-        '$path must be an integer (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static int _requireInt(YamlMap node, String key, String path) =>
+      _types.requireInt(node, key, path);
 
-  static double _requireDouble(
-    YamlMap node,
-    String key,
-    String path,
-  ) {
-    final v = node[key];
-    if (v == null) {
-      throw SubstrateConfigException('Missing required field: $path');
-    }
-    if (v is num) return v.toDouble();
-    throw SubstrateConfigException(
-      '$path must be a number (got ${v.runtimeType}).',
-    );
-  }
+  static int? _optionalInt(YamlMap node, String key, String path) =>
+      _types.optionalInt(node, key, path);
 
-  static bool? _optionalBool(
-    YamlMap node,
-    String key,
-    String path,
-  ) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! bool) {
-      throw SubstrateConfigException(
-        '$path must be a boolean (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static double _requireDouble(YamlMap node, String key, String path) =>
+      _types.requireDouble(node, key, path);
 
-  static YamlMap _requireMap(
-    YamlMap node,
-    String key,
-    String path,
-  ) {
-    final v = node[key];
-    if (v == null) {
-      throw SubstrateConfigException('Missing required field: $path');
-    }
-    if (v is! YamlMap) {
-      throw SubstrateConfigException(
-        '$path must be a map (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static bool? _optionalBool(YamlMap node, String key, String path) =>
+      _types.optionalBool(node, key, path);
 
-  static YamlMap? _optionalMap(YamlMap node, String key) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! YamlMap) {
-      throw SubstrateConfigException(
-        'Field `$key` must be a map (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static YamlMap _requireMap(YamlMap node, String key, String path) =>
+      _types.requireMap(node, key, path);
 
-  static YamlList _requireList(
-    YamlMap node,
-    String key,
-    String path,
-  ) {
-    final v = node[key];
-    if (v == null) {
-      throw SubstrateConfigException('Missing required field: $path');
-    }
-    if (v is! YamlList) {
-      throw SubstrateConfigException(
-        '$path must be a list (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static YamlMap? _optionalMap(YamlMap node, String key) =>
+      _types.optionalMap(node, key);
 
-  static YamlList? _optionalList(
-    YamlMap node,
-    String key,
-    String path,
-  ) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! YamlList) {
-      throw SubstrateConfigException(
-        '$path must be a list (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static YamlList _requireList(YamlMap node, String key, String path) =>
+      _types.requireList(node, key, path);
 
-  static Uri _parseUri(String raw, String path) {
-    final uri = Uri.tryParse(raw);
-    if (uri == null) {
-      throw SubstrateConfigException(
-        '$path must be a valid URI (got "$raw").',
-      );
-    }
-    return uri;
-  }
+  static YamlList? _optionalList(YamlMap node, String key, String path) =>
+      _types.optionalList(node, key, path);
 
-  // ---------------------------------------------------------------
-  // `${NAME}` substitution. Same scanner as `MemoryConfigLoader`'s,
-  // line-for-line behaviourally identical so future loaders can be
-  // factored onto a shared helper.
-  // ---------------------------------------------------------------
+  static Uri _parseUri(String raw, String path) => _types.parseUri(raw, path);
 
-  static String _expandEnv(
-    String input,
-    Map<String, String> env,
-    String path,
-  ) {
-    if (!input.contains(r'$')) return input;
-    final out = StringBuffer();
-    var i = 0;
-    while (i < input.length) {
-      final ch = input[i];
-      if (ch == r'$' && i + 1 < input.length && input[i + 1] == '{') {
-        final close = input.indexOf('}', i + 2);
-        if (close < 0) {
-          throw SubstrateConfigException(
-            '$path has unterminated `\${` token.',
-          );
-        }
-        final name = input.substring(i + 2, close);
-        if (name.isEmpty) {
-          throw SubstrateConfigException(
-            '$path has empty `\${}` token.',
-          );
-        }
-        final value = env[name];
-        if (value == null) {
-          throw SubstrateConfigException(
-            '$path references undefined env var `\${$name}`.',
-          );
-        }
-        out.write(value);
-        i = close + 1;
-      } else {
-        out.write(ch);
-        i++;
-      }
-    }
-    return out.toString();
-  }
+  static String _expandEnv(String input, Map<String, String> env, String path) =>
+      YamlConfigReader(env: env, errorFactory: SubstrateConfigException.new)
+          .expandEnv(input, path);
 }
 

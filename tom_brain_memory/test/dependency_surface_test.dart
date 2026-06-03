@@ -74,6 +74,7 @@ import 'package:tom_core_server/tom_core_server.dart' as server;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:dart_mcp/server.dart' as mcp;
 import 'package:yaml/yaml.dart' as yaml;
+import 'package:tom_core_agentic/tom_core_agentic.dart' as agentic;
 
 import 'package:test/test.dart';
 
@@ -136,6 +137,22 @@ void main() {
       // shape change (e.g. enum removed and replaced with a const class)
       // would surface here.
       expect(mcp.ProtocolVersion.values, isNotEmpty);
+    });
+
+    test('tom_core_agentic exposes YamlConfigReader (B.1)', () {
+      // `MemoryConfigLoader` routes its YAML field coercion + `${ENV}`
+      // expansion through `YamlConfigReader`. Functional smoke-test:
+      // build a reader bound to a domain-exception factory and prove a
+      // required-string read and an `${ENV}` expansion both work, so a
+      // signature change in the shared reader surfaces here, not in the
+      // loader's first call site.
+      final reader = agentic.YamlConfigReader(
+        env: const {'TOKEN': 'secret'},
+        errorFactory: MemoryConfigException.new,
+      );
+      final node = yaml.loadYaml('name: tom\n') as yaml.YamlMap;
+      expect(reader.requireString(node, 'name', 'root.name'), 'tom');
+      expect(reader.expandEnv(r'${TOKEN}', 'root.token'), 'secret');
     });
 
     test('yaml exposes the loadYaml entry + YamlMap surface (A.32)', () {

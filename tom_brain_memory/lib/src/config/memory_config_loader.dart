@@ -37,6 +37,7 @@
 
 import 'dart:io';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 import 'package:yaml/yaml.dart';
 
 import 'memory_config.dart';
@@ -486,149 +487,49 @@ abstract final class MemoryConfigLoader {
   }
 
   // ---------------------------------------------------------------
-  // Type-safe field helpers. All consume a YamlMap and a key path,
-  // raise [MemoryConfigException] with the path on type mismatch.
+  // Type-safe field helpers + `${NAME}` substitution now live in
+  // tom_core_agentic's `YamlConfigReader`. These thin wrappers keep
+  // the loader's private vocabulary and bind the
+  // `MemoryConfigException` factory, so every existing call site is
+  // unchanged. The shared reader is the consolidation of the
+  // behaviourally-identical helper block this loader and the substrate
+  // loader grew independently.
+  //
+  // `_types` carries an empty env because the type-coercion helpers
+  // never expand `${NAME}`; `_expandEnv` builds a per-call reader with
+  // the caller's env, matching the original signature that threads
+  // `env` through the parse tree.
   // ---------------------------------------------------------------
 
-  static String _requireString(
-    YamlMap node,
-    String key,
-    String path,
-  ) {
-    final v = node[key];
-    if (v == null) {
-      throw MemoryConfigException('Missing required field: $path');
-    }
-    if (v is! String) {
-      throw MemoryConfigException(
-        '$path must be a string (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static final YamlConfigReader _types = YamlConfigReader(
+    env: const {},
+    errorFactory: MemoryConfigException.new,
+  );
 
-  static String? _optionalString(
-    YamlMap node,
-    String key,
-    String path,
-  ) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! String) {
-      throw MemoryConfigException(
-        '$path must be a string (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static String _requireString(YamlMap node, String key, String path) =>
+      _types.requireString(node, key, path);
 
-  static int? _optionalInt(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! int) {
-      throw MemoryConfigException(
-        '$path must be an integer (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static String? _optionalString(YamlMap node, String key, String path) =>
+      _types.optionalString(node, key, path);
 
-  static double? _optionalDouble(
-    YamlMap node,
-    String key,
-    String path,
-  ) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is num) return v.toDouble();
-    throw MemoryConfigException(
-      '$path must be a number (got ${v.runtimeType}).',
-    );
-  }
+  static int? _optionalInt(YamlMap node, String key, String path) =>
+      _types.optionalInt(node, key, path);
 
-  static bool? _optionalBool(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! bool) {
-      throw MemoryConfigException(
-        '$path must be a boolean (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static double? _optionalDouble(YamlMap node, String key, String path) =>
+      _types.optionalDouble(node, key, path);
 
-  static YamlMap _requireMap(
-    YamlMap node,
-    String key,
-    String path,
-  ) {
-    final v = node[key];
-    if (v == null) {
-      throw MemoryConfigException('Missing required field: $path');
-    }
-    if (v is! YamlMap) {
-      throw MemoryConfigException(
-        '$path must be a map (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static bool? _optionalBool(YamlMap node, String key, String path) =>
+      _types.optionalBool(node, key, path);
 
-  static YamlMap? _optionalMap(YamlMap node, String key) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! YamlMap) {
-      throw MemoryConfigException(
-        'Field `$key` must be a map (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static YamlMap _requireMap(YamlMap node, String key, String path) =>
+      _types.requireMap(node, key, path);
 
-  // ---------------------------------------------------------------
-  // `${NAME}` substitution. Deliberately not regex: the input is
-  // small, and an explicit scanner gives precise error messages
-  // (location, name, suggestion).
-  // ---------------------------------------------------------------
+  static YamlMap? _optionalMap(YamlMap node, String key) =>
+      _types.optionalMap(node, key);
 
-  static String _expandEnv(
-    String input,
-    Map<String, String> env,
-    String path,
-  ) {
-    if (!input.contains(r'$')) return input;
-    final out = StringBuffer();
-    var i = 0;
-    while (i < input.length) {
-      final ch = input[i];
-      if (ch == r'$' && i + 1 < input.length && input[i + 1] == '{') {
-        final close = input.indexOf('}', i + 2);
-        if (close < 0) {
-          throw MemoryConfigException(
-            '$path has unterminated `\${` token.',
-          );
-        }
-        final name = input.substring(i + 2, close);
-        if (name.isEmpty) {
-          throw MemoryConfigException(
-            '$path has empty `\${}` token.',
-          );
-        }
-        final value = env[name];
-        if (value == null) {
-          throw MemoryConfigException(
-            '$path references undefined env var `\${$name}`.',
-          );
-        }
-        out.write(value);
-        i = close + 1;
-      } else {
-        out.write(ch);
-        i++;
-      }
-    }
-    return out.toString();
-  }
+  static String _expandEnv(String input, Map<String, String> env, String path) =>
+      YamlConfigReader(env: env, errorFactory: MemoryConfigException.new)
+          .expandEnv(input, path);
 
   // ---------------------------------------------------------------
   // `host:port` splitter. Accepts IPv4 / hostname forms. IPv6 is
