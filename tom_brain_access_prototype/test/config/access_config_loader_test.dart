@@ -194,6 +194,77 @@ void main() {
     test('no classifier section ⇒ 5-minute TTL', () {
       expect(config.embeddingCacheTtl, const Duration(minutes: 5));
     });
+
+    test('no edgeState section ⇒ null (in-process state)', () {
+      expect(config.edgeStateDirectory, isNull);
+    });
+  });
+
+  group('E.44 edgeState (P1.4)', () {
+    test('parses access.edgeState.directory', () {
+      const doc = '''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+  edgeState:
+    directory: /var/lib/tom_brain/edge_state
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.edgeStateDirectory, '/var/lib/tom_brain/edge_state');
+    });
+
+    test('expands \${ENV} in the directory', () {
+      const doc = r'''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+  edgeState:
+    directory: "${STATE_DIR}/edge"
+''';
+      final config = AccessConfigLoader.parse(
+        doc,
+        envVars: const {'STATE_DIR': '/srv/state'},
+      );
+      expect(config.edgeStateDirectory, '/srv/state/edge');
+    });
+
+    test('rejects an unknown key within edgeState', () {
+      const doc = '''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+  edgeState: { directory: /x, mystery: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.edgeState has unknown key "mystery"'),
+        )),
+      );
+    });
+
+    test('rejects an empty directory', () {
+      const doc = '''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+  edgeState: { directory: "" }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.edgeState.directory must be non-empty'),
+        )),
+      );
+    });
   });
 
   group('E.44 forward-only schema (AC-12)', () {

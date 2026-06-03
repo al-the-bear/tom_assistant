@@ -100,7 +100,12 @@ class _ShutdownCounter {
   Future<void> call() async => calls++;
 }
 
-AccessConfig _config({bool telegram = false}) => AccessConfig(
+AccessConfig _config({
+  bool telegram = false,
+  bool bearer = false,
+  String? edgeStateDir,
+}) =>
+    AccessConfig(
       openAiPort: 7654,
       rateLimitPolicy: _openPolicy(),
       dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: 100),
@@ -109,6 +114,10 @@ AccessConfig _config({bool telegram = false}) => AccessConfig(
       telegramUserIdBindings: telegram
           ? {'tg-42': IdentityBinding(principalId: 'principal-1')}
           : const {},
+      bearerTokenBindings: bearer
+          ? {'secret-token': IdentityBinding(principalId: 'principal-1')}
+          : const {},
+      edgeStateDirectory: edgeStateDir,
     );
 
 Future<Response> _get(Handler handler, String path) async =>
@@ -146,6 +155,52 @@ void main() {
       // An unknown route falls through to the OpenAI 404 envelope.
       final unknown = await _get(serve.handler!, '/nope');
       expect(unknown.statusCode, 404);
+    });
+  });
+
+  group('startBrainAccessProcess — edge-state persistence (P1.4)', () {
+    test('a configured edgeState directory persists limiter state to JSON files',
+        () async {
+      final dir = Directory.systemTemp.createTempSync('edge_proc_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+
+      final serve = _CaptureServe();
+      final process = await startBrainAccessProcess(
+        config: _config(bearer: true, edgeStateDir: dir.path),
+        brain: _provisionedBrain().brain,
+        serve: serve.call,
+        clock: _fixedNow,
+        shutdownSignals: const [],
+        terminate: (_) {},
+      );
+      addTearDown(process.stop);
+
+      // One admitted chat completion spends a rate-limit token and a quota
+      // call, each of which the file stores persist.
+      final response = await serve.handler!(
+        Request(
+          'POST',
+          Uri.parse('http://localhost/v1/chat/completions'),
+          headers: const <String, String>{
+            'content-type': 'application/json',
+            'authorization': 'Bearer secret-token',
+          },
+          body: jsonEncode(<String, Object?>{
+            'model': 'tom-assistant',
+            'stream': false,
+            'messages': <Object?>[
+              <String, Object?>{'role': 'user', 'content': 'hi'},
+            ],
+          }),
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(response.statusCode, 200);
+      expect(File('${dir.path}/quota_state.json').existsSync(), isTrue,
+          reason: 'daily-quota counter should be persisted');
+      expect(File('${dir.path}/rate_limit_state.json').existsSync(), isTrue,
+          reason: 'rate-limit bucket should be persisted');
     });
   });
 

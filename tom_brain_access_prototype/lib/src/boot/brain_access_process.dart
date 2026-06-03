@@ -53,7 +53,8 @@ import 'package:tom_chattools/tom_chattools.dart'
 import '../adapters/telegram/telegram_adapter.dart';
 import '../adapters/telegram/telegram_whitelist.dart';
 import '../config/access_config.dart';
-import '../edge_security/edge_security.dart' show BearerTokenAuthenticator;
+import '../edge_security/edge_security.dart'
+    show BearerTokenAuthenticator, EdgeStateStore, JsonFileEdgeStateStore;
 import '../heuristic_classifier/heuristic_kind_hint_classifier.dart'
     show KindHintClassifier, KindHintEmbedder;
 import 'brain_access_boot.dart';
@@ -388,27 +389,61 @@ final class _TelegramEdge {
 
 /// Maps the on-disk [AccessConfig] onto the [BrainAccessConfig] composition
 /// inputs, injecting the runtime seams that are not configuration.
+///
+/// When [AccessConfig.edgeStateDirectory] is set, builds one
+/// [JsonFileEdgeStateStore] per edge limiter under that directory so the
+/// rate-limit buckets (E.29) and the daily-quota counters (E.30) survive a
+/// process restart (P1.4). When it is `null` both stores are `null` and the
+/// limiters keep their state in process only.
 BrainAccessConfig _toBrainAccessConfig(
   AccessConfig config, {
   required BearerTokenAuthenticator? bearerAuthenticator,
   required KindHintEmbedder? kindHintEmbedder,
   required KindHintClassifier? kindHintClassifier,
   required DateTime Function()? clock,
-}) =>
-    BrainAccessConfig(
-      rateLimitPolicy: config.rateLimitPolicy,
-      dailyQuotaPolicy: config.dailyQuotaPolicy,
-      anchorPolicy: config.anchorPolicy,
-      bearerTokenBindings: config.bearerTokenBindings,
-      telegramUserIdBindings: config.telegramUserIdBindings,
-      personaVocabulary: config.personaVocabulary,
-      bearerAuthenticator: bearerAuthenticator,
-      kindHintEmbedder: kindHintEmbedder,
-      kindHintClassifier: kindHintClassifier,
-      embeddingCacheTtl: config.embeddingCacheTtl,
-      sessionMaxWindowTurns: config.sessionMaxWindowTurns,
-      clock: clock,
-    );
+}) {
+  final EdgeStateStore? rateLimitStore;
+  final EdgeStateStore? quotaStore;
+  final dir = config.edgeStateDirectory;
+  if (dir == null) {
+    rateLimitStore = null;
+    quotaStore = null;
+  } else {
+    rateLimitStore = JsonFileEdgeStateStore(_edgeStatePath(dir, _rateLimitStateFile));
+    quotaStore = JsonFileEdgeStateStore(_edgeStatePath(dir, _quotaStateFile));
+  }
+
+  return BrainAccessConfig(
+    rateLimitPolicy: config.rateLimitPolicy,
+    dailyQuotaPolicy: config.dailyQuotaPolicy,
+    anchorPolicy: config.anchorPolicy,
+    bearerTokenBindings: config.bearerTokenBindings,
+    telegramUserIdBindings: config.telegramUserIdBindings,
+    personaVocabulary: config.personaVocabulary,
+    bearerAuthenticator: bearerAuthenticator,
+    kindHintEmbedder: kindHintEmbedder,
+    kindHintClassifier: kindHintClassifier,
+    embeddingCacheTtl: config.embeddingCacheTtl,
+    sessionMaxWindowTurns: config.sessionMaxWindowTurns,
+    clock: clock,
+    rateLimitStore: rateLimitStore,
+    quotaStore: quotaStore,
+  );
+}
+
+/// The per-limiter state file names under [AccessConfig.edgeStateDirectory].
+const String _rateLimitStateFile = 'rate_limit_state.json';
+const String _quotaStateFile = 'quota_state.json';
+
+/// Joins an edge-state [directory] and [fileName], tolerating a trailing
+/// separator on the directory. Forward slashes work across the prototype's
+/// supported hosts (Linux / macOS) and `dart:io` accepts them everywhere.
+String _edgeStatePath(String directory, String fileName) {
+  final trimmed = directory.endsWith('/')
+      ? directory.substring(0, directory.length - 1)
+      : directory;
+  return '$trimmed/$fileName';
+}
 
 /// The default [AccessServer]: an adapter over a bound `dart:io` [HttpServer].
 class _HttpAccessServer implements AccessServer {

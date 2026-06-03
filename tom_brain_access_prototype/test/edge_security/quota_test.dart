@@ -292,4 +292,147 @@ void main() {
       expect(limiter.principalCount, 2);
     });
   });
+
+  group('E.30 snapshot/restore', () {
+    test('snapshot() is empty for an untouched limiter', () {
+      final limiter = DailyQuotaLimiter(policy: _policy());
+      expect(limiter.snapshot(), isEmpty);
+    });
+
+    test('snapshot() captures the call count and day per principal', () {
+      final clock = _FakeClock(DateTime(2026, 6, 2, 9));
+      final limiter =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 5), clock: clock.now);
+      limiter.check('a');
+      limiter.check('a');
+      limiter.check('b');
+
+      final snap = limiter.snapshot();
+      expect(snap.keys.toSet(), {'a', 'b'});
+      expect(snap['a']!.calls, 2);
+      expect(snap['a']!.dayStart, DateTime(2026, 6, 2));
+      expect(snap['b']!.calls, 1);
+    });
+
+    test('snapshotOf() returns one principal, or null when unseen', () {
+      final clock = _FakeClock(DateTime(2026, 6, 2, 9));
+      final limiter =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 5), clock: clock.now);
+      limiter.check('a');
+      expect(limiter.snapshotOf('a')!.calls, 1);
+      expect(limiter.snapshotOf('missing'), isNull);
+    });
+
+    test('restore() seeds state a fresh limiter resumes from', () {
+      final clock = _FakeClock(DateTime(2026, 6, 2, 9));
+      final source =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 2), clock: clock.now);
+      source.check('p'); // 1
+      source.check('p'); // 2 — at cap
+      final snap = source.snapshot();
+
+      // A brand-new limiter (as after a restart) restored from the snapshot.
+      final restored =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 2), clock: clock.now);
+      restored.restore(snap);
+      // At the same instant the restored principal is exhausted, not fresh.
+      expect(() => restored.check('p'), throwsA(isA<DailyQuotaExceeded>()));
+    });
+
+    test('restore() lets a crossed day boundary reset the counter lazily', () {
+      final clock = _FakeClock(DateTime(2026, 6, 2, 23));
+      final source =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 1), clock: clock.now);
+      source.check('p'); // exhausted for 2026-06-02
+      final snap = source.snapshot();
+
+      final restored =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 1), clock: clock.now);
+      restored.restore(snap);
+      // A day of "downtime" passes before the next check: the restored
+      // counter belongs to yesterday, so the next day's allowance is fresh.
+      clock.advance(const Duration(hours: 2)); // 2026-06-03 01:00
+      restored.check('p');
+      expect(() => restored.check('p'), throwsA(isA<DailyQuotaExceeded>()));
+    });
+
+    test('restore() clamps calls to the current cap', () {
+      final clock = _FakeClock(DateTime(2026, 6, 2, 9));
+      final restored =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 3), clock: clock.now);
+      restored.restore({
+        'p': QuotaSnapshot(calls: 99, dayStart: DateTime(2026, 6, 2)),
+      });
+      // A bloated count from a since-shrunk cap cannot grant extra calls — the
+      // principal is simply at (or above) the cap, so it is blocked.
+      expect(() => restored.check('p'), throwsA(isA<DailyQuotaExceeded>()));
+    });
+
+    test('restore() rejects an empty principalId', () {
+      final limiter = DailyQuotaLimiter(policy: _policy());
+      expect(
+        () => limiter.restore(
+            {'': QuotaSnapshot(calls: 1, dayStart: DateTime(2026, 6, 2))}),
+        throwsArgumentError,
+      );
+    });
+
+    test('QuotaSnapshot value equality is by moment, not zone', () {
+      final utc = DateTime.utc(2026, 6, 2);
+      final a = QuotaSnapshot(calls: 2, dayStart: utc);
+      final b = QuotaSnapshot(calls: 2, dayStart: utc.toLocal());
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+    });
+  });
+
+  group('E.30 store-backed persistence (P1.4)', () {
+    test('counter survives a restart through the store', () {
+      final clock = _FakeClock(DateTime(2026, 6, 2, 9));
+      final store = MapEdgeStateStore();
+      final before = DailyQuotaLimiter(
+          policy: _policy(dailyCap: 2), clock: clock.now, store: store);
+      before.check('p'); // 1
+      before.check('p'); // 2 — at cap
+
+      // A fresh limiter over the same store (a restart), same instant.
+      final after = DailyQuotaLimiter(
+          policy: _policy(dailyCap: 2), clock: clock.now, store: store);
+      // The counter is resumed at the cap — the restart did not reset it.
+      expect(() => after.check('p'), throwsA(isA<DailyQuotaExceeded>()));
+    });
+
+    test('a restart near the day boundary cannot reset the daily cap', () {
+      // The exact bypass P1.4 closes: cap 1, exhausted at 23:00, then a restart
+      // a minute later must NOT grant a fresh allowance within the same day.
+      final clock = _FakeClock(DateTime(2026, 6, 2, 23));
+      final store = MapEdgeStateStore();
+      final before = DailyQuotaLimiter(
+          policy: _policy(dailyCap: 1), clock: clock.now, store: store);
+      before.check('p'); // day's single call spent
+
+      clock.advance(const Duration(minutes: 1)); // 23:01, still 2026-06-02
+      final after = DailyQuotaLimiter(
+          policy: _policy(dailyCap: 1), clock: clock.now, store: store);
+      // Still exhausted — the restart did not hand out a second allowance.
+      expect(() => after.check('p'), throwsA(isA<DailyQuotaExceeded>()));
+
+      // The genuine next day still refreshes the allowance.
+      clock.advance(const Duration(hours: 2)); // 2026-06-03 01:01
+      after.check('p');
+    });
+
+    test('with no store, counters do not persist across instances', () {
+      final clock = _FakeClock(DateTime(2026, 6, 2, 9));
+      final before =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 1), clock: clock.now);
+      before.check('p');
+      expect(() => before.check('p'), throwsA(isA<DailyQuotaExceeded>()));
+
+      // A fresh limiter with no shared store starts the day fresh again.
+      final after =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 1), clock: clock.now);
+      after.check('p'); // fresh allowance
+    });
+  });
 }

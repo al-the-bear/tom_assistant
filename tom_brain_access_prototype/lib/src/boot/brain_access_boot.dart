@@ -128,6 +128,17 @@ final class BrainAccessConfig {
   /// tests inject a fixed clock.
   final DateTime Function() clock;
 
+  /// Durable backing for the rate limiter's per-principal buckets (E.29 /
+  /// P1.4), or `null` to keep them in process only. The process boot (E.45)
+  /// supplies a [JsonFileEdgeStateStore] when `access.edgeState.directory` is
+  /// configured; tests inject a [MapEdgeStateStore].
+  final EdgeStateStore? rateLimitStore;
+
+  /// Durable backing for the daily quota's per-principal counters (E.30 /
+  /// P1.4), or `null` to keep them in process only. Kept separate from
+  /// [rateLimitStore] so each limiter owns its own file / row format.
+  final EdgeStateStore? quotaStore;
+
   /// Builds an access-layer composition config.
   BrainAccessConfig({
     required this.rateLimitPolicy,
@@ -142,6 +153,8 @@ final class BrainAccessConfig {
     this.embeddingCacheTtl = const Duration(minutes: 5),
     this.sessionMaxWindowTurns = defaultMaxWindowTurns,
     DateTime Function()? clock,
+    this.rateLimitStore,
+    this.quotaStore,
   }) : clock = clock ?? systemClock;
 }
 
@@ -218,10 +231,12 @@ abstract final class BrainAccessBoot {
       rateLimiter: RateLimiter(
         policy: config.rateLimitPolicy,
         clock: config.clock,
+        store: config.rateLimitStore,
       ),
       quotaLimiter: DailyQuotaLimiter(
         policy: config.dailyQuotaPolicy,
         clock: config.clock,
+        store: config.quotaStore,
       ),
       anchorPreCheck: AnchorPreCheck(config.anchorPolicy),
       deliveryRegistry: deliveryRegistry,

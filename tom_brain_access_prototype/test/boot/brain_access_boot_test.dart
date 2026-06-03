@@ -444,6 +444,90 @@ void main() {
     });
   });
 
+  group('BrainAccessBoot.install — edge-state persistence (P1.4)', () {
+    test('a configured quota store resumes the cap across a re-install',
+        () async {
+      final store = MapEdgeStateStore();
+
+      BootedAccessLayer boot() => BrainAccessBoot.install(
+            dispatcher: _recordingDispatcher().dispatcher,
+            config: BrainAccessConfig(
+              bearerTokenBindings: _oneBearer(),
+              rateLimitPolicy: _openPolicy(),
+              dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: 1),
+              anchorPolicy: AnchorPolicy(disallowedSignatures: const []),
+              clock: _fixedNow,
+              quotaStore: store,
+            ),
+          );
+
+      final first = boot();
+      addTearDown(first.shutdown);
+      await first.assembler.admitOpenAi(
+        bearerToken: 'secret-token',
+        modelId: 'tom-assistant',
+        envelope: _envelope(messageId: 'msg-1'),
+        sink: _CollectingSseSink(),
+      );
+
+      // A second boot over the same store (a restart) resumes the spent quota.
+      final second = boot();
+      addTearDown(second.shutdown);
+      await expectLater(
+        second.assembler.admitOpenAi(
+          bearerToken: 'secret-token',
+          modelId: 'tom-assistant',
+          envelope: _envelope(messageId: 'msg-2'),
+          sink: _CollectingSseSink(),
+        ),
+        throwsA(isA<DailyQuotaExceeded>()),
+      );
+    });
+
+    test('a configured rate-limit store resumes the bucket across a re-install',
+        () async {
+      final store = MapEdgeStateStore();
+
+      BootedAccessLayer boot() => BrainAccessBoot.install(
+            dispatcher: _recordingDispatcher().dispatcher,
+            config: BrainAccessConfig(
+              bearerTokenBindings: _oneBearer(),
+              rateLimitPolicy: RateLimitPolicy(
+                capacity: 1,
+                refillTokens: 1,
+                refillPeriod: const Duration(seconds: 10),
+              ),
+              dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: 100),
+              anchorPolicy: AnchorPolicy(disallowedSignatures: const []),
+              clock: _fixedNow,
+              rateLimitStore: store,
+            ),
+          );
+
+      final first = boot();
+      addTearDown(first.shutdown);
+      await first.assembler.admitOpenAi(
+        bearerToken: 'secret-token',
+        modelId: 'tom-assistant',
+        envelope: _envelope(messageId: 'msg-1'),
+        sink: _CollectingSseSink(),
+      );
+
+      // The single token was spent; a restart at the same instant stays empty.
+      final second = boot();
+      addTearDown(second.shutdown);
+      await expectLater(
+        second.assembler.admitOpenAi(
+          bearerToken: 'secret-token',
+          modelId: 'tom-assistant',
+          envelope: _envelope(messageId: 'msg-2'),
+          sink: _CollectingSseSink(),
+        ),
+        throwsA(isA<RateLimitExceeded>()),
+      );
+    });
+  });
+
   group('AccessAssembler — classification (E.33 / E.34 / AC-9)', () {
     test('a confident classification attaches the procedure id as kindHint',
         () async {

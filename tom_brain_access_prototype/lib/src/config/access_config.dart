@@ -139,6 +139,14 @@ final class AccessConfig {
   /// The embedding-cache TTL (E.34). Strictly positive.
   final Duration embeddingCacheTtl;
 
+  /// Directory the edge limiters persist their per-principal state under
+  /// (E.29 rate-limit buckets, E.30 daily-quota counters; P1.4), or `null`
+  /// to keep that state in process only. When set, boot (E.45) places one
+  /// JSON file per limiter inside it, so a restart — including one near the
+  /// day boundary — cannot reset the daily cap. A relative path is resolved
+  /// against the process working directory by boot.
+  final String? edgeStateDirectory;
+
   /// Builds an access config. Callers normally go through
   /// [AccessConfigLoader]; tests construct one directly.
   AccessConfig({
@@ -153,6 +161,7 @@ final class AccessConfig {
     this.personaVocabulary,
     this.sessionMaxWindowTurns = defaultMaxWindowTurns,
     this.embeddingCacheTtl = const Duration(minutes: 5),
+    this.edgeStateDirectory,
   })  : bearerTokenBindings = Map.unmodifiable(bearerTokenBindings),
         telegramUserIdBindings = Map.unmodifiable(telegramUserIdBindings) {
     if (openAiPort <= 0) {

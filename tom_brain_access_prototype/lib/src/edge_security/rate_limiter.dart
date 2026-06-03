@@ -35,13 +35,18 @@
 // wait until one token will have refilled — the value the OpenAI adapter
 // puts in the `Retry-After` header.
 //
-// Persistence. The plan says "bucket state persisted per principal,
-// in-process for the prototype": the bucket map lives in this object's
-// memory and a process restart resets every bucket (Q-E.2.5 accepts that
-// volatility for the prototype; persisting bucket state into memory is a
-// final-layer concern). "Persisted per principal" is honoured *within* the
-// process: a principal's bucket survives across that principal's requests
-// for the lifetime of the limiter, rather than being re-created per request.
+// Persistence. The plan says "bucket state persisted per principal". When an
+// [EdgeStateStore] is supplied the limiter restores every bucket from it on
+// construction and writes the whole snapshot back after each admitted request,
+// so a principal's bucket survives a process restart (P1.4). Because the
+// continuous refill is computed lazily from the wall-clock elapsed since each
+// bucket was last touched, a bucket restored after downtime auto-credits the
+// idle time on its next take — there is no separate catch-up step. When no
+// store is supplied the bucket map lives only in this object's memory and a
+// restart resets every bucket (the original in-process behaviour; harmless for
+// the short-horizon burst throttle, unlike the daily quota E.30). Either way
+// "per principal" is honoured within the process: a principal's bucket survives
+// across that principal's requests for the limiter's lifetime.
 //
 // Clock seam. The limiter reads time through an injectable `DateTime
 // Function()` ([RateLimiter.clock]); production passes `DateTime.now`, tests
@@ -62,6 +67,8 @@
 //   * authenticate (E.28) or resolve identity (E.24).
 
 import 'package:tom_core_agentic/tom_core_agentic.dart';
+
+import 'edge_state_store.dart';
 
 /// The HTTP status a [RateLimitExceeded] maps to on the OpenAI channel
 /// (proto spec § 8: rate-limit failure → `429` JSON). Exposed as a single
@@ -169,11 +176,26 @@ final class RateLimiter {
   /// backwards-clock guard, and the per-principal state.
   final TokenBucket _bucket;
 
-  /// Builds a limiter over [policy]. [clock] defaults to [systemClock].
+  /// Optional durable backing for the bucket map (P1.4). When present the
+  /// limiter restores every bucket from it on construction and writes the
+  /// snapshot back after each admitted request; when `null` the bucket map is
+  /// in-process only and a restart resets it.
+  final EdgeStateStore? _store;
+
+  /// Builds a limiter over [policy]. [clock] defaults to [systemClock]. When
+  /// [store] is supplied the bucket map is restored from it immediately, so a
+  /// limiter rebuilt after a restart resumes the persisted buckets.
   RateLimiter({
     required this.policy,
     DateTime Function()? clock,
-  }) : _bucket = TokenBucket(policy: policy._bucketPolicy, clock: clock);
+    EdgeStateStore? store,
+  })  : _bucket = TokenBucket(policy: policy._bucketPolicy, clock: clock),
+        _store = store {
+    final store = _store;
+    if (store != null) {
+      _bucket.restore(_decodeRows(store.load()));
+    }
+  }
 
   /// Charges one token to [principalId]'s bucket.
   ///
@@ -181,7 +203,8 @@ final class RateLimiter {
   /// normally when the bucket can afford it, or throws [RateLimitExceeded]
   /// with the wait until one token will have refilled. The bucket is *not*
   /// charged on a throw, so a rejected request does not push the retry window
-  /// further out.
+  /// further out. On a successful take the snapshot is written back to the
+  /// store (when one is configured), so the consumed token survives a restart.
   ///
   /// [principalId] must be non-empty — an empty id would collapse every
   /// caller into one shared bucket (the bucket rejects an empty key).
@@ -190,7 +213,34 @@ final class RateLimiter {
     if (retryAfter != null) {
       throw RateLimitExceeded(principalId, retryAfter);
     }
+    _store?.save(_encodeRows(_bucket.snapshot()));
   }
+
+  /// Decodes persisted store rows into the bucket's typed snapshot form.
+  static Map<String, TokenBucketSnapshot> _decodeRows(
+    Map<String, Map<String, Object?>> rows,
+  ) =>
+      <String, TokenBucketSnapshot>{
+        for (final entry in rows.entries)
+          entry.key: TokenBucketSnapshot(
+            tokens: (entry.value['tokens'] as num).toDouble(),
+            lastRefill: DateTime.parse(entry.value['lastRefill'] as String),
+          ),
+      };
+
+  /// Encodes the bucket's typed snapshot into JSON-able store rows. The
+  /// `lastRefill` instant is written as an ISO-8601 string that preserves its
+  /// zone, so restore reconstructs the same moment.
+  static Map<String, Map<String, Object?>> _encodeRows(
+    Map<String, TokenBucketSnapshot> snapshot,
+  ) =>
+      <String, Map<String, Object?>>{
+        for (final entry in snapshot.entries)
+          entry.key: <String, Object?>{
+            'tokens': entry.value.tokens,
+            'lastRefill': entry.value.lastRefill.toIso8601String(),
+          },
+      };
 
   /// Number of principals with live bucket state — for observability and as
   /// the seam an idle-eviction policy reads (Q-E.29.3).

@@ -47,6 +47,7 @@
 // production change here — E.32 is purely tests; boot wiring is E.41+.
 
 export 'bearer_auth.dart';
+export 'edge_state_store.dart';
 export 'rate_limiter.dart';
 export 'quota.dart';
 export 'anchor_precheck.dart';

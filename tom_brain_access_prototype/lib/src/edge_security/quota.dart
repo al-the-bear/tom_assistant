@@ -46,14 +46,18 @@
 // call), so a client that keeps hammering an exhausted quota does not push
 // its own reset further out and the count never overflows past [dailyCap].
 //
-// Persistence. A daily cap conceptually wants cross-restart durability — a
-// restart at 23:00 should not hand every principal a fresh day's allowance
-// (Q-E.29.1 / Q-E.30.1). For the prototype the counter map lives in this
-// object's memory and a process restart resets every counter, consistent
-// with the rate limiter and Q-E.2.5 (in-process volatility accepted for the
-// prototype; persisting the counter into memory is a final-layer concern).
-// "Per principal" is honoured *within* the process: a principal's counter
-// survives across that principal's requests for the limiter's lifetime.
+// Persistence. A daily cap demands cross-restart durability — a restart at
+// 23:00 must not hand every principal a fresh day's allowance, which would be a
+// trivial bypass of the cap (Q-E.30.1 / P1.4). When an [EdgeStateStore] is
+// supplied the limiter restores every counter from it on construction and
+// writes the snapshot back after each admitted call, so a process restart
+// resumes the counters at the point they stopped — and the lazy day-rollover in
+// [check] still resets a restored counter that belongs to an earlier day, so a
+// genuine new day refreshes the allowance while a restart within the same day
+// does not. When no store is supplied the counter map lives only in this
+// object's memory and a restart resets it (the original in-process behaviour).
+// Either way "per principal" is honoured within the process: a principal's
+// counter survives across that principal's requests for the limiter's lifetime.
 //
 // Clock seam. The limiter reads time through an injectable `DateTime
 // Function()` ([DailyQuotaLimiter.clock]); production passes `DateTime.now`,
@@ -79,6 +83,7 @@
 
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
+import 'edge_state_store.dart';
 import 'rate_limiter.dart' show rateLimitHttpStatus;
 
 /// The graceful message the Telegram adapter (E.41+) sends when a sender has
@@ -156,6 +161,41 @@ class _QuotaState {
   _QuotaState(this.calls, this.dayStart);
 }
 
+/// Immutable snapshot of one principal's quota state — the persistable form.
+///
+/// Captures exactly what [DailyQuotaLimiter] needs to resume a counter after a
+/// process restart: the number of [calls] admitted so far and the [dayStart]
+/// those calls belong to. Because the day-rollover reset is computed lazily on
+/// the next [DailyQuotaLimiter.check] (the date portion of the clock is
+/// compared against [dayStart]), a snapshot restored after downtime that
+/// crosses a day boundary naturally resets to a fresh allowance — there is no
+/// separate "catch-up" step. A caller persists these (via
+/// [DailyQuotaLimiter.snapshot] / [DailyQuotaLimiter.snapshotOf]) and seeds them
+/// back with [DailyQuotaLimiter.restore], so a restart near the day boundary
+/// cannot hand a principal a second full allowance.
+final class QuotaSnapshot {
+  /// The number of admitted calls within [dayStart]'s calendar day.
+  final int calls;
+
+  /// The start-of-day instant [calls] belongs to.
+  final DateTime dayStart;
+
+  /// Builds a snapshot of [calls] admitted within [dayStart]'s day.
+  const QuotaSnapshot({required this.calls, required this.dayStart});
+
+  @override
+  bool operator ==(Object other) =>
+      other is QuotaSnapshot &&
+      other.calls == calls &&
+      other.dayStart.isAtSameMomentAs(dayStart);
+
+  @override
+  int get hashCode => Object.hash(calls, dayStart.microsecondsSinceEpoch);
+
+  @override
+  String toString() => 'QuotaSnapshot(calls: $calls, dayStart: $dayStart)';
+}
+
 /// Per-principal daily LLM-call quota (E.30).
 ///
 /// One counter per `principalId`, keyed on the non-secret stable id. Call
@@ -181,11 +221,26 @@ final class DailyQuotaLimiter {
   /// `principalId` → quota state. Created lazily on first [check].
   final Map<String, _QuotaState> _states = {};
 
-  /// Builds a limiter over [policy]. [clock] defaults to [systemClock].
+  /// Optional durable backing for the counter map (P1.4). When present the
+  /// limiter restores every counter from it on construction and writes the
+  /// snapshot back after each admitted call; when `null` the counter map is
+  /// in-process only and a restart resets it.
+  final EdgeStateStore? _store;
+
+  /// Builds a limiter over [policy]. [clock] defaults to [systemClock]. When
+  /// [store] is supplied the counter map is restored from it immediately, so a
+  /// limiter rebuilt after a restart resumes the persisted counters.
   DailyQuotaLimiter({
     required this.policy,
     DateTime Function()? clock,
-  }) : clock = clock ?? systemClock;
+    EdgeStateStore? store,
+  })  : clock = clock ?? systemClock,
+        _store = store {
+    final store = _store;
+    if (store != null) {
+      restore(_decodeRows(store.load()));
+    }
+  }
 
   /// Counts one daily LLM call against [principalId]'s quota.
   ///
@@ -223,7 +278,34 @@ final class DailyQuotaLimiter {
     }
 
     state.calls += 1;
+    _store?.save(_encodeRows(snapshot()));
   }
+
+  /// Decodes persisted store rows into the limiter's typed snapshot form.
+  static Map<String, QuotaSnapshot> _decodeRows(
+    Map<String, Map<String, Object?>> rows,
+  ) =>
+      <String, QuotaSnapshot>{
+        for (final entry in rows.entries)
+          entry.key: QuotaSnapshot(
+            calls: (entry.value['calls'] as num).toInt(),
+            dayStart: DateTime.parse(entry.value['dayStart'] as String),
+          ),
+      };
+
+  /// Encodes the limiter's typed snapshot into JSON-able store rows. The
+  /// `dayStart` instant is written as an ISO-8601 string that preserves its
+  /// zone, so restore reconstructs the same day boundary.
+  static Map<String, Map<String, Object?>> _encodeRows(
+    Map<String, QuotaSnapshot> snapshot,
+  ) =>
+      <String, Map<String, Object?>>{
+        for (final entry in snapshot.entries)
+          entry.key: <String, Object?>{
+            'calls': entry.value.calls,
+            'dayStart': entry.value.dayStart.toIso8601String(),
+          },
+      };
 
   /// Number of principals with live quota state — for observability and as the
   /// seam an idle-eviction policy reads. The map grows by one entry per distinct
@@ -236,6 +318,50 @@ final class DailyQuotaLimiter {
   /// its next [check]. The blunt eviction seam (a process restart already has
   /// this effect; this exposes it without one).
   void clear() => _states.clear();
+
+  /// Snapshot of every live counter, keyed by the same `principalId` — the
+  /// durable form. A caller persists these and restores them with [restore]
+  /// after a process restart, so a restart near the day boundary cannot reset a
+  /// principal's counter to a fresh allowance. An empty map when no principal
+  /// has been seen.
+  Map<String, QuotaSnapshot> snapshot() => <String, QuotaSnapshot>{
+        for (final entry in _states.entries)
+          entry.key: QuotaSnapshot(
+            calls: entry.value.calls,
+            dayStart: entry.value.dayStart,
+          ),
+      };
+
+  /// Snapshot of a single [principalId]'s counter, or `null` when it has no
+  /// live state. The single-key form a caller uses to persist incrementally —
+  /// after one [check] for [principalId], write just that principal's row
+  /// rather than the whole map.
+  QuotaSnapshot? snapshotOf(String principalId) {
+    final state = _states[principalId];
+    if (state == null) return null;
+    return QuotaSnapshot(calls: state.calls, dayStart: state.dayStart);
+  }
+
+  /// Seeds counter state from a previously taken [snapshot] (e.g. read from
+  /// durable storage at boot).
+  ///
+  /// Each principal in [snapshot] overwrites any existing counter; principals
+  /// absent from [snapshot] are left untouched. A restored count is clamped to
+  /// `[0, dailyCap]` so a snapshot taken under a larger cap (a since-shrunk
+  /// policy) cannot seed a counter that pretends to a larger allowance — at
+  /// most it is exactly at the cap, which still blocks. Each `principalId` must
+  /// be non-empty (the same invariant [check] enforces). The lazy day-rollover
+  /// in [check] still applies: a restored counter from an earlier day resets to
+  /// a fresh allowance on its owner's next [check].
+  void restore(Map<String, QuotaSnapshot> snapshot) {
+    snapshot.forEach((principalId, state) {
+      requireNonEmpty(principalId, 'principalId');
+      _states[principalId] = _QuotaState(
+        state.calls.clamp(0, policy.dailyCap),
+        state.dayStart,
+      );
+    });
+  }
 
   /// Evicts the counters that no longer belong to the current day — every
   /// principal whose last [check] fell on an earlier day. Such a counter would

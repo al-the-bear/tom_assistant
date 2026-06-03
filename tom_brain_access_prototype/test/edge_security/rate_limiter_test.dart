@@ -270,4 +270,48 @@ void main() {
       expect(e.toString(), contains('250'));
     });
   });
+
+  group('E.29 store-backed persistence (P1.4)', () {
+    test('bucket state survives a restart through the store', () {
+      final clock = _FakeClock(DateTime.utc(2026, 6, 2, 9));
+      final store = MapEdgeStateStore();
+      final before = RateLimiter(
+        policy: _policy(capacity: 1, refillPeriod: const Duration(seconds: 10)),
+        clock: clock.now,
+        store: store,
+      );
+      before.check('p'); // consumes the single token
+      expect(() => before.check('p'), throwsA(isA<RateLimitExceeded>()));
+
+      // A fresh limiter over the same store (as after a restart), same instant.
+      final after = RateLimiter(
+        policy: _policy(capacity: 1, refillPeriod: const Duration(seconds: 10)),
+        clock: clock.now,
+        store: store,
+      );
+      // The bucket is still empty — the restart did not refill it.
+      expect(() => after.check('p'), throwsA(isA<RateLimitExceeded>()));
+
+      // Elapsed wall-clock during the "downtime" still refills lazily.
+      clock.advance(const Duration(seconds: 10));
+      after.check('p');
+    });
+
+    test('with no store, state does not persist across instances', () {
+      final clock = _FakeClock(DateTime.utc(2026, 6, 2, 9));
+      final before = RateLimiter(
+        policy: _policy(capacity: 1, refillPeriod: const Duration(seconds: 10)),
+        clock: clock.now,
+      );
+      before.check('p');
+      expect(() => before.check('p'), throwsA(isA<RateLimitExceeded>()));
+
+      // A fresh limiter with no shared store starts full again.
+      final after = RateLimiter(
+        policy: _policy(capacity: 1, refillPeriod: const Duration(seconds: 10)),
+        clock: clock.now,
+      );
+      after.check('p'); // fresh full bucket
+    });
+  });
 }

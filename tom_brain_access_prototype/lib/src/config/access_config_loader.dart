@@ -146,6 +146,7 @@ abstract final class AccessConfigLoader {
         'personas',
         'session',
         'classifier',
+        'edgeState',
       },
       'access',
     );
@@ -174,6 +175,10 @@ abstract final class AccessConfigLoader {
     final cacheTtl = _parseClassifier(
       _optionalMap(node, 'classifier', 'access.classifier'),
     );
+    final edgeStateDir = _parseEdgeState(
+      _optionalMap(node, 'edgeState', 'access.edgeState'),
+      env,
+    );
 
     return AccessConfig(
       openAiPort: port,
@@ -187,6 +192,7 @@ abstract final class AccessConfigLoader {
       personaVocabulary: personas,
       sessionMaxWindowTurns: sessionWindow,
       embeddingCacheTtl: cacheTtl,
+      edgeStateDirectory: edgeStateDir,
     );
   }
 
@@ -506,6 +512,28 @@ abstract final class AccessConfigLoader {
     return Duration(
       microseconds: (seconds * Duration.microsecondsPerSecond).round(),
     );
+  }
+
+  /// Parses `access.edgeState` → the directory the edge limiters persist their
+  /// per-principal state under (P1.4), or `null` when the section is absent
+  /// (state stays in process only). The single `directory` key is a
+  /// `${ENV}`-expandable string and must be non-empty when present.
+  static String? _parseEdgeState(YamlMap? node, Map<String, String> env) {
+    if (node == null) return null;
+    _rejectUnknownKeys(node, const <String>{'directory'}, 'access.edgeState');
+    final dir = _optionalString(
+      node,
+      'directory',
+      'access.edgeState.directory',
+    );
+    if (dir == null) return null;
+    final expanded = _expandEnv(dir, env, 'access.edgeState.directory');
+    if (expanded.isEmpty) {
+      throw const AccessConfigException(
+        'access.edgeState.directory must be non-empty when present.',
+      );
+    }
+    return expanded;
   }
 
   // ---------------------------------------------------------------
