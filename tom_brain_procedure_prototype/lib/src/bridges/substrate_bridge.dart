@@ -361,7 +361,7 @@ class SubstrateBridge {
 /// engine's fallback executor (C.46) can branch by class, plus the
 /// best-effort [report] reflecting what was known at the point of
 /// failure.
-class LlmCompletionFailure implements Exception {
+final class LlmCompletionFailure implements Exception {
   /// Stable kebab-case discriminator from `substrate_specification.md`
   /// § 5.4.
   final String classCode;

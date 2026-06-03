@@ -211,7 +211,7 @@ final class SustainedFallbackMonitor {
 
 /// One procedure id's sliding window of recent fallback edges plus the latch
 /// that makes the idea push fire exactly once per sustained episode.
-class _FallbackEpisode {
+final class _FallbackEpisode {
   /// The in-window fallback edges, oldest first.
   final List<_FallbackEdge> edges = <_FallbackEdge>[];
 
@@ -222,7 +222,7 @@ class _FallbackEpisode {
 
 /// A single fallback edge as the monitor tracks it: when it occurred and which
 /// typed failure class triggered it.
-class _FallbackEdge {
+final class _FallbackEdge {
   _FallbackEdge(this.at, this.trigger);
 
   /// UTC timestamp from the `ProcedureFallback`'s `occurredAt`.

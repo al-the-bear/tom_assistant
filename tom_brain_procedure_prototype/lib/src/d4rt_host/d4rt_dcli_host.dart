@@ -110,7 +110,7 @@ typedef SandboxSurfaceInstaller = void Function(D4rt interpreter);
 /// The host is the C.16 deliverable; the engine (`ProcedureEngine`,
 /// C.38–C.41) drives it, the validator (C.27–C.30) gates what reaches
 /// it, and the recorder (C.31–C.33) observes the bridged calls it makes.
-class D4rtDcliHost {
+final class D4rtDcliHost {
   /// Boots a host over [memoryBridge] and [substrateBridge].
   ///
   /// [dataDirectory] is the CLI surface's data/working directory. The

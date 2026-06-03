@@ -41,7 +41,7 @@ import 'brain_bridges.b.dart';
 /// d4rt procedure script can import them from either
 /// `lib/src/bridges/memory_bridge.dart` or
 /// `lib/src/bridges/substrate_bridge.dart`.
-class BrainBridges {
+final class BrainBridges {
   const BrainBridges._();
 
   /// The library URI under which the memory bridge is importable from a

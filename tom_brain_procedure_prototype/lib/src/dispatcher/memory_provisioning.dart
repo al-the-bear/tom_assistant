@@ -70,7 +70,7 @@ enum MemoryTransport {
 /// in-process transport without a client) is unrepresentable. The
 /// [transport] field is the config flag a reader inspects; the
 /// branch-specific fields are non-null exactly for their branch.
-class MemoryProvisioningConfig {
+final class MemoryProvisioningConfig {
   /// The transport flag. [MemoryTransport.isolate] by default —
   /// produced by [MemoryProvisioningConfig.isolate].
   final MemoryTransport transport;
@@ -127,7 +127,7 @@ class MemoryProvisioningConfig {
 /// isolate transport [dispose] shuts the worker isolate down cleanly
 /// (which flushes writes and checkpoints the WAL first); for the
 /// in-process transport it closes the client.
-class ProvisionedMemory {
+final class ProvisionedMemory {
   /// The memory client the dispatcher / engine / bridge talk to.
   /// Indifferent to the transport behind it (PE-10).
   final TomBrainMemoryClient client;
@@ -169,7 +169,7 @@ class ProvisionedMemory {
 /// worker isolate) is produced on each call. Hosts are single-use
 /// (Phase A): a disposed [ProvisionedMemory] cannot be reopened —
 /// provision again for a fresh one.
-class MemoryProvisioner {
+final class MemoryProvisioner {
   /// How to provision. The [MemoryProvisioningConfig.transport] flag
   /// selects the branch.
   final MemoryProvisioningConfig config;

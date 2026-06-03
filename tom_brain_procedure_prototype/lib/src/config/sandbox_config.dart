@@ -44,7 +44,7 @@ library;
 ///
 /// A [D4rtDcliHost] that is given an enabled switch must also be given
 /// the matching surface installer; see the host's constructor.
-class SandboxConfig {
+final class SandboxConfig {
   /// Creates a sandbox configuration. Both surfaces default to disabled.
   const SandboxConfig({
     this.enableUnixCommands = false,
