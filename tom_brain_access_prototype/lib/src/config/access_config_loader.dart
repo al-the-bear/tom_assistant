@@ -1,11 +1,13 @@
 // AccessConfigLoader — parses the `access:` section of the whole-process
 // YAML into a typed [AccessConfig] (E.44; proto spec § 11.4 / § 13.1).
 //
-// Modelled line-for-line on `SubstrateConfigLoader` (B.36) /
-// `MemoryConfigLoader` (A.83): the same `loadYaml` + `YamlMap` plumbing,
-// the same dotted-key-path error messages, the same `${ENV}` substitution
-// for string-valued fields, and the same "no I/O until `loadFromFile`"
-// discipline (so [parse] stays deterministic for tests).
+// Modelled on `SubstrateConfigLoader` (B.36) / `MemoryConfigLoader` (A.83):
+// the same `loadYaml` + `YamlMap` plumbing, dotted-key-path error messages,
+// and "no I/O until `loadFromFile`" discipline (so [parse] stays
+// deterministic for tests). The type-coercion field accessors and the
+// `${ENV}` substitution are shared with those loaders through
+// tom_core_agentic's `YamlConfigReader` (this loader delegates to it rather
+// than carrying its own copy).
 //
 // What the loader does:
 //
@@ -37,6 +39,7 @@
 
 import 'dart:io';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show YamlConfigReader;
 import 'package:yaml/yaml.dart';
 
 import '../edge_security/anchor_precheck.dart';
@@ -506,7 +509,10 @@ abstract final class AccessConfigLoader {
   }
 
   // ---------------------------------------------------------------
-  // Field helpers (mirrors `SubstrateConfigLoader`'s shape).
+  // Field helpers. The type-coercion + `${ENV}` accessors delegate to
+  // tom_core_agentic's shared `YamlConfigReader` (see `_types` below); the
+  // forward-only key check and the claims-scalar unwrap are access-local
+  // (they have no shared equivalent yet).
   // ---------------------------------------------------------------
 
   static void _rejectUnknownKeys(
@@ -524,87 +530,48 @@ abstract final class AccessConfigLoader {
     }
   }
 
-  static String _requireString(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) {
-      throw AccessConfigException('Missing required field: $path');
-    }
-    if (v is! String) {
-      throw AccessConfigException(
-        '$path must be a string (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  /// The type-coercion accessors now live in tom_core_agentic's
+  /// [YamlConfigReader] — the consolidation of the behaviourally-identical
+  /// helper block this loader, `SubstrateConfigLoader`, and
+  /// `MemoryConfigLoader` each grew independently. These thin wrappers keep
+  /// the loader's private vocabulary and bind the [AccessConfigException]
+  /// factory so every existing call site is unchanged.
+  ///
+  /// `_types` carries an empty env because the coercion helpers never expand
+  /// `${NAME}`; [_expandEnv] builds a per-call reader with the caller's env,
+  /// matching the original signature that threads `env` through the parse
+  /// tree.
+  static final YamlConfigReader _types = YamlConfigReader(
+    env: const {},
+    errorFactory: AccessConfigException.new,
+  );
 
-  static String? _optionalString(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! String) {
-      throw AccessConfigException(
-        '$path must be a string (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static String _requireString(YamlMap node, String key, String path) =>
+      _types.requireString(node, key, path);
 
-  static int _requireInt(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) {
-      throw AccessConfigException('Missing required field: $path');
-    }
-    if (v is! int) {
-      throw AccessConfigException(
-        '$path must be an integer (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static String? _optionalString(YamlMap node, String key, String path) =>
+      _types.optionalString(node, key, path);
 
-  static int? _optionalInt(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! int) {
-      throw AccessConfigException(
-        '$path must be an integer (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static int _requireInt(YamlMap node, String key, String path) =>
+      _types.requireInt(node, key, path);
 
-  static double _requireDouble(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) {
-      throw AccessConfigException('Missing required field: $path');
-    }
-    if (v is num) return v.toDouble();
-    throw AccessConfigException(
-      '$path must be a number (got ${v.runtimeType}).',
-    );
-  }
+  static int? _optionalInt(YamlMap node, String key, String path) =>
+      _types.optionalInt(node, key, path);
 
-  static double? _optionalDouble(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is num) return v.toDouble();
-    throw AccessConfigException(
-      '$path must be a number (got ${v.runtimeType}).',
-    );
-  }
+  static double _requireDouble(YamlMap node, String key, String path) =>
+      _types.requireDouble(node, key, path);
 
-  static YamlMap _requireMap(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) {
-      throw AccessConfigException('Missing required field: $path');
-    }
-    if (v is! YamlMap) {
-      throw AccessConfigException(
-        '$path must be a map (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static double? _optionalDouble(YamlMap node, String key, String path) =>
+      _types.optionalDouble(node, key, path);
 
+  static YamlMap _requireMap(YamlMap node, String key, String path) =>
+      _types.requireMap(node, key, path);
+
+  /// Optional map — kept local rather than delegated. The shared
+  /// [YamlConfigReader.optionalMap] reports by *key* (`Field \`x\` must be a
+  /// map …`); this loader's conformance contract (the "errors carry dotted
+  /// key paths" suite) is that every access error names the dotted *path*, so
+  /// the path-shaped message is preserved here.
   static YamlMap? _optionalMap(YamlMap node, String key, String path) {
     final v = node[key];
     if (v == null) return null;
@@ -616,16 +583,8 @@ abstract final class AccessConfigLoader {
     return v;
   }
 
-  static YamlList? _optionalList(YamlMap node, String key, String path) {
-    final v = node[key];
-    if (v == null) return null;
-    if (v is! YamlList) {
-      throw AccessConfigException(
-        '$path must be a list (got ${v.runtimeType}).',
-      );
-    }
-    return v;
-  }
+  static YamlList? _optionalList(YamlMap node, String key, String path) =>
+      _types.optionalList(node, key, path);
 
   /// Unwraps a YAML scalar into a plain Dart value for the opaque claims
   /// map. Nested maps / lists are rejected — claims are flat scalars.
@@ -638,44 +597,18 @@ abstract final class AccessConfigLoader {
   }
 
   // ---------------------------------------------------------------
-  // `${NAME}` substitution — the same scanner as
-  // `SubstrateConfigLoader` / `MemoryConfigLoader`.
+  // `${NAME}` substitution — delegated to the shared scanner in
+  // tom_core_agentic's `YamlConfigReader`. A per-call reader binds the
+  // caller's env (the type-coercion `_types` reader carries an empty env),
+  // matching the original signature that threads `env` through the parse
+  // tree.
   // ---------------------------------------------------------------
 
   static String _expandEnv(
     String input,
     Map<String, String> env,
     String path,
-  ) {
-    if (!input.contains(r'$')) return input;
-    final out = StringBuffer();
-    var i = 0;
-    while (i < input.length) {
-      final ch = input[i];
-      if (ch == r'$' && i + 1 < input.length && input[i + 1] == '{') {
-        final close = input.indexOf('}', i + 2);
-        if (close < 0) {
-          throw AccessConfigException(
-            '$path has unterminated `\${` token.',
-          );
-        }
-        final name = input.substring(i + 2, close);
-        if (name.isEmpty) {
-          throw AccessConfigException('$path has empty `\${}` token.');
-        }
-        final value = env[name];
-        if (value == null) {
-          throw AccessConfigException(
-            '$path references undefined env var `\${$name}`.',
-          );
-        }
-        out.write(value);
-        i = close + 1;
-      } else {
-        out.write(ch);
-        i++;
-      }
-    }
-    return out.toString();
-  }
+  ) =>
+      YamlConfigReader(env: env, errorFactory: AccessConfigException.new)
+          .expandEnv(input, path);
 }
