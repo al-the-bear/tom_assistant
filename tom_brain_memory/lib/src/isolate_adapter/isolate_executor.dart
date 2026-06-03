@@ -113,10 +113,10 @@ class MemoryIsolateExecutor extends TomExecutor {
   Future<IsolateResponse> _dispatch(IsolateRequest req) async {
     try {
       switch (req) {
-        case PingRequest(:final hostMonotonicMs):
+        case PingRequest(:final hostWallClockMs):
           return PongResponse(
-            echoedHostMonotonicMs: hostMonotonicMs,
-            isolateMonotonicMs: _monotonicMs(),
+            echoedHostWallClockMs: hostWallClockMs,
+            isolateWallClockMs: _wallClockMs(),
           );
 
         case OpenMemoryRequest(:final config):
@@ -156,7 +156,9 @@ class MemoryIsolateExecutor extends TomExecutor {
         case StreamCloseRequest(:final streamId):
           final ctl = _streamControls[streamId.id];
           if (ctl != null) {
-            ctl.closeRequested = true;
+            // Raises the flag (backpressured producer checkpoints) and
+            // fires the close signal (unbounded producer awaits it).
+            ctl.requestClose();
             // Wake any producer parked on backpressure so it can
             // observe the close flag and exit.
             _trackers[streamId.id]?.close();
@@ -638,7 +640,12 @@ class MemoryIsolateExecutor extends TomExecutor {
       var seq = 0;
       StreamSubscription<T>? sub;
       try {
-        final controller = Completer<void>();
+        // Completes when the source finishes (done or error). Producer
+        // termination is the first of: source finishing, a
+        // `StreamCloseRequest`, or cancellation — all three are
+        // futures, so we `await` whichever fires first rather than
+        // polling the flags on a timer (review D.5.2).
+        final sourceFinished = Completer<void>();
         sub = source().listen(
           (item) {
             if (control.closeRequested || handle.isCancelled) return;
@@ -650,35 +657,39 @@ class MemoryIsolateExecutor extends TomExecutor {
             seq += 1;
           },
           onError: (Object e) {
-            if (!controller.isCompleted) {
+            if (!sourceFinished.isCompleted) {
               _sendStreamMessage(StreamErrorEnvelope(
                 streamId: streamId,
                 message: e.toString(),
                 exceptionType: e.runtimeType.toString(),
               ));
-              controller.complete();
+              sourceFinished.complete();
             }
           },
           onDone: () {
-            if (!controller.isCompleted) {
+            if (!sourceFinished.isCompleted) {
               _sendStreamMessage(StreamCompleteEnvelope(
                 streamId: streamId,
                 sequence: seq,
               ));
-              controller.complete();
+              sourceFinished.complete();
             }
           },
         );
-        while (!controller.isCompleted) {
-          if (control.closeRequested || handle.isCancelled) {
-            _sendStreamMessage(StreamCancelledEnvelope(
-              streamId: streamId,
-              token: cancellation,
-            ));
-            controller.complete();
-            break;
-          }
-          await Future<void>.delayed(const Duration(milliseconds: 4));
+        await Future.any<void>(<Future<void>>[
+          sourceFinished.future,
+          control.closeSignal.future,
+          handle.cancelled,
+        ]);
+        // If the source had not already finished, the wake-up was a
+        // close or cancel; emit the cancelled envelope to close the
+        // host-side stream cleanly.
+        if (!sourceFinished.isCompleted &&
+            (control.closeRequested || handle.isCancelled)) {
+          _sendStreamMessage(StreamCancelledEnvelope(
+            streamId: streamId,
+            token: cancellation,
+          ));
         }
       } catch (e) {
         _sendStreamMessage(StreamErrorEnvelope(
@@ -734,13 +745,29 @@ class MemoryIsolateExecutor extends TomExecutor {
     return _memory!;
   }
 
-  static int _monotonicMs() => DateTime.now().millisecondsSinceEpoch;
+  /// Wall-clock millisecond reading echoed in [PongResponse]. Named
+  /// for what it is — `DateTime.now()` is not monotonic; the ping
+  /// round-trip is measured against the host's single clock, so this
+  /// is only ever used for the same-process delta, never for
+  /// cross-process duration arithmetic.
+  static int _wallClockMs() => DateTime.now().millisecondsSinceEpoch;
 }
 
 /// Internal per-stream control block. Held by the executor's
-/// `_streamControls` map; the producer loop checks `closeRequested`
-/// every iteration so a `StreamCloseRequest` can stop a long-
-/// running stream without throwing.
+/// `_streamControls` map. A `StreamCloseRequest` calls [requestClose],
+/// which both raises the flag (read at the backpressured producer's
+/// checkpoints) and fires [closeSignal] (awaited by the unbounded
+/// producer instead of a poll timer — review D.5.2).
 class _StreamControl {
   bool closeRequested = false;
+
+  /// Completes the first time [requestClose] is called. Never
+  /// completes if the stream is not asked to close.
+  final Completer<void> closeSignal = Completer<void>();
+
+  /// Idempotently flags the stream for close and fires [closeSignal].
+  void requestClose() {
+    closeRequested = true;
+    if (!closeSignal.isCompleted) closeSignal.complete();
+  }
 }

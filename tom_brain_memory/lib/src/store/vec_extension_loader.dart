@@ -66,6 +66,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show defaultNowUtc;
 
 import '../api/memory_event.dart';
 import '../config/memory_config.dart';
@@ -361,7 +362,7 @@ VecExtensionLoadResult loadVecExtensionWithFailOpen({
   DateTime Function()? now,
 }) {
   final activeLoader = loader ?? VecExtensionLoader();
-  final clock = now ?? () => DateTime.now().toUtc();
+  final clock = now ?? defaultNowUtc;
   final result = activeLoader.load(sqlite: sqlite, config: config);
 
   if (!result.isLoaded) {

@@ -81,6 +81,7 @@
 import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show defaultNowUtc;
 
 import '../config/memory_config.dart';
 import 'memory_directory.dart';
@@ -295,9 +296,7 @@ final class BootIntegrityCheck {
         _fts5Probe = fts5Probe ?? defaultFts5Probe,
         _loadExtensionProbe = loadExtensionProbe ?? defaultLoadExtensionProbe,
         _markerProbe = embeddingMarkerProbe ?? defaultEmbeddingMarkerProbe,
-        _now = clock ?? _defaultClock;
-
-  static DateTime _defaultClock() => DateTime.now().toUtc();
+        _now = clock ?? defaultNowUtc;
 
   /// The migrator backing this check. Exposed for diagnostics —
   /// callers may want to log `latestKnownVersion` separately from

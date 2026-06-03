@@ -65,9 +65,13 @@ final class RecallLatencyTracker {
   final Map<RecallMode, ListQueue<int>> _buffers =
       <RecallMode, ListQueue<int>>{};
 
-  /// Constructs a tracker with a per-mode capacity. Default 256 is the
-  /// agreed window — see file header.
-  RecallLatencyTracker({int capacity = 256}) : _capacity = capacity {
+  /// Default per-mode ring capacity. See the file header for the
+  /// O(N log N)-on-snapshot rationale behind the chosen window.
+  static const int defaultCapacity = 256;
+
+  /// Constructs a tracker with a per-mode capacity. Default is
+  /// [defaultCapacity] — see file header.
+  RecallLatencyTracker({int capacity = defaultCapacity}) : _capacity = capacity {
     assert(capacity > 0, 'RecallLatencyTracker capacity must be positive');
   }
 

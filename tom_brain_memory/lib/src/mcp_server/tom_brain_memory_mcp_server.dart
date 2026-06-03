@@ -106,10 +106,17 @@ base class TomBrainMemoryMcpServer extends MCPServer with ToolsSupport {
   /// initialization.
   ///
   /// Hand-mirrored from the `version:` line in `pubspec.yaml` (currently
-  /// `0.0.1`). A future helper may parse the pubspec at build time; until
-  /// then, bumping the package version requires bumping this constant in
-  /// the same change.
+  /// `0.0.1`). The `a75_mcp_server_skeleton_test` "serverVersion stays in
+  /// sync with pubspec.yaml" case asserts equality, so a version bump
+  /// that forgets this constant fails the suite rather than shipping a
+  /// stale `serverInfo.version`.
   static const serverVersion = '0.0.1';
+
+  /// JSON-RPC error code for a failed bearer authentication. Sits in
+  /// the server-defined implementation range (-32099 … -32000) per the
+  /// JSON-RPC 2.0 spec; named so the value is not a bare literal at the
+  /// throw site.
+  static const int bearerAuthRpcErrorCode = -32001;
 
   /// The instructions string returned to clients during the `initialize`
   /// handshake. Documents the v1 contract — read-only by default with
@@ -308,15 +315,15 @@ tests), listTools returns an empty list.
 
   /// Maps a [BearerAuthFailure] to a JSON-RPC error.
   ///
-  /// The error code (`-32001`) is in the JSON-RPC server-defined
-  /// implementation range (-32099 … -32000). The error message is
-  /// generic (`Bearer authentication failed: <reason>`) so the wire
-  /// surface cannot be used to fingerprint individual tokens; the
-  /// detailed [BearerAuthFailure.message] is left for server-side
+  /// The error code is [bearerAuthRpcErrorCode], in the JSON-RPC
+  /// server-defined implementation range (-32099 … -32000). The error
+  /// message is generic (`Bearer authentication failed: <reason>`) so
+  /// the wire surface cannot be used to fingerprint individual tokens;
+  /// the detailed [BearerAuthFailure.message] is left for server-side
   /// logs only.
   static RpcException _bearerRpcError(BearerAuthFailure failure) =>
       RpcException(
-        -32001,
+        bearerAuthRpcErrorCode,
         'Bearer authentication failed: ${failure.reason.name}',
       );
 }

@@ -63,7 +63,13 @@ export 'src/events/events.dart'
 // tests). Every brain component that reads "now" takes a Clock by
 // constructor; the shared layer offers no global clock.
 export 'src/time/time.dart'
-    show BrainTime, Clock, FixedClock, MutableTestClock, SystemClock;
+    show
+        BrainTime,
+        Clock,
+        FixedClock,
+        MutableTestClock,
+        SystemClock,
+        defaultNowUtc;
 
 // A.16 — version/ module: BrainVersion monotonic positive-integer
 // version with total ordering and `next()` successor. Used by procedure

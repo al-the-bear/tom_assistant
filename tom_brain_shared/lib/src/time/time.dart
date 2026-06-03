@@ -33,4 +33,5 @@
 //     confusion between "time of day" and "elapsed since start".
 
 export 'brain_time.dart' show BrainTime;
-export 'clock.dart' show Clock, FixedClock, MutableTestClock, SystemClock;
+export 'clock.dart'
+    show Clock, FixedClock, MutableTestClock, SystemClock, defaultNowUtc;

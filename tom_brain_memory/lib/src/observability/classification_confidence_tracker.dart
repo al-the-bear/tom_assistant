@@ -106,21 +106,32 @@ final class ClassificationConfidenceTracker {
 
   /// Maps a sample to its bucket label.
   ///
-  /// The mapping is:
+  /// Derives the index arithmetically from the width-0.1 bucketing and
+  /// indexes [bucketLabels], so the labels are the single source of
+  /// truth — a literal `if`-ladder could silently drift from them
+  /// (review D.5.6). The mapping is:
   ///   x < 0.1 → "0.0-0.1" (also covers negative saturation)
   ///   0.1 ≤ x < 0.2 → "0.1-0.2"
   ///   ...
   ///   0.9 ≤ x ≤ 1.0 → "0.9-1.0" (also covers >1.0 saturation)
   static String _bucketFor(double x) {
-    if (x < 0.1) return '0.0-0.1';
-    if (x < 0.2) return '0.1-0.2';
-    if (x < 0.3) return '0.2-0.3';
-    if (x < 0.4) return '0.3-0.4';
-    if (x < 0.5) return '0.4-0.5';
-    if (x < 0.6) return '0.5-0.6';
-    if (x < 0.7) return '0.6-0.7';
-    if (x < 0.8) return '0.7-0.8';
-    if (x < 0.9) return '0.8-0.9';
-    return '0.9-1.0';
+    // `x * bucketLabels.length` (== x * 10) gives the width-0.1 bucket
+    // index. `_fpBoundaryTolerance` counters binary-float underflow at
+    // exact tenth boundaries — `0.3 * 10 == 2.9999999999999996`, which
+    // would otherwise drop a boundary sample one bucket low — without
+    // affecting any value that is more than a nanounit inside a bucket.
+    // The clamp saturates out-of-range samples to the edge buckets
+    // (negatives → 0, ≥ 1.0 → last), matching the documented behaviour.
+    final index = (x * bucketLabels.length + _fpBoundaryTolerance)
+        .floor()
+        .clamp(0, bucketLabels.length - 1);
+    return bucketLabels[index];
   }
+
+  /// Floating-point slack added before flooring in [_bucketFor] so an
+  /// exact tenth boundary (whose `× 10` product is a hair below the
+  /// integer in IEEE-754) lands in the bucket it names rather than the
+  /// one below it. Far smaller than the 0.1 bucket width, so it never
+  /// reclassifies an interior value.
+  static const double _fpBoundaryTolerance = 1e-9;
 }

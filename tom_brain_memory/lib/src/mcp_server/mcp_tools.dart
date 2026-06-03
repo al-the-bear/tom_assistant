@@ -156,6 +156,15 @@ void registerMemoryTools(
 
 // ─── Tool declarations ────────────────────────────────────────────
 
+/// Default post-fusion cap when the `recall` tool call omits `k` (or
+/// supplies a malformed value). Named so the schema description and
+/// the argument-coercion fallback cannot drift.
+const int _defaultRecallK = 20;
+
+/// Default wall-clock budget in milliseconds when the `recall` tool
+/// call omits `wallClockMs` (or supplies a malformed value).
+const int _defaultRecallWallClockMs = 120;
+
 final _recallTool = Tool(
   name: 'memory.recall',
   description:
@@ -183,11 +192,13 @@ final _recallTool = Tool(
         items: Schema.string(),
       ),
       'k': Schema.int(
-        description: 'Post-fusion cap on the returned node list.',
+        description: 'Post-fusion cap on the returned node list. '
+            'Default: $_defaultRecallK.',
         minimum: 1,
       ),
       'wallClockMs': Schema.int(
-        description: 'Wall-clock budget in milliseconds.',
+        description: 'Wall-clock budget in milliseconds. '
+            'Default: $_defaultRecallWallClockMs.',
         minimum: 1,
       ),
     },
@@ -565,9 +576,10 @@ RecallQuery _parseRecallQuery(Map<String, Object?> args) {
   // A present-but-malformed k / wallClockMs falls back to the default
   // (recall is best-effort and the tool has no error channel here) but
   // is logged so the drift is visible.
-  final k = _coerceIntArg(args['k']) ?? _logDefaulted('k', args['k'], 20);
+  final k = _coerceIntArg(args['k']) ??
+      _logDefaulted('k', args['k'], _defaultRecallK);
   final wallClockMs = _coerceIntArg(args['wallClockMs']) ??
-      _logDefaulted('wallClockMs', args['wallClockMs'], 120);
+      _logDefaulted('wallClockMs', args['wallClockMs'], _defaultRecallWallClockMs);
   return RecallQuery(
     modes: modes,
     text: text,

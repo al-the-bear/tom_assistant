@@ -348,14 +348,16 @@ class TomBrainMemoryIsolateHost {
 
   // ─── Convenience wrappers ─────────────────────────────────────
 
-  /// `send(PingRequest)` with a host-side monotonic timestamp.
+  /// `send(PingRequest)` with a host-side wall-clock timestamp.
   ///
-  /// Returns the round-trip latency in milliseconds. Used by
-  /// tests; production callers would log the [PongResponse]
-  /// directly.
+  /// Returns the round-trip latency in milliseconds. The latency is
+  /// measured against the host's own clock at send and receive, so a
+  /// wall-clock source is acceptable here (it is never compared
+  /// against the isolate's clock). Used by tests; production callers
+  /// would log the [PongResponse] directly.
   Future<int> ping() async {
     final t0 = DateTime.now().millisecondsSinceEpoch;
-    await send<PongResponse>(PingRequest(hostMonotonicMs: t0));
+    await send<PongResponse>(PingRequest(hostWallClockMs: t0));
     return DateTime.now().millisecondsSinceEpoch - t0;
   }
 

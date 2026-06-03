@@ -87,6 +87,22 @@ void main() {
       );
     });
 
+    test('serverVersion stays in sync with pubspec.yaml', () {
+      // The constant is hand-mirrored from `pubspec.yaml`'s `version:`
+      // line. Asserting equality here turns the manual-sync hazard
+      // (review D.5.7) into a test failure the next time the package
+      // version is bumped without updating the constant.
+      final pubspec = io.File('pubspec.yaml').readAsStringSync();
+      final match = RegExp(r'^version:\s*(\S+)', multiLine: true)
+          .firstMatch(pubspec);
+      expect(match, isNotNull, reason: 'pubspec.yaml must declare a version');
+      expect(
+        TomBrainMemoryMcpServer.serverVersion,
+        equals(match!.group(1)),
+        reason: 'serverVersion must match pubspec.yaml version:',
+      );
+    });
+
     test('initialize advertises a tools capability (currently empty)', () async {
       final env = _TestEnv();
       addTearDown(env.shutdown);

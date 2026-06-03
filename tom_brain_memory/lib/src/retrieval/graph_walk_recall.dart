@@ -233,13 +233,24 @@ final class GraphWalkRecall {
       bestScore[s.value] = 1.0;
     }
 
-    var currentFrontier = <String>{for (final s in seeds) s.value};
+    // The walk state bundles the collaborators every leg-evaluation
+    // touches (see [_WalkState]). `currentFrontier` and `depthScores`
+    // are reassigned per depth; `visited` and `bestScore` accumulate
+    // across the whole walk.
+    final state = _WalkState(
+      policy: policy,
+      permittedTypeWeights: permittedTypeWeights,
+      visited: visited,
+      bestScore: bestScore,
+      currentFrontier: <String>{for (final s in seeds) s.value},
+      depthScores: <String, double>{},
+    );
 
     for (var depth = 1; depth <= policy.maxDepth; depth++) {
-      if (currentFrontier.isEmpty) break;
+      if (state.currentFrontier.isEmpty) break;
 
       final edges = _selectFrontierEdges(
-        frontier: currentFrontier,
+        frontier: state.currentFrontier,
         types: permittedTypes,
         direction: policy.direction,
       );
@@ -248,47 +259,35 @@ final class GraphWalkRecall {
       // Per-depth scratch: neighbour.value → best candidate score
       // discovered at THIS depth. We commit the whole depth at once
       // so an order-sensitive update can't leak between rows.
-      final depthScores = <String, double>{};
+      state.depthScores = <String, double>{};
 
       for (final row in edges) {
         // Each row may contribute as outgoing from one frontier node,
         // or incoming to one frontier node, or (in direction=both)
         // both legs at once. We evaluate both legs that match the
         // direction policy and take the higher candidate score.
-        _considerLeg(
+        state.considerLeg(
           parentValue: row.fromValue,
           neighbourValue: row.toValue,
           rowType: row.type,
           rowWeight: row.weight,
           isOutgoingLeg: true,
-          policy: policy,
-          permittedTypeWeights: permittedTypeWeights,
-          currentFrontier: currentFrontier,
-          visited: visited,
-          bestScore: bestScore,
-          depthScores: depthScores,
         );
-        _considerLeg(
+        state.considerLeg(
           parentValue: row.toValue,
           neighbourValue: row.fromValue,
           rowType: row.type,
           rowWeight: row.weight,
           isOutgoingLeg: false,
-          policy: policy,
-          permittedTypeWeights: permittedTypeWeights,
-          currentFrontier: currentFrontier,
-          visited: visited,
-          bestScore: bestScore,
-          depthScores: depthScores,
         );
       }
 
       // Commit this depth's discoveries.
-      for (final entry in depthScores.entries) {
+      for (final entry in state.depthScores.entries) {
         bestScore[entry.key] = entry.value;
         visited.add(entry.key);
       }
-      currentFrontier = depthScores.keys.toSet();
+      state.currentFrontier = state.depthScores.keys.toSet();
     }
 
     // Collect non-seed results.
@@ -332,62 +331,6 @@ final class GraphWalkRecall {
       );
     }
     return List<GraphWalkRecallCandidate>.unmodifiable(candidates);
-  }
-
-  // ─── Internal: BFS step ────────────────────────────────────────
-
-  /// Considers one direction-leg of an edge as a possible expansion.
-  ///
-  /// `parentValue` is the candidate parent (must be in frontier);
-  /// `neighbourValue` is the candidate new node (must not be in
-  /// visited or it is a cycle / re-discovery and is silently
-  /// dropped).
-  ///
-  /// `isOutgoingLeg = true` evaluates `parent.from → neighbour.to`;
-  /// `false` evaluates `parent.to → neighbour.from`. The direction
-  /// policy decides which legs are allowed:
-  ///
-  ///   * `outgoing` — only the outgoing leg of each row counts.
-  ///   * `incoming` — only the incoming leg of each row counts.
-  ///   * `both` — both legs counted; the higher candidate score
-  ///     wins via the `depthScores` map's max-update semantics.
-  void _considerLeg({
-    required String parentValue,
-    required String neighbourValue,
-    required EdgeType rowType,
-    required double rowWeight,
-    required bool isOutgoingLeg,
-    required GraphWalkPolicy policy,
-    required Map<EdgeType, double> permittedTypeWeights,
-    required Set<String> currentFrontier,
-    required Set<String> visited,
-    required Map<String, double> bestScore,
-    required Map<String, double> depthScores,
-  }) {
-    // Direction gate.
-    switch (policy.direction) {
-      case EdgeDirection.outgoing:
-        if (!isOutgoingLeg) return;
-        break;
-      case EdgeDirection.incoming:
-        if (isOutgoingLeg) return;
-        break;
-      case EdgeDirection.both:
-        break;
-    }
-
-    if (!currentFrontier.contains(parentValue)) return;
-    if (visited.contains(neighbourValue)) return;
-
-    final typeWeight = permittedTypeWeights[rowType]!;
-    final parentScore = bestScore[parentValue]!;
-    final candidate =
-        parentScore * typeWeight * rowWeight * policy.depthDecay;
-
-    final existing = depthScores[neighbourValue];
-    if (existing == null || candidate > existing) {
-      depthScores[neighbourValue] = candidate;
-    }
   }
 
   // ─── Internal: SQL ─────────────────────────────────────────────
@@ -441,6 +384,89 @@ final class GraphWalkRecall {
         .toList(growable: false);
   }
 
+}
+
+/// Mutable bundle of the collaborators a single BFS walk threads
+/// through every leg evaluation.
+///
+/// Extracting these into one object keeps [considerLeg] to the five
+/// arguments that actually vary per edge-leg, instead of re-passing
+/// the six walk-scoped collaborators on every call. `visited` and
+/// `bestScore` accumulate across the whole walk; `currentFrontier`
+/// and `depthScores` are reassigned by the caller at each depth.
+final class _WalkState {
+  final GraphWalkPolicy policy;
+  final Map<EdgeType, double> permittedTypeWeights;
+
+  /// Every `NodeId.value` seen at any depth (cycle-safety guard).
+  final Set<String> visited;
+
+  /// `NodeId.value` → first-visit walk score.
+  final Map<String, double> bestScore;
+
+  /// The frontier being expanded this depth. Reassigned per depth.
+  Set<String> currentFrontier;
+
+  /// Per-depth scratch: neighbour.value → best candidate score
+  /// discovered at THIS depth. Reassigned (cleared) per depth.
+  Map<String, double> depthScores;
+
+  _WalkState({
+    required this.policy,
+    required this.permittedTypeWeights,
+    required this.visited,
+    required this.bestScore,
+    required this.currentFrontier,
+    required this.depthScores,
+  });
+
+  /// Considers one direction-leg of an edge as a possible expansion.
+  ///
+  /// `parentValue` is the candidate parent (must be in frontier);
+  /// `neighbourValue` is the candidate new node (must not be in
+  /// visited or it is a cycle / re-discovery and is silently
+  /// dropped).
+  ///
+  /// `isOutgoingLeg = true` evaluates `parent.from → neighbour.to`;
+  /// `false` evaluates `parent.to → neighbour.from`. The direction
+  /// policy decides which legs are allowed:
+  ///
+  ///   * `outgoing` — only the outgoing leg of each row counts.
+  ///   * `incoming` — only the incoming leg of each row counts.
+  ///   * `both` — both legs counted; the higher candidate score
+  ///     wins via the `depthScores` map's max-update semantics.
+  void considerLeg({
+    required String parentValue,
+    required String neighbourValue,
+    required EdgeType rowType,
+    required double rowWeight,
+    required bool isOutgoingLeg,
+  }) {
+    // Direction gate.
+    switch (policy.direction) {
+      case EdgeDirection.outgoing:
+        if (!isOutgoingLeg) return;
+        break;
+      case EdgeDirection.incoming:
+        if (isOutgoingLeg) return;
+        break;
+      case EdgeDirection.both:
+        break;
+    }
+
+    if (!currentFrontier.contains(parentValue)) return;
+    if (visited.contains(neighbourValue)) return;
+
+    final typeWeight = permittedTypeWeights[rowType]!;
+    final parentScore = bestScore[parentValue]!;
+    final candidate =
+        parentScore * typeWeight * rowWeight * policy.depthDecay;
+
+    final existing = depthScores[neighbourValue];
+    if (existing == null || candidate > existing) {
+      depthScores[neighbourValue] = candidate;
+    }
+  }
 }
 
 /// One row from the per-depth frontier-expansion SELECT.

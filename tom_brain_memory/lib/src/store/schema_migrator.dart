@@ -59,6 +59,7 @@
 //   The brain prefers a hard refusal to a soft corruption.
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show defaultNowUtc;
 
 import '../observability/memory_log.dart';
 import 'schema_v1.dart';
@@ -241,9 +242,7 @@ final class SchemaMigrator {
     List<SchemaMigration>? migrations,
     DateTime Function()? clock,
   })  : _migrations = _sortedAndValidated(migrations ?? kSchemaMigrations),
-        _now = clock ?? _defaultClock;
-
-  static DateTime _defaultClock() => DateTime.now().toUtc();
+        _now = clock ?? defaultNowUtc;
 
   /// The highest known schema version in this migrator's registry.
   ///

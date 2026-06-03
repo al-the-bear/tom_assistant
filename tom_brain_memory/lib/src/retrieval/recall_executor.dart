@@ -209,6 +209,12 @@ typedef NodeBulkReader = Future<List<Node>> Function(List<NodeId> ids);
 /// pipeline against fake mode executors and a node reader without
 /// having to spin up the full memory store.
 final class RecallExecutor {
+  /// Upper clamp for the recorded `elapsedMs`. Guards against a
+  /// non-monotonic wall clock producing a negative or absurdly large
+  /// delta; `2^31` ms (~24.8 days) is far beyond any real recall and
+  /// keeps the value in a 32-bit-friendly range for consumers.
+  static const int _maxElapsedMs = 1 << 31;
+
   /// BM25 mode executor function. Always required.
   final Bm25ModeFn _bm25;
 
@@ -410,7 +416,7 @@ final class RecallExecutor {
       diversityLambda: query.diversity.strategy == DiversityStrategy.mmr
           ? query.diversity.lambda
           : null,
-      elapsedMs: (endMs - startMs).clamp(0, 1 << 31),
+      elapsedMs: (endMs - startMs).clamp(0, _maxElapsedMs),
       embeddingsCallouts: 0,
       reRankInvoked: reRankInvoked,
       degraded: degraded,

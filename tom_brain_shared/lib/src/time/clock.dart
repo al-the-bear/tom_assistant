@@ -96,6 +96,19 @@ final class SystemClock implements Clock {
   }
 }
 
+/// The canonical default wall-clock tear-off for the legacy seams that
+/// inject time as a bare `DateTime Function()` rather than a full [Clock].
+///
+/// A handful of components (boot integrity, the schema migrator, the
+/// vec-extension loader) predate the [Clock] interface and accept a
+/// `DateTime Function()? clock` test seam. They default to this so the
+/// `DateTime.now().toUtc()` body lives in exactly one place —
+/// [SystemClock.now] — instead of being re-spelled at each injection
+/// site (which is how the same expression drifted into three private
+/// `_defaultClock` copies). Prefer injecting a full [Clock] in new code;
+/// this exists only for the tear-off-shaped seams.
+DateTime defaultNowUtc() => const SystemClock().now();
+
 /// Test [Clock] that always returns the same instant.
 ///
 /// Construct with a [BrainTime]; every call to [now] / [nowMs] /

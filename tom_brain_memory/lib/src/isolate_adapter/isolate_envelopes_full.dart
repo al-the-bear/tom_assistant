@@ -374,9 +374,14 @@ final class StacksPushResponse extends IsolateResponse {
 }
 
 final class StacksPeekRequest extends IsolateRequest {
+  /// Default entry count when the caller does not specify `k`. The
+  /// wire-contract owner of this default; the client's `peek(k:)`
+  /// references it so the two cannot drift.
+  static const int defaultK = 16;
+
   final String name;
   final int k;
-  const StacksPeekRequest({required this.name, this.k = 16});
+  const StacksPeekRequest({required this.name, this.k = defaultK});
 }
 
 final class StacksPeekResponse extends IsolateResponse {

@@ -112,11 +112,16 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
   StackApi? _stacks;
   MigrationApi? _migrations;
 
+  /// Default sliding-window size for every streaming surface. Chosen
+  /// to keep the in-isolate producer a few chunks ahead of the
+  /// consumer without unbounded buffering; tests override per-stream.
+  static const int defaultStreamCredits = 16;
+
   TomBrainMemoryIsolateClient(
     this.host, {
-    this.readTrailInitialCredits = 16,
-    this.streamQueryInitialCredits = 16,
-    this.stacksArchivedInitialCredits = 16,
+    this.readTrailInitialCredits = defaultStreamCredits,
+    this.streamQueryInitialCredits = defaultStreamCredits,
+    this.stacksArchivedInitialCredits = defaultStreamCredits,
   });
 
   // ─── Lifecycle ───────────────────────────────────────────────────
@@ -551,7 +556,10 @@ class _IsolateStackApi implements StackApi {
   }
 
   @override
-  Future<List<StackEntry>> peek(String name, {int k = 16}) async {
+  Future<List<StackEntry>> peek(
+    String name, {
+    int k = StacksPeekRequest.defaultK,
+  }) async {
     final r = await _host.send<StacksPeekResponse>(
       StacksPeekRequest(name: name, k: k),
     );

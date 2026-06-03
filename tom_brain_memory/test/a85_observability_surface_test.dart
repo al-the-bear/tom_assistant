@@ -259,6 +259,35 @@ void main() {
       expect(tracker.totalSamples, 5);
     });
 
+    test('exact tenth boundaries land in the bucket they name', () {
+      // Guards the floating-point boundary correction in `_bucketFor`:
+      // 0.3, 0.6, 0.7, 0.9 have `× 10` products a hair below the
+      // integer in IEEE-754, so a naive floor would drop them one
+      // bucket low. Each exact tenth must land in the bucket whose
+      // label starts at that value.
+      final tracker = ClassificationConfidenceTracker();
+      const boundaries = <(double, String)>[
+        (0.0, '0.0-0.1'),
+        (0.1, '0.1-0.2'),
+        (0.2, '0.2-0.3'),
+        (0.3, '0.3-0.4'),
+        (0.4, '0.4-0.5'),
+        (0.5, '0.5-0.6'),
+        (0.6, '0.6-0.7'),
+        (0.7, '0.7-0.8'),
+        (0.8, '0.8-0.9'),
+        (0.9, '0.9-1.0'),
+      ];
+      for (final (value, _) in boundaries) {
+        tracker.record(value);
+      }
+      final snap = tracker.snapshot();
+      for (final (_, expectedLabel) in boundaries) {
+        expect(snap[expectedLabel], 1, reason: 'bucket $expectedLabel');
+      }
+      expect(tracker.totalSamples, boundaries.length);
+    });
+
     test('out-of-range samples saturate to the edge buckets', () {
       final tracker = ClassificationConfidenceTracker();
       tracker.record(-0.5); // negative → 0.0-0.1

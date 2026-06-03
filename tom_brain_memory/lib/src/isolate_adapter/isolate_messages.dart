@@ -56,28 +56,34 @@ abstract class IsolateResponse {
 /// echoes the host timestamp so a future latency probe can land
 /// without a protocol change.
 final class PingRequest extends IsolateRequest {
-  /// The host's monotonic millisecond reading at send time. The
+  /// The host's wall-clock millisecond reading at send time. The
   /// isolate echoes this value back unchanged so the host can
   /// compute round-trip latency without re-reading its own clock.
-  final int hostMonotonicMs;
+  ///
+  /// Wall-clock, not monotonic: the round-trip is measured against
+  /// the *same* host clock at send and receive (see
+  /// `TomBrainMemoryIsolateHost.ping`), so a non-monotonic source is
+  /// acceptable for the round-trip delta. It must not be used for
+  /// cross-process duration arithmetic.
+  final int hostWallClockMs;
 
-  const PingRequest({required this.hostMonotonicMs});
+  const PingRequest({required this.hostWallClockMs});
 }
 
 /// Reply to a [PingRequest].
 final class PongResponse extends IsolateResponse {
-  /// The value originally provided in [PingRequest.hostMonotonicMs].
-  final int echoedHostMonotonicMs;
+  /// The value originally provided in [PingRequest.hostWallClockMs].
+  final int echoedHostWallClockMs;
 
-  /// The isolate's monotonic millisecond reading at reply time.
+  /// The isolate's wall-clock millisecond reading at reply time.
   /// Sequencing observation: the isolate's clock is the same wall
   /// clock as the host's, so the difference is dominated by the
   /// message-pump latency.
-  final int isolateMonotonicMs;
+  final int isolateWallClockMs;
 
   const PongResponse({
-    required this.echoedHostMonotonicMs,
-    required this.isolateMonotonicMs,
+    required this.echoedHostWallClockMs,
+    required this.isolateWallClockMs,
   });
 }
 

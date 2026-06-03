@@ -36,6 +36,8 @@
 // holds the state per token. Cancellation can be set before, during, or
 // after the call — the executor honors whichever order it observes.
 
+import 'dart:async';
+
 import 'isolate_messages.dart';
 
 /// Opaque identifier for a cancellable request, sendable across an
@@ -127,7 +129,7 @@ final class CancellationRegistry {
   void cancel(CancellationToken token) {
     final entry = _entries[token.id];
     if (entry != null) {
-      entry._cancelled = true;
+      entry.markCancelled();
     } else {
       _pendingCancellations.add(token.id);
     }
@@ -155,7 +157,21 @@ final class CancellationRegistry {
 
 class _RegistryEntry {
   bool _cancelled;
-  _RegistryEntry({required bool cancelled}) : _cancelled = cancelled;
+
+  /// Completes the first time the entry is cancelled. Lets a producer
+  /// `await` cancellation instead of polling the flag (review D.5.2).
+  final Completer<void> _cancelSignal = Completer<void>();
+
+  _RegistryEntry({required bool cancelled}) : _cancelled = cancelled {
+    if (cancelled) _cancelSignal.complete();
+  }
+
+  /// Idempotently raises the cancelled-flag and fires [_cancelSignal].
+  void markCancelled() {
+    if (_cancelled) return;
+    _cancelled = true;
+    if (!_cancelSignal.isCompleted) _cancelSignal.complete();
+  }
 }
 
 /// Per-request cancellation handle returned by `register()`.
@@ -173,6 +189,12 @@ final class CancellationHandle {
 
   /// Whether the request has been cancelled (either pre- or post-call).
   bool get isCancelled => _entry._cancelled;
+
+  /// Completes the first time the request is cancelled. Lets a stream
+  /// producer `await` cancellation alongside its source completion and
+  /// close signal instead of polling the flag on a timer (review
+  /// D.5.2). Never completes if the request is not cancelled.
+  Future<void> get cancelled => _entry._cancelSignal.future;
 
   /// Throws [CancellationException] when cancelled. Convenience for
   /// pre-call and post-call checkpoints.

@@ -202,18 +202,22 @@ final class SqliteTrailStore with CloseGuard {
     await open.writer.append(entry);
     // Line is durable. Whether we wrote the index row yet is the
     // gate for emitting `TrailOpened` (and for inserting the row).
+    // One clock read for the whole append: `TrailOpened` and the
+    // `TrailEntryAppended` it is paired with describe the *same*
+    // first append, so they must share an `occurredAt` rather than
+    // straddle two clock reads (review D.5.3).
+    final occurredAt = _clock.now().toUtc();
     final wasFirst = !open.indexRowWritten;
     if (wasFirst) {
       _insertIndexRow(open);
       open.indexRowWritten = true;
-      final at = _clock.now().toUtc();
       _eventSink?.call(
         TrailOpened(
           trailId: open.id,
           runRef: open.runRef,
           jsonlPath: open.writer.path,
           openedAt: open.openedAt,
-          occurredAt: at,
+          occurredAt: occurredAt,
           runId: open.runRef.runId,
         ),
       );
@@ -223,7 +227,7 @@ final class SqliteTrailStore with CloseGuard {
         trailId: open.id,
         entryKind: entry.kind,
         entryIndex: open.writer.entryCount,
-        occurredAt: _clock.now().toUtc(),
+        occurredAt: occurredAt,
         runId: open.runRef.runId,
       ),
     );
@@ -498,12 +502,14 @@ final class SqliteTrailStore with CloseGuard {
     return null;
   }
 
-  static TrailEntryKind? _kindByName(String name) {
-    for (final k in TrailEntryKind.values) {
-      if (k.name == name) return k;
-    }
-    return null;
-  }
+  /// Wire-name → kind lookup, built once instead of scanning
+  /// `TrailEntryKind.values` per JSONL line during readback of a
+  /// potentially huge trail file (review D.5.4).
+  static final Map<String, TrailEntryKind> _kindsByName = <String, TrailEntryKind>{
+    for (final k in TrailEntryKind.values) k.name: k,
+  };
+
+  static TrailEntryKind? _kindByName(String name) => _kindsByName[name];
 }
 
 /// In-process bookkeeping for a trail that has been opened but not

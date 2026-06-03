@@ -332,7 +332,7 @@ void main() {
       final host = TomBrainMemoryIsolateHost(factory: spawnFakeMemory);
       expect(
         () => host.send<PongResponse>(
-          const PingRequest(hostMonotonicMs: 0),
+          const PingRequest(hostWallClockMs: 0),
         ),
         throwsStateError,
       );
@@ -346,12 +346,12 @@ void main() {
         await host.spawn();
         final t0 = DateTime.now().millisecondsSinceEpoch;
         final reply = await host.send<PongResponse>(
-          PingRequest(hostMonotonicMs: t0),
+          PingRequest(hostWallClockMs: t0),
         );
-        expect(reply.echoedHostMonotonicMs, equals(t0));
+        expect(reply.echoedHostWallClockMs, equals(t0));
         // Isolate clock is the same wall clock; reply timestamp
         // must be >= request timestamp.
-        expect(reply.isolateMonotonicMs, greaterThanOrEqualTo(t0));
+        expect(reply.isolateWallClockMs, greaterThanOrEqualTo(t0));
       } finally {
         await host.shutdown();
       }
