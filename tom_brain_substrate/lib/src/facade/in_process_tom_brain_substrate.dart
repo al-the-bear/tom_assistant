@@ -536,7 +536,14 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate {
         occurredAt: _now().toUtc(),
         url: result.url.toString(),
         status: result.status,
-        bytes: result.text?.length ??
+        // Prefer the measured body byte length the fetcher recorded
+        // (real size, consistent across text / json / binary). The
+        // fallbacks cover producers that did not measure (test
+        // doubles); `DefaultWebFetch` always sets `contentBytes`, so
+        // the JSON path reports its true byte length, not a 0/1
+        // placeholder (B.3.5).
+        bytes: result.contentBytes ??
+            result.text?.length ??
             result.binaryMeta?.contentLength ??
             (result.json == null ? 0 : 1),
         truncated: result.truncated,

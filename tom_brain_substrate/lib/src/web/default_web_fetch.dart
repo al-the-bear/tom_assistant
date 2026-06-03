@@ -214,6 +214,7 @@ class DefaultWebFetch implements WebFetch {
         contentLength: response.contentLength,
       ),
       truncated: response.truncated,
+      contentBytes: response.bodyBytes.length,
     );
   }
 
@@ -228,6 +229,7 @@ class DefaultWebFetch implements WebFetch {
       contentType: normalised,
       text: text,
       truncated: response.truncated,
+      contentBytes: response.bodyBytes.length,
     );
   }
 
@@ -245,6 +247,7 @@ class DefaultWebFetch implements WebFetch {
       contentType: normalised,
       text: text,
       truncated: response.truncated,
+      contentBytes: response.bodyBytes.length,
     );
   }
 
@@ -267,6 +270,7 @@ class DefaultWebFetch implements WebFetch {
       contentType: normalised,
       json: parsed,
       truncated: response.truncated,
+      contentBytes: response.bodyBytes.length,
     );
   }
 

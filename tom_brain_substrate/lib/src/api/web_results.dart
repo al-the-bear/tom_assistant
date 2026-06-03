@@ -118,6 +118,19 @@ final class WebFetchResult {
   /// `WebFetchCompleted.truncated` (substrate event § 10.2).
   final bool truncated;
 
+  /// Number of raw body bytes the substrate read off the wire (after
+  /// any budget truncation) — i.e. the true size of the fetched body,
+  /// independent of the content-type branch. Lands in
+  /// `WebFetchCompleted.bytes` (substrate event § 10.2).
+  ///
+  /// `null` only when the producer did not measure the body (e.g. a
+  /// test double that primes a result without a byte count).
+  /// [DefaultWebFetch] always sets it. Reporting the byte length here —
+  /// rather than `text.length` (a *character* count) or a JSON-path
+  /// placeholder — gives every content type a single, honest size: a
+  /// JSON response reports its decoded byte length, not `0`/`1`.
+  final int? contentBytes;
+
   const WebFetchResult({
     required this.url,
     required this.status,
@@ -126,6 +139,7 @@ final class WebFetchResult {
     this.json,
     this.binaryMeta,
     this.truncated = false,
+    this.contentBytes,
   });
 }
 
