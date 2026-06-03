@@ -88,7 +88,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:dart_mcp/server.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal;
 
@@ -102,6 +101,11 @@ import '../observability/memory_log.dart';
 import '../retrieval/recall_query.dart';
 import '../retrieval/recall_result.dart';
 import '../stacks/stack_types.dart';
+// MCP protocol types (`Tool`, `ToolAnnotations`, `ObjectSchema`,
+// `Schema`, `CallToolRequest`, `CallToolResult`, `TextContent`,
+// `ToolsSupport`) come through the single MCP-library adapter (todo
+// #5), never `package:dart_mcp` directly.
+import 'mcp_library_adapter.dart';
 import 'mcp_write_forbidden.dart';
 
 /// Resolves the bearer-authenticated principal for the current MCP

@@ -66,9 +66,11 @@ import 'bearer_auth.dart';
 
 // Re-export `stdioChannel` so callers depend on a single transport
 // surface (`mcp_server` barrel) rather than reaching directly into the
-// `dart_mcp` sub-library. The re-export also documents that stdio is
-// one of the two A.75 supported transports.
-export 'package:dart_mcp/stdio.dart' show stdioChannel;
+// `dart_mcp` sub-library. The re-export goes through the MCP-library
+// adapter (todo #5) so the concrete `package:dart_mcp/stdio.dart`
+// dependency stays confined to that one file. The re-export also
+// documents that stdio is one of the two A.75 supported transports.
+export 'mcp_library_adapter.dart' show stdioChannel;
 
 /// Adapts a `dart:io` [io.Socket] (typically a UNIX-domain socket) to the
 /// newline-delimited UTF-8 [StreamChannel] of `String` that `dart_mcp`'s

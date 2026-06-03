@@ -64,13 +64,16 @@
 
 import 'dart:async';
 
-import 'package:dart_mcp/server.dart';
-import 'package:json_rpc_2/json_rpc_2.dart' show RpcException;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal;
 
 import '../api/tom_brain_memory.dart';
 import '../observability/memory_log.dart';
 import 'bearer_auth.dart';
+// MCP protocol types (`MCPServer`, `ToolsSupport`, `Implementation`,
+// `InitializeRequest`, `InitializeResult`) and the JSON-RPC error type
+// (`RpcException`) come through the single MCP-library adapter (todo
+// #5), never `package:dart_mcp` / `package:json_rpc_2` directly.
+import 'mcp_library_adapter.dart';
 import 'mcp_tools.dart';
 
 /// The Tom Brain memory MCP server skeleton.
@@ -183,7 +186,7 @@ tests), listTools returns an empty list.
   /// by `stdioChannel(input: stdin, output: stdout)` for command-line
   /// hosting, or by `socketChannel(socket)` for a UNIX-domain socket
   /// connection. The constructor does not start the I/O loop directly;
-  /// `dart_mcp`'s [MCPBase] does that internally on construction.
+  /// `dart_mcp`'s `MCPBase` does that internally on construction.
   ///
   /// [authenticator] enables the bearer-token check at `initialize`.
   /// When omitted (or `null`), the server runs in anonymous mode —
