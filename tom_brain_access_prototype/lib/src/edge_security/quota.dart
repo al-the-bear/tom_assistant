@@ -224,4 +224,37 @@ final class DailyQuotaLimiter {
 
     state.calls += 1;
   }
+
+  /// Number of principals with live quota state — for observability and as the
+  /// seam an idle-eviction policy reads. The map grows by one entry per distinct
+  /// principal and never shrinks on its own (Q-E.30.3); the bound is the
+  /// configured credential set, made explicit here and via [clear] / [sweepStale]
+  /// rather than left as an unwritten assumption (G.3.3).
+  int get principalCount => _states.length;
+
+  /// Drops all quota state; every principal starts a fresh day's allowance on
+  /// its next [check]. The blunt eviction seam (a process restart already has
+  /// this effect; this exposes it without one).
+  void clear() => _states.clear();
+
+  /// Evicts the counters that no longer belong to the current day — every
+  /// principal whose last [check] fell on an earlier day. Such a counter would
+  /// be reset to zero on its owner's next [check] anyway, so dropping it changes
+  /// no admission decision; it only reclaims the memory of principals that have
+  /// gone idle across a day boundary. The targeted complement to [clear]: a
+  /// periodic sweep (driven by the final-layer scheduler) keeps the map bounded
+  /// by the *active* principal set rather than the all-time one.
+  ///
+  /// Returns the number of evicted counters.
+  int sweepStale() {
+    final today = startOfDay(clock());
+    final stale = <String>[
+      for (final entry in _states.entries)
+        if (entry.value.dayStart != today) entry.key,
+    ];
+    for (final key in stale) {
+      _states.remove(key);
+    }
+    return stale.length;
+  }
 }

@@ -348,4 +348,81 @@ void main() {
       expect(created.totalTurns, 1);
     });
   });
+
+  group('SessionManager — map-bound seams (G.3.3)', () {
+    test('clear() drops every session node', () {
+      final manager = SessionManager();
+      manager.resolve(
+        identity: _identity('p1'),
+        channel: AccessChannel.openai,
+        envelope: _inbound(text: 'a', conversationId: 'c1'),
+      );
+      manager.resolve(
+        identity: _identity('p2'),
+        channel: AccessChannel.openai,
+        envelope: _inbound(text: 'b', conversationId: 'c2'),
+      );
+      expect(manager.sessionCount, 2);
+
+      manager.clear();
+      expect(manager.sessionCount, 0);
+    });
+
+    test('evictIdle drops only sessions idle longer than the cutoff', () {
+      // A controllable clock: each turn is stamped at the current `now`.
+      var now = DateTime(2026, 6, 2, 12);
+      final manager = SessionManager(now: () => now);
+
+      // c1 records its (only) turn at 12:00.
+      manager.resolve(
+        identity: _identity('p1'),
+        channel: AccessChannel.openai,
+        envelope: _inbound(text: 'old', conversationId: 'c1'),
+      );
+
+      // Two hours later c2 records a turn at 14:00.
+      now = DateTime(2026, 6, 2, 14);
+      manager.resolve(
+        identity: _identity('p1'),
+        channel: AccessChannel.openai,
+        envelope: _inbound(text: 'fresh', conversationId: 'c2'),
+      );
+      expect(manager.sessionCount, 2);
+
+      // At 14:00, evict anything idle for more than 1 hour: c1 (idle 2h) goes,
+      // c2 (idle 0) stays.
+      final evicted = manager.evictIdle(const Duration(hours: 1));
+      expect(evicted, 1);
+      expect(manager.sessionCount, 1);
+      expect(
+        manager.peek(SessionKey(
+          principalId: 'p1',
+          channel: AccessChannel.openai,
+          conversationId: 'c2',
+        )),
+        isNotNull,
+      );
+    });
+
+    test('evictIdle keeps everything when nothing is old enough', () {
+      var now = DateTime(2026, 6, 2, 12);
+      final manager = SessionManager(now: () => now);
+      manager.resolve(
+        identity: _identity('p1'),
+        channel: AccessChannel.openai,
+        envelope: _inbound(text: 'a', conversationId: 'c1'),
+      );
+      now = DateTime(2026, 6, 2, 12, 30);
+      expect(manager.evictIdle(const Duration(hours: 1)), 0);
+      expect(manager.sessionCount, 1);
+    });
+
+    test('evictIdle rejects a negative duration', () {
+      final manager = SessionManager();
+      expect(
+        () => manager.evictIdle(const Duration(seconds: -1)),
+        throwsArgumentError,
+      );
+    });
+  });
 }

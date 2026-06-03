@@ -234,4 +234,62 @@ void main() {
       expect(s, contains('180m'));
     });
   });
+
+  group('E.30 map-bound seams (G.3.3)', () {
+    test('principalCount tracks the number of distinct principals seen', () {
+      final clock = _FakeClock(DateTime(2026, 6, 2, 9));
+      final limiter =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 5), clock: clock.now);
+
+      expect(limiter.principalCount, 0);
+      limiter.check('p1');
+      limiter.check('p1'); // same principal — no new entry
+      expect(limiter.principalCount, 1);
+      limiter.check('p2');
+      expect(limiter.principalCount, 2);
+    });
+
+    test('clear() drops every counter; allowance is fresh afterwards', () {
+      final clock = _FakeClock(DateTime(2026, 6, 2, 9));
+      final limiter =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 1), clock: clock.now);
+
+      limiter.check('p1');
+      expect(() => limiter.check('p1'), throwsA(isA<DailyQuotaExceeded>()));
+
+      limiter.clear();
+      expect(limiter.principalCount, 0);
+      // A fresh day's allowance — the same instant now admits again.
+      limiter.check('p1');
+      expect(limiter.principalCount, 1);
+    });
+
+    test('sweepStale() evicts only counters from an earlier day', () {
+      final clock = _FakeClock(DateTime(2026, 6, 2, 9));
+      final limiter =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 5), clock: clock.now);
+
+      limiter.check('yesterday'); // counter pinned to 2026-06-02
+      clock.set(DateTime(2026, 6, 3, 9)); // a new day
+      limiter.check('today'); // counter pinned to 2026-06-03
+      expect(limiter.principalCount, 2);
+
+      final evicted = limiter.sweepStale();
+      expect(evicted, 1);
+      expect(limiter.principalCount, 1);
+      // The surviving counter is the current-day one — it still blocks at cap.
+      // (cap is 5, so it would still admit; we only assert it survived.)
+    });
+
+    test('sweepStale() on an all-current map evicts nothing', () {
+      final clock = _FakeClock(DateTime(2026, 6, 2, 9));
+      final limiter =
+          DailyQuotaLimiter(policy: _policy(dailyCap: 5), clock: clock.now);
+
+      limiter.check('p1');
+      limiter.check('p2');
+      expect(limiter.sweepStale(), 0);
+      expect(limiter.principalCount, 2);
+    });
+  });
 }

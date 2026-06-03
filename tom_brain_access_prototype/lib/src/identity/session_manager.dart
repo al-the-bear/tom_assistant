@@ -302,7 +302,43 @@ final class SessionManager {
   }
 
   /// The number of distinct sessions currently held.
+  ///
+  /// The node map grows by one entry per distinct (principal, channel,
+  /// conversation) key and never shrinks on its own in the prototype
+  /// (Q-E.2.5). The bound is made explicit here and via [clear] / [evictIdle]
+  /// rather than left as an unwritten assumption (G.3.3); a final-layer
+  /// scheduler drives a periodic [evictIdle] to keep the map bounded by the
+  /// *active* conversation set rather than the all-time one.
   int get sessionCount => _nodes.length;
+
+  /// Drops all session state; every conversation starts a fresh node on its
+  /// next [resolve]. The blunt eviction seam (a process restart already has
+  /// this effect; this exposes it without one).
+  void clear() => _nodes.clear();
+
+  /// Evicts every session whose most recent turn is older than [idleFor]
+  /// measured against the manager's clock — the conversations that have gone
+  /// quiet long enough that retaining their window earns nothing. A re-arriving
+  /// turn for an evicted key simply mints a fresh node, so eviction loses only
+  /// the prior window (the prototype keeps no cross-restart history anyway,
+  /// Q-E.2.5), never a correctness guarantee. The targeted complement to
+  /// [clear]: the seam a final-layer idle-eviction policy reads.
+  ///
+  /// [idleFor] must be non-negative. Returns the number of evicted sessions.
+  int evictIdle(Duration idleFor) {
+    if (idleFor.isNegative) {
+      throw ArgumentError.value(idleFor, 'idleFor', 'must be non-negative');
+    }
+    final cutoff = _now().subtract(idleFor);
+    final idle = <(String, AccessChannel, String?)>[
+      for (final entry in _nodes.entries)
+        if (entry.value.lastActivityAt.isBefore(cutoff)) entry.key,
+    ];
+    for (final key in idle) {
+      _nodes.remove(key);
+    }
+    return idle.length;
+  }
 
   /// Resolves the session for one inbound request and records its turn.
   ///
