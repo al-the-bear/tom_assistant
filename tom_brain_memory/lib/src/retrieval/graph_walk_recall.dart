@@ -102,6 +102,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart' show sqlPlaceholders;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import '../edges/edge_type.dart';
+import '../nodes/node_reader.dart' show readNodeTypeNames;
 import 'recall_query.dart';
 
 /// Default per-edge-type weight when [GraphWalkPolicy.edgeTypeWeights]
@@ -305,7 +306,7 @@ final class GraphWalkRecall {
     // silently from the result. We do not surface it as an error
     // here; the recall surface is a relevance ranking, not a graph
     // integrity check.
-    final typeByValue = _fetchTypeNames(discovered.keys);
+    final typeByValue = readNodeTypeNames(_db, discovered.keys);
 
     final candidates = <GraphWalkRecallCandidate>[];
     for (final entry in discovered.entries) {
@@ -440,23 +441,6 @@ final class GraphWalkRecall {
         .toList(growable: false);
   }
 
-  /// One bulk SELECT against `nodes` for the discovered ids. Missing
-  /// ids (dangling edge endpoints) are absent from the returned map
-  /// and the caller drops the candidate.
-  Map<String, String> _fetchTypeNames(Iterable<String> ids) {
-    if (ids.isEmpty) return const <String, String>{};
-    final list = ids.toList(growable: false);
-    final placeholders = sqlPlaceholders(list.length);
-    final rows = _db.select(
-      'SELECT id, type_name FROM nodes WHERE id IN ($placeholders)',
-      list,
-    );
-    final result = <String, String>{};
-    for (final row in rows) {
-      result[row['id'] as String] = row['type_name'] as String;
-    }
-    return result;
-  }
 }
 
 /// One row from the per-depth frontier-expansion SELECT.

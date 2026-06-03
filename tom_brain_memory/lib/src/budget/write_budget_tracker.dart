@@ -129,64 +129,78 @@ final class WriteBudgetTracker {
   /// `maxNodes` remaining — the rejected write does not consume
   /// budget.
   void chargeNode({required String? runId, required String producer}) {
-    if (runId == null) return;
-    final r = _runs[runId];
-    if (r == null) return;
-    if (r.maxNodes == 0) {
-      throw WriteBudgetExceeded(
-        dimension: WriteBudgetDimension.maxNodes,
-        runId: runId,
-        budget: r.budget,
-        producer: producer,
-        message:
-            'run "$runId" has exhausted its WriteBudget.maxNodes '
-            '(cap: ${r.budget.maxNodes}). The Nth+1 persist was '
-            'rejected without inserting a row or emitting an event.',
-      );
-    }
-    r.maxNodes -= 1;
+    _charge(
+      runId: runId,
+      producer: producer,
+      dimension: WriteBudgetDimension.maxNodes,
+      cap: (b) => b.maxNodes,
+      remaining: (r) => r.maxNodes,
+      decrement: (r) => r.maxNodes -= 1,
+      noun: 'persist',
+    );
   }
 
   /// Charges one edge-write against [runId]. Same semantics as
   /// [chargeNode] but on the `maxEdges` dimension.
   void chargeEdge({required String? runId, required String producer}) {
-    if (runId == null) return;
-    final r = _runs[runId];
-    if (r == null) return;
-    if (r.maxEdges == 0) {
-      throw WriteBudgetExceeded(
-        dimension: WriteBudgetDimension.maxEdges,
-        runId: runId,
-        budget: r.budget,
-        producer: producer,
-        message:
-            'run "$runId" has exhausted its WriteBudget.maxEdges '
-            '(cap: ${r.budget.maxEdges}). The Nth+1 edge was '
-            'rejected without inserting a row or emitting an event.',
-      );
-    }
-    r.maxEdges -= 1;
+    _charge(
+      runId: runId,
+      producer: producer,
+      dimension: WriteBudgetDimension.maxEdges,
+      cap: (b) => b.maxEdges,
+      remaining: (r) => r.maxEdges,
+      decrement: (r) => r.maxEdges -= 1,
+      noun: 'edge',
+    );
   }
 
   /// Charges one stack-push against [runId]. Same semantics as
   /// [chargeNode] but on the `maxStackEntries` dimension.
   void chargeStackEntry({required String? runId, required String producer}) {
+    _charge(
+      runId: runId,
+      producer: producer,
+      dimension: WriteBudgetDimension.maxStackEntries,
+      cap: (b) => b.maxStackEntries,
+      remaining: (r) => r.maxStackEntries,
+      decrement: (r) => r.maxStackEntries -= 1,
+      noun: 'push',
+    );
+  }
+
+  /// Atomic check-and-decrement shared by the three typed charge
+  /// methods. The dimension differs only in which counter it reads,
+  /// which cap it reports, and the noun in the rejection message — the
+  /// guard-and-decrement logic is identical, so it lives here once.
+  ///
+  /// Pass-through (no-op) when [runId] is null or unregistered. Throws
+  /// [WriteBudgetExceeded] when [remaining] reads zero — the rejected
+  /// write does not consume budget (no decrement runs).
+  void _charge({
+    required String? runId,
+    required String producer,
+    required WriteBudgetDimension dimension,
+    required int Function(WriteBudget budget) cap,
+    required int Function(_Remaining r) remaining,
+    required void Function(_Remaining r) decrement,
+    required String noun,
+  }) {
     if (runId == null) return;
     final r = _runs[runId];
     if (r == null) return;
-    if (r.maxStackEntries == 0) {
+    if (remaining(r) == 0) {
       throw WriteBudgetExceeded(
-        dimension: WriteBudgetDimension.maxStackEntries,
+        dimension: dimension,
         runId: runId,
         budget: r.budget,
         producer: producer,
         message:
-            'run "$runId" has exhausted its WriteBudget.maxStackEntries '
-            '(cap: ${r.budget.maxStackEntries}). The Nth+1 push was '
+            'run "$runId" has exhausted its WriteBudget.${dimension.name} '
+            '(cap: ${cap(r.budget)}). The Nth+1 $noun was '
             'rejected without inserting a row or emitting an event.',
       );
     }
-    r.maxStackEntries -= 1;
+    decrement(r);
   }
 }
 

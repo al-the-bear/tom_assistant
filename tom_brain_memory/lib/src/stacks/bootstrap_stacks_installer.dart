@@ -364,9 +364,9 @@ BootstrapInstallReport installBootstrapStacks(
           stackNodeId.toString(),
           spec.entryNodeType,
           spec.policy.priority.name,
-          _priorityAttrsJson(spec.policy),
+          spec.policy.priorityAttrsJson(),
           spec.policy.retention.name,
-          _retentionAttrsJson(spec.policy),
+          spec.policy.retentionAttrsJson(),
           null, // harvesterHook — none at bootstrap time.
           1, // is_bootstrap
           atMs,
@@ -409,16 +409,4 @@ BootstrapInstallReport installBootstrapStacks(
   }
 
   return BootstrapInstallReport(installed: installed, skipped: skipped);
-}
-
-String? _priorityAttrsJson(StackPolicy policy) {
-  if (policy.halflifeMs == null) return null;
-  return jsonEncode(<String, Object?>{'halflifeMs': policy.halflifeMs});
-}
-
-String? _retentionAttrsJson(StackPolicy policy) {
-  final out = <String, Object?>{};
-  if (policy.maxCount != null) out['maxCount'] = policy.maxCount;
-  if (policy.maxAgeMs != null) out['maxAgeMs'] = policy.maxAgeMs;
-  return out.isEmpty ? null : jsonEncode(out);
 }

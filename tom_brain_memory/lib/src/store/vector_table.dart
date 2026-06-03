@@ -122,7 +122,12 @@ import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart'
-    show fnv1a32, sqlPlaceholders, sqlSafeIdentifier;
+    show
+        blobFromColumn,
+        blobFromColumnOrNull,
+        fnv1a32,
+        sqlPlaceholders,
+        sqlSafeIdentifier;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import 'vector_table_exception.dart';
@@ -428,7 +433,10 @@ final class PlainBlobTableBackend implements VectorIndexBackend {
     );
     final matches = <VectorMatch>[];
     for (final row in rows) {
-      final blob = _readBlob(row['embedding']);
+      final blob = blobFromColumn(
+        row['embedding'],
+        context: 'PlainBlobTableBackend.embedding',
+      );
       // Defensive: rows that have somehow ended up with the wrong
       // width are skipped (they cannot participate in a k-NN query
       // anyway). This branch is unreachable through the layer's own
@@ -452,13 +460,6 @@ final class PlainBlobTableBackend implements VectorIndexBackend {
     return List.unmodifiable(matches.sublist(0, k));
   }
 
-  static Uint8List _readBlob(Object? raw) {
-    if (raw is Uint8List) return raw;
-    if (raw is List<int>) return Uint8List.fromList(raw);
-    throw StateError(
-      'PlainBlobTableBackend: expected BLOB, got ${raw.runtimeType}',
-    );
-  }
 }
 
 /// The `vectors.db` side of the storage stack.
@@ -830,13 +831,7 @@ final class VectorTable {
     );
     final result = <String, Vec>{};
     for (final row in rows) {
-      final raw = row['embedding'];
-      Uint8List? blob;
-      if (raw is Uint8List) {
-        blob = raw;
-      } else if (raw is List<int>) {
-        blob = Uint8List.fromList(raw);
-      }
+      final blob = blobFromColumnOrNull(row['embedding']);
       if (blob == null) continue;
       if (blob.lengthInBytes != info.dims * 4) continue;
       result[row['node_id'] as String] = Vec.fromBlob(blob);

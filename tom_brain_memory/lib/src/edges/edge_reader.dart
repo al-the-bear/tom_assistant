@@ -71,10 +71,9 @@
 //     SQLite's row-id ordering, which is an implementation detail
 //     of the table layout. Tracked as **Q-A.37.3**.
 
-import 'dart:convert';
-
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_core_agentic/tom_core_agentic.dart' show sqlPlaceholders;
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show decodeJsonObject, sqlPlaceholders;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
 
 import 'edge.dart';
@@ -184,27 +183,11 @@ final class EdgeReader {
       type: type,
       to: to,
       weight: weight,
-      attrs: _decodeAttrs(attrsJson),
+      // A NULL column → empty map (mirrors the writer's convention of
+      // writing NULL for an empty attrs payload). A non-object payload
+      // throws a context-tagged StateError — that would indicate a
+      // `memory.db` integrity failure, not a normal read path.
+      attrs: decodeJsonObject(attrsJson, context: 'edges.attrs_json'),
     );
-  }
-
-  /// Decodes the `attrs_json` column into the read-side attribute map.
-  ///
-  /// A `NULL` column → empty map (mirrors the writer's convention of
-  /// writing NULL for an empty attrs payload). A non-object payload
-  /// throws — that would indicate a `memory.db` integrity failure,
-  /// not a normal read path, and silently coercing it would hide the
-  /// bug from the operator UI.
-  Map<String, Object?> _decodeAttrs(String? json) {
-    if (json == null) return const <String, Object?>{};
-    final raw = jsonDecode(json);
-    if (raw is! Map) {
-      throw StateError(
-        'edges.attrs_json is not a JSON object: ${raw.runtimeType}',
-      );
-    }
-    return <String, Object?>{
-      for (final entry in raw.entries) entry.key as String: entry.value,
-    };
   }
 }

@@ -176,39 +176,57 @@ final class AgentRegistry {
     required String? agentName,
     required String scope,
   }) {
-    if (agentName == null) return;
-    final reg = _byName[agentName];
-    if (reg == null) {
-      throw AgentScopeViolation(
-        kind: AgentScopeViolationKind.agentNotRegistered,
-        agentName: agentName,
-        message:
-            'agent "$agentName" attempted a read of scope "$scope" but '
-            'is not registered with the AgentRegistry. The registry '
-            'is populated by the dispatcher at run start; an '
-            'unregistered agent name usually means a stale procedure '
-            'declaration or a dispatcher bug.',
-      );
-    }
-    if (!reg.allowsRead(scope)) {
-      throw AgentScopeViolation(
-        kind: AgentScopeViolationKind.readScopeDenied,
-        agentName: agentName,
-        requestedScope: scope,
-        grantedScopes: reg.readScopes,
-        message:
-            'agent "$agentName" attempted to read scope "$scope" but '
-            'its readScopes ${reg.readScopes} do not match. '
-            'Spec § 9.5 — readScopes restrict which resources the '
-            'agent may consult; broaden the registration or revise '
-            'the procedure to read a permitted resource.',
-      );
-    }
+    _guard(
+      agentName: agentName,
+      scope: scope,
+      accessNoun: 'read',
+      allows: (reg) => reg.allowsRead(scope),
+      deniedKind: AgentScopeViolationKind.readScopeDenied,
+      grantedScopes: (reg) => reg.readScopes,
+      deniedDetail:
+          'Spec § 9.5 — readScopes restrict which resources the '
+          'agent may consult; broaden the registration or revise '
+          'the procedure to read a permitted resource.',
+    );
   }
 
   // ─── Internals ──────────────────────────────────────────────────
 
   void _guardWrite({required String? agentName, required String scope}) {
+    _guard(
+      agentName: agentName,
+      scope: scope,
+      accessNoun: 'write',
+      allows: (reg) => reg.allowsWrite(scope),
+      deniedKind: AgentScopeViolationKind.writeScopeDenied,
+      grantedScopes: (reg) => reg.writeScopes,
+      deniedDetail:
+          'Spec § 9.5 — a Connector cannot write Procedure nodes, '
+          'a Pruner cannot create new nodes; broaden the '
+          'registration or revise the procedure to write a '
+          'permitted resource.',
+    );
+  }
+
+  /// Shared guard body for the read and write scope checks. The two
+  /// access kinds differ only in the predicate they consult, the
+  /// denied-violation kind, which scope set they report, and the
+  /// spec-explanation tail — the agent-resolution and rejection
+  /// structure is identical, so it lives here once (review D.2.9).
+  ///
+  /// Pass-through (no-op) when [agentName] is null. Throws
+  /// [AgentScopeViolation] with kind
+  /// [AgentScopeViolationKind.agentNotRegistered] when the agent is
+  /// unknown, and with [deniedKind] when [allows] returns false.
+  void _guard({
+    required String? agentName,
+    required String scope,
+    required String accessNoun,
+    required bool Function(AgentRegistration reg) allows,
+    required AgentScopeViolationKind deniedKind,
+    required Set<String> Function(AgentRegistration reg) grantedScopes,
+    required String deniedDetail,
+  }) {
     if (agentName == null) return;
     final reg = _byName[agentName];
     if (reg == null) {
@@ -216,26 +234,24 @@ final class AgentRegistry {
         kind: AgentScopeViolationKind.agentNotRegistered,
         agentName: agentName,
         message:
-            'agent "$agentName" attempted a write of scope "$scope" but '
-            'is not registered with the AgentRegistry. The registry '
-            'is populated by the dispatcher at run start; an '
-            'unregistered agent name usually means a stale procedure '
+            'agent "$agentName" attempted a $accessNoun of scope '
+            '"$scope" but is not registered with the AgentRegistry. '
+            'The registry is populated by the dispatcher at run start; '
+            'an unregistered agent name usually means a stale procedure '
             'declaration or a dispatcher bug.',
       );
     }
-    if (!reg.allowsWrite(scope)) {
+    if (!allows(reg)) {
+      final granted = grantedScopes(reg);
       throw AgentScopeViolation(
-        kind: AgentScopeViolationKind.writeScopeDenied,
+        kind: deniedKind,
         agentName: agentName,
         requestedScope: scope,
-        grantedScopes: reg.writeScopes,
+        grantedScopes: granted,
         message:
-            'agent "$agentName" attempted to write scope "$scope" but '
-            'its writeScopes ${reg.writeScopes} do not match. '
-            'Spec § 9.5 — a Connector cannot write Procedure nodes, '
-            'a Pruner cannot create new nodes; broaden the '
-            'registration or revise the procedure to write a '
-            'permitted resource.',
+            'agent "$agentName" attempted to $accessNoun scope "$scope" '
+            'but its ${accessNoun}Scopes $granted do not match. '
+            '$deniedDetail',
       );
     }
   }

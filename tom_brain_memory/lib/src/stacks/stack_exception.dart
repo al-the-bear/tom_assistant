@@ -31,6 +31,8 @@
 //                                   `halflifeMs`). Surfaced by
 //                                   `create` and `updatePolicy`.
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show formatException;
+
 /// Sealed base for every refusal of a `StackApi` call.
 sealed class StackException implements Exception {
   /// Human-readable explanation. Always names the stack involved.
@@ -39,7 +41,7 @@ sealed class StackException implements Exception {
   const StackException(this.message);
 
   @override
-  String toString() => '$runtimeType: $message';
+  String toString() => formatException(this, message);
 }
 
 /// `name` does not match any row in `stacks`.

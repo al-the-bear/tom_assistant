@@ -40,6 +40,7 @@
 // with different endpoints, surface to the user, or abandon the
 // write.
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show formatException;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import 'edge_type.dart';
@@ -70,8 +71,11 @@ sealed class EdgeWriteException implements Exception {
   EdgeRejectionReason get reason;
 
   @override
-  String toString() =>
-      '$runtimeType($from --${type.wireName}--> $to): $message';
+  String toString() => formatException(
+        this,
+        message,
+        context: '$from --${type.wireName}--> $to',
+      );
 }
 
 /// `from` or `to` node id does not name a live node.

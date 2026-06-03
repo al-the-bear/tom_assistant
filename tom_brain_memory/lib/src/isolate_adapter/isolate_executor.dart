@@ -43,7 +43,6 @@ import 'dart:async';
 import 'package:tom_brain_shared/tom_brain_shared.dart' show TrailId;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomExecutor, TomWorker;
 
-import '../api/memory_event.dart';
 import '../api/memory_stats.dart';
 import '../api/tom_brain_memory.dart';
 import '../nodes/node.dart';
@@ -479,6 +478,11 @@ class MemoryIsolateExecutor extends TomExecutor {
   /// Spawns the async producer for a `readTrail` stream. The
   /// producer pushes one [StreamChunkEnvelope] per `TrailEntry`,
   /// waiting on the [BackpressureTracker] before each push.
+  ///
+  /// A `readTrail` stream is an ordinary backpressured stream whose
+  /// source is `memory.readTrail(trailId)`; the generic producer owns
+  /// the credit/cancel/close machinery (review D.2.8). The element
+  /// type (`TrailEntry`) is inferred from the source.
   void _startReadTrailProducer({
     required StreamId streamId,
     required TrailId trailId,
@@ -486,83 +490,12 @@ class MemoryIsolateExecutor extends TomExecutor {
     required CancellationToken? cancellation,
     required TomBrainMemory memory,
   }) {
-    final tracker = BackpressureTracker(initialCredits: initialCredits);
-    _trackers[streamId.id] = tracker;
-    final control = _StreamControl();
-    _streamControls[streamId.id] = control;
-
-    CancellationHandle? handle;
-    if (cancellation != null) {
-      handle = _cancellation.register(cancellation);
-    }
-
-    // Fire-and-forget; errors are funnelled into the terminal
-    // envelope.
-    unawaited(() async {
-      var seq = 0;
-      try {
-        await for (final entry in memory.readTrail(trailId)) {
-          if (control.closeRequested) {
-            _sendStreamMessage(StreamCancelledEnvelope(
-              streamId: streamId,
-              token: cancellation,
-            ));
-            return;
-          }
-          if (handle?.isCancelled ?? false) {
-            _sendStreamMessage(StreamCancelledEnvelope(
-              streamId: streamId,
-              token: cancellation,
-            ));
-            return;
-          }
-          try {
-            await tracker.awaitCredit();
-          } on StateError {
-            // Tracker closed mid-wait — treat as cancellation.
-            _sendStreamMessage(StreamCancelledEnvelope(
-              streamId: streamId,
-              token: cancellation,
-            ));
-            return;
-          }
-          // Re-check after awaiting (close may have arrived while
-          // we were parked).
-          if (control.closeRequested ||
-              (handle?.isCancelled ?? false)) {
-            _sendStreamMessage(StreamCancelledEnvelope(
-              streamId: streamId,
-              token: cancellation,
-            ));
-            return;
-          }
-          _sendStreamMessage(StreamChunkEnvelope(
-            streamId: streamId,
-            sequence: seq,
-            payload: entry,
-          ));
-          tracker.consume(1);
-          seq += 1;
-        }
-        _sendStreamMessage(StreamCompleteEnvelope(
-          streamId: streamId,
-          sequence: seq,
-        ));
-      } catch (e) {
-        _sendStreamMessage(StreamErrorEnvelope(
-          streamId: streamId,
-          message: e.toString(),
-          exceptionType: e.runtimeType.toString(),
-        ));
-      } finally {
-        if (!tracker.isClosed) {
-          tracker.close();
-        }
-        _trackers.remove(streamId.id);
-        _streamControls.remove(streamId.id);
-        handle?.dispose();
-      }
-    }());
+    _startBackpressuredProducer(
+      streamId: streamId,
+      initialCredits: initialCredits,
+      cancellation: cancellation,
+      source: () => memory.readTrail(trailId),
+    );
   }
 
   /// Spawns a backpressured producer over `stream(StreamQuery)`. Same
@@ -765,74 +698,21 @@ class MemoryIsolateExecutor extends TomExecutor {
   /// Spawns the async producer for an `events()` stream. Unbounded
   /// (no backpressure tracker). Termination is exclusively via
   /// cancellation or `StreamCloseRequest`.
+  ///
+  /// The lifecycle event stream is an ordinary unbounded stream whose
+  /// source is `memory.events()`; the generic producer owns the
+  /// subscribe/cancel/close machinery (review D.2.8). The element type
+  /// (`MemoryEvent`) is inferred from the source.
   void _startEventsProducer({
     required StreamId streamId,
     required CancellationToken cancellation,
     required TomBrainMemory memory,
   }) {
-    final control = _StreamControl();
-    _streamControls[streamId.id] = control;
-    final handle = _cancellation.register(cancellation);
-
-    unawaited(() async {
-      var seq = 0;
-      StreamSubscription<MemoryEvent>? sub;
-      try {
-        final controller = Completer<void>();
-        sub = memory.events().listen(
-          (event) {
-            if (control.closeRequested || handle.isCancelled) return;
-            _sendStreamMessage(StreamChunkEnvelope(
-              streamId: streamId,
-              sequence: seq,
-              payload: event,
-            ));
-            seq += 1;
-          },
-          onError: (Object e) {
-            if (!controller.isCompleted) {
-              _sendStreamMessage(StreamErrorEnvelope(
-                streamId: streamId,
-                message: e.toString(),
-                exceptionType: e.runtimeType.toString(),
-              ));
-              controller.complete();
-            }
-          },
-          onDone: () {
-            if (!controller.isCompleted) {
-              _sendStreamMessage(StreamCompleteEnvelope(
-                streamId: streamId,
-                sequence: seq,
-              ));
-              controller.complete();
-            }
-          },
-        );
-        // Park until the source ends OR cancellation/close fires.
-        while (!controller.isCompleted) {
-          if (control.closeRequested || handle.isCancelled) {
-            _sendStreamMessage(StreamCancelledEnvelope(
-              streamId: streamId,
-              token: cancellation,
-            ));
-            controller.complete();
-            break;
-          }
-          await Future<void>.delayed(const Duration(milliseconds: 4));
-        }
-      } catch (e) {
-        _sendStreamMessage(StreamErrorEnvelope(
-          streamId: streamId,
-          message: e.toString(),
-          exceptionType: e.runtimeType.toString(),
-        ));
-      } finally {
-        await sub?.cancel();
-        _streamControls.remove(streamId.id);
-        handle.dispose();
-      }
-    }());
+    _startUnboundedProducer(
+      streamId: streamId,
+      cancellation: cancellation,
+      source: () => memory.events(),
+    );
   }
 
   /// One indirection so tests can swap the transport. In production

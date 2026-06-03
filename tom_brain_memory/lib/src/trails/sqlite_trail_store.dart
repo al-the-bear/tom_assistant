@@ -399,12 +399,7 @@ final class SqliteTrailStore with CloseGuard {
   ) {
     final closedAtMs = closedAt.millisecondsSinceEpoch;
     final closedAtIso = closedAt.toIso8601String();
-    final outcomeJson = jsonEncode(<String, Object?>{
-      'status': outcome.status.name,
-      'summary': outcome.summary,
-      if (outcome.details.isNotEmpty) 'details': outcome.details,
-      'elapsedMs': outcome.elapsedMs,
-    });
+    final outcomeJson = jsonEncode(outcome.toJson());
     _db.execute(
       'UPDATE trails SET '
       'status = ?, outcome = ?, closed_at_ms = ?, closed_at_iso = ? '

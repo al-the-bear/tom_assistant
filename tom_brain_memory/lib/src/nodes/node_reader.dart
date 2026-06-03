@@ -49,13 +49,37 @@
 //     (the handle) are immutable. Multiple readers over the same
 //     handle is supported but pointless — share one.
 
-import 'dart:convert';
-
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_core_agentic/tom_core_agentic.dart' show sqlPlaceholders;
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show decodeJsonObject, sqlPlaceholders;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import 'node.dart';
+
+/// Reads `id → type_name` for [idStrs] in a single SELECT against
+/// `nodes`. Ids that no longer exist (forgotten, never persisted,
+/// dangling edge endpoints) are absent from the result; empty input
+/// short-circuits without touching SQLite.
+///
+/// Shared by the vector and graph-walk recall executors, which both
+/// resolve a batch of discovered node-id strings to their type names.
+/// Homed next to [NodeReader] so the `nodes` read path stays in one
+/// module (review D.2.6).
+Map<String, String> readNodeTypeNames(Database db, Iterable<String> idStrs) {
+  final list =
+      idStrs is List<String> ? idStrs : idStrs.toList(growable: false);
+  if (list.isEmpty) return const <String, String>{};
+  final placeholders = sqlPlaceholders(list.length);
+  final rows = db.select(
+    'SELECT id, type_name FROM nodes WHERE id IN ($placeholders)',
+    list,
+  );
+  final result = <String, String>{};
+  for (final row in rows) {
+    result[row['id'] as String] = row['type_name'] as String;
+  }
+  return result;
+}
 
 /// In-process owner of the node-read path.
 ///
@@ -160,7 +184,11 @@ final class NodeReader {
     final statusName = row['status'] as String;
     final createdAtMs = row['created_at_ms'] as int;
 
-    final values = _decodeAttrs(attrsJson);
+    // At A.35 this is a thin defensive decode. No type-driven
+    // rehydration happens — see file header **Q-A.35.2**. A future
+    // step will pass the `NodeTypeDecl.schema` here so `vec` fields
+    // (stored as `List<double>` on the wire) become `Vec` again.
+    final values = decodeJsonObject(attrsJson, context: 'attrs_json');
     final status = _decodeStatus(statusName);
     final createdAt =
         DateTime.fromMillisecondsSinceEpoch(createdAtMs, isUtc: true);
@@ -176,28 +204,6 @@ final class NodeReader {
       embedding: null,
       status: status,
     );
-  }
-
-  /// Decodes the `attrs_json` column into the read-side value map.
-  ///
-  /// At A.35 this is a thin `jsonDecode`. No type-driven
-  /// rehydration happens — see file header **Q-A.35.2**. A future
-  /// step will pass the `NodeTypeDecl.schema` here so `vec` fields
-  /// (stored as `List<double>` on the wire) become `Vec` again.
-  Map<String, Object?> _decodeAttrs(String json) {
-    final raw = jsonDecode(json);
-    if (raw is! Map) {
-      // Defensive: a corrupted attrs_json column is a `memory.db`
-      // integrity failure, not a normal read path. Surface it
-      // explicitly so the higher layer can degrade rather than
-      // returning a silently empty map.
-      throw StateError(
-        'attrs_json is not a JSON object: ${raw.runtimeType}',
-      );
-    }
-    return <String, Object?>{
-      for (final entry in raw.entries) entry.key as String: entry.value,
-    };
   }
 
   /// Decodes the `status` column.

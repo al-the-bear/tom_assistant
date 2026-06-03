@@ -329,9 +329,9 @@ final class SqliteStackApi with CloseGuard implements StackApi {
           stackNodeId.toString(),
           decl.entryNodeType,
           decl.policy.priority.name,
-          _priorityAttrsJson(decl.policy),
+          decl.policy.priorityAttrsJson(),
           decl.policy.retention.name,
-          _retentionAttrsJson(decl.policy),
+          decl.policy.retentionAttrsJson(),
           decl.harvesterHook,
           0,
           atMs,
@@ -382,9 +382,9 @@ final class SqliteStackApi with CloseGuard implements StackApi {
       'WHERE name = ?',
       <Object?>[
         policy.priority.name,
-        _priorityAttrsJson(policy),
+        policy.priorityAttrsJson(),
         policy.retention.name,
-        _retentionAttrsJson(policy),
+        policy.retentionAttrsJson(),
         name,
       ],
     );
@@ -1017,18 +1017,6 @@ final class SqliteStackApi with CloseGuard implements StackApi {
   Map<String, Object?> _decodeAttrsJson(String? raw) {
     if (raw == null || raw.isEmpty) return const <String, Object?>{};
     return Map<String, Object?>.from(jsonDecode(raw) as Map);
-  }
-
-  String? _priorityAttrsJson(StackPolicy policy) {
-    if (policy.halflifeMs == null) return null;
-    return jsonEncode(<String, Object?>{'halflifeMs': policy.halflifeMs});
-  }
-
-  String? _retentionAttrsJson(StackPolicy policy) {
-    final out = <String, Object?>{};
-    if (policy.maxCount != null) out['maxCount'] = policy.maxCount;
-    if (policy.maxAgeMs != null) out['maxAgeMs'] = policy.maxAgeMs;
-    return out.isEmpty ? null : jsonEncode(out);
   }
 
   /// Refuses a policy bundle that crosses the

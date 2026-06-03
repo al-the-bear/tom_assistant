@@ -90,9 +90,9 @@
 //   keep tests deterministic.
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_core_agentic/tom_core_agentic.dart' show sqlPlaceholders;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
 
+import '../nodes/node_reader.dart' show readNodeTypeNames;
 import '../nodes/node_type_registry.dart';
 import '../store/vector_table.dart';
 import '../store/vector_table_exception.dart';
@@ -309,8 +309,9 @@ final class VectorRecall {
 
     if (matches.isEmpty) return;
 
-    final typeNameByNodeId = _readTypeNamesFor(
-      matches.map((m) => m.nodeId).toList(growable: false),
+    final typeNameByNodeId = readNodeTypeNames(
+      _memoryDb,
+      matches.map((m) => m.nodeId),
     );
 
     for (final match in matches) {
@@ -342,26 +343,4 @@ final class VectorRecall {
     }
   }
 
-  /// Reads `(node_id, type_name)` for every id in [nodeIds] in one
-  /// SELECT. Returns a map keyed by the bare `NodeId.toString()` form
-  /// the vector backend emits. Ids that no longer exist in `nodes`
-  /// are absent from the result.
-  ///
-  /// Bounded by [VectorTable.queryNearest]'s k — at most `perModeK`
-  /// per call, so the parameter list never approaches SQLite's
-  /// default 999-host-parameter ceiling for the perModeK values we
-  /// care about (typical `perModeK <= 256`).
-  Map<String, String> _readTypeNamesFor(List<String> nodeIds) {
-    if (nodeIds.isEmpty) return const <String, String>{};
-    final placeholders = sqlPlaceholders(nodeIds.length);
-    final rows = _memoryDb.select(
-      'SELECT id, type_name FROM nodes WHERE id IN ($placeholders)',
-      nodeIds,
-    );
-    final result = <String, String>{};
-    for (final row in rows) {
-      result[row['id'] as String] = row['type_name'] as String;
-    }
-    return result;
-  }
 }

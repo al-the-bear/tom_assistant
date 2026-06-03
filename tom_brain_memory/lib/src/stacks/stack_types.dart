@@ -7,6 +7,8 @@
 // the shapes exist so the abstract `TomBrainMemory.stacks` getter
 // has a typed surface.
 
+import 'dart:convert';
+
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show NodeId, StackEntryId;
 
@@ -79,6 +81,29 @@ final class StackPolicy {
     this.maxAgeMs,
     this.halflifeMs,
   });
+
+  /// The priority-attributes JSON stored on the `Stack` node's
+  /// `priority_attrs` column, or `null` when the policy carries no
+  /// priority tuning.
+  ///
+  /// Single source for both write sites — `SqliteStackApi.create` /
+  /// `updatePolicy` and `installBootstrapStacks` — so the two cannot
+  /// drift (review D.2.3).
+  String? priorityAttrsJson() {
+    if (halflifeMs == null) return null;
+    return jsonEncode(<String, Object?>{'halflifeMs': halflifeMs});
+  }
+
+  /// The retention-attributes JSON stored on the `Stack` node's
+  /// `retention_attrs` column, or `null` when the policy carries no
+  /// retention bounds. Single source for both write sites
+  /// (review D.2.3).
+  String? retentionAttrsJson() {
+    final out = <String, Object?>{};
+    if (maxCount != null) out['maxCount'] = maxCount;
+    if (maxAgeMs != null) out['maxAgeMs'] = maxAgeMs;
+    return out.isEmpty ? null : jsonEncode(out);
+  }
 }
 
 /// Declaration used to create a non-bootstrap stack.

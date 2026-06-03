@@ -92,6 +92,7 @@
 import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show blobFromColumn;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 /// The vector half of a pending two-DB write.
@@ -473,7 +474,10 @@ final class TwoDbCoordinator {
         .map((row) => PendingVectorWrite(
               nodeId: row['node_id'] as String,
               embeddingModelId: row['embedding_model_id'] as String,
-              payloadBlob: _readBlob(row['payload_blob']),
+              payloadBlob: blobFromColumn(
+                row['payload_blob'],
+                context: 'pending_vector_writes.payload_blob',
+              ),
               payloadDims: row['payload_dims'] as int,
               enqueuedAt: BrainTime.fromMs(row['enqueued_at_ms'] as int),
             ))
@@ -493,23 +497,4 @@ final class TwoDbCoordinator {
     return rows.first['n'] as int;
   }
 
-  /// Normalises a SQLite BLOB column read.
-  ///
-  /// `sqlite3` returns a fresh `Uint8List` for BLOB columns under
-  /// most builds, but the dynamic typing of `Row` means the caller
-  /// still gets `Object?`. This helper centralises the cast so the
-  /// surrounding code can pretend `payload_blob` is always a
-  /// `Uint8List`.
-  static Uint8List _readBlob(Object? raw) {
-    if (raw is Uint8List) {
-      return raw;
-    }
-    if (raw is List<int>) {
-      return Uint8List.fromList(raw);
-    }
-    throw StateError(
-      'pending_vector_writes.payload_blob: expected BLOB, got '
-      '${raw.runtimeType}',
-    );
-  }
 }

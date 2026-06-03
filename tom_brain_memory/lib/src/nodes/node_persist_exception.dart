@@ -35,6 +35,8 @@
 // procedure) decides whether to retry with a fixed draft, surface the
 // error to the user, or abandon the write.
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show formatException;
+
 /// Sealed base for every failure category of `NodePersister.persist`.
 sealed class NodePersistException implements Exception {
   /// Type name the draft carried (preserved so logs always identify
@@ -52,7 +54,7 @@ sealed class NodePersistException implements Exception {
   });
 
   @override
-  String toString() => '$runtimeType($typeName): $message';
+  String toString() => formatException(this, message, context: typeName);
 }
 
 /// `NodeDraft.typeName` is not registered. The caller must register

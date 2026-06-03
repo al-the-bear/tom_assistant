@@ -63,6 +63,20 @@ final class TrailOutcome {
     this.details = const <String, Object?>{},
     this.elapsedMs = 0,
   });
+
+  /// The canonical JSON shape of this outcome.
+  ///
+  /// Single source of the `status` / `summary` / (`details`) /
+  /// `elapsedMs` map. Both consumers — the `outcome` JSONL line
+  /// ([TrailEntry.outcome]) and the `trails.outcome` column written
+  /// by `closeTrail` — call this so the on-disk file and the
+  /// `memory.db` index row can never drift.
+  Map<String, Object?> toJson() => <String, Object?>{
+        'status': status.name,
+        'summary': summary,
+        if (details.isNotEmpty) 'details': details,
+        'elapsedMs': elapsedMs,
+      };
 }
 
 /// Structural outcome kinds.
@@ -196,11 +210,6 @@ final class TrailEntry {
       TrailEntry(
         at: (at ?? DateTime.now()).toUtc(),
         kind: TrailEntryKind.outcome,
-        payload: <String, Object?>{
-          'status': outcome.status.name,
-          'summary': outcome.summary,
-          if (outcome.details.isNotEmpty) 'details': outcome.details,
-          'elapsedMs': outcome.elapsedMs,
-        },
+        payload: outcome.toJson(),
       );
 }
