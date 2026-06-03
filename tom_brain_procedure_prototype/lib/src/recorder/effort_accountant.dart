@@ -93,15 +93,6 @@ final class EffortAccountant {
     'fetch',
   };
 
-  /// Engine-native control-flow primitives that cost nothing in this
-  /// metric set (a nested `runProcedure`'s cost lands on the child run).
-  static const Set<String> _freePrimitives = <String>{
-    'runProcedure',
-    'note',
-    'yield_if_foreground_waiting',
-    'yieldIfForegroundWaiting',
-  };
-
   /// The metric delta the [primitive] call contributed.
   ///
   /// [result] is the call's JSON-encodable return map (the same map the
@@ -128,12 +119,18 @@ final class EffortAccountant {
     if (_writePrimitives.contains(primitive)) {
       return EffortMetrics(memoryWrites: 1);
     }
-    // Engine-native control flow is recognised and deliberately free; an
-    // unrecognised name also contributes nothing. Both return zero — the
-    // branch documents that the free set is intentional, not an omission.
-    if (_freePrimitives.contains(primitive)) {
-      return EffortMetrics.zero;
-    }
+    // Everything else contributes nothing. This covers two cases that the
+    // current metric set scores identically:
+    //   - engine-native control flow (`runProcedure`, `note`,
+    //     `yield_if_foreground_waiting`) — a nested `runProcedure`'s cost is
+    //     tallied on the child run, so the parent charges zero, and the
+    //     other two have no substrate/memory cost;
+    //   - an unrecognised primitive — scored zero rather than guessed, while
+    //     the recorder still writes the call to the trail.
+    // There is no separate "free" branch because there is no separate
+    // metric to assign: until a control-flow primitive carries a real cost,
+    // collapsing both cases here keeps the classifier honest about the fact
+    // that they are indistinguishable in this metric set.
     return EffortMetrics.zero;
   }
 
