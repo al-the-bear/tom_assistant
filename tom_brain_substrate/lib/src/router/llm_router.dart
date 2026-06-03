@@ -173,8 +173,9 @@ class LlmRouter {
   }
 
   /// Returns `true` iff the `(providerId, modelId)` route is in cooldown
-  /// at this instant. Exposed for tests; production code calls
-  /// [_isCooldownActive] internally.
+  /// at this instant. The filter step ([_filter]) calls this on every
+  /// route before attempting it; it is also the public hook tests assert
+  /// against.
   bool isInCooldown({
     required String providerId,
     required String modelId,
@@ -236,25 +237,19 @@ class LlmRouter {
       if (filtered != null) continue;
 
       // Wall-clock budget check before the attempt.
-      if (overallWatch.elapsedMilliseconds >= budget.wallClockMs) {
-        attempts.add(RouteAttempt(
-          routeKey: '${entry.providerId}:${entry.model}',
-          outcome: 'skipped:budget_wall_clock',
-          retries: 0,
-        ));
+      if (_recordBudgetSkipIfExhausted(entry, overallWatch, budget, attempts)) {
         break;
       }
 
       final provider = providers[entry.providerId]!;
       final resolvedOptions = _resolveOptions(options, entry.model);
       int retries = 0;
-      Object? lastException;
 
       while (true) {
         if (cancellationToken.isCancelled) {
           lastClass = LlmFailureClass.cancelledByConsumer;
           attempts.add(RouteAttempt(
-            routeKey: '${entry.providerId}:${entry.model}',
+            routeKey: _routeKey(entry),
             outcome: 'failed:cancelled_by_consumer:cancelled',
             retries: retries,
             classification: lastClass,
@@ -270,33 +265,20 @@ class LlmRouter {
           final report =
               await provider.complete(prompt, resolvedOptions);
           attempts.add(RouteAttempt(
-            routeKey: '${entry.providerId}:${entry.model}',
+            routeKey: _routeKey(entry),
             outcome: 'succeeded',
             retries: retries,
             classification: null,
           ));
-          return LlmCallReport(
-            providerId: report.providerId,
-            modelId: report.modelId,
-            anchorHash: report.anchorHash,
-            promptHash: report.promptHash,
-            tokensIn: report.tokensIn,
-            tokensOut: report.tokensOut,
-            retries: report.retries + retries,
-            wallClockMs: report.wallClockMs,
-            cost: report.cost,
-            templateSha: report.templateSha,
-            notes: report.notes,
-          );
+          return _foldRetries(report, retries);
         } catch (e) {
-          lastException = e;
           final cls = classifier.classify(e);
           lastClass = cls;
           final action = cls.routerAction;
 
           if (cls == LlmFailureClass.contextOverflow) {
             attempts.add(RouteAttempt(
-              routeKey: '${entry.providerId}:${entry.model}',
+              routeKey: _routeKey(entry),
               outcome: 'failed:context_overflow:${textPreview('$e', limit: 117, ellipsis: '...')}',
               retries: retries,
               classification: cls,
@@ -312,7 +294,7 @@ class LlmRouter {
 
           if (cls == LlmFailureClass.cancelledByConsumer) {
             attempts.add(RouteAttempt(
-              routeKey: '${entry.providerId}:${entry.model}',
+              routeKey: _routeKey(entry),
               outcome: 'failed:cancelled_by_consumer:${textPreview('$e', limit: 117, ellipsis: '...')}',
               retries: retries,
               classification: cls,
@@ -324,9 +306,7 @@ class LlmRouter {
             );
           }
 
-          if (action == LlmRouterAction.retryThenRotate &&
-              retries < retriesPerClass &&
-              overallWatch.elapsedMilliseconds < budget.wallClockMs) {
+          if (_shouldRetry(action, retries, overallWatch, budget)) {
             retries++;
             await _waitForRetry(cls);
             continue;
@@ -335,7 +315,7 @@ class LlmRouter {
           // Rotate. Apply cooldown / removal per action.
           _applyAction(action, cls, entry);
           attempts.add(RouteAttempt(
-            routeKey: '${entry.providerId}:${entry.model}',
+            routeKey: _routeKey(entry),
             outcome: 'failed:${cls.code}:${textPreview('$e', limit: 117, ellipsis: '...')}',
             retries: retries,
             classification: cls,
@@ -343,11 +323,9 @@ class LlmRouter {
           break;
         }
       }
-
-      // After rotation, drop through the for-loop to the next entry.
-      // `lastException` is preserved so the trail names a real cause.
-      // ignore: unused_local_variable
-      final _ = lastException;
+      // After rotation, drop through the for-loop to the next entry. The
+      // last classification is preserved on `lastClass` so the exhausted
+      // trail names a real cause.
     }
 
     throw NoRouteAvailable(
@@ -412,12 +390,7 @@ class LlmRouter {
       );
       if (filtered != null) continue;
 
-      if (overallWatch.elapsedMilliseconds >= budget.wallClockMs) {
-        attempts.add(RouteAttempt(
-          routeKey: '${entry.providerId}:${entry.model}',
-          outcome: 'skipped:budget_wall_clock',
-          retries: 0,
-        ));
+      if (_recordBudgetSkipIfExhausted(entry, overallWatch, budget, attempts)) {
         break;
       }
 
@@ -428,7 +401,7 @@ class LlmRouter {
       while (true) {
         if (cancellationToken.isCancelled) {
           attempts.add(RouteAttempt(
-            routeKey: '${entry.providerId}:${entry.model}',
+            routeKey: _routeKey(entry),
             outcome: 'failed:cancelled_by_consumer:cancelled',
             retries: retries,
             classification: LlmFailureClass.cancelledByConsumer,
@@ -486,25 +459,13 @@ class LlmRouter {
           }
           final report = terminalDone.report;
           attempts.add(RouteAttempt(
-            routeKey: '${entry.providerId}:${entry.model}',
+            routeKey: _routeKey(entry),
             outcome: 'succeeded',
             retries: retries,
           ));
           yield LlmStreamCompleted(
             callId: terminalDone.callId,
-            report: LlmCallReport(
-              providerId: report.providerId,
-              modelId: report.modelId,
-              anchorHash: report.anchorHash,
-              promptHash: report.promptHash,
-              tokensIn: report.tokensIn,
-              tokensOut: report.tokensOut,
-              retries: report.retries + retries,
-              wallClockMs: report.wallClockMs,
-              cost: report.cost,
-              templateSha: report.templateSha,
-              notes: report.notes,
-            ),
+            report: _foldRetries(report, retries),
           );
           return;
         }
@@ -517,7 +478,7 @@ class LlmRouter {
 
         if (cls == LlmFailureClass.contextOverflow) {
           attempts.add(RouteAttempt(
-            routeKey: '${entry.providerId}:${entry.model}',
+            routeKey: _routeKey(entry),
             outcome: 'failed:context_overflow:${fail.failure.message}',
             retries: retries,
             classification: cls,
@@ -536,7 +497,7 @@ class LlmRouter {
 
         if (cls == LlmFailureClass.cancelledByConsumer) {
           attempts.add(RouteAttempt(
-            routeKey: '${entry.providerId}:${entry.model}',
+            routeKey: _routeKey(entry),
             outcome: 'failed:cancelled_by_consumer:${fail.failure.message}',
             retries: retries,
             classification: cls,
@@ -549,9 +510,7 @@ class LlmRouter {
           return;
         }
 
-        if (action == LlmRouterAction.retryThenRotate &&
-            retries < retriesPerClass &&
-            overallWatch.elapsedMilliseconds < budget.wallClockMs) {
+        if (_shouldRetry(action, retries, overallWatch, budget)) {
           retries++;
           await _waitForRetry(cls);
           continue;
@@ -559,7 +518,7 @@ class LlmRouter {
 
         _applyAction(action, cls, entry);
         attempts.add(RouteAttempt(
-          routeKey: '${entry.providerId}:${entry.model}',
+          routeKey: _routeKey(entry),
           outcome: 'failed:${cls.code}:${fail.failure.message}',
           retries: retries,
           classification: cls,
@@ -594,15 +553,15 @@ class LlmRouter {
     final provider = providers[entry.providerId];
     if (provider == null) {
       attempts.add(RouteAttempt(
-        routeKey: '${entry.providerId}:${entry.model}',
+        routeKey: _routeKey(entry),
         outcome: 'skipped:no_provider',
         retries: 0,
       ));
       return 'no_provider';
     }
-    if (_isCooldownActive(entry)) {
+    if (isInCooldown(providerId: entry.providerId, modelId: entry.model)) {
       attempts.add(RouteAttempt(
-        routeKey: '${entry.providerId}:${entry.model}',
+        routeKey: _routeKey(entry),
         outcome: 'skipped:cooldown',
         retries: 0,
       ));
@@ -611,7 +570,7 @@ class LlmRouter {
     final maxIn = entry.conditions.maxInputTokens;
     if (maxIn != null && inputTokensHint != null && inputTokensHint > maxIn) {
       attempts.add(RouteAttempt(
-        routeKey: '${entry.providerId}:${entry.model}',
+        routeKey: _routeKey(entry),
         outcome: 'skipped:conditions:max_input_tokens',
         retries: 0,
       ));
@@ -620,15 +579,64 @@ class LlmRouter {
     return null;
   }
 
-  bool _isCooldownActive(RouteEntry entry) {
-    final t = now();
-    for (final mapEntry in _cooldownUntil.entries) {
-      if (!mapEntry.value.isAfter(t)) continue;
-      if (mapEntry.key.matchesRoute(entry.providerId, entry.model)) {
-        return true;
-      }
-    }
-    return false;
+  /// The audit / cooldown key for a route entry: `<providerId>:<model>`.
+  /// Used verbatim as the `RouteAttempt.routeKey` and in trail summaries.
+  /// (Cooldown *map* keys use the structured [_CooldownKey]; this string
+  /// is the human-facing route label, not the map key.)
+  String _routeKey(RouteEntry entry) => '${entry.providerId}:${entry.model}';
+
+  /// Re-stamp a winning route's [report] with the router-level [retries]
+  /// burned on it, folded into the provider's own retry count. Every
+  /// other field is copied verbatim. Shared by [dispatch] and
+  /// [dispatchStream] so the two paths fold retries identically.
+  LlmCallReport _foldRetries(LlmCallReport report, int retries) {
+    return LlmCallReport(
+      providerId: report.providerId,
+      modelId: report.modelId,
+      anchorHash: report.anchorHash,
+      promptHash: report.promptHash,
+      tokensIn: report.tokensIn,
+      tokensOut: report.tokensOut,
+      retries: report.retries + retries,
+      wallClockMs: report.wallClockMs,
+      cost: report.cost,
+      templateSha: report.templateSha,
+      notes: report.notes,
+    );
+  }
+
+  /// The in-route retry predicate (spec § 5.4 `retryThenRotate`): retry
+  /// the current route iff the class calls for it, the per-class retry
+  /// budget is not yet spent, and the wall-clock budget still has room.
+  /// Shared by [dispatch] and [dispatchStream].
+  bool _shouldRetry(
+    LlmRouterAction action,
+    int retries,
+    Stopwatch overallWatch,
+    Budget budget,
+  ) =>
+      action == LlmRouterAction.retryThenRotate &&
+      retries < retriesPerClass &&
+      overallWatch.elapsedMilliseconds < budget.wallClockMs;
+
+  /// Pre-attempt wall-clock budget gate. Returns `false` when [entry] may
+  /// still attempt; returns `true` (and records a `skipped:budget_wall_clock`
+  /// audit line) when the elapsed wall-clock has reached the budget, so
+  /// the caller breaks out of the chain walk. Shared by [dispatch] and
+  /// [dispatchStream].
+  bool _recordBudgetSkipIfExhausted(
+    RouteEntry entry,
+    Stopwatch overallWatch,
+    Budget budget,
+    List<RouteAttempt> attempts,
+  ) {
+    if (overallWatch.elapsedMilliseconds < budget.wallClockMs) return false;
+    attempts.add(RouteAttempt(
+      routeKey: _routeKey(entry),
+      outcome: 'skipped:budget_wall_clock',
+      retries: 0,
+    ));
+    return true;
   }
 
   void _applyAction(
