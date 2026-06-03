@@ -10,6 +10,12 @@
 //   - `RecallResult`, `RecallReport` — output record + cost
 //     breakdown.
 //   - `StreamQuery`, `StreamCursor` — cursor-backed bulk iteration.
+//   - `StreamCursorStore`, `JsonFileStreamCursorStore` — durable
+//     persistence for `StreamCursor` so an agent walking the full node
+//     set resumes from its last checkpoint after a restart instead of
+//     starting from zero (§ 9.2). File-backed under
+//     `checkpoints/stream_<streamId>.json`, mirroring the migration
+//     cursor's durability surface.
 //   - `Fts5Catalog` — per-type FTS5 virtual-table layout owner.
 //   - `Fts5Writer` — per-type FTS5 INSERT path called by the
 //     persister.
@@ -90,6 +96,8 @@ export 'recall_result.dart' show RecallReport, RecallResult;
 export 'mmr.dart'
     show MmrInput, MmrSelected, kDefaultMmrLambda, mmrDiversify;
 export 'rrf.dart' show RrfFusedCandidate, kDefaultRrfK, rrfFuse;
+export 'stream_cursor_store.dart'
+    show JsonFileStreamCursorStore, StreamCursorStore;
 export 'stream_query.dart' show StreamCursor, StreamQuery;
 export 'symbolic_recall.dart'
     show
