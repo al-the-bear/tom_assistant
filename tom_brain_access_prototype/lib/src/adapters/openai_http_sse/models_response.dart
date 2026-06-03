@@ -58,8 +58,10 @@ final class ModelsResponseRenderer {
   /// The fixed creation timestamp (Unix epoch seconds: 2025-01-01T00:00:00Z)
   /// stamped into every listed model. The personas are static, so this is a
   /// deterministic constant rather than a wall-clock read — the models
-  /// response is the same bytes on every request.
-  static const int created = 1735689600;
+  /// response is the same bytes on every request. Named distinctly from the
+  /// chat renderers' per-response `created` field, which *is* a wall-clock
+  /// timestamp.
+  static const int modelsListCreatedEpoch = 1735689600;
 
   /// Builds the renderer. Stateless — a single shared instance is fine.
   const ModelsResponseRenderer();
@@ -77,7 +79,7 @@ final class ModelsResponseRenderer {
         <String, Object?>{
           'id': id,
           'object': modelObjectType,
-          'created': created,
+          'created': modelsListCreatedEpoch,
           'owned_by': ownedBy,
         },
     ];

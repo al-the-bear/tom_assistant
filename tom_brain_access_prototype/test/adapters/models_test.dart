@@ -47,7 +47,7 @@ void main() {
         final Map<String, Object?> model = item as Map<String, Object?>;
         expect(model['object'], 'model');
         expect(model['owned_by'], 'tom-brain');
-        expect(model['created'], ModelsResponseRenderer.created);
+        expect(model['created'], ModelsResponseRenderer.modelsListCreatedEpoch);
         expect(model['id'], isA<String>());
       }
     });
