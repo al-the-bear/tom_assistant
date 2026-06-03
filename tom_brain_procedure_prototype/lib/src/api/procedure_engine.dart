@@ -41,15 +41,22 @@
 //
 // Cancelling a parent abandons its whole sub-tree by abandoning the parent's
 // step future; a nested `runProcedure` is not threaded its own cancellation
-// (Q-C.39.2). The sugar aliases (`think`, `plan`, …) are C.40. The
-// header → sandbox → contract
-// validation gate (§ 7, validators built at C.27–C.30) is wired into the
-// run path when `answer_with_memory_v1` lands (Phase D) and the strict
-// `Future<ProcedureResult>` entry-point shape — including ProcedureResult
-// bridging into d4rt — exists; until then a procedure's entry-point return
-// is coerced (a `ProcedureResult` passes through; a `Map` becomes a
-// succeeded result; see Q-C.38.2). C.38 owns the entry point, the run
-// handle, and the outcome — the machinery that roundtrips a procedure.
+// (Q-C.39.2). The sugar aliases (`think`, `plan`, …) are C.40.
+//
+// ── Sandbox gate (§ 7, PE-1) ────────────────────────────────────────
+//
+// Every resolved procedure clears the static `SandboxValidator` before the
+// host is built (`_runInternal`, right after `resolver.resolve`). The
+// validator allows an `import` only of the host-injected bridge / input /
+// engine-native libraries and bans `export` and the SDK-gateway identifiers
+// (E.3.5 reconciled the old blanket import ban with the host's
+// import-to-reach-`mem`/`sub` convention, Q-D.37.1). A violation propagates
+// like a resolution failure — surfaced as an outcome error, no run recorded.
+// The strict `Future<ProcedureResult>` entry-point shape — including
+// ProcedureResult bridging into d4rt — does not yet exist, so a procedure's
+// entry-point return is still coerced (a `ProcedureResult` passes through; a
+// `Map` becomes a succeeded result; see Q-C.38.2). C.38 owns the entry point,
+// the run handle, and the outcome — the machinery that roundtrips a procedure.
 
 import 'dart:async';
 
@@ -71,6 +78,7 @@ import '../procedure_store/procedure_loader.dart';
 import '../procedure_store/procedure_resolver.dart';
 import '../recorder/run_records.dart';
 import '../recorder/run_recorder.dart';
+import '../validator/sandbox_validator.dart';
 import 'procedure_inputs.dart';
 import 'procedure_invocation.dart';
 import 'procedure_outcome.dart';
@@ -122,6 +130,7 @@ final class ProcedureEngine {
     required this.memory,
     required this.memoryBridge,
     required this.substrateBridge,
+    this.validator = SandboxValidator.shared,
     PreemptionState? preemptionState,
     Duration stepDeadline = defaultStepDeadline,
     DeadlineTimerFactory? deadlineTimerFactory,
@@ -142,6 +151,17 @@ final class ProcedureEngine {
 
   /// The memory client the recorder writes every run to.
   final TomBrainMemoryClient memory;
+
+  /// The static sandbox gate every resolved procedure clears before it runs.
+  ///
+  /// PE-1's static half (§ 7): a procedure whose source imports a library
+  /// outside the host-injected bridge / input / engine-native set, or names a
+  /// disallowed SDK identifier, is rejected before any effect surface is built
+  /// — the violation surfaces as an outcome error and no run is recorded, the
+  /// same shape as an unresolvable id. The host's doc states the validator
+  /// "gates source *before* it reaches here"; this is where that gate lives
+  /// (Q-D.37.1). Defaults to [SandboxValidator.shared].
+  final SandboxValidator validator;
 
   /// Template for the bridged memory surface a procedure script reaches as
   /// `mem`. Its `client` is rebound to a per-run recording bridge in
@@ -246,6 +266,13 @@ final class ProcedureEngine {
     RunCancellation? cancellation,
   }) async {
     final LoadedProcedure loaded = resolver.resolve(procedureId, version: version);
+
+    // Static sandbox gate (§ 7, PE-1): a procedure that imports outside the
+    // host-injected surface or names a disallowed identifier never reaches the
+    // host. A violation propagates like a resolution failure — surfaced as an
+    // outcome error, with no run recorded (the procedure never started).
+    validator.validate(loaded);
+
     final recorder = RunRecorder(memory, now: _now, onEntry: onEntry);
 
     // Bind the bridges to *this* run's recorder so every effect call lands on

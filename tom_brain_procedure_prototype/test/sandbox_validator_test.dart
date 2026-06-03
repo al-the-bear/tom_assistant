@@ -113,6 +113,65 @@ void main() {
     });
   });
 
+  group('SandboxValidator.validateSource — import allow-list (E.3.5)', () {
+    test('accepts an import of the memory bridge library', () {
+      expect(
+        () => validator
+            .validateSource("import '${BrainBridges.memoryLibrary}';"),
+        returnsNormally,
+      );
+    });
+
+    test('accepts the four host-injected imports together', () {
+      final source = '''
+import '${BrainBridges.memoryLibrary}';
+import '${BrainBridges.substrateLibrary}';
+import '$engineNativeLibrary';
+import '$procedureInputsLibrary';
+
+Future<Object?> run(inputs) async => 1;
+''';
+      expect(() => validator.validateSource(source), returnsNormally);
+    });
+
+    test('rejects an import of a package not on the allow-list', () {
+      _expectViolation(
+        () => validator.validateSource("import 'package:evil/evil.dart';"),
+        kind: SandboxViolationKind.forbiddenDirective,
+        offender: 'import',
+      );
+    });
+
+    test('rejects a relative import even of a same-named source file', () {
+      _expectViolation(
+        () => validator.validateSource("import 'memory_bridge.dart';"),
+        offender: 'import',
+      );
+    });
+
+    test('the default allow-list is exactly the host-injected library URIs',
+        () {
+      expect(
+        SandboxValidator.defaultAllowedImportUris,
+        <String>{
+          BrainBridges.memoryLibrary,
+          BrainBridges.substrateLibrary,
+          engineNativeLibrary,
+          procedureInputsLibrary,
+        },
+      );
+    });
+
+    test('reports the 1-based line of an off-list import', () {
+      try {
+        validator.validateSource("var a = 1;\nimport 'dart:io';");
+        fail('expected a ProcedureSandboxViolation');
+      } on ProcedureSandboxViolation catch (e) {
+        expect(e.line, 2);
+      }
+    });
+  });
+
   group('SandboxValidator.validateSource — disallowed identifiers', () {
     test('rejects Process', () {
       _expectViolation(
@@ -268,6 +327,7 @@ void main() {
       const custom = SandboxValidator(
         disallowedIdentifiers: {'Forbidden'},
         disallowedDirectives: {},
+        allowedImportUris: {'x'},
       );
       _expectViolation(
         () => custom.validateSource('Forbidden();'),
@@ -275,8 +335,27 @@ void main() {
       );
       // The default-banned `Process` is allowed under the custom set.
       expect(() => custom.validateSource('Process.run();'), returnsNormally);
-      // Directives are allowed when the directive set is empty.
+      // An import on the custom allow-list passes; one off it still fails.
       expect(() => custom.validateSource("import 'x';"), returnsNormally);
+      _expectViolation(
+        () => custom.validateSource("import 'y';"),
+        offender: 'import',
+      );
+    });
+
+    test('a custom allow-list co-exists with a restored blanket import ban',
+        () {
+      // Putting `import` back into the directive deny set restores the old
+      // blanket ban: every import is rejected regardless of the allow-list.
+      const blanket = SandboxValidator(
+        disallowedDirectives: {'import', 'export'},
+        allowedImportUris: {'x'},
+      );
+      _expectViolation(
+        () => blanket.validateSource("import 'x';"),
+        kind: SandboxViolationKind.forbiddenDirective,
+        offender: 'import',
+      );
     });
   });
 }

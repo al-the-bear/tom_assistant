@@ -152,10 +152,13 @@
 //     function, not a bridge method, so it is reached by import, not via a
 //     `mem.`/`sub.` receiver (`native_primitives_installer.dart`).
 // These imports are the only surface this body touches; everything else is
-// denied (PE-1). (The static `SandboxValidator` rejects *all* imports per
-// spec § 4.2; that ban contradicts the host's import-to-reach-`mem`/`sub`
-// convention and is not yet reconciled — see Q-D.37.1. The validator is not
-// wired into the engine run path, so the body runs as written.)
+// denied (PE-1). The static `SandboxValidator` allow-lists exactly these four
+// host-injected library URIs and rejects every other `import` (plus `export`
+// and the SDK-gateway identifiers); the engine runs that gate on every
+// resolved procedure before the host is built (E.3.5 reconciled the old
+// blanket import ban with this import-to-reach-`mem`/`sub` convention,
+// Q-D.37.1). So this body passes the gate precisely because its imports are
+// the allow-listed ones.
 //
 // ── Header fields tracked to the body ───────────────────────────────
 //

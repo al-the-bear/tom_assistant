@@ -508,6 +508,48 @@ Future<Object?> run(inputs) async {
       expect((await run.outcome).status, TrailOutcomeStatus.accepted);
     });
   });
+
+  group('E.3.5 the static sandbox gate runs before the host', () {
+    test('a forbidden import surfaces a violation and records no run',
+        () async {
+      final engine = engineFor(<LoadedProcedure>[
+        _procedure(
+          'rogue_v1',
+          "import 'dart:io';\nObject? run(inputs) => 1;",
+        ),
+      ]);
+
+      final run = engine.invoke(ProcedureInvocation(procedureId: 'rogue_v1'));
+
+      await expectLater(
+        run.outcome,
+        throwsA(
+          isA<ProcedureSandboxViolation>()
+              .having((e) => e.procedureId, 'procedureId', 'rogue_v1')
+              .having((e) => e.offender, 'offender', 'import'),
+        ),
+      );
+      // The gate fires before the recorder starts: nothing was recorded.
+      expect(await memory.stacks.peek(recentRunsStackName), isEmpty);
+      expect(await memory.stacks.peek(inflightStackName), isEmpty);
+    });
+
+    test('a procedure importing only allow-listed libraries runs', () async {
+      final engine = engineFor(<LoadedProcedure>[
+        _procedure(
+          'clean_v1',
+          "import '${BrainBridges.memoryLibrary}';\n"
+              'Object? run(inputs) => 1;',
+        ),
+      ]);
+
+      final outcome =
+          await engine.invoke(ProcedureInvocation(procedureId: 'clean_v1')).outcome;
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(outcome.result!.output<Object?>('value'), 1);
+    });
+  });
 }
 
 /// Builds a [LoadedProcedure] from [body], wrapping it in a minimal valid

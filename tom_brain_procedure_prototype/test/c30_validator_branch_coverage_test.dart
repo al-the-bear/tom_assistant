@@ -203,7 +203,8 @@ void main() {
       );
     }
 
-    // forbiddenDirective branch — both keywords in the default deny set.
+    // forbiddenDirective branch — every keyword in the default deny set
+    // (only `export` after E.3.5; `import` moved to the allow-list branch).
     for (final directive in SandboxValidator.defaultDisallowedDirectives) {
       test('rejects the `$directive` directive', () {
         expectSandboxViolation(
@@ -213,6 +214,17 @@ void main() {
         );
       });
     }
+
+    // import allow-list branch (E.3.5) — an `import` of a URI off the
+    // host-injected allow-list is a forbiddenDirective violation, but the
+    // keyword itself is `import` (allow-listed by URI, not blanket-banned).
+    test('rejects an off-allow-list import', () {
+      expectSandboxViolation(
+        "import 'dart:io';\n$_cleanBody",
+        kind: SandboxViolationKind.forbiddenDirective,
+        offender: 'import',
+      );
+    });
 
     // disallowedIdentifier branch — a representative from each SDK family.
     const identifierProbes = <String>[
@@ -250,7 +262,7 @@ void main() {
       );
       expect(
         SandboxValidator.defaultDisallowedDirectives,
-        unorderedEquals(<String>{'import', 'export'}),
+        unorderedEquals(<String>{'export'}),
       );
     });
 
