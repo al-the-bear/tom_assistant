@@ -26,7 +26,7 @@
 import 'procedure_loader.dart';
 import 'procedure_not_found.dart';
 import 'procedure_source.dart';
-import 'procedure_store_base.dart';
+import 'procedure_store_interface.dart';
 
 /// Indexes loaded procedures by `(id → version)` and resolves a request to
 /// a single [LoadedProcedure], exposing the `[v_latest, …, v1]` fallback

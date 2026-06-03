@@ -37,4 +37,4 @@ export 'procedure_origin.dart';
 export 'procedure_ref.dart';
 export 'procedure_resolver.dart';
 export 'procedure_source.dart';
-export 'procedure_store_base.dart';
+export 'procedure_store_interface.dart';

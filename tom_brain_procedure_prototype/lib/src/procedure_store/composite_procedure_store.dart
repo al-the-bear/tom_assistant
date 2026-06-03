@@ -16,7 +16,7 @@
 
 import 'procedure_ref.dart';
 import 'procedure_source.dart';
-import 'procedure_store_base.dart';
+import 'procedure_store_interface.dart';
 
 /// A [ProcedureStore] that presents an ordered list of backends as one.
 final class CompositeProcedureStore implements ProcedureStore {

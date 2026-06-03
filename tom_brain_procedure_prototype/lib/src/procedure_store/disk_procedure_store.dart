@@ -17,7 +17,7 @@ import 'dart:io';
 import 'procedure_origin.dart';
 import 'procedure_ref.dart';
 import 'procedure_source.dart';
-import 'procedure_store_base.dart';
+import 'procedure_store_interface.dart';
 
 /// Disk-backed [ProcedureStore] over a system directory and an optional
 /// user directory.

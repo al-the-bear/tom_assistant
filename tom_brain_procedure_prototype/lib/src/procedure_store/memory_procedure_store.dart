@@ -20,7 +20,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import 'procedure_ref.dart';
 import 'procedure_source.dart';
-import 'procedure_store_base.dart';
+import 'procedure_store_interface.dart';
 
 /// Memory-backed [ProcedureStore] over the brain's `Procedure` nodes.
 ///
