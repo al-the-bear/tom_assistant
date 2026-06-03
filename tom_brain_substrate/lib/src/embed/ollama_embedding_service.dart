@@ -54,6 +54,7 @@ import 'dart:typed_data';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Vec;
 
+import '../api/cancellation.dart';
 import '../api/embedding_result.dart';
 import '../api/substrate_event.dart' show EmbeddingIdentityChanged;
 import '../llm/ollama_llm_provider.dart';
@@ -194,13 +195,27 @@ final class OllamaEmbeddingService implements EmbeddingService {
   EmbeddingModelIdentity get currentModelIdentity => _identity;
 
   @override
-  Future<EmbeddingResult> embed(String text) async {
+  Future<EmbeddingResult> embed(String text) =>
+      _embed(text, CancellationToken.none);
+
+  /// Shared embed implementation. [cancellationToken] is threaded into
+  /// [OllamaLlmProvider.embedRaw] so [embedBatch] can stop the in-flight
+  /// round-trips on the first per-input failure. The public [embed]
+  /// passes [CancellationToken.none].
+  Future<EmbeddingResult> _embed(
+    String text,
+    CancellationToken cancellationToken,
+  ) async {
     // Note: we do NOT validate empty / whitespace input here. Some
     // models accept the empty string and return a "neutral" vector;
     // others reject it. The boundary belongs to the backend, not the
     // substrate — surfacing the backend's decision verbatim keeps
     // the contract minimal.
-    final raw = await provider.embedRaw(prompt: text, model: model);
+    final raw = await provider.embedRaw(
+      prompt: text,
+      model: model,
+      cancellationToken: cancellationToken,
+    );
 
     if (raw.isEmpty) {
       throw EmbeddingBackendEmpty(
@@ -266,17 +281,34 @@ final class OllamaEmbeddingService implements EmbeddingService {
     // be wasted overhead.
     final workerCount = math.min(batchConcurrency, texts.length);
 
+    // Shared cancellation channel (B.3.3). The first worker to fail
+    // cancels the source; the others see it and (a) stop picking up
+    // new indices and (b) abandon their in-flight `embedRaw` round-
+    // trip via the token threaded through `_embed`. Without this, the
+    // surviving workers ran every remaining input to completion and
+    // discarded the results — wasted backend calls on a batch that had
+    // already failed.
+    final cancellation = CancellationTokenSource();
+
     Future<void> worker() async {
       while (true) {
+        if (cancellation.isCancelled) return;
         final i = nextIndex++;
         if (i >= texts.length) return;
         // Per-input failure (EmbeddingDimensionMismatch /
         // EmbeddingBackendEmpty / transport exception) flows out of
-        // the worker; Future.wait(eagerError: true) surfaces it on
-        // the batch future and stops dispatching new work. Other
-        // in-flight workers run to completion (no embedRaw-side
-        // cancellation yet), but their results are discarded.
-        results[i] = await embed(texts[i]);
+        // the worker; Future.wait(eagerError: true) surfaces the first
+        // such error on the batch future. We cancel the shared source
+        // first so siblings halt cleanly, then re-throw so the real
+        // failure — not a sibling's OperationCancelled — is what the
+        // batch future completes with (the original error fires first,
+        // so eagerError surfaces it).
+        try {
+          results[i] = await _embed(texts[i], cancellation.token);
+        } catch (_) {
+          cancellation.cancel();
+          rethrow;
+        }
       }
     }
 

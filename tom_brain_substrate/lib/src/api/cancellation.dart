@@ -100,6 +100,28 @@ class _Token implements CancellationToken {
   Future<void> get whenCancelled => _completer.future;
 }
 
+/// Thrown by an operation that was racing a [CancellationToken] when
+/// the token signalled before the operation completed.
+///
+/// The underlying work (e.g. an in-flight HTTP POST) may still be
+/// running — `package:http`'s standard `Client` has no per-request
+/// abort handle — but its result is abandoned: the caller observes this
+/// exception instead. Used by [OllamaLlmProvider.embedRaw] so a batch
+/// that hit a failure on one input stops issuing / awaiting work on the
+/// others cleanly rather than running every remaining call to
+/// completion and discarding the results.
+class OperationCancelled implements Exception {
+  /// Optional human-readable label of the cancelled operation.
+  final String? operation;
+
+  const OperationCancelled([this.operation]);
+
+  @override
+  String toString() => operation == null
+      ? 'OperationCancelled'
+      : 'OperationCancelled($operation)';
+}
+
 class _NeverCancelled implements CancellationToken {
   const _NeverCancelled();
 

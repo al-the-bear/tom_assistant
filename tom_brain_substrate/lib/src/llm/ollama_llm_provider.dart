@@ -37,6 +37,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../api/cancellation.dart';
 import '../api/llm_call.dart';
 import '../api/llm_stream_event.dart';
 import 'llm_provider.dart';
@@ -248,16 +249,55 @@ final class OllamaLlmProvider implements LlmProvider {
   /// Not part of [LlmProvider] yet (spec § 4.1; B.25 / B.26 add the
   /// interface members). Exposed here so the embedding service can
   /// bind against it in the same change that grows the interface.
+  ///
+  /// When [cancellationToken] signals before the round-trip completes,
+  /// the returned future completes with [OperationCancelled] and the
+  /// in-flight HTTP result is abandoned. (`package:http`'s standard
+  /// `Client` has no per-request abort handle — the socket is left to
+  /// the daemon to finish — but the caller stops waiting, which is what
+  /// lets `OllamaEmbeddingService.embedBatch` halt the remaining
+  /// workers on the first per-input failure instead of running every
+  /// call to completion and discarding the results.)
   Future<List<double>> embedRaw({
     required String prompt,
     String? model,
+    CancellationToken cancellationToken = CancellationToken.none,
   }) {
-    return httpClient.embed(
+    final call = httpClient.embed(
       baseUri: baseUri,
       model: model ?? defaultModel,
       prompt: prompt,
       requestTimeout: requestTimeout,
     );
+    if (identical(cancellationToken, CancellationToken.none)) {
+      return call;
+    }
+    return _raceCancellation(call, cancellationToken);
+  }
+
+  /// Resolves with [work]'s result, or with [OperationCancelled] if
+  /// [token] signals first. The loser of the race is abandoned; its
+  /// eventual completion is observed (so it never surfaces as an
+  /// unhandled async error) but ignored.
+  static Future<T> _raceCancellation<T>(
+    Future<T> work,
+    CancellationToken token,
+  ) {
+    final completer = Completer<T>();
+    work.then(
+      (value) {
+        if (!completer.isCompleted) completer.complete(value);
+      },
+      onError: (Object error, StackTrace stack) {
+        if (!completer.isCompleted) completer.completeError(error, stack);
+      },
+    );
+    token.whenCancelled.then((_) {
+      if (!completer.isCompleted) {
+        completer.completeError(const OperationCancelled('embedRaw'));
+      }
+    });
+    return completer.future;
   }
 
   /// Raw `/api/tags` call. Returns the daemon's installed models.

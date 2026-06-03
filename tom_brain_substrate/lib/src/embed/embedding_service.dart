@@ -29,9 +29,10 @@
 //     off a shared counter and dispatches `embed()` calls — order in
 //     the returned list matches input order regardless of completion
 //     order. The first failure short-circuits the batch via
-//     `Future.wait(eagerError: true)`; in-flight calls run to
-//     completion (no `embedRaw`-side cancellation yet), but no new
-//     dispatch happens after the failure surfaces.
+//     `Future.wait(eagerError: true)` and cancels the shared
+//     `CancellationTokenSource` threaded into `embedRaw` (B.3.3), so
+//     no new dispatch happens and in-flight round-trips are abandoned
+//     rather than run to completion.
 //   * B.27 ✅ — Identity reporting: `probeIdentity()` plus
 //     `EmbeddingIdentityChanged` event production. The probe is the
 //     boot-time validator (dim / empty-vector check on a fixed
@@ -112,14 +113,16 @@ abstract class EmbeddingService {
   /// failure on any input (boundary failure from [embed] —
   /// [EmbeddingDimensionMismatch] / [EmbeddingBackendEmpty] — or a
   /// transport exception), the future completes with that error.
-  /// In-flight backend calls for other indices run to completion (no
-  /// cancellation token on the prototype's wire path), but their
-  /// results are discarded and no further dispatch happens after the
-  /// failure surfaces. Whether the surfaced error corresponds to the
-  /// first input by index or the first to complete is implementation-
-  /// defined; consumers should treat batch failure as "one or more
-  /// inputs failed" and retry the batch (or fall back to per-input
-  /// [embed] for diagnostics).
+  /// The implementation cancels the remaining work on the first
+  /// failure: no further inputs are dispatched, and in-flight calls
+  /// are abandoned through a cancellation token (the backend socket
+  /// may still finish, since `package:http` has no per-request abort,
+  /// but the worker stops waiting). The surfaced error is the original
+  /// per-input failure, not a downstream cancellation. Whether it
+  /// corresponds to the first input by index or the first to complete
+  /// is implementation-defined; consumers should treat batch failure
+  /// as "one or more inputs failed" and retry the batch (or fall back
+  /// to per-input [embed] for diagnostics).
   Future<List<EmbeddingResult>> embedBatch(List<String> texts);
 
   /// The model identity stamped on every result this service
