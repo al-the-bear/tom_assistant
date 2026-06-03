@@ -74,6 +74,7 @@
 import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show sqlPlaceholders;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
 
 import 'edge.dart';
@@ -151,7 +152,7 @@ final class EdgeReader {
     // short-circuit above.
     String whereTypes = '';
     if (types != null) {
-      final placeholders = List<String>.filled(types.length, '?').join(',');
+      final placeholders = sqlPlaceholders(types.length);
       whereTypes = ' AND type IN ($placeholders)';
       params.addAll(types.map((t) => t.wireName));
     }

@@ -10,6 +10,7 @@
 // concrete id, the type name, the value map (frozen), the optional
 // embedding, the creation timestamp, and the lifecycle status.
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show mapEquals;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
 
 /// Lifecycle status of a stored node.
@@ -57,7 +58,7 @@ final class NodeDraft {
     if (other is! NodeDraft) return false;
     return other.typeName == typeName &&
         other.embedding == embedding &&
-        _mapEquals(other.values, values);
+        mapEquals(other.values, values);
   }
 
   @override
@@ -108,7 +109,7 @@ final class Node {
         other.createdAt == createdAt &&
         other.status == status &&
         other.embedding == embedding &&
-        _mapEquals(other.values, values);
+        mapEquals(other.values, values);
   }
 
   @override
@@ -118,14 +119,4 @@ final class Node {
   @override
   String toString() =>
       'Node(id: $id, type: $typeName, status: ${status.name})';
-}
-
-bool _mapEquals(Map<String, Object?> a, Map<String, Object?> b) {
-  if (identical(a, b)) return true;
-  if (a.length != b.length) return false;
-  for (final entry in a.entries) {
-    if (!b.containsKey(entry.key)) return false;
-    if (b[entry.key] != entry.value) return false;
-  }
-  return true;
 }

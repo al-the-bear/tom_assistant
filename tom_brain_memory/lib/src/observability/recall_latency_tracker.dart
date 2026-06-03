@@ -46,6 +46,9 @@
 
 import 'dart:collection';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show nearestRankPercentile;
+
 import '../api/memory_stats.dart';
 import '../retrieval/recall_query.dart' show RecallMode;
 
@@ -123,20 +126,12 @@ final class RecallLatencyTracker {
   /// single sample, which is the correct "we have one data point"
   /// behaviour.
   static LatencyHistogram _percentiles(ListQueue<int> samples) {
+    // Callers (`snapshot`/`snapshotFor`) only reach here on a non-empty
+    // buffer, which is the precondition `nearestRankPercentile` requires.
     final sorted = List<int>.from(samples)..sort();
     return LatencyHistogram(
-      p50Ms: _percentile(sorted, 0.50).toDouble(),
-      p95Ms: _percentile(sorted, 0.95).toDouble(),
+      p50Ms: nearestRankPercentile(sorted, 0.50).toDouble(),
+      p95Ms: nearestRankPercentile(sorted, 0.95).toDouble(),
     );
-  }
-
-  static int _percentile(List<int> sortedAsc, double p) {
-    // Nearest-rank: index = ceil(p * N) - 1, clamped to [0, N-1].
-    final n = sortedAsc.length;
-    if (n == 0) return 0;
-    var idx = (p * n).ceil() - 1;
-    if (idx < 0) idx = 0;
-    if (idx >= n) idx = n - 1;
-    return sortedAsc[idx];
   }
 }

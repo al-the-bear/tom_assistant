@@ -202,7 +202,7 @@ void main() {
       );
       expect(
         compiled.whereSql,
-        equals('json_extract(attrs_json, ?) IN (?, ?, ?)'),
+        equals('json_extract(attrs_json, ?) IN (?,?,?)'),
       );
       expect(
         compiled.bindings,

@@ -49,6 +49,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show CloseGuard;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock;
 
 import 'trail.dart';
@@ -70,7 +71,7 @@ const Set<String> _reservedTopLevelKeys = {'ts', 'kind'};
 /// callers do not need to serialise themselves; that serialisation
 /// matters only for the rare case where two primitive bridges fire
 /// back-to-back without awaiting (and is cheap when they do not).
-final class TrailWriter {
+final class TrailWriter with CloseGuard {
   /// Absolute path to the trail file this writer owns.
   ///
   /// Resolved at [open] time from `<trailsRoot>/YYYY/MM/DD/run-<runId>.jsonl`
@@ -91,8 +92,6 @@ final class TrailWriter {
   /// tests that want to assert "n entries are durable on disk".
   int get entryCount => _entryCount;
   int _entryCount = 0;
-
-  bool _closed = false;
 
   /// Internal future chain that serialises overlapping [append] calls
   /// on the same writer. Each `append` chains onto the previous
@@ -166,7 +165,7 @@ final class TrailWriter {
   /// [ArgumentError] if [entry]'s payload contains a reserved
   /// top-level key (`ts` or `kind`).
   Future<void> append(TrailEntry entry) {
-    if (_closed) {
+    if (isClosed) {
       throw StateError(
         'TrailWriter for ${runRef.runId} is closed; cannot append.',
       );
@@ -211,8 +210,7 @@ final class TrailWriter {
   /// file is left as-is; callers that need to record an outcome
   /// should write an `outcome` [TrailEntry] *before* calling [close].
   Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
     // Drain any in-flight appends so we never close out from under a
     // pending write.
     try {
@@ -223,9 +221,6 @@ final class TrailWriter {
     }
     await _raf.close();
   }
-
-  /// Whether [close] has been called.
-  bool get isClosed => _closed;
 
   // --- Encoding ----------------------------------------------------------
 

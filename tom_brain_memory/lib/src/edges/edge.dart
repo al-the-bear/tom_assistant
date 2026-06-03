@@ -5,6 +5,7 @@
 // the materialised form returned by `TomBrainMemory.edgesOf` and by
 // graph-walk recall.
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show mapEquals;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
 
 import 'edge_type.dart';
@@ -60,7 +61,7 @@ final class Edge {
         other.type == type &&
         other.to == to &&
         other.weight == weight &&
-        _mapEquals(other.attrs, attrs);
+        mapEquals(other.attrs, attrs);
   }
 
   @override
@@ -70,14 +71,4 @@ final class Edge {
   String toString() => 'Edge(id: $id, ${from.toString()} '
       '--${type.wireName}--> ${to.toString()}, '
       'weight: $weight${attrs.isEmpty ? '' : ', attrs: $attrs'})';
-}
-
-bool _mapEquals(Map<String, Object?> a, Map<String, Object?> b) {
-  if (identical(a, b)) return true;
-  if (a.length != b.length) return false;
-  for (final entry in a.entries) {
-    if (!b.containsKey(entry.key)) return false;
-    if (b[entry.key] != entry.value) return false;
-  }
-  return true;
 }

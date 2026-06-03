@@ -121,6 +121,8 @@
 import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show fnv1a32, sqlPlaceholders, sqlSafeIdentifier;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import 'vector_table_exception.dart';
@@ -820,7 +822,7 @@ final class VectorTable {
     final info = lookupIndex(modelId);
     if (info == null) return const <String, Vec>{};
 
-    final placeholders = List<String>.filled(nodeIds.length, '?').join(',');
+    final placeholders = sqlPlaceholders(nodeIds.length);
     final rows = _vectorsDb.select(
       'SELECT node_id, embedding FROM "${info.tableName}" '
       'WHERE node_id IN ($placeholders)',
@@ -864,39 +866,13 @@ final class VectorTable {
   /// a later change to this function does not invalidate any
   /// existing index.
   static String deriveTableName(String modelId) {
-    final lower = modelId.toLowerCase();
-    final sanitised = StringBuffer();
-    for (var i = 0; i < lower.length && sanitised.length < 32; i++) {
-      final ch = lower.codeUnitAt(i);
-      final isAlnum = (ch >= 0x30 && ch <= 0x39) || // 0-9
-          (ch >= 0x61 && ch <= 0x7a); // a-z
-      final isUnderscore = ch == 0x5f;
-      sanitised.write(isAlnum || isUnderscore
-          ? String.fromCharCode(ch)
-          : '_');
-    }
-    final hash = _fnv1a32(modelId).toRadixString(16).padLeft(8, '0');
-    return 'vec_idx_${sanitised.toString()}_$hash';
-  }
-
-  /// FNV-1a 32-bit hash of [s], computed over the UTF-16 code units.
-  ///
-  /// FNV-1a is not cryptographic — collision-resistance here is only
-  /// what we need to disambiguate the readable-prefix portion of the
-  /// table name. The meta row's `UNIQUE` constraint on `table_name`
-  /// is the actual collision detector: a collision (in the
-  /// astronomically-unlikely worst case) would surface as a
-  /// SqliteException on `installIndex` and the operator would pick a
-  /// new model id.
-  static int _fnv1a32(String s) {
-    const int offset = 0x811c9dc5;
-    const int prime = 0x01000193;
-    var hash = offset;
-    for (var i = 0; i < s.length; i++) {
-      hash ^= s.codeUnitAt(i) & 0xff;
-      hash = (hash * prime) & 0xffffffff;
-    }
-    return hash;
+    // Readable, SQL-safe prefix (lossy, capped at 32 chars) plus a
+    // collision-disambiguating FNV-1a suffix over the full model id.
+    // The meta row's `UNIQUE` constraint on `table_name` is the actual
+    // collision detector — see `tom_core_agentic`'s `fnv1a32`.
+    final sanitised = sqlSafeIdentifier(modelId, maxLength: 32);
+    final hash = fnv1a32(modelId).toRadixString(16).padLeft(8, '0');
+    return 'vec_idx_${sanitised}_$hash';
   }
 
   VectorIndexInfo _decodeInfo(Row row) => VectorIndexInfo(

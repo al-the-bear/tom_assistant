@@ -52,6 +52,7 @@
 import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show sqlPlaceholders;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import 'node.dart';
@@ -130,7 +131,7 @@ final class NodeReader {
       }
     }
 
-    final placeholders = List<String>.filled(orderedKeys.length, '?').join(',');
+    final placeholders = sqlPlaceholders(orderedKeys.length);
     final rows = _db.select(
       'SELECT id, type_name, attrs_json, status, '
       'created_at_ms FROM nodes WHERE id IN ($placeholders)',

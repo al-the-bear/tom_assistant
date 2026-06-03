@@ -98,6 +98,7 @@
 //     expansion. The cost is a single SELECT that returns no rows.
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show sqlPlaceholders;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import '../edges/edge_type.dart';
@@ -400,8 +401,8 @@ final class GraphWalkRecall {
   }) {
     if (frontier.isEmpty || types.isEmpty) return const <_FrontierEdgeRow>[];
 
-    final idPh = List<String>.filled(frontier.length, '?').join(',');
-    final typePh = List<String>.filled(types.length, '?').join(',');
+    final idPh = sqlPlaceholders(frontier.length);
+    final typePh = sqlPlaceholders(types.length);
 
     final String whereDir;
     final params = <Object?>[];
@@ -445,7 +446,7 @@ final class GraphWalkRecall {
   Map<String, String> _fetchTypeNames(Iterable<String> ids) {
     if (ids.isEmpty) return const <String, String>{};
     final list = ids.toList(growable: false);
-    final placeholders = List<String>.filled(list.length, '?').join(',');
+    final placeholders = sqlPlaceholders(list.length);
     final rows = _db.select(
       'SELECT id, type_name FROM nodes WHERE id IN ($placeholders)',
       list,

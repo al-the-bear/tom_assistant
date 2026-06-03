@@ -92,6 +92,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show CloseGuard;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show NodeId, StackEntryId;
 
@@ -118,7 +119,7 @@ const Set<String> bootstrapStackNames = <String>{
 };
 
 /// Concrete `StackApi` backed by `memory.db` (Plan step A.40).
-final class SqliteStackApi implements StackApi {
+final class SqliteStackApi with CloseGuard implements StackApi {
   /// Live SQLite handle on `memory.db`. Owned by the store; the
   /// api does NOT close it.
   final Database _db;
@@ -157,11 +158,6 @@ final class SqliteStackApi implements StackApi {
   final Map<String, StreamController<StackEvent>> _eventStreams =
       <String, StreamController<StackEvent>>{};
 
-  /// `true` after [close] runs; further mutations throw a
-  /// [StateError]. Closing the api flushes all pending stream
-  /// controllers; closing twice is a no-op.
-  bool _closed = false;
-
   SqliteStackApi({
     required Database memoryDb,
     StackEntryId Function()? entryIdMint,
@@ -181,8 +177,7 @@ final class SqliteStackApi implements StackApi {
   /// Releases stream controllers. Called by the higher-level store
   /// during `close`. Does NOT close the underlying database handle.
   Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
     final controllers = _eventStreams.values.toList();
     _eventStreams.clear();
     for (final controller in controllers) {
@@ -821,7 +816,7 @@ final class SqliteStackApi implements StackApi {
 
   @override
   Stream<StackEvent> events(String name) {
-    if (_closed) {
+    if (isClosed) {
       throw StateError(
         'SqliteStackApi.events: api is closed; cannot subscribe to '
         '"$name".',
@@ -837,7 +832,7 @@ final class SqliteStackApi implements StackApi {
   // ─── Internal helpers ─────────────────────────────────────────
 
   void _assertOpen() {
-    if (_closed) {
+    if (isClosed) {
       throw StateError('SqliteStackApi: api is closed.');
     }
   }

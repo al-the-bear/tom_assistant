@@ -67,6 +67,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show CloseGuard;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show Clock, SystemClock, TrailId;
 
@@ -85,7 +86,7 @@ const String _statusActive = 'active';
 const String _statusClosed = 'closed';
 
 /// Concrete trail subsystem backed by `memory.db` (Plan step A.47).
-final class SqliteTrailStore {
+final class SqliteTrailStore with CloseGuard {
   /// Live SQLite handle on `memory.db`. Owned by the store opener;
   /// the trail store does NOT close it.
   final Database _db;
@@ -116,8 +117,6 @@ final class SqliteTrailStore {
   /// closeTrail are owned single-threadedly by one engine.
   final Map<String, _OpenTrail> _open = <String, _OpenTrail>{};
 
-  bool _closed = false;
-
   SqliteTrailStore({
     required Database memoryDb,
     required String trailsRoot,
@@ -141,8 +140,7 @@ final class SqliteTrailStore {
   /// either re-attach (engine recovery) or mark it `aborted` (a
   /// reconciliation sweep — out of scope at A.47).
   Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
     final pending = _open.values.toList();
     _open.clear();
     for (final open in pending) {
@@ -352,7 +350,7 @@ final class SqliteTrailStore {
   // ─── Internal helpers ─────────────────────────────────────────
 
   void _assertOpen() {
-    if (_closed) {
+    if (isClosed) {
       throw StateError('SqliteTrailStore: store is closed.');
     }
   }

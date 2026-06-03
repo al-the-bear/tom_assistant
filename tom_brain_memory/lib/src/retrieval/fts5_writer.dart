@@ -30,6 +30,7 @@
 //     re-populated under the new schema. Out of scope at A.54.
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show sqlPlaceholders;
 
 import '../nodes/node_type_decl.dart';
 import 'fts5_catalog.dart';
@@ -97,7 +98,7 @@ final class Fts5Writer {
       <Object?>[nodeId],
     );
 
-    final placeholders = List<String>.filled(columns.length + 1, '?').join(', ');
+    final placeholders = sqlPlaceholders(columns.length + 1);
     final quotedColumns = columns.map((c) => '"$c"').join(', ');
     final params = <Object?>[
       nodeId,

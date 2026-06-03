@@ -90,6 +90,7 @@
 //   keep tests deterministic.
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show sqlPlaceholders;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
 
 import '../nodes/node_type_registry.dart';
@@ -352,7 +353,7 @@ final class VectorRecall {
   /// care about (typical `perModeK <= 256`).
   Map<String, String> _readTypeNamesFor(List<String> nodeIds) {
     if (nodeIds.isEmpty) return const <String, String>{};
-    final placeholders = List<String>.filled(nodeIds.length, '?').join(',');
+    final placeholders = sqlPlaceholders(nodeIds.length);
     final rows = _memoryDb.select(
       'SELECT id, type_name FROM nodes WHERE id IN ($placeholders)',
       nodeIds,
