@@ -73,19 +73,15 @@ class DefaultWebSearch with CloseGuard implements WebSearch {
 
   static Map<String, WebSearchProvider> _buildRegistry(
     List<WebSearchProvider> providers,
-  ) {
-    final out = <String, WebSearchProvider>{};
-    for (final provider in providers) {
-      if (out.containsKey(provider.id)) {
-        throw ArgumentError(
-          'DefaultWebSearch: duplicate provider id "${provider.id}"; '
-          'every WebSearchProvider must declare a unique id',
-        );
-      }
-      out[provider.id] = provider;
-    }
-    return out;
-  }
+  ) =>
+      buildUniqueById<WebSearchProvider>(
+        providers,
+        (provider) => provider.id,
+        itemLabel: 'providers',
+        onDuplicate: (id) =>
+            'DefaultWebSearch: duplicate provider id "$id"; '
+            'every WebSearchProvider must declare a unique id',
+      );
 
   /// Ids of every registered provider, in registration order.
   ///

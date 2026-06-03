@@ -70,6 +70,8 @@
 //     template, the cross-validation case mentioned above). Conflating
 //     them under one type would hide that distinction at catch sites.
 
+import 'package:tom_core_agentic/tom_core_agentic.dart';
+
 import 'role_template.dart';
 
 /// The substrate's authoritative holder of `RoleTemplate` instances.
@@ -119,19 +121,14 @@ final class RoleRegistry {
   /// that holds a reference to [ids] / [templates] cannot mutate the
   /// registry's view by accident.
   factory RoleRegistry({required List<RoleTemplate> templates}) {
-    final byId = <String, RoleTemplate>{};
-    for (final t in templates) {
-      if (byId.containsKey(t.id)) {
-        throw ArgumentError.value(
-          t.id,
-          'templates',
-          'duplicate role id "${t.id}" — registry rejects duplicates so the '
-              'loader cannot pick a silent winner',
-        );
-      }
-      byId[t.id] = t;
-    }
-    return RoleRegistry._(Map<String, RoleTemplate>.unmodifiable(byId));
+    return RoleRegistry._(buildUniqueById<RoleTemplate>(
+      templates,
+      (t) => t.id,
+      itemLabel: 'templates',
+      onDuplicate: (id) =>
+          'duplicate role id "$id" — registry rejects duplicates so the '
+          'loader cannot pick a silent winner',
+    ));
   }
 
   const RoleRegistry._(this._byId);
