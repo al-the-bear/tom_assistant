@@ -143,10 +143,16 @@ final class ProcedureEngine {
   /// The memory client the recorder writes every run to.
   final TomBrainMemoryClient memory;
 
-  /// The bridged memory surface a procedure script reaches as `mem`.
+  /// Template for the bridged memory surface a procedure script reaches as
+  /// `mem`. Its `client` is rebound to a per-run recording bridge in
+  /// `_runInternal` (E.3.2); the template instance itself is never
+  /// dispatched through.
   final MemoryBridge memoryBridge;
 
-  /// The bridged substrate surface a procedure script reaches as `sub`.
+  /// Template for the bridged substrate surface a procedure script reaches
+  /// as `sub`. Its `client` is rebound to a per-run recording bridge in
+  /// `_runInternal` (E.3.2); the template instance itself is never
+  /// dispatched through.
   final SubstrateBridge substrateBridge;
 
   /// The shared cooperative-preemption state the engine yields against and
@@ -242,14 +248,26 @@ final class ProcedureEngine {
     final LoadedProcedure loaded = resolver.resolve(procedureId, version: version);
     final recorder = RunRecorder(memory, now: _now, onEntry: onEntry);
 
+    // Bind the bridges to *this* run's recorder so every effect call lands on
+    // the run's trail and folds into its effort tally (E.3.2). The engine's
+    // `memoryBridge` / `substrateBridge` are shared templates; dispatching
+    // through them directly would force one mutable observer across concurrent
+    // runs, so a fresh recording instance over the same client is built per
+    // run (the deferred composition-root wiring, Q-C.44.1).
+    final recordCall = recorder.recordPrimitiveCall;
+    final runMemoryBridge =
+        MemoryBridge(memoryBridge.client, onCall: recordCall);
+    final runSubstrateBridge =
+        SubstrateBridge(substrateBridge.client, onCall: recordCall);
+
     final runPrimitive = RunProcedurePrimitive(
       executor: (call) => _executeNested(call, parentRunId: runId),
       hardDepthCap: _hardDepthCap,
       startDepth: depth,
     );
     final host = D4rtDcliHost(
-      memoryBridge: memoryBridge,
-      substrateBridge: substrateBridge,
+      memoryBridge: runMemoryBridge,
+      substrateBridge: runSubstrateBridge,
       installNativePrimitives: nativePrimitivesInstaller(
         runProcedurePrimitive: runPrimitive,
         notePrimitive: NotePrimitive(sink: recorder.noteSink, now: _now),

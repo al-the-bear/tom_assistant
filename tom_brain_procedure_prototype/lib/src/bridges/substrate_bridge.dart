@@ -57,6 +57,8 @@
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
+import 'bridge_call_recorder.dart';
+
 /// Re-exposes the substrate primitive set to d4rt procedure scripts.
 ///
 /// Mirrors the substrate rows of
@@ -70,9 +72,43 @@ class SubstrateBridge {
   /// (PE-10). Injected by the host (C.16).
   final TomBrainSubstrateClient client;
 
-  /// Wraps [client]. The host constructs this natively and registers
-  /// the instance with the d4rt runtime.
-  SubstrateBridge(this.client);
+  /// Per-run recording hook (E.3.2). `null` on the shared template bridge
+  /// the engine is constructed with; the engine binds a per-run instance to
+  /// the active recorder so every effect call lands on that run's trail and
+  /// folds into its effort tally. Not part of the d4rt-facing constructor
+  /// surface — a procedure script only ever sees the injected instance.
+  final BridgeCallRecorder? _onCall;
+
+  /// Wraps [client]. The host constructs this natively and registers the
+  /// instance with the d4rt runtime. [onCall], when supplied, records each
+  /// completed primitive call against the issuing run (E.3.2).
+  SubstrateBridge(this.client, {BridgeCallRecorder? onCall}) : _onCall = onCall;
+
+  /// Delegates to [body], and — when [_onCall] is wired — records the call
+  /// (name [primitive], argument map [input], the flattened [resultOf] of
+  /// the value, and the measured wall-clock cost) before returning the
+  /// value unchanged. With no hook wired the call is a straight delegate.
+  /// A throwing [body] (e.g. [LlmCompletionFailure]) propagates without a
+  /// recording — the engine records the crash on its own path.
+  Future<T> _record<T>(
+    String primitive,
+    Map<String, Object?> input,
+    Future<T> Function() body, {
+    required Map<String, Object?> Function(T value) resultOf,
+  }) async {
+    final onCall = _onCall;
+    if (onCall == null) return body();
+    final watch = Stopwatch()..start();
+    final value = await body();
+    watch.stop();
+    await onCall(
+      primitive,
+      input,
+      resultOf(value),
+      elapsedMs: watch.elapsedMilliseconds,
+    );
+    return value;
+  }
 
   /// The role the prototype's user-facing answer step uses (§ 5.1
   /// step "answer"). The default for [llm] when the caller does not
@@ -113,47 +149,53 @@ class SubstrateBridge {
     String prompt, {
     String role = defaultRole,
     Map<String, Object?>? budget,
-  }) async {
-    final call = LlmCall(
-      roleId: role,
-      inputs: <String, Object?>{'prompt': prompt},
-      budget: _buildBudget(budget),
-    );
-
-    final buffer = StringBuffer();
-
-    await for (final event in client.completeStream(call)) {
-      switch (event) {
-        case LlmStreamChunk(:final text):
-          buffer.write(text);
-        case LlmStreamCompleted(:final report):
-          return <String, Object?>{
-            'text': buffer.toString(),
-            'report': _reportToMap(report),
-          };
-        case LlmStreamFailed(:final failure, report: final failReport):
-          throw LlmCompletionFailure(
-            classCode: failure.classCode,
-            message: failure.message,
-            report: _reportToMap(failReport),
+  }) =>
+      _record<Map<String, Object?>>(
+        'llm',
+        <String, Object?>{'prompt': prompt, 'role': role},
+        () async {
+          final call = LlmCall(
+            roleId: role,
+            inputs: <String, Object?>{'prompt': prompt},
+            budget: _buildBudget(budget),
           );
-        case LlmStreamStarted():
-        case LlmStreamToolCallProposed():
-          // Started carries no text; tool-call resolution is the
-          // dispatcher's job (Phase D) and is not exercised by
-          // `answer_with_memory_v1`. Both are ignored here.
-          break;
-      }
-    }
 
-    // A well-behaved substrate always terminates with Completed or
-    // Failed. Reaching here means the stream closed without a terminal
-    // event — a substrate contract violation, surfaced loudly.
-    throw StateError(
-      'completeStream closed without a terminal '
-      'LlmStreamCompleted/LlmStreamFailed event.',
-    );
-  }
+          final buffer = StringBuffer();
+
+          await for (final event in client.completeStream(call)) {
+            switch (event) {
+              case LlmStreamChunk(:final text):
+                buffer.write(text);
+              case LlmStreamCompleted(:final report):
+                return <String, Object?>{
+                  'text': buffer.toString(),
+                  'report': _reportToMap(report),
+                };
+              case LlmStreamFailed(:final failure, report: final failReport):
+                throw LlmCompletionFailure(
+                  classCode: failure.classCode,
+                  message: failure.message,
+                  report: _reportToMap(failReport),
+                );
+              case LlmStreamStarted():
+              case LlmStreamToolCallProposed():
+                // Started carries no text; tool-call resolution is the
+                // dispatcher's job (Phase D) and is not exercised by
+                // `answer_with_memory_v1`. Both are ignored here.
+                break;
+            }
+          }
+
+          // A well-behaved substrate always terminates with Completed or
+          // Failed. Reaching here means the stream closed without a terminal
+          // event — a substrate contract violation, surfaced loudly.
+          throw StateError(
+            'completeStream closed without a terminal '
+            'LlmStreamCompleted/LlmStreamFailed event.',
+          );
+        },
+        resultOf: (value) => value,
+      );
 
   // ── embed ─────────────────────────────────────────────────────────
 
@@ -164,10 +206,16 @@ class SubstrateBridge {
   /// identity is memory's cosine-comparability commitment (§ 7.4); it
   /// rides into the persisted node so cross-model vectors are never
   /// mixed.
-  Future<Map<String, Object?>> embed(String text) async {
-    final result = await client.embed(text);
-    return _embeddingToMap(result);
-  }
+  Future<Map<String, Object?>> embed(String text) =>
+      _record<Map<String, Object?>>(
+        'embed',
+        <String, Object?>{'text': text},
+        () async {
+          final result = await client.embed(text);
+          return _embeddingToMap(result);
+        },
+        resultOf: (value) => value,
+      );
 
   // ── search ────────────────────────────────────────────────────────
 
@@ -181,13 +229,19 @@ class SubstrateBridge {
     String query, {
     String? provider,
     int k = 10,
-  }) async {
-    final result = await client.webSearch(
-      query,
-      options: WebSearchOptions(provider: provider, k: k),
-    );
-    return _searchToMap(result);
-  }
+  }) =>
+      _record<Map<String, Object?>>(
+        'search',
+        <String, Object?>{'query': query, 'provider': provider, 'k': k},
+        () async {
+          final result = await client.webSearch(
+            query,
+            options: WebSearchOptions(provider: provider, k: k),
+          );
+          return _searchToMap(result);
+        },
+        resultOf: (value) => value,
+      );
 
   // ── fetch ─────────────────────────────────────────────────────────
 
@@ -201,13 +255,19 @@ class SubstrateBridge {
   Future<Map<String, Object?>> fetch(
     String url, {
     int? budgetBytes,
-  }) async {
-    final result = await client.webFetch(
-      Uri.parse(url),
-      options: WebFetchOptions(budgetBytes: budgetBytes),
-    );
-    return _fetchToMap(result);
-  }
+  }) =>
+      _record<Map<String, Object?>>(
+        'fetch',
+        <String, Object?>{'url': url, 'budgetBytes': budgetBytes},
+        () async {
+          final result = await client.webFetch(
+            Uri.parse(url),
+            options: WebFetchOptions(budgetBytes: budgetBytes),
+          );
+          return _fetchToMap(result);
+        },
+        resultOf: (value) => value,
+      );
 
   // ── primitive ⇄ domain conversions ────────────────────────────────
 

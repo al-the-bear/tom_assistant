@@ -48,6 +48,8 @@ import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show BrainVersion, NodeId, Vec;
 
+import 'bridge_call_recorder.dart';
+
 /// Re-exposes the memory primitive set to d4rt procedure scripts.
 ///
 /// Mirrors the memory rows of `tom_brain_procedure_prototype_specification.md`
@@ -60,9 +62,70 @@ class MemoryBridge {
   /// (PE-10). Injected by the host (C.16).
   final TomBrainMemoryClient client;
 
-  /// Wraps [client]. The host constructs this natively and registers
-  /// the instance with the d4rt runtime.
-  MemoryBridge(this.client);
+  /// Per-run recording hook (E.3.2). `null` on the shared template bridge
+  /// the engine is constructed with; the engine binds a per-run instance to
+  /// the active recorder so every effect call lands on that run's trail and
+  /// folds into its effort tally. Not part of the d4rt-facing constructor
+  /// surface — a procedure script only ever sees the injected instance and
+  /// calls its methods, it never constructs the bridge.
+  final BridgeCallRecorder? _onCall;
+
+  /// Wraps [client]. The host constructs this natively and registers the
+  /// instance with the d4rt runtime. [onCall], when supplied, records each
+  /// completed primitive call against the issuing run (E.3.2).
+  MemoryBridge(this.client, {BridgeCallRecorder? onCall}) : _onCall = onCall;
+
+  /// Delegates to [body], and — when [_onCall] is wired — records the call
+  /// (name [primitive], argument map [input], the flattened [resultOf] of
+  /// the value, and the measured wall-clock cost) before returning the
+  /// value unchanged. With no hook wired the call is a straight delegate
+  /// with zero recording overhead. A throwing [body] propagates without a
+  /// recording — a failed call is not a recorded successful call; the engine
+  /// records the crash on its own path.
+  Future<T> _record<T>(
+    String primitive,
+    Map<String, Object?> input,
+    Future<T> Function() body, {
+    required Map<String, Object?> Function(T value) resultOf,
+  }) async {
+    final onCall = _onCall;
+    if (onCall == null) return body();
+    final watch = Stopwatch()..start();
+    final value = await body();
+    watch.stop();
+    await onCall(
+      primitive,
+      input,
+      resultOf(value),
+      elapsedMs: watch.elapsedMilliseconds,
+    );
+    return value;
+  }
+
+  /// Void counterpart of [_record] for primitives that return nothing:
+  /// they record an empty result map (only the fact and the cost of the
+  /// call), never a return payload.
+  Future<void> _recordVoid(
+    String primitive,
+    Map<String, Object?> input,
+    Future<void> Function() body,
+  ) async {
+    final onCall = _onCall;
+    if (onCall == null) return body();
+    final watch = Stopwatch()..start();
+    await body();
+    watch.stop();
+    await onCall(
+      primitive,
+      input,
+      _noResult,
+      elapsedMs: watch.elapsedMilliseconds,
+    );
+  }
+
+  /// The empty result map void primitives record (they carry no return
+  /// payload, only the fact and the cost of the call).
+  static const Map<String, Object?> _noResult = <String, Object?>{};
 
   // ── recall ──────────────────────────────────────────────────────
 
@@ -81,18 +144,24 @@ class MemoryBridge {
     String text, {
     List<String> modes = const <String>['bm25', 'vector'],
     int k = 8,
-  }) async {
-    final query = RecallQuery(
-      text: text,
-      modes: modes.map(_parseMode).toSet(),
-      k: k,
-    );
-    final result = await client.recall(query);
-    return <String, Object?>{
-      'nodes': result.nodes.map(_nodeToMap).toList(),
-      'report': _reportToMap(result.report),
-    };
-  }
+  }) =>
+      _record<Map<String, Object?>>(
+        'recall',
+        <String, Object?>{'text': text, 'modes': modes, 'k': k},
+        () async {
+          final query = RecallQuery(
+            text: text,
+            modes: modes.map(_parseMode).toSet(),
+            k: k,
+          );
+          final result = await client.recall(query);
+          return <String, Object?>{
+            'nodes': result.nodes.map(_nodeToMap).toList(),
+            'report': _reportToMap(result.report),
+          };
+        },
+        resultOf: (value) => value,
+      );
 
   // ── persist ─────────────────────────────────────────────────────
 
@@ -111,23 +180,29 @@ class MemoryBridge {
     String? causedBy,
     String? runId,
     List<double>? embedding,
-  }) async {
-    final draft = NodeDraft(
-      typeName: typeName,
-      values: values,
-      embedding: embedding == null ? null : Vec.fromList(embedding),
-    );
-    final id = await client.persist(
-      draft,
-      scope: Scope(
-        producer: producer,
-        idempotencyKey: idempotencyKey,
-        causedBy: causedBy,
-        runId: runId,
-      ),
-    );
-    return id.value;
-  }
+  }) =>
+      _record<String>(
+        'persist',
+        <String, Object?>{'typeName': typeName, 'values': values},
+        () async {
+          final draft = NodeDraft(
+            typeName: typeName,
+            values: values,
+            embedding: embedding == null ? null : Vec.fromList(embedding),
+          );
+          final id = await client.persist(
+            draft,
+            scope: Scope(
+              producer: producer,
+              idempotencyKey: idempotencyKey,
+              causedBy: causedBy,
+              runId: runId,
+            ),
+          );
+          return id.value;
+        },
+        resultOf: (id) => <String, Object?>{'id': id},
+      );
 
   // ── edge ────────────────────────────────────────────────────────
 
@@ -148,22 +223,28 @@ class MemoryBridge {
     String? causedBy,
     String? runId,
     Map<String, Object?>? attrs,
-  }) async {
-    final id = await client.edge(
-      NodeId.fromString(from),
-      EdgeType.fromWireName(type),
-      NodeId.fromString(to),
-      scope: Scope(
-        producer: producer,
-        idempotencyKey: idempotencyKey,
-        causedBy: causedBy,
-        runId: runId,
-      ),
-      weight: weight,
-      attrs: attrs,
-    );
-    return id.value;
-  }
+  }) =>
+      _record<String>(
+        'edge',
+        <String, Object?>{'from': from, 'type': type, 'to': to},
+        () async {
+          final id = await client.edge(
+            NodeId.fromString(from),
+            EdgeType.fromWireName(type),
+            NodeId.fromString(to),
+            scope: Scope(
+              producer: producer,
+              idempotencyKey: idempotencyKey,
+              causedBy: causedBy,
+              runId: runId,
+            ),
+            weight: weight,
+            attrs: attrs,
+          );
+          return id.value;
+        },
+        resultOf: (id) => <String, Object?>{'id': id},
+      );
 
   // ── propose_node_type ───────────────────────────────────────────
 
@@ -188,21 +269,33 @@ class MemoryBridge {
   /// Embedding / index / retention policies default to "none / index
   /// nothing / default retention". The full policy surface is out of
   /// the prototype's scope (Q-C.12.3).
-  Future<void> proposeNodeType(Map<String, Object?> decl) =>
-      client.registerNodeType(_buildNodeTypeDecl(decl));
+  Future<void> proposeNodeType(Map<String, Object?> decl) => _recordVoid(
+        'proposeNodeType',
+        <String, Object?>{'decl': decl},
+        () => client.registerNodeType(_buildNodeTypeDecl(decl)),
+      );
 
   // ── stack.* ─────────────────────────────────────────────────────
 
   /// `stack.list` — summary row per stack.
-  Future<List<Map<String, Object?>>> stackList() async {
-    final summaries = await client.stacks.list();
-    return summaries.map(_summaryToMap).toList();
-  }
+  Future<List<Map<String, Object?>>> stackList() =>
+      _record<List<Map<String, Object?>>>(
+        'stackList',
+        _noResult,
+        () async {
+          final summaries = await client.stacks.list();
+          return summaries.map(_summaryToMap).toList();
+        },
+        resultOf: (entries) => <String, Object?>{'entries': entries},
+      );
 
   /// `stack.create` — creates a non-bootstrap stack from a primitive
   /// declaration map (see [_buildStackDecl] for the supported shape).
-  Future<void> stackCreate(Map<String, Object?> decl) =>
-      client.stacks.create(_buildStackDecl(decl));
+  Future<void> stackCreate(Map<String, Object?> decl) => _recordVoid(
+        'stackCreate',
+        <String, Object?>{'decl': decl},
+        () => client.stacks.create(_buildStackDecl(decl)),
+      );
 
   /// `stack.push` — atomically pushes [nodeId] onto [name]. Returns the
   /// new stack-entry id string.
@@ -213,33 +306,55 @@ class MemoryBridge {
     Map<String, Object?>? attrs,
     String? producer,
     String? runId,
-  }) async {
-    final id = await client.stacks.push(
-      name,
-      NodeId.fromString(nodeId),
-      priority: priority,
-      attrs: attrs,
-      scope: producer == null
-          ? null
-          : Scope(producer: producer, runId: runId),
-    );
-    return id.value;
-  }
+  }) =>
+      _record<String>(
+        'stackPush',
+        <String, Object?>{
+          'name': name,
+          'nodeId': nodeId,
+          'priority': priority,
+        },
+        () async {
+          final id = await client.stacks.push(
+            name,
+            NodeId.fromString(nodeId),
+            priority: priority,
+            attrs: attrs,
+            scope: producer == null
+                ? null
+                : Scope(producer: producer, runId: runId),
+          );
+          return id.value;
+        },
+        resultOf: (id) => <String, Object?>{'id': id},
+      );
 
   /// `stack.peek` — top-[k] read honouring the stack's priority policy.
   Future<List<Map<String, Object?>>> stackPeek(
     String name, {
     int k = 16,
-  }) async {
-    final entries = await client.stacks.peek(name, k: k);
-    return entries.map(_entryToMap).toList();
-  }
+  }) =>
+      _record<List<Map<String, Object?>>>(
+        'stackPeek',
+        <String, Object?>{'name': name, 'k': k},
+        () async {
+          final entries = await client.stacks.peek(name, k: k);
+          return entries.map(_entryToMap).toList();
+        },
+        resultOf: (entries) => <String, Object?>{'entries': entries},
+      );
 
   /// `stack.pop` — atomically pops the top entry, or `null` when empty.
-  Future<Map<String, Object?>?> stackPop(String name) async {
-    final entry = await client.stacks.pop(name);
-    return entry == null ? null : _entryToMap(entry);
-  }
+  Future<Map<String, Object?>?> stackPop(String name) =>
+      _record<Map<String, Object?>?>(
+        'stackPop',
+        <String, Object?>{'name': name},
+        () async {
+          final entry = await client.stacks.pop(name);
+          return entry == null ? null : _entryToMap(entry);
+        },
+        resultOf: (entry) => entry ?? _noResult,
+      );
 
   /// `stack.update` — updates priority / status / attrs of an entry.
   /// [status] is a [StackEntryStatus] name (`active` / `archived`).
@@ -250,17 +365,25 @@ class MemoryBridge {
     String? status,
     Map<String, Object?>? attrs,
   }) =>
-      client.stacks.update(
-        name,
-        NodeId.fromString(nodeId),
-        priority: priority,
-        status: status == null ? null : StackEntryStatus.values.byName(status),
-        attrs: attrs,
+      _recordVoid(
+        'stackUpdate',
+        <String, Object?>{'name': name, 'nodeId': nodeId},
+        () => client.stacks.update(
+          name,
+          NodeId.fromString(nodeId),
+          priority: priority,
+          status:
+              status == null ? null : StackEntryStatus.values.byName(status),
+          attrs: attrs,
+        ),
       );
 
   /// `stack.remove` — removes the entry's membership; the node stays.
-  Future<void> stackRemove(String name, String nodeId) =>
-      client.stacks.remove(name, NodeId.fromString(nodeId));
+  Future<void> stackRemove(String name, String nodeId) => _recordVoid(
+        'stackRemove',
+        <String, Object?>{'name': name, 'nodeId': nodeId},
+        () => client.stacks.remove(name, NodeId.fromString(nodeId)),
+      );
 
   // ── primitive ⇄ domain conversions ──────────────────────────────
 

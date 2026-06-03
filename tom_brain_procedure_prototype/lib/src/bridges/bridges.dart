@@ -38,5 +38,6 @@
 //     test doubles.
 
 export 'brain_bridges_registrar.dart';
+export 'bridge_call_recorder.dart' show BridgeCallRecorder;
 export 'memory_bridge.dart';
 export 'substrate_bridge.dart';

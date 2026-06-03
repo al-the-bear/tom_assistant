@@ -311,6 +311,59 @@ Future<Object?> run(inputs) async {
     });
   });
 
+  group('E.3.2 bridged calls are recorded on the run trail', () {
+    test('a sub.embed call lands as a primitiveCall entry and counts effort',
+        () async {
+      final engine = engineFor(<LoadedProcedure>[
+        _procedure(
+          'embed_v1',
+          '''
+import '${BrainBridges.substrateLibrary}';
+
+Future<Object?> run(inputs) async {
+  await sub.embed('hello');
+  return 1;
+}
+''',
+        ),
+      ]);
+
+      final outcome =
+          await engine.invoke(ProcedureInvocation(procedureId: 'embed_v1')).outcome;
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+
+      // The bridged effect call landed on this run's trail as a primitiveCall
+      // entry naming the primitive (E.3.2).
+      final primitiveCalls = outcome.entries
+          .where((e) => e.kind == TrailEntryKind.primitiveCall)
+          .toList();
+      expect(primitiveCalls, hasLength(1));
+      expect(primitiveCalls.single.payload['primitive'], 'embed');
+      expect((primitiveCalls.single.payload['input']! as Map)['text'], 'hello');
+
+      // The call folded into the run's effort tally: embed is a substrate
+      // tool callout (+1 toolCalls) per the EffortAccountant.
+      expect(outcome.record.effort.toolCalls, 1);
+    });
+
+    test('a procedure that makes no bridged call records none', () async {
+      final engine = engineFor(<LoadedProcedure>[
+        _procedure('answer_v1', 'Object? run(inputs) => 1;'),
+      ]);
+
+      final outcome =
+          await engine.invoke(ProcedureInvocation(procedureId: 'answer_v1')).outcome;
+
+      final primitiveCalls = outcome.entries
+          .where((e) => e.kind == TrailEntryKind.primitiveCall)
+          .toList();
+      expect(primitiveCalls, isEmpty);
+      expect(outcome.record.effort.toolCalls, 0);
+      expect(outcome.record.effort.memoryReads, 0);
+    });
+  });
+
   group('C.39-1 run.cancel() abandons a run and closes it aborted', () {
     test('an explicit cancel closes aborted with a run_cancelled note',
         () async {
