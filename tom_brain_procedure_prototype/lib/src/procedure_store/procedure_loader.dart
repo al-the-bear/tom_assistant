@@ -309,6 +309,12 @@ final class ProcedureLoader {
   }
 
   String _entryString(Map<Object?, Object?> map, String key, String field) {
+    if (!map.containsKey(key) || map[key] == null) {
+      throw ProcedureHeaderInvalid(
+        'entry "$key" is required',
+        field: field,
+      );
+    }
     final value = map[key];
     if (value is! String || value.trim().isEmpty) {
       throw ProcedureHeaderInvalid(

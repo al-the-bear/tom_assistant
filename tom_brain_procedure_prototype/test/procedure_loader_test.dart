@@ -292,6 +292,27 @@ class Foo {
             .having((e) => e.field, 'field', 'inputs')),
       );
     });
+
+    test('names a missing entry key distinctly from a wrong-typed one (E.3.6)',
+        () {
+      const missingName = '''
+/// @procedure
+/// id: x_v1
+/// version: 1
+/// summary: S.
+/// successCriterion: C.
+/// budget: { wallClockMs: 1 }
+/// inputs:
+///   - { type: String }
+''';
+      expect(
+        () => loader.parse(missingName),
+        throwsA(isA<ProcedureHeaderInvalid>()
+            .having((e) => e.field, 'field', 'inputs')
+            .having((e) => e.reason, 'reason',
+                allOf(contains('name'), contains('required')))),
+      );
+    });
   });
 
   group('C.24 ProcedureLoader.load — bundles ref + source', () {
