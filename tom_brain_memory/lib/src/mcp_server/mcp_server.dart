@@ -1,17 +1,19 @@
 // Barrel for the `mcp_server/` module (Plan step A.23).
 //
 // Owns the MCP server described in `memory_specification.md` § 3.2 —
-// the read-only network surface other Tom Brain components and
-// well-known external consumers use when they cannot share an isolate
-// with memory.
+// the network surface other Tom Brain components and well-known
+// external consumers use when they cannot share an isolate with
+// memory.
 //
 // Scope:
 //
 //   - Built on `dart_mcp` (pub.dev) — the workspace MCP library.
-//   - Read-only seven-tool surface (no writes; writes happen through
-//     the in-process API or the procedure-engine bridge):
-//       `recall`, `get_node`, `edges_of`, `list_node_types`,
-//       `stack_peek`, `centroid_lookup`, `health`.
+//   - Seven-tool surface. Six are pure reads; `memory.persistNote` is
+//     the single, closed-set write (gated by `McpWriteForbidden` to
+//     the `allowedPersistNoteTypeNames` types and by bearer auth):
+//       `memory.recall`, `memory.get`, `memory.edgesOf`,
+//       `memory.stack.list`, `memory.stack.peek`, `memory.classify`,
+//       `memory.persistNote`.
 //   - Bearer-token authentication via `TomBearerAuthentication`
 //     (re-exported from `tom_core_kernel`; see Q-A.22.2).
 //   - No HTTP transport in scope for the v1 server. Stdio + UNIX socket

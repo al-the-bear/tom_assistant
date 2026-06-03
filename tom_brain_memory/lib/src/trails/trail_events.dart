@@ -1,7 +1,7 @@
 // Trail `MemoryEvent` leaves — observability for the per-run
 // JSONL trail subsystem (memory_specification.md § 8 / § 16).
 //
-// Plan step A.47 owns the first three:
+// Three of the four events fire on the write path:
 //
 //   - `TrailOpened`            — emitted by `SqliteTrailStore` *after*
 //                                the first JSONL line is durable AND
@@ -22,10 +22,10 @@
 //                                full `TrailOutcome` so observers do
 //                                not need a follow-up read.
 //
-// `TrailEntryCorrupted` is scoped to the corruption-tolerant reader
-// (A.48); it lands here so the events module is complete from the
-// start (A.47 emits it on read-time failures even before the full
-// A.48 hardening lands).
+// `TrailEntryCorrupted` is emitted by the corruption-tolerant reader
+// on read-time failures (a malformed or truncated JSONL line), so a
+// consumer can observe partial-trail recovery without parsing the
+// file itself.
 //
 // Per the per-component convention documented on `MemoryEvent`, the
 // `kind` strings are kebab-cased under the `memory.trail-*` namespace.

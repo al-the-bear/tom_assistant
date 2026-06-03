@@ -96,6 +96,14 @@ final class Fts5Catalog {
     return List<String>.unmodifiable(fields);
   }
 
+  /// Whether [decl] carries any FTS-indexed fields — i.e. whether a
+  /// per-type FTS5 table exists (or will be provisioned) for it.
+  ///
+  /// Reads clearer at call sites than `ftsColumnsFor(decl).isEmpty`:
+  /// the writer/reader guard on "does this type have an FTS table?"
+  /// rather than allocating the column list only to test its length.
+  bool hasFtsTable(NodeTypeDecl decl) => decl.indexPolicy.ftsFields.isNotEmpty;
+
   /// Provisions the FTS5 virtual table for [decl] on [db] if and
   /// only if the type carries any FTS-indexed fields.
   ///

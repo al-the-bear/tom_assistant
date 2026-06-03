@@ -109,7 +109,7 @@ export 'boot_integrity.dart'
         defaultLoadExtensionProbe,
         embeddingModelMarkerPath,
         kEmbeddingModelMarkerFileName;
-export 'memory_directory.dart';
+export 'memory_directory.dart' show MemoryDirectory;
 export 'schema_migrator.dart'
     show
         SchemaMigration,

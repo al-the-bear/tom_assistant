@@ -67,13 +67,14 @@ final class Fts5Writer {
   ///     `NodeTypeRegistry._validateIndexPolicy` an FTS-eligible
   ///     field is always typed `string` on the schema, so the
   ///     stringification is identity for any present non-null value.
-  ///   * Existing rows for the same `node_id` are replaced via
-  ///     `INSERT INTO … (rowid, …) SELECT rowid, … FROM …` — but the
-  ///     FTS5 path simpler than that: the persister never re-inserts
-  ///     an existing node id (idempotent persist returns early
-  ///     without calling this writer). For safety against a future
-  ///     update-then-persist path we still issue `DELETE` + `INSERT`
-  ///     under the same transaction.
+  ///   * Existing rows for the same `node_id` are replaced with a
+  ///     `DELETE … WHERE node_id = ?` followed by a fresh `INSERT`,
+  ///     both under the caller's transaction. The persister never
+  ///     re-inserts an existing node id today (idempotent persist
+  ///     returns early without calling this writer), so the DELETE is
+  ///     a safety net against a future update-then-persist path — it
+  ///     guarantees at most one FTS row per node id, which keeps BM25
+  ///     term frequencies honest.
   ///
   /// Must be called inside an open SQLite transaction (the
   /// coordinator's `writeNode` callback already runs inside one).
@@ -84,8 +85,8 @@ final class Fts5Writer {
     required String nodeId,
     required Map<String, Object?> values,
   }) {
+    if (!_catalog.hasFtsTable(decl)) return;
     final columns = _catalog.ftsColumnsFor(decl);
-    if (columns.isEmpty) return;
 
     final tableName = _catalog.tableNameFor(decl.typeName);
 
@@ -121,8 +122,7 @@ final class Fts5Writer {
     required NodeTypeDecl decl,
     required String nodeId,
   }) {
-    final columns = _catalog.ftsColumnsFor(decl);
-    if (columns.isEmpty) return;
+    if (!_catalog.hasFtsTable(decl)) return;
     final tableName = _catalog.tableNameFor(decl.typeName);
     db.execute(
       'DELETE FROM "$tableName" WHERE node_id = ?',

@@ -23,8 +23,9 @@
 //     non-serialisable callbacks. Any method added here is
 //     unavailable through the isolate adapter by construction.
 //
-// The MCP server (§ 3.2) wraps a strict read-only slice of the
-// client surface for cross-process callers. The procedure-engine
+// The MCP server (§ 3.2) wraps a narrow slice of the client surface
+// for cross-process callers — six read tools plus the single
+// closed-set `memory.persistNote` write. The procedure-engine
 // bridge (§ 3.3) re-exports the methods as the primitive set
 // d4rt scripts call.
 

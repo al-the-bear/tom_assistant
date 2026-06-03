@@ -19,8 +19,9 @@
 //   - Migrations — `migrations` getter (delegates to `migrations/`).
 //   - Observability — `events`, `stats`.
 //
-// The MCP surface (§ 3.2) wraps a strict read-only slice of this API
-// and lives under `mcp_server/`. The procedure-engine bridge (§ 3.3)
+// The MCP surface (§ 3.2) wraps a narrow slice of this API — six read
+// tools plus the single closed-set `memory.persistNote` write — and
+// lives under `mcp_server/`. The procedure-engine bridge (§ 3.3)
 // adapts this API for isolate transport and lives under
 // `isolate_adapter/`. Both of those modules consume `api/`; the
 // reverse is forbidden.
@@ -39,8 +40,8 @@
 // exported from the top-level package barrel; it is intentionally not
 // re-exported here.
 
-export 'memory_event.dart';
-export 'memory_stats.dart';
-export 'scope.dart';
-export 'tom_brain_memory.dart';
-export 'tom_brain_memory_client.dart';
+export 'memory_event.dart' show MemoryEvent;
+export 'memory_stats.dart' show LatencyHistogram, MemoryStats;
+export 'scope.dart' show DemotionReason, ForgetReason, Scope;
+export 'tom_brain_memory.dart' show TomBrainMemory;
+export 'tom_brain_memory_client.dart' show TomBrainMemoryClient;

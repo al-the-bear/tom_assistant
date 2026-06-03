@@ -6,17 +6,14 @@
 /// is augmented by retrieval over the graph, and each completed trail is
 /// folded back into the graph by the cognitive agents.
 ///
-/// At A.23 the `lib/src/` folder layout is in place but every
-/// subfolder barrel is intentionally empty — the actual surface lands
-/// incrementally across the remaining Phase A steps:
-///
-/// - A.23 ✅ — `lib/src/` folder layout (`store/`, `retrieval/`,
-///   `nodes/`, `edges/`, `stacks/`, `classification/`, `trails/`,
-///   `migrations/`, `api/`, `mcp_server/`, `isolate_adapter/`,
-///   `config/`).
-/// - A.24 — `TomBrainMemory` abstract interface + `MemoryConfig`.
-/// - A.26 – A.87 — store, retrieval, agents, sleep cycles, MCP server,
-///   multi-machine sync, backup.
+/// The public surface is organised into one module per `lib/src/`
+/// subfolder (`store/`, `retrieval/`, `nodes/`, `edges/`, `stacks/`,
+/// `classification/`, `trails/`, `migrations/`, `api/`, `mcp_server/`,
+/// `isolate_adapter/`, `config/`, plus `budget/`, `cognitive_agents/`,
+/// and `observability/`). Each module's barrel `show`-exports its own
+/// public types; this top-level barrel re-exports those module barrels
+/// so the whole surface is reachable through
+/// `package:tom_brain_memory/tom_brain_memory.dart`.
 ///
 /// See `_ai/quests/tom_brain/prototype_implementation_plan.md` Phase A
 /// (steps A.21 – A.94) for the build order, and
@@ -24,12 +21,9 @@
 /// package implements.
 library;
 
-// A.23 — module barrels. Each `src/<folder>/<folder>.dart` is currently
-// an empty barrel; the export here ensures the top-level package
-// surface mirrors the internal layout from day one. As later A-steps
-// add public symbols inside each module, the symbols become visible
-// through `package:tom_brain_memory/tom_brain_memory.dart` without
-// further changes here.
+// Module barrels. Each `src/<folder>/<folder>.dart` re-exports the
+// public types of its module behind explicit `show` clauses; the
+// top-level package surface mirrors the internal layout.
 export 'src/api/api.dart';
 export 'src/budget/budget.dart';
 export 'src/classification/classification.dart';

@@ -33,7 +33,7 @@ import '../config/memory_config.dart';
 import '../observability/memory_log.dart';
 import 'isolate_boot.dart';
 import 'isolate_cancellation_protocol.dart';
-import 'isolate_envelopes.dart';
+import 'isolate_envelopes_full.dart';
 import 'isolate_messages.dart';
 import 'isolate_stream_protocol.dart';
 import 'memory_factory.dart';

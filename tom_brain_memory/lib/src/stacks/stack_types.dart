@@ -30,7 +30,23 @@ enum PriorityPolicyKind {
   /// `entry.priority * exp(-Δt / halflife)` descending.
   /// `halflife` is part of the policy config (carried separately
   /// because it's only meaningful for this variant).
-  timeDecayedPriority,
+  timeDecayedPriority;
+
+  /// Parses the persisted wire name (the enum's `.name`) back to a
+  /// kind. Throws [ArgumentError] when [wireName] matches no known
+  /// kind — a corrupt or hand-edited `priority_policy` column.
+  ///
+  /// Centralises the `priority_policy`-string → enum decode so the
+  /// read-back, ordering, and validation sites cannot drift apart on
+  /// the spelling of a wire name (review D.4.7).
+  static PriorityPolicyKind byWireName(String wireName) => values.firstWhere(
+        (k) => k.name == wireName,
+        orElse: () => throw ArgumentError.value(
+          wireName,
+          'wireName',
+          'unknown PriorityPolicyKind wire name',
+        ),
+      );
 }
 
 /// Retention rule applied when a stack overflows its bound.
@@ -45,13 +61,40 @@ enum RetentionPolicyKind {
   boundedN,
 
   /// Entries older than `maxAge` are archived.
-  boundedAge,
+  boundedAge;
+
+  /// Parses the persisted wire name (the enum's `.name`) back to a
+  /// kind. Throws [ArgumentError] when [wireName] matches no known
+  /// kind — a corrupt or hand-edited `retention_policy` column.
+  ///
+  /// Centralises the `retention_policy`-string → enum decode so the
+  /// read-back and enforcement sites cannot drift (review D.4.7).
+  static RetentionPolicyKind byWireName(String wireName) => values.firstWhere(
+        (k) => k.name == wireName,
+        orElse: () => throw ArgumentError.value(
+          wireName,
+          'wireName',
+          'unknown RetentionPolicyKind wire name',
+        ),
+      );
 }
 
 /// Lifecycle status of a single `StackEntry`.
 enum StackEntryStatus {
   active,
-  archived,
+  archived;
+
+  /// Parses the persisted wire name (the enum's `.name`) back to a
+  /// status. Throws [ArgumentError] when [wireName] matches no known
+  /// status — a corrupt or hand-edited `status` column.
+  static StackEntryStatus byWireName(String wireName) => values.firstWhere(
+        (s) => s.name == wireName,
+        orElse: () => throw ArgumentError.value(
+          wireName,
+          'wireName',
+          'unknown StackEntryStatus wire name',
+        ),
+      );
 }
 
 /// Combined policy bundle for a stack — what the dispatcher gets

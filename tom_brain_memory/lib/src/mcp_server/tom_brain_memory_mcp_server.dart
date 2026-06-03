@@ -4,7 +4,8 @@
 //        when the optional `memory` constructor parameter is supplied.
 //
 // Extends `dart_mcp`'s [MCPServer] (with the [ToolsSupport] mixin) and
-// advertises the Tom Brain memory identity + the v1 read-only contract.
+// advertises the Tom Brain memory identity + the v1 tool contract
+// (six reads plus the single closed-set `memory.persistNote` write).
 // When constructed with a non-null [TomBrainMemory] argument, the
 // constructor body registers the seven spec § 3.2 tools (`memory.recall`,
 // `memory.get`, `memory.edgesOf`, `memory.stack.list`,

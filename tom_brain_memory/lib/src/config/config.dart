@@ -29,5 +29,17 @@
 //   - A.83 ✅ — `MemoryConfigLoader` parses the YAML in spec § 14 into
 //     the typed `MemoryConfig`.
 
-export 'memory_config.dart';
-export 'memory_config_loader.dart';
+export 'memory_config.dart'
+    show
+        BudgetsConfig,
+        ClassificationConfig,
+        DefaultWriteBudgetConfig,
+        McpServerConfig,
+        MemoryConfig,
+        ReplicationConfig,
+        ReplicationRole,
+        RetrievalConfig,
+        SqliteVecConfig,
+        TrailsConfig;
+export 'memory_config_loader.dart'
+    show MemoryConfigException, MemoryConfigLoader;

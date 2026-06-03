@@ -11,8 +11,8 @@
 //   ...
 //   await memory.closeTrail(tid, outcome);
 //
-// At A.24 only the value types exist. The writer / reader land at
-// A.46 – A.49.
+// This file owns the trail *value types*; the writer / reader live in
+// `sqlite_trail_store.dart`.
 
 /// Reference to the procedure run a trail belongs to.
 ///

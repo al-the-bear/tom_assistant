@@ -11,12 +11,12 @@
 // ─────────────────────────────────────────────────────────────────────
 //
 // The persister already routes through the coordinator (A.34 — see
-// `node_persister.dart` line 191). The coordinator already enqueues
+// `NodePersister.persist`). The coordinator already enqueues
 // `pending_vector_writes` rows and calls `applier.apply(write)` after
-// commit (A.30 — see `two_db_coordinator.dart` line 397). The vector
-// table already accepts `(nodeId, vector, modelId)` and writes into
-// the per-model physical table (A.51 — see `vector_table.dart`
-// line 667).
+// commit (A.30 — see `TwoDbCoordinator.persistNodeWithVector`). The
+// vector table already accepts `(nodeId, vector, modelId)` and writes
+// into the per-model physical table (A.51 — see
+// `VectorTable.insertVector`).
 //
 // What was missing was the **production** `VectorApplier`. Until A.52
 // the only `VectorApplier` implementations were in-test fakes (the
@@ -64,13 +64,13 @@
 // Idempotency
 // ─────────────────────────────────────────────────────────────────────
 //
-// The `VectorApplier` contract (`two_db_coordinator.dart`
-// line 198-200) requires `apply` to be idempotent so the recovery
-// path can replay. This adapter delegates idempotency to
-// `VectorTable.insertVector`, which both ship backends implement via
-// `INSERT … ON CONFLICT(node_id) DO UPDATE SET embedding = excluded
-// .embedding` (`vector_table.dart` lines 315-319 for vec0, lines
-// 398-404 for plain). A replayed `apply(write)` with the same
+// The `VectorApplier.apply` contract requires `apply` to be
+// idempotent so the recovery path can replay. This adapter delegates
+// idempotency to `VectorTable.insertVector`, which both ship backends
+// implement via `INSERT … ON CONFLICT(node_id) DO UPDATE SET embedding
+// = excluded.embedding` (`Vec0VirtualTableBackend.insertRow` and
+// `PlainBlobTableBackend.insertRow`). A replayed `apply(write)` with
+// the same
 // `(nodeId, modelId)` overwrites; the final state converges
 // regardless of how many times the recovery loop runs.
 //
@@ -87,15 +87,15 @@
 //
 // The coordinator's call sites handle the propagation:
 //
-//   * `persistNodeWithVector` (line 397): rethrows the applier
-//     exception to the caller. The pending row stays committed so the
-//     next `recoverPending` can converge. This is the spec § 2.4
+//   * `persistNodeWithVector`: rethrows the applier exception to the
+//     caller. The pending row stays committed so the next
+//     `recoverPending` can converge. This is the spec § 2.4
 //     contract — a missing vector with the node visible is the
 //     conservative branch (re-apply on next boot) over the
 //     alternative (delete the node, which would lose the row).
 //
-//   * `recoverPending` (line 434-446): aggregates the per-row failure
-//     into `TwoDbReplayReport.failures`, leaves the pending row, and
+//   * `recoverPending`: aggregates the per-row failure into
+//     `TwoDbReplayReport.failures`, leaves the pending row, and
 //     continues with the next row. The next call to `recoverPending`
 //     re-tries.
 //
@@ -179,9 +179,11 @@ final class VectorTableApplier implements VectorApplier {
   ///
   /// Throws on any of:
   ///
-  ///   * `ArgumentError` — `payloadBlob` is empty or its length is
-  ///     not a multiple of 4 (i.e. the WAL row is corrupt or was
-  ///     written under a non-float32 wire format).
+  ///   * `ArgumentError` — raised by `Vec.fromBlob` (not by this
+  ///     method) when `payloadBlob` is empty or its length is not a
+  ///     multiple of 4 (i.e. the WAL row is corrupt or was written
+  ///     under a non-float32 wire format). The length contract is
+  ///     `Vec.fromBlob`'s; `apply` surfaces it unchanged.
   ///   * `EmbeddingModelMismatch` — no index is installed for
   ///     `write.embeddingModelId`. The conservative branch: do not
   ///     auto-install (the install policy is an operator decision per

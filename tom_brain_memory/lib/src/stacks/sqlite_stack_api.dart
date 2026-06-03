@@ -873,16 +873,17 @@ final class SqliteStackApi with CloseGuard implements StackApi {
   /// score, so a top-N pre-filter is safe) can replace it later
   /// if profiling demands it.
   List<StackEntry> _readTopActive(String name, Row stackRow, int k) {
-    final policyName = stackRow['priority_policy'] as String;
+    final priorityKind =
+        PriorityPolicyKind.byWireName(stackRow['priority_policy'] as String);
     final priorityAttrs = _decodeAttrsJson(
       stackRow['priority_policy_attrs_json'] as String?,
     );
 
-    if (policyName == PriorityPolicyKind.timeDecayedPriority.name) {
+    if (priorityKind == PriorityPolicyKind.timeDecayedPriority) {
       return _readTimeDecayedTop(name, priorityAttrs, k);
     }
 
-    final orderClause = _staticOrderClause(policyName);
+    final orderClause = _staticOrderClause(priorityKind);
     final rows = _db.select(
       'SELECT id, stack_name, entry_node, priority, status, '
       'attrs_json, pushed_at_ms '
@@ -912,7 +913,7 @@ final class SqliteStackApi with CloseGuard implements StackApi {
       // ordering so the read does not throw; the misconfiguration
       // surfaces via `info`.
       final orderClause =
-          _staticOrderClause(PriorityPolicyKind.priority.name);
+          _staticOrderClause(PriorityPolicyKind.priority);
       final rows = _db.select(
         'SELECT id, stack_name, entry_node, priority, status, '
         'attrs_json, pushed_at_ms '
@@ -962,7 +963,7 @@ final class SqliteStackApi with CloseGuard implements StackApi {
   }
 
   StackEntryStatus _statusFromName(String name) =>
-      StackEntryStatus.values.firstWhere((s) => s.name == name);
+      StackEntryStatus.byWireName(name);
 
   /// Returns the SQL `ORDER BY` clause for one of the three
   /// *static* policies (`fifo`, `lifo`, `priority`). These map
@@ -972,19 +973,27 @@ final class SqliteStackApi with CloseGuard implements StackApi {
   /// continuous decay cannot be expressed as a single `ORDER BY`.
   /// The clauses here are an optimisation; the canonical ordering
   /// reference is `priority_policy.dart`.
-  String _staticOrderClause(String policy) {
+  ///
+  /// Callers must route `timeDecayedPriority` to `_readTimeDecayedTop`
+  /// before reaching here; passing it is a programming error and
+  /// throws. The exhaustive `switch` (no `default`) makes a future
+  /// `PriorityPolicyKind` variant a compile-time error rather than a
+  /// silent FIFO fallback.
+  String _staticOrderClause(PriorityPolicyKind policy) {
     switch (policy) {
-      case 'fifo':
+      case PriorityPolicyKind.fifo:
         return 'ORDER BY pushed_at_ms ASC, id ASC';
-      case 'lifo':
+      case PriorityPolicyKind.lifo:
         return 'ORDER BY pushed_at_ms DESC, id DESC';
-      case 'priority':
+      case PriorityPolicyKind.priority:
         return 'ORDER BY priority DESC, pushed_at_ms ASC, id ASC';
-      default:
-        // Unknown policy — fall through to FIFO so the catalogue
-        // is still queryable. A surprised operator gets ordered
-        // results; the misconfiguration surfaces via `info`.
-        return 'ORDER BY pushed_at_ms ASC, id ASC';
+      case PriorityPolicyKind.timeDecayedPriority:
+        throw ArgumentError.value(
+          policy,
+          'policy',
+          'timeDecayedPriority has no static ORDER BY clause; route it '
+              'to _readTimeDecayedTop',
+        );
     }
   }
 
@@ -998,10 +1007,8 @@ final class SqliteStackApi with CloseGuard implements StackApi {
       row['retention_policy_attrs_json'] as String?,
     );
     return StackPolicy(
-      priority: PriorityPolicyKind.values
-          .firstWhere((p) => p.name == priorityName),
-      retention: RetentionPolicyKind.values
-          .firstWhere((r) => r.name == retentionName),
+      priority: PriorityPolicyKind.byWireName(priorityName),
+      retention: RetentionPolicyKind.byWireName(retentionName),
       maxCount: (retentionAttrs['maxCount'] as num?)?.toInt(),
       maxAgeMs: (retentionAttrs['maxAgeMs'] as num?)?.toInt(),
       halflifeMs: (priorityAttrs['halflifeMs'] as num?)?.toInt(),
@@ -1096,35 +1103,39 @@ final class SqliteStackApi with CloseGuard implements StackApi {
     Row stackRow,
     DateTime at,
   ) {
-    final retentionName = stackRow['retention_policy'] as String;
-    if (retentionName == RetentionPolicyKind.unbounded.name) {
-      return const <StackEntryId>[];
-    }
-    final retentionAttrs = _decodeAttrsJson(
-      stackRow['retention_policy_attrs_json'] as String?,
-    );
-    if (retentionName == RetentionPolicyKind.boundedN.name) {
-      final maxCount = (retentionAttrs['maxCount'] as num?)?.toInt();
-      // `_validatePolicy` guarantees a positive maxCount on every
-      // bounded_n stack; the defensive `<= 0` branch is for
-      // belt-and-braces against future config corruption (a row
-      // hand-edited outside the api would otherwise crash push).
-      if (maxCount == null || maxCount <= 0) {
+    // Decode the wire name to the enum once. A corrupt / hand-edited
+    // `retention_policy` column throws here (byWireName); the switch
+    // below is exhaustive, so adding a future `RetentionPolicyKind`
+    // variant is a compile-time error rather than a silent skip
+    // (review D.4.7).
+    final retentionKind =
+        RetentionPolicyKind.byWireName(stackRow['retention_policy'] as String);
+    switch (retentionKind) {
+      case RetentionPolicyKind.unbounded:
         return const <StackEntryId>[];
-      }
-      return _enforceBoundedN(name, stackRow, maxCount, at);
+      case RetentionPolicyKind.boundedN:
+        final retentionAttrs = _decodeAttrsJson(
+          stackRow['retention_policy_attrs_json'] as String?,
+        );
+        final maxCount = (retentionAttrs['maxCount'] as num?)?.toInt();
+        // `_validatePolicy` guarantees a positive maxCount on every
+        // bounded_n stack; the defensive `<= 0` branch is for
+        // belt-and-braces against future config corruption (a row
+        // hand-edited outside the api would otherwise crash push).
+        if (maxCount == null || maxCount <= 0) {
+          return const <StackEntryId>[];
+        }
+        return _enforceBoundedN(name, stackRow, maxCount, at);
+      case RetentionPolicyKind.boundedAge:
+        final retentionAttrs = _decodeAttrsJson(
+          stackRow['retention_policy_attrs_json'] as String?,
+        );
+        final maxAgeMs = (retentionAttrs['maxAgeMs'] as num?)?.toInt();
+        if (maxAgeMs == null || maxAgeMs <= 0) {
+          return const <StackEntryId>[];
+        }
+        return _enforceBoundedAge(name, maxAgeMs, at);
     }
-    if (retentionName == RetentionPolicyKind.boundedAge.name) {
-      final maxAgeMs = (retentionAttrs['maxAgeMs'] as num?)?.toInt();
-      if (maxAgeMs == null || maxAgeMs <= 0) {
-        return const <StackEntryId>[];
-      }
-      return _enforceBoundedAge(name, maxAgeMs, at);
-    }
-    // Unknown retention name — be conservative and do nothing rather
-    // than crash the push. `info()` surfaces the misconfiguration to
-    // operators.
-    return const <StackEntryId>[];
   }
 
   /// `bounded_n`: count active rows; if over maxCount, archive the

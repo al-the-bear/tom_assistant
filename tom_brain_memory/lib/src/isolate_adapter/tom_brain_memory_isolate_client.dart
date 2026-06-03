@@ -68,7 +68,6 @@ import '../stacks/stack_api.dart';
 import '../stacks/stack_types.dart';
 import '../trails/trail.dart';
 import 'isolate_cancellation_protocol.dart';
-import 'isolate_envelopes.dart';
 import 'isolate_envelopes_full.dart';
 import 'isolate_messages.dart';
 import 'isolate_stream_protocol.dart';
@@ -482,17 +481,15 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
   }
 }
 
-// ─── Proxy stubs for the getter-returned sub-APIs ─────────────────
+// ─── Proxies for the getter-returned sub-APIs ─────────────────────
 //
-// Both `stacks` and `migrations` are exposed as getters that must
-// return a usable object. A.82 will replace these proxies with
-// versions that marshal each call through new envelopes. Until
-// then, every method on the proxy raises [EnvelopeNotWiredError]
-// the same way the top-level methods do. The proxies live in this
-// file (not in `stacks/` or `migrations/`) because they are an
-// implementation detail of the isolate-client surface; the
-// canonical in-process stack/migration implementations belong in
-// their own modules.
+// Both `stacks` and `migrations` are exposed as getters that return a
+// usable object. Each proxy marshals every call through the parent
+// client's host using the per-method envelopes from
+// `isolate_envelopes_full.dart`. The proxies live in this file (not in
+// `stacks/` or `migrations/`) because they are an implementation
+// detail of the isolate-client surface; the canonical in-process
+// stack/migration implementations belong in their own modules.
 
 /// Concrete [StackApi] for the isolate client — marshals every call
 /// through the parent client's host.
