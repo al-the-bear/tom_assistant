@@ -41,6 +41,7 @@ import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:dart_mcp/server.dart' as mcp_server;
+import 'package:http/http.dart' as httpc;
 import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
@@ -112,12 +113,19 @@ void main() {
 
   group('B.8 — HttpMcpTransport bearer-token auth', () {
     late io.HttpServer http;
+    // Production sources the transport's `package:http.Client` from
+    // `tom_core_kernel.TomHttpClientFactory` (Q-B.43.3). The VM test
+    // platform has no real `TomPlatformUtils`, so these fixture-server
+    // tests inject a real client whose lifetime they own.
+    late httpc.Client httpClient;
 
     setUp(() async {
       http = await io.HttpServer.bind('127.0.0.1', 0);
+      httpClient = httpc.Client();
     });
 
     tearDown(() async {
+      httpClient.close();
       await http.close(force: true);
     });
 
@@ -147,6 +155,7 @@ void main() {
         url: Uri.parse('http://${http.address.host}:${http.port}/mcp'),
         auth: const McpBearerCredential('not-a-real-token'),
         requestTimeout: const Duration(seconds: 2),
+        httpClient: httpClient,
       );
 
       McpAuthFailed? captured;
@@ -183,6 +192,7 @@ void main() {
         url: Uri.parse('http://${http.address.host}:${http.port}/mcp'),
         auth: const McpBearerCredential('whatever'),
         requestTimeout: const Duration(seconds: 2),
+        httpClient: httpClient,
       );
 
       McpClientException? captured;
@@ -224,6 +234,7 @@ void main() {
         url: Uri.parse('http://${http.address.host}:${http.port}/mcp'),
         auth: const McpBearerCredential('secret-token-12345'),
         requestTimeout: const Duration(seconds: 2),
+        httpClient: httpClient,
       );
 
       try {
@@ -258,6 +269,7 @@ void main() {
         url: Uri.parse('http://${http.address.host}:${http.port}/mcp'),
         // No `auth:` argument — anonymous transport.
         requestTimeout: const Duration(seconds: 2),
+        httpClient: httpClient,
       );
 
       try {

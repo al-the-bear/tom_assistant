@@ -45,6 +45,7 @@ import 'dart:async';
 import 'dart:io' as io;
 
 import 'package:dart_mcp/server.dart' as mcp_server;
+import 'package:http/http.dart' as httpc;
 import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
@@ -171,12 +172,19 @@ void main() {
 
     group('contract — auth failure surfaces as typed error', () {
       late io.HttpServer http;
+      // Production sources the transport's `package:http.Client` from
+      // `tom_core_kernel.TomHttpClientFactory` (Q-B.43.3); the VM test
+      // platform has no real `TomPlatformUtils`, so the fixture-server
+      // tests inject a real client whose lifetime they own.
+      late httpc.Client httpClient;
 
       setUp(() async {
         http = await io.HttpServer.bind('127.0.0.1', 0);
+        httpClient = httpc.Client();
       });
 
       tearDown(() async {
+        httpClient.close();
         await http.close(force: true);
       });
 
@@ -200,6 +208,7 @@ void main() {
           url: Uri.parse('http://${http.address.host}:${http.port}/mcp'),
           auth: const McpBearerCredential('b35-not-a-real-token'),
           requestTimeout: const Duration(seconds: 2),
+          httpClient: httpClient,
         );
 
         Object? captured;
@@ -255,6 +264,7 @@ void main() {
           url: Uri.parse('http://${http.address.host}:${http.port}/mcp'),
           auth: const McpBearerCredential('b35-revoked-token'),
           requestTimeout: const Duration(seconds: 2),
+          httpClient: httpClient,
         );
 
         Object? captured;
@@ -294,6 +304,7 @@ void main() {
           url: Uri.parse('http://${http.address.host}:${http.port}/mcp'),
           auth: const McpBearerCredential('b35-some-token'),
           requestTimeout: const Duration(seconds: 2),
+          httpClient: httpClient,
         );
 
         Object? captured;

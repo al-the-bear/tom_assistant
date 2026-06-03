@@ -306,16 +306,15 @@ class OllamaHttpException extends WireHttpException {
 
 /// Production [OllamaHttpClient] backed by a `package:http` `Client`.
 ///
-/// The client is acquired through `tom_core_kernel`'s
-/// `TomHttpClientFactory.initialize` / `.getClient` — but for B.14 we
-/// allow the caller to inject the `Client` directly so the
-/// dependency-discipline test does not bind the substrate to the
-/// kernel's static initialiser. The router-layer construction (B.18+
-/// / B.40+) is what calls `TomHttpClientFactory.initialize` once at
-/// substrate `open()`.
+/// When no `client` is injected the underlying `package:http.Client` is
+/// acquired from `tom_core_kernel.TomHttpClientFactory` (Q-B.43.3) — the
+/// same workspace-shared factory `TomKernelWebHttpClient` uses — so the
+/// substrate keeps no parallel HTTP stack (spec § 11). Tests inject a
+/// `MockClient` via `client:`, which takes precedence and is left for the
+/// caller to close.
 final class DefaultOllamaHttpClient extends DefaultWireHttpClientBase
     implements OllamaHttpClient {
-  DefaultOllamaHttpClient({super.client});
+  DefaultOllamaHttpClient({super.client, super.factory});
 
   static const Map<String, String> _jsonHeaders = <String, String>{
     'Content-Type': 'application/json',

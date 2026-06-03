@@ -45,12 +45,23 @@
 //   * Cancellation-token transport. The per-line loop checks the token
 //     between frames (best-effort, B.14/B.15 posture); a transport-level
 //     cancellable client lands at B.18.
+//
+// HTTP-client acquisition (Q-B.43.3): when no client is injected this
+// base sources its `package:http.Client` from
+// `tom_core_kernel.TomHttpClientFactory` — the same factory the web
+// adapter (`TomKernelWebHttpClient`) and every other workspace HTTP
+// consumer use, so the workspace can swap the underlying client in one
+// place. This realises spec § 11's "no parallel HTTP stack" mandate for
+// the LLM wire layer. Retry + circuit-breaker stay in their own layers
+// (the router for LLM calls); a first-class kernel `RetryPolicy` /
+// `CircuitBreaker` surface is tracked separately under Q-B.31.1.
 
 import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:tom_core_agentic/tom_core_agentic.dart' show textPreview;
+import 'package:tom_core_kernel/tom_core_kernel.dart' as kernel;
 
 /// Base for the typed wire exceptions a `Default…` HTTP client throws
 /// when a backend answers with a non-2xx status or a malformed 2xx body.
@@ -118,11 +129,23 @@ abstract base class DefaultWireHttpClientBase {
 
   /// Whether [close] should also close the underlying [http.Client].
   /// `false` when the caller injected a client whose lifetime they
-  /// manage themselves.
+  /// manage themselves; `true` when this base sourced the client (from
+  /// [client] being null → the kernel factory), so [close] disposes it.
   final bool _ownsInner;
 
-  DefaultWireHttpClientBase({http.Client? client})
-      : _inner = client ?? http.Client(),
+  /// [client] — an explicit `package:http.Client` to use; takes
+  /// precedence over [factory] and is NOT closed by [close] (the caller
+  /// owns its lifetime). Test wiring injects a `MockClient` here.
+  ///
+  /// [factory] — the `tom_core_kernel.TomHttpClientFactory` to acquire a
+  /// client from when [client] is null. Defaults to a fresh
+  /// `TomHttpClientFactory()` (the workspace-shared path). The acquired
+  /// client is owned and closed by [close].
+  DefaultWireHttpClientBase({
+    http.Client? client,
+    kernel.TomHttpClientFactory? factory,
+  })  : _inner =
+            client ?? (factory ?? kernel.TomHttpClientFactory()).getClient(),
         _ownsInner = client == null;
 
   /// Builds the backend-specific [WireHttpException] subtype. The

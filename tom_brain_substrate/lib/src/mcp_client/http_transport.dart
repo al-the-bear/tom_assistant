@@ -46,15 +46,15 @@
 //   - Malformed JSON-RPC body  -> closes the inbound stream with a
 //                                 [McpTransportUnreachable] error.
 //
-// The transport uses `package:http` for the actual POST. `package:http`
-// is already on every `tom_core_kernel` consumer's transitive surface
-// via `dart_mcp` (a json_rpc_2 / web_socket_channel transitive); this
-// keeps the substrate footprint minimal while we wait for B.11 to
-// adopt `tom_core_kernel.HttpClient` for the LLM provider calls. A
-// future cleanup pass will migrate this transport onto
-// `tom_core_kernel.HttpClient` so retry + circuit breaker semantics
-// are shared with provider calls. Documented in
-// `prototype_implementation_questions.md` under Q-B.8.2.
+// The transport uses `package:http` for the actual POST, sourcing its
+// `package:http.Client` from `tom_core_kernel.TomHttpClientFactory`
+// (Q-B.8.2 / Q-B.43.3) when no client is injected — the same
+// workspace-shared factory the LLM wire clients and the web adapter
+// (`TomKernelWebHttpClient`) use, so the substrate keeps no parallel HTTP
+// stack (spec § 11). Retry / circuit-breaker semantics are not yet shared
+// here: the v1 memory MCP surface is request/response and the MCP client
+// surfaces failures for the caller to handle; a first-class kernel
+// `RetryPolicy` / `CircuitBreaker` surface is tracked under Q-B.31.1.
 
 import 'dart:async';
 import 'dart:convert';
@@ -62,6 +62,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:stream_channel/stream_channel.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart';
+import 'package:tom_core_kernel/tom_core_kernel.dart' as kernel;
 
 import 'mcp_errors.dart';
 import 'mcp_transport.dart';
@@ -84,26 +85,36 @@ final class HttpMcpTransport with CloseGuard implements McpTransport {
   final Duration requestTimeout;
 
   /// Underlying HTTP client. Injected for tests (so a tiny in-isolate
-  /// `MockClient` can stand in for the network); defaults to a
-  /// fresh `http.Client()` in production.
+  /// `MockClient` can stand in for the network); when not injected it is
+  /// acquired from `tom_core_kernel.TomHttpClientFactory` (Q-B.43.3) in
+  /// production.
   final http.Client _httpClient;
 
-  /// Whether [close] should also close the injected [_httpClient].
-  /// True when this transport owns the client (default constructor),
-  /// false when an external client is injected.
+  /// Whether [close] should also close the [_httpClient]. True when this
+  /// transport sourced the client (no [httpClient] injected → acquired
+  /// from the factory), false when an external client is injected.
   final bool _ownsHttpClient;
 
   final _doneCompleter = Completer<void>();
   StreamChannelController<String>? _controller;
   bool _connected = false;
 
+  /// [httpClient] — an explicit `package:http.Client`; takes precedence
+  /// over [factory] and is left open for the caller on [close].
+  ///
+  /// [factory] — the `tom_core_kernel.TomHttpClientFactory` to acquire a
+  /// client from when [httpClient] is null. Defaults to a fresh
+  /// `TomHttpClientFactory()` (the workspace-shared path). The acquired
+  /// client is owned and closed by [close].
   HttpMcpTransport({
     required this.id,
     required this.url,
     this.auth,
     this.requestTimeout = const Duration(seconds: 30),
     http.Client? httpClient,
-  })  : _httpClient = httpClient ?? http.Client(),
+    kernel.TomHttpClientFactory? factory,
+  })  : _httpClient = httpClient ??
+            (factory ?? kernel.TomHttpClientFactory()).getClient(),
         _ownsHttpClient = httpClient == null;
 
   @override

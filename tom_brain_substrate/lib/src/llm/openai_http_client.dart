@@ -358,16 +358,15 @@ class OpenAiHttpException extends WireHttpException {
 
 /// Production [OpenAiHttpClient] backed by a `package:http` `Client`.
 ///
-/// The client is acquired through `tom_core_kernel`'s
-/// `TomHttpClientFactory.initialize` / `.getClient` — but for B.15 we
-/// allow the caller to inject the `Client` directly so the
-/// dependency-discipline test does not bind the substrate to the
-/// kernel's static initialiser. The router-layer construction (B.18+
-/// / B.40+) is what calls `TomHttpClientFactory.initialize` once at
-/// substrate `open()`.
+/// When no `client` is injected the underlying `package:http.Client` is
+/// acquired from `tom_core_kernel.TomHttpClientFactory` (Q-B.43.3) — the
+/// same workspace-shared factory `TomKernelWebHttpClient` uses — so the
+/// substrate keeps no parallel HTTP stack (spec § 11). Tests inject a
+/// `MockClient` via `client:`, which takes precedence and is left for the
+/// caller to close.
 final class DefaultOpenAiHttpClient extends DefaultWireHttpClientBase
     implements OpenAiHttpClient {
-  DefaultOpenAiHttpClient({super.client});
+  DefaultOpenAiHttpClient({super.client, super.factory});
 
   @override
   WireHttpException wireException({
