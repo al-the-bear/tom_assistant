@@ -724,14 +724,20 @@ class _BudgetAwareFakeHttp implements WebHttpClient {
     );
   }
 
+  // Robots.txt fetch (Q-B.30.3): the conformance harness fetches public
+  // URLs, so answer 404 ⇒ allow all and let the budget / content-type
+  // contract assertions run unchanged.
   @override
   Future<WebHttpResponse> get(
     Uri url, {
     Map<String, String> headers = const <String, String>{},
     Duration? requestTimeout,
   }) async =>
-      throw UnimplementedError(
-        '_BudgetAwareFakeHttp.get is not exercised by the fetch harness',
+      WebHttpResponse(
+        statusCode: 404,
+        body: '',
+        headers: const <String, String>{},
+        url: url,
       );
 
   @override

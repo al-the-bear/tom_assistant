@@ -175,13 +175,20 @@ class _FakeBytesHttpClient implements WebHttpClient {
       response ??
       (throw StateError('_FakeBytesHttpClient.response not set'));
 
+  // Robots.txt fetch (Q-B.30.3): 404 ⇒ allow all, so these byte-length
+  // assertions run unchanged.
   @override
   Future<WebHttpResponse> get(
     Uri url, {
     Map<String, String> headers = const <String, String>{},
     Duration? requestTimeout,
   }) async =>
-      throw UnimplementedError();
+      WebHttpResponse(
+        statusCode: 404,
+        body: '',
+        headers: const <String, String>{},
+        url: url,
+      );
 
   @override
   Future<WebHttpResponse> postForm(

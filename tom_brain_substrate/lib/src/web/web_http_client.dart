@@ -38,8 +38,10 @@
 //   - Bearer-token auth for key-bearing providers (Brave / SerpAPI /
 //     Tavily / Kagi). Plug-in providers configure their own auth on the
 //     headers they pass into `get` / `postForm`.
-//   - Robots.txt enforcement. That is `WebFetch`-side policy (B.30, spec
-//     § 8.2) and does not affect search providers.
+//   - Robots.txt enforcement. That is `WebFetch`-side policy (spec § 8.2,
+//     Q-B.30.3 — see `RobotsGate` in `robots_policy.dart`, which consults
+//     *this* seam's `get` to read `/robots.txt`) and does not affect
+//     search providers.
 
 import 'dart:async';
 import 'dart:convert';

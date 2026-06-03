@@ -180,10 +180,19 @@ final class WebFetchOptions {
   /// — callers cannot override it.
   final Map<String, String> headers;
 
+  /// Whether to honour the target host's `robots.txt` (spec § 8.2;
+  /// Q-B.30.3). `true` (default) ⇒ the substrate refuses the fetch with
+  /// `WebFetchRobotsDenied` when robots disallows the URL for the
+  /// substrate's user-agent. `false` ⇒ the robots check is skipped
+  /// entirely — the per-route override for procedures fetching a host
+  /// they own.
+  final bool obeyRobots;
+
   const WebFetchOptions({
     this.budgetBytes,
     this.method = 'GET',
     this.headers = const <String, String>{},
+    this.obeyRobots = true,
   });
 
   /// All-defaults instance.

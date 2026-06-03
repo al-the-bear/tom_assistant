@@ -15,8 +15,13 @@
 //   * `WebFetch` — abstract fetch contract (B.30).
 //   * `DefaultWebFetch` — content-type-dispatching fetch impl backed
 //     by the shared `WebHttpClient` seam (B.30).
-//   * `WebFetchHttpException`, `WebFetchUnsupportedType` — typed
-//     fetch-side error surfaces (B.30).
+//   * `WebFetchHttpException`, `WebFetchUnsupportedType`,
+//     `WebFetchRobotsDenied` + `RobotsDenialReason` — typed fetch-side
+//     error surfaces (B.30 / Q-B.30.3).
+//   * `RobotsGate` + `RobotsRules` + `parseRobotsTxt` +
+//     `robotsProductToken` + `robotsMatchPath` — robots.txt enforcement
+//     policy consulted by `DefaultWebFetch` before every fetch
+//     (Q-B.30.3).
 //   * `extractReadableHtml` / `extractReadableHtmlString` — HTML →
 //     prose strip helper, shared between fetch's HTML branch and
 //     anywhere else the substrate needs to read prose out of HTML.
@@ -60,6 +65,7 @@ export 'default_web_search.dart';
 export 'duckduckgo_search_provider.dart';
 export 'html_readable_extractor.dart';
 export 'retrying_web_http_client.dart';
+export 'robots_policy.dart';
 export 'tom_kernel_web_http_client.dart';
 export 'web_fetch.dart';
 export 'web_http_client.dart';

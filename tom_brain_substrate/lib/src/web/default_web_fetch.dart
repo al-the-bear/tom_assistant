@@ -7,17 +7,21 @@
 //
 // Why "default": only one fetch strategy ships at B.30. The shape of
 // the abstract `WebFetch` surface (`web_fetch.dart`) leaves room for
-// future variants — cache layers, mirror fallback, robots-policy
-// pre-filters — without rewriting the dispatch logic here.
+// future variants — cache layers, mirror fallback — without rewriting
+// the dispatch logic here.
+//
+// Robots.txt enforcement (Q-B.30.3) IS owned here: every fetch is gated
+// through a `RobotsGate` (`robots_policy.dart`) before any body is read,
+// unless the caller passed `WebFetchOptions.obeyRobots: false` (the
+// per-route override of spec § 8.2). A disallow — or an unreachable
+// robots.txt (fail closed, RFC 9309 § 2.3.1.4) — raises
+// `WebFetchRobotsDenied` and no request to the target URL is made.
 //
 // What this class deliberately does NOT own:
 //
 //   - Retry / circuit-breaker policy on transport failures. That lives
 //     at B.31 (rewires `WebHttpClient` to `tom_core_kernel.HttpClient`)
 //     and applies uniformly to all web tools via the shared seam.
-//   - Robots.txt enforcement. Spec § 8.2 names it but the policy
-//     decider (per-route opt-out, per-host backoff) is a B.x concern
-//     post-prototype. Q-B.30.3 logs the deferral.
 //   - Substrate-event emission (`WebFetchCompleted`). The event is
 //     emitted by the substrate facade (B.40+) wrapping `fetch`; this
 //     class is silent on observability.
@@ -31,6 +35,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 import '../api/web_results.dart';
 import 'html_readable_extractor.dart';
+import 'robots_policy.dart';
 import 'web_fetch.dart';
 import 'web_http_client.dart';
 
@@ -111,14 +116,40 @@ class DefaultWebFetch with CloseGuard implements WebFetch {
 
   final WebHttpClient _http;
   final bool _ownsClient;
+  final RobotsGate _robots;
 
   DefaultWebFetch({
     WebHttpClient? httpClient,
-    this.defaultBudgetBytes = defaultBudgetBytesDefault,
-    this.userAgent = userAgentDefault,
-    this.requestTimeout = requestTimeoutDefault,
-  })  : _http = httpClient ?? DefaultWebHttpClient(),
-        _ownsClient = httpClient == null {
+    int defaultBudgetBytes = defaultBudgetBytesDefault,
+    String userAgent = userAgentDefault,
+    Duration? requestTimeout = requestTimeoutDefault,
+    RobotsGate? robotsGate,
+  }) : this._(
+          httpClient ?? DefaultWebHttpClient(),
+          ownsClient: httpClient == null,
+          defaultBudgetBytes: defaultBudgetBytes,
+          userAgent: userAgent,
+          requestTimeout: requestTimeout,
+          robotsGate: robotsGate,
+        );
+
+  // Private constructor with the resolved [WebHttpClient] in scope, so
+  // the default [RobotsGate] shares the *same* client as the fetch path
+  // (one client, not two) and the validation runs once.
+  DefaultWebFetch._(
+    this._http, {
+    required bool ownsClient,
+    required this.defaultBudgetBytes,
+    required this.userAgent,
+    required this.requestTimeout,
+    RobotsGate? robotsGate,
+  })  : _ownsClient = ownsClient,
+        _robots = robotsGate ??
+            RobotsGate(
+              httpClient: _http,
+              userAgent: userAgent,
+              requestTimeout: requestTimeout,
+            ) {
     if (defaultBudgetBytes < 0) {
       throw ArgumentError.value(
         defaultBudgetBytes,
@@ -155,6 +186,16 @@ class DefaultWebFetch with CloseGuard implements WebFetch {
         'options.budgetBytes',
         'budgetBytes must be >= 0',
       );
+    }
+
+    // Robots.txt gate (spec § 8.2; Q-B.30.3). Skipped only when the
+    // caller explicitly opts out (`obeyRobots: false`). Refusal happens
+    // before any request to `url` is made.
+    if (options.obeyRobots) {
+      final denial = await _robots.evaluate(url);
+      if (denial != null) {
+        throw WebFetchRobotsDenied(url: url, reason: denial);
+      }
     }
 
     final mergedHeaders = <String, String>{

@@ -32,9 +32,10 @@ import '../api/web_results.dart';
 ///     The substrate's default; the facade (B.40+) constructs one of
 ///     these from `SubstrateConfig`.
 ///   - Future variants (not in scope at B.30) — could fan out to a
-///     cache layer, fall back across mirrors, or pre-filter against a
-///     robots-policy decider. They implement this same surface; the
-///     facade swap is a constructor argument.
+///     cache layer or fall back across mirrors. They implement this
+///     same surface; the facade swap is a constructor argument.
+///     (Robots-policy pre-filtering is no longer a "future variant" —
+///     `DefaultWebFetch` enforces it via `RobotsGate`; see Q-B.30.3.)
 ///
 /// **Failure surfaces:**
 ///
@@ -42,6 +43,9 @@ import '../api/web_results.dart';
 ///   - `WebFetchUnsupportedType` — server returned a content-type the
 ///     substrate explicitly refuses to materialise (e.g. PDF at
 ///     B.30 — spec § 8.2 table marks it out of scope for v1).
+///   - `WebFetchRobotsDenied` — the host's robots.txt disallows the
+///     URL for the substrate's user-agent (spec § 8.2; Q-B.30.3). Not
+///     raised when the caller passed `WebFetchOptions.obeyRobots: false`.
 ///   - `WebHttpTransportException` (`web_http_client.dart`) — transport
 ///     failed before any HTTP response arrived.
 ///
@@ -149,4 +153,46 @@ class WebFetchUnsupportedType implements Exception {
       'WebFetchUnsupportedType($url contentType=$contentType '
       '(raw="$rawContentType")): the substrate refuses to materialise '
       'responses of this type at v1';
+}
+
+/// Thrown by [WebFetch.fetch] when the target host's `robots.txt`
+/// disallows the URL for the substrate's user-agent (spec § 8.2;
+/// Q-B.30.3).
+///
+/// Distinct from [WebFetchHttpException]: no request to [url] is made
+/// once robots denies it — the fetch is refused before any body is
+/// read. Also raised (fail closed) when robots.txt was unreachable
+/// (5xx / transport failure), per RFC 9309 § 2.3.1.4; [reason]
+/// distinguishes the two.
+///
+/// A caller that owns the host and accepts the risk bypasses the check
+/// entirely with `WebFetchOptions.obeyRobots: false` — in which case
+/// this exception is never raised.
+class WebFetchRobotsDenied implements Exception {
+  /// The URL the substrate refused to fetch.
+  final Uri url;
+
+  /// Whether the refusal came from a matching `Disallow` rule
+  /// (`robotsDisallow`) or from robots.txt being unreachable
+  /// (`robotsUnreachable`, the fail-closed branch).
+  final RobotsDenialReason reason;
+
+  WebFetchRobotsDenied({
+    required this.url,
+    this.reason = RobotsDenialReason.robotsDisallow,
+  });
+
+  @override
+  String toString() => 'WebFetchRobotsDenied($url, ${reason.name}): '
+      "fetch refused by the host's robots.txt policy";
+}
+
+/// Why a [WebFetchRobotsDenied] was raised.
+enum RobotsDenialReason {
+  /// A `Disallow` rule in the host's robots.txt matched the URL.
+  robotsDisallow,
+
+  /// robots.txt was unreachable (5xx / transport failure), so the
+  /// substrate failed closed (RFC 9309 § 2.3.1.4).
+  robotsUnreachable,
 }

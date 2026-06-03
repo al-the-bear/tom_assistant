@@ -601,14 +601,21 @@ class _FakeBytesHttpClient implements WebHttpClient {
         (throw StateError('_FakeBytesHttpClient.response not set'));
   }
 
+  /// Robots.txt fetch (`DefaultWebFetch` calls `get` on `/robots.txt`
+  /// before each fetch — Q-B.30.3). Defaults to a 404 so the host is
+  /// treated as "no robots.txt" (allow all), keeping every existing
+  /// content-type / budget / failure assertion in this file unchanged.
   @override
   Future<WebHttpResponse> get(
     Uri url, {
     Map<String, String> headers = const <String, String>{},
     Duration? requestTimeout,
   }) async =>
-      throw UnimplementedError(
-        '_FakeBytesHttpClient.get is not exercised by B.30 tests',
+      WebHttpResponse(
+        statusCode: 404,
+        body: '',
+        headers: const <String, String>{},
+        url: url,
       );
 
   @override
