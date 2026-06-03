@@ -34,14 +34,25 @@
 //   - Future deployment shapes plug in here without touching the
 //     server class.
 //
-// Authentication note (todo #3 scope boundary): [McpHttpServer] does
-// **not** terminate bearer auth at the HTTP layer. The server class
-// already authenticates at the MCP `initialize` boundary via
-// `_meta.tomBrainBearerToken` (A.76). Making bearer auth an
-// *HTTP-header* concern and reconciling it with the substrate client
-// is todo #4; this transport intentionally passes every request body
-// through unchanged so that todo #4 can add the header check at a
-// single, documented seam (`McpHttpServer._authorize`).
+// Authentication (todo #4): when [McpHttpServer] is bound with a
+// [BearerTokenAuthenticator], it terminates bearer auth at the
+// **HTTP-header** layer — every `POST` / `DELETE` must carry a valid
+// `Authorization: Bearer <token>` or it is refused `401`. This mirrors
+// the substrate MCP *client*, which sends the token as the same header
+// (`tom_brain_substrate`'s `http_transport.dart`) and treats `401`/`403`
+// as `McpAuthFailed`. Auth is **off unless configured**: with no
+// authenticator the endpoint admits anonymous callers, the trust-the-VPN
+// posture the cross-machine link uses by default.
+//
+// Auth is transport-scoped (policy override 2): stdio / UNIX-socket
+// transports never authenticate, so this header check lives in the HTTP
+// transport rather than in the protocol-level server class. For an
+// HTTP deployment the per-session server is built without an
+// `_meta`-level authenticator — the HTTP layer is the single auth
+// boundary, so a client that sends only the header (the substrate
+// client does) is not double-challenged. Per-tool authorisation by the
+// authenticated principal over HTTP is future work; like the substrate
+// client, the token is treated here as an opaque gate.
 
 import 'dart:async';
 import 'dart:convert';
@@ -50,6 +61,8 @@ import 'dart:math' show Random;
 
 import 'package:async/async.dart' show StreamSinkTransformer;
 import 'package:stream_channel/stream_channel.dart';
+
+import 'bearer_auth.dart';
 
 // Re-export `stdioChannel` so callers depend on a single transport
 // surface (`mcp_server` barrel) rather than reaching directly into the
@@ -186,6 +199,17 @@ final class McpHttpServer {
   /// [io.SecurityContext]).
   final bool isSecure;
 
+  /// Optional HTTP-header bearer authenticator (todo #4).
+  ///
+  /// `null` ⇒ the endpoint is **anonymous** — no `Authorization` header
+  /// is required and every well-formed request is admitted. This is the
+  /// off-by-default, trust-the-VPN posture.
+  ///
+  /// When non-null, every `POST` / `DELETE` must carry a valid
+  /// `Authorization: Bearer <token>`; a missing, malformed, or rejected
+  /// token is refused `401` before any session is created or addressed.
+  final BearerTokenAuthenticator? _authenticator;
+
   final _sessions = <String, _McpHttpSession>{};
   final Random _sessionIdRng = Random.secure();
   bool _closed = false;
@@ -196,7 +220,8 @@ final class McpHttpServer {
     required this.path,
     required this.requestTimeout,
     required this.isSecure,
-  }) {
+    required BearerTokenAuthenticator? authenticator,
+  }) : _authenticator = authenticator {
     _httpServer.listen(
       _dispatch,
       onError: (Object _) {/* per-connection errors are non-fatal */},
@@ -216,6 +241,13 @@ final class McpHttpServer {
   /// When [securityContext] is non-null the listener is bound with
   /// `bindSecure`, producing an HTTPS endpoint ([isSecure] is then
   /// `true`).
+  ///
+  /// [authenticator] enables HTTP-header bearer auth (todo #4). When
+  /// omitted (or `null`) the endpoint is anonymous — the off-by-default
+  /// posture. When supplied, every `POST` / `DELETE` must carry a valid
+  /// `Authorization: Bearer <token>` or it is refused `401`. See
+  /// `bearer_auth.dart` for the two shipped implementations
+  /// ([JwtBearerTokenAuthenticator], [StaticBearerTokenAuthenticator]).
   static Future<McpHttpServer> bind({
     required McpHttpSessionHandler onSession,
     Object? address,
@@ -223,6 +255,7 @@ final class McpHttpServer {
     io.SecurityContext? securityContext,
     String path = '/mcp',
     Duration requestTimeout = const Duration(seconds: 30),
+    BearerTokenAuthenticator? authenticator,
   }) async {
     final bindAddress = address ?? io.InternetAddress.loopbackIPv4;
     final httpServer = securityContext == null
@@ -234,6 +267,7 @@ final class McpHttpServer {
       path: path,
       requestTimeout: requestTimeout,
       isSecure: securityContext != null,
+      authenticator: authenticator,
     );
   }
 
@@ -245,6 +279,10 @@ final class McpHttpServer {
 
   /// The number of live sessions. Exposed for observability / tests.
   int get sessionCount => _sessions.length;
+
+  /// Whether this endpoint requires HTTP-header bearer auth. `false`
+  /// when bound without an authenticator (anonymous, off-by-default).
+  bool get requiresAuth => _authenticator != null;
 
   /// The base URL clients POST to (`scheme://host:port{path}`).
   Uri get url => Uri(
@@ -263,8 +301,10 @@ final class McpHttpServer {
       }
       switch (request.method) {
         case 'POST':
+          if (!await _authorize(request)) return;
           await _handlePost(request);
         case 'DELETE':
+          if (!await _authorize(request)) return;
           await _handleDelete(request);
         case 'GET':
           // SSE / server-initiated streams are not part of the v1
@@ -400,6 +440,69 @@ final class McpHttpServer {
     return bytes
         .map((b) => b.toRadixString(16).padLeft(2, '0'))
         .join();
+  }
+
+  /// HTTP-header bearer gate (todo #4). Runs before [_handlePost] /
+  /// [_handleDelete].
+  ///
+  /// Returns `true` when the request may proceed:
+  ///   - the endpoint is anonymous (no authenticator configured), or
+  ///   - the `Authorization: Bearer <token>` header carries a token the
+  ///     authenticator accepts.
+  ///
+  /// Returns `false` after writing a `401` response when an authenticator
+  /// is configured and the header is missing, malformed, or rejected.
+  /// The token is consumed only as a gate — the authenticated principal
+  /// is not propagated, matching the substrate client which treats the
+  /// token as opaque (per-tool authorisation over HTTP is future work).
+  Future<bool> _authorize(io.HttpRequest request) async {
+    final authenticator = _authenticator;
+    if (authenticator == null) return true;
+
+    final token = _bearerToken(
+        request.headers.value(io.HttpHeaders.authorizationHeader));
+    if (token == null) {
+      await _respondUnauthorized(
+          request.response, 'Missing or malformed Bearer credentials.');
+      return false;
+    }
+    try {
+      authenticator.authenticate(token);
+      return true;
+    } on BearerAuthFailure catch (failure) {
+      // Generic wire message (reason tag only); the detailed
+      // `failure.message` stays server-side so the response cannot be
+      // used to fingerprint individual tokens (mirrors the server class's
+      // `initialize`-time redaction).
+      await _respondUnauthorized(request.response,
+          'Bearer authentication failed: ${failure.reason.name}');
+      return false;
+    }
+  }
+
+  /// Extracts the token from an `Authorization` header value, or `null`
+  /// when the header is absent or not a non-empty `Bearer` credential.
+  /// The scheme match is case-insensitive per RFC 7235.
+  static String? _bearerToken(String? header) {
+    if (header == null) return null;
+    const prefix = 'bearer ';
+    if (header.length <= prefix.length) return null;
+    if (header.substring(0, prefix.length).toLowerCase() != prefix) {
+      return null;
+    }
+    final token = header.substring(prefix.length).trim();
+    return token.isEmpty ? null : token;
+  }
+
+  Future<void> _respondUnauthorized(
+    io.HttpResponse response,
+    String message,
+  ) async {
+    response.statusCode = io.HttpStatus.unauthorized;
+    response.headers.set(io.HttpHeaders.wwwAuthenticateHeader, 'Bearer');
+    response.headers.contentType = io.ContentType.json;
+    response.write(jsonEncode({'error': message}));
+    await response.close();
   }
 
   Future<void> _respondError(

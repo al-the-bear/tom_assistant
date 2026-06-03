@@ -23,9 +23,12 @@
 //     § 10) needs, since neither stdio nor a UNIX socket crosses a host
 //     boundary. It implements the POST + single JSON-RPC response
 //     subset (no SSE), mirroring the outbound client subset in
-//     `tom_brain_substrate`. HTTP-header bearer auth is deferred to
-//     todo #4; the transport passes request bodies through so the MCP
-//     `initialize`-time `_meta` check (A.76) remains the auth boundary.
+//     `tom_brain_substrate`. HTTP-header bearer auth (todo #4) is
+//     optional and off by default: when `McpHttpServer` is bound with a
+//     `BearerTokenAuthenticator`, every POST / DELETE must carry a valid
+//     `Authorization: Bearer <token>` (refused `401` otherwise) — the
+//     same header the substrate client sends. With no authenticator the
+//     endpoint admits anonymous callers (trust-the-VPN default).
 //
 // Hard invariants honoured here:
 //

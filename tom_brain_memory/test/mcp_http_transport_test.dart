@@ -34,6 +34,7 @@ import 'dart:io' as io;
 import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
 import 'package:tom_brain_memory/tom_brain_memory.dart';
+import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal, TomUser;
 
 void main() {
   group('todo #3 McpHttpServer (HTTP)', () {
@@ -172,6 +173,187 @@ void main() {
     });
   });
 
+  group('todo #4 McpHttpServer HTTP-header bearer auth', () {
+    // A shared-secret authenticator: the deployment shape the
+    // cross-machine Big-Beast/bomber link uses (one token proves "this
+    // is a trusted Tom Brain worker"). Mirrors the substrate client,
+    // which sends the same token as `Authorization: Bearer <token>`.
+    StaticBearerTokenAuthenticator authenticator() =>
+        StaticBearerTokenAuthenticator({
+          'good-token': TomPrincipal(
+            authenticated: true,
+            user: TomUser(username: 'bomber'),
+          ),
+        });
+
+    test('requiresAuth is false unless an authenticator is configured',
+        () async {
+      final anon = await McpHttpServer.bind(
+        onSession: (channel) => TomBrainMemoryMcpServer(channel),
+      );
+      addTearDown(anon.close);
+      expect(anon.requiresAuth, isFalse);
+
+      final secured = await McpHttpServer.bind(
+        onSession: (channel) => TomBrainMemoryMcpServer(channel),
+        authenticator: authenticator(),
+      );
+      addTearDown(secured.close);
+      expect(secured.requiresAuth, isTrue);
+    });
+
+    test('anonymous server admits a request with no Authorization header',
+        () async {
+      // "off unless configured": the default posture is no auth, so an
+      // unauthenticated initialize still succeeds.
+      final server = await McpHttpServer.bind(
+        onSession: (channel) => TomBrainMemoryMcpServer(channel),
+      );
+      addTearDown(server.close);
+      final client = io.HttpClient();
+      addTearDown(() => client.close(force: true));
+
+      final res = await _post(client, server.url, _initRequest(1));
+      expect(res.status, equals(200));
+    });
+
+    test('valid bearer token opens a session', () async {
+      final server = await McpHttpServer.bind(
+        onSession: (channel) => TomBrainMemoryMcpServer(channel),
+        authenticator: authenticator(),
+      );
+      addTearDown(server.close);
+      final client = io.HttpClient();
+      addTearDown(() => client.close(force: true));
+
+      final res = await _post(
+        client,
+        server.url,
+        _initRequest(1),
+        authorization: 'Bearer good-token',
+      );
+      expect(res.status, equals(200));
+      expect(res.headers['mcp-session-id'], isNotNull);
+      expect(server.sessionCount, equals(1));
+    });
+
+    test('missing Authorization header is rejected 401 with WWW-Authenticate',
+        () async {
+      final server = await McpHttpServer.bind(
+        onSession: (channel) => TomBrainMemoryMcpServer(channel),
+        authenticator: authenticator(),
+      );
+      addTearDown(server.close);
+      final client = io.HttpClient();
+      addTearDown(() => client.close(force: true));
+
+      final res = await _post(client, server.url, _initRequest(1));
+      expect(res.status, equals(401));
+      expect(res.headers['www-authenticate'], contains('Bearer'));
+      expect(server.sessionCount, equals(0),
+          reason: 'a rejected request must not open a session');
+    });
+
+    test('an unknown bearer token is rejected 401', () async {
+      final server = await McpHttpServer.bind(
+        onSession: (channel) => TomBrainMemoryMcpServer(channel),
+        authenticator: authenticator(),
+      );
+      addTearDown(server.close);
+      final client = io.HttpClient();
+      addTearDown(() => client.close(force: true));
+
+      final res = await _post(
+        client,
+        server.url,
+        _initRequest(1),
+        authorization: 'Bearer wrong-token',
+      );
+      expect(res.status, equals(401));
+      expect(server.sessionCount, equals(0));
+    });
+
+    test('a non-Bearer Authorization scheme is rejected 401', () async {
+      final server = await McpHttpServer.bind(
+        onSession: (channel) => TomBrainMemoryMcpServer(channel),
+        authenticator: authenticator(),
+      );
+      addTearDown(server.close);
+      final client = io.HttpClient();
+      addTearDown(() => client.close(force: true));
+
+      final res = await _post(
+        client,
+        server.url,
+        _initRequest(1),
+        authorization: 'Basic good-token',
+      );
+      expect(res.status, equals(401));
+    });
+
+    test('every follow-up POST is re-validated, not just initialize',
+        () async {
+      final server = await McpHttpServer.bind(
+        onSession: (channel) => TomBrainMemoryMcpServer(channel),
+        authenticator: authenticator(),
+      );
+      addTearDown(server.close);
+      final client = io.HttpClient();
+      addTearDown(() => client.close(force: true));
+
+      final init = await _post(
+        client,
+        server.url,
+        _initRequest(1),
+        authorization: 'Bearer good-token',
+      );
+      final sessionId = init.headers['mcp-session-id']!;
+
+      // A follow-up that drops the token must be refused even though the
+      // session is established — the credential travels on every POST,
+      // matching the substrate client.
+      final unauthed = await _post(
+        client,
+        server.url,
+        _request(2, 'tools/list'),
+        sessionId: sessionId,
+      );
+      expect(unauthed.status, equals(401));
+    });
+
+    test('DELETE is gated: unauthenticated teardown is refused 401', () async {
+      final server = await McpHttpServer.bind(
+        onSession: (channel) => TomBrainMemoryMcpServer(channel),
+        authenticator: authenticator(),
+      );
+      addTearDown(server.close);
+      final client = io.HttpClient();
+      addTearDown(() => client.close(force: true));
+
+      final init = await _post(
+        client,
+        server.url,
+        _initRequest(1),
+        authorization: 'Bearer good-token',
+      );
+      final sessionId = init.headers['mcp-session-id']!;
+
+      final refused = await _delete(client, server.url, sessionId);
+      expect(refused.status, equals(401));
+      expect(server.sessionCount, equals(1),
+          reason: 'an unauthenticated DELETE must not tear the session down');
+
+      final ok = await _delete(
+        client,
+        server.url,
+        sessionId,
+        authorization: 'Bearer good-token',
+      );
+      expect(ok.status, anyOf(equals(204), equals(200)));
+      expect(server.sessionCount, equals(0));
+    });
+  });
+
   group('todo #3 transport barrel', () {
     test('McpHttpSessionHandler is reachable through the package barrel', () {
       const McpHttpSessionHandler handler = _noopHandler;
@@ -217,10 +399,14 @@ Future<_HttpResult> _post(
   Uri url,
   String body, {
   String? sessionId,
+  String? authorization,
 }) async {
   final req = await client.postUrl(url);
   req.headers.contentType = io.ContentType.json;
   if (sessionId != null) req.headers.set('Mcp-Session-Id', sessionId);
+  if (authorization != null) {
+    req.headers.set(io.HttpHeaders.authorizationHeader, authorization);
+  }
   req.write(body);
   final resp = await req.close();
   final text = await utf8.decoder.bind(resp).join();
@@ -230,10 +416,14 @@ Future<_HttpResult> _post(
 Future<_HttpResult> _delete(
   io.HttpClient client,
   Uri url,
-  String sessionId,
-) async {
+  String sessionId, {
+  String? authorization,
+}) async {
   final req = await client.deleteUrl(url);
   req.headers.set('Mcp-Session-Id', sessionId);
+  if (authorization != null) {
+    req.headers.set(io.HttpHeaders.authorizationHeader, authorization);
+  }
   final resp = await req.close();
   final text = await utf8.decoder.bind(resp).join();
   return _collect(resp, text);
