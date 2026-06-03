@@ -96,3 +96,37 @@ abstract interface class ChannelDelivery {
   /// [binding] to its own [DeliveryBinding] subtype (`covariant`).
   DeliverCallback bindDeliver(DeliveryBinding binding);
 }
+
+/// The single-shot terminal latch every delivery path's bound callback
+/// shares (G.4.3).
+///
+/// The engine contract is "exactly one final chunk, last". Both the streamed
+/// (SSE, E.37) and buffered (Telegram, E.38) paths must act on the final
+/// chunk once and treat any chunk *after* it as a loud bug rather than
+/// silently dropping it (a streamed path would write into a closed wire; a
+/// buffered path would send a stray extra message). Each path's `bindDeliver`
+/// closure used to re-declare a bare `bool terminated` and re-spell the same
+/// post-final `StateError`; this names that two-state transition once and
+/// shares the guard message.
+final class DeliveryLifecycle {
+  bool _terminated = false;
+
+  /// Whether the final chunk has already been handled.
+  bool get isTerminated => _terminated;
+
+  /// Throws [StateError] when a chunk arrives after the path's final chunk
+  /// has already been handled. [pathDetail] completes the message with the
+  /// path-specific consequence (e.g. "has already written `[DONE]` and closed
+  /// the wire").
+  void guardNotTerminated(String pathDetail) {
+    if (_terminated) {
+      throw StateError(
+        'OutboundChunk delivered after the final chunk — $pathDetail',
+      );
+    }
+  }
+
+  /// Records that the final chunk has been handled; subsequent
+  /// [guardNotTerminated] calls throw.
+  void terminate() => _terminated = true;
+}

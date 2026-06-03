@@ -166,6 +166,15 @@ final class TelegramDeliveryBinding implements DeliveryBinding {
   /// return it). An answer that never carries a final chunk leaves this
   /// pending, as the SSE path leaves its wire open.
   Future<void> get delivered => _delivered.future;
+
+  /// Binds the actual send to [delivered]: the delivery path calls this on the
+  /// final chunk with the future that completes when every consolidated part
+  /// has been sent (or with the send's error). The path holds only the public
+  /// binding, so completion is a public contract here rather than a reach into
+  /// a private `Completer` (G.4.4).
+  void completeDelivery(Future<void> sendFuture) {
+    _delivered.complete(sendFuture);
+  }
 }
 
 /// The Telegram outbound delivery path (E.38) — buffered single-message +
@@ -202,29 +211,24 @@ final class TelegramChannelDelivery implements ChannelDelivery {
   @override
   DeliverCallback bindDeliver(covariant TelegramDeliveryBinding binding) {
     final StringBuffer answer = StringBuffer();
-    bool terminated = false;
+    final DeliveryLifecycle lifecycle = DeliveryLifecycle();
 
     return (OutboundChunk chunk) {
-      if (terminated) {
-        // The engine contract is "exactly one final chunk, last"; a chunk
-        // after the answer has been consolidated and flushed is a bug.
-        // Surface it loudly rather than send a stray extra message.
-        throw StateError(
-          'OutboundChunk delivered after the final chunk — the Telegram '
-          'delivery path has already consolidated and flushed the answer',
-        );
-      }
+      lifecycle.guardNotTerminated(
+        'the Telegram delivery path has already consolidated and flushed the '
+        'answer',
+      );
 
       answer.write(chunk.textDelta);
       if (chunk.isFinal) {
-        terminated = true;
+        lifecycle.terminate();
         final List<String> parts = consolidator.split(answer.toString());
         // The send is async and the `DeliverCallback` return is synchronous;
         // the actual delivery is observable through `binding.delivered`. We
         // chain the flush future into the binding's completer so a consumer
         // (boot / E.39 / the test suite) can await real delivery and observe
         // a send error.
-        binding._delivered.complete(_flush(binding.sink, parts));
+        binding.completeDelivery(_flush(binding.sink, parts));
       }
 
       // A buffered channel cannot stall during streaming — the chunk was

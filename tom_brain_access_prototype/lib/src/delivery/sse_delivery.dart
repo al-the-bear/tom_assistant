@@ -221,18 +221,12 @@ final class SseChannelDelivery implements ChannelDelivery {
   DeliverCallback bindDeliver(covariant SseDeliveryBinding binding) {
     final SseSink sink = binding.sink;
     final ChatCompletionSseRenderer renderer = binding.renderer;
-    bool terminated = false;
+    final DeliveryLifecycle lifecycle = DeliveryLifecycle();
 
     return (OutboundChunk chunk) {
-      if (terminated) {
-        // The engine contract is "exactly one final chunk, last"; a chunk
-        // after the terminal frame would render into a closed wire. Surface
-        // it loudly rather than corrupt the stream or swallow a real bug.
-        throw StateError(
-          'OutboundChunk delivered after the final chunk — the OpenAI SSE '
-          'path has already written `[DONE]` and closed the wire',
-        );
-      }
+      lifecycle.guardNotTerminated(
+        'the OpenAI SSE path has already written `[DONE]` and closed the wire',
+      );
 
       if (sink.isDisconnected) {
         // The client disconnected mid-stream (the response-body subscription
@@ -241,7 +235,7 @@ final class SseChannelDelivery implements ChannelDelivery {
         // stream so the engine cancels the run rather than leaking it (E.40:
         // "a disconnected SSE doesn't leak the run"). Mark terminated so a
         // stray later chunk throws loudly rather than being silently dropped.
-        terminated = true;
+        lifecycle.terminate();
         return Backpressure.stalled(
           DeliveryStalled.terminal(
             channel: AccessChannel.openai.wireName,
@@ -253,7 +247,7 @@ final class SseChannelDelivery implements ChannelDelivery {
 
       sink.write(renderer.frameFor(chunk));
       if (chunk.isFinal) {
-        terminated = true;
+        lifecycle.terminate();
         sink.write(ChatCompletionSseRenderer.doneFrame);
         // The wire close is irreversible and not awaited here: this is the
         // last chunk, and the `DeliverCallback` signature is synchronous in

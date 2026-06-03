@@ -143,24 +143,51 @@ final class DeliveryRegistry {
       return inner;
     }
 
-    int chunkCount = 0;
-    bool delivered = false;
+    final _DeliveryProgress progress = _DeliveryProgress();
     return (OutboundChunk chunk) {
       final Stream<OutboundChunk> backpressure = inner(chunk);
-      chunkCount++;
-      if (chunk.isFinal && !delivered) {
-        delivered = true;
+      progress.countChunk();
+      if (chunk.isFinal && progress.markDeliveredOnce()) {
         onDelivered(
           AccessDelivered(
             occurredAt: _clock().toUtc(),
             accessId: binding.envelope.messageId,
             principalId: binding.identity.principalId,
-            chunkCount: chunkCount,
+            chunkCount: progress.chunkCount,
             conversationId: binding.envelope.conversationId,
           ),
         );
       }
       return backpressure;
     };
+  }
+}
+
+/// The per-`Access` progress the `onDelivered`-wrapping callback tracks
+/// (G.4.3): how many chunks have streamed through, and whether the once-only
+/// terminal-success [AccessDelivered] has already been emitted.
+///
+/// Names the small state machine the wrapper used to keep as a bare
+/// `int chunkCount` / `bool delivered` pair in its closure, so the
+/// "count every chunk, emit exactly once on the final one" intent reads
+/// directly at the call site.
+final class _DeliveryProgress {
+  int _chunkCount = 0;
+  bool _delivered = false;
+
+  /// The number of chunks streamed through so far — the `chunkCount` the
+  /// emitted [AccessDelivered] carries.
+  int get chunkCount => _chunkCount;
+
+  /// Records one more chunk streamed through the wrapped callback.
+  void countChunk() => _chunkCount++;
+
+  /// Latches the once-only terminal-success emission: returns `true` the first
+  /// time it is called (the final chunk should emit), `false` thereafter (a
+  /// stray later final chunk must not re-emit).
+  bool markDeliveredOnce() {
+    if (_delivered) return false;
+    _delivered = true;
+    return true;
   }
 }
