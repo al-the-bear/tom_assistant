@@ -32,11 +32,20 @@
 //     documented rejection branch of all three layers, plus the three-layer
 //     gate driven in the engine's order (header → sandbox → contract).
 
-export 'bridged_primitive_catalog.dart';
-export 'code_projection.dart';
-export 'contract_validator.dart';
-export 'header_validator.dart';
-export 'procedure_contract_invalid.dart';
-export 'procedure_requires_mismatch.dart';
-export 'procedure_sandbox_violation.dart';
-export 'sandbox_validator.dart';
+export 'bridged_primitive_catalog.dart' show BridgedPrimitiveCatalog;
+export 'code_projection.dart' show CodeProjection;
+export 'contract_validator.dart' show ContractValidator;
+export 'header_validator.dart' show HeaderValidator;
+export 'procedure_contract_invalid.dart'
+    show ContractViolationKind, ProcedureContractInvalid, procedureContractInvalidCode;
+export 'procedure_requires_mismatch.dart'
+    show
+        ProcedureRequiresMismatch,
+        RequiresMismatchKind,
+        procedureRequiresMismatchCode;
+export 'procedure_sandbox_violation.dart'
+    show
+        ProcedureSandboxViolation,
+        SandboxViolationKind,
+        procedureSandboxViolationCode;
+export 'sandbox_validator.dart' show SandboxValidator;

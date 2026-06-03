@@ -60,12 +60,27 @@
 //     `'[tom_brain.dispatcher.<area>] '` and forwards to `tomLog`. Mirrors
 //     `EngineLog` (C.43).
 
-export 'dispatcher_config.dart';
-export 'dispatcher_config_invalid.dart';
-export 'dispatcher_log.dart';
-export 'engine_config.dart';
-export 'engine_config_invalid.dart';
-export 'engine_event.dart';
-export 'engine_event_bus.dart';
-export 'engine_log.dart';
-export 'sandbox_config.dart';
+export 'dispatcher_config.dart'
+    show
+        DispatcherConfig,
+        defaultDispatcherHardStepDeadline,
+        defaultForegroundQueueDepth,
+        defaultSchedulerEnabled;
+export 'dispatcher_config_invalid.dart'
+    show DispatcherConfigInvalid, dispatcherConfigInvalidCode;
+export 'dispatcher_log.dart' show DispatcherLog, DispatcherLogCategory;
+export 'engine_config.dart'
+    show EngineConfig, defaultSystemScriptsPath, defaultUserScriptsPath;
+export 'engine_config_invalid.dart'
+    show EngineConfigInvalid, engineConfigInvalidCode;
+export 'engine_event.dart'
+    show
+        EngineEvent,
+        InvocationCompleted,
+        InvocationFailed,
+        InvocationStarted,
+        PrimitiveCalled,
+        StepYielded;
+export 'engine_event_bus.dart' show EngineEventBus;
+export 'engine_log.dart' show EngineLog, EngineLogCategory;
+export 'sandbox_config.dart' show SandboxConfig;

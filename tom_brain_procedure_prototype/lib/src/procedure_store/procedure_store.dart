@@ -26,15 +26,22 @@
 //     production code, raises the three pillars to the integrated
 //     `store → loader → resolver` pipeline.
 
-export 'composite_procedure_store.dart';
-export 'disk_procedure_store.dart';
-export 'memory_procedure_store.dart';
-export 'procedure_header.dart';
-export 'procedure_header_invalid.dart';
-export 'procedure_loader.dart';
-export 'procedure_not_found.dart';
-export 'procedure_origin.dart';
-export 'procedure_ref.dart';
-export 'procedure_resolver.dart';
-export 'procedure_source.dart';
-export 'procedure_store_interface.dart';
+export 'composite_procedure_store.dart' show CompositeProcedureStore;
+export 'disk_procedure_store.dart' show DiskProcedureStore;
+export 'memory_procedure_store.dart' show MemoryProcedureStore;
+export 'procedure_header.dart'
+    show
+        ProcedureBudget,
+        ProcedureHeader,
+        ProcedureInputDecl,
+        ProcedureOutputDecl;
+export 'procedure_header_invalid.dart'
+    show ProcedureHeaderInvalid, procedureHeaderInvalidCode;
+export 'procedure_loader.dart' show LoadedProcedure, ProcedureLoader;
+export 'procedure_not_found.dart'
+    show ProcedureNotFound, procedureNotFoundCode;
+export 'procedure_origin.dart' show ProcedureOrigin;
+export 'procedure_ref.dart' show ProcedureRef;
+export 'procedure_resolver.dart' show ProcedureResolver;
+export 'procedure_source.dart' show ProcedureSource;
+export 'procedure_store_interface.dart' show ProcedureStore;

@@ -33,6 +33,13 @@
 //   - C.33 — stub-memory integration tests (ordered trail entries,
 //     `inflight` then `recent_runs`).
 
-export 'effort_accountant.dart';
-export 'run_records.dart';
-export 'run_recorder.dart';
+export 'effort_accountant.dart' show EffortAccountant;
+export 'run_records.dart'
+    show
+        ProcedureRunRecord,
+        RunCompletion,
+        RunStart,
+        inflightStackName,
+        procedureRunNodeType,
+        recentRunsStackName;
+export 'run_recorder.dart' show RunRecorder;

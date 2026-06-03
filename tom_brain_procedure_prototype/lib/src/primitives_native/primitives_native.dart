@@ -32,11 +32,23 @@
 //     (`sugar_aliases.dart`, § 5.2). Only `think_v1` exists in the
 //     prototype (a no-op stub); the rest surface `ProcedureNotFound`.
 
-export 'native_primitives_installer.dart';
-export 'note_primitive.dart';
-export 'procedure_inputs_bridge.dart';
-export 'recursion_limit_exceeded.dart';
-export 'run_procedure_primitive.dart';
-export 'sugar_aliases.dart';
-export 'trail_note.dart';
-export 'yield_primitive.dart';
+export 'native_primitives_installer.dart'
+    show
+        engineNativeLibrary,
+        nativePrimitivesInstaller,
+        noteName,
+        runProcedureName,
+        yieldIfForegroundWaitingName;
+export 'note_primitive.dart' show NotePrimitive;
+export 'procedure_inputs_bridge.dart'
+    show
+        procedureInputsBridgedClass,
+        procedureInputsLibrary,
+        registerProcedureInputsBridge;
+export 'recursion_limit_exceeded.dart'
+    show RecursionLimitExceeded, recursionLimitExceededCode;
+export 'run_procedure_primitive.dart'
+    show ProcedureCall, ProcedureExecutor, RunProcedurePrimitive;
+export 'sugar_aliases.dart' show registerSugarAliases, sugarAliasProcedureIds;
+export 'trail_note.dart' show TrailNote, TrailSink, automationCandidateCategory;
+export 'yield_primitive.dart' show YieldPrimitive;
