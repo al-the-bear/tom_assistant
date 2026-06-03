@@ -370,6 +370,12 @@ class LlmRouter {
     final attempts = <RouteAttempt>[];
     final overallWatch = Stopwatch()..start();
     LlmFailureClass? lastClass;
+    // The most recent route that actually reached the attempt stage
+    // (survived the filter + budget gate). The chain-exhausted event
+    // attributes the terminal failure to *this* route, not to the first
+    // chain entry — the last route attempted is the one that produced
+    // `lastClass`.
+    RouteEntry? lastAttemptedEntry;
 
     for (final entry in chain) {
       if (cancellationToken.isCancelled) {
@@ -394,6 +400,7 @@ class LlmRouter {
         break;
       }
 
+      lastAttemptedEntry = entry;
       final provider = providers[entry.providerId]!;
       final resolvedOptions = _resolveOptions(options, entry.model);
       int retries = 0;
@@ -527,13 +534,20 @@ class LlmRouter {
       }
     }
 
-    // Chain exhausted.
+    // Chain exhausted. Attribute the terminal failure to the last route
+    // actually attempted (the one that produced `lastClass`). Fall back
+    // to the first chain entry only when no route ever reached the
+    // attempt stage (every entry filter-skipped or budget-skipped), where
+    // there is no "last attempted" route to name.
+    final attributedEntry =
+        lastAttemptedEntry ?? (chain.isEmpty ? null : chain.first);
     yield _exhaustedFailedEvent(
       roleId: roleId,
       attempts: attempts,
       lastClass: lastClass,
-      provider: providers.values.isEmpty ? null : providers.values.first,
-      entry: chain.isEmpty ? null : chain.first,
+      provider:
+          attributedEntry == null ? null : providers[attributedEntry.providerId],
+      entry: attributedEntry,
     );
   }
 

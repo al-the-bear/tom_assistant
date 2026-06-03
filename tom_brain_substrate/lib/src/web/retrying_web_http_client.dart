@@ -182,11 +182,18 @@ final class WebCircuitBreakerPolicy {
     this.halfOpenMaxProbes = 1,
   });
 
-  /// A policy that never opens the breaker (`failureThreshold` set to
-  /// the JS-`Number.MAX_SAFE_INTEGER` equivalent). Useful in tests
-  /// that want to exercise retry in isolation.
+  /// A `failureThreshold` so large the breaker never opens in any real
+  /// run: the consecutive-failure counter would need a billion
+  /// back-to-back failures to reach it, which no prototype workload
+  /// approaches. Named so the "never trips" intent is explicit rather
+  /// than encoded in a bare `1 << 31` literal.
+  static const int neverOpensThreshold = 1000000000;
+
+  /// A policy that never opens the breaker (its [failureThreshold] is
+  /// [neverOpensThreshold]). Useful in tests that want to exercise retry
+  /// behaviour in isolation from the breaker.
   static const WebCircuitBreakerPolicy disabled = WebCircuitBreakerPolicy(
-    failureThreshold: 1 << 31,
+    failureThreshold: neverOpensThreshold,
   );
 }
 

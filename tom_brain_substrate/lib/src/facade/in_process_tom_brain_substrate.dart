@@ -137,12 +137,23 @@ import '../router/llm_router.dart';
 import '../web/web_fetch.dart';
 import '../web/web_search.dart';
 
-/// Default identity stamped on lazily-constructed [McpClient]
-/// instances. Mirrors `tom_brain_substrate`'s pubspec version; a
-/// future bump should update both.
+/// The substrate package version reported on the wire (MCP client
+/// identity, and any future protocol handshake that needs a version).
+///
+/// Single code-side source of truth: previously the version lived both
+/// here and as a literal inside [_defaultMcpIdentity], kept in step only
+/// by a comment — and had already drifted (`0.1.0` here vs `0.0.1` in the
+/// pubspec). There is no build-time version generator in this package
+/// (no `build_runner`), so this constant is the canonical code value;
+/// it tracks `pubspec.yaml`'s `version` and is bumped in the same change
+/// as a release.
+const String substratePackageVersion = '0.0.1';
+
+/// Default identity stamped on lazily-constructed [McpClient] instances.
+/// Sourced from the single [substratePackageVersion] constant.
 const McpClientIdentity _defaultMcpIdentity = McpClientIdentity(
   name: 'tom_brain_substrate',
-  version: '0.1.0',
+  version: substratePackageVersion,
 );
 
 /// Signature for the lazy [McpClient] factory the facade uses to
