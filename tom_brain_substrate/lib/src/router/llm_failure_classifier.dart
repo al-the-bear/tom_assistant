@@ -48,8 +48,7 @@ import 'dart:async' show TimeoutException;
 import 'dart:io' show HandshakeException, SocketException, TlsException;
 
 import '../api/llm_stream_event.dart' show LlmFailure;
-import '../llm/ollama_http_client.dart' show OllamaHttpException;
-import '../llm/openai_http_client.dart' show OpenAiHttpException;
+import '../llm/wire_http_transport.dart' show WireHttpException;
 
 /// Closed taxonomy of LLM-call failure classes (spec § 5.4).
 ///
@@ -203,10 +202,10 @@ class LlmFailureClassifier {
       }
       return classify(exception.cause ?? Exception(exception.message));
     }
-    if (exception is OllamaHttpException) {
-      return _fromStatus(exception.statusCode, exception.body);
-    }
-    if (exception is OpenAiHttpException) {
+    if (exception is WireHttpException) {
+      // Both backend-family subtypes (`OllamaHttpException` /
+      // `OpenAiHttpException`) map identically — status + body decide
+      // the class, not which wire layer threw.
       return _fromStatus(exception.statusCode, exception.body);
     }
     if (exception is TimeoutException) return LlmFailureClass.timeout;

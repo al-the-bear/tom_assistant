@@ -43,6 +43,14 @@
 //     its own barrel. The roles surface is the only producer of
 //     `WirePrompt`; everything else (substrate-internal or test)
 //     consumes the type.
+//   * The shared transport base (`wire_http_transport.dart`, B.2.3) —
+//     `DefaultWireHttpClientBase` is an implementation convenience the
+//     two `Default…` wire clients extend; `WireHttpException` is the
+//     supertype of the exported `OllamaHttpException` /
+//     `OpenAiHttpException`, matched only by the router's
+//     `LlmFailureClassifier` (relative import). Same minimal-surface
+//     posture as `HttpLlmProviderBase` (B.2.2): consumers never touch
+//     the transport base directly, so it stays internal.
 //
 // What this barrel adds at B.14:
 //

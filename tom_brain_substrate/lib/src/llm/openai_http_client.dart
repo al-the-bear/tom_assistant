@@ -46,12 +46,12 @@
 //   * Cancellation-token wiring on the non-streaming path. Same
 //     pattern as B.14: streaming-only at B.15; B.18 wires both paths.
 
-import 'dart:async';
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart';
+
+import 'wire_http_transport.dart';
 
 /// Narrow wire-shape interface to an OpenAI-format Chat Completions /
 /// Embeddings endpoint (`/v1/chat/completions`, `/v1/embeddings`,
@@ -333,25 +333,23 @@ final class OpenAiModelEntry {
 }
 
 /// Thrown by [DefaultOpenAiHttpClient] when the endpoint answers with
-/// a non-2xx status.
+/// a non-2xx status (or a malformed 2xx body / SSE frame — B.3.1).
 ///
-/// The B.15 provider re-throws this (until B.18 wires the
-/// classifier). It is *not* a typed `LlmFailure` — that translation
-/// belongs to the router, not the wire layer.
-class OpenAiHttpException implements Exception {
-  final int statusCode;
-  final String body;
-  final Uri endpoint;
-
+/// The backend-family subtype of [WireHttpException]: it carries no
+/// fields beyond the shared base, existing only to keep the
+/// "OpenAI-format wire layer threw" signal that the trail and the B.3.1
+/// conformance tests read. The router's `LlmFailureClassifier` matches
+/// the [WireHttpException] supertype, so both families classify
+/// identically.
+class OpenAiHttpException extends WireHttpException {
   OpenAiHttpException({
-    required this.statusCode,
-    required this.body,
-    required this.endpoint,
+    required super.statusCode,
+    required super.body,
+    required super.endpoint,
   });
 
   @override
-  String toString() =>
-      'OpenAiHttpException($statusCode at $endpoint): $body';
+  String get label => 'OpenAiHttpException';
 }
 
 /// Production [OpenAiHttpClient] backed by a `package:http` `Client`.
@@ -363,13 +361,21 @@ class OpenAiHttpException implements Exception {
 /// kernel's static initialiser. The router-layer construction (B.18+
 /// / B.40+) is what calls `TomHttpClientFactory.initialize` once at
 /// substrate `open()`.
-class DefaultOpenAiHttpClient implements OpenAiHttpClient {
-  final http.Client _inner;
-  final bool _ownsInner;
+final class DefaultOpenAiHttpClient extends DefaultWireHttpClientBase
+    implements OpenAiHttpClient {
+  DefaultOpenAiHttpClient({super.client});
 
-  DefaultOpenAiHttpClient({http.Client? client})
-      : _inner = client ?? http.Client(),
-        _ownsInner = client == null;
+  @override
+  WireHttpException wireException({
+    required int statusCode,
+    required String body,
+    required Uri endpoint,
+  }) =>
+      OpenAiHttpException(
+        statusCode: statusCode,
+        body: body,
+        endpoint: endpoint,
+      );
 
   @override
   Future<OpenAiChatResponse> chat({
@@ -382,31 +388,19 @@ class DefaultOpenAiHttpClient implements OpenAiHttpClient {
     Duration? requestTimeout,
   }) async {
     final url = baseUri.resolve('v1/chat/completions');
-    final body = <String, Object?>{
-      'model': model,
-      'messages': messages.map((m) => m.toJson()).toList(growable: false),
-      'stream': false,
-      ...options.toJsonFragment(),
-    };
-
-    final future = _inner.post(
-      url,
+    final response = await postJson(
+      url: url,
       headers: _buildHeaders(apiKey: apiKey, extra: extraHeaders),
-      body: jsonEncode(body),
+      jsonBody: _chatBody(
+        model: model,
+        messages: messages,
+        options: options,
+        stream: false,
+      ),
+      requestTimeout: requestTimeout,
     );
-    final response = await (requestTimeout == null
-        ? future
-        : future.timeout(requestTimeout));
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw OpenAiHttpException(
-        statusCode: response.statusCode,
-        body: response.body,
-        endpoint: url,
-      );
-    }
-
-    final decoded = _decodeJsonObjectOrThrow(
+    final decoded = decodeJsonObject(
       response.body,
       statusCode: response.statusCode,
       endpoint: url,
@@ -427,43 +421,26 @@ class DefaultOpenAiHttpClient implements OpenAiHttpClient {
     CancellationToken? cancellationToken,
   }) async* {
     final url = baseUri.resolve('v1/chat/completions');
-    final body = <String, Object?>{
-      'model': model,
-      'messages': messages.map((m) => m.toJson()).toList(growable: false),
-      'stream': true,
-      if (options.includeUsageOnStream)
-        'stream_options': <String, Object?>{'include_usage': true},
-      ...options.toJsonFragment(),
-    };
-
-    final request = http.Request('POST', url);
-    request.headers.addAll(_buildHeaders(apiKey: apiKey, extra: extraHeaders));
-    request.headers['Accept'] = 'text/event-stream';
-    request.body = jsonEncode(body);
-
-    final sendFuture = _inner.send(request);
-    final response = await (requestTimeout == null
-        ? sendFuture
-        : sendFuture.timeout(requestTimeout));
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      final errBody = await response.stream.bytesToString();
-      throw OpenAiHttpException(
-        statusCode: response.statusCode,
-        body: errBody,
-        endpoint: url,
-      );
-    }
-
-    final lines = response.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter());
+    final lines = sendForLines(
+      url: url,
+      headers: <String, String>{
+        ..._buildHeaders(apiKey: apiKey, extra: extraHeaders),
+        'Accept': 'text/event-stream',
+      },
+      body: jsonEncode(_chatBody(
+        model: model,
+        messages: messages,
+        options: options,
+        stream: true,
+      )),
+      requestTimeout: requestTimeout,
+    );
 
     await for (final line in lines) {
       if (cancellationToken?.isCancelled ?? false) {
         // Best-effort cancellation: B.18 wires a transport-level
         // cancellable variant. Same posture as B.14.
-        throw _OpenAiCancelled();
+        throw const WireStreamCancelled('OpenAI');
       }
       if (line.isEmpty) continue;
       if (!line.startsWith('data:')) {
@@ -485,9 +462,10 @@ class DefaultOpenAiHttpClient implements OpenAiHttpClient {
         // B.3.1 — a malformed SSE data payload is a wire corruption.
         // Surface it as the typed wire exception (endpoint + payload
         // excerpt) so the router classifies it instead of letting a bare
-        // `FormatException` escape the route-walk.
-        throw OpenAiHttpException(
-          statusCode: response.statusCode,
+        // `FormatException` escape the route-walk. The status is 2xx by
+        // construction ([sendForLines] already threw otherwise).
+        throw wireException(
+          statusCode: 200,
           body: 'Malformed SSE data payload: ${e.message}. '
               'Payload: ${textPreview(payload)}',
           endpoint: url,
@@ -509,40 +487,25 @@ class DefaultOpenAiHttpClient implements OpenAiHttpClient {
     Duration? requestTimeout,
   }) async {
     final url = baseUri.resolve('v1/embeddings');
-    final body = <String, Object?>{
-      'model': model,
+    final response = await postJson(
+      url: url,
+      headers: _buildHeaders(apiKey: apiKey, extra: extraHeaders),
       // OpenAI accepts either a single string or a list of strings;
       // we always send the list shape — vendors uniformly support it
       // and it lets the embedding service (B.25/26) use one call for
       // both single and batch.
-      'input': input,
-    };
-
-    final future = _inner.post(
-      url,
-      headers: _buildHeaders(apiKey: apiKey, extra: extraHeaders),
-      body: jsonEncode(body),
+      jsonBody: <String, Object?>{'model': model, 'input': input},
+      requestTimeout: requestTimeout,
     );
-    final response = await (requestTimeout == null
-        ? future
-        : future.timeout(requestTimeout));
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw OpenAiHttpException(
-        statusCode: response.statusCode,
-        body: response.body,
-        endpoint: url,
-      );
-    }
-
-    final decoded = _decodeJsonObjectOrThrow(
+    final decoded = decodeJsonObject(
       response.body,
       statusCode: response.statusCode,
       endpoint: url,
       shape: '{data: [...]}',
     );
     if (decoded['data'] is! List) {
-      throw OpenAiHttpException(
+      throw wireException(
         statusCode: response.statusCode,
         body: 'Expected {data: [...]}, got: ${textPreview(response.body)}',
         endpoint: url,
@@ -559,30 +522,20 @@ class DefaultOpenAiHttpClient implements OpenAiHttpClient {
     Duration? requestTimeout,
   }) async {
     final url = baseUri.resolve('v1/models');
-    final future = _inner.get(
-      url,
+    final response = await getUrl(
+      url: url,
       headers: _buildHeaders(apiKey: apiKey, extra: extraHeaders),
+      requestTimeout: requestTimeout,
     );
-    final response = await (requestTimeout == null
-        ? future
-        : future.timeout(requestTimeout));
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw OpenAiHttpException(
-        statusCode: response.statusCode,
-        body: response.body,
-        endpoint: url,
-      );
-    }
-
-    final decoded = _decodeJsonObjectOrThrow(
+    final decoded = decodeJsonObject(
       response.body,
       statusCode: response.statusCode,
       endpoint: url,
       shape: '{data: [...]}',
     );
     if (decoded['data'] is! List) {
-      throw OpenAiHttpException(
+      throw wireException(
         statusCode: response.statusCode,
         body: 'Expected {data: [...]}, got: ${textPreview(response.body)}',
         endpoint: url,
@@ -598,9 +551,25 @@ class DefaultOpenAiHttpClient implements OpenAiHttpClient {
         .toList(growable: false);
   }
 
-  @override
-  void close() {
-    if (_ownsInner) _inner.close();
+  /// OpenAI `/v1/chat/completions` request body. [stream] selects the
+  /// SSE streaming response (and, when [OpenAiGenerationOptions.includeUsageOnStream]
+  /// is set, the `stream_options: {include_usage: true}` flag so the
+  /// terminal frame carries the usage counters). The generation knobs
+  /// are shared between the streaming and non-streaming paths.
+  Map<String, Object?> _chatBody({
+    required String model,
+    required List<OpenAiMessage> messages,
+    required OpenAiGenerationOptions options,
+    required bool stream,
+  }) {
+    return <String, Object?>{
+      'model': model,
+      'messages': messages.map((m) => m.toJson()).toList(growable: false),
+      'stream': stream,
+      if (stream && options.includeUsageOnStream)
+        'stream_options': <String, Object?>{'include_usage': true},
+      ...options.toJsonFragment(),
+    };
   }
 
   /// Composes `Content-Type` + optional `Authorization` + caller-supplied
@@ -618,16 +587,6 @@ class DefaultOpenAiHttpClient implements OpenAiHttpClient {
     headers.addAll(extra);
     return headers;
   }
-}
-
-/// Sentinel exception raised by the streaming path when the
-/// cancellation token signals. Translated to
-/// `LlmFailure(cancelled_by_consumer)` at the router (B.18). Internal —
-/// not exported.
-class _OpenAiCancelled implements Exception {
-  const _OpenAiCancelled();
-  @override
-  String toString() => 'OpenAI passthrough stream cancelled by consumer';
 }
 
 OpenAiChatResponse _decodeChatResponse(Map<String, Object?> json) {
@@ -737,45 +696,4 @@ OpenAiEmbeddingResponse _decodeEmbeddingResponse(
     embeddings: embeddings,
     promptTokens: promptTokens,
   );
-}
-
-/// B.3.1 — decode [body] as a JSON object on a 2xx response, mapping a
-/// malformed-JSON `FormatException` onto an [OpenAiHttpException] that
-/// carries the [endpoint] and a body excerpt.
-///
-/// Without this guard a backend (or an intermediary proxy) that answers
-/// `200` with a non-JSON body throws a bare `FormatException` that
-/// carries no provider/url context and is *not* one of the classes
-/// [LlmFailureClassifier] recognises (§ 5.4) — it escapes the router's
-/// route-walk uncaught. Routing the decode through the typed wire
-/// exception keeps every transport failure inside the closed taxonomy.
-///
-/// [shape] names the expected structure; it is reused for both the
-/// malformed-JSON message and the valid-JSON-but-not-an-object branch so
-/// the prior error envelopes are preserved.
-Map<String, Object?> _decodeJsonObjectOrThrow(
-  String body, {
-  required int statusCode,
-  required Uri endpoint,
-  required String shape,
-}) {
-  final Object? decoded;
-  try {
-    decoded = jsonDecode(body);
-  } on FormatException catch (e) {
-    throw OpenAiHttpException(
-      statusCode: statusCode,
-      body: 'Malformed JSON ($shape expected): ${e.message}. '
-          'Body: ${textPreview(body)}',
-      endpoint: endpoint,
-    );
-  }
-  if (decoded is! Map<String, Object?>) {
-    throw OpenAiHttpException(
-      statusCode: statusCode,
-      body: 'Expected $shape, got: ${textPreview(body)}',
-      endpoint: endpoint,
-    );
-  }
-  return decoded;
 }

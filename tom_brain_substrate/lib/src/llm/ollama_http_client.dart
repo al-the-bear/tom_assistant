@@ -48,12 +48,12 @@
 //     only on the streaming path (where the consumer can race the
 //     stream against `token.whenCancelled`).
 
-import 'dart:async';
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart';
+
+import 'wire_http_transport.dart';
 
 /// Narrow wire-shape interface to a running Ollama daemon
 /// (`/api/chat`, `/api/embeddings`, `/api/tags`).
@@ -281,25 +281,23 @@ final class OllamaTagEntry {
 }
 
 /// Thrown by [DefaultOllamaHttpClient] when the daemon answers with a
-/// non-2xx status.
+/// non-2xx status (or a malformed 2xx body — B.3.1).
 ///
-/// The B.14 provider re-throws this (until B.18 wires the classifier).
-/// It is *not* a typed `LlmFailure` — that translation belongs to the
-/// router, not the wire layer.
-class OllamaHttpException implements Exception {
-  final int statusCode;
-  final String body;
-  final Uri endpoint;
-
+/// The backend-family subtype of [WireHttpException]: it carries no
+/// fields beyond the shared base, existing only to keep the
+/// "Ollama wire layer threw" signal that the trail and the B.3.1
+/// conformance tests read. The router's `LlmFailureClassifier` matches
+/// the [WireHttpException] supertype, so both families classify
+/// identically.
+class OllamaHttpException extends WireHttpException {
   OllamaHttpException({
-    required this.statusCode,
-    required this.body,
-    required this.endpoint,
+    required super.statusCode,
+    required super.body,
+    required super.endpoint,
   });
 
   @override
-  String toString() =>
-      'OllamaHttpException($statusCode at $endpoint): $body';
+  String get label => 'OllamaHttpException';
 }
 
 /// Production [OllamaHttpClient] backed by a `package:http` `Client`.
@@ -311,17 +309,25 @@ class OllamaHttpException implements Exception {
 /// kernel's static initialiser. The router-layer construction (B.18+
 /// / B.40+) is what calls `TomHttpClientFactory.initialize` once at
 /// substrate `open()`.
-class DefaultOllamaHttpClient implements OllamaHttpClient {
-  final http.Client _inner;
+final class DefaultOllamaHttpClient extends DefaultWireHttpClientBase
+    implements OllamaHttpClient {
+  DefaultOllamaHttpClient({super.client});
 
-  /// Whether [close] should also close the underlying [http.Client].
-  /// `false` when the caller injected a client whose lifetime they
-  /// manage themselves.
-  final bool _ownsInner;
+  static const Map<String, String> _jsonHeaders = <String, String>{
+    'Content-Type': 'application/json',
+  };
 
-  DefaultOllamaHttpClient({http.Client? client})
-      : _inner = client ?? http.Client(),
-        _ownsInner = client == null;
+  @override
+  WireHttpException wireException({
+    required int statusCode,
+    required String body,
+    required Uri endpoint,
+  }) =>
+      OllamaHttpException(
+        statusCode: statusCode,
+        body: body,
+        endpoint: endpoint,
+      );
 
   @override
   Future<OllamaChatResponse> chat({
@@ -332,32 +338,19 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
     Duration? requestTimeout,
   }) async {
     final url = baseUri.resolve('/api/chat');
-    final body = <String, Object?>{
-      'model': model,
-      'messages': messages.map((m) => m.toJson()).toList(growable: false),
-      'stream': false,
-      if (options.toJson().isNotEmpty) 'options': options.toJson(),
-      if (options.jsonFormat) 'format': 'json',
-    };
-
-    final future = _inner.post(
-      url,
-      headers: const <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(body),
+    final response = await postJson(
+      url: url,
+      headers: _jsonHeaders,
+      jsonBody: _chatBody(
+        model: model,
+        messages: messages,
+        options: options,
+        stream: false,
+      ),
+      requestTimeout: requestTimeout,
     );
-    final response = await (requestTimeout == null
-        ? future
-        : future.timeout(requestTimeout));
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw OllamaHttpException(
-        statusCode: response.statusCode,
-        body: response.body,
-        endpoint: url,
-      );
-    }
-
-    final decoded = _decodeJsonObjectOrThrow(
+    final decoded = decodeJsonObject(
       response.body,
       statusCode: response.statusCode,
       endpoint: url,
@@ -377,35 +370,17 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
     CancellationToken? cancellationToken,
   }) async* {
     final url = baseUri.resolve('/api/chat');
-    final body = <String, Object?>{
-      'model': model,
-      'messages': messages.map((m) => m.toJson()).toList(growable: false),
-      'stream': true,
-      if (options.toJson().isNotEmpty) 'options': options.toJson(),
-      if (options.jsonFormat) 'format': 'json',
-    };
-
-    final request = http.Request('POST', url)
-      ..headers['Content-Type'] = 'application/json'
-      ..body = jsonEncode(body);
-
-    final sendFuture = _inner.send(request);
-    final response = await (requestTimeout == null
-        ? sendFuture
-        : sendFuture.timeout(requestTimeout));
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      final errBody = await response.stream.bytesToString();
-      throw OllamaHttpException(
-        statusCode: response.statusCode,
-        body: errBody,
-        endpoint: url,
-      );
-    }
-
-    final lines = response.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter());
+    final lines = sendForLines(
+      url: url,
+      headers: _jsonHeaders,
+      body: jsonEncode(_chatBody(
+        model: model,
+        messages: messages,
+        options: options,
+        stream: true,
+      )),
+      requestTimeout: requestTimeout,
+    );
 
     await for (final line in lines) {
       if (cancellationToken?.isCancelled ?? false) {
@@ -413,7 +388,7 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
         // does not surface a per-request abort handle on the
         // standard Client — closing the whole client is too coarse.
         // B.18 wires a cancellable client.
-        throw _OllamaCancelled();
+        throw const WireStreamCancelled('Ollama');
       }
       if (line.isEmpty) continue;
       final Object? decoded;
@@ -424,10 +399,11 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
         // corruption, not a parsed value. Surface it as the typed wire
         // exception (carrying the endpoint + line excerpt) so the router
         // classifies it instead of letting a bare `FormatException`
-        // escape the route-walk. Valid-but-non-object frames keep their
-        // prior skip semantics below.
-        throw OllamaHttpException(
-          statusCode: response.statusCode,
+        // escape the route-walk. The status is 2xx by construction
+        // ([sendForLines] already threw otherwise). Valid-but-non-object
+        // frames keep their prior skip semantics below.
+        throw wireException(
+          statusCode: 200,
           body: 'Malformed NDJSON line: ${e.message}. '
               'Line: ${textPreview(line)}',
           endpoint: url,
@@ -446,29 +422,14 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
     Duration? requestTimeout,
   }) async {
     final url = baseUri.resolve('/api/embeddings');
-    final body = <String, Object?>{
-      'model': model,
-      'prompt': prompt,
-    };
-
-    final future = _inner.post(
-      url,
-      headers: const <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(body),
+    final response = await postJson(
+      url: url,
+      headers: _jsonHeaders,
+      jsonBody: <String, Object?>{'model': model, 'prompt': prompt},
+      requestTimeout: requestTimeout,
     );
-    final response = await (requestTimeout == null
-        ? future
-        : future.timeout(requestTimeout));
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw OllamaHttpException(
-        statusCode: response.statusCode,
-        body: response.body,
-        endpoint: url,
-      );
-    }
-
-    final decoded = _decodeJsonObjectOrThrow(
+    final decoded = decodeJsonObject(
       response.body,
       statusCode: response.statusCode,
       endpoint: url,
@@ -476,7 +437,7 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
     );
     final vec = JsonShape.readDoubleListN(decoded, 'embedding');
     if (vec == null) {
-      throw OllamaHttpException(
+      throw wireException(
         statusCode: response.statusCode,
         body: 'Expected {embedding: [...]}, got: ${textPreview(response.body)}',
         endpoint: url,
@@ -491,27 +452,16 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
     Duration? requestTimeout,
   }) async {
     final url = baseUri.resolve('/api/tags');
-    final future = _inner.get(url);
-    final response = await (requestTimeout == null
-        ? future
-        : future.timeout(requestTimeout));
+    final response = await getUrl(url: url, requestTimeout: requestTimeout);
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw OllamaHttpException(
-        statusCode: response.statusCode,
-        body: response.body,
-        endpoint: url,
-      );
-    }
-
-    final decoded = _decodeJsonObjectOrThrow(
+    final decoded = decodeJsonObject(
       response.body,
       statusCode: response.statusCode,
       endpoint: url,
       shape: '{models: [...]}',
     );
     if (decoded['models'] is! List) {
-      throw OllamaHttpException(
+      throw wireException(
         statusCode: response.statusCode,
         body: 'Expected {models: [...]}, got: ${textPreview(response.body)}',
         endpoint: url,
@@ -533,61 +483,23 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
         .toList(growable: false);
   }
 
-  @override
-  void close() {
-    if (_ownsInner) _inner.close();
+  /// Ollama `/api/chat` request body. [stream] selects the NDJSON
+  /// streaming response; the generation knobs + JSON-format flag are
+  /// shared between the streaming and non-streaming paths.
+  Map<String, Object?> _chatBody({
+    required String model,
+    required List<OllamaMessage> messages,
+    required OllamaGenerationOptions options,
+    required bool stream,
+  }) {
+    return <String, Object?>{
+      'model': model,
+      'messages': messages.map((m) => m.toJson()).toList(growable: false),
+      'stream': stream,
+      if (options.toJson().isNotEmpty) 'options': options.toJson(),
+      if (options.jsonFormat) 'format': 'json',
+    };
   }
-}
-
-/// B.3.1 — decode [body] as a JSON object on a 2xx response, mapping a
-/// malformed-JSON `FormatException` onto an [OllamaHttpException] that
-/// carries the [endpoint] and a body excerpt.
-///
-/// Without this guard a backend that answers `200` with a non-JSON body
-/// (a proxy error page, a truncated stream) throws a bare
-/// `FormatException` that carries no provider/url context and is *not*
-/// one of the classes [LlmFailureClassifier] recognises (§ 5.4) — it
-/// escapes the router's route-walk uncaught. Routing the decode through
-/// the typed wire exception keeps every transport failure inside the
-/// closed taxonomy.
-///
-/// [shape] names the expected structure; it is reused for both the
-/// malformed-JSON message and the valid-JSON-but-not-an-object branch
-/// so the prior error envelopes are preserved.
-Map<String, Object?> _decodeJsonObjectOrThrow(
-  String body, {
-  required int statusCode,
-  required Uri endpoint,
-  required String shape,
-}) {
-  final Object? decoded;
-  try {
-    decoded = jsonDecode(body);
-  } on FormatException catch (e) {
-    throw OllamaHttpException(
-      statusCode: statusCode,
-      body: 'Malformed JSON ($shape expected): ${e.message}. '
-          'Body: ${textPreview(body)}',
-      endpoint: endpoint,
-    );
-  }
-  if (decoded is! Map<String, Object?>) {
-    throw OllamaHttpException(
-      statusCode: statusCode,
-      body: 'Expected $shape, got: ${textPreview(body)}',
-      endpoint: endpoint,
-    );
-  }
-  return decoded;
-}
-
-/// Sentinel exception raised by the streaming path when the
-/// cancellation token signals. Translated to `LlmFailure(cancelled_by_consumer)`
-/// at the router (B.18). Internal — not exported.
-class _OllamaCancelled implements Exception {
-  const _OllamaCancelled();
-  @override
-  String toString() => 'Ollama stream cancelled by consumer';
 }
 
 OllamaChatResponse _decodeChatResponse(Map<String, Object?> json) {
