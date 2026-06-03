@@ -31,17 +31,21 @@
 // this file so a future reader sees the full eventual shape without
 // being misled into thinking it is implemented today.
 //
-// Why a single abstract class, not a mixin or a typedef:
+// Why a single abstract class, not a typedef:
 //
-//   - The three prototype providers (Ollama, OpenAI passthrough,
-//     stub; B.14–B.16) share *no* implementation — Ollama goes
-//     through `tom_core_kernel.HttpClient` against
-//     `localhost:11434`, OpenAI passthrough goes through the same
-//     client against a configured base URL with bearer auth, the
-//     stub is in-process and deterministic. A mixin would invite
-//     shared base behaviour that does not exist; a typedef would
-//     not let the analyzer enforce method-set completeness on
-//     subclasses.
+//   - The two HTTP-backed providers (Ollama, OpenAI passthrough;
+//     B.14 / B.15) do share implementation — report construction,
+//     body hashing, the call-id formula, and the owns-the-client
+//     lifecycle. That shared half is factored into
+//     `HttpLlmProviderBase` (B.2.2), which `implements LlmProvider`;
+//     the two providers `extend` it and supply only their wire-shape
+//     translation. The `StubLlmProvider` (B.16) shares none of it —
+//     it is in-process and deterministic — so it implements
+//     `LlmProvider` directly. The interface is the contract; the HTTP
+//     base is an implementation convenience under it, not part of the
+//     contract.
+//   - A typedef would not let the analyzer enforce method-set
+//     completeness on implementers; an abstract class does.
 //   - The router (B.18+) holds a `Map<String, LlmProvider>` keyed
 //     by `id`. A single abstract class makes that map type-precise.
 //

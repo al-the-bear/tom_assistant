@@ -34,12 +34,10 @@
 
 import 'dart:async';
 
-import 'package:tom_core_agentic/tom_core_agentic.dart' show promptSha256;
-
 import '../api/cancellation.dart';
 import '../api/llm_call.dart';
 import '../api/llm_stream_event.dart';
-import 'llm_provider.dart';
+import 'http_llm_provider_base.dart';
 import 'ollama_http_client.dart';
 import 'wire_prompt.dart';
 
@@ -67,38 +65,21 @@ import 'wire_prompt.dart';
 /// non-streaming `complete` path runs to completion or throws on
 /// transport failure; B.18 wires a router-mediated cancellable client
 /// that covers both paths uniformly.
-final class OllamaLlmProvider implements LlmProvider {
-  @override
-  final String id;
-
-  /// Base URL the daemon listens on (`http://127.0.0.1:11434/` for
-  /// the local dev default).
-  final Uri baseUri;
-
-  /// Model id used when `LlmOptions.model` is null. Spec § 9 sources
-  /// this from `providers[*].defaults.model`.
-  final String defaultModel;
-
+final class OllamaLlmProvider extends HttpLlmProviderBase {
   /// HTTP seam (see [OllamaHttpClient]).
   final OllamaHttpClient httpClient;
 
-  /// Per-call wall-clock cap on the non-streaming path. `null` ⇒ no
-  /// cap. The router (B.18+) can still cancel through the streaming
-  /// path.
-  final Duration? requestTimeout;
-
-  /// Whether this provider owns [httpClient] (and should close it
-  /// on [close]) or whether the caller manages its lifetime.
-  final bool _ownsHttpClient;
-
   OllamaLlmProvider({
-    required this.id,
-    required this.baseUri,
-    required this.defaultModel,
+    required super.id,
+    required super.baseUri,
+    required super.defaultModel,
     OllamaHttpClient? httpClient,
-    this.requestTimeout,
+    super.requestTimeout,
   })  : httpClient = httpClient ?? DefaultOllamaHttpClient(),
-        _ownsHttpClient = httpClient == null;
+        super(ownsHttpClient: httpClient == null);
+
+  @override
+  String get callIdPrefix => 'ollama';
 
   @override
   Future<LlmCallReport> complete(
@@ -121,16 +102,12 @@ final class OllamaLlmProvider implements LlmProvider {
 
     stopwatch.stop();
 
-    return LlmCallReport(
-      providerId: id,
+    return buildReport(
+      prompt: prompt,
       modelId: response.model.isEmpty ? modelId : response.model,
-      anchorHash: prompt.anchorHash,
-      promptHash: promptSha256(prompt.body),
       tokensIn: response.promptEvalCount ?? 0,
       tokensOut: response.evalCount ?? 0,
-      retries: 0,
       wallClockMs: stopwatch.elapsedMilliseconds,
-      templateSha: prompt.templateSha,
       notes: _collectNotes(options, response),
     );
   }
@@ -143,7 +120,7 @@ final class OllamaLlmProvider implements LlmProvider {
     final stopwatch = Stopwatch()..start();
     final modelId = options.model ?? defaultModel;
     final ollamaOptions = _toOllamaOptions(options);
-    final callId = _newCallId(prompt);
+    final callId = newCallId(prompt);
 
     yield LlmStreamStarted(
       callId: callId,
@@ -151,7 +128,6 @@ final class OllamaLlmProvider implements LlmProvider {
       modelId: modelId,
     );
 
-    final buffer = StringBuffer();
     int? promptEval;
     int? eval;
     String? echoedModel;
@@ -167,7 +143,6 @@ final class OllamaLlmProvider implements LlmProvider {
         requestTimeout: requestTimeout,
       )) {
         if (frag.contentDelta.isNotEmpty) {
-          buffer.write(frag.contentDelta);
           yield LlmStreamChunk(callId: callId, text: frag.contentDelta);
         }
         if (frag.promptEvalCount != null) promptEval = frag.promptEvalCount;
@@ -177,16 +152,12 @@ final class OllamaLlmProvider implements LlmProvider {
           stopwatch.stop();
           yield LlmStreamCompleted(
             callId: callId,
-            report: LlmCallReport(
-              providerId: id,
+            report: buildReport(
+              prompt: prompt,
               modelId: echoedModel ?? modelId,
-              anchorHash: prompt.anchorHash,
-              promptHash: promptSha256(prompt.body),
               tokensIn: promptEval ?? 0,
               tokensOut: eval ?? 0,
-              retries: 0,
               wallClockMs: stopwatch.elapsedMilliseconds,
-              templateSha: prompt.templateSha,
               notes: _collectStreamNotes(options),
             ),
           );
@@ -204,16 +175,12 @@ final class OllamaLlmProvider implements LlmProvider {
           message:
               'Ollama stream ended without a terminal done=true frame.',
         ),
-        report: LlmCallReport(
-          providerId: id,
+        report: buildReport(
+          prompt: prompt,
           modelId: echoedModel ?? modelId,
-          anchorHash: prompt.anchorHash,
-          promptHash: promptSha256(prompt.body),
           tokensIn: promptEval ?? 0,
           tokensOut: eval ?? 0,
-          retries: 0,
           wallClockMs: stopwatch.elapsedMilliseconds,
-          templateSha: prompt.templateSha,
         ),
       );
     } catch (e) {
@@ -226,16 +193,12 @@ final class OllamaLlmProvider implements LlmProvider {
           message: e.toString(),
           cause: e,
         ),
-        report: LlmCallReport(
-          providerId: id,
+        report: buildReport(
+          prompt: prompt,
           modelId: echoedModel ?? modelId,
-          anchorHash: prompt.anchorHash,
-          promptHash: promptSha256(prompt.body),
           tokensIn: promptEval ?? 0,
           tokensOut: eval ?? 0,
-          retries: 0,
           wallClockMs: stopwatch.elapsedMilliseconds,
-          templateSha: prompt.templateSha,
         ),
       );
     }
@@ -311,18 +274,10 @@ final class OllamaLlmProvider implements LlmProvider {
     );
   }
 
-  /// Releases owned HTTP resources. No-op if [httpClient] was
-  /// injected by the caller.
-  void close() {
-    if (_ownsHttpClient) httpClient.close();
-  }
+  @override
+  void disposeHttpClient() => httpClient.close();
 
   // ─── Internals ────────────────────────────────────────────────
-
-  String _newCallId(WirePrompt prompt) {
-    final now = DateTime.now().microsecondsSinceEpoch;
-    return 'ollama-$id-$now-${prompt.body.hashCode.toUnsigned(32)}';
-  }
 
   OllamaGenerationOptions _toOllamaOptions(LlmOptions options) {
     return OllamaGenerationOptions(
