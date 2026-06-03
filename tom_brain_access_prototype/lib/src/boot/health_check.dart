@@ -41,6 +41,7 @@ import 'dart:convert';
 
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
 
 /// A point-in-time read of the dispatcher coordinator's run-slot + queue state
 /// (E.43), the `queues` payload of the health body.
@@ -140,13 +141,13 @@ class HealthCheck {
   ///
   /// [queueSnapshot] reads the live coordinator state (the running process
   /// wires it to its `RunCoordinator`; a test passes a probe). [clock] stamps
-  /// uptime; it defaults to [DateTime.now] and is captured *now* as the process
+  /// uptime; it defaults to [systemClock] and is captured *now* as the process
   /// start instant, so `uptime_s` measures from construction.
   factory HealthCheck({
     required QueueSnapshotSource queueSnapshot,
     DateTime Function()? clock,
   }) =>
-      HealthCheck._(queueSnapshot, clock ?? DateTime.now);
+      HealthCheck._(queueSnapshot, clock ?? systemClock);
 
   HealthCheck._(this._queueSnapshot, DateTime Function() clock)
       : _clock = clock,

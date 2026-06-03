@@ -58,6 +58,7 @@
 //   * evict by TTL — the prototype slides by turn-count capacity only;
 //     time-based expiry is deferred (Q-E.25.2).
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 /// The originating channel of an inbound request — the second component of
@@ -283,14 +284,14 @@ final class SessionManager {
   /// [maxWindowTurns] (default [defaultMaxWindowTurns]) caps each session's
   /// window and must be at least 1. [sessionIdFactory] builds a new node's
   /// id (default: a readable, deterministic derivation from the key).
-  /// [now] is the clock used for turn timestamps (default: [DateTime.now]),
+  /// [now] is the clock used for turn timestamps (default: [systemClock]),
   /// injectable so tests can assert lifecycle timestamps deterministically.
   SessionManager({
     this.maxWindowTurns = defaultMaxWindowTurns,
     SessionIdFactory? sessionIdFactory,
     DateTime Function()? now,
   })  : _sessionIdFactory = sessionIdFactory ?? _defaultSessionId,
-        _now = now ?? DateTime.now {
+        _now = now ?? systemClock {
     if (maxWindowTurns < 1) {
       throw ArgumentError.value(
         maxWindowTurns,

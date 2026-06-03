@@ -53,6 +53,7 @@
 //   * No substrate / memory construction (that is `BrainProcessBoot`'s job, and
 //     it is reached only through the dispatcher + the injected seams).
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
     show AccessLayerInstaller, AccessLayerShutdown, Dispatcher;
 
@@ -141,7 +142,7 @@ final class BrainAccessConfig {
     this.embeddingCacheTtl = const Duration(minutes: 5),
     this.sessionMaxWindowTurns = defaultMaxWindowTurns,
     DateTime Function()? clock,
-  }) : clock = clock ?? DateTime.now;
+  }) : clock = clock ?? systemClock;
 }
 
 /// A composed, running access layer plus its teardown.

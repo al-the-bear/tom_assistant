@@ -77,6 +77,8 @@
 //   * implement the anchor pre-check (E.31) or wire into boot (E.41+).
 //   * authenticate (E.28) or resolve identity (E.24).
 
+import 'package:tom_core_agentic/tom_core_agentic.dart';
+
 import 'rate_limiter.dart' show rateLimitHttpStatus;
 
 /// The graceful message the Telegram adapter (E.41+) sends when a sender has
@@ -179,11 +181,11 @@ final class DailyQuotaLimiter {
   /// `principalId` → quota state. Created lazily on first [check].
   final Map<String, _QuotaState> _states = {};
 
-  /// Builds a limiter over [policy]. [clock] defaults to `DateTime.now`.
+  /// Builds a limiter over [policy]. [clock] defaults to [systemClock].
   DailyQuotaLimiter({
     required this.policy,
     DateTime Function()? clock,
-  }) : clock = clock ?? DateTime.now;
+  }) : clock = clock ?? systemClock;
 
   /// Counts one daily LLM call against [principalId]'s quota.
   ///
@@ -198,16 +200,10 @@ final class DailyQuotaLimiter {
   /// [principalId] must be non-empty — an empty id would collapse every
   /// caller into one shared quota.
   void check(String principalId) {
-    if (principalId.isEmpty) {
-      throw ArgumentError.value(
-        principalId,
-        'principalId',
-        'must be non-empty',
-      );
-    }
+    requireNonEmpty(principalId, 'principalId');
 
     final now = clock();
-    final today = _startOfDay(now);
+    final today = startOfDay(now);
     final state = _states.putIfAbsent(
       principalId,
       () => _QuotaState(0, today),
@@ -222,23 +218,10 @@ final class DailyQuotaLimiter {
     }
 
     if (state.calls >= policy.dailyCap) {
-      final retryAfter = _nextDayStart(today).difference(now);
+      final retryAfter = nextDayStart(today).difference(now);
       throw DailyQuotaExceeded(principalId, retryAfter);
     }
 
     state.calls += 1;
   }
-
-  /// The start-of-day instant for [t], preserving [t]'s zone (UTC instants
-  /// truncate to UTC midnight, local instants to local midnight) so a
-  /// UTC-driven deployment resets at UTC midnight.
-  DateTime _startOfDay(DateTime t) => t.isUtc
-      ? DateTime.utc(t.year, t.month, t.day)
-      : DateTime(t.year, t.month, t.day);
-
-  /// The start of the day *after* [dayStart]. `day + 1` lets Dart's `DateTime`
-  /// constructor normalise month / year rollover.
-  DateTime _nextDayStart(DateTime dayStart) => dayStart.isUtc
-      ? DateTime.utc(dayStart.year, dayStart.month, dayStart.day + 1)
-      : DateTime(dayStart.year, dayStart.month, dayStart.day + 1);
 }

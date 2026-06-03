@@ -61,6 +61,8 @@
 //   * implement the anchor pre-check (E.31) or wire into boot (E.41+).
 //   * authenticate (E.28) or resolve identity (E.24).
 
+import 'package:tom_core_agentic/tom_core_agentic.dart';
+
 /// The HTTP status a [RateLimitExceeded] maps to on the OpenAI channel
 /// (proto spec § 8: rate-limit failure → `429` JSON). Exposed as a single
 /// constant so the OpenAI adapter (E.41+) has one source of truth rather
@@ -102,32 +104,21 @@ final class RateLimitPolicy {
   final Duration refillPeriod;
 
   /// Builds a policy. [capacity] must be `>= 1`, [refillTokens] must be
-  /// `> 0`, and [refillPeriod] must be strictly positive.
+  /// `> 0`, and [refillPeriod] must be strictly positive. Delegates the
+  /// numeric validation to the shared [TokenBucketPolicy], which the limiter
+  /// runs on internally.
   RateLimitPolicy({
     required this.capacity,
     required this.refillTokens,
     required this.refillPeriod,
-  }) {
-    if (capacity < 1) {
-      throw ArgumentError.value(capacity, 'capacity', 'must be >= 1');
-    }
-    if (refillTokens <= 0) {
-      throw ArgumentError.value(refillTokens, 'refillTokens', 'must be > 0');
-    }
-    if (refillPeriod <= Duration.zero) {
-      throw ArgumentError.value(
-        refillPeriod,
-        'refillPeriod',
-        'must be a strictly positive duration',
-      );
-    }
-  }
+  }) : _bucketPolicy = TokenBucketPolicy(
+          capacity: capacity,
+          refillTokens: refillTokens,
+          refillPeriod: refillPeriod,
+        );
 
-  /// Tokens replenished per microsecond — the continuous refill rate used by
-  /// the lazy refill computation. Derived once from [refillTokens] and
-  /// [refillPeriod].
-  double get _tokensPerMicrosecond =>
-      refillTokens / refillPeriod.inMicroseconds;
+  /// The shared throttle policy this rate-limit policy maps onto.
+  final TokenBucketPolicy _bucketPolicy;
 }
 
 /// Raised when a principal's token bucket cannot afford the current request.
@@ -155,17 +146,6 @@ final class RateLimitExceeded implements Exception {
       '${retryAfter.inMilliseconds}ms';
 }
 
-/// Mutable per-principal bucket state: the current (fractional) token count
-/// and the wall-clock instant it was last refilled. One instance per
-/// principal id; created full on first sight and held for the limiter's
-/// lifetime ("persisted per principal", in-process).
-class _BucketState {
-  double tokens;
-  DateTime lastRefill;
-
-  _BucketState(this.tokens, this.lastRefill);
-}
-
 /// Per-principal token-bucket rate limiter (E.29).
 ///
 /// One bucket per `principalId`, keyed on the non-secret stable id. Call
@@ -184,75 +164,39 @@ final class RateLimiter {
   /// The single policy applied to every principal in the prototype.
   final RateLimitPolicy policy;
 
-  /// Time source. Production passes `DateTime.now`; tests pass a controllable
-  /// clock for deterministic refill.
-  final DateTime Function() clock;
+  /// The shared keyed token bucket the limiter delegates to. Keyed on the
+  /// non-secret `principalId`; owns the continuous-refill maths, the
+  /// backwards-clock guard, and the per-principal state.
+  final TokenBucket _bucket;
 
-  /// `principalId` → bucket state. Created lazily on first [check].
-  final Map<String, _BucketState> _buckets = {};
-
-  /// Builds a limiter over [policy]. [clock] defaults to `DateTime.now`.
+  /// Builds a limiter over [policy]. [clock] defaults to [systemClock].
   RateLimiter({
     required this.policy,
     DateTime Function()? clock,
-  }) : clock = clock ?? DateTime.now;
+  }) : _bucket = TokenBucket(policy: policy._bucketPolicy, clock: clock);
 
   /// Charges one token to [principalId]'s bucket.
   ///
-  /// Refills the bucket from the elapsed wall-clock time, then either
-  /// consumes one token (returns normally) or — when fewer than one token is
-  /// available — throws [RateLimitExceeded] with the wait until one token
-  /// will have refilled. The bucket is *not* charged on a throw, so a
-  /// rejected request does not push the retry window further out.
+  /// Delegates to the shared [TokenBucket]: takes one token and returns
+  /// normally when the bucket can afford it, or throws [RateLimitExceeded]
+  /// with the wait until one token will have refilled. The bucket is *not*
+  /// charged on a throw, so a rejected request does not push the retry window
+  /// further out.
   ///
   /// [principalId] must be non-empty — an empty id would collapse every
-  /// caller into one shared bucket.
+  /// caller into one shared bucket (the bucket rejects an empty key).
   void check(String principalId) {
-    if (principalId.isEmpty) {
-      throw ArgumentError.value(
-        principalId,
-        'principalId',
-        'must be non-empty',
-      );
+    final retryAfter = _bucket.tryTake(principalId);
+    if (retryAfter != null) {
+      throw RateLimitExceeded(principalId, retryAfter);
     }
-
-    final now = clock();
-    final bucket = _buckets.putIfAbsent(
-      principalId,
-      () => _BucketState(policy.capacity.toDouble(), now),
-    );
-
-    _refill(bucket, now);
-
-    if (bucket.tokens >= 1.0) {
-      bucket.tokens -= 1.0;
-      return;
-    }
-
-    // Not enough for a whole token: compute the wait until the deficit
-    // (1 - tokens) has refilled. refillTokens > 0 guarantees this is finite.
-    final deficit = 1.0 - bucket.tokens;
-    final microseconds =
-        (deficit / policy._tokensPerMicrosecond).ceil();
-    throw RateLimitExceeded(
-      principalId,
-      Duration(microseconds: microseconds),
-    );
   }
 
-  /// Refills [bucket] for the time elapsed since its last refill, capped at
-  /// [RateLimitPolicy.capacity]. A no-op when no time has passed.
-  void _refill(_BucketState bucket, DateTime now) {
-    final elapsedMicros = now.difference(bucket.lastRefill).inMicroseconds;
-    if (elapsedMicros <= 0) {
-      // Clock did not advance (or went backwards — never let it drain the
-      // bucket); just pin lastRefill forward so a backwards clock cannot
-      // create a future credit.
-      bucket.lastRefill = now;
-      return;
-    }
-    final refilled = elapsedMicros * policy._tokensPerMicrosecond;
-    bucket.tokens = (bucket.tokens + refilled).clamp(0.0, policy.capacity.toDouble());
-    bucket.lastRefill = now;
-  }
+  /// Number of principals with live bucket state — for observability and as
+  /// the seam an idle-eviction policy reads (Q-E.29.3).
+  int get principalCount => _bucket.keyCount;
+
+  /// Drops all bucket state; every principal is full again on its next
+  /// [check]. The eviction seam the per-principal-map bound (G.3.3) exposes.
+  void clear() => _bucket.clear();
 }

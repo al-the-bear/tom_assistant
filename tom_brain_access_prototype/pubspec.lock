@@ -981,7 +981,7 @@ packages:
     source: hosted
     version: "1.0.2"
   tom_core_agentic:
-    dependency: transitive
+    dependency: "direct main"
     description:
       path: "../../tom_ai/core/tom_core_agentic"
       relative: true

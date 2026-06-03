@@ -44,34 +44,30 @@
 // Keeping the dependency at a function boundary makes E.42 testable in
 // isolation and keeps the access layer from reaching past the dispatcher.
 
-import 'dart:async';
 import 'dart:io';
 
-import 'package:tom_basics/tom_basics.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 
-/// The async teardown a [GracefulShutdown] runs when a termination signal
-/// arrives.
-///
-/// In the running brain process (E.45) this is `BootedBrain.shutdown`, which
-/// stops the access layer, drains the in-flight foreground run, disposes
-/// memory, and closes the substrate — the spec's § 11.2 sequence. A test
-/// passes a probe that records its invocation and ordering.
-typedef ShutdownAction = Future<void> Function();
+// The generic signal → awaited-teardown → terminate machinery now lives in
+// `tom_core_agentic`'s `AsyncShutdownCoordinator` (the Section-G consolidation:
+// it is the same coordinator any running agentic process needs, not anything
+// brain-specific). `GracefulShutdown` is the thin, brain-shaped wrapper around
+// it — it pins the trigger type to `ProcessSignal`, supplies the `SIGINT` /
+// `SIGTERM` default signal set and the real-process `exit` terminator, and
+// tags the lifecycle log lines with the access layer's label. The teardown
+// (`ShutdownAction`) is still the spec's § 11.2 sequence the caller injects
+// (`BootedBrain.shutdown` in the running process; a probe in a test).
+//
+// `ShutdownAction`, `ProcessTerminator`, `shutdownExitOk`, and
+// `shutdownExitError` are re-exported from `tom_core_agentic` so this file
+// remains the single import for boot's barrel (`boot.dart`) and the E.42
+// tests — the names and meanings are unchanged, only their home moved.
 
-/// Terminates the process with [code]. Defaults to `dart:io`'s [exit]
-/// (via [_ioExit]); a test injects a recorder so the process survives the
-/// assertion.
-typedef ProcessTerminator = void Function(int code);
+export 'package:tom_core_agentic/tom_core_agentic.dart'
+    show ProcessTerminator, ShutdownAction, shutdownExitError, shutdownExitOk;
 
-/// Exit code for a clean graceful shutdown (the teardown completed without
-/// throwing).
-const int shutdownExitOk = 0;
-
-/// Exit code when the teardown threw (`EX_SOFTWARE`, the conventional
-/// "internal software error" code). The process still exits — a failed drain
-/// must not hold the process open — but the non-zero code surfaces the failure
-/// to a supervisor.
-const int shutdownExitError = 70;
+/// The label the access layer's graceful-shutdown lifecycle log lines carry.
+const String _shutdownLabel = 'tom_brain.access.shutdown';
 
 /// The default [ProcessTerminator]: terminate the real process.
 ///
@@ -84,6 +80,12 @@ void _ioExit(int code) => exit(code);
 /// Watches OS termination signals and runs an async process teardown to
 /// completion before the process exits (E.42; proto spec § 11.2).
 ///
+/// A `ProcessSignal`-shaped wrapper over the generic
+/// [AsyncShutdownCoordinator]: it supplies the `SIGINT` / `SIGTERM` default
+/// signal set, the real-process `exit` terminator, and the access layer's log
+/// label, and otherwise delegates the first-signal-wins gating, the awaited
+/// teardown, and the terminate to the shared coordinator.
+///
 /// Construct via [GracefulShutdown.install], which subscribes to the signal
 /// streams immediately. The *first* signal wins: it flips [isTriggered], runs
 /// [ShutdownAction] to completion (logging start and finish), and then calls
@@ -93,18 +95,13 @@ void _ioExit(int code) => exit(code);
 /// teardown has run (so a test can await the whole sequence without a real
 /// `exit`).
 class GracefulShutdown {
-  final ShutdownAction _onShutdown;
-  final ProcessTerminator _terminate;
-  final List<StreamSubscription<ProcessSignal>> _subscriptions =
-      <StreamSubscription<ProcessSignal>>[];
-  final Completer<int> _completed = Completer<int>();
-  bool _triggered = false;
+  final AsyncShutdownCoordinator<ProcessSignal> _coordinator;
 
-  GracefulShutdown._(this._onShutdown, this._terminate);
+  GracefulShutdown._(this._coordinator);
 
   /// Whether a signal has already begun the shutdown sequence. Once `true`,
   /// further signals are ignored.
-  bool get isTriggered => _triggered;
+  bool get isTriggered => _coordinator.isTriggered;
 
   /// Resolves with the exit code once the teardown has run (after the first
   /// signal). [shutdownExitOk] on a clean teardown, [shutdownExitError] if the
@@ -113,12 +110,13 @@ class GracefulShutdown {
   /// In the running process the [ProcessTerminator] is the real [exit], so
   /// nothing observes this future; a test injects a no-op / recording
   /// terminator and awaits this to assert the sequence ran.
-  Future<int> get completed => _completed.future;
+  Future<int> get completed => _coordinator.completed;
 
   /// The default termination signals for the running process: `SIGINT`
   /// (Ctrl-C / `kill -INT`) and `SIGTERM` (`kill`, container stop, systemd
   /// stop). A test injects its own `StreamController` streams instead.
-  static List<Stream<ProcessSignal>> defaultSignals() => <Stream<ProcessSignal>>[
+  static List<Stream<ProcessSignal>> defaultSignals() =>
+      <Stream<ProcessSignal>>[
         ProcessSignal.sigint.watch(),
         ProcessSignal.sigterm.watch(),
       ];
@@ -136,71 +134,18 @@ class GracefulShutdown {
     List<Stream<ProcessSignal>>? signals,
     ProcessTerminator terminate = _ioExit,
   }) {
-    final GracefulShutdown coordinator =
-        GracefulShutdown._(onShutdown, terminate);
-    final List<Stream<ProcessSignal>> streams = signals ?? defaultSignals();
-    for (final Stream<ProcessSignal> stream in streams) {
-      coordinator._subscriptions.add(stream.listen(coordinator._onSignal));
-    }
-    return coordinator;
-  }
-
-  /// First signal wins: begin the async teardown. A signal that arrives while
-  /// the teardown is already in flight is logged and ignored.
-  void _onSignal(ProcessSignal signal) {
-    if (_triggered) {
-      tomLog.status(
-        '[tom_brain.access.shutdown] $signal received while already '
-        'shutting down — ignored',
-      );
-      return;
-    }
-    _triggered = true;
-    // Fire-and-forget the async teardown; `_runShutdown` owns its own errors
-    // and resolves `completed`. The handler itself must stay synchronous so a
-    // burst of signals all hit the `_triggered` guard.
-    unawaited(_runShutdown(signal));
-  }
-
-  /// Runs the teardown to completion, then terminates. Stops listening for
-  /// further signals first (so a late signal cannot re-enter), awaits
-  /// [_onShutdown], resolves [completed] with the exit code, and calls the
-  /// [ProcessTerminator] last.
-  Future<void> _runShutdown(ProcessSignal signal) async {
-    tomLog.status(
-      '[tom_brain.access.shutdown] $signal received — stop accepting '
-      'connections, draining in-flight foreground, closing memory',
+    return GracefulShutdown._(
+      AsyncShutdownCoordinator.install<ProcessSignal>(
+        label: _shutdownLabel,
+        onShutdown: onShutdown,
+        signals: signals ?? defaultSignals(),
+        terminate: terminate,
+      ),
     );
-    await _cancelSubscriptions();
-    int code = shutdownExitOk;
-    try {
-      await _onShutdown();
-      tomLog.status('[tom_brain.access.shutdown] graceful shutdown complete');
-    } catch (error, stackTrace) {
-      code = shutdownExitError;
-      tomLog.severe(
-        '[tom_brain.access.shutdown] shutdown action failed: $error\n'
-        '$stackTrace',
-      );
-    }
-    if (!_completed.isCompleted) {
-      _completed.complete(code);
-    }
-    _terminate(code);
-  }
-
-  /// Cancels and clears the signal subscriptions. Idempotent.
-  Future<void> _cancelSubscriptions() async {
-    final List<StreamSubscription<ProcessSignal>> subscriptions =
-        List<StreamSubscription<ProcessSignal>>.of(_subscriptions);
-    _subscriptions.clear();
-    for (final StreamSubscription<ProcessSignal> subscription in subscriptions) {
-      await subscription.cancel();
-    }
   }
 
   /// Stops listening for signals without triggering a shutdown. For a test
   /// teardown or for an embedding context that manages its own lifecycle.
   /// Idempotent and safe in a `finally`.
-  Future<void> dispose() => _cancelSubscriptions();
+  Future<void> dispose() => _coordinator.dispose();
 }

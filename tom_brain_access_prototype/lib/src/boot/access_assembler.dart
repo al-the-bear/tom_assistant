@@ -60,6 +60,7 @@
 //     file names, and only as the `accept(Access)` boundary (the access layer
 //     never depends on `tom_brain_memory` / `tom_brain_substrate`).
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
     show Dispatcher;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
@@ -167,7 +168,7 @@ final class AccessAssembler {
     this.bearerAuthenticator,
     this.classifier,
     DateTime Function()? clock,
-  }) : _clock = clock ?? DateTime.now;
+  }) : _clock = clock ?? systemClock;
 
   /// Admits one OpenAI HTTP/SSE request.
   ///

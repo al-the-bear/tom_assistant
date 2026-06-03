@@ -29,6 +29,8 @@
 
 import 'dart:convert';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' as agentic;
+
 /// One batch of embeddings plus the model that produced them — the
 /// substrate-agnostic result the adapter's `EmbeddingSource` seam returns.
 ///
@@ -122,12 +124,13 @@ final class EmbeddingsResponseRenderer {
       jsonEncode(bodyMap(inputs: inputs, batch: batch));
 
   /// Approximate, tokeniser-free token count over all [inputs] (mirrors
-  /// E.14's `ceil(length / 4)`; empty text counts as zero). The single place
-  /// to replace once the embedding call surfaces a real token count.
+  /// E.14's `ceil(length / 4)`; empty text counts as zero). Sums
+  /// `tom_core_agentic`'s shared [agentic.estimateTokens] per input (the
+  /// Section-G consolidation of the char/4 heuristic).
   static int _estimateTokens(List<String> inputs) {
     int total = 0;
     for (final String text in inputs) {
-      if (text.isNotEmpty) total += (text.length / 4).ceil();
+      total += agentic.estimateTokens(text);
     }
     return total;
   }

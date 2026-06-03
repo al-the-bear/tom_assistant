@@ -30,6 +30,7 @@
 
 import 'dart:convert';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' as agentic;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 /// Renders a stream of [OutboundChunk]s into one OpenAI `chat.completion`
@@ -145,8 +146,9 @@ final class ChatCompletionJsonRenderer {
       jsonEncode(bodyMap(prompt: prompt, content: content));
 
   /// Approximate, tokeniser-free token count for [text] (proto spec § 5.4,
-  /// Q-E.2.1): `ceil(length / 4)`, with empty text counting as zero. This is
-  /// the single place to replace once the run surfaces real effort metrics.
-  static int estimateTokens(String text) =>
-      text.isEmpty ? 0 : (text.length / 4).ceil();
+  /// Q-E.2.1): `ceil(length / 4)`, with empty text counting as zero.
+  /// Delegates to `tom_core_agentic`'s shared [agentic.estimateTokens] (the
+  /// Section-G consolidation: the char/4 heuristic is generic), kept as a
+  /// named static so the OpenAI adapter and its tests have one call site.
+  static int estimateTokens(String text) => agentic.estimateTokens(text);
 }

@@ -35,6 +35,7 @@
 //     never counted as delivered.)
 //   * No `Access` construction or boot wiring (E.41+).
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import '../identity/session_manager.dart' show AccessChannel;
@@ -89,12 +90,12 @@ final class DeliveryRegistry {
   ///
   /// [onDelivered] — when supplied — receives an [AccessDelivered] on the
   /// final chunk of every fully-streamed answer. [clock] stamps that event;
-  /// it defaults to [DateTime.now].
+  /// it defaults to [systemClock].
   DeliveryRegistry({
     void Function(AccessDelivered event)? onDelivered,
     DateTime Function()? clock,
   })  : _onDelivered = onDelivered,
-        _clock = clock ?? DateTime.now;
+        _clock = clock ?? systemClock;
 
   /// Registers [delivery] as the delivery path for its
   /// [ChannelDelivery.channel].

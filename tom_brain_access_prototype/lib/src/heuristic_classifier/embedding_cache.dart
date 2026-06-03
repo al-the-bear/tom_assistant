@@ -36,22 +36,19 @@
 
 import 'dart:async';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart';
+
 import 'heuristic_kind_hint_classifier.dart';
 
-/// A cached embedding plus the wall-clock time it was computed.
+/// Default ceiling on the number of live cache entries (G.3.1).
 ///
-/// Immutable. [computedAt] is stamped from the cache's clock at the moment the
-/// wrapped embedder resolved; expiry is measured against it (absolute TTL from
-/// compute time, not a sliding window — see [EmbeddingCache]).
-final class _CacheEntry {
-  const _CacheEntry(this.embedding, this.computedAt);
-
-  /// The stored embedding vector (the wrapped embedder's resolved result).
-  final List<double> embedding;
-
-  /// Wall-clock time the embedding was computed, per the cache's clock.
-  final DateTime computedAt;
-}
+/// The cache is keyed by *exact inbound text*, an attacker-influenced key
+/// space, so a stream of distinct prompts would grow the map without bound
+/// between TTL sweeps. This least-recently-used ceiling bounds the memory a
+/// long-running process can hold to embeddings; a final-layer cache (Q-E.34.3)
+/// makes it configurable. Sized generously so it never evicts a genuinely
+/// recent prompt at the prototype's request scale.
+const int defaultEmbeddingCacheMaxEntries = 10000;
 
 /// In-process recent-embedding cache (E.34; § 9.2).
 ///
@@ -85,63 +82,50 @@ final class EmbeddingCache {
   EmbeddingCache({
     required KindHintEmbedder embedder,
     Duration ttl = const Duration(minutes: 5),
-    DateTime Function() clock = DateTime.now,
+    int maxEntries = defaultEmbeddingCacheMaxEntries,
+    DateTime Function() clock = systemClock,
   })  : assert(ttl > Duration.zero, 'ttl must be positive'),
         _embedder = embedder,
-        _ttl = ttl,
-        _clock = clock;
+        _cache = TtlCache<String, List<double>>(
+          ttl: ttl,
+          maxEntries: maxEntries,
+          clock: clock,
+        );
 
   final KindHintEmbedder _embedder;
-  final Duration _ttl;
-  final DateTime Function() _clock;
 
-  /// Exact-text → cached embedding. Bounded by TTL only (prototype scale; a
-  /// size cap is Q-E.34.3). Expired entries are swept lazily on each access.
-  final Map<String, _CacheEntry> _entries = <String, _CacheEntry>{};
+  /// Exact-text → cached embedding. Absolute-TTL expiry with a
+  /// least-recently-used size ceiling ([defaultEmbeddingCacheMaxEntries]);
+  /// expired entries are swept lazily on each access. The store mechanics
+  /// (sweep, recency, eviction) live in the shared [TtlCache]; this class
+  /// owns only the "have I embedded this exact text recently?" policy.
+  final TtlCache<String, List<double>> _cache;
 
   /// The cached-or-computed embedding for [text] — a [KindHintEmbedder].
   ///
   /// On a live cache hit (an entry exists for the exact [text] and is younger
-  /// than [ttl]) returns the stored embedding *without calling the wrapped
+  /// than the TTL) returns the stored embedding *without calling the wrapped
   /// embedder* — the embed call is saved (§ 9.2). On a miss or an expired
-  /// entry, calls the wrapped embedder, stores the result stamped with the
-  /// current clock time, and returns it.
+  /// entry, calls the wrapped embedder, stores the result, and returns it.
   ///
   /// A throwing embed call propagates and leaves the cache untouched (resolved
-  /// values only).
+  /// values only — concurrent identical misses each run the embedder).
   Future<List<double>> embed(String text) async {
-    final DateTime now = _clock();
-    _sweepExpired(now);
-
-    final _CacheEntry? entry = _entries[text];
-    if (entry != null && !_isExpired(entry, now)) {
-      return entry.embedding;
+    final List<double>? hit = _cache.get(text);
+    if (hit != null) {
+      return hit;
     }
 
-    // Miss (or just-swept expiry): compute, then store stamped with the time
-    // the call was *issued*. A failing embedder throws here and the map is
-    // left as the sweep found it — no failure is memoised.
+    // Miss (or expiry): compute, then store. A failing embedder throws here
+    // and the cache is left untouched — no failure is memoised.
     final List<double> embedding = await _embedder(text);
-    _entries[text] = _CacheEntry(embedding, now);
+    _cache.set(text, embedding);
     return embedding;
   }
 
   /// The number of live (post-sweep) entries — for tests and observability.
-  int get size {
-    _sweepExpired(_clock());
-    return _entries.length;
-  }
+  int get size => _cache.length;
 
   /// Drops all entries. For tests and for a deliberate boot-time flush.
-  void clear() => _entries.clear();
-
-  bool _isExpired(_CacheEntry entry, DateTime now) =>
-      now.difference(entry.computedAt) >= _ttl;
-
-  /// Removes every entry older than [ttl]. O(n) over the map; cheap at the
-  /// prototype's request scale and keeps dead entries from accumulating
-  /// between the keys that happen to be read.
-  void _sweepExpired(DateTime now) {
-    _entries.removeWhere((_, entry) => _isExpired(entry, now));
-  }
+  void clear() => _cache.clear();
 }

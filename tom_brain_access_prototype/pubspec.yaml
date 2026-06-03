@@ -122,6 +122,16 @@ dependencies:
   tom_brain_procedure_prototype:
     path: ../tom_brain_procedure_prototype
   tom_basics: ^1.0.0
+  # ADDED for the Section-G cleanup. Generic, domain-free agentic building
+  # blocks the access edge no longer re-implements per file: the keyed
+  # `TokenBucket` (rate limiter), the `TtlCache` (embedding cache, now
+  # size-capped), `startOfDay` / `nextDayStart` (quota day boundary), the
+  # `AsyncShutdownCoordinator` (graceful shutdown), `YamlConfigReader`
+  # (config loader), `systemClock`, `requireNonEmpty`, and `estimateTokens`.
+  # Depends only on `tom_basics` (+ `yaml`), so it adds no transport, memory,
+  # or substrate coupling — the layering contract above is preserved.
+  tom_core_agentic:
+    path: ../../tom_ai/core/tom_core_agentic
   tom_core_kernel:
     path: ../../tom_ai/core/tom_core_kernel
   tom_core_server:
