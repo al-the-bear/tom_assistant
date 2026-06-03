@@ -51,6 +51,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:tom_basics/tom_basics.dart' show tomLog;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import '../adapters/openai_http_sse/chat_completion_sse.dart';
@@ -256,12 +257,38 @@ final class SseChannelDelivery implements ChannelDelivery {
         sink.write(ChatCompletionSseRenderer.doneFrame);
         // The wire close is irreversible and not awaited here: this is the
         // last chunk, and the `DeliverCallback` signature is synchronous in
-        // its return of the backpressure stream.
-        unawaited(sink.close());
+        // its return of the backpressure stream. But a failure on close — a
+        // broken pipe when the client has already gone — must not be silently
+        // dropped (G.3.5): `_closeWire` awaits the close off the hot path and
+        // logs any error rather than letting it vanish into an unhandled
+        // microtask.
+        unawaited(_closeWire(sink));
       }
 
       // The chunk was accepted and the wire is ready for more — no stall.
       return Backpressure.clear;
     };
+  }
+
+  /// Closes the SSE wire after the terminal `[DONE]` frame, logging — rather
+  /// than swallowing — any failure (G.3.5).
+  ///
+  /// Called fire-and-forget from the synchronous [DeliverCallback], so it
+  /// cannot surface an error to the caller. A close failure here is benign:
+  /// the answer is fully written and `[DONE]` is already on the wire, so the
+  /// most likely cause is a client that disconnected just before the close.
+  /// It is logged at `warn` (not `severe`) for exactly that reason — only the
+  /// error's runtime type is recorded, never its message, so a transport
+  /// exception cannot leak wire contents.
+  static Future<void> _closeWire(SseSink sink) async {
+    try {
+      await sink.close();
+    } catch (error) {
+      tomLog.warn(
+        'SSE wire close failed after `[DONE]` (${error.runtimeType}); the '
+        'answer was already fully delivered, so this is benign — most likely '
+        'a client that disconnected before the close.',
+      );
+    }
   }
 }

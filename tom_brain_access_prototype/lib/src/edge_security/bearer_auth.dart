@@ -68,6 +68,11 @@ const String authorizationHeaderName = 'authorization';
 /// header (RFC 7235 auth-schemes are case-insensitive).
 const String bearerScheme = 'Bearer';
 
+/// The lower-cased form of [bearerScheme], pre-folded once so the header
+/// comparison ([parseBearerHeader]) is a direct equality rather than a
+/// `.toLowerCase()` on every request.
+const String _bearerSchemeLower = 'bearer';
+
 /// The HTTP status every [BearerAuthFailure] maps to on the OpenAI channel
 /// (proto spec § 8: "OpenAI failure: `401` JSON"). Exposed as a single
 /// constant so the OpenAI adapter (E.41+) has one source of truth for the
@@ -160,7 +165,7 @@ String parseBearerHeader(String? authorizationHeader) {
       'Authorization header is not a single "Bearer <token>" pair.',
     );
   }
-  if (parts[0].toLowerCase() != bearerScheme.toLowerCase()) {
+  if (parts[0].toLowerCase() != _bearerSchemeLower) {
     throw const BearerAuthFailure(
       BearerAuthFailureReason.malformed,
       'Authorization header does not use the Bearer scheme.',
@@ -191,6 +196,26 @@ TomPrincipal authenticateBearerHeader(
   return authenticator.authenticate(token);
 }
 
+/// Runs [action], collapsing *any* thrown error into a single
+/// [BearerAuthFailureReason.malformed] failure tagged with [context].
+///
+/// The two JWT steps ([TomClientJwtToken] parsing and principal conversion)
+/// share this collapse: a token-introspection error must never ride into the
+/// client-facing failure path. Only the error's **kind**
+/// (`error.runtimeType`) is recorded, never its `toString()` — if the
+/// underlying decoder ever interpolated a token fragment into its exception
+/// text, `toString()` would leak it (G.3.4); the runtime type cannot.
+T _catchAsMalformed<T>(T Function() action, String context) {
+  try {
+    return action();
+  } catch (error) {
+    throw BearerAuthFailure(
+      BearerAuthFailureReason.malformed,
+      '$context (${error.runtimeType}).',
+    );
+  }
+}
+
 /// JWT-based bearer authenticator wiring
 /// `TomBearerAuthentication.convertTokenPayloadToPrincipal`.
 ///
@@ -211,18 +236,10 @@ class JwtBearerTokenAuthenticator implements BearerTokenAuthenticator {
       );
     }
 
-    TomClientJwtToken parsed;
-    try {
-      parsed = TomClientJwtToken(token, decrypt: false);
-    } catch (error) {
-      // `TomClientJwtToken` raises miscellaneous parse errors; we collapse
-      // them all into a single `malformed` failure so the client never sees
-      // the internal exception text.
-      throw BearerAuthFailure(
-        BearerAuthFailureReason.malformed,
-        'Bearer token failed to parse as JWT: $error',
-      );
-    }
+    final parsed = _catchAsMalformed(
+      () => TomClientJwtToken(token, decrypt: false),
+      'Bearer token failed to parse as JWT',
+    );
 
     if (parsed.payload == null) {
       throw const BearerAuthFailure(
@@ -231,17 +248,10 @@ class JwtBearerTokenAuthenticator implements BearerTokenAuthenticator {
       );
     }
 
-    final TomPrincipal principal;
-    try {
-      principal = TomBearerAuthentication.convertTokenPayloadToPrincipal(
-        parsed,
-      );
-    } catch (error) {
-      throw BearerAuthFailure(
-        BearerAuthFailureReason.malformed,
-        'Bearer JWT payload could not be converted to a principal: $error',
-      );
-    }
+    final principal = _catchAsMalformed(
+      () => TomBearerAuthentication.convertTokenPayloadToPrincipal(parsed),
+      'Bearer JWT payload could not be converted to a principal',
+    );
 
     if (!principal.authenticated) {
       throw const BearerAuthFailure(

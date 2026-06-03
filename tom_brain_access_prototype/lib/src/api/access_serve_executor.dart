@@ -111,6 +111,11 @@ class AccessServeExecutor extends CommandExecutor {
     }
     print('Send SIGINT / SIGTERM to shut down gracefully.');
 
+    // Blocks for the process lifetime; `completed` resolves only after a
+    // termination signal drives the teardown. The teardown is itself bounded
+    // (`shutdownDeadline`, G.3.6), so this wait cannot hang on a wedged drain —
+    // a blanket timeout *here* would instead (wrongly) fire during healthy
+    // serving, since `completed` does not resolve until shutdown begins.
     final int exitCode = await process.completed;
     return exitCode == shutdownExitOk
         ? const ToolResult.success(processedCount: 1)

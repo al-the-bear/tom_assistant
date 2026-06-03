@@ -97,6 +97,27 @@ abstract interface class AccessServer {
 /// be driven without the network.
 typedef TelegramChatApiFactory = ChatApi Function(String botToken);
 
+/// How long a graceful [AccessServer.close] waits for in-flight requests to
+/// finish draining before it forces the socket shut (E.45 / G.3.2).
+///
+/// A streaming SSE answer that is mid-flight when shutdown begins is allowed to
+/// run to its natural end within this window; only a request that is still open
+/// past the deadline is severed. Sized to outlast a normal answer but bound the
+/// teardown so a hung connection cannot block the process forever.
+const Duration defaultShutdownDrainTimeout = Duration(seconds: 10);
+
+/// Upper bound on the *whole* ordered teardown (E.45 / G.3.6).
+///
+/// The graceful-shutdown future ([BrainAccessProcess.completed]) only resolves
+/// once the teardown has run, and the serve executor blocks on it. If a
+/// teardown step hangs (a stuck cognition shutdown, a wedged channel), an
+/// unbounded teardown would never resolve `completed` and the process would
+/// hang on exit. Bounding the teardown here guarantees `completed` resolves —
+/// cleanly when the drain finishes in time, or with an error after this
+/// deadline forces the issue. Strictly larger than [defaultShutdownDrainTimeout]
+/// so the socket drain has its full window inside the overall bound.
+const Duration defaultShutdownDeadline = Duration(seconds: 30);
+
 /// The default [AccessServeSeam]: bind the handler with `shelf_io.serve` on all
 /// IPv4 interfaces (E.45).
 Future<AccessServer> serveWithShelfIo(Handler handler, int port) async {
@@ -178,6 +199,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
   KindHintClassifier? kindHintClassifier,
   List<Stream<ProcessSignal>>? shutdownSignals,
   ProcessTerminator? terminate,
+  Duration shutdownDeadline = defaultShutdownDeadline,
   DateTime Function()? clock,
 }) async {
   // ── Phase 5a: compose the admission core over the booted dispatcher. ──
@@ -242,13 +264,20 @@ Future<BrainAccessProcess> startBrainAccessProcess({
     await brain.shutdown();
   }
 
+  // The whole teardown is bounded by [shutdownDeadline] (G.3.6): a hung
+  // teardown step otherwise leaves `completed` unresolved and the serve
+  // executor blocked on exit. On the deadline a `TimeoutException` propagates;
+  // the graceful coordinator catches it and terminates with the error exit
+  // code, so the process exits either way.
+  Future<void> boundedTeardown() => teardown().timeout(shutdownDeadline);
+
   final GracefulShutdown gracefulShutdown = terminate == null
       ? GracefulShutdown.install(
-          onShutdown: teardown,
+          onShutdown: boundedTeardown,
           signals: shutdownSignals,
         )
       : GracefulShutdown.install(
-          onShutdown: teardown,
+          onShutdown: boundedTeardown,
           signals: shutdownSignals,
           terminate: terminate,
         );
@@ -256,7 +285,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
   return BrainAccessProcess._(
     port: server.port,
     gracefulShutdown: gracefulShutdown,
-    teardown: teardown,
+    teardown: boundedTeardown,
   );
 }
 
@@ -287,12 +316,27 @@ BrainAccessConfig _toBrainAccessConfig(
 /// The default [AccessServer]: an adapter over a bound `dart:io` [HttpServer].
 class _HttpAccessServer implements AccessServer {
   final HttpServer _server;
+  final Duration _drainTimeout;
 
-  _HttpAccessServer(this._server);
+  _HttpAccessServer(
+    this._server, {
+    Duration drainTimeout = defaultShutdownDrainTimeout,
+  }) : _drainTimeout = drainTimeout;
 
   @override
   int get port => _server.port;
 
+  /// Graceful close (G.3.2): first stop accepting new connections and let
+  /// in-flight requests (including streaming SSE answers) drain, bounded by
+  /// [_drainTimeout]. Only if a request is still open past the deadline does
+  /// it fall back to `force: true` — so a normal answer completes, but a hung
+  /// connection cannot hold the teardown open indefinitely.
   @override
-  Future<void> close() => _server.close(force: true);
+  Future<void> close() async {
+    try {
+      await _server.close().timeout(_drainTimeout);
+    } on TimeoutException {
+      await _server.close(force: true);
+    }
+  }
 }
