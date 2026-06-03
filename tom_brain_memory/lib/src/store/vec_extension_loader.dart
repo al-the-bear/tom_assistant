@@ -67,7 +67,7 @@ import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
 
-import '../config/memory_config.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryConfig;
 import 'sqlite_vec_binary_resolver.dart';
 
 /// Outcome of one `VecExtensionLoader.load(...)` call.

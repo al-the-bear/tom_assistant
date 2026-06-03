@@ -30,10 +30,12 @@
 //
 //   - A.61 — graph-walk recall mode (`memory_specification.md` § 10).
 
-export 'edge.dart' show Edge;
+// `Edge` and `EdgeType`/`EdgeDirection` moved to `tom_brain_shared` at
+// A.88 (todo #16); re-exported here so the barrel keeps its surface.
+export 'package:tom_brain_shared/tom_brain_shared.dart'
+    show Edge, EdgeDirection, EdgeType;
 export 'edge_events.dart' show EdgeCreated, EdgeRejected;
 export 'edge_reader.dart' show EdgeReader;
-export 'edge_type.dart' show EdgeDirection, EdgeType;
 export 'edge_write_exception.dart'
     show
         EdgeEndpointMissing,

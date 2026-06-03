@@ -40,7 +40,18 @@ import 'dart:io';
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 import 'package:yaml/yaml.dart';
 
-import 'memory_config.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show
+        BudgetsConfig,
+        ClassificationConfig,
+        DefaultWriteBudgetConfig,
+        McpServerConfig,
+        MemoryConfig,
+        ReplicationConfig,
+        ReplicationRole,
+        RetrievalConfig,
+        SqliteVecConfig,
+        TrailsConfig;
 
 /// Thrown when the YAML document does not match the schema in
 /// `memory_specification.md` § 14.

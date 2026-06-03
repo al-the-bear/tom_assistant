@@ -131,21 +131,17 @@
 
 import 'dart:math' as math;
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show Clock, NodeId, SystemClock, Vec;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock, DiversityStrategy, FusionStrategy, GraphWalkPolicy, MemoryEvent, Node, NodeId, RecallMode, RecallQuery, RecallReport, RecallResult, ReRankHook, Scope, SymbolicFilter, SystemClock, Vec;
 
-import '../api/memory_event.dart';
-import '../api/scope.dart';
 import '../cognitive_agents/shaking_events.dart';
-import '../nodes/node.dart';
+
 import '../nodes/node_reader.dart';
 import '../observability/memory_log.dart';
 import 'bm25_recall.dart';
 import 'graph_walk_recall.dart';
 import 'mmr.dart';
 import 'recall_events.dart';
-import 'recall_query.dart';
-import 'recall_result.dart';
+
 import 'rrf.dart';
 import 'symbolic_recall.dart';
 import 'vector_recall.dart';

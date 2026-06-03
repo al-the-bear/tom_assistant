@@ -49,8 +49,7 @@ import 'dart:collection';
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show nearestRankPercentile;
 
-import '../api/memory_stats.dart';
-import '../retrieval/recall_query.dart' show RecallMode;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show LatencyHistogram, RecallMode;
 
 /// Per-mode latency aggregator producing p50 / p95 snapshots for
 /// `MemoryStats.recallLatencyPerMode` (spec § 16).

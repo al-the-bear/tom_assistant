@@ -43,12 +43,7 @@
 // family identifiable in serialised event streams without a
 // reflection cast.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId;
-
-import '../api/memory_event.dart';
-import '../edges/edge_type.dart';
-import '../retrieval/recall_query.dart' show RecallMode;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, EdgeType, MemoryEvent, NodeId, RecallMode;
 
 /// Common discriminator prefix for every shaking sub-kind. Subscribers
 /// that want "the whole shaking family" can filter on

@@ -111,14 +111,10 @@
 import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show BrainTime, Clock, Vec, cosine;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainTime, ClassificationDecision, ClassificationTarget, Clock, cosine, MemoryEvent, Scope, Vec;
 
-import '../api/memory_event.dart';
-import '../api/scope.dart';
 import '../cognitive_agents/shaking_events.dart';
 import 'classification_events.dart';
-import 'classification_result.dart';
 
 /// One row of the `centroids` table.
 ///

@@ -21,9 +21,22 @@
 //   - A.34 — `persist(NodeDraft, Scope)` write path.
 //   - A.35 — `get` / `getMany` / `demote` / `forget`.
 
+// `Node`/`NodeDraft`/`NodeStatus` and the `NodeTypeDecl` schema-and-
+// policy primitives moved to `tom_brain_shared` at A.88 (todo #16);
+// re-exported here so the barrel keeps its surface.
+export 'package:tom_brain_shared/tom_brain_shared.dart'
+    show
+        EmbeddingPolicy,
+        FieldSpec,
+        FieldType,
+        IndexPolicy,
+        Node,
+        NodeDraft,
+        NodeStatus,
+        NodeTypeDecl,
+        RetentionPolicy;
 export 'critique_hook.dart'
     show CritiqueApproved, CritiqueHook, CritiqueOutcome, CritiqueRefused;
-export 'node.dart' show Node, NodeDraft, NodeStatus;
 export 'node_events.dart' show NodeDemoted, NodeForgotten, NodePersisted;
 export 'node_lifecycle.dart'
     show NodeLifecycleManager, TombstoneIndexEntry, lookupTombstone;
@@ -37,14 +50,6 @@ export 'node_persist_exception.dart'
         UnknownNodeType;
 export 'node_persister.dart' show NodePersister;
 export 'node_reader.dart' show NodeReader;
-export 'node_type_decl.dart'
-    show
-        EmbeddingPolicy,
-        FieldSpec,
-        FieldType,
-        IndexPolicy,
-        NodeTypeDecl,
-        RetentionPolicy;
 export 'node_type_events.dart' show NodeTypeRegistered;
 export 'node_type_registration.dart'
     show

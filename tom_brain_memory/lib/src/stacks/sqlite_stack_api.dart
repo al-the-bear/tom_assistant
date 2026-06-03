@@ -94,20 +94,16 @@ import 'dart:convert';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show CloseGuard, decodeJsonObject;
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show NodeId, StackEntryId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent, NodeId, PriorityPolicyKind, RetentionPolicyKind, Scope, StackApi, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackEvent, StackEventKind, StackInfo, StackPolicy, StackSummary;
 
-import '../api/memory_event.dart';
-import '../api/scope.dart';
 import '../budget/write_budget_tracker.dart';
 import '../cognitive_agents/agent_registry.dart';
 import '../store/transaction_support.dart';
 import 'bootstrap_names.dart';
 import 'priority_policy.dart';
-import 'stack_api.dart';
+
 import 'stack_events.dart';
 import 'stack_exception.dart';
-import 'stack_types.dart';
 
 /// Concrete `StackApi` backed by `memory.db` (Plan step A.40).
 final class SqliteStackApi with CloseGuard implements StackApi {

@@ -58,8 +58,6 @@
 
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
-import '../api/memory_event.dart';
-
 /// Central fan-in for `MemoryEvent`s emitted across the memory
 /// subsystem.
 ///

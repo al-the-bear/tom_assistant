@@ -27,10 +27,7 @@
 // `memory.node-forgotten`) follow the per-component convention
 // documented on `MemoryEvent`.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
-
-import '../api/memory_event.dart';
-import '../api/scope.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show DemotionReason, ForgetReason, MemoryEvent, NodeId;
 
 /// Emitted when `NodePersister.persist` successfully commits a fresh
 /// node (idempotency miss).

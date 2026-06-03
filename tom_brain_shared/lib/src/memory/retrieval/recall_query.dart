@@ -17,8 +17,9 @@
 // SQL compiler that turns a `SymbolicFilter` into a parameterised
 // `WHERE` clause stays here in memory (`retrieval/symbolic_recall.dart`).
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show NodeId, SymbolicFilter, Vec;
+import '../../embedding/embedding.dart' show Vec;
+import '../../ids/ids.dart' show NodeId;
+import '../../symbolic/symbolic.dart' show SymbolicFilter;
 
 import '../edges/edge_type.dart';
 import '../nodes/node.dart';
@@ -29,7 +30,7 @@ import '../nodes/node.dart';
 // A.88 relocation. `SymbolicFilter` is exported via the show-list of
 // the import above (it is also used directly here in `RecallQuery`);
 // `AttrClause` and `SymbolicOp` ride the standalone export below.
-export 'package:tom_brain_shared/tom_brain_shared.dart'
+export '../../symbolic/symbolic.dart'
     show AttrClause, SymbolicFilter, SymbolicOp;
 
 /// One of the four retrieval modes (§ 6.1).

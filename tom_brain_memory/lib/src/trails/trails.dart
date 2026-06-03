@@ -28,7 +28,10 @@
 //     contract surface).
 
 export 'sqlite_trail_store.dart' show SqliteTrailStore;
-export 'trail.dart'
+// The trail record value types moved to `tom_brain_shared` at A.88
+// (todo #16); re-exported here so the barrel keeps its surface. The
+// JSONL writer, the SQLite store, and the event leaves stay here.
+export 'package:tom_brain_shared/tom_brain_shared.dart'
     show
         ProcedureRunRef,
         TrailEntry,

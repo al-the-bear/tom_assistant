@@ -86,12 +86,10 @@
 import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show DemotionReason, ForgetReason, MemoryEvent, NodeId, NodeStatus;
 
-import '../api/memory_event.dart';
-import '../api/scope.dart';
 import '../store/transaction_support.dart';
-import 'node.dart';
+
 import 'node_events.dart';
 
 /// In-process owner of the `demote` and `forget` paths.

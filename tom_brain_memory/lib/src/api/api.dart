@@ -40,8 +40,20 @@
 // exported from the top-level package barrel; it is intentionally not
 // re-exported here.
 
-export 'memory_event.dart' show MemoryEvent;
-export 'memory_stats.dart' show LatencyHistogram, MemoryStats;
-export 'scope.dart' show DemotionReason, ForgetReason, Scope;
+// `MemoryEvent`, `MemoryStats`/`LatencyHistogram`, `Scope`/
+// `DemotionReason`/`ForgetReason`, and the `TomBrainMemoryClient`
+// contract moved to `tom_brain_shared` at A.88 (todo #16) so lighter
+// consumers can hold the interface without pulling sqlite3 / dart_mcp.
+// Re-exported here so the memory barrel keeps the same surface.
+// `TomBrainMemory` (the in-process abstract base that `implements`
+// `TomBrainMemoryClient`) stays in this package.
+export 'package:tom_brain_shared/tom_brain_shared.dart'
+    show
+        DemotionReason,
+        ForgetReason,
+        LatencyHistogram,
+        MemoryEvent,
+        MemoryStats,
+        Scope,
+        TomBrainMemoryClient;
 export 'tom_brain_memory.dart' show TomBrainMemory;
-export 'tom_brain_memory_client.dart' show TomBrainMemoryClient;

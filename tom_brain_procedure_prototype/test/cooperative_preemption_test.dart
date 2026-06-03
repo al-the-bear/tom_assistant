@@ -29,7 +29,8 @@
 
 import 'dart:async';
 
-import 'package:tom_brain_memory/tom_brain_memory.dart';
+// The memory client interface + value types moved to tom_brain_shared at
+// A.88 (todo #16); this test now sources them from the shared barrel.
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'package:test/test.dart';

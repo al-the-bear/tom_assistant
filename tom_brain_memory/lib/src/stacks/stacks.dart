@@ -46,7 +46,6 @@ export 'bootstrap_stacks_installer.dart'
 export 'priority_policy.dart'
     show comparePolicy, effectivePriority, sortByPolicy;
 export 'sqlite_stack_api.dart' show SqliteStackApi;
-export 'stack_api.dart' show StackApi;
 export 'stack_events.dart'
     show
         StackCreated,
@@ -65,10 +64,16 @@ export 'stack_exception.dart'
         StackNotFound,
         StackPolicyConfigInvalid,
         StackPolicyConfigInvalidReason;
-export 'stack_types.dart'
+// `StackApi` and the stack value-type shapes moved to
+// `tom_brain_shared` at A.88 (todo #16); re-exported here so the
+// barrel keeps its surface. The concrete `SqliteStackApi`, the
+// priority-policy evaluators, the bootstrap installer, and the event /
+// exception families stay in this package.
+export 'package:tom_brain_shared/tom_brain_shared.dart'
     show
         PriorityPolicyKind,
         RetentionPolicyKind,
+        StackApi,
         StackDecl,
         StackEntry,
         StackEntryStatus,

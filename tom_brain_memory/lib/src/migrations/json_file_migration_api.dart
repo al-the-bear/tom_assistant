@@ -132,9 +132,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import '../api/memory_event.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent, MigrationApi, MigrationCursor, MigrationDecl, MigrationStatus;
 import '../store/memory_directory.dart';
-import 'migration_api.dart';
+
 import 'migration_events.dart';
 
 /// File-backed concrete [MigrationApi] for the brain's long-running

@@ -78,7 +78,12 @@ export 'recall_executor.dart'
         RecallExecutor,
         SymbolicModeFn,
         VectorModeFn;
-export 'recall_query.dart'
+// `RecallQuery` (+ its policy/mode value types), `RecallResult`/
+// `RecallReport`, and `StreamQuery`/`StreamCursor` moved to
+// `tom_brain_shared` at A.88 (todo #16); re-exported here so the
+// barrel keeps its surface. The mode executors, RRF/MMR, the symbolic
+// SQL compiler, and the durable cursor store stay in this package.
+export 'package:tom_brain_shared/tom_brain_shared.dart'
     show
         AttrClause,
         DiversityPolicy,
@@ -89,16 +94,18 @@ export 'recall_query.dart'
         RecallBudget,
         RecallMode,
         RecallQuery,
+        RecallReport,
+        RecallResult,
         ReRankHook,
+        StreamCursor,
+        StreamQuery,
         SymbolicFilter,
         SymbolicOp;
-export 'recall_result.dart' show RecallReport, RecallResult;
 export 'mmr.dart'
     show MmrInput, MmrSelected, kDefaultMmrLambda, mmrDiversify;
 export 'rrf.dart' show RrfFusedCandidate, kDefaultRrfK, rrfFuse;
 export 'stream_cursor_store.dart'
     show JsonFileStreamCursorStore, StreamCursorStore;
-export 'stream_query.dart' show StreamCursor, StreamQuery;
 export 'symbolic_recall.dart'
     show
         CompiledSymbolicFilter,

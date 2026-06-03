@@ -40,10 +40,14 @@
 // `prototype_implementation_questions.md` for why the abstract
 // signatures stay minimal.
 
+// The `classify` result triad moved to `tom_brain_shared` at A.88
+// (todo #16); re-exported here so the barrel keeps its surface. The
+// centroid store, classifier, uncertain finder, and event leaves stay
+// in this package.
+export 'package:tom_brain_shared/tom_brain_shared.dart'
+    show ClassificationDecision, ClassificationResult, ClassificationTarget;
 export 'centroid_store.dart' show CentroidRecord, CentroidStore;
 export 'classification_events.dart'
     show CentroidUpdated, ClassificationComputed;
-export 'classification_result.dart'
-    show ClassificationDecision, ClassificationResult, ClassificationTarget;
 export 'classifier.dart' show Classifier;
 export 'uncertain_finder.dart' show UncertainCandidate, UncertainFinder;

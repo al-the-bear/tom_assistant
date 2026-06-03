@@ -47,26 +47,8 @@
 
 import 'dart:async';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, StackEntryId, TrailId, Vec, WriteBudget;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MemoryConfig, MemoryEvent, MemoryStats, MigrationApi, MigrationCursor, MigrationDecl, MigrationStatus, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, RecallQuery, RecallResult, Scope, StackApi, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackEvent, StackInfo, StackPolicy, StackSummary, StreamQuery, TomBrainMemoryClient, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
 
-import '../api/memory_event.dart';
-import '../api/memory_stats.dart';
-import '../api/scope.dart';
-import '../api/tom_brain_memory_client.dart';
-import '../classification/classification_result.dart';
-import '../config/memory_config.dart';
-import '../edges/edge.dart';
-import '../edges/edge_type.dart';
-import '../migrations/migration_api.dart';
-import '../nodes/node.dart';
-import '../nodes/node_type_decl.dart';
-import '../retrieval/recall_query.dart';
-import '../retrieval/recall_result.dart';
-import '../retrieval/stream_query.dart';
-import '../stacks/stack_api.dart';
-import '../stacks/stack_types.dart';
-import '../trails/trail.dart';
 import 'isolate_cancellation_protocol.dart';
 import 'isolate_envelopes_full.dart';
 import 'isolate_messages.dart';

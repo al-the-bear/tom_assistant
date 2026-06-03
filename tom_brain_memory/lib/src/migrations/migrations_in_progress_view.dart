@@ -101,7 +101,7 @@
 // hints to the snapshot (e.g. "sort by health then id"); the view's
 // current contract is "deterministic, alphabetical, decorated".
 
-import 'migration_api.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MigrationApi, MigrationStatus;
 
 /// Health classification for a single migration row in the
 /// `migrations_in_progress` view (memory_specification.md § 11.3).

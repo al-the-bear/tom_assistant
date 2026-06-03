@@ -81,9 +81,8 @@
 import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart' show defaultNowUtc;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show defaultNowUtc, MemoryConfig;
 
-import '../config/memory_config.dart';
 import 'memory_directory.dart';
 import 'schema_migrator.dart';
 import 'schema_v1.dart' show readSchemaVersion;

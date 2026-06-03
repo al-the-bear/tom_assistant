@@ -72,15 +72,10 @@
 // `ArgumentError`; the classifier surfaces it for the same reason.
 // See Q-A.64.6.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show Clock, SystemClock, Vec, cosine;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationConfig, ClassificationDecision, ClassificationResult, ClassificationTarget, Clock, cosine, MemoryEvent, Scope, SystemClock, Vec;
 
-import '../api/memory_event.dart';
-import '../api/scope.dart';
-import '../config/memory_config.dart' show ClassificationConfig;
 import 'centroid_store.dart';
 import 'classification_events.dart';
-import 'classification_result.dart';
 
 /// LLM-independent centroid-based classifier (spec § 7.2).
 ///

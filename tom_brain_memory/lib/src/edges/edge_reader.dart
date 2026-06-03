@@ -74,10 +74,7 @@
 import 'package:sqlite3/sqlite3.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show decodeJsonObject, sqlPlaceholders;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
-
-import 'edge.dart';
-import 'edge_type.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show Edge, EdgeDirection, EdgeId, EdgeType, NodeId;
 
 /// In-process owner of the edge-read path.
 ///

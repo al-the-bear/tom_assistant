@@ -40,14 +40,11 @@
 
 import 'dart:async';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show TrailId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryStats, Node, StackEntry, StackEvent, StreamQuery, TrailId;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomExecutor, TomWorker;
 
-import '../api/memory_stats.dart';
 import '../api/tom_brain_memory.dart';
-import '../nodes/node.dart';
-import '../retrieval/stream_query.dart';
-import '../stacks/stack_types.dart';
+
 import 'isolate_cancellation_protocol.dart';
 import 'isolate_envelopes_full.dart';
 import 'isolate_messages.dart';

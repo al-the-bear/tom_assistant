@@ -30,8 +30,9 @@
 // `TomBrainMemoryClient` only and must pass against both
 // implementations.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, TrailId, Vec, WriteBudget;
+import '../../budget/budget.dart' show WriteBudget;
+import '../../embedding/embedding.dart' show Vec;
+import '../../ids/ids.dart' show EdgeId, NodeId, TrailId;
 
 import '../classification/classification_result.dart';
 import '../config/memory_config.dart';

@@ -29,7 +29,7 @@ import 'package:tom_basics/tom_basics.dart'
 import 'package:tom_core_kernel/tom_core_kernel.dart'
     show TomExecutor, TomWorker;
 
-import '../config/memory_config.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryConfig;
 import '../observability/memory_log.dart';
 import 'isolate_boot.dart';
 import 'isolate_cancellation_protocol.dart';

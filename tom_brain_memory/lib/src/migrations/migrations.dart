@@ -23,9 +23,14 @@
 // `MigrationApi`; Tom Forge's brain inspector is the only normal-
 // operation caller of `MigrationsInProgressView`.
 
-export 'json_file_migration_api.dart' show JsonFileMigrationApi;
-export 'migration_api.dart'
+// The abstract `MigrationApi` surface + its cursor / decl / status
+// records moved to `tom_brain_shared` at A.88 (todo #16); re-exported
+// here so the barrel keeps its surface. The file-backed
+// `JsonFileMigrationApi`, the event leaf, and the operator-UI view
+// stay in this package.
+export 'package:tom_brain_shared/tom_brain_shared.dart'
     show MigrationApi, MigrationCursor, MigrationDecl, MigrationStatus;
+export 'json_file_migration_api.dart' show JsonFileMigrationApi;
 export 'migration_events.dart' show MigrationProgressed;
 export 'migrations_in_progress_view.dart'
     show

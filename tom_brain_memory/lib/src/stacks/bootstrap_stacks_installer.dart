@@ -53,14 +53,12 @@
 import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent, NodeId, PriorityPolicyKind, RetentionPolicyKind, StackPolicy;
 
-import '../api/memory_event.dart';
 import '../observability/memory_log.dart';
 import '../store/transaction_support.dart';
 import 'bootstrap_names.dart';
 import 'stack_events.dart';
-import 'stack_types.dart';
 
 /// Wildcard sentinel for the `entryNodeType` field on stacks that
 /// accept any node type (the spec § 5.4 "(any)" cell on

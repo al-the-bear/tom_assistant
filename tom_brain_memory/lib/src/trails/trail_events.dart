@@ -30,10 +30,7 @@
 // Per the per-component convention documented on `MemoryEvent`, the
 // `kind` strings are kebab-cased under the `memory.trail-*` namespace.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show TrailId;
-
-import '../api/memory_event.dart';
-import 'trail.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent, ProcedureRunRef, TrailEntryKind, TrailId, TrailOutcome;
 
 /// Emitted *after* the first JSONL line for a trail is durable AND
 /// the `trails` index row has been inserted (spec § 8.1).

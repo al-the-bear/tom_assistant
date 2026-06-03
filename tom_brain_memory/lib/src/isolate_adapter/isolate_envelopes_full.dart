@@ -38,21 +38,8 @@
 //   that carry a non-null `reRank` with `ArgumentError.value` before
 //   constructing the envelope (see `tom_brain_memory_isolate_client.dart`).
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, StackEntryId, TrailId, Vec, WriteBudget;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MigrationCursor, MigrationDecl, MigrationStatus, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, RecallQuery, RecallResult, Scope, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackInfo, StackPolicy, StackSummary, StreamQuery, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
 
-import '../api/scope.dart';
-import '../classification/classification_result.dart';
-import '../edges/edge.dart';
-import '../edges/edge_type.dart';
-import '../migrations/migration_api.dart';
-import '../nodes/node.dart';
-import '../nodes/node_type_decl.dart';
-import '../retrieval/recall_query.dart';
-import '../retrieval/recall_result.dart';
-import '../retrieval/stream_query.dart';
-import '../stacks/stack_types.dart';
-import '../trails/trail.dart';
 import 'isolate_cancellation_protocol.dart';
 import 'isolate_messages.dart';
 import 'isolate_stream_protocol.dart';

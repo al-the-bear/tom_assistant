@@ -49,7 +49,7 @@
 //     a `WARN` line, but the bare collector does not paper over
 //     failures.
 
-import '../api/memory_stats.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show LatencyHistogram, MemoryStats;
 
 /// Signature for a slice source returning `Map<String, int>`.
 typedef IntMapSource = Future<Map<String, int>> Function();

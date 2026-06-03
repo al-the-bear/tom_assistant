@@ -51,7 +51,7 @@
 //     entries. Subscribers that want them durably recorded fold
 //     them into a `Question` / `Conclusion` node themselves.
 
-import '../api/memory_event.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent;
 import 'shaking_events.dart';
 
 /// The well-defined seam through which a [ShakingEvent] reaches

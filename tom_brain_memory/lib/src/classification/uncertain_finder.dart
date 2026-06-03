@@ -127,12 +127,10 @@
 // need.
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec, cosine;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationConfig, ClassificationTarget, cosine, NodeId, Vec;
 
-import '../config/memory_config.dart' show ClassificationConfig;
 import '../store/vector_table.dart';
 import 'centroid_store.dart';
-import 'classification_result.dart';
 
 /// One borderline candidate that survived the band filter.
 ///

@@ -8,7 +8,7 @@
 // the abstract `TomBrainMemory.events()` stream has a typed
 // element.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
+import '../../events/events.dart' show BrainEvent;
 
 /// Base class for every event memory emits.
 ///

@@ -18,8 +18,7 @@
 // in-memory test double, or a future isolate-bridged adapter)
 // MUST provide it.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show NodeId, StackEntryId;
+import '../../ids/ids.dart' show NodeId, StackEntryId;
 
 import '../api/scope.dart';
 import 'stack_types.dart';

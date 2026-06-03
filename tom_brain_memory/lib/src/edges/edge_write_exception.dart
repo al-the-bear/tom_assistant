@@ -41,9 +41,7 @@
 // write.
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show formatException;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
-
-import 'edge_type.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeType, NodeId;
 
 /// Sealed base for every refusal of `EdgeWriter.edge`.
 sealed class EdgeWriteException implements Exception {

@@ -53,7 +53,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../store/memory_directory.dart';
-import 'stream_query.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show StreamCursor;
 
 /// Durable persistence for a [StreamCursor] (spec § 9.2).
 ///

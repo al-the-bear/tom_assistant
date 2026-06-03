@@ -105,16 +105,14 @@
 import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, EdgeType, MemoryEvent, NodeId, Scope;
 
-import '../api/memory_event.dart';
-import '../api/scope.dart';
 import '../budget/write_budget_tracker.dart';
 import '../cognitive_agents/agent_registry.dart';
 import '../cognitive_agents/shaking_events.dart';
 import '../nodes/node_type_registry.dart';
 import 'edge_events.dart';
-import 'edge_type.dart';
+
 import 'edge_write_exception.dart';
 
 /// In-process owner of the edge-write path.

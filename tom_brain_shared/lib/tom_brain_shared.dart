@@ -181,6 +181,18 @@ export 'src/access/backpressure.dart'
         StallReason,
         StallReasonTerminality;
 
+// A.88 — memory/ module: the consumer-facing `TomBrainMemoryClient`
+// contract and the ~25 pure value types it traffics in (`Node`,
+// `Edge`, `NodeTypeDecl`, `RecallQuery`, `RecallResult`, `Scope`,
+// `MemoryConfig`, the stack / trail / migration / classification value
+// types, `MemoryEvent`). Hoisted out of `tom_brain_memory` (todo #16,
+// Q-A.88.4) so the substrate, the engine, and the access edge can
+// consume the memory interface without pulling `sqlite3` / `dart_mcp`.
+// Concrete implementations (`SqliteTomBrainMemory`, the isolate
+// host/client, SQL compilers, stores) and the `dart:io` path getters
+// (`MemoryConfigPaths`) stay in `tom_brain_memory`.
+export 'src/memory/memory.dart';
+
 // D.52 — access/ inbound-kind vocabulary: `InboundKinds` names the
 // well-known inbound kind strings the Phase-E heuristic classifier (E.33)
 // writes into `InboundRequest.kindHint` and the Phase-D dispatcher

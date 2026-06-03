@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Sources: 2 files
-// Generated: 2026-06-01T20:42:26.756160
+// Generated: 2026-06-03T21:18:06.016463
 
 // ignore_for_file: unused_import, deprecated_member_use, prefer_function_declarations_over_variables, implementation_imports, sort_child_properties_last, non_constant_identifier_names, avoid_function_literals_in_foreach_calls, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member
 
@@ -8,10 +8,11 @@ import 'package:tom_d4rt/d4rt.dart';
 import 'package:tom_d4rt/tom_d4rt.dart';
 import 'dart:async';
 
-import 'package:tom_brain_memory/src/api/tom_brain_memory_client.dart' as $tom_brain_memory_1;
-import 'package:tom_brain_procedure_prototype/src/bridges/memory_bridge.dart' as $tom_brain_procedure_prototype_1;
-import 'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart' as $tom_brain_procedure_prototype_2;
+import 'package:tom_brain_procedure_prototype/src/bridges/bridge_call_recorder.dart' as $tom_brain_procedure_prototype_1;
+import 'package:tom_brain_procedure_prototype/src/bridges/memory_bridge.dart' as $tom_brain_procedure_prototype_2;
+import 'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart' as $tom_brain_procedure_prototype_3;
 import 'package:tom_brain_shared/src/budget/budget.dart' as $tom_brain_shared_1;
+import 'package:tom_brain_shared/src/memory/api/tom_brain_memory_client.dart' as $tom_brain_shared_2;
 import 'package:tom_brain_substrate/src/api/tom_brain_substrate_client.dart' as $tom_brain_substrate_1;
 
 /// Bridge class for package_tom_brain_procedure_prototype module.
@@ -53,6 +54,8 @@ class PackageTomBrainProcedurePrototypeBridge {
   /// registered so that they can be used as type arguments in D4rt scripts.
   static List<String> functionTypedefs() {
     return [
+      'BridgeCallRecorder',
+      'SubstrateTokenSink',
     ];
   }
 
@@ -94,6 +97,12 @@ class PackageTomBrainProcedurePrototypeBridge {
     for (final bridge in classes) {
       interpreter.registerBridgedClass(bridge, importPath, sourceUri: classSources[bridge.name]);
     }
+
+    // Register function typedefs for type resolution
+    final typedefs = functionTypedefs();
+    for (final name in typedefs) {
+      interpreter.registerFunctionTypedef(name, importPath);
+    }
   }
 
   /// Returns a map of global function names to their native implementations.
@@ -131,22 +140,23 @@ class PackageTomBrainProcedurePrototypeBridge {
 
 BridgedClass _createMemoryBridgeBridge() {
   return BridgedClass(
-    nativeType: $tom_brain_procedure_prototype_1.MemoryBridge,
+    nativeType: $tom_brain_procedure_prototype_2.MemoryBridge,
     name: 'MemoryBridge',
-    isAssignable: (v) => v is $tom_brain_procedure_prototype_1.MemoryBridge,
+    isAssignable: (v) => v is $tom_brain_procedure_prototype_2.MemoryBridge,
     constructors: {
       '': (visitor, positional, named) {
         D4.requireMinArgs(positional, 1, 'MemoryBridge');
-        final client = D4.getRequiredArg<$tom_brain_memory_1.TomBrainMemoryClient>(positional, 0, 'client', 'MemoryBridge');
-        return $tom_brain_procedure_prototype_1.MemoryBridge(client);
+        final client = D4.getRequiredArg<$tom_brain_shared_2.TomBrainMemoryClient>(positional, 0, 'client', 'MemoryBridge');
+        final onCallRaw = named['onCall'];
+        return $tom_brain_procedure_prototype_2.MemoryBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs}) as Future<void>; });
       },
     },
     getters: {
-      'client': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge').client,
+      'client': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge').client,
     },
     methods: {
       'recall': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 1, 'recall');
         final text = D4.getRequiredArg<String>(positional, 0, 'text', 'recall');
         final k = D4.getNamedArgWithDefault<int>(named, 'k', 8);
@@ -160,7 +170,7 @@ BridgedClass _createMemoryBridgeBridge() {
         throw StateError('Unreachable: all named parameter combinations should be covered');
       },
       'persist': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 2, 'persist');
         final typeName = D4.getRequiredArg<String>(positional, 0, 'typeName', 'persist');
         if (positional.length <= 1) {
@@ -175,7 +185,7 @@ BridgedClass _createMemoryBridgeBridge() {
         return t.persist(typeName, values, producer: producer, idempotencyKey: idempotencyKey, causedBy: causedBy, runId: runId, embedding: embedding);
       },
       'edge': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 3, 'edge');
         final from = D4.getRequiredArg<String>(positional, 0, 'from', 'edge');
         final type = D4.getRequiredArg<String>(positional, 1, 'type', 'edge');
@@ -189,7 +199,7 @@ BridgedClass _createMemoryBridgeBridge() {
         return t.edge(from, type, to, producer: producer, weight: weight, idempotencyKey: idempotencyKey, causedBy: causedBy, runId: runId, attrs: attrs);
       },
       'proposeNodeType': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 1, 'proposeNodeType');
         if (positional.isEmpty) {
           throw ArgumentError('proposeNodeType: Missing required argument "decl" at position 0');
@@ -198,11 +208,11 @@ BridgedClass _createMemoryBridgeBridge() {
         return t.proposeNodeType(decl);
       },
       'stackList': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
         return t.stackList();
       },
       'stackCreate': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 1, 'stackCreate');
         if (positional.isEmpty) {
           throw ArgumentError('stackCreate: Missing required argument "decl" at position 0');
@@ -211,7 +221,7 @@ BridgedClass _createMemoryBridgeBridge() {
         return t.stackCreate(decl);
       },
       'stackPush': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 2, 'stackPush');
         final name = D4.getRequiredArg<String>(positional, 0, 'name', 'stackPush');
         final nodeId = D4.getRequiredArg<String>(positional, 1, 'nodeId', 'stackPush');
@@ -222,20 +232,20 @@ BridgedClass _createMemoryBridgeBridge() {
         return t.stackPush(name, nodeId, priority: priority, attrs: attrs, producer: producer, runId: runId);
       },
       'stackPeek': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 1, 'stackPeek');
         final name = D4.getRequiredArg<String>(positional, 0, 'name', 'stackPeek');
         final k = D4.getNamedArgWithDefault<int>(named, 'k', 16);
         return t.stackPeek(name, k: k);
       },
       'stackPop': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 1, 'stackPop');
         final name = D4.getRequiredArg<String>(positional, 0, 'name', 'stackPop');
         return t.stackPop(name);
       },
       'stackUpdate': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 2, 'stackUpdate');
         final name = D4.getRequiredArg<String>(positional, 0, 'name', 'stackUpdate');
         final nodeId = D4.getRequiredArg<String>(positional, 1, 'nodeId', 'stackUpdate');
@@ -245,7 +255,7 @@ BridgedClass _createMemoryBridgeBridge() {
         return t.stackUpdate(name, nodeId, priority: priority, status: status, attrs: attrs);
       },
       'stackRemove': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_1.MemoryBridge>(target, 'MemoryBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 2, 'stackRemove');
         final name = D4.getRequiredArg<String>(positional, 0, 'name', 'stackRemove');
         final nodeId = D4.getRequiredArg<String>(positional, 1, 'nodeId', 'stackRemove');
@@ -253,7 +263,7 @@ BridgedClass _createMemoryBridgeBridge() {
       },
     },
     constructorSignatures: {
-      '': 'MemoryBridge(TomBrainMemoryClient client)',
+      '': 'MemoryBridge(TomBrainMemoryClient client, {BridgeCallRecorder? onCall})',
     },
     methodSignatures: {
       'recall': 'Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8})',
@@ -280,22 +290,24 @@ BridgedClass _createMemoryBridgeBridge() {
 
 BridgedClass _createSubstrateBridgeBridge() {
   return BridgedClass(
-    nativeType: $tom_brain_procedure_prototype_2.SubstrateBridge,
+    nativeType: $tom_brain_procedure_prototype_3.SubstrateBridge,
     name: 'SubstrateBridge',
-    isAssignable: (v) => v is $tom_brain_procedure_prototype_2.SubstrateBridge,
+    isAssignable: (v) => v is $tom_brain_procedure_prototype_3.SubstrateBridge,
     constructors: {
       '': (visitor, positional, named) {
         D4.requireMinArgs(positional, 1, 'SubstrateBridge');
         final client = D4.getRequiredArg<$tom_brain_substrate_1.TomBrainSubstrateClient>(positional, 0, 'client', 'SubstrateBridge');
-        return $tom_brain_procedure_prototype_2.SubstrateBridge(client);
+        final onCallRaw = named['onCall'];
+        final onTokenRaw = named['onToken'];
+        return $tom_brain_procedure_prototype_3.SubstrateBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs}) as Future<void>; }, onToken: onTokenRaw == null ? null : (String p0) { return D4.callInterpreterCallback(visitor!, onTokenRaw, [p0]) as Future<void>; });
       },
     },
     getters: {
-      'client': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_2.SubstrateBridge>(target, 'SubstrateBridge').client,
+      'client': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_3.SubstrateBridge>(target, 'SubstrateBridge').client,
     },
     methods: {
       'llm': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.SubstrateBridge>(target, 'SubstrateBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_3.SubstrateBridge>(target, 'SubstrateBridge');
         D4.requireMinArgs(positional, 1, 'llm');
         final prompt = D4.getRequiredArg<String>(positional, 0, 'prompt', 'llm');
         final budget = D4.coerceMapOrNull<String, Object?>(named['budget'], 'budget');
@@ -309,13 +321,13 @@ BridgedClass _createSubstrateBridgeBridge() {
         throw StateError('Unreachable: all named parameter combinations should be covered');
       },
       'embed': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.SubstrateBridge>(target, 'SubstrateBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_3.SubstrateBridge>(target, 'SubstrateBridge');
         D4.requireMinArgs(positional, 1, 'embed');
         final text = D4.getRequiredArg<String>(positional, 0, 'text', 'embed');
         return t.embed(text);
       },
       'search': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.SubstrateBridge>(target, 'SubstrateBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_3.SubstrateBridge>(target, 'SubstrateBridge');
         D4.requireMinArgs(positional, 1, 'search');
         final query = D4.getRequiredArg<String>(positional, 0, 'query', 'search');
         final provider = D4.getOptionalNamedArg<String?>(named, 'provider');
@@ -323,7 +335,7 @@ BridgedClass _createSubstrateBridgeBridge() {
         return t.search(query, provider: provider, k: k);
       },
       'fetch': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.SubstrateBridge>(target, 'SubstrateBridge');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_3.SubstrateBridge>(target, 'SubstrateBridge');
         D4.requireMinArgs(positional, 1, 'fetch');
         final url = D4.getRequiredArg<String>(positional, 0, 'url', 'fetch');
         final budgetBytes = D4.getOptionalNamedArg<int?>(named, 'budgetBytes');
@@ -331,11 +343,11 @@ BridgedClass _createSubstrateBridgeBridge() {
       },
     },
     staticGetters: {
-      'defaultRole': (visitor) => $tom_brain_procedure_prototype_2.SubstrateBridge.defaultRole,
-      'defaultBudget': (visitor) => $tom_brain_procedure_prototype_2.SubstrateBridge.defaultBudget,
+      'defaultRole': (visitor) => $tom_brain_procedure_prototype_3.SubstrateBridge.defaultRole,
+      'defaultBudget': (visitor) => $tom_brain_procedure_prototype_3.SubstrateBridge.defaultBudget,
     },
     constructorSignatures: {
-      '': 'SubstrateBridge(TomBrainSubstrateClient client)',
+      '': 'SubstrateBridge(TomBrainSubstrateClient client, {BridgeCallRecorder? onCall, SubstrateTokenSink? onToken})',
     },
     methodSignatures: {
       'llm': 'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, Map<String, Object?>? budget})',
@@ -359,9 +371,9 @@ BridgedClass _createSubstrateBridgeBridge() {
 
 BridgedClass _createLlmCompletionFailureBridge() {
   return BridgedClass(
-    nativeType: $tom_brain_procedure_prototype_2.LlmCompletionFailure,
+    nativeType: $tom_brain_procedure_prototype_3.LlmCompletionFailure,
     name: 'LlmCompletionFailure',
-    isAssignable: (v) => v is $tom_brain_procedure_prototype_2.LlmCompletionFailure,
+    isAssignable: (v) => v is $tom_brain_procedure_prototype_3.LlmCompletionFailure,
     constructors: {
       '': (visitor, positional, named) {
         final classCode = D4.getRequiredNamedArg<String>(named, 'classCode', 'LlmCompletionFailure');
@@ -370,17 +382,17 @@ BridgedClass _createLlmCompletionFailureBridge() {
           throw ArgumentError('LlmCompletionFailure: Missing required named argument "report"');
         }
         final report = D4.coerceMap<String, Object?>(named['report'], 'report');
-        return $tom_brain_procedure_prototype_2.LlmCompletionFailure(classCode: classCode, message: message, report: report);
+        return $tom_brain_procedure_prototype_3.LlmCompletionFailure(classCode: classCode, message: message, report: report);
       },
     },
     getters: {
-      'classCode': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_2.LlmCompletionFailure>(target, 'LlmCompletionFailure').classCode,
-      'message': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_2.LlmCompletionFailure>(target, 'LlmCompletionFailure').message,
-      'report': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_2.LlmCompletionFailure>(target, 'LlmCompletionFailure').report,
+      'classCode': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_3.LlmCompletionFailure>(target, 'LlmCompletionFailure').classCode,
+      'message': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_3.LlmCompletionFailure>(target, 'LlmCompletionFailure').message,
+      'report': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_3.LlmCompletionFailure>(target, 'LlmCompletionFailure').report,
     },
     methods: {
       'toString': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.LlmCompletionFailure>(target, 'LlmCompletionFailure');
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_3.LlmCompletionFailure>(target, 'LlmCompletionFailure');
         return t.toString();
       },
     },

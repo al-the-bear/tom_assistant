@@ -68,12 +68,10 @@ import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart' show CloseGuard;
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show Clock, SystemClock, TrailId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock, MemoryEvent, ProcedureRunRef, SystemClock, TrailEntry, TrailEntryKind, TrailId, TrailOutcome;
 
-import '../api/memory_event.dart';
 import '../observability/memory_log.dart';
-import 'trail.dart';
+
 import 'trail_events.dart';
 import 'trail_writer.dart';
 

@@ -18,7 +18,7 @@
 // The discriminator (`memory.authority-unreachable`) follows the
 // per-component convention documented on `MemoryEvent`.
 
-import '../api/memory_event.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent;
 
 /// Emitted when a mirror / cognitive worker loses heartbeat
 /// connectivity to the canonical authority (spec §§ 14–16).

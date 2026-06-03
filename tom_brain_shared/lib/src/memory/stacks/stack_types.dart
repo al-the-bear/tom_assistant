@@ -9,8 +9,7 @@
 
 import 'dart:convert';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show NodeId, StackEntryId;
+import '../../ids/ids.dart' show NodeId, StackEntryId;
 
 /// Priority ordering used by a stack at `peek` / `pop` time.
 ///

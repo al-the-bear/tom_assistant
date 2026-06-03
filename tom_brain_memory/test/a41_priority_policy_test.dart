@@ -60,7 +60,8 @@ import 'dart:math' as math;
 
 import 'package:test/test.dart';
 import 'package:tom_brain_memory/src/stacks/priority_policy.dart';
-import 'package:tom_brain_memory/src/stacks/stack_types.dart';
+// `stack_types.dart` moved to `tom_brain_shared` at A.88; the stack
+// value types now arrive via the shared barrel below.
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 // ─── Fixtures ────────────────────────────────────────────────────

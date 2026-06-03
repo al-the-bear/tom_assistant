@@ -11,7 +11,9 @@
 // embedding, the creation timestamp, and the lifecycle status.
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show mapEquals;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
+
+import '../../embedding/embedding.dart' show Vec;
+import '../../ids/ids.dart' show NodeId;
 
 /// Lifecycle status of a stored node.
 ///

@@ -38,9 +38,8 @@
 //   without renaming.
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, NodeTypeDecl;
 
-import '../nodes/node_type_decl.dart';
 import '../nodes/node_type_registry.dart';
 import 'fts5_catalog.dart';
 

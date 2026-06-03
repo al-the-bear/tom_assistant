@@ -11,8 +11,9 @@
 // later by `dream_recentroid_v1`), and the per-type permission table
 // for the closed 12-edge alphabet (§ 4.2).
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show BrainVersion, NodeId, Vec;
+import '../../embedding/embedding.dart' show Vec;
+import '../../ids/ids.dart' show NodeId;
+import '../../version/version.dart' show BrainVersion;
 
 import '../edges/edge_type.dart';
 

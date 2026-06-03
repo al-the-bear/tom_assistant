@@ -11,9 +11,7 @@
 // The discriminator (`memory.node-type-registered`) follows the
 // per-component convention documented on `MemoryEvent`.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
-
-import '../api/memory_event.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent, NodeId;
 
 /// Emitted when `NodeTypeRegistry.registerNodeType` successfully
 /// commits a `NodeTypeDecl`.

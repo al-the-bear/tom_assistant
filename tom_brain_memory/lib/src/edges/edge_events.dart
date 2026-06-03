@@ -15,10 +15,8 @@
 // The discriminators (`memory.edge-created`, `memory.edge-rejected`)
 // follow the per-component convention documented on `MemoryEvent`.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, EdgeType, MemoryEvent, NodeId;
 
-import '../api/memory_event.dart';
-import 'edge_type.dart';
 import 'edge_write_exception.dart';
 
 /// Emitted when `EdgeWriter.edge` successfully commits a fresh edge.

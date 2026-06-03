@@ -29,7 +29,13 @@
 //   - A.83 ✅ — `MemoryConfigLoader` parses the YAML in spec § 14 into
 //     the typed `MemoryConfig`.
 
-export 'memory_config.dart'
+// `MemoryConfig` and its sub-config records moved to `tom_brain_shared`
+// at A.88 (so substrate / engine / access can consume the memory
+// interface without pulling sqlite3 / dart_mcp). Re-exported here so
+// the memory barrel keeps the same surface. The filesystem path
+// getters stay in this package on the `MemoryConfigPaths` extension
+// (they need `dart:io`).
+export 'package:tom_brain_shared/tom_brain_shared.dart'
     show
         BudgetsConfig,
         ClassificationConfig,
@@ -43,3 +49,4 @@ export 'memory_config.dart'
         TrailsConfig;
 export 'memory_config_loader.dart'
     show MemoryConfigException, MemoryConfigLoader;
+export 'memory_config_paths.dart' show MemoryConfigPaths;

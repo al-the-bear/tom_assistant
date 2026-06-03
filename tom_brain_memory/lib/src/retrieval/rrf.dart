@@ -60,9 +60,7 @@
 //   - `cap` <= 0 (when non-null): returns `const []`. Symmetric with
 //     the mode executors' `perModeK <= 0` refusal.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
-
-import 'recall_query.dart' show RecallMode;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, RecallMode;
 
 /// Default RRF smoothing constant.
 ///

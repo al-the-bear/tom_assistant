@@ -18,9 +18,7 @@
 // The discriminator (`memory.recall-completed`) follows the
 // per-component convention documented on `MemoryEvent`.
 
-import '../api/memory_event.dart';
-import 'recall_query.dart' show RecallMode;
-import 'recall_result.dart' show RecallReport;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent, RecallMode, RecallReport;
 
 /// Emitted when `RecallExecutor.recall` finishes a recall call.
 ///

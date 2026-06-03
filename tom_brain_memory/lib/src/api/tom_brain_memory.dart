@@ -29,7 +29,7 @@
 // bridge (§ 3.3) re-exports the methods as the primitive set
 // d4rt scripts call.
 
-import 'tom_brain_memory_client.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show TomBrainMemoryClient;
 
 /// The in-process Dart base class for the brain's property-graph
 /// memory.

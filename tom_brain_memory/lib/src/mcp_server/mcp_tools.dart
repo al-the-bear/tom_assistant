@@ -88,19 +88,13 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, Edge, EdgeDirection, EdgeType, Node, NodeDraft, NodeId, RecallBudget, RecallMode, RecallQuery, RecallResult, Scope, StackEntry, StackSummary, Vec;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal;
 
-import '../api/scope.dart';
 import '../api/tom_brain_memory.dart';
-import '../classification/classification_result.dart';
-import '../edges/edge.dart';
-import '../edges/edge_type.dart';
-import '../nodes/node.dart';
+
 import '../observability/memory_log.dart';
-import '../retrieval/recall_query.dart';
-import '../retrieval/recall_result.dart';
-import '../stacks/stack_types.dart';
+
 // MCP protocol types (`Tool`, `ToolAnnotations`, `ObjectSchema`,
 // `Schema`, `CallToolRequest`, `CallToolResult`, `TextContent`,
 // `ToolsSupport`) come through the single MCP-library adapter (todo

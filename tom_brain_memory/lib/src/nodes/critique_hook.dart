@@ -44,7 +44,7 @@
 // engine) and we don't want a synchronous-vs-asynchronous shim layer
 // the day we switch test fakes for the real one.
 
-import 'node_type_decl.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeTypeDecl;
 
 /// Outcome of a critique pass over a candidate [NodeTypeDecl].
 ///

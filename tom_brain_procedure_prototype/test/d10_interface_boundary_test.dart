@@ -20,18 +20,30 @@
 //      `package:<dep>/src/...` path. This is the engine's own coupling
 //      surface and it must stay at the barrel.
 //
-//   2. The only `lib/src/` reach-ins into memory/substrate anywhere in
-//      the package are inside *generated* bridge files (`*.b.dart`, the
-//      `// do not edit` artifacts the d4rt generator emits with
-//      `ignore_for_file: implementation_imports`). The generator resolves
-//      each bridged type to its declaring library, so it cannot use the
-//      re-export barrel — this is an unavoidable, audited generator
-//      artifact, not engine code.
+//   2. The only memory/substrate interface-client `lib/src/` reach-ins
+//      anywhere in the package are inside *generated* bridge files
+//      (`*.b.dart`, the `// do not edit` artifacts the d4rt generator
+//      emits with `ignore_for_file: implementation_imports`). The
+//      generator resolves each bridged type to its declaring library, so
+//      it cannot use the re-export barrel — this is an unavoidable,
+//      audited generator artifact, not engine code.
+//
+//      At A.88 (todo #16) the `TomBrainMemoryClient` interface plus its
+//      value types relocated out of heavy `tom_brain_memory` into the
+//      pure `tom_brain_shared` package, so the generated memory reach-in
+//      now resolves to `tom_brain_shared/src/memory/api/`; the substrate
+//      client interface still lives in `tom_brain_substrate/src/api/`.
+//      Pure value-type reach-ins elsewhere in `tom_brain_shared/src/`
+//      (e.g. `src/budget/` for `WriteBudget`) are not part of this audit:
+//      `tom_brain_shared` is a pure-value dependency with no concrete
+//      implementations to firewall — only the *memory* namespace within
+//      it carries the relocated interface boundary this test tracks.
 //
 //   3. Even the generated reach-ins stay at the *interface* boundary
 //      semantically: they target only the two interface-client
-//      declaration files (`tom_brain_memory_client.dart`,
-//      `tom_brain_substrate_client.dart`) — never a concrete store /
+//      declaration files (`tom_brain_memory_client.dart` under
+//      `tom_brain_shared/src/memory/api/`, `tom_brain_substrate_client.dart`
+//      under `tom_brain_substrate/src/api/`) — never a concrete store /
 //      facade / isolate-adapter implementation file. So no path — hand
 //      written or generated — couples the engine to a concrete
 //      implementation of memory or substrate.
@@ -57,9 +69,12 @@ const String _substrateBarrel =
     'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 /// The two interface-client declaration files. A generated `lib/src/`
-/// reach-in may only target one of these — never a concrete impl file.
+/// reach-in (within the memory/substrate interface scope, see
+/// [_reachesIntoSrc]) may only target one of these — never a concrete
+/// impl file. The memory client moved to `tom_brain_shared` at A.88
+/// (todo #16); the substrate client still lives in `tom_brain_substrate`.
 const Set<String> _allowedGeneratedReachIns = {
-  'package:tom_brain_memory/src/api/tom_brain_memory_client.dart',
+  'package:tom_brain_shared/src/memory/api/tom_brain_memory_client.dart',
   'package:tom_brain_substrate/src/api/tom_brain_substrate_client.dart',
 };
 
@@ -105,9 +120,19 @@ bool _isMemoryOrSubstrate(String uri) =>
     uri.startsWith('package:tom_brain_memory/') ||
     uri.startsWith('package:tom_brain_substrate/');
 
+/// The memory/substrate *interface* `lib/src/` namespaces this audit
+/// guards. `tom_brain_memory/src/` and `tom_brain_substrate/src/` are the
+/// heavy packages whose concrete implementations the engine must never
+/// couple to. `tom_brain_shared/src/memory/` is the namespace the memory
+/// client interface relocated into at A.88 (todo #16) — its only legal
+/// reach-in is the interface-client decl in [_allowedGeneratedReachIns].
+/// Other `tom_brain_shared/src/` namespaces (pure value types like
+/// `src/budget/`) are deliberately out of scope: shared is a pure-value
+/// dependency with no implementation to firewall.
 bool _reachesIntoSrc(String uri) =>
     uri.startsWith('package:tom_brain_memory/src/') ||
-    uri.startsWith('package:tom_brain_substrate/src/');
+    uri.startsWith('package:tom_brain_substrate/src/') ||
+    uri.startsWith('package:tom_brain_shared/src/memory/');
 
 void main() {
   late final List<_Directive> handWritten;

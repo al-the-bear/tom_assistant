@@ -50,9 +50,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show CloseGuard;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock;
-
-import 'trail.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock, ProcedureRunRef, TrailEntry;
 
 /// Reserved top-level keys in the JSONL entry. Payloads that contain
 /// either are rejected by [TrailWriter.append].

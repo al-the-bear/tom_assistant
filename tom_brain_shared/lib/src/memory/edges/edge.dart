@@ -6,7 +6,8 @@
 // graph-walk recall.
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show mapEquals;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
+
+import '../../ids/ids.dart' show EdgeId, NodeId;
 
 import 'edge_type.dart';
 

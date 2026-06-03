@@ -20,9 +20,7 @@
 // `memory.centroid-updated`) follow the per-component convention
 // documented on `MemoryEvent`.
 
-import '../api/memory_event.dart';
-import 'classification_result.dart'
-    show ClassificationDecision, ClassificationTarget;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationDecision, ClassificationTarget, MemoryEvent;
 
 /// Emitted when `Classifier.classify` returns a decision.
 ///

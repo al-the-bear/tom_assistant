@@ -31,8 +31,7 @@
 //   in mind. A future test (A.82) drives every envelope through a
 //   real isolate to enforce the contract dynamically.
 
-import '../api/memory_stats.dart';
-import '../config/memory_config.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryConfig, MemoryStats;
 
 /// Marker base for every request sent from the host to the isolate.
 ///

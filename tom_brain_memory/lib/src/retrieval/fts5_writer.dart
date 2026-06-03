@@ -32,7 +32,7 @@
 import 'package:sqlite3/sqlite3.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart' show sqlPlaceholders;
 
-import '../nodes/node_type_decl.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeTypeDecl;
 import 'fts5_catalog.dart';
 
 /// Owner of the per-type FTS5 INSERT path.

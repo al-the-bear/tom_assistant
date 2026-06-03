@@ -19,7 +19,7 @@
 // outside any run; the dispatcher's `restructure_tree_v1` threads its
 // run scope through when it has one.
 
-import '../api/memory_event.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent;
 
 /// Emitted when `MigrationApi.saveCursor` durably advances a
 /// migration's cursor (spec § 16).

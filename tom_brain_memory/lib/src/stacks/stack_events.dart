@@ -15,11 +15,7 @@
 // All payload maps are constructed `late` inside `payloadJson` so
 // the event objects stay cheap when no observer is decoding them.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show NodeId, StackEntryId;
-
-import '../api/memory_event.dart';
-import 'stack_types.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent, NodeId, StackEntryId, StackEntryStatus, StackPolicy;
 
 /// Emitted when `StackApi.create` successfully commits a new
 /// non-bootstrap stack (or when bootstrap insertion at A.43 mints a

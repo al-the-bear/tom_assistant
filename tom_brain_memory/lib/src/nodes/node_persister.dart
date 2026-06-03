@@ -91,18 +91,16 @@
 import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, Vec;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show FieldSpec, FieldType, MemoryEvent, NodeDraft, NodeId, NodeStatus, NodeTypeDecl, Scope, Vec;
 
-import '../api/memory_event.dart';
-import '../api/scope.dart';
 import '../budget/write_budget_tracker.dart';
 import '../cognitive_agents/agent_registry.dart';
 import '../retrieval/fts5_writer.dart';
 import '../store/two_db_coordinator.dart';
-import 'node.dart';
+
 import 'node_events.dart';
 import 'node_persist_exception.dart';
-import 'node_type_decl.dart';
+
 import 'node_type_registry.dart';
 
 /// In-process owner of the node-write path.

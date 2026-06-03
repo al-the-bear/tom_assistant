@@ -63,9 +63,7 @@ import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart' show sqlPlaceholders;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
-
-import 'recall_query.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show AttrClause, NodeId, SymbolicFilter, SymbolicOp;
 
 /// A single symbolic-mode candidate.
 ///

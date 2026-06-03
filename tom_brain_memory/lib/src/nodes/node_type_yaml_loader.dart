@@ -37,12 +37,8 @@
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show BrainVersion, NodeId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainVersion, EdgeType, EmbeddingPolicy, FieldSpec, FieldType, IndexPolicy, NodeId, NodeTypeDecl, RetentionPolicy;
 import 'package:yaml/yaml.dart';
-
-import '../edges/edge_type.dart';
-import 'node_type_decl.dart';
 
 /// Package URI of the bootstrap manifest shipped with this package.
 ///

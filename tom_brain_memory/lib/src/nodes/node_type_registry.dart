@@ -58,15 +58,12 @@
 import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show BrainVersion, NodeId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainVersion, EdgeType, EmbeddingPolicy, FieldSpec, FieldType, IndexPolicy, MemoryEvent, NodeId, NodeTypeDecl, RetentionPolicy;
 
-import '../api/memory_event.dart';
-import '../edges/edge_type.dart';
 import '../retrieval/fts5_catalog.dart';
 import '../store/transaction_support.dart';
 import 'critique_hook.dart';
-import 'node_type_decl.dart';
+
 import 'node_type_events.dart';
 import 'node_type_registration.dart';
 

@@ -44,7 +44,7 @@
 
 import 'dart:math' as math;
 
-import 'stack_types.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show PriorityPolicyKind, StackEntry, StackPolicy;
 
 /// Sorts [entries] according to [policy] and returns a new list.
 ///

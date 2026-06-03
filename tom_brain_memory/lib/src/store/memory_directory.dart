@@ -34,7 +34,7 @@
 
 import 'dart:io';
 
-import '../config/memory_config.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryConfig;
 
 /// The canonical filesystem view of a memory root.
 ///

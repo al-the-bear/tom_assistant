@@ -10,8 +10,13 @@
 // The YAML shape this maps to is documented inline in § 14 of the
 // spec; the round-trip parser lives in whichever component owns
 // the config file.
-
-import 'dart:io';
+//
+// `MemoryConfig` itself is a pure value type (no `dart:io`) so it can
+// live in `tom_brain_shared` and be consumed by lighter components.
+// The filesystem path getters (`memory.db`, `vectors.db`, `trails/`,
+// …) — which need `Platform.pathSeparator` — live on the
+// `MemoryConfigPaths` extension in `tom_brain_memory`
+// (`config/memory_config_paths.dart`), where `dart:io` is allowed.
 
 /// sqlite-vec FFI extension configuration.
 ///
@@ -249,24 +254,4 @@ final class MemoryConfig {
       ),
     );
   }
-
-  /// Resolves the `memory.db` path under [root].
-  String get memoryDbPath =>
-      '$root${Platform.pathSeparator}memory.db';
-
-  /// Resolves the `vectors.db` path under [root].
-  String get vectorsDbPath =>
-      '$root${Platform.pathSeparator}vectors.db';
-
-  /// Resolves the `trails/` directory under [root].
-  String get trailsDir =>
-      '$root${Platform.pathSeparator}trails';
-
-  /// Resolves the `tombstones/` directory under [root].
-  String get tombstonesDir =>
-      '$root${Platform.pathSeparator}tombstones';
-
-  /// Resolves the `checkpoints/` directory under [root].
-  String get checkpointsDir =>
-      '$root${Platform.pathSeparator}checkpoints';
 }
