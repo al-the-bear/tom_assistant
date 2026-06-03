@@ -358,14 +358,12 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
       );
     }
 
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, Object?>) {
-      throw OllamaHttpException(
-        statusCode: response.statusCode,
-        body: 'Expected JSON object, got: ${response.body}',
-        endpoint: url,
-      );
-    }
+    final decoded = _decodeJsonObjectOrThrow(
+      response.body,
+      statusCode: response.statusCode,
+      endpoint: url,
+      shape: 'JSON object',
+    );
 
     return _decodeChatResponse(decoded);
   }
@@ -419,7 +417,23 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
         throw _OllamaCancelled();
       }
       if (line.isEmpty) continue;
-      final decoded = jsonDecode(line);
+      final Object? decoded;
+      try {
+        decoded = jsonDecode(line);
+      } on FormatException catch (e) {
+        // B.3.1 — a malformed NDJSON frame mid-stream is a wire
+        // corruption, not a parsed value. Surface it as the typed wire
+        // exception (carrying the endpoint + line excerpt) so the router
+        // classifies it instead of letting a bare `FormatException`
+        // escape the route-walk. Valid-but-non-object frames keep their
+        // prior skip semantics below.
+        throw OllamaHttpException(
+          statusCode: response.statusCode,
+          body: 'Malformed NDJSON line: ${e.message}. '
+              'Line: ${_bodyExcerpt(line)}',
+          endpoint: url,
+        );
+      }
       if (decoded is! Map<String, Object?>) continue;
       yield _decodeStreamFragment(decoded);
     }
@@ -455,19 +469,17 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
       );
     }
 
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, Object?>) {
-      throw OllamaHttpException(
-        statusCode: response.statusCode,
-        body: 'Expected JSON object, got: ${response.body}',
-        endpoint: url,
-      );
-    }
+    final decoded = _decodeJsonObjectOrThrow(
+      response.body,
+      statusCode: response.statusCode,
+      endpoint: url,
+      shape: '{embedding: [...]}',
+    );
     final vec = JsonShape.readDoubleListN(decoded, 'embedding');
     if (vec == null) {
       throw OllamaHttpException(
         statusCode: response.statusCode,
-        body: 'Expected {embedding: [...]}, got: ${response.body}',
+        body: 'Expected {embedding: [...]}, got: ${_bodyExcerpt(response.body)}',
         endpoint: url,
       );
     }
@@ -493,11 +505,16 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
       );
     }
 
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, Object?> || decoded['models'] is! List) {
+    final decoded = _decodeJsonObjectOrThrow(
+      response.body,
+      statusCode: response.statusCode,
+      endpoint: url,
+      shape: '{models: [...]}',
+    );
+    if (decoded['models'] is! List) {
       throw OllamaHttpException(
         statusCode: response.statusCode,
-        body: 'Expected {models: [...]}, got: ${response.body}',
+        body: 'Expected {models: [...]}, got: ${_bodyExcerpt(response.body)}',
         endpoint: url,
       );
     }
@@ -522,6 +539,54 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
     if (_ownsInner) _inner.close();
   }
 }
+
+/// B.3.1 — decode [body] as a JSON object on a 2xx response, mapping a
+/// malformed-JSON `FormatException` onto an [OllamaHttpException] that
+/// carries the [endpoint] and a body excerpt.
+///
+/// Without this guard a backend that answers `200` with a non-JSON body
+/// (a proxy error page, a truncated stream) throws a bare
+/// `FormatException` that carries no provider/url context and is *not*
+/// one of the classes [LlmFailureClassifier] recognises (§ 5.4) — it
+/// escapes the router's route-walk uncaught. Routing the decode through
+/// the typed wire exception keeps every transport failure inside the
+/// closed taxonomy.
+///
+/// [shape] names the expected structure; it is reused for both the
+/// malformed-JSON message and the valid-JSON-but-not-an-object branch
+/// so the prior error envelopes are preserved.
+Map<String, Object?> _decodeJsonObjectOrThrow(
+  String body, {
+  required int statusCode,
+  required Uri endpoint,
+  required String shape,
+}) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(body);
+  } on FormatException catch (e) {
+    throw OllamaHttpException(
+      statusCode: statusCode,
+      body: 'Malformed JSON ($shape expected): ${e.message}. '
+          'Body: ${_bodyExcerpt(body)}',
+      endpoint: endpoint,
+    );
+  }
+  if (decoded is! Map<String, Object?>) {
+    throw OllamaHttpException(
+      statusCode: statusCode,
+      body: 'Expected $shape, got: ${_bodyExcerpt(body)}',
+      endpoint: endpoint,
+    );
+  }
+  return decoded;
+}
+
+/// Truncates [body] for inclusion in a wire-exception message so a
+/// multi-megabyte error page does not bloat the trail. (B.2.6 will fold
+/// this onto the shared `textPreview` helper.)
+String _bodyExcerpt(String body, [int limit = 512]) =>
+    body.length <= limit ? body : '${body.substring(0, limit)}…';
 
 /// Sentinel exception raised by the streaming path when the
 /// cancellation token signals. Translated to `LlmFailure(cancelled_by_consumer)`

@@ -422,7 +422,29 @@ class DefaultWebHttpClient implements WebHttpClient {
 /// HTML parser in `duckduckgo_search_provider.dart` and does not call
 /// this helper.
 ///
-/// Returns the decoded JSON object. Throws [FormatException] if the
-/// body is not valid JSON.
-Object? decodeJsonBody(WebHttpResponse response) =>
-    jsonDecode(response.body);
+/// Returns the decoded JSON. B.3.1 — a malformed body is surfaced as a
+/// [WebHttpTransportException] carrying the [WebHttpResponse.url] and a
+/// body excerpt (with the original `FormatException` as its cause)
+/// rather than a bare context-free `FormatException`. Web search
+/// providers already catch [WebHttpTransportException] and rewrap it as
+/// `WebSearchProviderException`, so the decode failure joins the web
+/// error taxonomy with provenance instead of escaping uncaught.
+Object? decodeJsonBody(WebHttpResponse response) {
+  try {
+    return jsonDecode(response.body);
+  } on FormatException catch (e) {
+    throw WebHttpTransportException(
+      url: response.url,
+      cause: FormatException(
+        'Malformed JSON body: ${e.message}. '
+        'Body: ${_bodyExcerpt(response.body)}',
+      ),
+    );
+  }
+}
+
+/// Truncates [body] for inclusion in an exception message so a
+/// multi-megabyte error page does not bloat the trail. (B.2.6 will fold
+/// this onto the shared `textPreview` helper.)
+String _bodyExcerpt(String body, [int limit = 512]) =>
+    body.length <= limit ? body : '${body.substring(0, limit)}…';
