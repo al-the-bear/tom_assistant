@@ -46,7 +46,7 @@
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show BrainVersion, NodeId, Vec;
+    show BrainTime, BrainVersion, NodeId, Vec;
 import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
 
 import 'bridge_call_recorder.dart';
@@ -388,6 +388,16 @@ class MemoryBridge {
 
   // ── primitive ⇄ domain conversions ──────────────────────────────
 
+  /// Formats [dt] as the canonical Tom Brain wire timestamp (E.3.8).
+  ///
+  /// Routes through [BrainTime] rather than calling `toIso8601String()` on
+  /// the raw `DateTime` so the d4rt boundary always emits the same UTC
+  /// `…Z` form the rest of the stack uses. `.toUtc()` is the named
+  /// conversion [BrainTime.fromDateTime] requires; a local-time instant is
+  /// normalised here instead of leaking a zone-offset string to scripts.
+  static String _isoUtc(DateTime dt) =>
+      BrainTime.fromDateTime(dt.toUtc()).toIso8601String();
+
   static RecallMode _parseMode(String wire) {
     switch (wire) {
       case 'bm25':
@@ -412,7 +422,7 @@ class MemoryBridge {
         'typeName': node.typeName,
         'values': node.values,
         'status': node.status.name,
-        'createdAt': node.createdAt.toIso8601String(),
+        'createdAt': _isoUtc(node.createdAt),
         if (node.embedding != null)
           'embedding': node.embedding!.values.toList(),
       };
@@ -445,7 +455,7 @@ class MemoryBridge {
         'stackName': e.stackName,
         'nodeId': e.nodeId.value,
         'priority': e.priority,
-        'pushedAt': e.pushedAt.toIso8601String(),
+        'pushedAt': _isoUtc(e.pushedAt),
         'status': e.status.name,
         'attrs': e.attrs,
       };

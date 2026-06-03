@@ -345,6 +345,52 @@ void main() {
     });
   });
 
+  // E.3.8 — timestamp serialisers route through the canonical BrainTime
+  // formatter, normalising to a UTC "…Z" wire string rather than emitting a
+  // zone-offset ISO string for a non-UTC DateTime.
+  group('E.3.8 MemoryBridge — timestamps serialise as canonical UTC', () {
+    test('recall node createdAt normalises a local instant to UTC', () async {
+      final local = DateTime(2026, 1, 2, 3, 4, 5); // local time, no zone Z
+      client.recallResult = RecallResult(
+        nodes: <Node>[
+          Node(
+            id: NodeId.fromString('n_00000000000000000000000001'),
+            typeName: 'Conclusion',
+            values: const <String, Object?>{'text': 'x'},
+            createdAt: local,
+          ),
+        ],
+        report: const RecallReport(
+          candidatesPerMode: <RecallMode, int>{},
+          fusionStrategy: FusionStrategy.rrf,
+          diversityStrategy: DiversityStrategy.mmr,
+          elapsedMs: 0,
+        ),
+      );
+      final out = await bridge.recall('q');
+      final n0 = (out['nodes']! as List<Object?>).first! as Map<String, Object?>;
+      expect(n0['createdAt'], endsWith('Z'));
+      expect(n0['createdAt'], local.toUtc().toIso8601String());
+    });
+
+    test('stackPeek entry pushedAt normalises a local instant to UTC',
+        () async {
+      final local = DateTime(2026, 6, 1, 12);
+      stacks.peekEntries = <StackEntry>[
+        StackEntry(
+          id: StackEntryId.fromString('se_00000000000000000000000003'),
+          stackName: 'interests',
+          nodeId: NodeId.fromString('n_00000000000000000000000004'),
+          priority: 0.7,
+          pushedAt: local,
+        ),
+      ];
+      final out = await bridge.stackPeek('interests');
+      expect(out.first['pushedAt'], endsWith('Z'));
+      expect(out.first['pushedAt'], local.toUtc().toIso8601String());
+    });
+  });
+
   // E.3.3 — malformed d4rt-supplied map fields raise a descriptive
   // FormatException (PE-1: d4rt scripts are an untrusted boundary), not an
   // opaque TypeError from a bare `as` cast.
