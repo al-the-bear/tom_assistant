@@ -58,7 +58,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 import '../api/memory_event.dart';
 import '../observability/memory_log.dart';
 import '../store/transaction_support.dart';
-import 'sqlite_stack_api.dart' show bootstrapStackNames;
+import 'bootstrap_names.dart';
 import 'stack_events.dart';
 import 'stack_types.dart';
 
@@ -119,7 +119,7 @@ const List<BootstrapStackSpec> bootstrapStackSpecs = <BootstrapStackSpec>[
   //    score, never bounded (the brain decides what to drop via
   //    `Pruner`, not via stack overflow).
   BootstrapStackSpec(
-    name: 'questions_open',
+    name: questionsOpenStackName,
     summary: 'Open questions for the brain to investigate (spec § 5.4).',
     entryNodeType: 'Question',
     policy: StackPolicy(
@@ -132,7 +132,7 @@ const List<BootstrapStackSpec> bootstrapStackSpecs = <BootstrapStackSpec>[
   //    by 30 days so a long-stale idea naturally settles to the
   //    bottom; cap at 1000 so the operator UI stays bounded.
   BootstrapStackSpec(
-    name: 'automation_ideas',
+    name: automationIdeasStackName,
     summary:
         'Candidate procedures the brain may author (decay 30d, cap 1000).',
     entryNodeType: 'AutomationIdea',
@@ -148,7 +148,7 @@ const List<BootstrapStackSpec> bootstrapStackSpecs = <BootstrapStackSpec>[
   //    14-day decay reflects "interest" being more volatile than
   //    "automation idea"; cap at 500.
   BootstrapStackSpec(
-    name: 'interests',
+    name: interestsStackName,
     summary:
         'Topics the brain is curious about (decay 14d, cap 500).',
     entryNodeType: 'InterestItem',
@@ -165,10 +165,10 @@ const List<BootstrapStackSpec> bootstrapStackSpecs = <BootstrapStackSpec>[
   //    64 (small because the dispatcher only allows a bounded
   //    concurrency level).
   BootstrapStackSpec(
-    name: 'inflight',
+    name: inflightStackName,
     summary:
         'Procedure runs currently being executed (FIFO, cap 64).',
-    entryNodeType: 'ProcedureRun',
+    entryNodeType: procedureRunNodeType,
     policy: StackPolicy(
       priority: PriorityPolicyKind.fifo,
       retention: RetentionPolicyKind.boundedN,
@@ -180,9 +180,9 @@ const List<BootstrapStackSpec> bootstrapStackSpecs = <BootstrapStackSpec>[
   //    UI shows newest-first; cap at 512 (small archive that
   //    rolls forward).
   BootstrapStackSpec(
-    name: 'recent_runs',
+    name: recentRunsStackName,
     summary: 'Most recent procedure runs (LIFO, cap 512).',
-    entryNodeType: 'ProcedureRun',
+    entryNodeType: procedureRunNodeType,
     policy: StackPolicy(
       priority: PriorityPolicyKind.lifo,
       retention: RetentionPolicyKind.boundedN,
@@ -194,7 +194,7 @@ const List<BootstrapStackSpec> bootstrapStackSpecs = <BootstrapStackSpec>[
   //    (`(any)` in the spec table → wildcard sentinel here). FIFO,
   //    unbounded — the dream cycles drain it.
   BootstrapStackSpec(
-    name: 'restructure_backlog',
+    name: restructureBacklogStackName,
     summary:
         'Nodes flagged for restructuring by the dream cycles '
         '(FIFO, unbounded).',

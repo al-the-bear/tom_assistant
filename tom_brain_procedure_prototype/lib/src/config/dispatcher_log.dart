@@ -65,7 +65,7 @@
 //   composition root is the first natural place to thread the logger
 //   through (logged as Q-D.48.1).
 
-import 'package:tom_basics/tom_basics.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 /// Closed enumeration of the five logging categories the
 /// `tom_brain_procedure_prototype` dispatcher emits under.
@@ -113,13 +113,16 @@ enum DispatcherLogCategory {
 /// categories. Each method prepends `'[<category>] '` to the message
 /// before forwarding to the matching `tomLog` method, preserving the lazy
 /// `() => String` contract.
-class DispatcherLog {
+final class DispatcherLog extends CategoryLog {
   /// The category this logger emits under. Read-only and final.
   final DispatcherLogCategory category;
 
   /// Internal: constructs a logger for [category]. Not exposed; the five
   /// static instances below are the public surface.
   const DispatcherLog._(this.category);
+
+  @override
+  String get categoryName => category.name;
 
   /// Entry-surface logger. See [DispatcherLogCategory.entry].
   static const DispatcherLog entry =
@@ -150,51 +153,6 @@ class DispatcherLog {
     scheduler,
     boot,
   ];
-
-  /// Most-verbose level. Use for entering / leaving inner methods and
-  /// for argument dumps that would be too noisy at `debug`.
-  void trace(Object message) => tomLog.trace(_tag(message));
-
-  /// Detailed debugging information. Filtered out at production level.
-  void debug(Object message) => tomLog.debug(_tag(message));
-
-  /// Network / data-flow logging.
-  void traffic(Object message) => tomLog.traffic(_tag(message));
-
-  /// General runtime information.
-  void info(Object message) => tomLog.info(_tag(message));
-
-  /// Potentially problematic situation that did not prevent operation
-  /// (e.g. fell back to default policy, queue overflow dropped a run).
-  void warn(Object message) => tomLog.warn(_tag(message));
-
-  /// Important lifecycle event — dispatcher boot, run accepted, preempted,
-  /// resumed, fallback tried, shutdown drained. Visible even under the
-  /// `silent` level filter.
-  void status(Object message) => tomLog.status(_tag(message));
-
-  /// Error condition (recoverable). Use for failed-but-handled paths.
-  void error(Object message) => tomLog.error(_tag(message));
-
-  /// Serious error that may require attention. Use for invariant
-  /// violations the caller will need to act on.
-  void severe(Object message) => tomLog.severe(_tag(message));
-
-  /// Unrecoverable error. Use for paths that immediately precede an exit
-  /// or a process-level failure.
-  void fatal(Object message) => tomLog.fatal(_tag(message));
-
-  /// Prepends the category prefix to [message], preserving the
-  /// `() => String` lazy-evaluation contract that `tomLog` supports.
-  Object _tag(Object message) {
-    if (message is String Function()) {
-      return () => '[${category.name}] ${message()}';
-    }
-    if (message is Object Function()) {
-      return () => '[${category.name}] ${message()}';
-    }
-    return '[${category.name}] $message';
-  }
 
   @override
   String toString() => 'DispatcherLog(${category.name})';

@@ -15,6 +15,13 @@
 // represent (Q-D.15.1). The error propagates unchanged through
 // `Dispatcher.accept` (the D.14 failure-propagation contract).
 
+/// The canonical wire code every unsupported-kind failure carries.
+///
+/// Kept as a named constant so the dispatcher failure-event mapping can
+/// route on the wire code without string-matching the message — the same
+/// idiom the loader/validator codes follow.
+const String unsupportedProcedureKindCode = 'procedure.kind.unsupported';
+
 /// Raised when dispatcher selection is asked to route an inbound kind the
 /// prototype does not support.
 ///
@@ -36,6 +43,9 @@ final class UnsupportedProcedureKind implements Exception {
   /// only `user_prompt`). Listed in the message so the rejection names the
   /// accepted set, not just the offender.
   final List<String> supportedKinds;
+
+  /// The wire code carried by every unsupported-kind failure.
+  String get code => unsupportedProcedureKindCode;
 
   /// Human-readable explanation, reused by [toString].
   String get message {

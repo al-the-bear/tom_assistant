@@ -43,6 +43,30 @@ final class ContractValidator {
   /// A shared, reusable validator (holds no state).
   static const ContractValidator shared = ContractValidator();
 
+  /// Matches the `run(` entry-point keyword not preceded by an identifier
+  /// char or `.`. Compiled once and reused across every validation (E.2:
+  /// previously rebuilt on each `validateSignature` call).
+  static final RegExp _runEntryPattern = RegExp(r'(?<![\w$.])run\s*\(');
+
+  /// Matches the required `Future<ProcedureResult>` return type, tolerating
+  /// whitespace around the generic brackets. Compiled once (E.2).
+  static final RegExp _futureProcedureResultPattern =
+      RegExp(r'Future\s*<\s*ProcedureResult\s*>');
+
+  /// Matches the `ProcedureInputs` parameter type as a whole word. Compiled
+  /// once (E.2).
+  static final RegExp _procedureInputsPattern =
+      RegExp(r'(?<![\w$.])ProcedureInputs(?![\w$])');
+
+  /// Matches the `async` modifier as a whole word. Compiled once (E.2).
+  static final RegExp _asyncPattern = RegExp(r'(?<![\w$.])async(?![\w$])');
+
+  /// Per-token cache of the call-site patterns [_callPattern] builds. The
+  /// token set is the fixed bridged-primitive catalog, so this is bounded;
+  /// caching avoids recompiling the same handful of regexes for every
+  /// procedure validated (E.2).
+  static final Map<String, RegExp> _callPatternCache = <String, RegExp>{};
+
   /// Validates that [source] declares the required entry point
   /// `Future<ProcedureResult> run(ProcedureInputs inputs) async { … }`.
   ///
@@ -54,8 +78,7 @@ final class ContractValidator {
   void validateSignature(String source, {String? procedureId}) {
     final projection = CodeProjection.project(source);
 
-    final runMatch =
-        RegExp(r'(?<![\w$.])run\s*\(').firstMatch(projection);
+    final runMatch = _runEntryPattern.firstMatch(projection);
     if (runMatch == null) {
       throw ProcedureContractInvalid(
         'no top-level `run(ProcedureInputs)` entry point found; a procedure '
@@ -81,7 +104,7 @@ final class ContractValidator {
     // Return type — the code between the previous statement boundary and the
     // `run` keyword must contain `Future<ProcedureResult>`.
     final returnWindow = _returnTypeWindow(projection, runMatch.start);
-    if (!RegExp(r'Future\s*<\s*ProcedureResult\s*>').hasMatch(returnWindow)) {
+    if (!_futureProcedureResultPattern.hasMatch(returnWindow)) {
       throw ProcedureContractInvalid(
         '`run` must return `Future<ProcedureResult>` (§ 4.3)',
         kind: ContractViolationKind.wrongReturnType,
@@ -101,7 +124,7 @@ final class ContractValidator {
         procedureId: procedureId,
       );
     }
-    if (!RegExp(r'(?<![\w$.])ProcedureInputs(?![\w$])').hasMatch(params)) {
+    if (!_procedureInputsPattern.hasMatch(params)) {
       throw ProcedureContractInvalid(
         "`run`'s parameter must be typed `ProcedureInputs`, was `$params` "
         '(§ 4.3)',
@@ -113,7 +136,7 @@ final class ContractValidator {
 
     // Async — between the parameter list and the body opener.
     final asyncWindow = _asyncWindow(projection, closeParen + 1);
-    if (!RegExp(r'(?<![\w$.])async(?![\w$])').hasMatch(asyncWindow)) {
+    if (!_asyncPattern.hasMatch(asyncWindow)) {
       throw ProcedureContractInvalid(
         '`run` must be declared `async` (§ 4.3 — every bridged call is '
         'awaited)',
@@ -219,10 +242,11 @@ final class ContractValidator {
   /// A regex matching a call to [token]: the token (dotted segments allow
   /// surrounding whitespace) not preceded by an identifier char or `.`,
   /// followed by `(`.
-  RegExp _callPattern(String token) {
-    final segments = token.split('.').map(RegExp.escape).join(r'\s*\.\s*');
-    return RegExp('(?<![\\w\$.])$segments\\s*\\(');
-  }
+  RegExp _callPattern(String token) =>
+      _callPatternCache.putIfAbsent(token, () {
+        final segments = token.split('.').map(RegExp.escape).join(r'\s*\.\s*');
+        return RegExp('(?<![\\w\$.])$segments\\s*\\(');
+      });
 
   // --- signature helpers -------------------------------------------------
 

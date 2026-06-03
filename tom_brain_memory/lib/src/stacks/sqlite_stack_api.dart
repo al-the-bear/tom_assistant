@@ -102,23 +102,12 @@ import '../api/scope.dart';
 import '../budget/write_budget_tracker.dart';
 import '../cognitive_agents/agent_registry.dart';
 import '../store/transaction_support.dart';
+import 'bootstrap_names.dart';
 import 'priority_policy.dart';
 import 'stack_api.dart';
 import 'stack_events.dart';
 import 'stack_exception.dart';
 import 'stack_types.dart';
-
-/// The six reserved bootstrap stack names from
-/// `memory_specification.md` § 5.4. `create` rejects these; the
-/// per-name installation path lives in A.43.
-const Set<String> bootstrapStackNames = <String>{
-  'questions_open',
-  'automation_ideas',
-  'interests',
-  'inflight',
-  'recent_runs',
-  'restructure_backlog',
-};
 
 /// Concrete `StackApi` backed by `memory.db` (Plan step A.40).
 final class SqliteStackApi with CloseGuard implements StackApi {

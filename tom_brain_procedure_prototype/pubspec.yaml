@@ -134,6 +134,13 @@ dependencies:
   tom_brain_substrate:
     path: ../tom_brain_substrate
   tom_basics: ^1.0.0
+  # tom_core_agentic — generic, domain-free agentic building blocks
+  #   (the `CategoryLog` logging facade, `CloseGuard`, `formatException`,
+  #   `YamlConfigReader`, cancellation, …). Extracted at the Phase-C/D
+  #   review reuse-extraction pass; the engine + dispatcher logs subclass
+  #   `CategoryLog` rather than re-deriving the tag/forward shape. Path dep.
+  tom_core_agentic:
+    path: ../../tom_ai/core/tom_core_agentic
   tom_core_kernel:
     path: ../../tom_ai/core/tom_core_kernel
   tom_core_d4rt:

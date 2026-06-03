@@ -59,6 +59,7 @@ import 'package:yaml/yaml.dart';
 
 import 'dispatcher_config_invalid.dart';
 import 'engine_config.dart' show defaultSystemScriptsPath;
+import 'yaml_field_readers.dart';
 
 export 'engine_config.dart' show defaultSystemScriptsPath, defaultUserScriptsPath;
 
@@ -187,36 +188,60 @@ final class DispatcherConfig {
   /// Used by [fromYamlString] and directly testable. Same strictness: present
   /// sections must have the right shape, otherwise [DispatcherConfigInvalid].
   static DispatcherConfig fromYamlMap(YamlMap map) {
-    final scripts = _optionalMap(map, 'scripts');
-    final queue = _optionalMap(map, 'queue');
-    final deadline = _optionalMap(map, 'deadline');
-    final scheduler = _optionalMap(map, 'scheduler');
+    final scripts =
+        optionalConfigMap(map, 'scripts', DispatcherConfigInvalid.new);
+    final queue = optionalConfigMap(map, 'queue', DispatcherConfigInvalid.new);
+    final deadline =
+        optionalConfigMap(map, 'deadline', DispatcherConfigInvalid.new);
+    final scheduler =
+        optionalConfigMap(map, 'scheduler', DispatcherConfigInvalid.new);
 
     final systemPath = scripts == null
         ? defaultSystemScriptsPath
-        : _optionalString(scripts, 'system', 'scripts.system') ??
+        : optionalConfigString(
+              scripts,
+              'system',
+              'scripts.system',
+              DispatcherConfigInvalid.new,
+            ) ??
             defaultSystemScriptsPath;
     final userPath = scripts == null
         ? null
-        : _optionalString(scripts, 'user', 'scripts.user');
+        : optionalConfigString(
+            scripts,
+            'user',
+            'scripts.user',
+            DispatcherConfigInvalid.new,
+          );
 
     final depth = queue == null
         ? defaultForegroundQueueDepth
-        : _optionalNonNegativeInt(
+        : optionalConfigNonNegativeInt(
               queue,
               'foregroundDepth',
               'queue.foregroundDepth',
+              DispatcherConfigInvalid.new,
             ) ??
             defaultForegroundQueueDepth;
 
     final hardStepMs = deadline == null
         ? defaultDispatcherHardStepDeadline.inMilliseconds
-        : _optionalPositiveInt(deadline, 'hardStepMs', 'deadline.hardStepMs') ??
+        : optionalConfigPositiveInt(
+              deadline,
+              'hardStepMs',
+              'deadline.hardStepMs',
+              DispatcherConfigInvalid.new,
+            ) ??
             defaultDispatcherHardStepDeadline.inMilliseconds;
 
     final enabled = scheduler == null
         ? defaultSchedulerEnabled
-        : _optionalBool(scheduler, 'enabled', 'scheduler.enabled') ??
+        : optionalConfigBool(
+              scheduler,
+              'enabled',
+              'scheduler.enabled',
+              DispatcherConfigInvalid.new,
+            ) ??
             defaultSchedulerEnabled;
 
     return DispatcherConfig(
@@ -249,9 +274,9 @@ final class DispatcherConfig {
   String toYamlString() {
     final buffer = StringBuffer()
       ..writeln('scripts:')
-      ..writeln('  system: ${_yamlScalar(systemScriptsPath)}');
+      ..writeln('  system: ${yamlScalar(systemScriptsPath)}');
     if (userScriptsPath != null) {
-      buffer.writeln('  user: ${_yamlScalar(userScriptsPath!)}');
+      buffer.writeln('  user: ${yamlScalar(userScriptsPath!)}');
     }
     buffer
       ..writeln('queue:')
@@ -307,86 +332,4 @@ final class DispatcherConfig {
       'foregroundQueueDepth: $foregroundQueueDepth, '
       'hardStepDeadline: $hardStepDeadline, '
       'schedulerEnabled: $schedulerEnabled)';
-
-  // --- section + field extraction ----------------------------------------
-
-  /// Returns the value of an optional mapping-valued [field] as a [YamlMap],
-  /// or `null` when the field is absent/null. Rejects a present field whose
-  /// value is not a mapping.
-  static YamlMap? _optionalMap(YamlMap node, String field) {
-    if (!node.containsKey(field) || node[field] == null) return null;
-    final value = node[field];
-    if (value is! YamlMap) {
-      throw DispatcherConfigInvalid('must be a mapping', path: field);
-    }
-    return value;
-  }
-
-  /// Returns the value of an optional string-valued [field] as a non-empty
-  /// `String`, or `null` when absent/null. Rejects a present value that is not
-  /// a non-empty string.
-  static String? _optionalString(YamlMap node, String field, String path) {
-    if (!node.containsKey(field) || node[field] == null) return null;
-    final value = node[field];
-    if (value is! String || value.trim().isEmpty) {
-      throw DispatcherConfigInvalid('must be a non-empty string', path: path);
-    }
-    return value;
-  }
-
-  /// Returns the value of an optional boolean-valued [field], or `null` when
-  /// absent/null. Rejects a present value that is not a boolean.
-  static bool? _optionalBool(YamlMap node, String field, String path) {
-    if (!node.containsKey(field) || node[field] == null) return null;
-    final value = node[field];
-    if (value is! bool) {
-      throw DispatcherConfigInvalid('must be a boolean', path: path);
-    }
-    return value;
-  }
-
-  /// Returns the value of an optional non-negative-integer [field], or `null`
-  /// when absent/null. Rejects a present value that is not an integer, or is
-  /// negative (zero is allowed — it disables queueing).
-  static int? _optionalNonNegativeInt(YamlMap node, String field, String path) {
-    if (!node.containsKey(field) || node[field] == null) return null;
-    final value = node[field];
-    if (value is! int) {
-      throw DispatcherConfigInvalid('must be an integer', path: path);
-    }
-    if (value < 0) {
-      throw DispatcherConfigInvalid('must be zero or greater', path: path);
-    }
-    return value;
-  }
-
-  /// Returns the value of an optional strictly-positive-integer [field], or
-  /// `null` when absent/null. Rejects a present value that is not an integer,
-  /// or is not strictly positive.
-  static int? _optionalPositiveInt(YamlMap node, String field, String path) {
-    if (!node.containsKey(field) || node[field] == null) return null;
-    final value = node[field];
-    if (value is! int) {
-      throw DispatcherConfigInvalid('must be an integer', path: path);
-    }
-    if (value <= 0) {
-      throw DispatcherConfigInvalid('must be strictly positive', path: path);
-    }
-    return value;
-  }
-
-  /// Renders a string scalar for YAML emission, quoting it when it could be
-  /// misread as a non-string. Plain filesystem paths emit unquoted.
-  static String _yamlScalar(String value) {
-    final needsQuote = value.isEmpty ||
-        value != value.trim() ||
-        const {'true', 'false', 'null', 'yes', 'no', '~'}
-            .contains(value.toLowerCase()) ||
-        RegExp(r'^[\[\]{}#&*!|>%@`"' "'" r']').hasMatch(value) ||
-        value.contains(': ') ||
-        value.contains(' #');
-    if (!needsQuote) return value;
-    final escaped = value.replaceAll('"', r'\"');
-    return '"$escaped"';
-  }
 }

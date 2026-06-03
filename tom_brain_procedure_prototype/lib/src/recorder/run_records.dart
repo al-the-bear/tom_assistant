@@ -14,18 +14,14 @@ import 'package:tom_brain_memory/tom_brain_memory.dart' show TrailOutcomeStatus;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show EffortMetrics, NodeId, TrailId;
 
-/// The bootstrap stack that holds the currently-running procedure runs
-/// (spec § 8 — pushed at start, removed at completion).
-const String inflightStackName = 'inflight';
-
-/// The bootstrap stack that holds completed runs (spec § 8 — a run lands
-/// here when it finishes, and is the stack the dispatcher's harvester
-/// peeks).
-const String recentRunsStackName = 'recent_runs';
-
-/// The node type every run record is persisted as (memory bootstrap node
-/// type #13).
-const String procedureRunNodeType = 'ProcedureRun';
+// The well-known bootstrap-schema names the recorder shares with memory
+// (`inflight` / `recent_runs` stacks, `ProcedureRun` node type — memory
+// bootstrap node type #13) are owned by `tom_brain_memory` and re-exported
+// here so the prototype's recorder and dispatcher consume a single source of
+// truth (E.2). Re-exported rather than merely imported so the existing
+// consumers that import these names from `run_records.dart` keep working.
+export 'package:tom_brain_memory/tom_brain_memory.dart'
+    show inflightStackName, procedureRunNodeType, recentRunsStackName;
 
 /// The launch facts captured when a procedure run begins.
 ///

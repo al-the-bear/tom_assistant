@@ -31,7 +31,8 @@ import 'package:tom_d4rt/d4rt.dart';
 
 import '../api/procedure_inputs.dart';
 import '../api/procedure_result.dart';
-import 'native_primitives_installer.dart' show engineNativeLibrary;
+import 'native_primitives_installer.dart'
+    show engineNativeLibrary, readRunProcedureModifiers;
 import 'run_procedure_primitive.dart';
 
 /// The sugar verbs mapped to the procedure id each resolves to (§ 5.2).
@@ -109,29 +110,13 @@ Future<ProcedureResult> _invokeSugar(
     );
   }
 
-  final version = namedArguments['version'];
-  if (version != null && version is! int) {
-    throw ArgumentError.value(
-      version,
-      'version',
-      '$verb version must be an int when supplied',
-    );
-  }
-
-  final depthDeltaArg = namedArguments['depthDelta'];
-  if (depthDeltaArg != null && depthDeltaArg is! int) {
-    throw ArgumentError.value(
-      depthDeltaArg,
-      'depthDelta',
-      '$verb depthDelta must be an int when supplied',
-    );
-  }
-  final depthDelta = (depthDeltaArg as int?) ?? 1;
+  final (:version, :depthDelta) =
+      readRunProcedureModifiers(namedArguments, verb);
 
   return primitive.runProcedure(
     procedureId,
     inputs,
-    version: version as int?,
+    version: version,
     depthDelta: depthDelta,
   );
 }

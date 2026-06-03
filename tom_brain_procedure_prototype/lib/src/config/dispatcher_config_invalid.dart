@@ -17,6 +17,14 @@
 
 library;
 
+/// The canonical wire code every dispatcher-config-invalid failure carries.
+///
+/// Matches the `dispatcher.config.invalid` failure class used in logs and
+/// trails. Kept as a named constant so the boot path (D.47 consumer) can
+/// route on the wire code without string-matching the message — the same
+/// idiom the loader/validator codes follow.
+const String dispatcherConfigInvalidCode = 'dispatcher.config.invalid';
+
 /// Thrown when a dispatcher configuration document is structurally invalid.
 ///
 /// Carries a human-readable [message] and, when the problem is localised to
@@ -36,9 +44,12 @@ final class DispatcherConfigInvalid implements Exception {
   /// [path].
   const DispatcherConfigInvalid(this.message, {this.path});
 
+  /// The wire code carried by every dispatcher-config-invalid failure.
+  String get code => dispatcherConfigInvalidCode;
+
   @override
   String toString() {
     final at = path == null ? '' : ' (at "$path")';
-    return 'dispatcher.config.invalid: $message$at';
+    return '$code: $message$at';
   }
 }

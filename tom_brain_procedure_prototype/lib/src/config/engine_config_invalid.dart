@@ -16,6 +16,14 @@
 
 library;
 
+/// The canonical wire code every engine-config-invalid failure carries.
+///
+/// Matches the `engine.config.invalid` failure class used in logs and
+/// trails. Kept as a named constant so the dispatcher boot path (C.42
+/// consumer) can route on the wire code without string-matching the
+/// message — the same idiom the loader/validator codes follow.
+const String engineConfigInvalidCode = 'engine.config.invalid';
+
 /// Thrown when an engine configuration document is structurally invalid.
 ///
 /// Carries a human-readable [message] and, when the problem is localised
@@ -36,9 +44,12 @@ final class EngineConfigInvalid implements Exception {
   /// [path].
   const EngineConfigInvalid(this.message, {this.path});
 
+  /// The wire code carried by every engine-config-invalid failure.
+  String get code => engineConfigInvalidCode;
+
   @override
   String toString() {
     final at = path == null ? '' : ' (at "$path")';
-    return 'engine.config.invalid: $message$at';
+    return '$code: $message$at';
   }
 }

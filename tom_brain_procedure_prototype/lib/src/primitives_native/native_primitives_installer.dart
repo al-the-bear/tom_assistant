@@ -140,6 +140,39 @@ void Function(D4rt) nativePrimitivesInstaller({
   };
 }
 
+/// Validates and reads the optional `version` / `depthDelta` named arguments
+/// shared by `runProcedure` and the five sugar verbs (E.2: both call sites
+/// marshalled these identically, differing only in the message [label]).
+///
+/// `version` must be an `int` when present (else `null`); `depthDelta` must be
+/// an `int` when present and defaults to `1`. [label] names the calling verb
+/// (`runProcedure`, `think`, …) so the rejection message points at the d4rt
+/// call the script actually wrote.
+({int? version, int depthDelta}) readRunProcedureModifiers(
+  Map<String, Object?> namedArguments,
+  String label,
+) {
+  final version = namedArguments['version'];
+  if (version != null && version is! int) {
+    throw ArgumentError.value(
+      version,
+      'version',
+      '$label version must be an int when supplied',
+    );
+  }
+
+  final depthDeltaArg = namedArguments['depthDelta'];
+  if (depthDeltaArg != null && depthDeltaArg is! int) {
+    throw ArgumentError.value(
+      depthDeltaArg,
+      'depthDelta',
+      '$label depthDelta must be an int when supplied',
+    );
+  }
+
+  return (version: version as int?, depthDelta: (depthDeltaArg as int?) ?? 1);
+}
+
 /// Marshals a d4rt `runProcedure(...)` call onto [primitive].
 ///
 /// Positional args: `[0]` the procedure id (String), `[1]` the inputs
@@ -176,29 +209,13 @@ Future<ProcedureResult> _invokeRunProcedure(
     );
   }
 
-  final version = namedArguments['version'];
-  if (version != null && version is! int) {
-    throw ArgumentError.value(
-      version,
-      'version',
-      'runProcedure version must be an int when supplied',
-    );
-  }
-
-  final depthDeltaArg = namedArguments['depthDelta'];
-  if (depthDeltaArg != null && depthDeltaArg is! int) {
-    throw ArgumentError.value(
-      depthDeltaArg,
-      'depthDelta',
-      'runProcedure depthDelta must be an int when supplied',
-    );
-  }
-  final depthDelta = (depthDeltaArg as int?) ?? 1;
+  final (:version, :depthDelta) =
+      readRunProcedureModifiers(namedArguments, 'runProcedure');
 
   return primitive.runProcedure(
     id,
     inputs,
-    version: version as int?,
+    version: version,
     depthDelta: depthDelta,
   );
 }

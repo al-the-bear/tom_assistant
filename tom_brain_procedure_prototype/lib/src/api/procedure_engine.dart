@@ -55,7 +55,8 @@ import 'dart:async';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show TomBrainMemoryClient, TrailEntry, TrailOutcomeStatus;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show PreemptionState;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show PreemptionState, defaultNowUtc;
 
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
@@ -133,7 +134,7 @@ final class ProcedureEngine {
         _deadlineTimerFactory = deadlineTimerFactory,
         _cancellationTimerFactory = cancellationTimerFactory,
         _hardDepthCap = hardDepthCap,
-        _now = now ?? DateTime.now,
+        _now = now ?? defaultNowUtc,
         _newRunId = newRunId ?? _defaultRunIdGenerator();
 
   /// Resolves a procedure id (and optional version) to a loaded source.
@@ -326,8 +327,7 @@ final class ProcedureEngine {
     final StepOutcome<Object?> step = (race as _RaceStep).step;
     switch (step) {
       case StepCompleted<Object?>(:final value):
-        final producedNodeIds = _extractProducedNodeIds(value);
-        final result = _coerceResult(value);
+        final (:result, :producedNodeIds) = _coerceReturn(value);
         final status = result.isSuccess
             ? TrailOutcomeStatus.accepted
             : TrailOutcomeStatus.errored;
@@ -461,50 +461,58 @@ final class ProcedureEngine {
     return outcome.result ?? ProcedureResult.failed();
   }
 
-  /// Coerces a procedure entry point's raw return into a [ProcedureResult].
+  /// Coerces a procedure entry point's raw return into a [ProcedureResult]
+  /// and, in the same pass, extracts the reserved produced-node-ids channel.
   ///
-  /// A `ProcedureResult` passes through unchanged. A `Map` becomes a
-  /// succeeded result carrying its entries as outputs. Any other non-null
-  /// value is wrapped under a single `value` output; `null` is an empty
-  /// succeeded result. See Q-C.38.2: until ProcedureResult is bridged into
-  /// d4rt, a script cannot construct one in-procedure, so the engine
-  /// coerces; a procedure signals failure by throwing, not by returning a
-  /// failed result.
-  ProcedureResult _coerceResult(Object? raw) {
-    if (raw is ProcedureResult) return raw;
+  /// Coercion rules: a `ProcedureResult` passes through unchanged (it carries
+  /// no produced-node-ids channel, so the list is empty). A `Map` becomes a
+  /// succeeded result carrying its entries as outputs — except the reserved
+  /// [producedNodeIdsOutputKey] (D.39), which is split off as the list of
+  /// node ids the body produced and never surfaced as a declared output. Any
+  /// other non-null value is wrapped under a single `value` output; `null` is
+  /// an empty succeeded result.
+  ///
+  /// See Q-C.38.2: until ProcedureResult is bridged into d4rt, a script cannot
+  /// construct one in-procedure, so the engine coerces; a procedure signals
+  /// failure by throwing, not by returning a failed result. Returning both
+  /// halves from one map walk keeps the produced-node-ids extraction
+  /// (consumed for `produced_by` edges) and the output coercion in lockstep —
+  /// they previously walked the same map twice (E.2.1).
+  ({ProcedureResult result, List<String> producedNodeIds}) _coerceReturn(
+    Object? raw,
+  ) {
+    if (raw is ProcedureResult) {
+      return (result: raw, producedNodeIds: const <String>[]);
+    }
     if (raw is Map) {
       final outputs = <String, Object?>{};
+      var producedNodeIds = const <String>[];
       raw.forEach((Object? key, Object? value) {
-        // The reserved produced-node-ids channel (D.39) is consumed by
-        // `_extractProducedNodeIds` and never surfaced as a declared output.
-        if ('$key' == producedNodeIdsOutputKey) return;
+        if ('$key' == producedNodeIdsOutputKey) {
+          if (value is List) {
+            producedNodeIds = value.whereType<String>().toList(growable: false);
+          }
+          return;
+        }
         outputs['$key'] = value;
       });
-      return ProcedureResult.succeeded(outputs: outputs);
+      return (
+        result: ProcedureResult.succeeded(outputs: outputs),
+        producedNodeIds: producedNodeIds,
+      );
     }
-    if (raw == null) return ProcedureResult.succeeded();
-    return ProcedureResult.succeeded(
-      outputs: <String, Object?>{'value': raw},
+    if (raw == null) {
+      return (
+        result: ProcedureResult.succeeded(),
+        producedNodeIds: const <String>[],
+      );
+    }
+    return (
+      result: ProcedureResult.succeeded(
+        outputs: <String, Object?>{'value': raw},
+      ),
+      producedNodeIds: const <String>[],
     );
-  }
-
-  /// Reads the reserved [producedNodeIdsOutputKey] off a procedure's raw
-  /// return (D.39): the ids of the memory nodes the body produced, which the
-  /// recorder turns into `produced_by` edges to the run record. Returns an
-  /// empty list when the body did not report any (every existing procedure
-  /// other than `answer_with_memory_v1`).
-  List<String> _extractProducedNodeIds(Object? raw) {
-    if (raw is! Map) return const <String>[];
-    for (final entry in raw.entries) {
-      if ('${entry.key}' == producedNodeIdsOutputKey) {
-        final value = entry.value;
-        if (value is List) {
-          return value.whereType<String>().toList(growable: false);
-        }
-        return const <String>[];
-      }
-    }
-    return const <String>[];
   }
 
   ProcedureOutcome _outcomeOf({

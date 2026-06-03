@@ -52,7 +52,7 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
         TrailEntryKind,
         TrailOutcome;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EffortMetrics, NodeId, TrailId;
+    show EffortMetrics, NodeId, TrailId, defaultNowUtc;
 
 import '../primitives_native/trail_note.dart' show TrailNote, TrailSink;
 import 'effort_accountant.dart';
@@ -82,7 +82,7 @@ final class RunRecorder {
     DateTime Function()? now,
     EffortAccountant accountant = const EffortAccountant(),
     void Function(TrailEntry entry)? onEntry,
-  })  : _now = now ?? DateTime.now,
+  })  : _now = now ?? defaultNowUtc,
         _accountant = accountant,
         _onEntry = onEntry;
 

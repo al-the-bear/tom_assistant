@@ -59,6 +59,7 @@ import 'package:yaml/yaml.dart';
 import '../preemption/step_deadline.dart' show defaultStepDeadline;
 import 'engine_config_invalid.dart';
 import 'sandbox_config.dart';
+import 'yaml_field_readers.dart';
 
 /// The default directory of shipped, well-known procedures
 /// (`scripts/system/`) — the permanent safety net (PE-6). Relative to the
@@ -149,38 +150,56 @@ final class EngineConfig {
   /// present sections must have the right shape, otherwise
   /// [EngineConfigInvalid].
   static EngineConfig fromYamlMap(YamlMap map) {
-    final scripts = _optionalMap(map, 'scripts');
-    final sandbox = _optionalMap(map, 'sandbox');
-    final deadline = _optionalMap(map, 'deadline');
+    final scripts = optionalConfigMap(map, 'scripts', EngineConfigInvalid.new);
+    final sandbox = optionalConfigMap(map, 'sandbox', EngineConfigInvalid.new);
+    final deadline =
+        optionalConfigMap(map, 'deadline', EngineConfigInvalid.new);
 
     final systemPath = scripts == null
         ? defaultSystemScriptsPath
-        : _optionalString(scripts, 'system', 'scripts.system') ??
+        : optionalConfigString(
+              scripts,
+              'system',
+              'scripts.system',
+              EngineConfigInvalid.new,
+            ) ??
             defaultSystemScriptsPath;
     final userPath = scripts == null
         ? null
-        : _optionalString(scripts, 'user', 'scripts.user');
+        : optionalConfigString(
+            scripts,
+            'user',
+            'scripts.user',
+            EngineConfigInvalid.new,
+          );
 
     final sandboxConfig = sandbox == null
         ? const SandboxConfig.locked()
         : SandboxConfig(
-            enableUnixCommands: _optionalBool(
+            enableUnixCommands: optionalConfigBool(
                   sandbox,
                   'enableUnixCommands',
                   'sandbox.enableUnixCommands',
+                  EngineConfigInvalid.new,
                 ) ??
                 false,
-            enableVsCodeIntegration: _optionalBool(
+            enableVsCodeIntegration: optionalConfigBool(
                   sandbox,
                   'enableVsCodeIntegration',
                   'sandbox.enableVsCodeIntegration',
+                  EngineConfigInvalid.new,
                 ) ??
                 false,
           );
 
     final stepMs = deadline == null
         ? defaultStepDeadline.inMilliseconds
-        : _optionalPositiveInt(deadline, 'stepMs', 'deadline.stepMs') ??
+        : optionalConfigPositiveInt(
+              deadline,
+              'stepMs',
+              'deadline.stepMs',
+              EngineConfigInvalid.new,
+            ) ??
             defaultStepDeadline.inMilliseconds;
 
     return EngineConfig(
@@ -212,9 +231,9 @@ final class EngineConfig {
   String toYamlString() {
     final buffer = StringBuffer()
       ..writeln('scripts:')
-      ..writeln('  system: ${_yamlScalar(systemScriptsPath)}');
+      ..writeln('  system: ${yamlScalar(systemScriptsPath)}');
     if (userScriptsPath != null) {
-      buffer.writeln('  user: ${_yamlScalar(userScriptsPath!)}');
+      buffer.writeln('  user: ${yamlScalar(userScriptsPath!)}');
     }
     buffer
       ..writeln('sandbox:')
@@ -257,72 +276,4 @@ final class EngineConfig {
       'userScriptsPath: $userScriptsPath, '
       'sandbox: $sandbox, '
       'stepDeadline: $stepDeadline)';
-
-  // --- section + field extraction ----------------------------------------
-
-  /// Returns the value of an optional mapping-valued [field] as a
-  /// [YamlMap], or `null` when the field is absent/null. Rejects a present
-  /// field whose value is not a mapping.
-  static YamlMap? _optionalMap(YamlMap node, String field) {
-    if (!node.containsKey(field) || node[field] == null) return null;
-    final value = node[field];
-    if (value is! YamlMap) {
-      throw EngineConfigInvalid('must be a mapping', path: field);
-    }
-    return value;
-  }
-
-  /// Returns the value of an optional string-valued [field] as a non-empty
-  /// `String`, or `null` when absent/null. Rejects a present value that is
-  /// not a non-empty string.
-  static String? _optionalString(YamlMap node, String field, String path) {
-    if (!node.containsKey(field) || node[field] == null) return null;
-    final value = node[field];
-    if (value is! String || value.trim().isEmpty) {
-      throw EngineConfigInvalid('must be a non-empty string', path: path);
-    }
-    return value;
-  }
-
-  /// Returns the value of an optional boolean-valued [field], or `null`
-  /// when absent/null. Rejects a present value that is not a boolean.
-  static bool? _optionalBool(YamlMap node, String field, String path) {
-    if (!node.containsKey(field) || node[field] == null) return null;
-    final value = node[field];
-    if (value is! bool) {
-      throw EngineConfigInvalid('must be a boolean', path: path);
-    }
-    return value;
-  }
-
-  /// Returns the value of an optional strictly-positive-integer [field],
-  /// or `null` when absent/null. Rejects a present value that is not an
-  /// integer, or is not strictly positive.
-  static int? _optionalPositiveInt(YamlMap node, String field, String path) {
-    if (!node.containsKey(field) || node[field] == null) return null;
-    final value = node[field];
-    if (value is! int) {
-      throw EngineConfigInvalid('must be an integer', path: path);
-    }
-    if (value <= 0) {
-      throw EngineConfigInvalid('must be strictly positive', path: path);
-    }
-    return value;
-  }
-
-  /// Renders a string scalar for YAML emission, quoting it when it could
-  /// be misread as a non-string (empty, leading/trailing space, or a
-  /// reserved scalar). Plain filesystem paths emit unquoted.
-  static String _yamlScalar(String value) {
-    final needsQuote = value.isEmpty ||
-        value != value.trim() ||
-        const {'true', 'false', 'null', 'yes', 'no', '~'}
-            .contains(value.toLowerCase()) ||
-        RegExp(r'^[\[\]{}#&*!|>%@`"' "'" r']').hasMatch(value) ||
-        value.contains(': ') ||
-        value.contains(' #');
-    if (!needsQuote) return value;
-    final escaped = value.replaceAll('"', r'\"');
-    return '"$escaped"';
-  }
 }
