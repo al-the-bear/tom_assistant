@@ -16,8 +16,16 @@
 //       `memory.persistNote`.
 //   - Bearer-token authentication via `TomBearerAuthentication`
 //     (re-exported from `tom_core_kernel`; see Q-A.22.2).
-//   - No HTTP transport in scope for the v1 server. Stdio + UNIX socket
-//     are the supported transports.
+//   - Three supported transports (`mcp_transports.dart`): stdio, UNIX
+//     socket, and — added at todo #3 — Streamable HTTP / HTTPS
+//     (`McpHttpServer`). The HTTP transport is the network surface the
+//     cross-machine Big-Beast/bomber topology (memory_specification.md
+//     § 10) needs, since neither stdio nor a UNIX socket crosses a host
+//     boundary. It implements the POST + single JSON-RPC response
+//     subset (no SSE), mirroring the outbound client subset in
+//     `tom_brain_substrate`. HTTP-header bearer auth is deferred to
+//     todo #4; the transport passes request bodies through so the MCP
+//     `initialize`-time `_meta` check (A.76) remains the auth boundary.
 //
 // Hard invariants honoured here:
 //

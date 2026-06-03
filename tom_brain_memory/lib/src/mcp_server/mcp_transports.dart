@@ -1,32 +1,52 @@
-// A.75 — MCP server transports.
+// MCP server transports.
 //
-// The barrel comment in `mcp_server.dart` names the v1 supported
-// transports: **stdio** and **UNIX-domain socket**. No HTTP transport
-// in v1 scope.
+// Supported transports (memory_specification.md § 3.2):
 //
 //   - **stdio** — re-exported from `package:dart_mcp/stdio.dart` so
 //     deployment code consumes a single transport surface. The dart_mcp
 //     helper does newline-delimited UTF-8 framing exactly the way
 //     MCP requires; there is no reason to rewrap it.
-//   - **UNIX-domain socket** — adapted from a `dart:io` [Socket] by
+//   - **UNIX-domain socket** — adapted from a `dart:io` [io.Socket] by
 //     [socketChannel]. The function mirrors `stdioChannel`'s framing
 //     (UTF-8 codec + [LineSplitter] on the inbound side; '\n'-appending
 //     on the outbound side). `Socket` already implements both
 //     `Stream<List<int>>` and `StreamSink<List<int>>`, so the adapter
 //     is a thin StreamChannel transform.
+//   - **Streamable HTTP / HTTPS** ([McpHttpServer], todo #3) — the
+//     network transport the cross-machine Big-Beast/bomber topology
+//     (memory_specification.md § 10) needs: neither stdio nor a UNIX
+//     socket crosses a host boundary. Implements the POST + single
+//     JSON-RPC response subset of the MCP "Streamable HTTP" binding
+//     (spec 2025-06-18), mirroring the outbound client subset in
+//     `tom_brain_substrate`'s `http_transport.dart`. SSE / server-
+//     initiated streams are out of scope (the v1 tool surface is pure
+//     request/response).
 //
 // Why a transports file separate from the server class:
 //
 //   - The server class (`tom_brain_memory_mcp_server.dart`) is purely
 //     about the MCP protocol surface: identity, capability
 //     advertisement, tool registration. Transports are about how bytes
-//     arrive — they belong to deployment, not protocol.
-//   - Future deployment shapes (e.g. an in-process channel for
-//     embedded callers, a TCP/TLS transport once a brain-to-brain
-//     network arrives) plug in here without touching the server class.
+//     arrive — they belong to deployment, not protocol. Each transport
+//     hands the server class a `StreamChannel<String>`; the server
+//     never learns whether the bytes arrived over stdio, a socket, or
+//     an HTTP POST.
+//   - Future deployment shapes plug in here without touching the
+//     server class.
+//
+// Authentication note (todo #3 scope boundary): [McpHttpServer] does
+// **not** terminate bearer auth at the HTTP layer. The server class
+// already authenticates at the MCP `initialize` boundary via
+// `_meta.tomBrainBearerToken` (A.76). Making bearer auth an
+// *HTTP-header* concern and reconciling it with the substrate client
+// is todo #4; this transport intentionally passes every request body
+// through unchanged so that todo #4 can add the header check at a
+// single, documented seam (`McpHttpServer._authorize`).
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
+import 'dart:math' show Random;
 
 import 'package:async/async.dart' show StreamSinkTransformer;
 import 'package:stream_channel/stream_channel.dart';
@@ -77,3 +97,432 @@ StreamChannel<String> socketChannel(io.Socket socket) =>
             },
           ),
         );
+
+/// Builds (and owns) the MCP server for a freshly-created HTTP session.
+///
+/// [McpHttpServer] calls this once per session — when an `initialize`
+/// request arrives with no session id — handing the implementation the
+/// duplex [StreamChannel] of `String` the session's JSON-RPC frames flow
+/// over. The callback constructs a `TomBrainMemoryMcpServer` (or any
+/// `dart_mcp` server) bound to [channel]:
+///
+/// ```dart
+/// final http = await McpHttpServer.bind(
+///   port: 8642,
+///   onSession: (channel) => TomBrainMemoryMcpServer(
+///     channel,
+///     memory: memory,
+///     authenticator: authenticator,
+///   ),
+/// );
+/// ```
+///
+/// The server's lifecycle is tied to [channel]: when the session ends
+/// (client `DELETE`, or [McpHttpServer.close]) the channel is closed,
+/// which shuts the `dart_mcp` server's run loop down. The callback does
+/// not need to retain the server reference.
+typedef McpHttpSessionHandler = void Function(StreamChannel<String> channel);
+
+/// Streamable HTTP / HTTPS transport for the memory MCP **server**
+/// (todo #3).
+///
+/// This is the network surface the multi-machine topology in
+/// `memory_specification.md` § 10 requires — a cognitive worker
+/// ("bomber") reads from, and submits writes back to, the canonical
+/// authority ("Big Beast") over MCP, and neither stdio nor a UNIX socket
+/// crosses a host boundary.
+///
+/// ## Wire contract (the implemented subset)
+///
+/// Mirrors the outbound subset in `tom_brain_substrate`'s
+/// `http_transport.dart`: the **POST + single JSON-RPC response** slice
+/// of the MCP "Streamable HTTP" binding (spec 2025-06-18). Server-
+/// Sent-Events responses, GET-based server-initiated streams, and
+/// resumability tokens are **out of scope** — the v1 memory tool
+/// surface (`memory_specification.md` § 3.2) is pure request/response
+/// with no server-initiated notifications.
+///
+///   - **`POST {path}`** — body is one JSON-RPC message (object).
+///       * `initialize` request with no `Mcp-Session-Id` header → a new
+///         session is created; the response carries the generated
+///         `Mcp-Session-Id` header and the body is the `initialize`
+///         result. `200 application/json`.
+///       * any request (`id` present) on an existing session → the
+///         correlated JSON-RPC response. `200 application/json`.
+///       * any notification (`id` absent, e.g.
+///         `notifications/initialized`) → `202 Accepted`, empty body.
+///       * unknown / missing session id (non-`initialize`) → `404`.
+///       * malformed body, or non-`initialize` first message → `400`.
+///   - **`DELETE {path}`** with a known `Mcp-Session-Id` → terminates
+///     the session, `204`.
+///   - **`GET {path}`** → `405` (no SSE stream in v1).
+///   - any other path → `404`.
+///
+/// ## Session model
+///
+/// Each session owns a [StreamChannelController]: inbound POST bodies are
+/// written to the controller's local sink (the server reads them as its
+/// inbound stream); the server's outbound frames arrive on the
+/// controller's local stream, where they are demultiplexed back to the
+/// awaiting POST by JSON-RPC `id`. A session lives until a `DELETE`, a
+/// channel close from the server side, or [close].
+///
+/// Concurrent in-flight requests on one session are supported — each
+/// JSON-RPC `id` maps to its own pending completer.
+final class McpHttpServer {
+  final io.HttpServer _httpServer;
+  final McpHttpSessionHandler _onSession;
+
+  /// The request path the transport serves. Requests to any other path
+  /// receive `404`. Defaults to `/mcp`.
+  final String path;
+
+  /// Per-request wall-clock deadline for a server response. A request
+  /// whose correlated response does not arrive within this window is
+  /// answered `504` and its pending slot is discarded.
+  final Duration requestTimeout;
+
+  /// Whether this endpoint terminates TLS (i.e. was bound with a
+  /// [io.SecurityContext]).
+  final bool isSecure;
+
+  final _sessions = <String, _McpHttpSession>{};
+  final Random _sessionIdRng = Random.secure();
+  bool _closed = false;
+
+  McpHttpServer._(
+    this._httpServer,
+    this._onSession, {
+    required this.path,
+    required this.requestTimeout,
+    required this.isSecure,
+  }) {
+    _httpServer.listen(
+      _dispatch,
+      onError: (Object _) {/* per-connection errors are non-fatal */},
+    );
+  }
+
+  /// Binds an MCP server over HTTP (or HTTPS when [securityContext] is
+  /// supplied) and starts accepting requests.
+  ///
+  /// [address] is a host string or an [io.InternetAddress]; it defaults
+  /// to the IPv4 loopback. [port] defaults to `0`, letting the OS pick a
+  /// free port (read it back from [port]).
+  ///
+  /// [onSession] constructs the `dart_mcp` server for each new session;
+  /// see [McpHttpSessionHandler].
+  ///
+  /// When [securityContext] is non-null the listener is bound with
+  /// `bindSecure`, producing an HTTPS endpoint ([isSecure] is then
+  /// `true`).
+  static Future<McpHttpServer> bind({
+    required McpHttpSessionHandler onSession,
+    Object? address,
+    int port = 0,
+    io.SecurityContext? securityContext,
+    String path = '/mcp',
+    Duration requestTimeout = const Duration(seconds: 30),
+  }) async {
+    final bindAddress = address ?? io.InternetAddress.loopbackIPv4;
+    final httpServer = securityContext == null
+        ? await io.HttpServer.bind(bindAddress, port)
+        : await io.HttpServer.bindSecure(bindAddress, port, securityContext);
+    return McpHttpServer._(
+      httpServer,
+      onSession,
+      path: path,
+      requestTimeout: requestTimeout,
+      isSecure: securityContext != null,
+    );
+  }
+
+  /// The port the listener is bound to.
+  int get port => _httpServer.port;
+
+  /// The address the listener is bound to.
+  io.InternetAddress get address => _httpServer.address;
+
+  /// The number of live sessions. Exposed for observability / tests.
+  int get sessionCount => _sessions.length;
+
+  /// The base URL clients POST to (`scheme://host:port{path}`).
+  Uri get url => Uri(
+        scheme: isSecure ? 'https' : 'http',
+        host: address.host,
+        port: port,
+        path: path,
+      );
+
+  Future<void> _dispatch(io.HttpRequest request) async {
+    try {
+      if (request.uri.path != path) {
+        await _respondError(request.response, io.HttpStatus.notFound,
+            'No MCP endpoint at ${request.uri.path}.');
+        return;
+      }
+      switch (request.method) {
+        case 'POST':
+          await _handlePost(request);
+        case 'DELETE':
+          await _handleDelete(request);
+        case 'GET':
+          // SSE / server-initiated streams are not part of the v1
+          // subset; advertise the methods we do serve.
+          request.response.headers.set(io.HttpHeaders.allowHeader,
+              'POST, DELETE');
+          await _respondError(request.response, io.HttpStatus.methodNotAllowed,
+              'This MCP endpoint does not support GET (no SSE in v1).');
+        default:
+          request.response.headers.set(io.HttpHeaders.allowHeader,
+              'POST, DELETE');
+          await _respondError(request.response, io.HttpStatus.methodNotAllowed,
+              '${request.method} is not supported.');
+      }
+    } catch (error) {
+      // Last-resort guard: a handler bug must not take the listener
+      // down. Surface a 500 and keep serving.
+      try {
+        await _respondError(request.response,
+            io.HttpStatus.internalServerError, 'Internal transport error.');
+      } catch (_) {/* response already (partly) sent */}
+    }
+  }
+
+  Future<void> _handlePost(io.HttpRequest request) async {
+    final body = await utf8.decoder.bind(request).join();
+    if (body.trim().isEmpty) {
+      await _respondError(
+          request.response, io.HttpStatus.badRequest, 'Empty request body.');
+      return;
+    }
+
+    Object? decoded;
+    try {
+      decoded = jsonDecode(body);
+    } on FormatException {
+      decoded = null;
+    }
+    if (decoded is! Map<String, Object?>) {
+      await _respondError(request.response, io.HttpStatus.badRequest,
+          'Request body must be a single JSON-RPC object.');
+      return;
+    }
+
+    final method = decoded['method'];
+    final id = decoded['id'];
+    final sessionId =
+        request.headers.value(_sessionIdHeader)?.trim();
+
+    final _McpHttpSession session;
+    final bool isNewSession;
+    if (sessionId == null || sessionId.isEmpty) {
+      if (method != 'initialize') {
+        await _respondError(request.response, io.HttpStatus.badRequest,
+            'Missing $_sessionIdHeader; only an initialize request may '
+            'open a new session.');
+        return;
+      }
+      session = _createSession();
+      isNewSession = true;
+    } else {
+      final existing = _sessions[sessionId];
+      if (existing == null) {
+        await _respondError(request.response, io.HttpStatus.notFound,
+            'Unknown or expired session id.');
+        return;
+      }
+      session = existing;
+      isNewSession = false;
+    }
+
+    final line = jsonEncode(decoded);
+
+    // A message without an `id` is a notification (or a response): the
+    // server produces nothing to return. Hand it off and acknowledge.
+    if (id == null) {
+      session.deliverInbound(line);
+      request.response.statusCode = io.HttpStatus.accepted;
+      await request.response.close();
+      return;
+    }
+
+    final String responseLine;
+    try {
+      responseLine = await session.request(id, line, requestTimeout);
+    } on TimeoutException {
+      if (isNewSession) _dropSession(session.id);
+      await _respondError(request.response, io.HttpStatus.gatewayTimeout,
+          'Timed out waiting for the MCP server to respond.');
+      return;
+    }
+
+    final response = request.response;
+    response.statusCode = io.HttpStatus.ok;
+    response.headers.contentType = io.ContentType.json;
+    if (isNewSession) {
+      response.headers.set(_sessionIdHeader, session.id);
+    }
+    response.write(responseLine);
+    await response.close();
+  }
+
+  Future<void> _handleDelete(io.HttpRequest request) async {
+    final sessionId = request.headers.value(_sessionIdHeader)?.trim();
+    if (sessionId == null || !_sessions.containsKey(sessionId)) {
+      await _respondError(request.response, io.HttpStatus.notFound,
+          'Unknown session id.');
+      return;
+    }
+    await _dropSession(sessionId);
+    request.response.statusCode = io.HttpStatus.noContent;
+    await request.response.close();
+  }
+
+  _McpHttpSession _createSession() {
+    final id = _newSessionId();
+    final session = _McpHttpSession(id, _onSession);
+    _sessions[id] = session;
+    // If the server closes its side of the channel, forget the session
+    // so its id can no longer be addressed.
+    session.onChannelClosed = () => _sessions.remove(id);
+    return session;
+  }
+
+  Future<void> _dropSession(String id) async {
+    final session = _sessions.remove(id);
+    if (session != null) await session.close();
+  }
+
+  String _newSessionId() {
+    final bytes =
+        List<int>.generate(16, (_) => _sessionIdRng.nextInt(256));
+    return bytes
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
+  }
+
+  Future<void> _respondError(
+    io.HttpResponse response,
+    int statusCode,
+    String message,
+  ) async {
+    response.statusCode = statusCode;
+    response.headers.contentType = io.ContentType.json;
+    response.write(jsonEncode({'error': message}));
+    await response.close();
+  }
+
+  /// Tears down every live session and stops the listener.
+  ///
+  /// Idempotent: a second call is a no-op. When [force] is true (the
+  /// default) in-flight requests are aborted; pass `false` to let active
+  /// connections drain first.
+  Future<void> close({bool force = true}) async {
+    if (_closed) return;
+    _closed = true;
+    final sessions = _sessions.values.toList(growable: false);
+    _sessions.clear();
+    for (final session in sessions) {
+      await session.close();
+    }
+    await _httpServer.close(force: force);
+  }
+
+  /// The HTTP header that carries the session id, both as the response
+  /// header on an `initialize` reply and as the request header on every
+  /// follow-up POST / DELETE. Matches the MCP "Streamable HTTP" binding.
+  static const String _sessionIdHeader = 'Mcp-Session-Id';
+}
+
+/// One HTTP session: a [StreamChannelController] bridging POSTed
+/// JSON-RPC frames to a single `dart_mcp` server instance, plus the
+/// id→completer table that routes server responses back to the awaiting
+/// POST.
+class _McpHttpSession {
+  final String id;
+  final StreamChannelController<String> _controller;
+  final _pending = <Object, Completer<String>>{};
+  late final StreamSubscription<String> _outboundSub;
+  bool _closed = false;
+
+  /// Invoked once when the server closes its side of the channel.
+  void Function()? onChannelClosed;
+
+  _McpHttpSession(this.id, McpHttpSessionHandler onSession)
+      : _controller = StreamChannelController<String>(
+          sync: false,
+          allowForeignErrors: true,
+        ) {
+    // The server consumes the foreign end; the transport keeps the local
+    // end. Frames written by the server to `foreign.sink` arrive on
+    // `local.stream`, where `_onOutbound` routes them by JSON-RPC id.
+    onSession(_controller.foreign);
+    _outboundSub = _controller.local.stream.listen(
+      _onOutbound,
+      onDone: _onChannelDone,
+    );
+  }
+
+  /// Writes a notification / response line to the server (no reply
+  /// expected).
+  void deliverInbound(String line) {
+    if (_closed) return;
+    _controller.local.sink.add(line);
+  }
+
+  /// Writes a request line to the server and resolves with the server's
+  /// correlated response line (matched by JSON-RPC [id]).
+  Future<String> request(Object id, String line, Duration timeout) {
+    if (_closed) {
+      return Future.error(
+          StateError('MCP session $id is closed; cannot submit request.'));
+    }
+    final completer = Completer<String>();
+    // Register before writing so a synchronously-produced response is
+    // never missed.
+    _pending[id] = completer;
+    _controller.local.sink.add(line);
+    return completer.future.timeout(timeout, onTimeout: () {
+      _pending.remove(id);
+      throw TimeoutException('MCP server response for id=$id timed out');
+    });
+  }
+
+  void _onOutbound(String line) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(line);
+    } on FormatException {
+      return; // Non-JSON frame: nothing we can route.
+    }
+    if (decoded is! Map<String, Object?>) return;
+    final id = decoded['id'];
+    if (id == null) return; // Server-initiated notification: dropped (no SSE).
+    final completer = _pending.remove(id);
+    completer?.complete(line);
+  }
+
+  void _onChannelDone() {
+    onChannelClosed?.call();
+    unawaited(close());
+  }
+
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    await _outboundSub.cancel();
+    // Fail any still-pending request so its POST does not hang to the
+    // request deadline.
+    for (final completer in _pending.values) {
+      if (!completer.isCompleted) {
+        completer.completeError(
+            StateError('MCP session $id closed before a response arrived.'));
+      }
+    }
+    _pending.clear();
+    try {
+      await _controller.local.sink.close();
+    } catch (_) {/* already closed */}
+  }
+}
