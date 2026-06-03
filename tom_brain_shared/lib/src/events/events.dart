@@ -6,6 +6,10 @@
 //                              emitted by every Tom Brain component.
 //                              Subclasses live in the owning module
 //                              (memory will add `MemoryEvent` at A.38).
+//   * `BrainEventBus<E>`     — generic broadcast fan-in for a `BrainEvent`
+//                              subtype (B.2.1). Each component extends it
+//                              with a named, element-bound subclass
+//                              (`SubstrateEventBus`, `MemoryEventBus`, …).
 //   * `DiagnosticEnvelope`   — transport wrapper around a `BrainEvent`
 //                              carrying source identity, sequence number,
 //                              severity, and tags.
@@ -26,6 +30,7 @@
 //     details.
 
 export 'brain_event.dart' show BrainEvent;
+export 'brain_event_bus.dart' show BrainEventBus;
 export 'diagnostic_envelope.dart' show DiagnosticEnvelope;
 export 'diagnostic_severity.dart'
     show DiagnosticSeverity, DiagnosticSeverityCompare;

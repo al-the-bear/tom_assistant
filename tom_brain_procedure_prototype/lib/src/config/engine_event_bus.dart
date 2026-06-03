@@ -47,7 +47,7 @@
 //     This matches the posture on `BrainEvent`, `MemoryEventBus`, and
 //     `SubstrateEventBus`.
 
-import 'dart:async';
+import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import 'engine_event.dart';
 
@@ -57,71 +57,9 @@ import 'engine_event.dart';
 /// hands `bus.emit` to the `ProcedureEngine`, and exposes `bus.events()`
 /// to observers.
 ///
-/// Lifecycle: [emit] is legal up until [close]; after [close] [emit]
-/// throws `StateError` and [events] subscribers receive a done-stream.
-///
-/// Shape mirror of `SubstrateEventBus` (B.38) / `MemoryEventBus` (A.85).
-/// Two reasons: (i) zero design risk — the pattern has shipped twice and
-/// is exercised by every test that goes through an emitter; (ii) zero
-/// divergence cost — a reader who has read one bus has read all three.
-/// The only intentional divergence is the event-base type (`EngineEvent`
-/// vs `SubstrateEvent` / `MemoryEvent`).
-final class EngineEventBus {
-  /// The backing broadcast controller.
-  ///
-  /// `sync: false` is the default; named explicitly to make the design
-  /// choice visible. Asynchronous emission keeps the engine's run-pipeline
-  /// call stack short and prevents a slow subscriber from stalling a
-  /// lifecycle emit site.
-  final StreamController<EngineEvent> _controller =
-      StreamController<EngineEvent>.broadcast(sync: false);
-
-  /// `true` once [close] has been called.
-  bool _closed = false;
-
-  /// Whether this bus has been closed.
-  bool get isClosed => _closed;
-
-  /// Emits [event] to every current subscriber.
-  ///
-  /// Asynchronous: the call enqueues the event on the controller and
-  /// returns. Subscribers see the event on a future microtask, not
-  /// inside the producer's call stack.
-  ///
-  /// Throws `StateError` if the bus has been closed. The expected
-  /// pattern is that the composition root closes the bus *after* the
-  /// engine is quiesced, so the race should not happen in practice;
-  /// producers that race shutdown should guard with [isClosed].
-  void emit(EngineEvent event) {
-    if (_closed) {
-      throw StateError(
-        'EngineEventBus.emit called after close (event kind=${event.kind})',
-      );
-    }
-    _controller.add(event);
-  }
-
-  /// Returns the typed event stream.
-  ///
-  /// Broadcast — multiple subscribers see every event. Subscriptions can
-  /// come and go; missed events stay missed (this is an observability
-  /// stream, not a durable queue).
-  ///
-  /// Each call returns the *same* underlying stream; subscribing multiple
-  /// times produces multiple independent subscriptions. This matches
-  /// `StreamController.broadcast()` semantics.
-  Stream<EngineEvent> events() => _controller.stream;
-
-  /// Closes the bus.
-  ///
-  /// Subsequent [emit] calls throw `StateError`; live subscribers receive
-  /// a done event and any `await for` loop over [events] terminates.
-  ///
-  /// Idempotent — calling `close` on an already-closed bus returns
-  /// immediately.
-  Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
-    await _controller.close();
-  }
+/// Lifecycle, broadcast/async semantics, and the closed-after-close
+/// guard all live in the shared [BrainEventBus] (B.2.1) — this is the
+/// element-bound subclass for `EngineEvent`.
+final class EngineEventBus extends BrainEventBus<EngineEvent> {
+  EngineEventBus() : super(busLabel: 'EngineEventBus');
 }

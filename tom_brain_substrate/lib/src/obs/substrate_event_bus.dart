@@ -86,7 +86,7 @@
 //   assertions, not in this file. Mirrors the B.37 logger pattern.
 //   See Q-B.38.1 in `prototype_implementation_questions.md`.
 
-import 'dart:async';
+import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import '../api/substrate_event.dart';
 
@@ -99,78 +99,11 @@ import '../api/substrate_event.dart';
 /// parameter, and exposes `bus.events()` as the
 /// `TomBrainSubstrateClient.events()` return.
 ///
-/// Lifecycle: [emit] is legal up until [close]; after [close] [emit]
-/// throws `StateError` and [events] subscribers receive a done-stream.
-///
-/// Shape mirror of `MemoryEventBus` (A.85). Two reasons: (i) zero
-/// design risk — the memory pattern has shipped, is exercised by
-/// every memory test that goes through an emitter, and is a documented
-/// invariant in `memory_specification.md` § 16; (ii) zero divergence
-/// cost — a future reader who has read one bus has read the other.
-/// The only intentional divergence is the event-base type
-/// (`SubstrateEvent` vs `MemoryEvent`).
-final class SubstrateEventBus {
-  /// The backing broadcast controller.
-  ///
-  /// `sync: false` is the default; we name it explicitly to make the
-  /// design choice visible. Asynchronous emission keeps the producer
-  /// call stack short and prevents a slow subscriber from stalling a
-  /// per-call emit site (router rotation, streaming chunk fan-out,
-  /// embedding batch fan-out).
-  final StreamController<SubstrateEvent> _controller =
-      StreamController<SubstrateEvent>.broadcast(sync: false);
-
-  /// `true` once [close] has been called. After close, [emit] throws
-  /// and the broadcast stream is in its done state.
-  bool _closed = false;
-
-  /// Whether this bus has been closed.
-  bool get isClosed => _closed;
-
-  /// Emits [event] to every current subscriber.
-  ///
-  /// Asynchronous: the call enqueues the event on the controller and
-  /// returns. Subscribers see the event on a future microtask, not
-  /// inside the producer's call stack.
-  ///
-  /// Throws `StateError` if the bus has been closed. Producers that
-  /// race with shutdown should guard with [isClosed] — but the
-  /// expected pattern is that the composition root closes the bus
-  /// *after* every per-subsystem emitter is quiesced, so the race
-  /// should not happen in practice.
-  void emit(SubstrateEvent event) {
-    if (_closed) {
-      throw StateError(
-        'SubstrateEventBus.emit called after close '
-        '(event kind=${event.kind})',
-      );
-    }
-    _controller.add(event);
-  }
-
-  /// Returns the typed event stream.
-  ///
-  /// Broadcast — multiple subscribers see every event. Subscriptions
-  /// can come and go; missed events stay missed (this is an
-  /// observability stream, not a durable queue).
-  ///
-  /// Each call returns the *same* underlying stream; subscribing
-  /// multiple times produces multiple independent subscriptions, not
-  /// duplicate views of the same one. This matches
-  /// `StreamController.broadcast()` semantics.
-  Stream<SubstrateEvent> events() => _controller.stream;
-
-  /// Closes the bus.
-  ///
-  /// Subsequent [emit] calls throw `StateError`; live subscribers
-  /// receive a done event and any `await for` loop over [events]
-  /// terminates.
-  ///
-  /// Idempotent — calling `close` on an already-closed bus succeeds
-  /// and returns immediately.
-  Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
-    await _controller.close();
-  }
+/// Lifecycle, broadcast/async semantics, and the closed-after-close
+/// guard all live in the shared [BrainEventBus] (B.2.1) — this is the
+/// element-bound subclass for `SubstrateEvent`. The five Tom Brain
+/// buses were verbatim shape-mirrors; the only per-component values are
+/// the element type and the bus label in the emit-after-close message.
+final class SubstrateEventBus extends BrainEventBus<SubstrateEvent> {
+  SubstrateEventBus() : super(busLabel: 'SubstrateEventBus');
 }

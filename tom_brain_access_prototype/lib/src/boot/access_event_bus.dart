@@ -30,8 +30,6 @@
 //     `bus.events().where((e) => e is AccessFailed)`.
 //   - Persistence. Events are observed live; the bus is observability-only.
 
-import 'dart:async';
-
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 /// Central fan-in for `AccessEvent`s emitted across the access edge.
@@ -41,49 +39,9 @@ import 'package:tom_brain_shared/tom_brain_shared.dart';
 /// `onDelivered` sink, and exposes `bus.events()` to observers (a Forge
 /// inspector, a test).
 ///
-/// Lifecycle: [emit] is legal up until [close]; after [close] [emit] throws
-/// `StateError` and [events] subscribers receive a done-stream.
-///
-/// Broadcast + asynchronous (`sync: false`) + no back-pressure — the same
-/// posture as `DispatcherEventBus` / `EngineEventBus` / `SubstrateEventBus` /
-/// `MemoryEventBus`.
-final class AccessEventBus {
-  /// The backing broadcast controller. `sync: false` keeps the edge's call
-  /// stack short and prevents a slow subscriber from stalling a lifecycle
-  /// emit site.
-  final StreamController<AccessEvent> _controller =
-      StreamController<AccessEvent>.broadcast(sync: false);
-
-  /// `true` once [close] has been called.
-  bool _closed = false;
-
-  /// Whether this bus has been closed.
-  bool get isClosed => _closed;
-
-  /// Emits [event] to every current subscriber.
-  ///
-  /// Asynchronous: the call enqueues the event on the controller and returns.
-  /// Subscribers see the event on a future microtask.
-  ///
-  /// Throws `StateError` if the bus has been closed.
-  void emit(AccessEvent event) {
-    if (_closed) {
-      throw StateError(
-        'AccessEventBus.emit called after close (event kind=${event.kind})',
-      );
-    }
-    _controller.add(event);
-  }
-
-  /// Returns the typed event stream. Broadcast — multiple subscribers see
-  /// every event; missed events stay missed (observability, not a queue).
-  Stream<AccessEvent> events() => _controller.stream;
-
-  /// Closes the bus. Subsequent [emit] calls throw `StateError`; live
-  /// subscribers receive a done event. Idempotent.
-  Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
-    await _controller.close();
-  }
+/// Lifecycle, broadcast/async semantics, and the closed-after-close
+/// guard all live in the shared [BrainEventBus] (B.2.1) — this is the
+/// element-bound subclass for `AccessEvent`.
+final class AccessEventBus extends BrainEventBus<AccessEvent> {
+  AccessEventBus() : super(busLabel: 'AccessEventBus');
 }

@@ -53,6 +53,7 @@ export 'src/result/result.dart'
 export 'src/events/events.dart'
     show
         BrainEvent,
+        BrainEventBus,
         DiagnosticEnvelope,
         DiagnosticSeverity,
         DiagnosticSeverityCompare;
