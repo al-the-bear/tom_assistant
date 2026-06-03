@@ -127,6 +127,7 @@ import '../config/substrate_config.dart';
 import '../embed/embedding_service.dart';
 import '../llm/anchor_registry.dart';
 import '../llm/llm_provider.dart';
+import '../llm/wire_prompt.dart';
 import '../mcp_client/mcp_client.dart';
 import '../obs/substrate_event_bus.dart';
 import '../roles/role_registry.dart';
@@ -395,65 +396,71 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate {
 
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
+    // Eager validation + prompt assembly so a closed substrate or an
+    // unknown role surfaces synchronously to the caller (RoleNotFound),
+    // not lazily on the first listen.
     _ensureNotClosed('completeStream');
-
     final template = _roleRegistry.get(call.roleId);
     final prompt = template.assemble(inputs: call.inputs);
     final callId = _allocateCallId();
 
-    final controller = StreamController<LlmStreamEvent>();
+    // Returned as a lazy `async*` stream rather than pumped into a
+    // fire-and-forget StreamController. B.3.4: the previous shape started
+    // `drive()` before the consumer subscribed, so router work began and
+    // events buffered even when no one was listening. An async generator
+    // is single-subscription, starts only on listen, and propagates the
+    // subscriber's pause/resume back through `await for` to the router
+    // (and thus the provider) as real back-pressure.
+    return _driveCompleteStream(call, prompt, callId);
+  }
 
-    Future<void> drive() async {
-      try {
-        await for (final event in _router.dispatchStream(
+  /// The streaming driver behind [completeStream]. Pure transform of the
+  /// router's event stream: enforces the anchor and records observability
+  /// on the terminal events, then forwards every event. A thrown
+  /// exception (anchor violation or router-terminal failure) propagates
+  /// as a stream error and terminates the stream.
+  Stream<LlmStreamEvent> _driveCompleteStream(
+    LlmCall call,
+    WirePrompt prompt,
+    String callId,
+  ) async* {
+    await for (final event in _router.dispatchStream(
+      roleId: call.roleId,
+      prompt: prompt,
+      options: call.options,
+      budget: call.budget,
+      cancellationToken: call.cancellationToken,
+    )) {
+      if (event is LlmStreamCompleted) {
+        _enforceAnchorOrThrow(
+          report: event.report,
           roleId: call.roleId,
-          prompt: prompt,
-          options: call.options,
-          budget: call.budget,
-          cancellationToken: call.cancellationToken,
-        )) {
-          if (event is LlmStreamCompleted) {
-            _enforceAnchorOrThrow(
-              report: event.report,
-              roleId: call.roleId,
-            );
-            _recordCallSuccess(
-              report: event.report,
-              roleId: call.roleId,
-            );
-            _safeEmit(
-              LlmCallCompleted(
-                occurredAt: _now().toUtc(),
-                callId: callId,
-                report: event.report,
-              ),
-            );
-          } else if (event is LlmStreamFailed) {
-            _safeEmit(
-              LlmCallFailed(
-                occurredAt: _now().toUtc(),
-                callId: callId,
-                failure: event.failure,
-                providerId: event.report.providerId,
-                modelId: event.report.modelId,
-                retryCount: event.report.retries,
-              ),
-            );
-          }
-          controller.add(event);
-        }
-        await controller.close();
-      } on Object catch (e, st) {
-        controller.addError(e, st);
-        await controller.close();
+        );
+        _recordCallSuccess(
+          report: event.report,
+          roleId: call.roleId,
+        );
+        _safeEmit(
+          LlmCallCompleted(
+            occurredAt: _now().toUtc(),
+            callId: callId,
+            report: event.report,
+          ),
+        );
+      } else if (event is LlmStreamFailed) {
+        _safeEmit(
+          LlmCallFailed(
+            occurredAt: _now().toUtc(),
+            callId: callId,
+            failure: event.failure,
+            providerId: event.report.providerId,
+            modelId: event.report.modelId,
+            retryCount: event.report.retries,
+          ),
+        );
       }
+      yield event;
     }
-
-    // Fire-and-forget the driver; the consumer drives back-pressure
-    // via the returned stream's subscription.
-    unawaited(drive());
-
-    return controller.stream;
   }
 
   // ─── Embedding ───────────────────────────────────────────────
