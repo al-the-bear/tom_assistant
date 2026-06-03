@@ -131,15 +131,21 @@ class LlmRouter {
   /// `policy.overloadedBackoff`.
   Duration get overloadedBackoff => policy.overloadedBackoff;
 
-  /// Cooldown bookkeeping. Key shape:
+  /// Cooldown bookkeeping, keyed by a structured [_CooldownKey] rather
+  /// than a `:`-joined string. Model ids legitimately contain colons
+  /// (`gemma3:27b`, `llama3.1:8b`), so a string key matched by prefix
+  /// would let one model's cooldown bleed onto a sibling that shares a
+  /// `<provider>:<prefix>` segment. The value class compares fields, not
+  /// substrings, so `(ollama, gemma3:27b)` and `(ollama, gemma3)` are
+  /// distinct keys.
   ///
-  ///   * `<providerId>:<modelId>:<classCode>` — per-route + per-class.
-  ///   * `<providerId>:*:<classCode>` — provider-wide (e.g. `auth`,
-  ///     where the credential is provider-scoped not route-scoped).
+  /// A key with a null [_CooldownKey.modelId] is provider-wide (e.g.
+  /// `auth`, where the credential is provider-scoped not route-scoped)
+  /// and matches every model of the provider.
   ///
   /// The map only holds entries that are currently in cooldown; an
   /// entry expires by being read past its [DateTime] and re-evaluated.
-  final Map<String, DateTime> _cooldownUntil = <String, DateTime>{};
+  final Map<_CooldownKey, DateTime> _cooldownUntil = <_CooldownKey, DateTime>{};
 
   /// Construct a router from a [RouterPolicy] + provider registry.
   ///
@@ -176,8 +182,7 @@ class LlmRouter {
     final t = now();
     for (final entry in _cooldownUntil.entries) {
       if (!entry.value.isAfter(t)) continue;
-      if (entry.key.startsWith('$providerId:$modelId:') ||
-          entry.key.startsWith('$providerId:*:')) {
+      if (entry.key.matchesRoute(providerId, modelId)) {
         return true;
       }
     }
@@ -617,11 +622,9 @@ class LlmRouter {
 
   bool _isCooldownActive(RouteEntry entry) {
     final t = now();
-    for (final key in _cooldownUntil.keys) {
-      final deadline = _cooldownUntil[key]!;
-      if (!deadline.isAfter(t)) continue;
-      if (key.startsWith('${entry.providerId}:${entry.model}:') ||
-          key.startsWith('${entry.providerId}:*:')) {
+    for (final mapEntry in _cooldownUntil.entries) {
+      if (!mapEntry.value.isAfter(t)) continue;
+      if (mapEntry.key.matchesRoute(entry.providerId, entry.model)) {
         return true;
       }
     }
@@ -637,18 +640,24 @@ class LlmRouter {
       case LlmRouterAction.cooldownAndRotate:
         final dur = cooldownByClass[cls];
         if (dur != null && dur > Duration.zero) {
-          _cooldownUntil['${entry.providerId}:${entry.model}:${cls.code}'] =
-              now().add(dur);
+          _cooldownUntil[_CooldownKey.route(
+            entry.providerId,
+            entry.model,
+            cls.code,
+          )] = now().add(dur);
         }
       case LlmRouterAction.removeCredential:
         // Provider-wide park.
         final dur = cooldownByClass[cls] ?? const Duration(days: 365);
-        _cooldownUntil['${entry.providerId}:*:${cls.code}'] =
+        _cooldownUntil[_CooldownKey.provider(entry.providerId, cls.code)] =
             now().add(dur);
       case LlmRouterAction.removeRoute:
         final dur = cooldownByClass[cls] ?? const Duration(days: 365);
-        _cooldownUntil['${entry.providerId}:${entry.model}:${cls.code}'] =
-            now().add(dur);
+        _cooldownUntil[_CooldownKey.route(
+          entry.providerId,
+          entry.model,
+          cls.code,
+        )] = now().add(dur);
       case LlmRouterAction.retryThenRotate:
         // No cooldown after a retry-exhausted rotation. The route stays
         // dispatchable on the next call; only the in-route retry budget
@@ -733,4 +742,56 @@ class LlmRouter {
   void resetCooldownsForTest() {
     _cooldownUntil.clear();
   }
+}
+
+/// Structured cooldown-map key. Replaces the earlier `:`-joined string
+/// key, which collided when a model id contained a colon (`gemma3:27b`):
+/// a prefix match on `<provider>:<modelPrefix>:` would falsely flag a
+/// sibling model as cooled down.
+///
+/// Equality compares fields rather than substrings, so distinct routes
+/// never alias. A null [modelId] marks a provider-wide park (e.g. an
+/// `auth` failure removes a credential, not a single route) and
+/// [matchesRoute] then matches every model of the provider.
+class _CooldownKey {
+  final String providerId;
+
+  /// `null` ⇒ provider-wide park (matches any model of [providerId]).
+  final String? modelId;
+  final String classCode;
+
+  const _CooldownKey._(this.providerId, this.modelId, this.classCode);
+
+  /// Per-route, per-class cooldown.
+  const _CooldownKey.route(
+    String providerId,
+    String modelId,
+    String classCode,
+  ) : this._(providerId, modelId, classCode);
+
+  /// Provider-wide, per-class cooldown (credential-scoped).
+  const _CooldownKey.provider(String providerId, String classCode)
+      : this._(providerId, null, classCode);
+
+  /// Whether this key covers the `(providerId, modelId)` route. A
+  /// provider-wide key ([modelId] null) covers every model of the
+  /// provider; a route key covers only its exact model.
+  bool matchesRoute(String providerId, String modelId) {
+    if (this.providerId != providerId) return false;
+    return this.modelId == null || this.modelId == modelId;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _CooldownKey &&
+      other.providerId == providerId &&
+      other.modelId == modelId &&
+      other.classCode == classCode;
+
+  @override
+  int get hashCode => Object.hash(providerId, modelId, classCode);
+
+  @override
+  String toString() =>
+      '_CooldownKey($providerId, ${modelId ?? '*'}, $classCode)';
 }
