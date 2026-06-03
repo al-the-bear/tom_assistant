@@ -24,3 +24,4 @@
 //   - C.18 — host-boot + bridge-resolution tests.
 
 export 'd4rt_dcli_host.dart';
+export 'procedure_parse_exception.dart' show ProcedureSourceParseException;

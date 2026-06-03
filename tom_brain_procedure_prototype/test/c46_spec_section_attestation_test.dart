@@ -147,10 +147,13 @@ void main() {
     // Spec § 7 lists five checks. FOUR are surfaced as typed wire codes in
     // `lib/`; the fifth — "d4rt source parses" → procedure.parse.failed — is
     // deliberately delegated to the host's d4rt interpreter (spec § 14 row
-    // attributes its detection to the "d4rt parser") and is NOT surfaced as a
-    // typed validator code in the prototype. That gap is the C.46 material
-    // divergence, tracked under Q-C.46.1; this group pins the four codes that
-    // DO exist so a future change to any of them fails loudly here.
+    // attributes its detection to the "d4rt parser"), NOT to a typed validator
+    // code. Q-C.46.1 resolved that delegation by surfacing the parse failure at
+    // the host/engine seam (the host raises `ProcedureSourceParseException`,
+    // the engine records `procedure.parse.failed`), so the parse failure IS now
+    // a typed, classified outcome — it is simply not a *validator* code. This
+    // group pins the four validator codes that DO exist so a future change to
+    // any of them fails loudly here.
     test('the four typed validator codes match the spec strings verbatim', () {
       expect(procedureHeaderInvalidCode, 'procedure.header.invalid');
       expect(procedureSandboxViolationCode, 'procedure.sandbox.violation');
@@ -167,9 +170,10 @@ void main() {
       };
       expect(codes.length, 4);
       expect(codes.every((c) => c.startsWith('procedure.')), isTrue);
-      // procedure.parse.failed is intentionally absent (Q-C.46.1). If a
-      // future step surfaces it, that addition is a deliberate edit and this
-      // guard makes the change visible.
+      // procedure.parse.failed is not a *validator* code: it is surfaced at
+      // the host/engine seam, not the static validator (Q-C.46.1). This guard
+      // pins that boundary — the validator taxonomy stays the four static
+      // checks; the parse failure lives with the d4rt parser per spec § 14.
       expect(codes.contains('procedure.parse.failed'), isFalse);
     });
 

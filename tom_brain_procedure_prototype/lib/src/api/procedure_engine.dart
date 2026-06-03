@@ -68,6 +68,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../d4rt_host/d4rt_dcli_host.dart';
+import '../d4rt_host/procedure_parse_exception.dart';
 import '../preemption/step_deadline.dart';
 import '../primitives_native/emit_primitive.dart';
 import '../primitives_native/native_primitives_installer.dart';
@@ -89,6 +90,15 @@ import 'run_cancellation.dart';
 
 /// The typed failure class a crashed run is recorded under (§ 10.4).
 const String _runtimeCrashKind = 'procedure.runtime.crash';
+
+/// The typed failure class a source-parse failure is recorded under (§ 10.4).
+///
+/// Distinct from [_runtimeCrashKind] because the two route differently for
+/// version-chain fallback: a runtime crash steps the chain to an older
+/// version, a parse failure does not (an older version cannot repair a
+/// syntactically broken newer source). Collapsing them would trigger a wrong
+/// fallback on a parse error (Q-C.46.1).
+const String _parseFailedKind = 'procedure.parse.failed';
 
 // `producedNodeIdsOutputKey` — the reserved produced-node-ids key the engine
 // splits off a body's outputs — is owned by `recorder/run_records.dart` (the
@@ -261,8 +271,10 @@ final class ProcedureEngine {
   /// nested run (cancelling a parent abandons its sub-tree by abandoning the
   /// parent's step future; see Q-C.39.2). Resolution failure propagates (the
   /// caller turns it into an outcome error); a procedure crash is caught,
-  /// recorded as `errored`, and returned as an outcome carrying the error; a
-  /// cancelled or timed-out run is closed `aborted`.
+  /// classified (`procedure.parse.failed` for a source-parse failure,
+  /// `procedure.runtime.crash` otherwise — Q-C.46.1), recorded as `errored`,
+  /// and returned as an outcome carrying the error; a cancelled or timed-out
+  /// run is closed `aborted`.
   ///
   /// [tokenSink] is the per-run outbound channel (P1.3 #8) — bound to the
   /// substrate bridge's `onToken` and the `emit` primitive's sink for the
@@ -353,14 +365,26 @@ final class ProcedureEngine {
         cancellation,
       );
     } catch (error) {
-      // The procedure threw before the deadline: a runtime crash. Record it,
-      // close the run as `errored`, and resolve the outcome carrying the
-      // error so the caller (and any fallback executor, Phase D) sees it.
-      await recorder.recordError(_runtimeCrashKind, '$error');
+      // The step threw before the deadline. Classify it: a source-parse
+      // failure (the procedure never ran — the host raises
+      // `ProcedureSourceParseException`) is `procedure.parse.failed`; any other
+      // uncaught error mid-execution is a `procedure.runtime.crash`. The two
+      // route differently for version-chain fallback (§ 10.4) — only a runtime
+      // crash steps the chain — so collapsing them would wrongly fall back on
+      // a parse error (Q-C.46.1). Either way the run closes `errored` and the
+      // outcome carries the error so the caller (and the Phase-D fallback
+      // executor) sees the typed class.
+      final isParseFailure = error is ProcedureSourceParseException;
+      await recorder.recordError(
+        isParseFailure ? _parseFailedKind : _runtimeCrashKind,
+        '$error',
+      );
       final crashed = await recorder.complete(
         RunCompletion(
           status: TrailOutcomeStatus.errored,
-          summary: 'procedure ${loaded.header.id} crashed',
+          summary: isParseFailure
+              ? 'procedure ${loaded.header.id} failed to parse'
+              : 'procedure ${loaded.header.id} crashed',
         ),
       );
       return _outcomeOf(

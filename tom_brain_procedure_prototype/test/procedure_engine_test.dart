@@ -262,6 +262,38 @@ Future<Object?> run(inputs) async {
       final errors =
           outcome.entries.where((e) => e.kind == TrailEntryKind.error).toList();
       expect(errors, hasLength(1));
+      // A body that threw mid-execution is a runtime crash, not a parse
+      // failure (the source parsed and ran before it threw).
+      expect(errors.single.payload['errorKind'], 'procedure.runtime.crash');
+    });
+
+    test(
+        'a syntactically invalid procedure surfaces procedure.parse.failed, '
+        'not procedure.runtime.crash (Q-C.46.1)', () async {
+      final engine = engineFor(<LoadedProcedure>[
+        // `return 1 1` is a parse error: the source never runs. It clears the
+        // lexical sandbox validator (no disallowed directive / identifier) so
+        // the host's runtime parser is the layer that rejects it.
+        _procedure(
+          'broken_v1',
+          'Object? run(inputs) { return 1 1; }',
+        ),
+      ]);
+
+      final outcome = await engine
+          .invoke(ProcedureInvocation(procedureId: 'broken_v1'))
+          .outcome;
+
+      // The run is still recorded `errored` — but the failure carries the
+      // source-parse class so the Phase-D fallback chain is not stepped (an
+      // older version cannot repair a syntactically broken newer source).
+      expect(outcome.status, TrailOutcomeStatus.errored);
+      expect(outcome.result, isNull);
+      expect(outcome.error, isA<ProcedureSourceParseException>());
+      final errors =
+          outcome.entries.where((e) => e.kind == TrailEntryKind.error).toList();
+      expect(errors, hasLength(1));
+      expect(errors.single.payload['errorKind'], 'procedure.parse.failed');
     });
   });
 

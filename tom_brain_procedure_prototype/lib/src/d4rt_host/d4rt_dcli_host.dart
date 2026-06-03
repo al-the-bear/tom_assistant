@@ -81,6 +81,7 @@ import '../bridges/brain_bridges_registrar.dart';
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../config/sandbox_config.dart';
+import 'procedure_parse_exception.dart';
 
 /// Signature for the engine-native-primitive installer (C.19–C.22).
 ///
@@ -275,15 +276,31 @@ final class D4rtDcliHost {
   /// and preemption checkpoints are layered on by later Phase C steps
   /// (validator C.27–C.30, recorder C.31–C.33, engine API C.38–C.41);
   /// the host itself only boots the interpreter and runs source on it.
+  ///
+  /// A source that fails to parse surfaces as a [ProcedureSourceParseException]
+  /// (`procedure.parse.failed`, § 10.4) rather than the interpreter's own
+  /// exception type: the host is the authority on syntax (the static validator
+  /// gates imports/identifiers only), and a parse failure must be
+  /// distinguishable from a runtime crash so the engine records the right
+  /// failure class and the version-chain fallback is not wrongly stepped
+  /// (Q-C.46.1). This is the single seam that knows d4rt's concrete
+  /// parse-error type.
   Future<Object?> run(
     String source, {
     String entryPoint = 'run',
     List<Object?> inputs = const <Object?>[],
   }) async {
-    return await _interpreter.execute(
-      source: source,
-      name: entryPoint,
-      positionalArgs: inputs,
-    );
+    try {
+      return await _interpreter.execute(
+        source: source,
+        name: entryPoint,
+        positionalArgs: inputs,
+      );
+    } on SourceCodeD4rtException catch (error) {
+      // The source did not parse: the procedure never ran. Re-raise as the
+      // host-owned parse exception so callers classify it as
+      // `procedure.parse.failed`, not a runtime crash.
+      throw ProcedureSourceParseException(error.message);
+    }
   }
 }

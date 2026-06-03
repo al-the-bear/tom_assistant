@@ -59,6 +59,8 @@
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show defaultNowUtc;
 
+import '../d4rt_host/procedure_parse_exception.dart'
+    show ProcedureSourceParseException;
 import '../procedure_store/procedure_loader.dart' show LoadedProcedure;
 import '../procedure_store/procedure_resolver.dart' show ProcedureResolver;
 import 'procedure_fallback_event.dart' show ProcedureFallback;
@@ -145,6 +147,12 @@ typedef FallbackClock = DateTime Function();
 /// The default [FailureClassifier] (def § 6, § 14).
 ///
 ///   - An [EnvironmentalFailure] never triggers fallback (`null`).
+///   - A [ProcedureSourceParseException] never triggers fallback (`null`):
+///     a parse failure (`procedure.parse.failed`, § 10.4) means the procedure
+///     never ran, and an older version cannot repair a syntactically broken
+///     newer source — stepping the chain would mask the fault and silently run
+///     stale logic (Q-C.46.1). It surfaces without stepping, like any
+///     non-fallback class.
 ///   - A [ClassifiedFailure] triggers fallback when its [failureKind] is one
 ///     of the four [FallbackTrigger] classes, and surfaces otherwise.
 ///   - Any other uncaught error is a [FallbackTrigger.runtimeCrash] — an
@@ -152,6 +160,7 @@ typedef FallbackClock = DateTime Function();
 ///     chain. Environmental failures must opt out via [EnvironmentalFailure].
 FallbackTrigger? defaultFallbackClassifier(Object error) {
   if (error is EnvironmentalFailure) return null;
+  if (error is ProcedureSourceParseException) return null;
   if (error is ClassifiedFailure) {
     return FallbackTrigger.forKind(error.failureKind);
   }

@@ -111,6 +111,16 @@ void main() {
           FallbackTrigger.runtimeCrash);
     });
 
+    test('a source-parse failure never triggers fallback (Q-C.46.1)', () {
+      // A syntactically broken source is not a runtime crash: an older
+      // version cannot repair the break, so the chain must not be stepped.
+      expect(
+        defaultFallbackClassifier(
+            const ProcedureSourceParseException('parse error')),
+        isNull,
+      );
+    });
+
     test('the real RunDeadlineExceeded classifies as deadlineExceeded', () {
       const error =
           RunDeadlineExceeded(RunSlot.foreground, Duration(seconds: 65));
