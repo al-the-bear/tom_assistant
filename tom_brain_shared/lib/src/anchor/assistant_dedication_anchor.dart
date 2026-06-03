@@ -167,6 +167,40 @@ final class AssistantDedicationAnchor {
     return '$text$prompt';
   }
 
+  /// Returns [prompt] guaranteed to *start with* the anchor.
+  ///
+  /// The strict-prefix sibling of [wrap]. Where [wrap] keys idempotency
+  /// on `contains` (the anchor appears *somewhere*), [ensurePrefix] keys
+  /// it on `startsWith` (the anchor is the *prefix*). The distinction
+  /// matters for the substrate's role layer, whose invariant 1 is "the
+  /// assembled body starts with the anchor": a body whose input value
+  /// happens to embed the anchor text mid-string must still be prefixed,
+  /// or the result would start with role text rather than the anchor.
+  ///
+  /// Behaviour:
+  ///
+  ///   * [prompt] `null`, empty, or whitespace-only → returns [text]
+  ///     (the empty-prompt tamper vector cannot escape the anchor).
+  ///   * [prompt] already starts with [text] → returns it unchanged
+  ///     (starts-with idempotency; repeated calls never double-anchor).
+  ///   * Otherwise returns `text + prompt`, even when [prompt] contains
+  ///     the anchor mid-string. The result always satisfies
+  ///     `result.startsWith(text)`.
+  ///
+  /// Pure function; safe to call from any layer. This is the production
+  /// path the role template's `assemble` uses; [wrap] remains the
+  /// contains-guarantee primitive for callers (the access edge, multi-
+  /// message prompts) that only need presence, not position.
+  static String ensurePrefix(String? prompt) {
+    if (prompt == null || prompt.trim().isEmpty) {
+      return text;
+    }
+    if (prompt.startsWith(text)) {
+      return prompt;
+    }
+    return '$text$prompt';
+  }
+
   /// True if [candidate] contains the anchor verbatim.
   ///
   /// Used by the substrate's anchor-enforcement test (Plan step

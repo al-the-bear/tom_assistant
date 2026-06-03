@@ -24,9 +24,16 @@ final class SubstrateStats {
   /// providers.
   final int activeCooldowns;
 
-  /// Wall-clock of the most recent provider failover, UTC.
-  /// `null` when no failover has happened since open.
-  final DateTime? lastFailoverAt;
+  /// Wall-clock of the most recent in-route retry, UTC. `null` when no
+  /// call has retried since open.
+  ///
+  /// This is a retry signal, not a provider-failover signal: the router
+  /// stamps it whenever a surfacing report carries `retries > 0`, which
+  /// includes same-provider retries. A dedicated provider-failover stat
+  /// arrives once the router emits a `ProviderFailover` event
+  /// (Q-B.41.2). Until then this field deliberately tracks the broader
+  /// "did this call retry" question.
+  final DateTime? lastRetryAt;
 
   /// Web searches issued.
   final int webSearches;
@@ -43,7 +50,7 @@ final class SubstrateStats {
     required this.callsPerRole,
     required this.embeddingsComputed,
     required this.activeCooldowns,
-    required this.lastFailoverAt,
+    required this.lastRetryAt,
     required this.webSearches,
     required this.webFetches,
     required this.mcpCalls,
@@ -57,7 +64,7 @@ final class SubstrateStats {
         callsPerRole: const <String, int>{},
         embeddingsComputed: 0,
         activeCooldowns: 0,
-        lastFailoverAt: null,
+        lastRetryAt: null,
         webSearches: 0,
         webFetches: 0,
         mcpCalls: 0,

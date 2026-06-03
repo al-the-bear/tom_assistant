@@ -512,7 +512,7 @@ void main() {
       expect(s.callsPerRole, isEmpty);
       expect(s.embeddingsComputed, equals(0));
       expect(s.activeCooldowns, equals(0));
-      expect(s.lastFailoverAt, isNull);
+      expect(s.lastRetryAt, isNull);
       expect(s.webSearches, equals(0));
       expect(s.webFetches, equals(0));
       expect(s.mcpCalls, equals(0));

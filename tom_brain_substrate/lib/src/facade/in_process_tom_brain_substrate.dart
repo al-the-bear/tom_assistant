@@ -220,7 +220,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
   final Map<String, int> _callsPerProvider = <String, int>{};
   final Map<String, int> _callsPerRole = <String, int>{};
   int _embeddingsComputed = 0;
-  DateTime? _lastFailoverAt;
+  DateTime? _lastRetryAt;
   int _webSearches = 0;
   int _webFetches = 0;
   int _mcpCalls = 0;
@@ -574,7 +574,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
       callsPerRole: Map<String, int>.unmodifiable(_callsPerRole),
       embeddingsComputed: _embeddingsComputed,
       activeCooldowns: _router.cooldownsActive,
-      lastFailoverAt: _lastFailoverAt,
+      lastRetryAt: _lastRetryAt,
       webSearches: _webSearches,
       webFetches: _webFetches,
       mcpCalls: _mcpCalls,
@@ -620,14 +620,14 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
       ifAbsent: () => 1,
     );
     if (report.retries > 0) {
-      // A non-zero retry count on the surfacing report means the
-      // router rotated at least once before this provider stuck;
-      // the substrate-side proxy for "did failover happen on this
-      // call" is the retries field. Stamping `_lastFailoverAt` here
-      // is the conservative reading (the router itself does not
-      // yet emit `ProviderFailover` — Q-B.41.2 in
+      // A non-zero retry count on the surfacing report means the router
+      // retried at least once (possibly on the same provider) before this
+      // provider stuck. This is a retry signal, not a failover signal:
+      // `retries > 0` includes same-provider retries, so the field is
+      // named `_lastRetryAt`. A true provider-failover stat lands once the
+      // router emits `ProviderFailover` (Q-B.41.2 in
       // `prototype_implementation_questions.md`).
-      _lastFailoverAt = _now().toUtc();
+      _lastRetryAt = _now().toUtc();
     }
   }
 

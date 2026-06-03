@@ -41,7 +41,7 @@ import 'web_results.dart';
 
 /// Consumer-facing contract for the Tom Brain substrate.
 ///
-/// Five surfaces, in spec § 3.1 order:
+/// Six surfaces, in spec § 3.1 order:
 ///
 ///   1. Lifecycle — [open], [close].
 ///   2. LLM      — [complete], [completeStream].
@@ -187,6 +187,17 @@ abstract class TomBrainSubstrateClient {
   /// The stream is broadcast — late subscribers do not see past
   /// events. Per-run replay belongs to the trail layer (memory),
   /// not to substrate.
+  ///
+  /// **Buffered-vs-streaming failure asymmetry.** A failed
+  /// [completeStream] call emits a terminal `LlmCallFailed` event here,
+  /// because the router surfaces it as an `LlmStreamFailed` carrier that
+  /// names the provider/model triple. A failed [complete] call does
+  /// **not** emit `LlmCallFailed`: the router surfaces buffered failures
+  /// as typed router-layer exceptions (`NoRouteAvailable`,
+  /// `ContextOverflowError`, …) that are the chain's terminal verdict and
+  /// carry no single-provider triple. Consumers that need a structural
+  /// "the buffered call ended in failure" signal must observe the thrown
+  /// exception at the call site, not this stream.
   Stream<SubstrateEvent> events();
 
   /// Point-in-time counters snapshot. Cheap; safe to poll.

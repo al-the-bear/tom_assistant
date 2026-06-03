@@ -377,20 +377,17 @@ final class RoleTemplate {
   /// structural proof of Postulate 3.
   WirePrompt assemble({Map<String, Object?> inputs = const {}}) {
     final assembled = _composeBody(inputs);
-    // Strict prepend, not `AssistantDedicationAnchor.wrap(...)`. The
-    // shared `wrap` keys on `contains(text)` for idempotency, which
-    // gives only the *contains-anchor* guarantee — if an input value
-    // happens to include the anchor text mid-string, `wrap` would
-    // return the assembled body unchanged and the result would start
-    // with `PERSONA:`, violating substrate invariant 1 ("body starts
-    // with anchor"). The substrate's invariant is stronger than the
-    // shared primitive's; `_composeBody` deterministically never
-    // starts with the anchor (it opens with `PERSONA:`), so a
-    // straight prepend is safe and produces the correct starts-with
-    // guarantee for every input shape, including the
-    // "input-value-contains-anchor" tamper vector covered by
-    // `b23_anchor_injection_test.dart`.
-    final wrapped = '${AssistantDedicationAnchor.text}$assembled';
+    // `ensurePrefix`, not `wrap`. The shared `wrap` keys idempotency on
+    // `contains(text)`, giving only the *contains-anchor* guarantee — if
+    // an input value happens to include the anchor text mid-string,
+    // `wrap` would return the body unchanged and the result would start
+    // with `PERSONA:`, violating substrate invariant 1 ("body starts with
+    // anchor"). `ensurePrefix` keys idempotency on `startsWith` and so
+    // always produces the strict starts-with guarantee for every input
+    // shape, including the "input-value-contains-anchor" tamper vector
+    // covered by `b23_anchor_injection_test.dart`. One anchor mechanism,
+    // owned by the shared primitive, used everywhere.
+    final wrapped = AssistantDedicationAnchor.ensurePrefix(assembled);
     return WirePrompt(
       body: wrapped,
       anchorHash: AnchorRegistry.currentHash,

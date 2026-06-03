@@ -174,6 +174,56 @@ void main() {
     });
   });
 
+  group('AssistantDedicationAnchor.ensurePrefix', () {
+    test('prepends the anchor to a non-empty body', () {
+      final out = AssistantDedicationAnchor.ensurePrefix('Tell me a joke.');
+      expect(out.startsWith(AssistantDedicationAnchor.text), isTrue);
+      expect(out.endsWith('Tell me a joke.'), isTrue);
+    });
+
+    test('result always starts with the anchor (stronger than wrap)', () {
+      // The defining difference from `wrap`: `ensurePrefix` guarantees the
+      // anchor is the *prefix*, not merely present somewhere. This is the
+      // substrate invariant 1 ("body starts with anchor") and the reason
+      // the role layer needs a starts-with primitive.
+      const body = 'PERSONA:\nanalyst\n\nOBJECTIVE:\nanswer';
+      final out = AssistantDedicationAnchor.ensurePrefix(body);
+      expect(out.startsWith(AssistantDedicationAnchor.text), isTrue);
+    });
+
+    test('is idempotent on already-prefixed input', () {
+      final once = AssistantDedicationAnchor.ensurePrefix('Body.');
+      final twice = AssistantDedicationAnchor.ensurePrefix(once);
+      expect(twice, equals(once));
+    });
+
+    test('prepends even when the anchor occurs mid-string', () {
+      // The "input value contains the anchor text mid-string" tamper
+      // vector: `wrap` would return it unchanged (the result would NOT
+      // start with the anchor); `ensurePrefix` prepends so the result
+      // still starts with the anchor.
+      const body = 'leading text ${'noise'} then the body';
+      final embedded = '$body${AssistantDedicationAnchor.text}tail';
+      final out = AssistantDedicationAnchor.ensurePrefix(embedded);
+      expect(out.startsWith(AssistantDedicationAnchor.text), isTrue);
+    });
+
+    test('returns the anchor alone for empty / whitespace / null input', () {
+      expect(AssistantDedicationAnchor.ensurePrefix(''),
+          equals(AssistantDedicationAnchor.text));
+      expect(AssistantDedicationAnchor.ensurePrefix('  \t\n '),
+          equals(AssistantDedicationAnchor.text));
+      expect(AssistantDedicationAnchor.ensurePrefix(null),
+          equals(AssistantDedicationAnchor.text));
+    });
+
+    test('preserves the body verbatim after the prefix', () {
+      const body = '  Multi-line\nbody with   spaces.\n';
+      final out = AssistantDedicationAnchor.ensurePrefix(body);
+      expect(out, equals('${AssistantDedicationAnchor.text}$body'));
+    });
+  });
+
   group('AssistantDedicationAnchor.containsAnchor', () {
     test('returns true for a wrapped string', () {
       final wrapped = AssistantDedicationAnchor.wrap('Body.');
