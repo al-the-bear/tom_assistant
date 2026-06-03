@@ -8,9 +8,10 @@
 ///
 /// The public surface is organised into one module per `lib/src/`
 /// subfolder (`store/`, `retrieval/`, `nodes/`, `edges/`, `stacks/`,
-/// `classification/`, `trails/`, `migrations/`, `api/`, `mcp_server/`,
-/// `isolate_adapter/`, `config/`, plus `budget/`, `cognitive_agents/`,
-/// and `observability/`). Each module's barrel `show`-exports its own
+/// `classification/`, `trails/`, `migrations/`, `sync/`, `api/`,
+/// `mcp_server/`, `isolate_adapter/`, `config/`, plus `budget/`,
+/// `cognitive_agents/`, and `observability/`). Each module's barrel
+/// `show`-exports its own
 /// public types; this top-level barrel re-exports those module barrels
 /// so the whole surface is reachable through
 /// `package:tom_brain_memory/tom_brain_memory.dart`.
@@ -38,4 +39,5 @@ export 'src/observability/observability.dart';
 export 'src/retrieval/retrieval.dart';
 export 'src/stacks/stacks.dart';
 export 'src/store/store.dart';
+export 'src/sync/sync.dart';
 export 'src/trails/trails.dart';

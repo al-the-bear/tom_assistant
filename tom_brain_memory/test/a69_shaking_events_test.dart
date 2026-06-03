@@ -270,14 +270,18 @@ void main() {
 
     final key = CentroidStore.keyForNodeType('Question');
 
-    test('first-ever update emits nothing (no prior to compare)', () {
+    test('first-ever update emits no drift (no prior to compare)', () {
       store.update(
         forKey: key,
         embeddingModelId: 'nomic-embed-text@v1.5',
         centroid: _unit768(seed: 1),
         exampleCount: 20,
       );
-      expect(events, isEmpty);
+      // No prior centroid → no `CentroidDriftDetected`. The
+      // unconditional `CentroidUpdated` audit (spec § 16) does fire on
+      // every write, so this asserts the absence of the *drift* signal
+      // specifically rather than an empty stream.
+      expect(events.whereType<CentroidDriftDetected>(), isEmpty);
     });
 
     test('cosine above threshold + same model emits nothing', () {

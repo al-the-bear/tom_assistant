@@ -72,10 +72,14 @@
 // `ArgumentError`; the classifier surfaces it for the same reason.
 // See Q-A.64.6.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show Vec, cosine;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show Clock, SystemClock, Vec, cosine;
 
+import '../api/memory_event.dart';
+import '../api/scope.dart';
 import '../config/memory_config.dart' show ClassificationConfig;
 import 'centroid_store.dart';
+import 'classification_events.dart';
 import 'classification_result.dart';
 
 /// LLM-independent centroid-based classifier (spec § 7.2).
@@ -97,17 +101,37 @@ final class Classifier {
   /// (`0.55 / 0.05 / 8`) when omitted.
   final ClassificationConfig _config;
 
+  /// Optional observability sink for [ClassificationComputed]
+  /// (spec § 16). `null` on the no-observer default.
+  final void Function(MemoryEvent)? _eventSink;
+
+  /// Clock stamping the `occurredAt` of emitted
+  /// [ClassificationComputed] events. Defaults to [SystemClock];
+  /// tests inject a fixed clock to assert the timestamp exactly.
+  final Clock _clock;
+
   /// Constructs a classifier over [store], reading tunables from
   /// [config].
   ///
   /// Production wires the workspace's [MemoryConfig.classification];
   /// tests construct their own [ClassificationConfig] to exercise
   /// borderline thresholds.
+  ///
+  /// [eventSink] is optional — when non-null, every [classify] call
+  /// emits a [ClassificationComputed] onto it. The concrete
+  /// `SqliteTomBrainMemory` wires this to the same `StreamController`
+  /// that backs `TomBrainMemory.events()`; tests pass a list-backed
+  /// sink to inspect emissions. [clock] stamps the event's
+  /// `occurredAt` and is only consulted when [eventSink] is wired.
   Classifier({
     required CentroidStore store,
     ClassificationConfig config = const ClassificationConfig(),
+    void Function(MemoryEvent)? eventSink,
+    Clock clock = const SystemClock(),
   })  : _store = store,
-        _config = config;
+        _config = config,
+        _eventSink = eventSink,
+        _clock = clock;
 
   /// The configuration this classifier was built with. Exposed so the
   /// concrete `SqliteTomBrainMemory.classify` (later A-step) and the
@@ -134,14 +158,19 @@ final class Classifier {
   /// Throws [ArgumentError] when [embedding] has zero norm, or when
   /// its dimension does not match a centroid being scored. Both are
   /// producer bugs — see file header.
+  ///
+  /// [scope] is optional and only supplies `runId` / `causedBy` for
+  /// the emitted [ClassificationComputed] event; it does not affect
+  /// the decision.
   ClassificationResult classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
+    Scope? scope,
   }) {
     final prefix = _prefixFor(target);
     final candidates = _store.readAll(prefix: prefix);
     if (candidates.isEmpty) {
-      return const ClassificationResult.unknown();
+      return _emit(const ClassificationResult.unknown(), target, scope);
     }
 
     // Cold-start filter (spec § 7.1): drop centroids whose backing
@@ -154,7 +183,7 @@ final class Classifier {
         .where((r) => r.exampleCount >= _config.coldStartMinExamples)
         .toList(growable: false);
     if (eligible.isEmpty) {
-      return const ClassificationResult.unknown();
+      return _emit(const ClassificationResult.unknown(), target, scope);
     }
 
     // Score every eligible centroid. `readAll` returns rows in
@@ -188,12 +217,45 @@ final class Classifier {
     final strippedKey = _stripPrefix(bestKey!, prefix);
     final decision = _decide(bestSimilarity, secondSimilarity);
 
-    return ClassificationResult(
-      decision: decision,
-      bestMatch: strippedKey,
-      bestSimilarity: bestSimilarity,
-      secondSimilarity: secondSimilarity,
+    return _emit(
+      ClassificationResult(
+        decision: decision,
+        bestMatch: strippedKey,
+        bestSimilarity: bestSimilarity,
+        secondSimilarity: secondSimilarity,
+      ),
+      target,
+      scope,
     );
+  }
+
+  /// Emits [ClassificationComputed] for [result] (spec § 16) and
+  /// returns [result] unchanged so call sites stay one-liners. The
+  /// event carries the decision plus both similarity scores; on the
+  /// cold-start `unknown` paths `bestMatch` is `null` and both
+  /// similarities are `0.0`, mirroring the returned result. Short-
+  /// circuits on a null sink.
+  ClassificationResult _emit(
+    ClassificationResult result,
+    ClassificationTarget target,
+    Scope? scope,
+  ) {
+    final sink = _eventSink;
+    if (sink != null) {
+      sink(
+        ClassificationComputed(
+          target: target,
+          decision: result.decision,
+          bestMatch: result.bestMatch,
+          bestSimilarity: result.bestSimilarity,
+          secondSimilarity: result.secondSimilarity,
+          occurredAt: _clock.now(),
+          runId: scope?.runId,
+          causedBy: scope?.causedBy,
+        ),
+      );
+    }
+    return result;
   }
 
   ClassificationDecision _decide(double best, double second) {

@@ -62,6 +62,7 @@ const _requiredSubfolders = <String>[
   'retrieval',
   'stacks',
   'store',
+  'sync', // Q-A.87.8
   'trails',
 ];
 
@@ -72,9 +73,9 @@ void main() {
       // `_requiredSubfolders` cannot silently shrink or duplicate
       // the contract. A.23 seeded 12; A.68 added `budget` for 13;
       // A.69 added `cognitive_agents` for 14; A.84 added
-      // `observability` for 15.
-      expect(_requiredSubfolders, hasLength(15));
-      expect(_requiredSubfolders.toSet(), hasLength(15),
+      // `observability` for 15; Q-A.87.8 added `sync` for 16.
+      expect(_requiredSubfolders, hasLength(16));
+      expect(_requiredSubfolders.toSet(), hasLength(16),
           reason: 'subfolder list must be free of duplicates');
     });
 

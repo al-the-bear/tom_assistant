@@ -41,6 +41,8 @@
 // signatures stay minimal.
 
 export 'centroid_store.dart' show CentroidRecord, CentroidStore;
+export 'classification_events.dart'
+    show CentroidUpdated, ClassificationComputed;
 export 'classification_result.dart'
     show ClassificationDecision, ClassificationResult, ClassificationTarget;
 export 'classifier.dart' show Classifier;

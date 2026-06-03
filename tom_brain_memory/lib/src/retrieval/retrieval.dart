@@ -63,6 +63,7 @@ export 'fts5_catalog.dart' show Fts5Catalog;
 export 'fts5_writer.dart' show Fts5Writer;
 export 'graph_walk_recall.dart'
     show GraphWalkRecall, GraphWalkRecallCandidate, kDefaultEdgeTypeWeight;
+export 'recall_events.dart' show RecallCompleted;
 export 'recall_executor.dart'
     show
         Bm25ModeFn,

@@ -26,6 +26,7 @@
 export 'json_file_migration_api.dart' show JsonFileMigrationApi;
 export 'migration_api.dart'
     show MigrationApi, MigrationCursor, MigrationDecl, MigrationStatus;
+export 'migration_events.dart' show MigrationProgressed;
 export 'migrations_in_progress_view.dart'
     show
         MigrationHealth,

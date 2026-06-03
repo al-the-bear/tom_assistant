@@ -132,8 +132,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../api/memory_event.dart';
 import '../store/memory_directory.dart';
 import 'migration_api.dart';
+import 'migration_events.dart';
 
 /// File-backed concrete [MigrationApi] for the brain's long-running
 /// migrations (memory_specification.md § 11).
@@ -182,6 +184,7 @@ final class JsonFileMigrationApi implements MigrationApi {
 
   final MemoryDirectory _directory;
   final DateTime Function() _now;
+  final void Function(MemoryEvent)? _eventSink;
   int _tempCounter = 0;
 
   /// Constructs an api over [directory] using [clock] for
@@ -189,11 +192,19 @@ final class JsonFileMigrationApi implements MigrationApi {
   ///
   /// Production passes the default ([DateTime.now]); tests inject
   /// a deterministic stand-in.
+  ///
+  /// [eventSink] is optional — when non-null, every successful
+  /// [saveCursor] emits a [MigrationProgressed] onto it (spec § 16).
+  /// The concrete `SqliteTomBrainMemory` wires this to the same
+  /// `StreamController` that backs `TomBrainMemory.events()`; tests
+  /// pass a list-backed sink to inspect emissions.
   JsonFileMigrationApi({
     required MemoryDirectory directory,
     DateTime Function()? clock,
+    void Function(MemoryEvent)? eventSink,
   })  : _directory = directory,
-        _now = clock ?? _defaultNow;
+        _now = clock ?? _defaultNow,
+        _eventSink = eventSink;
 
   static DateTime _defaultNow() => DateTime.now().toUtc();
 
@@ -321,6 +332,24 @@ final class JsonFileMigrationApi implements MigrationApi {
     }
 
     await _atomicWrite(file, record);
+
+    // Spec § 16 — `MigrationProgressed`. One event per durable cursor
+    // advance, reporting the post-write snapshot. Emitted only after
+    // the atomic write succeeds, so a failed persist surfaces no
+    // progress. `runId` is null: a cursor advance is the migration-
+    // progress case the `MemoryEvent` base names as run-free.
+    final sink = _eventSink;
+    if (sink != null) {
+      sink(
+        MigrationProgressed(
+          migrationId: migrationId,
+          processed: _asNonNegativeIntOrNull(record['processedCount']) ?? 0,
+          total: _asNonNegativeIntOrNull(record['totalEstimate']) ?? 0,
+          complete: record['complete'] == true,
+          occurredAt: at,
+        ),
+      );
+    }
   }
 
   @override

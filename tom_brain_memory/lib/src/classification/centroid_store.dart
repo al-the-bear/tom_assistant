@@ -117,6 +117,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import '../api/memory_event.dart';
 import '../api/scope.dart';
 import '../cognitive_agents/shaking_events.dart';
+import 'classification_events.dart';
 import 'classification_result.dart';
 
 /// One row of the `centroids` table.
@@ -415,6 +416,26 @@ final class CentroidStore {
       occurredAt: updatedAt.toDateTime(),
       scope: scope,
     );
+
+    // Spec § 16 — `CentroidUpdated` is the unconditional audit of
+    // every successful upsert (distinct from the conditional
+    // `CentroidDriftDetected` above). `created` is derived from the
+    // prior read: no prior row ⇒ this upsert inserted a fresh one.
+    final sink = _eventSink;
+    if (sink != null) {
+      sink(
+        CentroidUpdated(
+          forKey: forKey,
+          embeddingModelId: embeddingModelId,
+          exampleCount: exampleCount,
+          dimensions: dims,
+          created: prior == null,
+          occurredAt: updatedAt.toDateTime(),
+          runId: scope?.runId,
+          causedBy: scope?.causedBy,
+        ),
+      );
+    }
 
     return CentroidRecord(
       forKey: forKey,

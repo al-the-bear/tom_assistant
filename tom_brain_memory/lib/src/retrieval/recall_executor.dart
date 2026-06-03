@@ -143,6 +143,7 @@ import '../observability/memory_log.dart';
 import 'bm25_recall.dart';
 import 'graph_walk_recall.dart';
 import 'mmr.dart';
+import 'recall_events.dart';
 import 'recall_query.dart';
 import 'recall_result.dart';
 import 'rrf.dart';
@@ -440,6 +441,25 @@ final class RecallExecutor {
         () => 'recall ok in ${report.elapsedMs}ms '
             '(modes=${query.modes.map((m) => m.name).join("+")}, '
             'k=${query.k}, returned=${finalNodes.length})',
+      );
+    }
+
+    // Spec § 16 — `RecallCompleted` (carries `RecallReport`). One
+    // event per recall call, including the empty-modes and degraded
+    // paths; subscribers filter on `degraded` / `returnedCount`
+    // themselves. Short-circuits on a null sink so the typical recall
+    // pays a single null check.
+    final sink = _eventSink;
+    if (sink != null) {
+      sink(
+        RecallCompleted(
+          requestedModes: List<RecallMode>.unmodifiable(query.modes),
+          returnedCount: finalNodes.length,
+          report: report,
+          occurredAt: _clock.now(),
+          runId: scope?.runId,
+          causedBy: scope?.causedBy,
+        ),
       );
     }
 

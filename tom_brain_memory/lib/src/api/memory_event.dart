@@ -32,6 +32,15 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 ///     § 16. The three memory-internal sub-kinds are emitted by the
 ///     edge writer, the centroid store, and the recall executor;
 ///     `CritiqueRejected` is agent-raised via `ShakingEventEmitter`.
+///   * Q-A.87.8 — the five remaining spec § 16 leaves:
+///     `RecallCompleted` (recall executor), `ClassificationComputed`
+///     (classifier), `CentroidUpdated` (centroid store),
+///     `MigrationProgressed` (migration api), and
+///     `AuthorityUnreachable`. The first four are wired to their
+///     producers; `AuthorityUnreachable` is declared but not yet
+///     emitted — its producer (the multi-machine heartbeat monitor,
+///     build step 9) has not shipped, so the type is landed ahead of
+///     the emission path the way `StackOverflowDemoted` was.
 ///
 /// The `kind` discriminator convention for memory events is
 /// `memory.<event-name>`, kebab-cased (e.g. `memory.node-persisted`).

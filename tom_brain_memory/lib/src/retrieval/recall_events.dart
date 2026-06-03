@@ -1,0 +1,78 @@
+// Retrieval `MemoryEvent` leaf — `RecallCompleted`.
+//
+// Spec § 16 names `RecallCompleted` ("carries `RecallReport`") as one
+// of the typed events memory fans out over the single observability
+// stream (`TomBrainMemory.events()`). This file lands the leaf; the
+// emission point is the `RecallExecutor.recall` tail, where the report
+// is already assembled.
+//
+// Unlike the node-lifecycle leaves (which emit only on a state
+// transition), a recall is a read — there is no transition to gate on.
+// `RecallCompleted` therefore follows the same "one event per call"
+// convention `RecallReport` itself does: every `recall` that produces a
+// report emits exactly one `RecallCompleted`, including the empty-modes
+// and degraded paths. Subscribers wanting only the interesting recalls
+// filter on `degraded` / `returnedCount` themselves (the bus does not
+// push typed filters — see `MemoryEventBus`).
+//
+// The discriminator (`memory.recall-completed`) follows the
+// per-component convention documented on `MemoryEvent`.
+
+import '../api/memory_event.dart';
+import 'recall_query.dart' show RecallMode;
+import 'recall_result.dart' show RecallReport;
+
+/// Emitted when `RecallExecutor.recall` finishes a recall call.
+///
+/// Carries the assembled [report] (spec § 16: "carries
+/// `RecallReport`") plus the two summary numbers a subscriber most
+/// often wants without reaching into the report: the modes the caller
+/// requested and how many nodes the call ultimately returned.
+///
+/// `runId` / `causedBy` are threaded from the optional `Scope` passed
+/// to `recall` — `null` when the caller supplied no scope, exactly as
+/// the sibling `RetrievalConflict` shaking event does.
+final class RecallCompleted extends MemoryEvent {
+  /// The modes the caller requested, in request order. Empty when the
+  /// caller asked for no modes (the empty-result fast path).
+  final List<RecallMode> requestedModes;
+
+  /// Number of nodes the recall ultimately returned (post-fusion,
+  /// post-diversify, post-re-rank, truncated to `RecallQuery.k`).
+  final int returnedCount;
+
+  /// The cost / candidacy report the same call returned to the caller.
+  /// Held by reference; consumers MUST treat it as read-only.
+  final RecallReport report;
+
+  const RecallCompleted({
+    required this.requestedModes,
+    required this.returnedCount,
+    required this.report,
+    required super.occurredAt,
+    super.runId,
+    super.causedBy,
+  });
+
+  @override
+  String get kind => 'memory.recall-completed';
+
+  @override
+  Map<String, Object?> payloadJson() => <String, Object?>{
+        'requestedModes':
+            requestedModes.map((m) => m.name).toList(growable: false),
+        'returnedCount': returnedCount,
+        'candidatesPerMode': <String, Object?>{
+          for (final entry in report.candidatesPerMode.entries)
+            entry.key.name: entry.value,
+        },
+        'fusionStrategy': report.fusionStrategy.name,
+        'diversityStrategy': report.diversityStrategy.name,
+        if (report.diversityLambda != null)
+          'diversityLambda': report.diversityLambda,
+        'elapsedMs': report.elapsedMs,
+        'embeddingsCallouts': report.embeddingsCallouts,
+        'reRankInvoked': report.reRankInvoked,
+        'degraded': report.degraded,
+      };
+}
