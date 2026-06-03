@@ -46,6 +46,22 @@
 // `LlmStreamFailed` terminal event is surfaced as a thrown
 // [LlmCompletionFailure] carrying the typed failure class.
 //
+// ── The streaming variant (P1.3 #7) ─────────────────────────────────
+//
+// Draining-to-concat is the *internal* path. For an external/user
+// request the spec (§ 11 step 2) requires the tokens to stream end to
+// end. So `llm` also forwards each chunk to an optional per-run
+// [SubstrateTokenSink] (`onToken`) as it arrives. The sink is `null` on
+// the template bridge and on internal / free-time runs (buffered, as
+// before); the engine binds a per-run sink only for an external request.
+// The concatenated buffer is *still* accumulated and returned either way
+// — the procedure's persist step needs the whole answer text and the
+// edge needs the buffer to preserve a correct late-failure HTTP status.
+// Streaming is therefore additive: live deltas for the external path,
+// the unchanged `{text, report}` return for every path. Threading the
+// sink through the dispatcher and onto the OpenAI SSE edge is P1.3 #8–#9;
+// this file owns only the substrate-side seam.
+//
 // ── Interface boundary (PE-10) ──────────────────────────────────────
 //
 // The bridge wraps a `TomBrainSubstrateClient` — the consumer-facing
@@ -80,10 +96,31 @@ class SubstrateBridge {
   /// surface — a procedure script only ever sees the injected instance.
   final BridgeCallRecorder? _onCall;
 
+  /// Per-run token-streaming hook (P1.3 #7). `null` on the shared template
+  /// bridge and on every internal / free-time run — those keep the buffered
+  /// path. The engine binds a per-run sink only for an **external/user**
+  /// request (the path the spec § 11 step 2 mandates streaming for); when a
+  /// sink is bound, [llm] forwards each generated chunk to it as it arrives
+  /// rather than only concatenating the answer at the end. Like [_onCall],
+  /// per-run binding is what makes streaming concurrency-safe: two runs that
+  /// share the same client each carry their own sink. Not part of the
+  /// d4rt-facing surface — a procedure script never sees it. The sink's
+  /// downstream wiring (a `deliver`/`emit` primitive threaded through the
+  /// dispatcher to the OpenAI SSE edge) lands in P1.3 #8–#9; this hook is the
+  /// substrate-side seam those steps thread into.
+  final SubstrateTokenSink? _onToken;
+
   /// Wraps [client]. The host constructs this natively and registers the
   /// instance with the d4rt runtime. [onCall], when supplied, records each
-  /// completed primitive call against the issuing run (E.3.2).
-  SubstrateBridge(this.client, {BridgeCallRecorder? onCall}) : _onCall = onCall;
+  /// completed primitive call against the issuing run (E.3.2). [onToken], when
+  /// supplied, receives each [llm] chunk's text delta live as it streams
+  /// (P1.3 #7 — the external/user-request path).
+  SubstrateBridge(
+    this.client, {
+    BridgeCallRecorder? onCall,
+    SubstrateTokenSink? onToken,
+  })  : _onCall = onCall,
+        _onToken = onToken;
 
   /// Delegates to [body], and — when [_onCall] is wired — records the call
   /// (name [primitive], argument map [input], the flattened [resultOf] of
@@ -162,11 +199,20 @@ class SubstrateBridge {
           );
 
           final buffer = StringBuffer();
+          final onToken = _onToken;
 
           await for (final event in client.completeStream(call)) {
             switch (event) {
               case LlmStreamChunk(:final text):
                 buffer.write(text);
+                // External/user-request path (P1.3 #7): forward each delta
+                // live as it arrives. Awaited so the downstream sink (the SSE
+                // edge, once wired) keeps ordering and backpressure. The
+                // buffer is still accumulated — the returned `text` feeds the
+                // procedure's persist step and preserves correct late-failure
+                // HTTP status. With no sink bound the chunk is only buffered
+                // (the internal / free-time path).
+                if (onToken != null) await onToken(text);
               case LlmStreamCompleted(:final report):
                 return <String, Object?>{
                   'text': buffer.toString(),
@@ -352,6 +398,18 @@ class SubstrateBridge {
           },
       };
 }
+
+/// Receives each generated text delta from [SubstrateBridge.llm] as it
+/// streams (P1.3 #7 — the end-to-end token-streaming seam).
+///
+/// The engine binds a per-run instance only for an **external/user** request;
+/// internal secondary and free-time prompts leave it unbound and keep the
+/// buffered path (spec § 11 step 2 — streaming is required for incoming
+/// external requests, optional otherwise). [textDelta] is one substrate
+/// [LlmStreamChunk]'s text, in arrival order. The future is awaited per chunk
+/// so the downstream consumer (the OpenAI SSE edge, wired in #8–#9) preserves
+/// ordering and backpressure.
+typedef SubstrateTokenSink = Future<void> Function(String textDelta);
 
 /// Thrown by [SubstrateBridge.llm] when the substrate stream terminates
 /// with [LlmStreamFailed].

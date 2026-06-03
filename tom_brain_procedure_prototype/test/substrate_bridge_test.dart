@@ -183,6 +183,88 @@ void main() {
     });
   });
 
+  group('C.13 SubstrateBridge.llm — streaming token sink (P1.3 #7)', () {
+    test('forwards each chunk to the bound sink as it arrives, still '
+        'returning the concatenated text', () async {
+      final tokens = <String>[];
+      final streaming = SubstrateBridge(client, onToken: (delta) async {
+        tokens.add(delta);
+      });
+      client.streamEvents = <LlmStreamEvent>[
+        const LlmStreamStarted(
+          callId: 'c1',
+          providerId: 'ollama:local',
+          modelId: 'gemma3:27b',
+        ),
+        const LlmStreamChunk(callId: 'c1', text: 'Hello, '),
+        const LlmStreamChunk(callId: 'c1', text: 'world.'),
+        const LlmStreamCompleted(
+          callId: 'c1',
+          report: LlmCallReport(
+            providerId: 'ollama:local',
+            modelId: 'gemma3:27b',
+            anchorHash: 'a1',
+            promptHash: 'p1',
+            tokensIn: 12,
+            tokensOut: 7,
+            retries: 0,
+            wallClockMs: 340,
+          ),
+        ),
+      ];
+
+      final out = await streaming.llm('what is X?');
+
+      // The sink saw each token delta in order — the external path streams
+      // instead of only buffering.
+      expect(tokens, <String>['Hello, ', 'world.']);
+      // The concatenated text is still returned (persist + late-failure
+      // status depend on it).
+      expect(out['text'], 'Hello, world.');
+    });
+
+    test('forwards the partial deltas before a stream failure', () async {
+      final tokens = <String>[];
+      final streaming = SubstrateBridge(client, onToken: (delta) async {
+        tokens.add(delta);
+      });
+      client.streamEvents = <LlmStreamEvent>[
+        const LlmStreamChunk(callId: 'c1', text: 'par'),
+        const LlmStreamChunk(callId: 'c1', text: 'tial'),
+        const LlmStreamFailed(
+          callId: 'c1',
+          failure: LlmFailure(classCode: 'timeout', message: 'too slow'),
+          report: LlmCallReport(
+            providerId: 'p',
+            modelId: 'm',
+            anchorHash: 'a',
+            promptHash: 'pr',
+            tokensIn: 3,
+            tokensOut: 0,
+            retries: 2,
+            wallClockMs: 9000,
+          ),
+        ),
+      ];
+
+      await expectLater(
+        streaming.llm('q'),
+        throwsA(isA<LlmCompletionFailure>()),
+      );
+      expect(tokens, <String>['par', 'tial']);
+    });
+
+    test('with no sink bound the chunks are only buffered (internal path)',
+        () async {
+      // The default bridge (no onToken) must behave exactly as before — the
+      // internal/free-time path stays non-streaming. Proven by the existing
+      // llm tests; this asserts the construction default explicitly.
+      client.streamEvents = _completedStream('ok');
+      final out = await bridge.llm('q');
+      expect(out['text'], 'ok');
+    });
+  });
+
   group('C.13 SubstrateBridge.embed', () {
     test('flattens the vector + model identity', () async {
       client.embedResult = EmbeddingResult(
