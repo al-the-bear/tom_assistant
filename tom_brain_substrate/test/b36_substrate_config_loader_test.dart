@@ -982,6 +982,224 @@ substrate:
     });
   });
 
+  group('B.36 SubstrateConfigLoader.parse — router tunables (Q-B.36.2)', () {
+    test('omitting `router:` yields RouterPolicy defaults', () {
+      final cfg = SubstrateConfigLoader.parse(_minimalYaml);
+      expect(
+        cfg.router.retriesPerClass,
+        equals(RouterPolicy.defaultRetriesPerClass),
+      );
+      expect(
+        cfg.router.overloadedBackoff,
+        equals(RouterPolicy.defaultOverloadedBackoff),
+      );
+      // No cooldown override ⇒ RouterPolicy supplies its defaults.
+      expect(cfg.router.cooldownByClass, isNull);
+
+      final policy = cfg.buildRouterPolicy();
+      expect(
+        policy.retriesPerClass,
+        equals(RouterPolicy.defaultRetriesPerClass),
+      );
+      expect(
+        policy.overloadedBackoff,
+        equals(RouterPolicy.defaultOverloadedBackoff),
+      );
+      expect(
+        policy.cooldownFor(LlmFailureClass.rateLimit),
+        equals(const Duration(seconds: 60)),
+      );
+      expect(
+        policy.cooldownFor(LlmFailureClass.billing),
+        equals(const Duration(hours: 24)),
+      );
+    });
+
+    test('router fields override the RouterPolicy defaults', () {
+      final cfg = SubstrateConfigLoader.parse('''
+substrate:
+  providers:
+    - id: s
+      kind: stub
+  roleRoutes:
+    analyser:
+      - {providerId: s, model: x}
+  embedding:
+    providerId: s
+    model: x
+    dims: 1
+  router:
+    retriesPerClass: 3
+    overloadedBackoffMs: 250
+    cooldownsSeconds:
+      rate_limit: 30
+      billing: 3600
+''');
+      expect(cfg.router.retriesPerClass, equals(3));
+      expect(
+        cfg.router.overloadedBackoff,
+        equals(const Duration(milliseconds: 250)),
+      );
+      expect(cfg.router.cooldownByClass, isNotNull);
+
+      final policy = cfg.buildRouterPolicy();
+      expect(policy.retriesPerClass, equals(3));
+      expect(
+        policy.overloadedBackoff,
+        equals(const Duration(milliseconds: 250)),
+      );
+      expect(
+        policy.cooldownFor(LlmFailureClass.rateLimit),
+        equals(const Duration(seconds: 30)),
+      );
+      expect(
+        policy.cooldownFor(LlmFailureClass.billing),
+        equals(const Duration(seconds: 3600)),
+      );
+    });
+
+    test('cooldownsSeconds fully replaces the default schedule', () {
+      // Only `rate_limit` is configured. A class the operator did not
+      // mention (billing) falls to zero cooldown, NOT to the 24 h
+      // default — the map is the complete schedule, not a patch.
+      final cfg = SubstrateConfigLoader.parse('''
+substrate:
+  providers:
+    - id: s
+      kind: stub
+  roleRoutes:
+    analyser:
+      - {providerId: s, model: x}
+  embedding:
+    providerId: s
+    model: x
+    dims: 1
+  router:
+    cooldownsSeconds:
+      rate_limit: 30
+''');
+      final policy = cfg.buildRouterPolicy();
+      expect(
+        policy.cooldownFor(LlmFailureClass.rateLimit),
+        equals(const Duration(seconds: 30)),
+      );
+      expect(
+        policy.cooldownFor(LlmFailureClass.billing),
+        equals(Duration.zero),
+      );
+    });
+
+    test('rejects an unknown failure-class code', () {
+      expect(
+        () => SubstrateConfigLoader.parse('''
+substrate:
+  providers:
+    - id: s
+      kind: stub
+  roleRoutes:
+    analyser:
+      - {providerId: s, model: x}
+  embedding:
+    providerId: s
+    model: x
+    dims: 1
+  router:
+    cooldownsSeconds:
+      model_meltdown: 30
+'''),
+        throwsA(
+          isA<SubstrateConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('model_meltdown'), contains('cooldownsSeconds')),
+          ),
+        ),
+      );
+    });
+
+    test('rejects a negative retriesPerClass', () {
+      expect(
+        () => SubstrateConfigLoader.parse('''
+substrate:
+  providers:
+    - id: s
+      kind: stub
+  roleRoutes:
+    analyser:
+      - {providerId: s, model: x}
+  embedding:
+    providerId: s
+    model: x
+    dims: 1
+  router:
+    retriesPerClass: -1
+'''),
+        throwsA(
+          isA<SubstrateConfigException>().having(
+            (e) => e.message,
+            'message',
+            contains('retriesPerClass'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects a negative overloadedBackoffMs', () {
+      expect(
+        () => SubstrateConfigLoader.parse('''
+substrate:
+  providers:
+    - id: s
+      kind: stub
+  roleRoutes:
+    analyser:
+      - {providerId: s, model: x}
+  embedding:
+    providerId: s
+    model: x
+    dims: 1
+  router:
+    overloadedBackoffMs: -5
+'''),
+        throwsA(
+          isA<SubstrateConfigException>().having(
+            (e) => e.message,
+            'message',
+            contains('overloadedBackoffMs'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects a negative cooldown seconds', () {
+      expect(
+        () => SubstrateConfigLoader.parse('''
+substrate:
+  providers:
+    - id: s
+      kind: stub
+  roleRoutes:
+    analyser:
+      - {providerId: s, model: x}
+  embedding:
+    providerId: s
+    model: x
+    dims: 1
+  router:
+    cooldownsSeconds:
+      rate_limit: -30
+'''),
+        throwsA(
+          isA<SubstrateConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('rate_limit'), contains('>= 0')),
+          ),
+        ),
+      );
+    });
+  });
+
   group('B.36 SubstrateConfig.validateRoleRegistry', () {
     test('accepts when every routed role is registered', () {
       // Bootstrap registry has `assistant_to_user`, `analyser`,

@@ -11,6 +11,7 @@
 //   providers: [ ... ]
 //   roleRoutes: { roleId: [{ providerId, model }, ...], ... }
 //   embedding: { providerId, model, dims, normalize }
+//   router:    { retriesPerClass, overloadedBackoffMs, cooldownsSeconds: { class: secs } }
 //   webSearch: { defaultProvider, providers: { name: { kind, auth? } } }
 //   webFetch:  { defaultBudgetBytes, userAgent }
 //   mcpClient: { endpoints: { id: { transport, ... } } }
@@ -74,6 +75,7 @@ import '../llm/llm_provider.dart' show LlmProvider;
 import '../mcp_client/mcp_auth.dart' show McpAuthConfig;
 import '../roles/role_registry.dart'
     show RoleRegistry, RoleTemplateNotFound;
+import '../router/llm_failure_classifier.dart' show LlmFailureClass;
 import '../router/route_entry.dart' show RouteEntry, RouteConditions;
 import '../router/router_policy.dart' show RouterPolicy;
 
@@ -275,6 +277,55 @@ final class RouteConditionsConfig {
   const RouteConditionsConfig({this.maxInputTokens});
 }
 
+/// The `substrate.router` subtree — the router's failover tunables
+/// (spec § 5.3 / § 5.4), exposed on the YAML schema so a deployment can
+/// adjust cooldown windows, the in-route retry budget, and the
+/// `overloaded` backoff without a code change (Q-B.36.2).
+///
+/// The defaults mirror [RouterPolicy.defaultRetriesPerClass],
+/// [RouterPolicy.defaultOverloadedBackoff], and (when [cooldownByClass]
+/// is `null`) [RouterPolicy.defaultCooldowns] — `RouterPolicy` remains
+/// the single source of truth for the default values. Omitting the
+/// `router:` block entirely produces [RouterTunables.defaults], so the
+/// loaded policy is byte-for-byte the historical hard-coded behaviour.
+///
+/// [cooldownByClass] semantics: `null` means "the operator did not
+/// configure a schedule — use [RouterPolicy.defaultCooldowns]". A
+/// non-null map is the operator's **complete** schedule: a failure class
+/// absent from the map gets zero cooldown (handled by retry), exactly
+/// as [RouterPolicy] treats an absent key. The map never *patches* the
+/// defaults — that would make "which cooldown applies" depend on a
+/// hidden merge, which is the ambiguity the explicit-replace rule
+/// avoids.
+final class RouterTunables {
+  /// Per-[LlmFailureClass] cooldown window, or `null` to defer to
+  /// [RouterPolicy.defaultCooldowns]. When non-null this is the full
+  /// schedule (absent classes ⇒ zero cooldown).
+  final Map<LlmFailureClass, Duration>? cooldownByClass;
+
+  /// In-route retry count for `retryThenRotate` failure classes.
+  final int retriesPerClass;
+
+  /// Base for the jittered backoff inserted before an `overloaded`
+  /// retry.
+  final Duration overloadedBackoff;
+
+  /// Constructs router tunables. Validation (non-negativity) lives in
+  /// the loader's parser and in [RouterPolicy]'s constructor; this
+  /// value class trusts its caller (the loader is the only producer
+  /// outside tests).
+  const RouterTunables({
+    this.cooldownByClass,
+    this.retriesPerClass = RouterPolicy.defaultRetriesPerClass,
+    this.overloadedBackoff = RouterPolicy.defaultOverloadedBackoff,
+  });
+
+  /// The all-defaults tunables — used when the `router:` block is
+  /// omitted. Equivalent to constructing a [RouterPolicy] with no
+  /// tunable arguments.
+  static const RouterTunables defaults = RouterTunables();
+}
+
 /// The embedding choice — which provider + model the substrate uses
 /// for `EmbeddingService.embed()` calls (spec § 9, § 7.2).
 ///
@@ -472,6 +523,11 @@ final class SubstrateConfig {
   /// `EmbeddingService` per process from this value.
   final EmbeddingChoice embedding;
 
+  /// Router failover tunables (cooldowns / retry budget / overloaded
+  /// backoff). Defaults to [RouterTunables.defaults] when the
+  /// `router:` block is omitted.
+  final RouterTunables router;
+
   /// Web-search subsystem configuration.
   final WebSearchConfig webSearch;
 
@@ -492,6 +548,7 @@ final class SubstrateConfig {
     required this.webSearch,
     required this.webFetch,
     required this.mcpClient,
+    this.router = RouterTunables.defaults,
     this.priceTable = const {},
   });
 
@@ -515,13 +572,13 @@ final class SubstrateConfig {
   ///
   /// Spec § 5.1 / § 5.3: the policy's `roleRoutes` map carries
   /// runtime [RouteEntry] rows in declaration order; ordering IS
-  /// the tier policy. The cooldown schedule and retry budget come
-  /// from [RouterPolicy.defaultCooldowns] /
-  /// [RouterPolicy.defaultRetriesPerClass] /
-  /// [RouterPolicy.defaultOverloadedBackoff] — the YAML schema
-  /// does not currently expose router-tunable knobs (they are
-  /// substrate-internal defaults; a future schema bump can lift
-  /// them onto the YAML if operators need to adjust).
+  /// the tier policy. The cooldown schedule, retry budget, and
+  /// overloaded-backoff window come from the [router] tunables
+  /// (spec § 9 `substrate.router`, Q-B.36.2). When [router] is
+  /// [RouterTunables.defaults] (the `router:` block was omitted),
+  /// `cooldownByClass` is `null`, so [RouterPolicy] supplies its
+  /// own [RouterPolicy.defaultCooldowns] — `RouterPolicy` stays the
+  /// single source of truth for the default schedule.
   ///
   /// Pure value-to-value transform — no provider construction, no
   /// network access. The facade composes this with its provider
@@ -539,7 +596,12 @@ final class SubstrateConfig {
           )
           .toList(growable: false);
     }
-    return RouterPolicy(roleRoutes: routes);
+    return RouterPolicy(
+      roleRoutes: routes,
+      cooldownByClass: router.cooldownByClass,
+      retriesPerClass: router.retriesPerClass,
+      overloadedBackoff: router.overloadedBackoff,
+    );
   }
 
   /// Cross-validates that every role id in [roleRoutes] is

@@ -61,6 +61,8 @@ import 'package:tom_core_agentic/tom_core_agentic.dart';
 import 'package:yaml/yaml.dart';
 
 import '../mcp_client/mcp_auth.dart' show McpAuthConfig;
+import '../router/llm_failure_classifier.dart' show LlmFailureClass;
+import '../router/router_policy.dart' show RouterPolicy;
 import 'substrate_config.dart';
 
 /// Parses + materialises [SubstrateConfig] from YAML.
@@ -151,6 +153,8 @@ abstract final class SubstrateConfigLoader {
     );
     final embedding = _parseEmbedding(embeddingNode);
 
+    final router = _parseRouter(_optionalMap(node, 'router'));
+
     final webSearch = _parseWebSearch(
       _optionalMap(node, 'webSearch'),
       env,
@@ -183,6 +187,7 @@ abstract final class SubstrateConfigLoader {
       providers: providers,
       roleRoutes: roleRoutes,
       embedding: embedding,
+      router: router,
       webSearch: webSearch,
       webFetch: webFetch,
       mcpClient: mcpClient,
@@ -532,6 +537,90 @@ abstract final class SubstrateConfigLoader {
       dims: dims,
       normalize: normalize,
     );
+  }
+
+  static RouterTunables _parseRouter(YamlMap? node) {
+    // Omitted block ⇒ all-defaults (cooldownByClass left null so
+    // RouterPolicy supplies its own default schedule).
+    if (node == null) return RouterTunables.defaults;
+
+    final retries = _optionalInt(
+          node,
+          'retriesPerClass',
+          'substrate.router.retriesPerClass',
+        ) ??
+        RouterPolicy.defaultRetriesPerClass;
+    if (retries < 0) {
+      throw const SubstrateConfigException(
+        'substrate.router.retriesPerClass must be >= 0.',
+      );
+    }
+
+    final backoffMs = _optionalInt(
+          node,
+          'overloadedBackoffMs',
+          'substrate.router.overloadedBackoffMs',
+        ) ??
+        RouterPolicy.defaultOverloadedBackoff.inMilliseconds;
+    if (backoffMs < 0) {
+      throw const SubstrateConfigException(
+        'substrate.router.overloadedBackoffMs must be >= 0.',
+      );
+    }
+
+    final cooldownByClass = _parseCooldowns(
+      _optionalMap(node, 'cooldownsSeconds'),
+    );
+
+    return RouterTunables(
+      cooldownByClass: cooldownByClass,
+      retriesPerClass: retries,
+      overloadedBackoff: Duration(milliseconds: backoffMs),
+    );
+  }
+
+  /// Parses `substrate.router.cooldownsSeconds` into a
+  /// per-[LlmFailureClass] cooldown map keyed by the class's
+  /// kebab-case `code` (e.g. `rate_limit`, `billing`).
+  ///
+  /// Returns `null` when the block is omitted — the caller leaves
+  /// `RouterTunables.cooldownByClass` null so `RouterPolicy` falls
+  /// back to its default schedule. A present block is the operator's
+  /// **complete** schedule (a class absent from it gets zero cooldown
+  /// at the policy layer); an unknown class code is a hard error so a
+  /// typo is never silently dropped.
+  static Map<LlmFailureClass, Duration>? _parseCooldowns(YamlMap? node) {
+    if (node == null) return null;
+    final result = <LlmFailureClass, Duration>{};
+    for (final keyDyn in node.keys) {
+      if (keyDyn is! String) {
+        throw SubstrateConfigException(
+          'substrate.router.cooldownsSeconds keys must be strings '
+          '(got ${keyDyn.runtimeType}).',
+        );
+      }
+      final code = keyDyn;
+      final cls = LlmFailureClass.fromCode(code);
+      if (cls == null) {
+        throw SubstrateConfigException(
+          'substrate.router.cooldownsSeconds key "$code" is not a known '
+          'LLM failure class (known: '
+          '${LlmFailureClass.values.map((c) => c.code).toList()}).',
+        );
+      }
+      final seconds = _requireInt(
+        node,
+        code,
+        'substrate.router.cooldownsSeconds.$code',
+      );
+      if (seconds < 0) {
+        throw SubstrateConfigException(
+          'substrate.router.cooldownsSeconds.$code must be >= 0.',
+        );
+      }
+      result[cls] = Duration(seconds: seconds);
+    }
+    return Map<LlmFailureClass, Duration>.unmodifiable(result);
   }
 
   static WebSearchConfig _parseWebSearch(
