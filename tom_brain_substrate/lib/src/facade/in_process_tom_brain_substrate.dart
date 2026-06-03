@@ -115,6 +115,8 @@
 
 import 'dart:async';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart';
+
 import '../api/embedding_result.dart';
 import '../api/llm_call.dart';
 import '../api/llm_stream_event.dart';
@@ -189,7 +191,8 @@ McpClient _defaultMcpClientFactory(McpEndpoint endpoint) {
 /// [AnchorRegistry.currentHash]; a mismatch throws [AnchorViolation]
 /// before the consumer observes the report. The conformance test at
 /// B.46 proves no public path bypasses the check.
-final class InProcessTomBrainSubstrate extends TomBrainSubstrate {
+final class InProcessTomBrainSubstrate extends TomBrainSubstrate
+    with CloseGuard {
   final RoleRegistry _roleRegistry;
   final Map<String, LlmProvider> _providers;
   final LlmRouter _router;
@@ -205,9 +208,6 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate {
   /// hooks (price-table lookup in cost reporting, provider lookup
   /// for diagnostics) and for the [config] getter exposed to tests.
   SubstrateConfig? _config;
-
-  /// `true` once [close] has been called.
-  bool _closed = false;
 
   /// Monotonic per-substrate call counter. Incremented on every
   /// [complete] / [completeStream]; folded into the substrate-side
@@ -300,9 +300,6 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate {
   /// The bound router. Exposed read-only for tests / inspectors.
   LlmRouter get router => _router;
 
-  /// `true` once [close] has been called.
-  bool get isClosed => _closed;
-
   // ─── Lifecycle ───────────────────────────────────────────────
 
   @override
@@ -317,8 +314,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate {
 
   @override
   Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
 
     // Close cached MCP clients first so any in-flight server-side
     // sessions terminate before the bus closes (event drainage).
@@ -587,13 +583,8 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate {
 
   // ─── Internal helpers ────────────────────────────────────────
 
-  void _ensureNotClosed(String op) {
-    if (_closed) {
-      throw StateError(
-        'InProcessTomBrainSubstrate.$op called after close().',
-      );
-    }
-  }
+  void _ensureNotClosed(String op) =>
+      ensureOpen('InProcessTomBrainSubstrate.$op');
 
   String _allocateCallId() {
     _callCounter++;

@@ -36,6 +36,7 @@ import 'dart:async';
 
 import 'package:dart_mcp/client.dart' as mcp;
 import 'package:dart_mcp/server.dart' as mcp_proto;
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 import 'mcp_errors.dart';
 import 'mcp_transport.dart';
@@ -121,11 +122,10 @@ final class McpToolResult {
 ///
 /// A single [McpClient] may hold any number of concurrent
 /// [McpSession]s (one per [McpTransport]).
-final class McpClient {
+final class McpClient with CloseGuard {
   final McpClientIdentity identity;
   final mcp.MCPClient _mcp;
   final _sessions = <McpSession>{};
-  bool _closed = false;
 
   McpClient({required this.identity})
       : _mcp = mcp.MCPClient(mcp.Implementation(
@@ -145,7 +145,7 @@ final class McpClient {
   ///     unsupported protocol version or any other initialize
   ///     malformation.
   Future<McpSession> connect(McpTransport transport) async {
-    if (_closed) {
+    if (isClosed) {
       throw StateError(
         'McpClient(${identity.name}) is closed; '
         'create a new client to connect again.',
@@ -237,8 +237,7 @@ final class McpClient {
 
   /// Closes all open sessions and the underlying dart_mcp client.
   Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
     final sessions = _sessions.toList(growable: false);
     _sessions.clear();
     for (final session in sessions) {
@@ -252,7 +251,7 @@ final class McpClient {
 
 /// A single open MCP session backed by an [McpTransport] and a
 /// dart_mcp [mcp.ServerConnection].
-final class McpSession {
+final class McpSession with CloseGuard {
   final McpTransport _transport;
   final mcp.ServerConnection _connection;
   final void Function(McpSession) _onClose;
@@ -262,8 +261,6 @@ final class McpSession {
 
   /// Negotiated MCP protocol version.
   final mcp_proto.ProtocolVersion protocolVersion;
-
-  bool _closed = false;
 
   McpSession._({
     required McpTransport transport,
@@ -329,8 +326,7 @@ final class McpSession {
   /// Closes this session and tears down the underlying transport.
   /// Idempotent.
   Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
     try {
       await _connection.shutdown();
     } catch (_) {/* best effort */}
@@ -341,7 +337,7 @@ final class McpSession {
   }
 
   void _assertOpen() {
-    if (_closed) {
+    if (isClosed) {
       throw StateError(
         'McpSession(${_transport.id}) is closed.',
       );

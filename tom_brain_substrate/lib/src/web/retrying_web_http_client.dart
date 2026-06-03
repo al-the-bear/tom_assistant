@@ -295,7 +295,7 @@ final class BreakerSnapshot {
 ///
 /// The provider / fetch code does not change; the retry / breaker
 /// layer is invisible to them.
-class RetryingWebHttpClient implements WebHttpClient {
+class RetryingWebHttpClient with CloseGuard implements WebHttpClient {
   final WebHttpClient _inner;
   final WebRetryPolicy retryPolicy;
   final WebCircuitBreakerPolicy breakerPolicy;
@@ -311,7 +311,6 @@ class RetryingWebHttpClient implements WebHttpClient {
   final String Function(Uri)? _breakerKey;
 
   final Map<String, _BreakerEntry> _breakers = <String, _BreakerEntry>{};
-  bool _closed = false;
 
   RetryingWebHttpClient({
     required WebHttpClient inner,
@@ -657,16 +656,11 @@ class RetryingWebHttpClient implements WebHttpClient {
     }
   }
 
-  void _checkOpen() {
-    if (_closed) {
-      throw StateError('RetryingWebHttpClient called after close()');
-    }
-  }
+  void _checkOpen() => ensureOpen('RetryingWebHttpClient');
 
   @override
   void close() {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
     if (_ownsInner) {
       _inner.close();
     }

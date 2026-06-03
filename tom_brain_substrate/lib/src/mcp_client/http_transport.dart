@@ -61,12 +61,13 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:stream_channel/stream_channel.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 import 'mcp_errors.dart';
 import 'mcp_transport.dart';
 
 /// Streamable HTTP MCP transport (POST + JSON response subset).
-final class HttpMcpTransport implements McpTransport {
+final class HttpMcpTransport with CloseGuard implements McpTransport {
   @override
   final String id;
 
@@ -95,7 +96,6 @@ final class HttpMcpTransport implements McpTransport {
   final _doneCompleter = Completer<void>();
   StreamChannelController<String>? _controller;
   bool _connected = false;
-  bool _closed = false;
 
   HttpMcpTransport({
     required this.id,
@@ -146,7 +146,7 @@ final class HttpMcpTransport implements McpTransport {
     String line,
     StreamChannelController<String> controller,
   ) async {
-    if (_closed) return;
+    if (isClosed) return;
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -225,7 +225,7 @@ final class HttpMcpTransport implements McpTransport {
     StreamChannelController<String> controller,
     McpClientException error,
   ) {
-    if (_closed) return;
+    if (isClosed) return;
     if (!_doneCompleter.isCompleted) {
       _doneCompleter.completeError(error);
     }
@@ -240,8 +240,7 @@ final class HttpMcpTransport implements McpTransport {
 
   @override
   Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
     final controller = _controller;
     if (controller != null) {
       try {

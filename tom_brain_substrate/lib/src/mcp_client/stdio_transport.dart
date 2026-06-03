@@ -28,6 +28,7 @@ import 'dart:io' as io;
 
 import 'package:async/async.dart' show StreamSinkTransformer;
 import 'package:stream_channel/stream_channel.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 import 'mcp_errors.dart';
 import 'mcp_transport.dart';
@@ -37,7 +38,7 @@ import 'mcp_transport.dart';
 /// Use the [StdioMcpTransport.process] factory to spawn a child
 /// process; use [StdioMcpTransport.streams] when wrapping pre-built
 /// byte streams (test fixtures, hand-spawned processes, …).
-final class StdioMcpTransport implements McpTransport {
+final class StdioMcpTransport with CloseGuard implements McpTransport {
   @override
   final String id;
 
@@ -47,7 +48,6 @@ final class StdioMcpTransport implements McpTransport {
   io.Process? _process;
   StreamChannel<String>? _channel;
   final _doneCompleter = Completer<void>();
-  bool _closed = false;
   bool _connected = false;
 
   StdioMcpTransport._(
@@ -129,7 +129,7 @@ final class StdioMcpTransport implements McpTransport {
     if (process != null) {
       unawaited(
         process.exitCode.then((code) {
-          if (_closed) {
+          if (isClosed) {
             if (!_doneCompleter.isCompleted) _doneCompleter.complete();
             return;
           }
@@ -180,8 +180,7 @@ final class StdioMcpTransport implements McpTransport {
 
   @override
   Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
 
     final channel = _channel;
     if (channel != null && _closeOnDispose) {

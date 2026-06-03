@@ -41,6 +41,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 import 'package:tom_core_kernel/tom_core_kernel.dart' as kernel;
 
 import 'web_http_client.dart';
@@ -60,11 +61,10 @@ import 'web_http_client.dart';
 ///     `MockClient`-backed factory without touching the global state.
 ///   - When constructed with a caller-supplied `client`, that client
 ///     is used directly and never closed by [close] (caller-owned).
-class TomKernelWebHttpClient implements WebHttpClient {
+class TomKernelWebHttpClient with CloseGuard implements WebHttpClient {
   final kernel.TomHttpClientFactory? _factory;
   http.Client? _client;
   final bool _ownsClient;
-  bool _closed = false;
 
   /// Default construction: pulls a `package:http.Client` from a
   /// `kernel.TomHttpClientFactory()` on first use. The acquired client
@@ -82,9 +82,7 @@ class TomKernelWebHttpClient implements WebHttpClient {
         _ownsClient = false;
 
   http.Client _acquire() {
-    if (_closed) {
-      throw StateError('TomKernelWebHttpClient called after close()');
-    }
+    ensureOpen('TomKernelWebHttpClient');
     final cached = _client;
     if (cached != null) return cached;
     final factory = _factory!;
@@ -234,8 +232,7 @@ class TomKernelWebHttpClient implements WebHttpClient {
 
   @override
   void close() {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
     if (_ownsClient) {
       _client?.close();
     }

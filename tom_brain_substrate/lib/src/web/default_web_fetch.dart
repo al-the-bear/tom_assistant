@@ -27,6 +27,8 @@
 
 import 'dart:convert';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart';
+
 import '../api/web_results.dart';
 import 'html_readable_extractor.dart';
 import 'web_fetch.dart';
@@ -75,7 +77,7 @@ import 'web_http_client.dart';
 /// **Lifecycle:** [close] forwards to the underlying
 /// [WebHttpClient] when this engine owns it (i.e. the caller did not
 /// inject one). Idempotent.
-class DefaultWebFetch implements WebFetch {
+class DefaultWebFetch with CloseGuard implements WebFetch {
   /// Substrate-wide budget when the caller does not pin one.
   /// Default 256 KiB per `substrate_specification.md` § 9
   /// (`webFetch.defaultBudgetBytes`).
@@ -109,7 +111,6 @@ class DefaultWebFetch implements WebFetch {
 
   final WebHttpClient _http;
   final bool _ownsClient;
-  bool _closed = false;
 
   DefaultWebFetch({
     WebHttpClient? httpClient,
@@ -139,9 +140,7 @@ class DefaultWebFetch implements WebFetch {
     Uri url, {
     WebFetchOptions options = WebFetchOptions.empty,
   }) async {
-    if (_closed) {
-      throw StateError('DefaultWebFetch.fetch called after close()');
-    }
+    ensureOpen('DefaultWebFetch.fetch');
     if (options.method != 'GET') {
       throw ArgumentError.value(
         options.method,
@@ -276,8 +275,7 @@ class DefaultWebFetch implements WebFetch {
 
   @override
   void close() {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
     if (_ownsClient) {
       _http.close();
     }

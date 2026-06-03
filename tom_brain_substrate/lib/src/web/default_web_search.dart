@@ -14,6 +14,8 @@
 // `webSearch.providers` map; B.40 (substrate facade) will hand the
 // registered instance to the in-process facade.
 
+import 'package:tom_core_agentic/tom_core_agentic.dart';
+
 import '../api/web_results.dart';
 import 'web_search.dart';
 import 'web_search_provider.dart';
@@ -46,11 +48,10 @@ import 'web_search_provider.dart';
 ///
 ///   - [close] forwards `close()` to every registered provider, in
 ///     registration order. Idempotent.
-class DefaultWebSearch implements WebSearch {
+class DefaultWebSearch with CloseGuard implements WebSearch {
   final String defaultProviderId;
   final Map<String, WebSearchProvider> _providers;
   final List<String> _registrationOrder;
-  bool _closed = false;
 
   DefaultWebSearch({
     required this.defaultProviderId,
@@ -98,9 +99,7 @@ class DefaultWebSearch implements WebSearch {
     String query, {
     WebSearchOptions options = WebSearchOptions.empty,
   }) async {
-    if (_closed) {
-      throw StateError('DefaultWebSearch.search called after close()');
-    }
+    ensureOpen('DefaultWebSearch.search');
     final providerId = options.provider ?? defaultProviderId;
     final provider = _providers[providerId];
     if (provider == null) {
@@ -114,8 +113,7 @@ class DefaultWebSearch implements WebSearch {
 
   @override
   void close() {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
     for (final id in _registrationOrder) {
       _providers[id]!.close();
     }

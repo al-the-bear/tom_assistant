@@ -18,6 +18,7 @@
 // it might be handed.
 
 import 'package:stream_channel/stream_channel.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 import 'mcp_transport.dart';
 
@@ -30,7 +31,7 @@ import 'mcp_transport.dart';
 /// down. Tests that want to drive the channel from both sides set
 /// it to `false` so the test can keep using the channel after the
 /// client has closed.
-final class ChannelMcpTransport implements McpTransport {
+final class ChannelMcpTransport with CloseGuard implements McpTransport {
   @override
   final String id;
 
@@ -38,7 +39,6 @@ final class ChannelMcpTransport implements McpTransport {
   final bool _closeChannelOnClose;
 
   bool _connected = false;
-  bool _closed = false;
 
   ChannelMcpTransport(
     this._channel, {
@@ -63,8 +63,7 @@ final class ChannelMcpTransport implements McpTransport {
 
   @override
   Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
+    if (!markClosed()) return;
     if (_closeChannelOnClose) {
       await _channel.sink.close();
     }
