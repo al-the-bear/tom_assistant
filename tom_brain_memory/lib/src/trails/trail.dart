@@ -57,12 +57,12 @@ final class TrailOutcome {
   /// Wall-clock elapsed for the whole run, in milliseconds.
   final int elapsedMs;
 
-  const TrailOutcome({
+  TrailOutcome({
     required this.status,
     required this.summary,
-    this.details = const <String, Object?>{},
+    Map<String, Object?> details = const <String, Object?>{},
     this.elapsedMs = 0,
-  });
+  }) : details = Map<String, Object?>.unmodifiable(details);
 
   /// The canonical JSON shape of this outcome.
   ///

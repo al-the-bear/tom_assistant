@@ -142,7 +142,7 @@ void main() {
       }
       await store.closeTrail(
         id,
-        const TrailOutcome(
+        TrailOutcome(
           status: TrailOutcomeStatus.accepted,
           summary: 'closed for A.48 test',
           elapsedMs: 0,

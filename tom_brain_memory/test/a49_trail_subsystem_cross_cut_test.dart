@@ -164,7 +164,7 @@ void main() {
 
         await store.closeTrail(
           id,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.accepted,
             summary: '4',
             details: <String, Object?>{'tokens': 14},
@@ -250,7 +250,7 @@ void main() {
         );
         await firstStore.closeTrail(
           id,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.accepted,
             summary: 'restart-roundtrip',
             elapsedMs: 0,
@@ -311,7 +311,7 @@ void main() {
         final jsonlPath = pathRow['jsonl_path'] as String;
         await store.closeTrail(
           id,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.accepted,
             summary: 'order-100',
             elapsedMs: 0,
@@ -380,7 +380,7 @@ void main() {
         final jsonlPath = pathRow['jsonl_path'] as String;
         await store.closeTrail(
           id,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.accepted,
             summary: 'survived-bad-append',
             elapsedMs: 0,
@@ -412,7 +412,7 @@ void main() {
         await store.appendTrail(id, TrailEntry.note('second'));
         await store.closeTrail(
           id,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.accepted,
             summary: 'event-order',
             elapsedMs: 5,
@@ -455,7 +455,7 @@ void main() {
         final id = await store.openTrail(runRef);
         await store.appendTrail(id, TrailEntry.note('only line before close'));
 
-        const outcome = TrailOutcome(
+        final outcome = TrailOutcome(
           status: TrailOutcomeStatus.accepted,
           summary: 'parity-check',
           details: <String, Object?>{'note': 'on-disk and SQL must agree'},
@@ -557,7 +557,7 @@ void main() {
         );
         await recoveryStore.closeTrail(
           recoveryId,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.accepted,
             summary: 'recovery-after-crash',
             elapsedMs: 0,

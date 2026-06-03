@@ -1076,7 +1076,7 @@ void _runConformance(_AdapterDriver driver) {
         await c.appendTrail(tid, TrailEntry.note('one'));
         await c.appendTrail(tid, TrailEntry.note('two'));
         await c.closeTrail(tid,
-            const TrailOutcome(
+            TrailOutcome(
               status: TrailOutcomeStatus.accepted,
               summary: 'ok',
             ));

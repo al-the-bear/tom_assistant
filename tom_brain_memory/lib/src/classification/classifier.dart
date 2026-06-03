@@ -218,14 +218,16 @@ final class Classifier {
   static String _stripPrefix(String key, String prefix) {
     // Defensive — `readAll(prefix: ...)` guarantees the prefix is
     // present, but stripping a non-prefixed string would silently
-    // produce wrong output. If the assumption ever breaks (e.g. a
-    // future migration writes a different key shape), the classifier
-    // surfaces it.
-    assert(
-      key.startsWith(prefix),
-      'Classifier: centroid key "$key" missing expected '
-      'namespace prefix "$prefix"',
-    );
+    // produce wrong output. This is a decode of a value crossing from
+    // the centroid store, so it must fail in release too (an `assert`
+    // is compiled out): throw if a future migration ever writes a
+    // different key shape.
+    if (!key.startsWith(prefix)) {
+      throw StateError(
+        'Classifier: centroid key "$key" missing expected '
+        'namespace prefix "$prefix"',
+      );
+    }
     return key.substring(prefix.length);
   }
 }

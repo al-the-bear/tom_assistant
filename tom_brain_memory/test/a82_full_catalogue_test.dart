@@ -915,7 +915,7 @@ void main() {
 
         await client.closeTrail(
           tid,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.accepted,
             summary: 'all-good',
           ),

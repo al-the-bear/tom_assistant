@@ -207,6 +207,20 @@ tests), listTools returns an empty list.
          instructions: readOnlyInstructions,
        ) {
     if (memory != null) {
+      // The v1 surface includes `memory.persistNote`, a write. With no
+      // authenticator every caller is anonymous — fine for an in-process
+      // embedded binding, but a hazard if an operator binds this to a
+      // socket transport. We cannot tell the transport apart from the
+      // generic channel here, so surface the exposure loudly rather than
+      // let an anonymous write-capable server start silently.
+      if (authenticator == null) {
+        MemoryLog.mcp.warn(
+          () => 'mcp server built write-capable (memory.persistNote) '
+              'with no authenticator — every caller is anonymous. This is '
+              'safe only for an in-process / stdio binding; require a '
+              'BearerTokenAuthenticator before exposing a socket transport.',
+        );
+      }
       registerMemoryTools(
         this,
         memory,

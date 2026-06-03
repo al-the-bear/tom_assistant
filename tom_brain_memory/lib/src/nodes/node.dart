@@ -91,14 +91,14 @@ final class Node {
   /// Lifecycle status.
   final NodeStatus status;
 
-  const Node({
+  Node({
     required this.id,
     required this.typeName,
-    required this.values,
+    required Map<String, Object?> values,
     required this.createdAt,
     this.embedding,
     this.status = NodeStatus.active,
-  });
+  }) : values = Map<String, Object?>.unmodifiable(values);
 
   @override
   bool operator ==(Object other) {

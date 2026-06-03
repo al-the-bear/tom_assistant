@@ -222,10 +222,16 @@ final class Bm25Recall {
   /// Strategy:
   ///
   ///   1. Split on whitespace.
-  ///   2. For each token, keep only word characters (`[A-Za-z0-9_]`)
-  ///      — anything that FTS5's `unicode61` tokeniser would
-  ///      consider a token boundary anyway is stripped here to keep
-  ///      the MATCH expression unambiguous.
+  ///   2. For each token, keep only Unicode word characters
+  ///      (`\p{L}`, `\p{N}`, `_`) — punctuation and FTS5 operator
+  ///      characters are stripped so the quoted phrase cannot break
+  ///      out into a MATCH operator. Accented letters are deliberately
+  ///      *kept*: the index-side `unicode61 remove_diacritics 2`
+  ///      tokeniser (see [Fts5Catalog.defaultTokeniser]) folds them to
+  ///      their base form, and FTS5 applies that same tokeniser to the
+  ///      query term, so "résumé" here matches "resume" in the index.
+  ///      Stripping non-ASCII letters (the old `[A-Za-z0-9_]` rule)
+  ///      silently broke that match.
   ///   3. Drop empty tokens.
   ///   4. Wrap each token in double quotes (FTS5 phrase / column
   ///      literal). This avoids accidental MATCH operators in user
@@ -242,7 +248,8 @@ final class Bm25Recall {
     final tokens = <String>[];
     for (final raw in text.split(RegExp(r'\s+'))) {
       if (raw.isEmpty) continue;
-      final cleaned = raw.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '');
+      final cleaned =
+          raw.replaceAll(RegExp(r'[^\p{L}\p{N}_]', unicode: true), '');
       if (cleaned.isEmpty) continue;
       tokens.add('"$cleaned"');
     }

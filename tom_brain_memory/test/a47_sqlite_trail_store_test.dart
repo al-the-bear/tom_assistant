@@ -286,7 +286,7 @@ void main() {
         clock.advance(const Duration(seconds: 1));
         final closeAt = clock.now();
 
-        const outcome = TrailOutcome(
+        final outcome = TrailOutcome(
           status: TrailOutcomeStatus.accepted,
           summary: 'answered the question',
           details: <String, Object?>{'cite': 'n_x'},
@@ -335,7 +335,7 @@ void main() {
         await store.appendTrail(id, TrailEntry.note('one'));
         await store.closeTrail(
           id,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.accepted,
             summary: 'ok',
           ),
@@ -355,7 +355,7 @@ void main() {
         final id = await store.openTrail(runRef);
         await store.closeTrail(
           id,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.aborted,
             summary: 'caller aborted before work',
             elapsedMs: 0,
@@ -393,7 +393,7 @@ void main() {
         await store.appendTrail(id, TrailEntry.note('mid'));
         await store.closeTrail(
           id,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.accepted,
             summary: 'done',
             elapsedMs: 12,
@@ -421,7 +421,7 @@ void main() {
         await store.appendTrail(id, TrailEntry.note('only'));
         await store.closeTrail(
           id,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.accepted,
             summary: 'one-liner',
           ),
@@ -451,7 +451,7 @@ void main() {
         await store.appendTrail(id, TrailEntry.note('good-1'));
         await store.closeTrail(
           id,
-          const TrailOutcome(
+          TrailOutcome(
             status: TrailOutcomeStatus.accepted,
             summary: 'wrap',
           ),

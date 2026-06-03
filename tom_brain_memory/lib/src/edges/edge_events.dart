@@ -58,7 +58,7 @@ final class EdgeCreated extends MemoryEvent {
   /// `attrs`.
   final Map<String, Object?> attrs;
 
-  const EdgeCreated({
+  EdgeCreated({
     required this.edgeId,
     required this.from,
     required this.type,
@@ -66,11 +66,11 @@ final class EdgeCreated extends MemoryEvent {
     required this.fromTypeName,
     required this.toTypeName,
     required this.weight,
-    required this.attrs,
+    required Map<String, Object?> attrs,
     required super.occurredAt,
     super.runId,
     super.causedBy,
-  });
+  }) : attrs = Map<String, Object?>.unmodifiable(attrs);
 
   @override
   String get kind => 'memory.edge-created';

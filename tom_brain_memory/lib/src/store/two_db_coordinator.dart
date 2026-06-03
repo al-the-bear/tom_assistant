@@ -95,6 +95,8 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart' show blobFromColumn;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
+import 'transaction_support.dart';
+
 /// The vector half of a pending two-DB write.
 ///
 /// Owned exclusively by [TwoDbCoordinator]. Carries every byte needed
@@ -376,9 +378,9 @@ final class TwoDbCoordinator {
         );
       }
       _memoryDb.execute('COMMIT');
-    } catch (_) {
-      _memoryDb.execute('ROLLBACK');
-      rethrow;
+    } catch (error, stack) {
+      rollbackQuietly(_memoryDb);
+      Error.throwWithStackTrace(error, stack);
     }
 
     if (vector == null) {

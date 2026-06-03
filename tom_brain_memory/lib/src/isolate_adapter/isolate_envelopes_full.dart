@@ -125,7 +125,7 @@ final class GetNodeResponse extends IsolateResponse {
 
 final class GetManyRequest extends IsolateRequest {
   final List<NodeId> ids;
-  const GetManyRequest(this.ids);
+  GetManyRequest(List<NodeId> ids) : ids = List<NodeId>.unmodifiable(ids);
 }
 
 final class GetManyResponse extends IsolateResponse {
@@ -162,14 +162,15 @@ final class CreateEdgeRequest extends IsolateRequest {
   final Scope scope;
   final double weight;
   final Map<String, Object?>? attrs;
-  const CreateEdgeRequest({
+  CreateEdgeRequest({
     required this.from,
     required this.type,
     required this.to,
     required this.scope,
     this.weight = 1.0,
-    this.attrs,
-  });
+    Map<String, Object?>? attrs,
+  }) : attrs =
+            attrs == null ? null : Map<String, Object?>.unmodifiable(attrs);
 }
 
 final class CreateEdgeResponse extends IsolateResponse {
@@ -354,13 +355,14 @@ final class StacksPushRequest extends IsolateRequest {
   final double priority;
   final Map<String, Object?>? attrs;
   final Scope? scope;
-  const StacksPushRequest({
+  StacksPushRequest({
     required this.name,
     required this.entry,
     this.priority = 0.0,
-    this.attrs,
+    Map<String, Object?>? attrs,
     this.scope,
-  });
+  }) : attrs =
+            attrs == null ? null : Map<String, Object?>.unmodifiable(attrs);
 }
 
 final class StacksPushResponse extends IsolateResponse {
@@ -508,10 +510,10 @@ final class MigrationsCursorResponse extends IsolateResponse {
 final class MigrationsSaveCursorRequest extends IsolateRequest {
   final String migrationId;
   final Map<String, Object?> position;
-  const MigrationsSaveCursorRequest({
+  MigrationsSaveCursorRequest({
     required this.migrationId,
-    required this.position,
-  });
+    required Map<String, Object?> position,
+  }) : position = Map<String, Object?>.unmodifiable(position);
 }
 
 final class MigrationsSaveCursorResponse extends IsolateResponse {

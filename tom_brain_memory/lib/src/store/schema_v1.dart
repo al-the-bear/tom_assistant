@@ -52,6 +52,8 @@
 
 import 'package:sqlite3/sqlite3.dart';
 
+import 'transaction_support.dart';
+
 /// Schema version produced by [applySchemaV1].
 ///
 /// The migrator (A.28) compares this against the highest row in the
@@ -415,9 +417,9 @@ void applySchemaV1(Database db) {
       <Object?>[schemaV1Version, nowMs, nowIso, schemaV1Summary],
     );
     db.execute('COMMIT');
-  } catch (_) {
-    db.execute('ROLLBACK');
-    rethrow;
+  } catch (error, stack) {
+    rollbackQuietly(db);
+    Error.throwWithStackTrace(error, stack);
   }
 }
 

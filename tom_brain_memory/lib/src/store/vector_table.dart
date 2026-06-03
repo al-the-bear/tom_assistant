@@ -130,6 +130,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart'
         sqlSafeIdentifier;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
+import 'transaction_support.dart';
 import 'vector_table_exception.dart';
 
 /// Lookup record for one installed embedding-model index.
@@ -578,22 +579,36 @@ final class VectorTable {
     final tableName = deriveTableName(modelId);
     final installedAt = BrainTime.now(_clock);
 
-    _vectorsDb.execute(
-      'INSERT INTO vector_indexes('
-      'model_id, table_name, dims, backend_name, '
-      'installed_at_ms, installed_at_iso'
-      ') VALUES (?, ?, ?, ?, ?, ?)',
-      <Object?>[
-        modelId,
-        tableName,
-        dims,
-        _backend.backendName,
-        installedAt.toMs(),
-        installedAt.toIso8601String(),
-      ],
-    );
+    // The meta row and the backing vector table must appear together or
+    // not at all — a crash between the two writes would otherwise leave
+    // a meta-row-without-table that `lookupIndex` reports as installed.
+    // Wrapping both in one transaction closes that gap at the source
+    // (the same-dims branch above is the recovery for pre-transaction
+    // rows that already crashed mid-install).
+    _vectorsDb.execute('BEGIN');
+    try {
+      _vectorsDb.execute(
+        'INSERT INTO vector_indexes('
+        'model_id, table_name, dims, backend_name, '
+        'installed_at_ms, installed_at_iso'
+        ') VALUES (?, ?, ?, ?, ?, ?)',
+        <Object?>[
+          modelId,
+          tableName,
+          dims,
+          _backend.backendName,
+          installedAt.toMs(),
+          installedAt.toIso8601String(),
+        ],
+      );
 
-    _backend.createIndex(_vectorsDb, tableName, dims);
+      _backend.createIndex(_vectorsDb, tableName, dims);
+
+      _vectorsDb.execute('COMMIT');
+    } catch (error, stack) {
+      rollbackQuietly(_vectorsDb);
+      Error.throwWithStackTrace(error, stack);
+    }
 
     return VectorIndexInfo(
       modelId: modelId,

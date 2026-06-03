@@ -38,19 +38,18 @@ final class Edge {
   /// none; `part_of` may carry `{'kind': 'depends_on'}` when used
   /// for plan-step dependency shapes (§ 4.1 `PlanStep`).
   ///
-  /// The map is held by reference. Consumers MUST treat it as
-  /// read-only; mutating it would silently change a value that other
-  /// readers hold.
+  /// Wrapped in an unmodifiable view at construction, so a consumer
+  /// cannot mutate a value other readers hold.
   final Map<String, Object?> attrs;
 
-  const Edge({
+  Edge({
     required this.id,
     required this.from,
     required this.type,
     required this.to,
     this.weight = 1.0,
-    this.attrs = const <String, Object?>{},
-  });
+    Map<String, Object?> attrs = const <String, Object?>{},
+  }) : attrs = Map<String, Object?>.unmodifiable(attrs);
 
   @override
   bool operator ==(Object other) {

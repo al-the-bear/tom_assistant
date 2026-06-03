@@ -64,6 +64,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import '../api/memory_event.dart';
 import '../edges/edge_type.dart';
 import '../retrieval/fts5_catalog.dart';
+import '../store/transaction_support.dart';
 import 'critique_hook.dart';
 import 'node_type_decl.dart';
 import 'node_type_events.dart';
@@ -541,9 +542,9 @@ final class NodeTypeRegistry {
         ],
       );
       _db.execute('COMMIT');
-    } catch (_) {
-      _db.execute('ROLLBACK');
-      rethrow;
+    } catch (error, stack) {
+      rollbackQuietly(_db);
+      Error.throwWithStackTrace(error, stack);
     }
   }
 
@@ -627,10 +628,23 @@ final class NodeTypeRegistry {
     if (raw is! Map) return result;
     for (final entry in raw.entries) {
       final key = entry.key as String;
-      final spec = entry.value as Map;
+      final spec = entry.value;
+      if (spec is! Map) {
+        throw StateError(
+          'node_type.schema["$key"] is not a JSON object: '
+          '${spec.runtimeType}',
+        );
+      }
+      final fieldType = spec['type'];
+      if (fieldType is! String) {
+        throw StateError(
+          'node_type.schema["$key"].type is not a string: '
+          '${fieldType.runtimeType}',
+        );
+      }
       result[key] = FieldSpec(
         name: key,
-        type: FieldType.values.byName(spec['type'] as String),
+        type: FieldType.values.byName(fieldType),
         nullable: (spec['nullable'] as bool?) ?? false,
         ftsEligible: (spec['fts'] as bool?) ?? false,
         vectorEligible: (spec['vector'] as bool?) ?? false,
@@ -648,12 +662,31 @@ final class NodeTypeRegistry {
   static EmbeddingPolicy _embeddingPolicyFromJson(Object? raw) {
     if (raw is! Map) return EmbeddingPolicy.none;
     if (raw['mode'] == 'none') return EmbeddingPolicy.none;
+    final modelIdentity = raw['model_identity'];
+    if (modelIdentity is! String) {
+      throw StateError(
+        'node_type.embedding.model_identity is not a string: '
+        '${modelIdentity.runtimeType}',
+      );
+    }
+    final dimensions = raw['dimensions'];
+    if (dimensions is! int) {
+      throw StateError(
+        'node_type.embedding.dimensions is not an int: '
+        '${dimensions.runtimeType}',
+      );
+    }
+    final sourceFields = raw['source_fields'];
+    if (sourceFields is! List) {
+      throw StateError(
+        'node_type.embedding.source_fields is not a list: '
+        '${sourceFields.runtimeType}',
+      );
+    }
     return EmbeddingPolicy(
-      modelIdentity: raw['model_identity'] as String,
-      dimensions: raw['dimensions'] as int,
-      sourceFields: List<String>.unmodifiable(
-        (raw['source_fields'] as List).cast<String>(),
-      ),
+      modelIdentity: modelIdentity,
+      dimensions: dimensions,
+      sourceFields: List<String>.unmodifiable(sourceFields.cast<String>()),
     );
   }
 

@@ -359,7 +359,7 @@ memory:
           );
           await trailStore.closeTrail(
             tid,
-            const TrailOutcome(
+            TrailOutcome(
               status: TrailOutcomeStatus.accepted,
               summary: 'seeded run completed',
               elapsedMs: 1,
@@ -695,7 +695,7 @@ memory:
       );
       await trailStore.closeTrail(
         tid,
-        const TrailOutcome(
+        TrailOutcome(
           status: TrailOutcomeStatus.accepted,
           summary: 'seeded run',
           elapsedMs: 1,

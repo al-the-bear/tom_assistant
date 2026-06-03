@@ -98,6 +98,7 @@ import '../classification/classification_result.dart';
 import '../edges/edge.dart';
 import '../edges/edge_type.dart';
 import '../nodes/node.dart';
+import '../observability/memory_log.dart';
 import '../retrieval/recall_query.dart';
 import '../retrieval/recall_result.dart';
 import '../stacks/stack_types.dart';
@@ -421,7 +422,16 @@ Future<CallToolResult> _runStackPeek(
   if (nameRaw is! String) {
     return _err('Argument "name" is required and must be a string.');
   }
-  final k = (args['k'] as int?) ?? 16;
+  final int k;
+  if (args['k'] == null) {
+    k = 16;
+  } else {
+    final parsedK = _coerceIntArg(args['k']);
+    if (parsedK == null || parsedK <= 0) {
+      return _err('Argument "k" must be a positive integer.');
+    }
+    k = parsedK;
+  }
   final entries = await memory.stacks.peek(nameRaw, k: k);
   return _ok({'entries': entries.map(_encodeStackEntry).toList()});
 }
@@ -481,7 +491,11 @@ Future<CallToolResult> _runPersistNote(
   if (args.containsKey('embedding') && embedding == null) {
     return _err('Argument "embedding" must be a non-empty list of numbers.');
   }
-  final idempotencyKey = args['idempotencyKey'] as String?;
+  final idempotencyKeyRaw = args['idempotencyKey'];
+  if (idempotencyKeyRaw != null && idempotencyKeyRaw is! String) {
+    return _err('Argument "idempotencyKey" must be a string when present.');
+  }
+  final idempotencyKey = idempotencyKeyRaw as String?;
 
   final principal = resolvePrincipal();
   final producer = principal != null
@@ -512,6 +526,7 @@ RecallQuery _parseRecallQuery(Map<String, Object?> args) {
   final seedsRaw = args['seeds'];
   if (seedsRaw is List) {
     final parsed = <NodeId>{};
+    var dropped = 0;
     for (final raw in seedsRaw) {
       if (raw is String) {
         try {
@@ -519,8 +534,20 @@ RecallQuery _parseRecallQuery(Map<String, Object?> args) {
         } on FormatException {
           // Skip malformed seeds rather than failing the whole call
           // — they reflect upstream drift, not a tool-shape error.
+          dropped++;
         }
+      } else {
+        dropped++;
       }
+    }
+    if (dropped > 0) {
+      // A silently dropped seed makes a "found nothing" result
+      // indistinguishable from a real miss; leave a trace so the
+      // upstream drift is diagnosable.
+      MemoryLog.mcp.warn(
+        () => 'recall: dropped $dropped malformed seed id(s) of '
+            '${seedsRaw.length} supplied.',
+      );
     }
     if (parsed.isNotEmpty) seeds = parsed;
   }
@@ -535,8 +562,12 @@ RecallQuery _parseRecallQuery(Map<String, Object?> args) {
   if (modes.isEmpty) {
     modes.add(RecallMode.bm25);
   }
-  final k = (args['k'] as int?) ?? 20;
-  final wallClockMs = (args['wallClockMs'] as int?) ?? 120;
+  // A present-but-malformed k / wallClockMs falls back to the default
+  // (recall is best-effort and the tool has no error channel here) but
+  // is logged so the drift is visible.
+  final k = _coerceIntArg(args['k']) ?? _logDefaulted('k', args['k'], 20);
+  final wallClockMs = _coerceIntArg(args['wallClockMs']) ??
+      _logDefaulted('wallClockMs', args['wallClockMs'], 120);
   return RecallQuery(
     modes: modes,
     text: text,
@@ -587,6 +618,40 @@ Vec? _parseEmbedding(Object? raw) {
     }
   }
   return Vec.fromList(values);
+}
+
+/// Coerces a JSON-decoded numeric argument to an `int`.
+///
+/// JSON has one number type, so an integer round-tripped through a
+/// client may arrive as `int` or as an integral `double` (`5.0`). Both
+/// are accepted. A `null` (absent argument) returns `null`; any other
+/// shape — a string, a fractional `double`, a non-finite `double` —
+/// also returns `null`, so a `as int?` cast can no longer throw a raw
+/// `TypeError` past the tool's `_err(...)` taxonomy. Callers decide
+/// whether `null` means "use the default" or "reject the argument".
+int? _coerceIntArg(Object? raw) {
+  if (raw == null) return null;
+  if (raw is int) return raw;
+  if (raw is num && raw.isFinite && raw == raw.roundToDouble()) {
+    return raw.toInt();
+  }
+  return null;
+}
+
+/// Returns [fallback], logging a warning only when [raw] was *present*
+/// but un-coercible (a missing argument is a normal default, not drift).
+///
+/// Used by best-effort parsers that have no `_err(...)` channel — a
+/// malformed numeric argument should not crash the call, but it should
+/// not vanish silently either.
+int _logDefaulted(String argName, Object? raw, int fallback) {
+  if (raw != null) {
+    MemoryLog.mcp.warn(
+      () => 'recall: argument "$argName" is not an integer '
+          '(${raw.runtimeType}); using default $fallback.',
+    );
+  }
+  return fallback;
 }
 
 // ─── Result encoders ──────────────────────────────────────────────

@@ -80,6 +80,11 @@ class TomBrainMemoryIsolateHost {
   TomWorker? _worker;
   _StreamRouter? _router;
   bool _spawnRequested = false;
+
+  /// Completes when the first [spawn] settles. Concurrent / repeat
+  /// callers await this instead of polling [_worker]; it carries the
+  /// spawn error through to every waiter when the first attempt throws.
+  final Completer<void> _spawnSettled = Completer<void>();
   bool _shutdownStarted = false;
   bool _shutdownComplete = false;
   bool _memoryOpen = false;
@@ -130,30 +135,34 @@ class TomBrainMemoryIsolateHost {
       );
     }
     if (_spawnRequested) {
-      // Wait for the in-flight spawn to settle.
-      while (_worker == null) {
-        await Future<void>.delayed(const Duration(milliseconds: 1));
-      }
-      return;
+      // Await the in-flight (or completed) spawn rather than polling.
+      // Propagates the spawn error to repeat callers too.
+      return _spawnSettled.future;
     }
     _spawnRequested = true;
-    final ctx = MemoryWorkerContext(
-      factory: factory,
-      tomEnvironment: environment,
-      tomPlatform: platform,
-      args: args,
-      namePrefix: namePrefix,
-    );
-    _worker = await TomWorker.spawn(TomWorker.startRemoteIsolate, ctx);
-    // A.81: install the creator-side router so the isolate can push
-    // stream chunks back to us via `sendToCreator(...)`.
-    _router = _StreamRouter(_streamSinks);
-    TomWorker.executors.add(_router!);
-    // A.84 — host spawn is a major lifecycle event; one `status`
-    // line so operators see the boot in any log filter.
-    MemoryLog.isolate.status(
-      () => 'isolate host spawned (namePrefix=$namePrefix)',
-    );
+    try {
+      final ctx = MemoryWorkerContext(
+        factory: factory,
+        tomEnvironment: environment,
+        tomPlatform: platform,
+        args: args,
+        namePrefix: namePrefix,
+      );
+      _worker = await TomWorker.spawn(TomWorker.startRemoteIsolate, ctx);
+      // A.81: install the creator-side router so the isolate can push
+      // stream chunks back to us via `sendToCreator(...)`.
+      _router = _StreamRouter(_streamSinks);
+      TomWorker.executors.add(_router!);
+      // A.84 — host spawn is a major lifecycle event; one `status`
+      // line so operators see the boot in any log filter.
+      MemoryLog.isolate.status(
+        () => 'isolate host spawned (namePrefix=$namePrefix)',
+      );
+      _spawnSettled.complete();
+    } catch (error, stack) {
+      _spawnSettled.completeError(error, stack);
+      rethrow;
+    }
   }
 
   /// Shuts the isolate down cleanly.

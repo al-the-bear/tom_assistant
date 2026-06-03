@@ -90,6 +90,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import '../api/memory_event.dart';
 import '../api/scope.dart';
+import '../store/transaction_support.dart';
 import 'node.dart';
 import 'node_events.dart';
 
@@ -343,9 +344,9 @@ final class NodeLifecycleManager {
       );
 
       _db.execute('COMMIT');
-    } catch (_) {
-      _db.execute('ROLLBACK');
-      rethrow;
+    } catch (error, stack) {
+      rollbackQuietly(_db);
+      Error.throwWithStackTrace(error, stack);
     }
 
     // Emit AFTER the COMMIT — a rolled-back transaction must not

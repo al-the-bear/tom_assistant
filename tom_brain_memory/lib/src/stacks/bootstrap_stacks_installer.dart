@@ -57,6 +57,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import '../api/memory_event.dart';
 import '../observability/memory_log.dart';
+import '../store/transaction_support.dart';
 import 'sqlite_stack_api.dart' show bootstrapStackNames;
 import 'stack_events.dart';
 import 'stack_types.dart';
@@ -374,9 +375,9 @@ BootstrapInstallReport installBootstrapStacks(
         ],
       );
       db.execute('COMMIT');
-    } catch (_) {
-      db.execute('ROLLBACK');
-      rethrow;
+    } catch (error, stack) {
+      rollbackQuietly(db);
+      Error.throwWithStackTrace(error, stack);
     }
 
     eventSink?.call(

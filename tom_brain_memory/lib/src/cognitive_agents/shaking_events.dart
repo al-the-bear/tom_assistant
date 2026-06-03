@@ -259,14 +259,15 @@ final class RetrievalConflict extends ShakingEvent {
   /// Carried for correlation; equals `min(5, perModeK)`.
   final int topK;
 
-  const RetrievalConflict({
-    required this.conflictingModes,
-    required this.topPerMode,
+  RetrievalConflict({
+    required List<RecallMode> conflictingModes,
+    required Map<RecallMode, List<NodeId>> topPerMode,
     required this.topK,
     required super.occurredAt,
     super.runId,
     super.causedBy,
-  });
+  })  : conflictingModes = List<RecallMode>.unmodifiable(conflictingModes),
+        topPerMode = Map<RecallMode, List<NodeId>>.unmodifiable(topPerMode);
 
   @override
   String get kind => '${ShakingEvent.kindPrefix}retrieval-conflict';

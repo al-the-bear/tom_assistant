@@ -195,15 +195,15 @@ final class StackEntry {
   /// Optional per-entry attributes.
   final Map<String, Object?> attrs;
 
-  const StackEntry({
+  StackEntry({
     required this.id,
     required this.stackName,
     required this.nodeId,
     required this.priority,
     required this.pushedAt,
     this.status = StackEntryStatus.active,
-    this.attrs = const <String, Object?>{},
-  });
+    Map<String, Object?> attrs = const <String, Object?>{},
+  }) : attrs = Map<String, Object?>.unmodifiable(attrs);
 }
 
 /// Kinds of `StackEvent` emitted on `StackApi.events`.

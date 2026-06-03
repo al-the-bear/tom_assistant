@@ -92,7 +92,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_core_agentic/tom_core_agentic.dart' show CloseGuard;
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show CloseGuard, decodeJsonObject;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show NodeId, StackEntryId;
 
@@ -100,6 +101,7 @@ import '../api/memory_event.dart';
 import '../api/scope.dart';
 import '../budget/write_budget_tracker.dart';
 import '../cognitive_agents/agent_registry.dart';
+import '../store/transaction_support.dart';
 import 'priority_policy.dart';
 import 'stack_api.dart';
 import 'stack_events.dart';
@@ -339,9 +341,9 @@ final class SqliteStackApi with CloseGuard implements StackApi {
         ],
       );
       _db.execute('COMMIT');
-    } catch (_) {
-      _db.execute('ROLLBACK');
-      rethrow;
+    } catch (error, stack) {
+      rollbackQuietly(_db);
+      Error.throwWithStackTrace(error, stack);
     }
 
     _eventSink?.call(
@@ -447,9 +449,9 @@ final class SqliteStackApi with CloseGuard implements StackApi {
         <Object?>[stackNodeId],
       );
       _db.execute('COMMIT');
-    } catch (_) {
-      _db.execute('ROLLBACK');
-      rethrow;
+    } catch (error, stack) {
+      rollbackQuietly(_db);
+      Error.throwWithStackTrace(error, stack);
     }
     // Close the per-stack event stream if one was minted — no one
     // should be subscribed to a deleted stack, and dangling
@@ -536,9 +538,9 @@ final class SqliteStackApi with CloseGuard implements StackApi {
       // and demotion (spec § 5.3).
       demotedIds = _enforceRetention(name, stackRow, at);
       _db.execute('COMMIT');
-    } catch (_) {
-      _db.execute('ROLLBACK');
-      rethrow;
+    } catch (error, stack) {
+      rollbackQuietly(_db);
+      Error.throwWithStackTrace(error, stack);
     }
 
     final event = StackPushed(
@@ -621,9 +623,9 @@ final class SqliteStackApi with CloseGuard implements StackApi {
       );
       _db.execute('COMMIT');
       popped = entry;
-    } catch (_) {
-      _db.execute('ROLLBACK');
-      rethrow;
+    } catch (error, stack) {
+      rollbackQuietly(_db);
+      Error.throwWithStackTrace(error, stack);
     }
 
     final at = _now().toUtc();
@@ -955,9 +957,7 @@ final class SqliteStackApi with CloseGuard implements StackApi {
         isUtc: true,
       ),
       status: _statusFromName(row['status'] as String),
-      attrs: attrsJson == null
-          ? const <String, Object?>{}
-          : Map<String, Object?>.from(jsonDecode(attrsJson) as Map),
+      attrs: decodeJsonObject(attrsJson, context: 'stack_entries.attrs_json'),
     );
   }
 
@@ -1009,15 +1009,15 @@ final class SqliteStackApi with CloseGuard implements StackApi {
   }
 
   String _summaryFromCanonicalNode(String? attrsJsonRaw) {
-    if (attrsJsonRaw == null) return '';
-    final attrs = jsonDecode(attrsJsonRaw) as Map<String, Object?>;
+    final attrs =
+        decodeJsonObject(attrsJsonRaw, context: 'canonical_node.attrs_json');
     return (attrs['summary'] as String?) ?? '';
   }
 
-  Map<String, Object?> _decodeAttrsJson(String? raw) {
-    if (raw == null || raw.isEmpty) return const <String, Object?>{};
-    return Map<String, Object?>.from(jsonDecode(raw) as Map);
-  }
+  Map<String, Object?> _decodeAttrsJson(String? raw) =>
+      raw == null || raw.isEmpty
+          ? const <String, Object?>{}
+          : decodeJsonObject(raw, context: 'stacks.policy_attrs_json');
 
   /// Refuses a policy bundle that crosses the
   /// [StackPolicyConfigInvalidReason] axes.

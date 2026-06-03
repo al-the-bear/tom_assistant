@@ -262,13 +262,17 @@ final class JsonFileMigrationApi implements MigrationApi {
     final position = record['position'];
     if (position is! Map) return null;
 
-    final savedAtRaw = record['lastCycleAt'];
-    if (savedAtRaw is! String) return null;
+    // Defensive: a hand-edited or older-schema checkpoint may carry a
+    // non-ISO-8601 `lastCycleAt`. The read contract (file header)
+    // promises never to throw, so a malformed timestamp degrades to
+    // "no cursor" rather than a FormatException.
+    final savedAt = _parseTimestampOrNull(record['lastCycleAt']);
+    if (savedAt == null) return null;
 
     return MigrationCursor(
       migrationId: migrationId,
       position: Map<String, Object?>.from(position),
-      savedAt: DateTime.parse(savedAtRaw).toUtc(),
+      savedAt: savedAt,
     );
   }
 
@@ -298,16 +302,21 @@ final class JsonFileMigrationApi implements MigrationApi {
     // dedicated fields so the operator-UI view can answer without
     // parsing the opaque payload. Missing keys are no-ops; the prior
     // mirrored values are retained.
-    final processed = position[positionProcessedKey];
-    if (processed is int && processed >= 0) {
+    //
+    // `processed` / `total` accept any non-negative integral `num`:
+    // a count that round-tripped through JSON/YAML as `200.0` is still
+    // a valid count, and silently dropping it would stall
+    // `processedCount` with no diagnostic.
+    final processed = _asNonNegativeIntOrNull(position[positionProcessedKey]);
+    if (processed != null) {
       record['processedCount'] = processed;
     }
     final complete = position[positionCompleteKey];
     if (complete is bool) {
       record['complete'] = complete;
     }
-    final total = position[positionTotalKey];
-    if (total is int && total >= 0) {
+    final total = _asNonNegativeIntOrNull(position[positionTotalKey]);
+    if (total != null) {
       record['totalEstimate'] = total;
     }
 
@@ -320,7 +329,7 @@ final class JsonFileMigrationApi implements MigrationApi {
     final file = _fileFor(migrationId);
     final record = _readIfExists(file);
     if (record == null) return null;
-    return _recordToStatus(record);
+    return _recordToStatus(record, migrationId);
   }
 
   @override
@@ -344,7 +353,13 @@ final class JsonFileMigrationApi implements MigrationApi {
       // *in-progress* ones. Completed migrations are still discoverable
       // via `status(id)` which walks the same file.
       if (record['complete'] == true) continue;
-      results.add(_recordToStatus(record));
+      // The filename, not the (possibly corrupt) record body, is the
+      // authoritative migration id.
+      final id = name.substring(
+        filenamePrefix.length,
+        name.length - filenameSuffix.length,
+      );
+      results.add(_recordToStatus(record, id));
     }
 
     // Stable ordering by migrationId so consumers see deterministic
@@ -444,17 +459,50 @@ final class JsonFileMigrationApi implements MigrationApi {
     }
   }
 
-  MigrationStatus _recordToStatus(Map<String, Object?> record) {
-    final lastCycleAtRaw = record['lastCycleAt'];
+  /// Projects a decoded checkpoint [record] onto a [MigrationStatus].
+  ///
+  /// [migrationId] is supplied by the caller (the lookup key for
+  /// `status`, the filename for `listInProgress`) rather than read
+  /// from the record body — the filename is authoritative and a
+  /// corrupt/missing `migrationId` field must not crash the read.
+  ///
+  /// Per the file header the read path never throws: every field is
+  /// decoded defensively. A non-integral `totalEstimate`/
+  /// `processedCount` that round-tripped through JSON as a `double`
+  /// (e.g. `200.0`) is accepted; a malformed `lastCycleAt` degrades
+  /// to "no cycle" rather than a FormatException.
+  MigrationStatus _recordToStatus(
+    Map<String, Object?> record,
+    String migrationId,
+  ) {
     return MigrationStatus(
-      migrationId: record['migrationId'] as String,
-      total: (record['totalEstimate'] as int?) ?? 0,
-      processed: (record['processedCount'] as int?) ?? 0,
-      complete: (record['complete'] as bool?) ?? false,
-      lastCycleAt: lastCycleAtRaw is String
-          ? DateTime.parse(lastCycleAtRaw).toUtc()
-          : null,
+      migrationId: migrationId,
+      total: _asNonNegativeIntOrNull(record['totalEstimate']) ?? 0,
+      processed: _asNonNegativeIntOrNull(record['processedCount']) ?? 0,
+      complete: record['complete'] == true,
+      lastCycleAt: _parseTimestampOrNull(record['lastCycleAt']),
     );
+  }
+
+  /// Returns [raw] as a non-negative `int`, or `null` when it is not a
+  /// non-negative integral number. Accepts any `num` that is integral
+  /// (so a JSON `200.0` counts as `200`); rejects negatives, NaN, and
+  /// non-numeric values.
+  static int? _asNonNegativeIntOrNull(Object? raw) {
+    if (raw is int) return raw >= 0 ? raw : null;
+    if (raw is num && raw >= 0 && raw.isFinite && raw == raw.roundToDouble()) {
+      return raw.toInt();
+    }
+    return null;
+  }
+
+  /// Parses an ISO-8601 timestamp into a UTC [DateTime], or `null`
+  /// when [raw] is not a parseable string. Uses [DateTime.tryParse]
+  /// so a malformed value never throws on the read path.
+  static DateTime? _parseTimestampOrNull(Object? raw) {
+    if (raw is! String) return null;
+    final parsed = DateTime.tryParse(raw);
+    return parsed?.toUtc();
   }
 
   void _validateMigrationId(String id) {
