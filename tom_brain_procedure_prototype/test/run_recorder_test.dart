@@ -566,6 +566,64 @@ void main() {
       });
     });
 
+    group('E.3.1 note write failure', () {
+      test('surfaces a dropped note write as an error entry', () async {
+        await recorder.start(startInfo());
+        memory.failAppend = true;
+        recorder.note(TrailNote(category: 'progress', recordedAt: clock));
+        // The note write-through is fire-and-forget; let it reject and be
+        // handled by the recorder's error sink.
+        await pumpEventQueue();
+        final last = recorder.entries.last;
+        expect(last.kind, TrailEntryKind.error);
+        expect(last.payload['errorKind'], RunRecorder.noteWriteFailedKind);
+        expect(last.payload['details'],
+            const <String, Object?>{'category': 'progress'});
+      });
+
+      test('reports the raw error to the onWriteError sink', () async {
+        final errors = <Object>[];
+        final rec = RunRecorder(
+          memory,
+          now: now,
+          onWriteError: (error, _) => errors.add(error),
+        );
+        await rec.start(startInfo());
+        memory.failAppend = true;
+        rec.note(TrailNote(category: 'progress', recordedAt: clock));
+        await pumpEventQueue();
+        expect(errors, hasLength(1));
+        expect(errors.single, isA<StateError>());
+      });
+    });
+
+    group('E.3.4 complete is finally-safe', () {
+      test('removes the inflight marker even if edge-drawing throws',
+          () async {
+        final procNode = NodeId.generate();
+        await recorder.start(startInfo(procedureNodeId: procNode));
+        final markerId = recorder.inflightMarkerId;
+        memory.failEdge = true;
+
+        await expectLater(
+          recorder.complete(
+            const RunCompletion(
+                status: TrailOutcomeStatus.accepted, summary: 's'),
+          ),
+          throwsStateError,
+        );
+
+        // The marker was cleared from inflight despite the failure — no
+        // phantom running run is stranded.
+        expect(stacks.removes, hasLength(1));
+        expect(stacks.removes.single.stackName, inflightStackName);
+        expect(stacks.removes.single.nodeId, markerId);
+        // The completion did not get far enough to push to recent_runs.
+        expect(stacks.pushes, hasLength(1));
+        expect(stacks.pushes.single.stackName, inflightStackName);
+      });
+    });
+
     test('full ordered trail: invocation → calls → note → outcome',
         () async {
       await recorder.start(startInfo());
@@ -631,6 +689,15 @@ class _StubMemory implements TomBrainMemoryClient {
   final List<NodeId> persistedIds = <NodeId>[];
   final List<_Edge> edges = <_Edge>[];
 
+  /// When set, `appendTrail` rejects — drives the E.3.1 note-write-failure
+  /// path. The `note(...)` write-through is fire-and-forget, so the
+  /// rejection is observed only through the recorder's error sink.
+  bool failAppend = false;
+
+  /// When set, `edge` throws — drives the E.3.4 finally path (a partial
+  /// failure between persisting the final node and the stack move).
+  bool failEdge = false;
+
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
     openedRef = run;
@@ -639,6 +706,9 @@ class _StubMemory implements TomBrainMemoryClient {
 
   @override
   Future<void> appendTrail(TrailId id, TrailEntry entry) async {
+    if (failAppend) {
+      throw StateError('appendTrail failed (test).');
+    }
     appended.add(entry);
   }
 
@@ -665,6 +735,9 @@ class _StubMemory implements TomBrainMemoryClient {
     double weight = 1.0,
     Map<String, Object?>? attrs,
   }) async {
+    if (failEdge) {
+      throw StateError('edge failed (test).');
+    }
     edges.add(_Edge(from, type, to));
     return EdgeId.generate();
   }

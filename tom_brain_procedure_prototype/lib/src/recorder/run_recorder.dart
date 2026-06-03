@@ -82,9 +82,15 @@ final class RunRecorder {
     DateTime Function()? now,
     EffortAccountant accountant = const EffortAccountant(),
     void Function(TrailEntry entry)? onEntry,
+    void Function(Object error, StackTrace stackTrace)? onWriteError,
   })  : _now = now ?? defaultNowUtc,
         _accountant = accountant,
-        _onEntry = onEntry;
+        _onEntry = onEntry,
+        _onWriteError = onWriteError;
+
+  /// The trail-entry kind recorded when a fire-and-forget `note(...)`
+  /// write-through fails (E.3.1) — so a dropped note is never silent.
+  static const String noteWriteFailedKind = 'recorder.note.write_failed';
 
   /// The memory client every write delegates to.
   final TomBrainMemoryClient memory;
@@ -93,6 +99,18 @@ final class RunRecorder {
 
   /// Observation seam: notified of every recorded trail entry, in order.
   final void Function(TrailEntry entry)? _onEntry;
+
+  /// Error sink for the fire-and-forget `note(...)` write-through (E.3.1).
+  ///
+  /// A note append cannot be awaited — the C.20 `TrailSink` is synchronous —
+  /// so a failed durable write would otherwise be dropped silently (the
+  /// `automation_candidate` signal the dispatcher's harvester keys on rides
+  /// this path). When the write fails the recorder *always* surfaces a
+  /// `noteWriteFailedKind` error entry into its in-memory view (so the loss
+  /// shows on the live trail and the [_onEntry] seam) and, when this sink is
+  /// supplied, also reports the raw error here so a composition root can
+  /// route it to the engine event bus.
+  final void Function(Object error, StackTrace stackTrace)? _onWriteError;
 
   /// Maps each recorded primitive call to its [EffortMetrics] delta
   /// (C.32). Injectable so a deployment can refine the accounting policy
@@ -234,7 +252,9 @@ final class RunRecorder {
   ///
   /// Synchronous to match `TrailSink`; the write-through future is fire-
   /// and-forget but its in-memory side effect ([entries]) is recorded
-  /// before this returns, so ordering is observable immediately.
+  /// before this returns, so ordering is observable immediately. A failed
+  /// durable write is surfaced through [_onNoteWriteFailed] rather than
+  /// dropped silently (E.3.1).
   void note(TrailNote note) {
     final trailId = _requireTrailId();
     final entry = TrailEntry(
@@ -246,7 +266,29 @@ final class RunRecorder {
       },
     );
     _track(entry);
-    unawaited(memory.appendTrail(trailId, entry));
+    unawaited(
+      memory.appendTrail(trailId, entry).catchError(
+        (Object error, StackTrace stack) =>
+            _onNoteWriteFailed(note, error, stack),
+      ),
+    );
+  }
+
+  /// Surfaces a dropped `note(...)` write-through so it is never lost
+  /// silently (E.3.1). The durable append failed; the recorder records the
+  /// loss as an in-memory error entry (visible on the live trail and the
+  /// [_onEntry] seam) and, when an `onWriteError` sink was supplied, reports
+  /// the raw error so the composition root can route it onward.
+  void _onNoteWriteFailed(TrailNote note, Object error, StackTrace stack) {
+    _track(
+      TrailEntry.error(
+        noteWriteFailedKind,
+        'failed to persist note "${note.category}": $error',
+        details: <String, Object?>{'category': note.category},
+        at: _now(),
+      ),
+    );
+    _onWriteError?.call(error, stack);
   }
 
   /// Persists the authoritative final `ProcedureRun`, draws its edges,
@@ -270,43 +312,109 @@ final class RunRecorder {
     }
 
     final finishedAt = _now();
+    final effort = _talliedEffort(completion, startedAt, finishedAt);
+    final scope = _scope();
+
+    // The in-flight marker MUST be cleared whichever way `complete` exits:
+    // a partial failure between persisting the final node and the stack
+    // move would otherwise strand a phantom running run that the
+    // dispatcher's fallback monitor and free-time scheduler both read
+    // (E.3.4). The `finally` removes it exactly once even if a step throws.
+    var markerCleared = false;
+    Future<void> clearInflightMarker() async {
+      if (markerCleared) return;
+      markerCleared = true;
+      await memory.stacks.remove(inflightStackName, markerId);
+    }
+
+    try {
+      final finalId = await memory.persist(
+        NodeDraft(
+          typeName: procedureRunNodeType,
+          values: _finalRunValues(info, completion, startedAt, finishedAt,
+              effort, trailId),
+        ),
+        scope: scope,
+      );
+
+      await _drawCompletionEdges(info, completion, finalId, scope);
+
+      // Move across the run stacks: the marker leaves `inflight`, the
+      // authoritative record lands on `recent_runs`.
+      await clearInflightMarker();
+      await memory.stacks.push(recentRunsStackName, finalId, scope: scope);
+
+      // Close the trail. `closeTrail` synthesises the `outcome` JSONL line
+      // in storage, so the recorder only mirrors it into its in-memory
+      // view — it does not append it twice.
+      final outcome = _completionOutcome(completion, effort);
+      _track(TrailEntry.outcome(outcome, at: finishedAt));
+      await memory.closeTrail(trailId, outcome);
+
+      _completed = true;
+      return ProcedureRunRecord(
+        runNodeId: finalId,
+        trailId: trailId,
+        procedureId: info.procedureId,
+        runId: info.runId,
+        status: completion.status,
+        effort: effort,
+      );
+    } finally {
+      await clearInflightMarker();
+    }
+  }
+
+  /// The run's final effort: everything the recorder accumulated per
+  /// bridged-primitive call (C.32) plus anything the engine injects via
+  /// `completion.effort` (counters the recorder could not observe, or an
+  /// externally-measured wall clock). The wall clock is the run's measured
+  /// elapsed unless a caller supplied a non-zero value.
+  EffortMetrics _talliedEffort(
+    RunCompletion completion,
+    DateTime startedAt,
+    DateTime finishedAt,
+  ) {
     final measuredMs = finishedAt.difference(startedAt).inMilliseconds;
-    // The run's effort is everything the recorder accumulated per
-    // bridged-primitive call (C.32) plus anything the engine injects via
-    // `completion.effort` (counters the recorder could not observe, or an
-    // externally-measured wall clock). The wall clock is the run's
-    // measured elapsed unless a caller supplied a non-zero value.
     final tallied = _accumulatedEffort.plus(completion.effort);
-    final effort = tallied.wallClockMs > 0
+    return tallied.wallClockMs > 0
         ? tallied
         : tallied.withWallClockMs(measuredMs);
+  }
 
-    final scope = _scope();
-    final finalId = await memory.persist(
-      NodeDraft(
-        typeName: procedureRunNodeType,
-        values: <String, Object?>{
-          'procedureId': info.procedureId,
-          'version': info.version,
-          'runId': info.runId,
-          if (info.parentRunId != null) 'parentRunId': info.parentRunId,
-          'status': completion.status.name,
-          'summary': completion.summary,
-          'startedAt': startedAt.toUtc().toIso8601String(),
-          'finishedAt': finishedAt.toUtc().toIso8601String(),
-          'effort': effort.toJson(),
-          'producedNodeIds': List<String>.unmodifiable(
-            completion.producedNodeIds,
-          ),
-          'trailId': trailId.value,
-        },
-      ),
-      scope: scope,
-    );
+  /// The field map of the authoritative final `ProcedureRun` node.
+  Map<String, Object?> _finalRunValues(
+    RunStart info,
+    RunCompletion completion,
+    DateTime startedAt,
+    DateTime finishedAt,
+    EffortMetrics effort,
+    TrailId trailId,
+  ) =>
+      <String, Object?>{
+        'procedureId': info.procedureId,
+        'version': info.version,
+        'runId': info.runId,
+        if (info.parentRunId != null) 'parentRunId': info.parentRunId,
+        'status': completion.status.name,
+        'summary': completion.summary,
+        'startedAt': startedAt.toUtc().toIso8601String(),
+        'finishedAt': finishedAt.toUtc().toIso8601String(),
+        'effort': effort.toJson(),
+        'producedNodeIds':
+            List<String>.unmodifiable(completion.producedNodeIds),
+        'trailId': trailId.value,
+      };
 
-    // Edges: the run `derived_from` the procedure (when the procedure is
-    // a memory node), and each produced result node points `produced_by`
-    // back to the run.
+  /// Draws the completion edges: the run `derived_from` the procedure (when
+  /// the procedure is a memory node), and each produced result node points
+  /// `produced_by` back to the run.
+  Future<void> _drawCompletionEdges(
+    RunStart info,
+    RunCompletion completion,
+    NodeId finalId,
+    Scope scope,
+  ) async {
     final procedureNodeId = info.procedureNodeId;
     if (procedureNodeId != null) {
       await memory.edge(
@@ -324,40 +432,25 @@ final class RunRecorder {
         scope: scope,
       );
     }
-
-    // Move across the run stacks: the marker leaves `inflight`, the
-    // authoritative record lands on `recent_runs`.
-    await memory.stacks.remove(inflightStackName, markerId);
-    await memory.stacks.push(recentRunsStackName, finalId, scope: scope);
-
-    // Close the trail. `closeTrail` synthesises the `outcome` JSONL line
-    // in storage, so the recorder only mirrors it into its in-memory
-    // view — it does not append it twice.
-    final outcome = TrailOutcome(
-      status: completion.status,
-      summary: completion.summary,
-      details: <String, Object?>{
-        ...completion.details,
-        'effort': effort.toJson(),
-        if (completion.producedNodeIds.isNotEmpty)
-          'producedNodeIds':
-              List<String>.unmodifiable(completion.producedNodeIds),
-      },
-      elapsedMs: effort.wallClockMs,
-    );
-    _track(TrailEntry.outcome(outcome, at: finishedAt));
-    await memory.closeTrail(trailId, outcome);
-
-    _completed = true;
-    return ProcedureRunRecord(
-      runNodeId: finalId,
-      trailId: trailId,
-      procedureId: info.procedureId,
-      runId: info.runId,
-      status: completion.status,
-      effort: effort,
-    );
   }
+
+  /// The terminal [TrailOutcome] mirrored into the closed trail.
+  TrailOutcome _completionOutcome(
+    RunCompletion completion,
+    EffortMetrics effort,
+  ) =>
+      TrailOutcome(
+        status: completion.status,
+        summary: completion.summary,
+        details: <String, Object?>{
+          ...completion.details,
+          'effort': effort.toJson(),
+          if (completion.producedNodeIds.isNotEmpty)
+            'producedNodeIds':
+                List<String>.unmodifiable(completion.producedNodeIds),
+        },
+        elapsedMs: effort.wallClockMs,
+      );
 
   // ── internals ───────────────────────────────────────────────────
 
