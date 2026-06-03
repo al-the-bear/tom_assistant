@@ -58,7 +58,20 @@ enum RunSlotOutcome {
 
   /// The coordinator's hard step deadline (D.21) fired and force-yielded the
   /// run; the caller saw `RunDeadlineExceeded` (`procedure.deadline.exceeded`).
-  forceYielded,
+  forceYielded;
+
+  /// The wire string this outcome serialises to on the trail (F.4.1).
+  ///
+  /// Snake-case so the two parallel run-outcome vocabularies render identically
+  /// across the dispatcher's observability surfaces — this matches the registry
+  /// [RunOutcome.status] form persisted to `recent_runs` (D.27) and emitted on
+  /// the `DispatcherEvent` stream (`RunCompleted`), so "how did the run end"
+  /// reads the same whether it surfaces via [RunSlotExited] or `RunCompleted`.
+  String get status => switch (this) {
+        RunSlotOutcome.completed => 'completed',
+        RunSlotOutcome.failed => 'failed',
+        RunSlotOutcome.forceYielded => 'force_yielded',
+      };
 }
 
 /// Marker / base for every typed preemption observability event (D.23).
@@ -130,7 +143,7 @@ final class RunSlotExited extends PreemptionEvent {
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
         'slot': slot.name,
-        'outcome': outcome.name,
+        'outcome': outcome.status,
       };
 }
 

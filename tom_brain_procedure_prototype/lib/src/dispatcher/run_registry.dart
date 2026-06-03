@@ -49,7 +49,7 @@
 
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show NodeDraft, Scope, TomBrainMemoryClient;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, defaultNowUtc;
 
 import '../recorder/run_records.dart'
     show
@@ -58,6 +58,15 @@ import '../recorder/run_records.dart'
         recentRunsStackName,
         runStatusRunning;
 import 'run_coordinator.dart' show RunSlot;
+
+/// The protocol-significant `producer` namespace every dispatcher-side memory
+/// write attributes itself under (F.5.1).
+///
+/// The `Scope.producer` of a write is matched on by the trace stitcher and the
+/// run inspector, so the `dispatcher` token is a contract, not a cosmetic
+/// label — named once here and reused by the run registry and the sustained-
+/// fallback monitor rather than re-spelled as a bare string at each write site.
+const String dispatcherScopeProducerPrefix = 'dispatcher';
 
 /// The launch facts the coordinator hands the registry when a run begins
 /// occupying a slot (D.26).
@@ -131,7 +140,7 @@ final class RunRegistry {
   /// Wraps the interface-boundary [memory] client. [now] is the injectable
   /// clock; tests pass a fixed clock to assert the marker's `startedAt`.
   RunRegistry(this.memory, {DateTime Function()? now})
-      : _now = now ?? DateTime.now;
+      : _now = now ?? defaultNowUtc;
 
   /// The memory client every write delegates to.
   final TomBrainMemoryClient memory;
@@ -147,23 +156,12 @@ final class RunRegistry {
   /// them to the dispatcher and the run, so a write-budget tracker (A.68)
   /// and the trace stitcher can follow them back to the producing run.
   Future<NodeId> recordStart(RunRegistration registration) async {
-    final scope = Scope(
-      producer: 'dispatcher:${registration.procedureId}:${registration.runId}',
-      runId: registration.runId,
-    );
+    final scope = _scopeFor(registration);
     final markerId = await memory.persist(
-      NodeDraft(
-        typeName: procedureRunNodeType,
-        values: <String, Object?>{
-          'procedureId': registration.procedureId,
-          'version': registration.version,
-          'runId': registration.runId,
-          'slot': registration.slot.name,
-          if (registration.parentRunId != null)
-            'parentRunId': registration.parentRunId,
-          'status': runStatusRunning,
-          'startedAt': _now().toUtc().toIso8601String(),
-        },
+      _runMarker(
+        registration,
+        status: runStatusRunning,
+        timeField: 'startedAt',
       ),
       scope: scope,
     );
@@ -190,14 +188,47 @@ final class RunRegistry {
     required NodeId markerId,
     required RunOutcome outcome,
   }) async {
-    final scope = Scope(
-      producer: 'dispatcher:${registration.procedureId}:${registration.runId}',
-      runId: registration.runId,
-    );
+    final scope = _scopeFor(registration);
     // Pop the running marker from `inflight` (membership only — the node
     // stays addressable by id).
     await memory.stacks.remove(inflightStackName, markerId);
     final finishedId = await memory.persist(
+      _runMarker(
+        registration,
+        status: outcome.status,
+        timeField: 'endedAt',
+      ),
+      scope: scope,
+    );
+    await memory.stacks.push(recentRunsStackName, finishedId, scope: scope);
+    return finishedId;
+  }
+
+  /// The dispatcher-attributing [Scope] every marker write for [registration]
+  /// carries (F.2.3, F.5.1).
+  ///
+  /// Both the start and end writes attribute to the same `producer` namespace
+  /// (`dispatcher:<procedureId>:<runId>`, anchored on
+  /// [dispatcherScopeProducerPrefix]) and the same `runId`, so the trace
+  /// stitcher and a write-budget tracker (A.68) follow them back to the one
+  /// producing run.
+  Scope _scopeFor(RunRegistration registration) => Scope(
+        producer: '$dispatcherScopeProducerPrefix'
+            ':${registration.procedureId}:${registration.runId}',
+        runId: registration.runId,
+      );
+
+  /// Builds a `ProcedureRun` marker draft for [registration] carrying the
+  /// terminal-or-running [status] under a single timestamp [timeField] (F.2.3).
+  ///
+  /// The running marker stamps `startedAt`; a finished marker stamps `endedAt`.
+  /// Both share the run/procedure identity and the coordinator slot, so the
+  /// run inspector reads either marker with the same shape.
+  NodeDraft _runMarker(
+    RunRegistration registration, {
+    required String status,
+    required String timeField,
+  }) =>
       NodeDraft(
         typeName: procedureRunNodeType,
         values: <String, Object?>{
@@ -207,13 +238,8 @@ final class RunRegistry {
           'slot': registration.slot.name,
           if (registration.parentRunId != null)
             'parentRunId': registration.parentRunId,
-          'status': outcome.status,
-          'endedAt': _now().toUtc().toIso8601String(),
+          'status': status,
+          timeField: _now().toUtc().toIso8601String(),
         },
-      ),
-      scope: scope,
-    );
-    await memory.stacks.push(recentRunsStackName, finishedId, scope: scope);
-    return finishedId;
-  }
+      );
 }

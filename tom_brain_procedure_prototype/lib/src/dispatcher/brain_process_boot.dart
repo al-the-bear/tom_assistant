@@ -109,13 +109,22 @@ const String inboundTextArgumentKey = 'text';
 /// past which the drain gives up waiting and shutdown proceeds to close memory
 /// and the substrate; the abandoned body, if any, runs on untracked.
 ///
-/// Sized to sit *above* the coordinator's own hard step deadline
-/// (`defaultStepDeadline` + `defaultCoordinatorDeadlineGrace` = ~65 s) so the
-/// normal bound on a run is the coordinator's force-yield — which itself frees
-/// the slot and idles the coordinator — and this drain timeout fires only for a
-/// run that bypassed *both* the engine and coordinator deadlines (e.g. an
-/// already-abandoned force-yielded body). The exact value is a config knob D.47
-/// (`DispatcherConfig`) can later surface.
+/// Tied to the coordinator's own hard step deadline
+/// ([defaultCoordinatorHardStepDeadline] = `defaultStepDeadline` 60 s +
+/// `defaultCoordinatorDeadlineGrace` 5 s = 65 s) plus a 25 s margin = 90 s, so
+/// the two cannot silently drift apart (F.5.2): the drain must sit *above* the
+/// coordinator's force-yield so the normal bound on a run is that force-yield —
+/// which itself frees the slot and idles the coordinator — and this drain
+/// timeout fires only for a run that bypassed *both* the engine and coordinator
+/// deadlines (e.g. an already-abandoned force-yielded body). The exact value is
+/// a config knob D.47 (`DispatcherConfig`) can later surface.
+///
+/// A literal, not `defaultCoordinatorHardStepDeadline + Duration(seconds: 25)`,
+/// because Dart `const` evaluation forbids `Duration` arithmetic (only `num` /
+/// `String` operands are allowed) and this must stay `const` to feed the `const`
+/// default of [BootedBrain.shutdown]'s `drainTimeout`. The anti-drift
+/// relationship `defaultShutdownDrainTimeout > defaultCoordinatorHardStepDeadline`
+/// is asserted by `test/f_dispatcher_cleanup_test.dart`.
 const Duration defaultShutdownDrainTimeout = Duration(seconds: 90);
 
 /// Which stage of [BrainProcessBoot.boot]'s § 12 bring-up sequence failed.
@@ -293,10 +302,15 @@ final class BootedBrain {
   ///      run to reach their natural end, so each run's `RunRecorder` closes
   ///      its trail durably *before* memory is flushed. Bounded by
   ///      [drainTimeout] so a genuinely-hung body cannot hold shutdown hostage.
-  ///   3. **Dispose memory** — the isolate transport flushes writes +
+  ///   3. **Close the coordinator** ([RunCoordinator.close]) — once it has
+  ///      quiesced, close its owned `PreemptionController` so its event
+  ///      subscribers see the done-stream and no controller resource outlives
+  ///      the boot (F.3.2). Done after the drain so no transition emits onto a
+  ///      closed stream.
+  ///   4. **Dispose memory** — the isolate transport flushes writes +
   ///      checkpoints the WAL before closing the worker, persisting the trails
   ///      the drain let close.
-  ///   4. **Close the substrate.**
+  ///   5. **Close the substrate.**
   ///
   /// [drainTimeout] bounds step 2's best-effort wait; it defaults to
   /// [defaultShutdownDrainTimeout]. Pass a `null` timeout
@@ -311,6 +325,7 @@ final class BootedBrain {
       await _accessLayerShutdown();
     }
     await coordinator.drain(timeout: drainTimeout);
+    await coordinator.close();
     await memory.dispose();
     await substrate.close();
   }
@@ -428,46 +443,87 @@ abstract final class BrainProcessBoot {
     required ProvisionedMemory memory,
     required TomBrainSubstrateClient substrate,
   }) async {
-    final resolver = await ProcedureResolver.fromStore(
-      DiskProcedureStore(
-        systemDir: config.systemScriptsDir,
-        userDir: config.userScriptsDir,
-      ),
-    );
+    final resolver = await _resolveProcedures(config);
 
     // One shared preemption state for the engine (yields against it) and the
-    // coordinator (drives it).
+    // coordinator (drives it) — see the file header.
     final preemption = PreemptionState();
 
-    final engine = ProcedureEngine(
+    final engine = _wireEngine(
+      memory: memory,
+      substrate: substrate,
       resolver: resolver,
-      memory: memory.client,
-      memoryBridge: MemoryBridge(memory.client),
-      substrateBridge: SubstrateBridge(substrate),
-      preemptionState: preemption,
-    );
-
-    final coordinator = RunCoordinator(
       preemption: preemption,
-      foregroundQueueDepth: config.foregroundQueueDepth,
     );
-
-    final dispatcher = Dispatcher(
-      route: _buildRoute(
-        // The kind-hint pass-through is unconditional; only the no-hint
-        // fallback is configurable. A `null` fallback keeps the D.15 default
-        // (`classify_inbound_v1`).
-        classifier: config.classifyFallback == null
-            ? InboundClassifier()
-            : InboundClassifier(fallback: config.classifyFallback!),
-        selector: ProcedureSelector(),
-        coordinator: coordinator,
-        engine: engine,
-      ),
+    final coordinator = _wireCoordinator(config: config, preemption: preemption);
+    final dispatcher = _wireDispatcher(
+      config: config,
+      coordinator: coordinator,
+      engine: engine,
     );
 
     return (dispatcher: dispatcher, engine: engine, coordinator: coordinator);
   }
+
+  /// Resolves the disk procedure store (system + optional user scripts) into a
+  /// [ProcedureResolver] (bring-up phase 3, step 1).
+  static Future<ProcedureResolver> _resolveProcedures(
+    BrainProcessConfig config,
+  ) =>
+      ProcedureResolver.fromStore(
+        DiskProcedureStore(
+          systemDir: config.systemScriptsDir,
+          userDir: config.userScriptsDir,
+        ),
+      );
+
+  /// Wires the [ProcedureEngine] over both bridges and the shared [preemption]
+  /// state (the engine yields against it via `yield_if_foreground_waiting`).
+  static ProcedureEngine _wireEngine({
+    required ProvisionedMemory memory,
+    required TomBrainSubstrateClient substrate,
+    required ProcedureResolver resolver,
+    required PreemptionState preemption,
+  }) =>
+      ProcedureEngine(
+        resolver: resolver,
+        memory: memory.client,
+        memoryBridge: MemoryBridge(memory.client),
+        substrateBridge: SubstrateBridge(substrate),
+        preemptionState: preemption,
+      );
+
+  /// Wires the [RunCoordinator] over the shared [preemption] state (it drives
+  /// the write side) with the configured foreground queue depth.
+  static RunCoordinator _wireCoordinator({
+    required BrainProcessConfig config,
+    required PreemptionState preemption,
+  }) =>
+      RunCoordinator(
+        preemption: preemption,
+        foregroundQueueDepth: config.foregroundQueueDepth,
+      );
+
+  /// Wires the [Dispatcher] over the classify→select→schedule route built
+  /// against the shared [coordinator] and [engine].
+  static Dispatcher _wireDispatcher({
+    required BrainProcessConfig config,
+    required RunCoordinator coordinator,
+    required ProcedureEngine engine,
+  }) =>
+      Dispatcher(
+        route: _buildRoute(
+          // The kind-hint pass-through is unconditional; only the no-hint
+          // fallback is configurable. A `null` fallback keeps the D.15 default
+          // (`classify_inbound_v1`).
+          classifier: config.classifyFallback == null
+              ? InboundClassifier()
+              : InboundClassifier(fallback: config.classifyFallback!),
+          selector: ProcedureSelector(),
+          coordinator: coordinator,
+          engine: engine,
+        ),
+      );
 
   /// Builds the `classify → select → schedule` route the [Dispatcher] hands
   /// each admitted [Access] to.

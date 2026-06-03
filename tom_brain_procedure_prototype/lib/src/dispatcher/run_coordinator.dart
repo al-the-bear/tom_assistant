@@ -297,6 +297,26 @@ final class ForegroundQueueFull implements Exception {
 /// competitor.
 const Duration defaultCoordinatorDeadlineGrace = Duration(seconds: 5);
 
+/// The coordinator's default hard step deadline (D.21): the engine's per-step
+/// deadline ([defaultStepDeadline], 60 s) plus the backstop
+/// [defaultCoordinatorDeadlineGrace] (5 s) = 65 s.
+///
+/// Named (rather than inlined at the constructor default) so the shutdown drain
+/// timeout can be tied to it (F.5.2 — `defaultShutdownDrainTimeout`) instead of
+/// the two living as wholly-unrelated literals: the drain must outlast this
+/// deadline so the normal bound on a run is the coordinator force-yield, not the
+/// drain.
+///
+/// Why a literal, not `defaultStepDeadline + defaultCoordinatorDeadlineGrace`:
+/// Dart `const` evaluation forbids arithmetic on `Duration` (only `num` /
+/// `String` operands are allowed), and this value must stay `const` because it
+/// feeds the `const` default of [defaultShutdownDrainTimeout]
+/// (`BootedBrain.shutdown`'s `drainTimeout` parameter). The derivation is
+/// therefore *asserted* by `test/f_dispatcher_cleanup_test.dart` — change either
+/// component and that test fails — so the literal cannot silently drift from its
+/// two summands.
+const Duration defaultCoordinatorHardStepDeadline = Duration(seconds: 65);
+
 /// Raised through a submission's future when the coordinator's hard step
 /// deadline (D.21) force-yields a run whose body did not complete in time.
 ///
@@ -424,9 +444,9 @@ final class RunCoordinator {
     DeadlineTimerFactory? deadlineTimerFactory,
   })  : preemption = preemption ?? PreemptionState(),
         preemptionController = preemptionController ?? PreemptionController(),
+        _ownsPreemptionController = preemptionController == null,
         _runIdMint = runIdMint,
-        hardStepDeadline = hardStepDeadline ??
-            (defaultStepDeadline + defaultCoordinatorDeadlineGrace),
+        hardStepDeadline = hardStepDeadline ?? defaultCoordinatorHardStepDeadline,
         _deadlineTimerFactory = deadlineTimerFactory {
     if (foregroundQueueDepth < 0) {
       throw ArgumentError.value(
@@ -459,6 +479,12 @@ final class RunCoordinator {
   /// never reads it back, and the controller never writes [preemption].
   /// Consumers subscribe through [preemptionEvents].
   final PreemptionController preemptionController;
+
+  /// Whether this coordinator constructed [preemptionController] itself (the
+  /// default) and therefore owns its [PreemptionController.close] lifecycle
+  /// (F.3.2). `false` when a controller was injected — its lifecycle is the
+  /// consumer's, per the constructor contract, so [close] leaves it open.
+  final bool _ownsPreemptionController;
 
   /// The dispatcher-half `inflight` tracker (D.26), or `null` when the
   /// coordinator runs without memory-side run tracking. When non-null the
@@ -518,6 +544,18 @@ final class RunCoordinator {
   /// with [CoordinatorDraining] so the live work can wind down to idle.
   bool _draining = false;
 
+  /// Whether [close] has shut down the *owned* [preemptionController], so the
+  /// coordinator must stop driving it (F.3.2). A [drain] with a [Duration]
+  /// timeout can return while a genuinely-hung run is still in-flight; when
+  /// `BootedBrain.shutdown` then calls [close], that abandoned body may *still*
+  /// complete later and try to record its slot-exit / resume transition. Driving
+  /// a closed controller throws, so once we close our own controller we route
+  /// those late records to a no-op — the abandoned body runs *untracked*, which
+  /// is exactly the post-drain contract. An injected controller is never closed
+  /// by [close], so this stays `false` and its records keep flowing to the
+  /// consumer that owns its lifecycle.
+  bool _recordingSuppressed = false;
+
   /// Whether a foreground run is currently live (occupying the slot).
   bool get hasForegroundRun => _foreground != null;
 
@@ -569,8 +607,14 @@ final class RunCoordinator {
       throw const CoordinatorDraining(RunSlot.foreground);
     }
     final completer = Completer<T>();
-    void start() =>
-        _runInForegroundSlot(body, completer, procedureId, version);
+    void start() => _runInSlot(
+          RunSlot.foreground,
+          body,
+          completer,
+          procedureId,
+          version,
+          pumpQueueOnDone: true,
+        );
 
     if (_foreground == null) {
       // Slot free: start immediately.
@@ -592,7 +636,7 @@ final class RunCoordinator {
       // Mirror the write onto the supervising observer (D.24). Idempotent on
       // the controller's own model, so back-to-back foreground arrivals during
       // one background run emit exactly one ForegroundPreemptionRequested.
-      preemptionController.recordForegroundPreemptionRequested();
+      _record(preemptionController.recordForegroundPreemptionRequested);
     }
     return completer.future;
   }
@@ -620,39 +664,41 @@ final class RunCoordinator {
       throw const RunSlotBusy(RunSlot.background);
     }
     final completer = Completer<T>();
-    final marker = Completer<void>();
-    // Mark the slot occupied *before* invoking the body, so a re-entrant
-    // submission from inside the body sees the slot busy rather than racing.
-    _background = marker.future;
-    final runId = _nextRunId(RunSlot.background);
-    preemptionController.recordRunStarted(RunSlot.background, runId: runId);
-    _registerInflight(RunSlot.background, runId, procedureId, version);
-    _guardWithDeadline(body).then(
-      (outcome) {
-        _background = null;
-        marker.complete();
-        final slotOutcome = _slotOutcomeOf(outcome);
-        preemptionController.recordRunFinished(
-          RunSlot.background,
-          slotOutcome,
-          runId: runId,
-        );
-        _finishInflight(RunSlot.background, slotOutcome);
-        _completeFromOutcome(completer, outcome, RunSlot.background);
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        _background = null;
-        marker.complete();
-        preemptionController.recordRunFinished(
-          RunSlot.background,
-          RunSlotOutcome.failed,
-          runId: runId,
-        );
-        _finishInflight(RunSlot.background, RunSlotOutcome.failed);
-        completer.completeError(error, stackTrace);
-      },
+    _runInSlot(
+      RunSlot.background,
+      body,
+      completer,
+      procedureId,
+      version,
+      pumpQueueOnDone: false,
     );
     return completer.future;
+  }
+
+  /// Synchronously reserves the background slot for an *about-to-be-built* run,
+  /// or returns `null` when a background run is already live or the coordinator
+  /// is draining (F.3.1).
+  ///
+  /// This closes the [FreeTimeScheduler.tick] time-of-check/time-of-use race:
+  /// the scheduler must check "is the background slot free?" and then perform
+  /// `await`s (read the stacks, pop an entry, build the run body) before it can
+  /// submit. Without an atomic reserve, two near-simultaneous ticks — or a tick
+  /// racing a [submitBackground] — could both observe the slot free and both
+  /// admit a background run, breaking the single-background invariant (PE-5).
+  ///
+  /// The reservation marks the background slot occupied *now*, synchronously,
+  /// so any concurrent admission attempt during the caller's `await`s sees the
+  /// slot busy. The caller must then either run its body via
+  /// [BackgroundReservation.submit] or release the slot via
+  /// [BackgroundReservation.cancel] (e.g. when no work materialised) — exactly
+  /// one, exactly once.
+  BackgroundReservation? reserveBackground() {
+    if (_draining || _background != null) {
+      return null;
+    }
+    final marker = Completer<void>();
+    _background = marker.future;
+    return BackgroundReservation._(this, marker);
   }
 
   /// Quiesces the coordinator for shutdown (D.45).
@@ -683,6 +729,39 @@ final class RunCoordinator {
     }
   }
 
+  /// Closes the coordinator's owned disposables (F.3.2).
+  ///
+  /// Closes [preemptionController] — so its event subscribers see the
+  /// done-stream and no controller resource outlives the coordinator — but only
+  /// when the coordinator *constructed* it (the default). An injected
+  /// controller's lifecycle belongs to the consumer that supplied it, per the
+  /// constructor contract, so this leaves it open. Idempotent: a second call is
+  /// a no-op (the controller's own [PreemptionController.close] is idempotent).
+  ///
+  /// Call after [drain] in a shutdown sequence — `BootedBrain.shutdown` does so
+  /// once the coordinator has quiesced, so no transition emits after the stream
+  /// closes.
+  Future<void> close() async {
+    if (_ownsPreemptionController) {
+      // Suppress further records *before* the controller closes, so a late
+      // completion of an abandoned run (drain timed out on a hung body) routes
+      // its slot-exit / resume transition to a no-op rather than driving a
+      // closed controller (which would throw).
+      _recordingSuppressed = true;
+      await preemptionController.close();
+    }
+  }
+
+  /// Drives a [preemptionController] `record*` call unless the coordinator has
+  /// closed its own controller (F.3.2). Centralises the post-close suppression
+  /// so every transition record shares one guard — see [_recordingSuppressed].
+  void _record(void Function() emit) {
+    if (_recordingSuppressed) {
+      return;
+    }
+    emit();
+  }
+
   /// Completes once the coordinator is fully [isIdle] (D.45).
   ///
   /// Awaits whichever slot markers are live; a foreground completion pumps the
@@ -705,50 +784,95 @@ final class RunCoordinator {
     }
   }
 
-  /// Occupies the foreground slot with [body], completing [completer] with
-  /// the body's result, then pumps the next queued foreground run (if any).
-  void _runInForegroundSlot<T>(
+  /// Occupies [slot] with [body], completing [completer] with the body's
+  /// result, then — when [pumpQueueOnDone] is set (the foreground path) — pumps
+  /// the next queued foreground run and resumes any parked background.
+  ///
+  /// The single run-completion path shared by [submitForeground] (via its
+  /// `start` closure), [submitBackground], and [BackgroundReservation.submit]
+  /// (F.2.1): the slot-occupancy marker, run-id mint, controller start/finish
+  /// records, and `inflight` registration/close-out all live here once, so a
+  /// fix to run-completion (e.g. the deadline mapping) lands in a single place
+  /// rather than being patched per slot.
+  ///
+  /// When [slotMarker] is supplied the slot was already marked occupied by the
+  /// caller (a [BackgroundReservation]); this reuses that marker rather than
+  /// minting a fresh one, so the reservation's slot hold flows straight into
+  /// the run without a window where the slot looks free.
+  void _runInSlot<T>(
+    RunSlot slot,
     RunBody<T> body,
     Completer<T> completer,
     String? procedureId,
-    int version,
-  ) {
-    final marker = Completer<void>();
-    _foreground = marker.future;
-    final runId = _nextRunId(RunSlot.foreground);
-    preemptionController.recordRunStarted(RunSlot.foreground, runId: runId);
-    _registerInflight(RunSlot.foreground, runId, procedureId, version);
+    int version, {
+    required bool pumpQueueOnDone,
+    Completer<void>? slotMarker,
+  }) {
+    final marker = slotMarker ?? Completer<void>();
+    if (slotMarker == null) {
+      // Mark the slot occupied *before* invoking the body, so a re-entrant
+      // submission from inside the body sees the slot busy rather than racing.
+      _setSlotMarker(slot, marker.future);
+    }
+    final runId = _nextRunId(slot);
+    _record(() => preemptionController.recordRunStarted(slot, runId: runId));
+    _registerInflight(slot, runId, procedureId, version);
+
+    // Frees the slot and emits the run-end records. Run *before* the caller's
+    // future is completed and (foreground) before the queue is pumped, so a
+    // queued successor's RunSlotEntered follows this run's RunSlotExited.
+    void finishSlot(RunSlotOutcome slotOutcome) {
+      _setSlotMarker(slot, null);
+      marker.complete();
+      _record(() =>
+          preemptionController.recordRunFinished(slot, slotOutcome, runId: runId));
+      _finishInflight(slot, slotOutcome);
+    }
+
+    // The foreground-only tail: pump the next queued run and release a parked
+    // background once the whole foreground chain has drained.
+    void afterComplete() {
+      if (pumpQueueOnDone) {
+        _pumpForegroundQueue();
+        _resumeBackgroundIfForegroundDrained();
+      }
+    }
+
     _guardWithDeadline(body).then(
       (outcome) {
-        _foreground = null;
-        marker.complete();
-        // Emit the exit *before* pumping the queue, so a queued successor's
-        // RunSlotEntered follows this run's RunSlotExited in the stream.
-        final slotOutcome = _slotOutcomeOf(outcome);
-        preemptionController.recordRunFinished(
-          RunSlot.foreground,
-          slotOutcome,
-          runId: runId,
-        );
-        _finishInflight(RunSlot.foreground, slotOutcome);
-        _completeFromOutcome(completer, outcome, RunSlot.foreground);
-        _pumpForegroundQueue();
-        _resumeBackgroundIfForegroundDrained();
+        finishSlot(_slotOutcomeOf(outcome));
+        _completeFromOutcome(completer, outcome, slot);
+        afterComplete();
       },
       onError: (Object error, StackTrace stackTrace) {
-        _foreground = null;
-        marker.complete();
-        preemptionController.recordRunFinished(
-          RunSlot.foreground,
-          RunSlotOutcome.failed,
-          runId: runId,
-        );
-        _finishInflight(RunSlot.foreground, RunSlotOutcome.failed);
+        finishSlot(RunSlotOutcome.failed);
         completer.completeError(error, stackTrace);
-        _pumpForegroundQueue();
-        _resumeBackgroundIfForegroundDrained();
+        afterComplete();
       },
     );
+  }
+
+  /// Sets (or clears, with `null`) the slot-occupancy marker for [slot].
+  void _setSlotMarker(RunSlot slot, Future<void>? marker) {
+    switch (slot) {
+      case RunSlot.foreground:
+        _foreground = marker;
+      case RunSlot.background:
+        _background = marker;
+    }
+  }
+
+  /// Releases a [BackgroundReservation] that was never submitted (F.3.1): frees
+  /// the background slot and completes its hold marker. A no-op if the slot has
+  /// already moved on (defensive — the reservation contract is submit-or-cancel
+  /// exactly once).
+  void _releaseBackgroundReservation(Completer<void> marker) {
+    if (identical(_background, marker.future)) {
+      _background = null;
+    }
+    if (!marker.isCompleted) {
+      marker.complete();
+    }
   }
 
   /// Races [body] against a fresh per-run [StepDeadline] (D.21).
@@ -814,7 +938,7 @@ final class RunCoordinator {
       // Mirror the write onto the supervising observer (D.24). Idempotent on
       // the controller's own model, so a resume with nothing pending (no
       // background was ever asked to yield) emits nothing.
-      preemptionController.recordBackgroundResumeSignalled();
+      _record(preemptionController.recordBackgroundResumeSignalled);
     }
   }
 
@@ -947,4 +1071,64 @@ final class _InflightHandle {
 
   /// The launch facts the registry needs to write the finished marker.
   final RunRegistration registration;
+}
+
+/// A synchronous hold on the coordinator's background slot, handed back by
+/// [RunCoordinator.reserveBackground] (F.3.1).
+///
+/// The free-time scheduler reserves the slot *before* it does the `await`s
+/// needed to build a background run (reading the stacks, popping an entry,
+/// routing it to a body). The reservation marks the slot occupied immediately,
+/// so a concurrent tick or a racing [RunCoordinator.submitBackground] sees the
+/// slot busy and does not double-admit. The holder must settle the reservation
+/// exactly once: [submit] to run the built body in the held slot, or [cancel]
+/// to release it when no work materialised.
+final class BackgroundReservation {
+  BackgroundReservation._(this._coordinator, this._marker);
+
+  final RunCoordinator _coordinator;
+  final Completer<void> _marker;
+  bool _settled = false;
+
+  /// Runs [body] in the reserved background slot, completing with the body's
+  /// own result (or error). Threads [procedureId] / [version] into the run's
+  /// `inflight` tracking exactly as [RunCoordinator.submitBackground] does.
+  ///
+  /// Throws [StateError] if the reservation was already settled (submitted or
+  /// cancelled).
+  Future<T> submit<T>(
+    RunBody<T> body, {
+    String? procedureId,
+    int version = 1,
+  }) {
+    _settle();
+    final completer = Completer<T>();
+    _coordinator._runInSlot(
+      RunSlot.background,
+      body,
+      completer,
+      procedureId,
+      version,
+      pumpQueueOnDone: false,
+      slotMarker: _marker,
+    );
+    return completer.future;
+  }
+
+  /// Releases the reserved background slot without running anything (the caller
+  /// found no work to schedule). Idempotent only in the sense that a settled
+  /// reservation throws [StateError]; a fresh one releases the slot.
+  void cancel() {
+    _settle();
+    _coordinator._releaseBackgroundReservation(_marker);
+  }
+
+  void _settle() {
+    if (_settled) {
+      throw StateError(
+        'background reservation already settled (submit or cancel exactly once)',
+      );
+    }
+    _settled = true;
+  }
 }

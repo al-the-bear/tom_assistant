@@ -327,8 +327,10 @@
 //     background slot free — so each in-flight run's `RunRecorder` closes its
 //     trail before memory is flushed. `BootedBrain.shutdown({drainTimeout})`
 //     now reverse-orders (access layer → drain → memory dispose → substrate
-//     close); `drainTimeout` defaults to `defaultShutdownDrainTimeout` (30 s),
-//     so a genuinely-hung body cannot hold shutdown hostage. Exported below.
+//     close); `drainTimeout` defaults to `defaultShutdownDrainTimeout` (derived
+//     from the coordinator hard step deadline plus a margin, ~90 s, so it
+//     strictly outlasts the coordinator force-yield), so a genuinely-hung body
+//     cannot hold shutdown hostage. Exported below.
 //   - D.46 ✅ — typed startup error + crash tests (`brain_process_boot.dart` +
 //     `memory_provisioning.dart`): `BrainProcessBoot.boot` now wraps every
 //     bring-up failure in a `BrainStartupError` tagging the `BootPhase`
@@ -477,6 +479,7 @@ export 'procedure_selector.dart'
     show ProcedureSelector, SystemProcedures, defaultProcedureRouting;
 export 'run_coordinator.dart'
     show
+        BackgroundReservation,
         CoordinatorDraining,
         ForegroundQueueFull,
         RunBody,
@@ -485,7 +488,8 @@ export 'run_coordinator.dart'
         RunIdMint,
         RunSlot,
         RunSlotBusy,
-        defaultCoordinatorDeadlineGrace;
+        defaultCoordinatorDeadlineGrace,
+        defaultCoordinatorHardStepDeadline;
 export 'run_registry.dart' show RunOutcome, RunRegistration, RunRegistry;
 export 'sustained_fallback_monitor.dart'
     show

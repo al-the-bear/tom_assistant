@@ -263,31 +263,42 @@ final class FreeTimeScheduler {
         FreeTimeDecision.foregroundPending,
       );
     }
-    // 2. At most one background run at a time (def § 7.1, PE-5).
-    if (coordinator.hasBackgroundRun) {
+    // 2. Atomically reserve the background slot *before* any await (F.3.1). The
+    // cycle must read the stacks, pop an entry, and build the run body — all
+    // async — before it can submit; without an atomic reserve two concurrent
+    // ticks (or a tick racing a `submitBackground`) could both observe the slot
+    // free and double-admit, breaking the single-background invariant (PE-5).
+    // A `null` reservation means the slot is already held (or the coordinator
+    // is draining): at most one background run at a time (def § 7.1, PE-5).
+    final reservation = coordinator.reserveBackground();
+    if (reservation == null) {
       return const FreeTimeSchedulerTick.noop(FreeTimeDecision.backgroundBusy);
     }
+    // From here every non-submitting exit must release the reservation so the
+    // held slot does not leak.
     // 3. Read stacks and pick the highest-priority hot one (§ 5.3).
     final hottest = _pickHottest(await memory.stacks.list());
     if (hottest == null) {
+      reservation.cancel();
       return const FreeTimeSchedulerTick.noop(FreeTimeDecision.idle);
     }
     // Pop the top entry of the chosen stack. A concurrent pop may have emptied
     // it since `list()`; treat that as an idle cycle rather than failing.
     final entry = await memory.stacks.pop(hottest.name);
     if (entry == null) {
+      reservation.cancel();
       return const FreeTimeSchedulerTick.noop(FreeTimeDecision.idle);
     }
     final pick = ScheduledPick(stackName: hottest.name, entry: entry);
     final work = workFactory(pick);
     if (work == null) {
       // The factory declined to route this entry (no procedure for it yet).
+      reservation.cancel();
       return const FreeTimeSchedulerTick.noop(FreeTimeDecision.idle);
     }
-    // 4. Submit as background. The slot is free (checked in step 2 and never
-    // released to another submitter between then and here within this turn),
-    // so `submitBackground` cannot raise `RunSlotBusy`.
-    final runFuture = coordinator.submitBackground<void>(
+    // 4. Run the built body in the slot reserved in step 2 — the hold has been
+    // continuous since then, so no other submitter could have taken it.
+    final runFuture = reservation.submit<void>(
       work.body,
       procedureId: work.procedureId,
       version: work.version,

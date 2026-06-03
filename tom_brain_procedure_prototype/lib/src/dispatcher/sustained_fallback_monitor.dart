@@ -52,6 +52,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import 'fallback_executor.dart' show FallbackEventSink, FallbackTrigger;
 import 'procedure_fallback_event.dart' show ProcedureFallback;
+import 'run_registry.dart' show dispatcherScopeProducerPrefix;
 
 /// The bootstrap stack that holds candidate procedures to author / revise
 /// (memory bootstrap stack #2 — `tom_brain_memory` `bootstrap_stacks_installer`).
@@ -147,8 +148,19 @@ final class SustainedFallbackMonitor {
       // 5th, … edge in the same burst must not re-push (Plan D.32).
       return null;
     }
-    episode.fired = true;
-    return _pushIdea(event.procedureId, episode.edges);
+    // Latch only after a *confirmed* write (F.3.3). Setting `fired` before the
+    // push would, on a failed write, both lose the alert and latch the episode
+    // as already-sent so it never retries. Mark fired only once the push
+    // succeeds; on failure leave the latch clear so the next edge in the still-
+    // sustained window re-attempts, and rethrow so the error is not swallowed.
+    try {
+      final ideaId = await _pushIdea(event.procedureId, episode.edges);
+      episode.fired = true;
+      return ideaId;
+    } catch (_) {
+      episode.fired = false;
+      rethrow;
+    }
   }
 
   /// Persists the `AutomationIdea` node and pushes it onto `automation_ideas`,
@@ -161,7 +173,7 @@ final class SustainedFallbackMonitor {
     final count = edges.length;
     final newestAt = edges.last.at;
     final scope = Scope(
-      producer: 'dispatcher:sustained-fallback:$procedureId',
+      producer: '$dispatcherScopeProducerPrefix:sustained-fallback:$procedureId',
       // The episode fires once; key on the triggering edge so a re-delivery of
       // the same crossing collapses to the original node rather than a second.
       idempotencyKey:

@@ -247,7 +247,7 @@ void main() {
       final exited = events[1].toJson();
       expect(exited['kind'], 'dispatcher.run-slot-exited');
       expect(exited['payload'],
-          <String, Object?>{'slot': 'background', 'outcome': 'forceYielded'});
+          <String, Object?>{'slot': 'background', 'outcome': 'force_yielded'});
 
       expect(events[2].toJson()['kind'],
           'dispatcher.foreground-preemption-requested');

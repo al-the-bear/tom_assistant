@@ -57,6 +57,8 @@
 // (`surfaced: true`), so the observability surface is exercised exactly as it
 // will be once multiple versions exist.
 
+import 'package:tom_brain_shared/tom_brain_shared.dart' show defaultNowUtc;
+
 import '../procedure_store/procedure_loader.dart' show LoadedProcedure;
 import '../procedure_store/procedure_resolver.dart' show ProcedureResolver;
 import 'procedure_fallback_event.dart' show ProcedureFallback;
@@ -293,9 +295,7 @@ final class FallbackExecutor {
     FallbackClock? clock,
   })  : classify = classifier ?? defaultFallbackClassifier,
         _onFallback = onFallback,
-        _clock = clock ?? _utcNow;
-
-  static DateTime _utcNow() => DateTime.now().toUtc();
+        _clock = clock ?? defaultNowUtc;
 
   /// Resolves a procedure id to its fallback chain (C.25).
   final ProcedureResolver resolver;
@@ -326,6 +326,13 @@ final class FallbackExecutor {
     String? causedBy,
   }) async {
     final chain = resolver.fallbackChain(procedureId);
+    // `fallbackChain` throws `ProcedureNotFound` for an unknown id and never
+    // returns an empty list for a known one. Fail fast at the boundary if that
+    // contract is ever broken, rather than falling through the loop to a
+    // trailing throw that reads as dead code (F.3.4).
+    if (chain.isEmpty) {
+      throw StateError('fallback chain for "$procedureId" was empty');
+    }
     final attempts = <FallbackAttempt>[];
     for (var i = 0; i < chain.length; i++) {
       final loaded = chain[i];
@@ -364,10 +371,11 @@ final class FallbackExecutor {
         // and re-attempt at the next version in the chain.
       }
     }
-    // `fallbackChain` throws for an unknown id and never returns an empty
-    // list for a known one, so the loop always returns above. This guards a
-    // future change to that contract.
-    throw StateError('fallback chain for "$procedureId" was empty');
+    // Unreachable: the chain is non-empty (guarded above) and every loop
+    // iteration either returns or steps down, with the last iteration
+    // (`!hasOlderVersion`) always returning. Present only so Dart's
+    // definite-return analysis accepts the method.
+    throw StateError('fallback chain walk for "$procedureId" did not return');
   }
 
   /// Builds and emits one [ProcedureFallback] when a sink is wired (D.30).

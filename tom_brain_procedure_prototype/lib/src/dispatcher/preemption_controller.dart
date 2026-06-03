@@ -41,6 +41,9 @@
 
 import 'dart:async';
 
+import 'package:tom_brain_shared/tom_brain_shared.dart' show defaultNowUtc;
+import 'package:tom_core_agentic/tom_core_agentic.dart' show CloseGuard;
+
 import 'preemption_event.dart';
 import 'run_coordinator.dart' show RunSlot;
 
@@ -60,13 +63,13 @@ typedef PreemptionClock = DateTime Function();
 ///
 /// Lifecycle: the `record*` methods are legal up until [close]; after [close]
 /// they throw `StateError` and [events] subscribers receive a done-stream —
-/// the same lifecycle contract as `EngineEventBus` (C.44).
-final class PreemptionController {
+/// the same lifecycle contract as `EngineEventBus` (C.44). The closed-flag and
+/// use-after-close guard come from the shared [CloseGuard] mixin (E.1) so the
+/// lifecycle dance is not re-hand-rolled here.
+final class PreemptionController with CloseGuard {
   /// Builds a controller over an optional [clock] (default: the UTC wall
   /// clock).
-  PreemptionController({PreemptionClock? clock}) : _clock = clock ?? _utcNow;
-
-  static DateTime _utcNow() => DateTime.now().toUtc();
+  PreemptionController({PreemptionClock? clock}) : _clock = clock ?? defaultNowUtc;
 
   final PreemptionClock _clock;
 
@@ -76,13 +79,9 @@ final class PreemptionController {
   final StreamController<PreemptionEvent> _controller =
       StreamController<PreemptionEvent>.broadcast(sync: false);
 
-  bool _closed = false;
   bool _foregroundOccupied = false;
   bool _backgroundOccupied = false;
   bool _preemptionPending = false;
-
-  /// Whether [close] has been called.
-  bool get isClosed => _closed;
 
   /// Whether the controller currently models the foreground slot as occupied.
   bool get isForegroundOccupied => _foregroundOccupied;
@@ -104,7 +103,7 @@ final class PreemptionController {
   /// Called by the coordinator the moment it starts a body in a slot — never
   /// for a rejected or still-queued submission.
   void recordRunStarted(RunSlot slot, {String? runId, String? causedBy}) {
-    _ensureOpen();
+    ensureOpen('PreemptionController.recordRunStarted');
     _setOccupied(slot, true);
     _emit(RunSlotEntered(
       occurredAt: _clock(),
@@ -127,7 +126,7 @@ final class PreemptionController {
     String? runId,
     String? causedBy,
   }) {
-    _ensureOpen();
+    ensureOpen('PreemptionController.recordRunFinished');
     _setOccupied(slot, false);
     _emit(RunSlotExited(
       occurredAt: _clock(),
@@ -145,7 +144,7 @@ final class PreemptionController {
   /// state. A redundant call while a preemption is already pending is a no-op
   /// and emits nothing.
   void recordForegroundPreemptionRequested({String? runId, String? causedBy}) {
-    _ensureOpen();
+    ensureOpen('PreemptionController.recordForegroundPreemptionRequested');
     if (_preemptionPending) {
       return;
     }
@@ -164,7 +163,7 @@ final class PreemptionController {
   /// only on the transition out of the waiting state. A call with no
   /// preemption pending is a no-op and emits nothing.
   void recordBackgroundResumeSignalled({String? runId, String? causedBy}) {
-    _ensureOpen();
+    ensureOpen('PreemptionController.recordBackgroundResumeSignalled');
     if (!_preemptionPending) {
       return;
     }
@@ -179,12 +178,12 @@ final class PreemptionController {
   /// Closes the controller.
   ///
   /// Subsequent `record*` calls throw `StateError`; live subscribers receive a
-  /// done event and any `await for` over [events] terminates. Idempotent.
+  /// done event and any `await for` over [events] terminates. Idempotent (the
+  /// [CloseGuard.markClosed] transition short-circuits a second call).
   Future<void> close() async {
-    if (_closed) {
+    if (!markClosed()) {
       return;
     }
-    _closed = true;
     await _controller.close();
   }
 
@@ -198,12 +197,4 @@ final class PreemptionController {
   }
 
   void _emit(PreemptionEvent event) => _controller.add(event);
-
-  void _ensureOpen() {
-    if (_closed) {
-      throw StateError(
-        'PreemptionController used after close',
-      );
-    }
-  }
 }
