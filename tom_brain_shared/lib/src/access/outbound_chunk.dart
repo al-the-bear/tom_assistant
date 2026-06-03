@@ -22,7 +22,7 @@
 //     type only carries the increment and the [isFinal] marker the
 //     wire layer keys on.
 
-import '../internal/text_preview.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show textPreview;
 
 /// One increment of a streamed answer.
 ///
@@ -71,7 +71,7 @@ final class OutboundChunk {
 
   @override
   String toString() => 'OutboundChunk('
-      'textDelta: ${previewText(textDelta)}, '
+      'textDelta: ${textPreview(textDelta, limit: 40)}, '
       'isFinal: $isFinal, '
       'index: $index)';
 }

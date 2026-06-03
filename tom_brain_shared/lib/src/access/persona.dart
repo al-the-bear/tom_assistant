@@ -23,7 +23,7 @@
 //   The dispatcher reads `persona.substrateRole`; Phase E produces the
 //   `Persona`. Two phases reference it → shared.
 
-import '../internal/argument_checks.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show requireNonEmpty;
 
 /// The persona handed to substrate for an inbound request, in the minimal
 /// shape the dispatcher needs. Carried on [Access].

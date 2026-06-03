@@ -8,15 +8,22 @@ environment:
 
 # Dependency discipline (Plan step A.9):
 # `tom_brain_shared` carries *pure types and pure helpers only*. No I/O,
-# no networking, no storage, no LLM, no logging side effects. The single
-# runtime dependency permitted at this level is `tom_basics`, which is the
-# workspace baseline (UUID, exception types, lightweight helpers).
+# no networking, no storage, no LLM, no logging side effects. Exactly two
+# baseline runtime dependencies are permitted at this level:
+#   - tom_basics       — workspace baseline (UUID, exception types,
+#                        lightweight helpers).
+#   - tom_core_agentic — generic, domain-free agentic building blocks
+#                        (collection equality, text preview, argument
+#                        guards, …). The shared-types layer builds on these
+#                        rather than re-implementing them per package.
 #
 # The dependency-discipline test (`test/dependency_discipline_test.dart`)
 # enforces this contract at build time. Adding anything else here without
 # updating that test will fail CI.
 dependencies:
   tom_basics: ^1.0.0
+  tom_core_agentic:
+    path: ../../tom_ai/core/tom_core_agentic
 
 dev_dependencies:
   lints: ^6.0.0

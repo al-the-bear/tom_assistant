@@ -63,9 +63,10 @@
 //     verbatim. A future `toJson` / `fromJson` lands when the second
 //     consumer needs it (per the workspace "don't pre-extract" rule).
 
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show requireNonEmpty, setEquals;
+
 import '../budget/write_budget.dart';
-import '../internal/argument_checks.dart';
-import '../internal/collection_equality.dart';
 
 /// Per-agent registry entry. Memory consults the matching entry on
 /// every write to attribute the write (`producedBy`) and to enforce

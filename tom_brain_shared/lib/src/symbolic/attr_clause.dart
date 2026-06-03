@@ -5,7 +5,9 @@
 // `notInList`); we keep the runtime check out of shared because the
 // validation message is most useful in the compiler's error context.
 
-import '../internal/collection_equality.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show deepValueEquals, deepValueHash;
+
 import 'symbolic_op.dart';
 
 /// One attribute clause in a [SymbolicFilter].

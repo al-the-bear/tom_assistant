@@ -20,8 +20,8 @@
 //   context stays on the kernel side. The dispatcher treats this handle
 //   opaquely (it reads only [principalId] for the memory scope) — Q-D.11.3.
 
-import '../internal/argument_checks.dart';
-import '../internal/collection_equality.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show mapEquals, requireNonEmpty;
 
 /// The resolved principal behind an inbound request, in the minimal shape
 /// the dispatcher needs. Carried on [Access] so the run / persist path can

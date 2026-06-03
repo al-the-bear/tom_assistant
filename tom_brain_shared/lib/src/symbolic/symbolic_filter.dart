@@ -43,7 +43,9 @@
 //     producer scopes (only the bare string), or attribute column
 //     types — that pairing happens at compile time inside memory.
 
-import '../internal/collection_equality.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show listEquals, setEquals;
+
 import '../time/brain_time.dart';
 import 'attr_clause.dart';
 

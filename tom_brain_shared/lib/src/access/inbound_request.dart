@@ -37,8 +37,8 @@
 //     classifier (E.33) or left null for the dispatcher's
 //     `classify_inbound_v1` fallback. This type only carries the hint.
 
-import '../internal/collection_equality.dart';
-import '../internal/text_preview.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show mapEquals, textPreview;
 
 /// The normalised inbound request — one user prompt, decoded from its
 /// originating channel into the channel-agnostic shape the dispatcher's
@@ -125,7 +125,7 @@ final class InboundRequest {
 
   @override
   String toString() => 'InboundRequest('
-      'text: ${previewText(text)}, '
+      'text: ${textPreview(text, limit: 40)}, '
       'kindHint: $kindHint, '
       'conversationId: $conversationId, '
       'messageId: $messageId, '

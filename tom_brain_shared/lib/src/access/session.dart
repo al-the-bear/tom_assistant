@@ -15,7 +15,7 @@
 //   the right conversation (D.39); it never reads the window contents.
 //   The shared shape therefore carries the identity only — Q-D.11.3.
 
-import '../internal/argument_checks.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show requireNonEmpty;
 
 /// The conversation a request belongs to, in the minimal shape the
 /// dispatcher needs. Carried on [Access] so a run can be linked to its
