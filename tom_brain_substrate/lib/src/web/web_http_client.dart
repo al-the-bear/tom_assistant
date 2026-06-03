@@ -46,6 +46,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 /// Narrow wire-shape interface to HTTP for the substrate's web tools
 /// (`WebSearch` at B.29, `WebFetch` at B.30).
@@ -437,14 +438,8 @@ Object? decodeJsonBody(WebHttpResponse response) {
       url: response.url,
       cause: FormatException(
         'Malformed JSON body: ${e.message}. '
-        'Body: ${_bodyExcerpt(response.body)}',
+        'Body: ${textPreview(response.body)}',
       ),
     );
   }
 }
-
-/// Truncates [body] for inclusion in an exception message so a
-/// multi-megabyte error page does not bloat the trail. (B.2.6 will fold
-/// this onto the shared `textPreview` helper.)
-String _bodyExcerpt(String body, [int limit = 512]) =>
-    body.length <= limit ? body : '${body.substring(0, limit)}…';

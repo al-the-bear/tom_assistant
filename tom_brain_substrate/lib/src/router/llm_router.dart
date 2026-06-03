@@ -58,8 +58,8 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget;
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 
-import '../api/cancellation.dart';
 import '../api/llm_call.dart';
 import '../api/llm_stream_event.dart';
 import '../llm/llm_provider.dart';
@@ -297,7 +297,7 @@ class LlmRouter {
           if (cls == LlmFailureClass.contextOverflow) {
             attempts.add(RouteAttempt(
               routeKey: '${entry.providerId}:${entry.model}',
-              outcome: 'failed:context_overflow:${_summarise(e)}',
+              outcome: 'failed:context_overflow:${textPreview('$e', limit: 117, ellipsis: '...')}',
               retries: retries,
               classification: cls,
             ));
@@ -313,7 +313,7 @@ class LlmRouter {
           if (cls == LlmFailureClass.cancelledByConsumer) {
             attempts.add(RouteAttempt(
               routeKey: '${entry.providerId}:${entry.model}',
-              outcome: 'failed:cancelled_by_consumer:${_summarise(e)}',
+              outcome: 'failed:cancelled_by_consumer:${textPreview('$e', limit: 117, ellipsis: '...')}',
               retries: retries,
               classification: cls,
             ));
@@ -336,7 +336,7 @@ class LlmRouter {
           _applyAction(action, cls, entry);
           attempts.add(RouteAttempt(
             routeKey: '${entry.providerId}:${entry.model}',
-            outcome: 'failed:${cls.code}:${_summarise(e)}',
+            outcome: 'failed:${cls.code}:${textPreview('$e', limit: 117, ellipsis: '...')}',
             retries: retries,
             classification: cls,
           ));
@@ -680,11 +680,6 @@ class LlmRouter {
   LlmOptions _resolveOptions(LlmOptions options, String routeModel) {
     if (options.model != null) return options;
     return options.copyWith(model: routeModel);
-  }
-
-  String _summarise(Object exception) {
-    final s = exception.toString();
-    return s.length > 120 ? '${s.substring(0, 117)}...' : s;
   }
 
   LlmStreamFailed _exhaustedFailedEvent({

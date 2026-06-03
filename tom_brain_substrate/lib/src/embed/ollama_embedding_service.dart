@@ -53,8 +53,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Vec;
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 
-import '../api/cancellation.dart';
 import '../api/embedding_result.dart';
 import '../api/substrate_event.dart' show EmbeddingIdentityChanged;
 import '../llm/ollama_llm_provider.dart';
@@ -220,7 +220,7 @@ final class OllamaEmbeddingService implements EmbeddingService {
     if (raw.isEmpty) {
       throw EmbeddingBackendEmpty(
         expectedIdentity: _identity,
-        inputPreview: _previewOf(text),
+        inputPreview: textPreview(text, limit: 64),
       );
     }
 
@@ -228,7 +228,7 @@ final class OllamaEmbeddingService implements EmbeddingService {
       throw EmbeddingDimensionMismatch(
         expectedIdentity: _identity,
         actualDims: raw.length,
-        inputPreview: _previewOf(text),
+        inputPreview: textPreview(text, limit: 64),
       );
     }
 
@@ -403,14 +403,5 @@ final class OllamaEmbeddingService implements EmbeddingService {
     for (var i = 0; i < values.length; i++) {
       values[i] = values[i] * invNorm;
     }
-  }
-
-  /// Truncates [text] for inclusion in exception messages. Keeps
-  /// stack-trace lines readable when the input is a multi-page
-  /// document.
-  static String _previewOf(String text) {
-    const limit = 64;
-    if (text.length <= limit) return text;
-    return '${text.substring(0, limit)}…';
   }
 }

@@ -104,6 +104,7 @@
 
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show AssistantDedicationAnchor;
+import 'package:tom_core_agentic/tom_core_agentic.dart' show textPreview;
 
 import '../llm/anchor_registry.dart';
 import '../llm/wire_prompt.dart';
@@ -480,13 +481,10 @@ final class RoleTemplate {
   @override
   String toString() => 'RoleTemplate('
       'id: $id, '
-      'personaText: ${_truncate(personaText)}, '
-      'objective: ${_truncate(objective)}, '
+      'personaText: "${textPreview(personaText, limit: 37, ellipsis: '...')}", '
+      'objective: "${textPreview(objective, limit: 37, ellipsis: '...')}", '
       'allowedActions: ${allowedActions.map((a) => a.token).toList()}, '
       'forbiddenActions: ${forbiddenActions.map((a) => a.token).toList()}, '
       'outputSchema: ${outputSchema == null ? 'null' : '<set>'}, '
       'budgetDefaults: $budgetDefaults)';
-
-  static String _truncate(String s) =>
-      s.length <= 40 ? '"$s"' : '"${s.substring(0, 37)}..."';
 }

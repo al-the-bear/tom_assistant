@@ -53,8 +53,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
-
-import '../api/cancellation.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 /// Narrow wire-shape interface to a running Ollama daemon
 /// (`/api/chat`, `/api/embeddings`, `/api/tags`).
@@ -430,7 +429,7 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
         throw OllamaHttpException(
           statusCode: response.statusCode,
           body: 'Malformed NDJSON line: ${e.message}. '
-              'Line: ${_bodyExcerpt(line)}',
+              'Line: ${textPreview(line)}',
           endpoint: url,
         );
       }
@@ -479,7 +478,7 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
     if (vec == null) {
       throw OllamaHttpException(
         statusCode: response.statusCode,
-        body: 'Expected {embedding: [...]}, got: ${_bodyExcerpt(response.body)}',
+        body: 'Expected {embedding: [...]}, got: ${textPreview(response.body)}',
         endpoint: url,
       );
     }
@@ -514,7 +513,7 @@ class DefaultOllamaHttpClient implements OllamaHttpClient {
     if (decoded['models'] is! List) {
       throw OllamaHttpException(
         statusCode: response.statusCode,
-        body: 'Expected {models: [...]}, got: ${_bodyExcerpt(response.body)}',
+        body: 'Expected {models: [...]}, got: ${textPreview(response.body)}',
         endpoint: url,
       );
     }
@@ -568,25 +567,19 @@ Map<String, Object?> _decodeJsonObjectOrThrow(
     throw OllamaHttpException(
       statusCode: statusCode,
       body: 'Malformed JSON ($shape expected): ${e.message}. '
-          'Body: ${_bodyExcerpt(body)}',
+          'Body: ${textPreview(body)}',
       endpoint: endpoint,
     );
   }
   if (decoded is! Map<String, Object?>) {
     throw OllamaHttpException(
       statusCode: statusCode,
-      body: 'Expected $shape, got: ${_bodyExcerpt(body)}',
+      body: 'Expected $shape, got: ${textPreview(body)}',
       endpoint: endpoint,
     );
   }
   return decoded;
 }
-
-/// Truncates [body] for inclusion in a wire-exception message so a
-/// multi-megabyte error page does not bloat the trail. (B.2.6 will fold
-/// this onto the shared `textPreview` helper.)
-String _bodyExcerpt(String body, [int limit = 512]) =>
-    body.length <= limit ? body : '${body.substring(0, limit)}…';
 
 /// Sentinel exception raised by the streaming path when the
 /// cancellation token signals. Translated to `LlmFailure(cancelled_by_consumer)`

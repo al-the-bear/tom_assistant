@@ -67,6 +67,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' as shared;
 import 'package:tom_basics/tom_basics.dart' as basics;
+import 'package:tom_core_agentic/tom_core_agentic.dart' as agentic;
 import 'package:tom_core_kernel/tom_core_kernel.dart' as kernel;
 import 'package:tom_core_server/tom_core_server.dart' as server;
 import 'package:dart_mcp/client.dart' as mcp_client;
@@ -120,6 +121,20 @@ void main() {
       // endpoint pipeline live there and the spec § 14 lists it
       // explicitly.
       expect(server.TomAuthenticationServer, isNotNull);
+    });
+
+    test('tom_core_agentic exposes the generic agentic building blocks', () {
+      // B.1 extraction: the substrate-local cancellation primitive,
+      // close-guard, dedup-by-id, text preview, and HTTP-date parser
+      // now live in this domain-free package. The substrate consumes
+      // them rather than re-declaring its own copies.
+      expect(agentic.CancellationToken, isNotNull);
+      expect(agentic.CancellationTokenSource, isNotNull);
+      expect(agentic.OperationCancelled, isNotNull);
+      expect(agentic.CloseGuard, isNotNull);
+      expect(agentic.HttpDate, isNotNull);
+      expect(agentic.textPreview, isA<Function>());
+      expect(agentic.buildUniqueById, isA<Function>());
     });
 
     test('dart_mcp exposes the client + protocol surface', () {

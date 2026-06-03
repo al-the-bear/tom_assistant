@@ -91,6 +91,16 @@ dependencies:
   tom_brain_shared:
     path: ../tom_brain_shared
   tom_basics: ^1.0.0
+  #   - tom_core_agentic   — generic, domain-free agentic building
+  #                          blocks (cooperative cancellation,
+  #                          `CloseGuard`, `buildUniqueById`,
+  #                          `textPreview`, `HttpDate`). Extracted from
+  #                          substrate-local duplicates per the
+  #                          prototype review (B.1). Depends only on
+  #                          `tom_basics` (+ yaml); no Tom-Brain types.
+  #                          Path dep — `publish_to: none`.
+  tom_core_agentic:
+    path: ../../tom_ai/core/tom_core_agentic
   tom_core_kernel:
     path: ../../tom_ai/core/tom_core_kernel
   tom_core_server:

@@ -51,8 +51,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
-
-import '../api/cancellation.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 /// Narrow wire-shape interface to an OpenAI-format Chat Completions /
 /// Embeddings endpoint (`/v1/chat/completions`, `/v1/embeddings`,
@@ -490,7 +489,7 @@ class DefaultOpenAiHttpClient implements OpenAiHttpClient {
         throw OpenAiHttpException(
           statusCode: response.statusCode,
           body: 'Malformed SSE data payload: ${e.message}. '
-              'Payload: ${_bodyExcerpt(payload)}',
+              'Payload: ${textPreview(payload)}',
           endpoint: url,
         );
       }
@@ -545,7 +544,7 @@ class DefaultOpenAiHttpClient implements OpenAiHttpClient {
     if (decoded['data'] is! List) {
       throw OpenAiHttpException(
         statusCode: response.statusCode,
-        body: 'Expected {data: [...]}, got: ${_bodyExcerpt(response.body)}',
+        body: 'Expected {data: [...]}, got: ${textPreview(response.body)}',
         endpoint: url,
       );
     }
@@ -585,7 +584,7 @@ class DefaultOpenAiHttpClient implements OpenAiHttpClient {
     if (decoded['data'] is! List) {
       throw OpenAiHttpException(
         statusCode: response.statusCode,
-        body: 'Expected {data: [...]}, got: ${_bodyExcerpt(response.body)}',
+        body: 'Expected {data: [...]}, got: ${textPreview(response.body)}',
         endpoint: url,
       );
     }
@@ -767,22 +766,16 @@ Map<String, Object?> _decodeJsonObjectOrThrow(
     throw OpenAiHttpException(
       statusCode: statusCode,
       body: 'Malformed JSON ($shape expected): ${e.message}. '
-          'Body: ${_bodyExcerpt(body)}',
+          'Body: ${textPreview(body)}',
       endpoint: endpoint,
     );
   }
   if (decoded is! Map<String, Object?>) {
     throw OpenAiHttpException(
       statusCode: statusCode,
-      body: 'Expected $shape, got: ${_bodyExcerpt(body)}',
+      body: 'Expected $shape, got: ${textPreview(body)}',
       endpoint: endpoint,
     );
   }
   return decoded;
 }
-
-/// Truncates [body] for inclusion in a wire-exception message so a
-/// multi-megabyte error page does not bloat the trail. (B.2.6 will fold
-/// this onto the shared `textPreview` helper.)
-String _bodyExcerpt(String body, [int limit = 512]) =>
-    body.length <= limit ? body : '${body.substring(0, limit)}…';
