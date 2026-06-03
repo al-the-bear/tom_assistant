@@ -91,6 +91,24 @@ import 'package:test/test.dart';
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
+/// True when the vec0 extension is registered process-globally.
+///
+/// The sqlite3 package only exposes the global `sqlite3_auto_extension`
+/// registrar, so vec0 presence is a process-wide fact, not a
+/// per-connection one. Probes by attempting a vec0 virtual table on a
+/// throwaway in-memory connection.
+bool _vec0RegisteredInProcess() {
+  final db = sqlite3.openInMemory();
+  try {
+    db.execute('CREATE VIRTUAL TABLE _probe USING vec0(e float[1])');
+    return true;
+  } on SqliteException {
+    return false;
+  } finally {
+    db.dispose();
+  }
+}
+
 void main() {
   group('A.51 vector table', () {
     late Database db;
@@ -678,6 +696,24 @@ void main() {
       // (it refuses to boot before this backend is ever constructed);
       // we lock the failure shape here so a future sqlite-vec syntax
       // change is detected.
+      //
+      // Precondition: vec0 must NOT be registered in this process. The
+      // sqlite3 package only exposes the process-global
+      // `sqlite3_auto_extension` registrar, so once any test in this
+      // process loads the real vec0 binary (e.g. the a53 real-binary
+      // roundtrip), every connection — including this fresh in-memory
+      // one — gains vec0 and the "no such module" contract no longer
+      // applies. The probe runs at execution time (not at collection
+      // time, where the global state may not yet reflect a sibling
+      // suite's load), and skips rather than letting test ordering
+      // decide pass/fail.
+      if (_vec0RegisteredInProcess()) {
+        markTestSkipped(
+          'vec0 is registered process-globally (a real-binary load ran in '
+          'this process); the "no vec0" precondition no longer holds.',
+        );
+        return;
+      }
       final db = sqlite3.openInMemory();
       addTearDown(db.dispose);
       expect(

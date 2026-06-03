@@ -130,6 +130,8 @@ export 'two_db_coordinator.dart'
         TwoDbReplayFailure,
         TwoDbReplayReport,
         VectorApplier;
+export 'sqlite_vec_binary_resolver.dart'
+    show SqliteVecBinaryResolver, UnsupportedSqliteVecPlatform;
 export 'vec_extension_loader.dart'
     show
         DynamicLibraryOpener,

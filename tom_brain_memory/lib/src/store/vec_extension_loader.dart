@@ -16,11 +16,15 @@
 //   1. Host calls `MemoryDirectory.openOrCreate(config)`.
 //   2. Host opens `memory.db` and runs `BootIntegrityCheck`.
 //   3. Host calls `loadVecExtensionOrRefuseToBoot(...)`:
-//        a. The loader resolves `config.sqliteVec.extensionPath`.
-//        b. If the path is empty, missing, or points at a file that
-//           fails to load / register, a `VectorRuntimeUnavailable`
-//           exception is thrown and `open()` aborts. There is no
-//           BM25-only fallback.
+//        a. The loader resolves the binary path: an explicit
+//           `config.sqliteVec.extensionPath` wins; otherwise it
+//           resolves `<binariesRoot>/<platform>/vec0.<ext>` from the
+//           in-quest `tom_binaries/sqlite_vec/` tree for the running
+//           platform (`SqliteVecBinaryResolver`).
+//        b. If neither is configured, the resolved file is missing, the
+//           running platform is unsupported, or the file fails to load /
+//           register, a `VectorRuntimeUnavailable` exception is thrown
+//           and `open()` aborts. There is no BM25-only fallback.
 //        c. If the load succeeds, the typed result is returned and
 //           `open()` proceeds.
 //   4. A.51+ relies on the load having succeeded for every vector-mode
@@ -46,15 +50,17 @@
 //   a thin wrapper preserves the loader as a pure value-returning
 //   function whose every branch is inspectable without a try/catch.
 //
-// Why dependency injection (opener / lookup / registrar):
+// Why dependency injection (opener / lookup / registrar / resolver):
 //
-//   The success path of the loader requires a real vec0 binary on
-//   disk. Until the binary is published into `tom_binaries/sqlite_vec/`
-//   (Plan step A.6), the failure paths would also be untestable because
-//   every test would have to provide a real shared library that *fails*
-//   on dlopen or symbol lookup in a controlled way. The injected
-//   functions make every branch deterministic and platform-neutral;
-//   production wiring uses the defaults.
+//   The success path of the loader requires a real vec0 binary on disk
+//   (now shipped in `tom_binaries/sqlite_vec/<platform>/`, todo #2).
+//   The failure paths, however, must still be testable without a
+//   binary that *fails* on dlopen or symbol lookup in a controlled way,
+//   and the `binariesRoot` resolution must be testable for platforms
+//   the test host is not running on. The injected functions — plus an
+//   injectable `SqliteVecBinaryResolver` bound to a chosen `Abi` — make
+//   every branch deterministic and platform-neutral; production wiring
+//   uses the defaults.
 
 import 'dart:ffi';
 import 'dart:io';
@@ -62,6 +68,7 @@ import 'dart:io';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../config/memory_config.dart';
+import 'sqlite_vec_binary_resolver.dart';
 
 /// Outcome of one `VecExtensionLoader.load(...)` call.
 ///
@@ -71,9 +78,10 @@ import '../config/memory_config.dart';
 ///                     `sqlite3_auto_extension` and every subsequent
 ///                     `Database` opened through the same `Sqlite3`
 ///                     instance will receive vec0 functions.
-///   * `unavailable` — the extension is not present (configuration
-///                     empty, file missing). The binary has not been
-///                     published yet; the brain refuses to boot.
+///   * `unavailable` — the extension is not present (neither
+///                     `extensionPath` nor `binariesRoot` configured,
+///                     or the resolved file is missing on disk). The
+///                     brain refuses to boot.
 ///   * `failed`      — the extension is present but could not be
 ///                     loaded (broken binary, wrong arch, missing
 ///                     entrypoint, registration error). The brain
@@ -95,10 +103,19 @@ enum VecLoadOutcome { loaded, unavailable, failed }
 /// any future reason must be added here and documented in the
 /// operator UI legend.
 enum VecUnavailableReason {
-  /// `MemoryConfig.sqliteVec.extensionPath` is the empty string.
-  /// Maps to `VecLoadOutcome.unavailable`. Expected on developer
-  /// machines that have not configured a binary path.
+  /// Both `MemoryConfig.sqliteVec.extensionPath` and `.binariesRoot`
+  /// are the empty string. Maps to `VecLoadOutcome.unavailable`.
+  /// Expected on developer machines that have configured neither an
+  /// explicit binary path nor the in-quest `tom_binaries/sqlite_vec/`
+  /// tree.
   notConfigured,
+
+  /// `.binariesRoot` was set but the running platform has no
+  /// `tom_binaries/sqlite_vec/` mapping (e.g. Android / iOS / RISC-V /
+  /// 32-bit x86). Maps to `VecLoadOutcome.failed`. The brain cannot run
+  /// on this platform until a `vec0` binary exists for it; this is a
+  /// porting task, not a missing-file-on-a-supported-host case.
+  unsupportedPlatform,
 
   /// The configured path does not exist on disk. Maps to
   /// `VecLoadOutcome.unavailable`. Most often: the binary has not
@@ -212,6 +229,7 @@ final class VecExtensionLoader {
   final DynamicLibraryOpener _open;
   final DynamicLibrarySymbolLookup _lookup;
   final ExtensionRegistrar _register;
+  final SqliteVecBinaryResolver _resolver;
 
   /// Constructs the loader.
   ///
@@ -223,6 +241,10 @@ final class VecExtensionLoader {
   ///                            `(lib, sym) => lib.lookup<Void>(sym)`.
   ///   * [registerExtension]  — defaults to
   ///                            `(sqlite, ext) => sqlite.ensureExtensionLoaded(ext)`.
+  ///   * [binaryResolver]     — defaults to `SqliteVecBinaryResolver()`
+  ///                            (the running platform). Tests inject one
+  ///                            bound to a specific `Abi` to drive the
+  ///                            `binariesRoot` resolution branch.
   ///
   /// Tests pass overrides; production wiring uses the defaults.
   VecExtensionLoader({
@@ -230,9 +252,11 @@ final class VecExtensionLoader {
     DynamicLibraryOpener? openDynamicLibrary,
     DynamicLibrarySymbolLookup? lookupSymbol,
     ExtensionRegistrar? registerExtension,
+    SqliteVecBinaryResolver? binaryResolver,
   })  : _open = openDynamicLibrary ?? DynamicLibrary.open,
         _lookup = lookupSymbol ?? _defaultLookup,
-        _register = registerExtension ?? _defaultRegister;
+        _register = registerExtension ?? _defaultRegister,
+        _resolver = binaryResolver ?? SqliteVecBinaryResolver();
 
   static Pointer<Void> _defaultLookup(DynamicLibrary lib, String symbol) =>
       lib.lookup<Void>(symbol);
@@ -260,14 +284,37 @@ final class VecExtensionLoader {
     required Sqlite3 sqlite,
     required MemoryConfig config,
   }) {
-    final path = config.sqliteVec.extensionPath;
+    final vecConfig = config.sqliteVec;
 
-    if (path.isEmpty) {
-      return VecExtensionLoadResult(
+    // Resolution priority (§ SqliteVecConfig docs):
+    //   1. explicit `extensionPath` wins (override for ad-hoc builds);
+    //   2. else resolve `<binariesRoot>/<platform>/vec0.<ext>` from the
+    //      in-quest tom_binaries tree for the running platform;
+    //   3. else neither configured → refuse to boot (notConfigured).
+    final String path;
+    if (vecConfig.extensionPath.isNotEmpty) {
+      path = vecConfig.extensionPath;
+    } else if (vecConfig.binariesRoot.isNotEmpty) {
+      try {
+        path = _resolver.resolve(vecConfig.binariesRoot);
+      } on UnsupportedSqliteVecPlatform catch (e) {
+        return VecExtensionLoadResult(
+          outcome: VecLoadOutcome.failed,
+          extensionPath: '',
+          reason: VecUnavailableReason.unsupportedPlatform,
+          summary: 'sqlite-vec binariesRoot is set '
+              '(${vecConfig.binariesRoot}) but the running platform has '
+              'no tom_binaries/sqlite_vec/ mapping: ${e.message}',
+          cause: e,
+        );
+      }
+    } else {
+      return const VecExtensionLoadResult(
         outcome: VecLoadOutcome.unavailable,
-        extensionPath: path,
+        extensionPath: '',
         reason: VecUnavailableReason.notConfigured,
-        summary: 'sqlite-vec extensionPath is empty in MemoryConfig; '
+        summary: 'sqlite-vec is unconfigured in MemoryConfig '
+            '(neither extensionPath nor binariesRoot is set); '
             'vector runtime unavailable',
       );
     }

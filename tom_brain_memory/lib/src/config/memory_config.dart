@@ -14,13 +14,38 @@
 import 'dart:io';
 
 /// sqlite-vec FFI extension configuration.
+///
+/// Two ways to point at the `vec0` binary, checked in this order by the
+/// loader (`vec_extension_loader.dart`):
+///
+///   1. [extensionPath] — an explicit absolute path. When non-empty it
+///      wins; this is the override for ad-hoc / non-standard builds.
+///   2. [binariesRoot] — the in-quest `tom_binaries/sqlite_vec/`
+///      directory. When [extensionPath] is empty and this is set, the
+///      loader resolves `<binariesRoot>/<platform>/vec0.<ext>` for the
+///      running platform via `SqliteVecBinaryResolver` (todo #2, P1.1).
+///
+/// When both are empty the loader treats the vector runtime as
+/// unconfigured and refuses to boot (Q-A.6.1: vector search is
+/// mandatory; there is no BM25-only fallback).
 final class SqliteVecConfig {
-  /// Absolute path to the `vec0.so` / `vec0.dylib` / `vec0.dll`
-  /// binary. The store boot-time check verifies the binary
+  /// Explicit absolute path to the `vec0.so` / `vec0.dylib` /
+  /// `vec0.dll` binary. Empty when resolution should fall to
+  /// [binariesRoot]. The store boot-time check verifies the binary
   /// version matches the schema version (§ 2.2 Option A).
   final String extensionPath;
 
-  const SqliteVecConfig({required this.extensionPath});
+  /// Path to the `tom_binaries/sqlite_vec/` directory holding the
+  /// per-platform `vec0` binaries shipped in-quest. Empty when an
+  /// explicit [extensionPath] is used instead. The platform tuple and
+  /// the library filename are resolved from the running platform, so
+  /// one config value works across Linux / macOS / Windows.
+  final String binariesRoot;
+
+  const SqliteVecConfig({
+    this.extensionPath = '',
+    this.binariesRoot = '',
+  });
 }
 
 /// Retrieval tunables (§ 6.2, § 14).
@@ -211,13 +236,17 @@ final class MemoryConfig {
   factory MemoryConfig.forTesting({
     required String root,
     String extensionPath = '',
+    String binariesRoot = '',
   }) {
     if (root.isEmpty) {
       throw ArgumentError.value(root, 'root', 'must be non-empty');
     }
     return MemoryConfig(
       root: root,
-      sqliteVec: SqliteVecConfig(extensionPath: extensionPath),
+      sqliteVec: SqliteVecConfig(
+        extensionPath: extensionPath,
+        binariesRoot: binariesRoot,
+      ),
     );
   }
 

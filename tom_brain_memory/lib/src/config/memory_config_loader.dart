@@ -171,17 +171,35 @@ abstract final class MemoryConfigLoader {
     YamlMap node,
     Map<String, String> env,
   ) {
-    final extRaw = _requireString(
+    // Either `extensionPath` (explicit binary) or `binariesRoot`
+    // (the in-quest `tom_binaries/sqlite_vec/` tree, resolved per
+    // platform by the loader) may be given; at least one is required so
+    // the brain can boot vector mode (Q-A.6.1 — no BM25-only fallback).
+    final extRaw = _optionalString(
       node,
       'extensionPath',
       'memory.sqliteVec.extensionPath',
     );
-    final ext = _expandEnv(
-      extRaw,
-      env,
-      'memory.sqliteVec.extensionPath',
+    final ext = extRaw == null
+        ? ''
+        : _expandEnv(extRaw, env, 'memory.sqliteVec.extensionPath');
+
+    final rootRaw = _optionalString(
+      node,
+      'binariesRoot',
+      'memory.sqliteVec.binariesRoot',
     );
-    return SqliteVecConfig(extensionPath: ext);
+    final binariesRoot = rootRaw == null
+        ? ''
+        : _expandEnv(rootRaw, env, 'memory.sqliteVec.binariesRoot');
+
+    if (ext.isEmpty && binariesRoot.isEmpty) {
+      throw const MemoryConfigException(
+        'memory.sqliteVec requires `extensionPath` or `binariesRoot` '
+        '(vector search is mandatory; there is no BM25-only fallback).',
+      );
+    }
+    return SqliteVecConfig(extensionPath: ext, binariesRoot: binariesRoot);
   }
 
   static RetrievalConfig _parseRetrieval(YamlMap? node) {

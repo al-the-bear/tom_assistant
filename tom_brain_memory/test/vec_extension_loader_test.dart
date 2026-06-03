@@ -456,4 +456,136 @@ void main() {
       expect(result.extensionPath, equals(stub));
     });
   });
+
+  group('VecExtensionLoader — binariesRoot resolution (todo #2)', () {
+    test('neither extensionPath nor binariesRoot → notConfigured', () {
+      final loader = VecExtensionLoader();
+      final cfg = MemoryConfig.forTesting(root: _tempDir('tbm_br_').path);
+
+      final result = loader.load(sqlite: sqlite3, config: cfg);
+
+      expect(result.outcome, equals(VecLoadOutcome.unavailable));
+      expect(result.reason, equals(VecUnavailableReason.notConfigured));
+      expect(result.extensionPath, equals(''));
+    });
+
+    test('binariesRoot resolves the platform path; missing file → fileMissing',
+        () {
+      // An empty tom_binaries/sqlite_vec tree: the resolved
+      // <root>/linux-x64/vec0.so does not exist, so the loader reports
+      // fileMissing against the *resolved* path (not the root).
+      final root = _tempDir('tbm_br_missing_').path;
+      final loader = VecExtensionLoader(
+        binaryResolver: SqliteVecBinaryResolver(abi: Abi.linuxX64),
+      );
+      final cfg = MemoryConfig.forTesting(
+        root: _tempDir('tbm_br_missing_root_').path,
+        binariesRoot: root,
+      );
+
+      final result = loader.load(sqlite: sqlite3, config: cfg);
+
+      expect(result.outcome, equals(VecLoadOutcome.unavailable));
+      expect(result.reason, equals(VecUnavailableReason.fileMissing));
+      expect(result.extensionPath, equals('$root/linux-x64/vec0.so'));
+    });
+
+    test('binariesRoot resolves and loads when the resolved file exists', () {
+      // Lay out <root>/linux-x64/vec0.so as a stub; inject open/lookup/
+      // register so the FFI pipeline succeeds without a real binary.
+      final root = _tempDir('tbm_br_loaded_');
+      final platformDir =
+          Directory('${root.path}${Platform.pathSeparator}linux-x64')
+            ..createSync(recursive: true);
+      final resolvedPath = _writeStubFile(platformDir, 'vec0.so', 'stub');
+
+      final loader = VecExtensionLoader(
+        binaryResolver: SqliteVecBinaryResolver(abi: Abi.linuxX64),
+        openDynamicLibrary: (_) => DynamicLibrary.process(),
+        lookupSymbol: (_, _) => _fakeEntrypoint(0x5151),
+        registerExtension: (_, _) {},
+      );
+      final cfg = MemoryConfig.forTesting(
+        root: _tempDir('tbm_br_loaded_root_').path,
+        binariesRoot: root.path,
+      );
+
+      final result = loader.load(sqlite: sqlite3, config: cfg);
+
+      expect(result.isLoaded, isTrue);
+      expect(result.extensionPath, equals(resolvedPath));
+      expect(resolvedPath, equals('${root.path}/linux-x64/vec0.so'));
+    });
+
+    test('explicit extensionPath wins over binariesRoot', () {
+      final root = _tempDir('tbm_br_override_');
+      final explicit = _writeStubFile(root, 'explicit_vec0.bin', 'x');
+
+      final loader = VecExtensionLoader(
+        // A resolver that would resolve elsewhere if consulted.
+        binaryResolver: SqliteVecBinaryResolver(abi: Abi.linuxX64),
+        openDynamicLibrary: (_) => DynamicLibrary.process(),
+        lookupSymbol: (_, _) => _fakeEntrypoint(0x6262),
+        registerExtension: (_, _) {},
+      );
+      final cfg = MemoryConfig(
+        root: _tempDir('tbm_br_override_root_').path,
+        sqliteVec: SqliteVecConfig(
+          extensionPath: explicit,
+          binariesRoot: '/should/not/be/used',
+        ),
+      );
+
+      final result = loader.load(sqlite: sqlite3, config: cfg);
+
+      expect(result.isLoaded, isTrue);
+      expect(result.extensionPath, equals(explicit));
+    });
+
+    test('binariesRoot on an unsupported platform → failed / unsupportedPlatform',
+        () {
+      final loader = VecExtensionLoader(
+        binaryResolver: SqliteVecBinaryResolver(abi: Abi.androidArm64),
+      );
+      final cfg = MemoryConfig.forTesting(
+        root: _tempDir('tbm_br_unsupported_').path,
+        binariesRoot: '/opt/tom_binaries/sqlite_vec',
+      );
+
+      final result = loader.load(sqlite: sqlite3, config: cfg);
+
+      expect(result.outcome, equals(VecLoadOutcome.failed));
+      expect(
+        result.reason,
+        equals(VecUnavailableReason.unsupportedPlatform),
+      );
+      expect(result.isFailed, isTrue);
+      expect(result.cause, isA<UnsupportedSqliteVecPlatform>());
+      expect(result.summary, contains('binariesRoot'));
+    });
+
+    test('unsupportedPlatform refuses to boot with wasError=true', () {
+      final loader = VecExtensionLoader(
+        binaryResolver: SqliteVecBinaryResolver(abi: Abi.androidArm64),
+      );
+      final cfg = MemoryConfig.forTesting(
+        root: _tempDir('tbm_br_unsupported_boot_').path,
+        binariesRoot: '/opt/tom_binaries/sqlite_vec',
+      );
+
+      expect(
+        () => loadVecExtensionOrRefuseToBoot(
+          sqlite: sqlite3,
+          config: cfg,
+          loader: loader,
+        ),
+        throwsA(
+          isA<VectorRuntimeUnavailable>()
+              .having((e) => e.reason, 'reason',
+                  VecUnavailableReason.unsupportedPlatform)
+              .having((e) => e.wasError, 'wasError', isTrue),
+        ),
+      );
+    });
+  });
 }

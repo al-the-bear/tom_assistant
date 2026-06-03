@@ -311,7 +311,8 @@ memory:
       );
     });
 
-    test('missing required `sqliteVec.extensionPath` raises', () {
+    test('empty sqliteVec (neither extensionPath nor binariesRoot) raises',
+        () {
       expect(
         () => MemoryConfigLoader.parse('''
 memory:
@@ -325,10 +326,30 @@ memory:
           isA<MemoryConfigException>().having(
             (e) => e.message,
             'message',
-            contains('memory.sqliteVec.extensionPath'),
+            allOf(
+              contains('memory.sqliteVec'),
+              contains('binariesRoot'),
+            ),
           ),
         ),
       );
+    });
+
+    test('binariesRoot alone is accepted and expands env tokens', () {
+      final cfg = MemoryConfigLoader.parse(
+        '''
+memory:
+  root: /var/lib/tom_brain/memory
+  sqliteVec:
+    binariesRoot: \${TOM_BINARIES}/sqlite_vec
+  replication:
+    role: authority
+    writeLogDir: /tmp/write-log
+''',
+        envVars: {'TOM_BINARIES': '/opt/tom/binaries'},
+      );
+      expect(cfg.sqliteVec.extensionPath, '');
+      expect(cfg.sqliteVec.binariesRoot, '/opt/tom/binaries/sqlite_vec');
     });
 
     test('wrong type for an integer field raises', () {
