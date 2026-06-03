@@ -139,9 +139,20 @@ export 'src/symbolic/symbolic.dart'
 // session window, the kernel identity, and the persona enrichment stay
 // with their owners (memory, `tom_core_kernel`, the substrate role map);
 // shared carries only the cross-phase shape.
+// D.12 also re-exports the `AccessEvent` sealed sum (`AccessCreated` /
+// `AccessDelivered` / `AccessFailed`) from the same library — it traces one
+// inbound request from construction through delivery / failure. Phase E emits
+// the events from the edge; the dispatcher / a Forge inspector observe them
+// off the shared `BrainEvent` base. The variants carry routing identity and
+// counts only — never the prompt text or the answer body. One `export` for
+// the whole `access.dart` surface (D.11 shape + D.12 events).
 export 'src/access/access.dart'
     show
         Access,
+        AccessCreated,
+        AccessDelivered,
+        AccessEvent,
+        AccessFailed,
         DeliverCallback,
         InboundRequest,
         OutboundChunk,
@@ -156,17 +167,12 @@ export 'src/access/access.dart'
 // E.38) and consumed by the engine, so the signal type is declared once, in
 // shared — joining `OutboundChunk` (D.11) rather than being moved at E.52.
 export 'src/access/backpressure.dart'
-    show Backpressure, BackpressureSignal, DeliveryStalled, StallReason;
-
-// D.12 — access/ observability: the `AccessEvent` sealed sum
-// (`AccessCreated` / `AccessDelivered` / `AccessFailed`) tracing one
-// inbound request from construction through delivery / failure. Lives
-// beside the `Access` shape it observes (D.11): Phase E emits the events
-// from the edge, the dispatcher / a Forge inspector observe them off the
-// shared `BrainEvent` base. The variants carry routing identity and
-// counts only — never the prompt text or the answer body.
-export 'src/access/access.dart'
-    show AccessCreated, AccessDelivered, AccessEvent, AccessFailed;
+    show
+        Backpressure,
+        BackpressureSignal,
+        DeliveryStalled,
+        StallReason,
+        StallReasonTerminality;
 
 // D.52 — access/ inbound-kind vocabulary: `InboundKinds` names the
 // well-known inbound kind strings the Phase-E heuristic classifier (E.33)

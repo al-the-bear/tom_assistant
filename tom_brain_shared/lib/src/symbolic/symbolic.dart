@@ -4,6 +4,6 @@
 // filter in shape-only form. The SQL compiler that turns these into
 // parameterised SQL lives in `tom_brain_memory/retrieval/symbolic_recall.dart`.
 
-export 'attr_clause.dart';
-export 'symbolic_filter.dart';
-export 'symbolic_op.dart';
+export 'attr_clause.dart' show AttrClause;
+export 'symbolic_filter.dart' show SymbolicFilter;
+export 'symbolic_op.dart' show SymbolicOp;

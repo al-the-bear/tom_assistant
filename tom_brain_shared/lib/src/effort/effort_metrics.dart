@@ -45,8 +45,10 @@ final class EffortMetrics {
   /// Memory writes (`persist`, `edge`, `stack.push`/`update`/`remove`).
   final int memoryWrites;
 
-  /// Builds a metric bundle. Every field defaults to zero.
-  const EffortMetrics({
+  /// Const, unvalidated raw constructor. Private — the only const path, used
+  /// by [zero] (the all-zero sentinel is trivially valid). All public
+  /// construction goes through the validating factory below.
+  const EffortMetrics._({
     this.wallClockMs = 0,
     this.llmCalls = 0,
     this.inputTokens = 0,
@@ -54,16 +56,53 @@ final class EffortMetrics {
     this.toolCalls = 0,
     this.memoryReads = 0,
     this.memoryWrites = 0,
-  })  : assert(wallClockMs >= 0, 'wallClockMs must be >= 0'),
-        assert(llmCalls >= 0, 'llmCalls must be >= 0'),
-        assert(inputTokens >= 0, 'inputTokens must be >= 0'),
-        assert(outputTokens >= 0, 'outputTokens must be >= 0'),
-        assert(toolCalls >= 0, 'toolCalls must be >= 0'),
-        assert(memoryReads >= 0, 'memoryReads must be >= 0'),
-        assert(memoryWrites >= 0, 'memoryWrites must be >= 0');
+  });
 
-  /// The all-zero record — the starting point C.32 accumulates onto.
-  static const EffortMetrics zero = EffortMetrics();
+  /// Builds a metric bundle. Every field defaults to zero.
+  ///
+  /// All fields must be non-negative. The check throws (rather than
+  /// `assert`s) so a negative counter — always a programming error in the
+  /// accountant — fails in release builds too: this record rides on every
+  /// `ProcedureRun`, so a corrupt one must not propagate silently. Because a
+  /// validating factory cannot be `const`, the all-zero [zero] sentinel is
+  /// built via the const private constructor and remains usable in const
+  /// contexts (e.g. default parameter values).
+  factory EffortMetrics({
+    int wallClockMs = 0,
+    int llmCalls = 0,
+    int inputTokens = 0,
+    int outputTokens = 0,
+    int toolCalls = 0,
+    int memoryReads = 0,
+    int memoryWrites = 0,
+  }) {
+    _requireNonNegative(wallClockMs, 'wallClockMs');
+    _requireNonNegative(llmCalls, 'llmCalls');
+    _requireNonNegative(inputTokens, 'inputTokens');
+    _requireNonNegative(outputTokens, 'outputTokens');
+    _requireNonNegative(toolCalls, 'toolCalls');
+    _requireNonNegative(memoryReads, 'memoryReads');
+    _requireNonNegative(memoryWrites, 'memoryWrites');
+    return EffortMetrics._(
+      wallClockMs: wallClockMs,
+      llmCalls: llmCalls,
+      inputTokens: inputTokens,
+      outputTokens: outputTokens,
+      toolCalls: toolCalls,
+      memoryReads: memoryReads,
+      memoryWrites: memoryWrites,
+    );
+  }
+
+  static void _requireNonNegative(int value, String name) {
+    if (value < 0) {
+      throw ArgumentError.value(value, name, 'must be >= 0');
+    }
+  }
+
+  /// The all-zero record — the starting point C.32 accumulates onto. Const so
+  /// it stays usable as a default parameter value.
+  static const EffortMetrics zero = EffortMetrics._();
 
   /// The primary estimation metric: `inputTokens + outputTokens`
   /// (spec § 8).

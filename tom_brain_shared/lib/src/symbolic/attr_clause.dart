@@ -5,6 +5,7 @@
 // `notInList`); we keep the runtime check out of shared because the
 // validation message is most useful in the compiler's error context.
 
+import '../internal/collection_equality.dart';
 import 'symbolic_op.dart';
 
 /// One attribute clause in a [SymbolicFilter].
@@ -34,31 +35,12 @@ final class AttrClause {
     if (other is! AttrClause) return false;
     if (field != other.field) return false;
     if (op != other.op) return false;
-    return _valueEquals(value, other.value);
+    return deepValueEquals(value, other.value);
   }
 
   @override
-  int get hashCode => Object.hash(field, op, _valueHash(value));
+  int get hashCode => Object.hash(field, op, deepValueHash(value));
 
   @override
   String toString() => 'AttrClause($field ${op.name} $value)';
-}
-
-bool _valueEquals(Object? a, Object? b) {
-  if (identical(a, b)) return true;
-  if (a == null || b == null) return false;
-  if (a is List && b is List) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (!_valueEquals(a[i], b[i])) return false;
-    }
-    return true;
-  }
-  return a == b;
-}
-
-int _valueHash(Object? v) {
-  if (v == null) return 0;
-  if (v is List) return Object.hashAll(v);
-  return v.hashCode;
 }

@@ -15,6 +15,8 @@
 //   the right conversation (D.39); it never reads the window contents.
 //   The shared shape therefore carries the identity only — Q-D.11.3.
 
+import '../internal/argument_checks.dart';
+
 /// The conversation a request belongs to, in the minimal shape the
 /// dispatcher needs. Carried on [Access] so a run can be linked to its
 /// conversation.
@@ -38,13 +40,7 @@ final class Session {
     required this.sessionId,
     this.conversationId,
   }) {
-    if (sessionId.isEmpty) {
-      throw ArgumentError.value(
-        sessionId,
-        'sessionId',
-        'must be non-empty',
-      );
-    }
+    requireNonEmpty(sessionId, 'sessionId');
   }
 
   @override

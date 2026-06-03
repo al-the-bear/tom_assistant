@@ -147,16 +147,10 @@ void main() {
       expect(json['causedBy'], equals('ev_01J'));
     });
 
-    test('asserts UTC in checked mode for non-UTC occurredAt', () {
-      // Local time should trip the assert in debug. We only run this when
-      // assertions are enabled (the default for `dart test`).
-      var asserted = false;
-      assert(() {
-        asserted = true;
-        return true;
-      }());
-      if (!asserted) return; // production mode; skip silently.
-
+    test('toJson rejects a non-UTC occurredAt', () {
+      // A local-time instant must never ride the observability wire — it
+      // corrupts cross-component trace ordering — so toJson throws (in
+      // release builds too), not asserts.
       final localTime = DateTime(2026, 5, 30, 14, 22, 33);
       final e = _FixtureEvent(
         message: 'm',
@@ -164,7 +158,7 @@ void main() {
         occurredAt: localTime,
       );
 
-      expect(() => e.toJson(), throwsA(isA<AssertionError>()));
+      expect(() => e.toJson(), throwsArgumentError);
     });
 
     test('payloadJson returns a fresh map per call', () {

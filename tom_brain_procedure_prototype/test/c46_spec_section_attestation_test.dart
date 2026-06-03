@@ -52,7 +52,7 @@ void main() {
     });
 
     test('the derived estimatedTokens equals inputTokens + outputTokens', () {
-      const m = EffortMetrics(inputTokens: 30, outputTokens: 12);
+      final m = EffortMetrics(inputTokens: 30, outputTokens: 12);
       expect(m.toJson()['estimatedTokens'], 42);
     });
   });

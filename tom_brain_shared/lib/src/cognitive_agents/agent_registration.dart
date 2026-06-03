@@ -64,6 +64,8 @@
 //     consumer needs it (per the workspace "don't pre-extract" rule).
 
 import '../budget/write_budget.dart';
+import '../internal/argument_checks.dart';
+import '../internal/collection_equality.dart';
 
 /// Per-agent registry entry. Memory consults the matching entry on
 /// every write to attribute the write (`producedBy`) and to enforce
@@ -78,10 +80,18 @@ final class AgentRegistration {
   /// every write the agent issues.
   final String agentName;
 
-  /// The d4rt procedure id that hosts this agent (e.g.
-  /// `"dream_extract_v1"`). Carried so memory can record
-  /// `producedBy` with both the agent identity and the originating
-  /// procedure — the trace stitcher needs the pair.
+  /// The id of the d4rt procedure that hosts this agent (e.g.
+  /// `"dream_extract_v1"`). Carried so memory can record `producedBy`
+  /// with both the agent identity and the originating procedure — the
+  /// trace stitcher needs the pair.
+  ///
+  /// Deliberately an opaque `String`, **not** the [ProcedureId] value
+  /// type: memory stores it verbatim as one half of the `producedBy`
+  /// pair and never parses it, and the cognitive-agent procedures are
+  /// keyed by their slug (`dream_extract_v1`), which is not the
+  /// `p_<slug>_v<n>` shape `ProcedureId` validates. Coupling this field
+  /// to `ProcedureId` would force every agent slug to migrate to that
+  /// format for no consumer benefit.
   final String procedureId;
 
   /// `WriteBudget` to install on every run the dispatcher starts on
@@ -126,20 +136,8 @@ final class AgentRegistration {
     required Set<String> writeScopes,
   })  : readScopes = Set.unmodifiable(readScopes),
         writeScopes = Set.unmodifiable(writeScopes) {
-    if (agentName.isEmpty) {
-      throw ArgumentError.value(
-        agentName,
-        'agentName',
-        'must be non-empty',
-      );
-    }
-    if (procedureId.isEmpty) {
-      throw ArgumentError.value(
-        procedureId,
-        'procedureId',
-        'must be non-empty',
-      );
-    }
+    requireNonEmpty(agentName, 'agentName');
+    requireNonEmpty(procedureId, 'procedureId');
     for (final tag in readScopes) {
       _validateTag(tag, field: 'readScopes');
     }
@@ -235,8 +233,8 @@ final class AgentRegistration {
       other.agentName == agentName &&
       other.procedureId == procedureId &&
       other.defaultBudget == defaultBudget &&
-      _setEq(other.readScopes, readScopes) &&
-      _setEq(other.writeScopes, writeScopes);
+      setEquals(other.readScopes, readScopes) &&
+      setEquals(other.writeScopes, writeScopes);
 
   @override
   int get hashCode => Object.hash(
@@ -254,12 +252,4 @@ final class AgentRegistration {
       'defaultBudget: $defaultBudget, '
       'readScopes: $readScopes, '
       'writeScopes: $writeScopes)';
-
-  static bool _setEq(Set<String> a, Set<String> b) {
-    if (a.length != b.length) return false;
-    for (final x in a) {
-      if (!b.contains(x)) return false;
-    }
-    return true;
-  }
 }

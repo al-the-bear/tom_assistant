@@ -37,6 +37,9 @@
 //     classifier (E.33) or left null for the dispatcher's
 //     `classify_inbound_v1` fallback. This type only carries the hint.
 
+import '../internal/collection_equality.dart';
+import '../internal/text_preview.dart';
+
 /// The normalised inbound request — one user prompt, decoded from its
 /// originating channel into the channel-agnostic shape the dispatcher's
 /// single entry point `accept(Access)` consumes.
@@ -108,7 +111,7 @@ final class InboundRequest {
       other.conversationId == conversationId &&
       other.messageId == messageId &&
       other.streaming == streaming &&
-      _mapEq(other.metadata, metadata);
+      mapEquals(other.metadata, metadata);
 
   @override
   int get hashCode => Object.hash(
@@ -122,25 +125,10 @@ final class InboundRequest {
 
   @override
   String toString() => 'InboundRequest('
-      'text: ${_preview(text)}, '
+      'text: ${previewText(text)}, '
       'kindHint: $kindHint, '
       'conversationId: $conversationId, '
       'messageId: $messageId, '
       'streaming: $streaming, '
       'metadata: $metadata)';
-
-  /// Truncates the prompt in `toString` so logs do not dump a full
-  /// prompt body.
-  static String _preview(String s) =>
-      s.length <= 40 ? s : '${s.substring(0, 40)}…';
-
-  static bool _mapEq(Map<String, Object?> a, Map<String, Object?> b) {
-    if (a.length != b.length) return false;
-    for (final entry in a.entries) {
-      if (!b.containsKey(entry.key) || b[entry.key] != entry.value) {
-        return false;
-      }
-    }
-    return true;
-  }
 }

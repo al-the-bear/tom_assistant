@@ -120,13 +120,13 @@ final class EffortAccountant {
       );
     }
     if (_toolPrimitives.contains(primitive)) {
-      return const EffortMetrics(toolCalls: 1);
+      return EffortMetrics(toolCalls: 1);
     }
     if (_readPrimitives.contains(primitive)) {
-      return const EffortMetrics(memoryReads: 1);
+      return EffortMetrics(memoryReads: 1);
     }
     if (_writePrimitives.contains(primitive)) {
-      return const EffortMetrics(memoryWrites: 1);
+      return EffortMetrics(memoryWrites: 1);
     }
     // Engine-native control flow is recognised and deliberately free; an
     // unrecognised name also contributes nothing. Both return zero — the

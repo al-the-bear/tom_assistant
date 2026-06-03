@@ -79,31 +79,46 @@ final class DiagnosticEnvelope<E extends BrainEvent> {
   /// of a sleep-mode dream it's `info`).
   final DiagnosticSeverity severity;
 
-  /// Internal tags map — see [tags] for the exposed view.
+  /// Internal tags map — see [tags] for the exposed view. Copied into an
+  /// unmodifiable map at construction so a caller that retains and later
+  /// mutates the supplied list/map cannot reach in and change the
+  /// envelope's state.
   final Map<String, String> _tags;
 
   /// Construct an envelope.
   ///
   /// [sequence] must be ≥ 0 — negative sequences indicate a programming
-  /// error in the emitter. [tags] is captured by reference and exposed
-  /// through an unmodifiable view; callers can pass `const {}` (the
-  /// default) for the no-tags case.
+  /// error in the emitter and are rejected in release builds too (the
+  /// envelope is the observability transport; an invalid one must not ride
+  /// silently). [source] must be non-empty. [tags] is copied into an
+  /// unmodifiable map at construction, so post-construction mutation of the
+  /// caller's map does not affect the envelope; callers can pass `const {}`
+  /// (the default) for the no-tags case.
   DiagnosticEnvelope({
     required this.event,
     required this.source,
     required this.sequence,
     this.severity = DiagnosticSeverity.info,
     Map<String, String> tags = const {},
-  })  : assert(sequence >= 0, 'sequence must be ≥ 0; got $sequence'),
-        assert(source.isNotEmpty, 'source must not be empty'),
-        _tags = tags;
+  }) : _tags = Map<String, String>.unmodifiable(tags) {
+    if (sequence < 0) {
+      throw ArgumentError.value(
+        sequence,
+        'sequence',
+        'must be ≥ 0; a negative sequence indicates an emitter bug',
+      );
+    }
+    if (source.isEmpty) {
+      throw ArgumentError.value(source, 'source', 'must not be empty');
+    }
+  }
 
   /// Unmodifiable view of the tags map.
   ///
-  /// Returned as an unmodifiable wrapper so consumers cannot mutate the
-  /// envelope's state through the getter. The underlying map is whatever
-  /// the constructor was given — typically `const {}` or a small literal.
-  Map<String, String> get tags => Map<String, String>.unmodifiable(_tags);
+  /// The map is already wrapped unmodifiable at construction, so this
+  /// returns it directly — consumers cannot mutate the envelope's state
+  /// through the getter.
+  Map<String, String> get tags => _tags;
 
   /// JSON representation of the envelope.
   ///

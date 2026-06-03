@@ -147,7 +147,7 @@ final class Vec {
     //
     // We compute the sum in double precision and only sqrt once, which keeps
     // the rounding error tighter than a running-sum-of-magnitudes.
-    return _sqrt(sumSq);
+    return math.sqrt(sumSq);
   }
 
   /// Element-wise mean across [vectors]. Requires non-empty input with
@@ -293,7 +293,7 @@ double l2(Vec a, Vec b) {
     final d = a[i] - b[i];
     sumSq += d * d;
   }
-  return _sqrt(sumSq);
+  return math.sqrt(sumSq);
 }
 
 void _requireSameDimension(Vec a, Vec b, String op) {
@@ -304,7 +304,3 @@ void _requireSameDimension(Vec a, Vec b, String op) {
     );
   }
 }
-
-// Local `sqrt` indirection — single point of contact with `dart:math`.
-// Keeps the rest of the file's call sites uniform.
-double _sqrt(double x) => math.sqrt(x);

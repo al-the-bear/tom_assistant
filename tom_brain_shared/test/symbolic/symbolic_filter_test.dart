@@ -91,8 +91,9 @@ void main() {
 
     test('isEmpty flips false when any narrowing is present', () {
       expect(SymbolicFilter(typeNames: {'Claim'}).isEmpty, isFalse);
-      expect(SymbolicFilter(createdAfter: DateTime(2026)).isEmpty, isFalse);
-      expect(SymbolicFilter(createdBefore: DateTime(2026)).isEmpty, isFalse);
+      expect(SymbolicFilter(createdAfter: BrainTime.utc(2026)).isEmpty, isFalse);
+      expect(
+          SymbolicFilter(createdBefore: BrainTime.utc(2026)).isEmpty, isFalse);
       expect(SymbolicFilter(producer: 'agent.x').isEmpty, isFalse);
       expect(
         SymbolicFilter(attributes: [AttrClause('k', SymbolicOp.eq, 1)])
@@ -119,16 +120,16 @@ void main() {
     test('equality is structural across all six fields', () {
       final a = SymbolicFilter(
         typeNames: {'Claim', 'Conclusion'},
-        createdAfter: DateTime.utc(2026, 1, 1),
-        createdBefore: DateTime.utc(2026, 6, 1),
+        createdAfter: BrainTime.utc(2026, 1, 1),
+        createdBefore: BrainTime.utc(2026, 6, 1),
         producer: 'agent.researcher',
         attributes: [AttrClause('priority', SymbolicOp.gte, 5)],
       );
       // Same fields, different construction order for the set.
       final b = SymbolicFilter(
         typeNames: {'Conclusion', 'Claim'},
-        createdAfter: DateTime.utc(2026, 1, 1),
-        createdBefore: DateTime.utc(2026, 6, 1),
+        createdAfter: BrainTime.utc(2026, 1, 1),
+        createdBefore: BrainTime.utc(2026, 6, 1),
         producer: 'agent.researcher',
         attributes: [AttrClause('priority', SymbolicOp.gte, 5)],
       );
@@ -140,8 +141,8 @@ void main() {
         () {
       SymbolicFilter base() => SymbolicFilter(
             typeNames: {'Claim'},
-            createdAfter: DateTime.utc(2026, 1, 1),
-            createdBefore: DateTime.utc(2026, 6, 1),
+            createdAfter: BrainTime.utc(2026, 1, 1),
+            createdBefore: BrainTime.utc(2026, 6, 1),
             producer: 'agent.x',
             attributes: [AttrClause('priority', SymbolicOp.gte, 5)],
           );
@@ -150,8 +151,8 @@ void main() {
         base(),
         isNot(equals(SymbolicFilter(
           typeNames: {'Claim', 'Conclusion'},
-          createdAfter: DateTime.utc(2026, 1, 1),
-          createdBefore: DateTime.utc(2026, 6, 1),
+          createdAfter: BrainTime.utc(2026, 1, 1),
+          createdBefore: BrainTime.utc(2026, 6, 1),
           producer: 'agent.x',
           attributes: [AttrClause('priority', SymbolicOp.gte, 5)],
         ))),
@@ -160,8 +161,8 @@ void main() {
         base(),
         isNot(equals(SymbolicFilter(
           typeNames: {'Claim'},
-          createdAfter: DateTime.utc(2026, 2, 1),
-          createdBefore: DateTime.utc(2026, 6, 1),
+          createdAfter: BrainTime.utc(2026, 2, 1),
+          createdBefore: BrainTime.utc(2026, 6, 1),
           producer: 'agent.x',
           attributes: [AttrClause('priority', SymbolicOp.gte, 5)],
         ))),
@@ -170,8 +171,8 @@ void main() {
         base(),
         isNot(equals(SymbolicFilter(
           typeNames: {'Claim'},
-          createdAfter: DateTime.utc(2026, 1, 1),
-          createdBefore: DateTime.utc(2026, 5, 1),
+          createdAfter: BrainTime.utc(2026, 1, 1),
+          createdBefore: BrainTime.utc(2026, 5, 1),
           producer: 'agent.x',
           attributes: [AttrClause('priority', SymbolicOp.gte, 5)],
         ))),
@@ -180,8 +181,8 @@ void main() {
         base(),
         isNot(equals(SymbolicFilter(
           typeNames: {'Claim'},
-          createdAfter: DateTime.utc(2026, 1, 1),
-          createdBefore: DateTime.utc(2026, 6, 1),
+          createdAfter: BrainTime.utc(2026, 1, 1),
+          createdBefore: BrainTime.utc(2026, 6, 1),
           producer: 'agent.y',
           attributes: [AttrClause('priority', SymbolicOp.gte, 5)],
         ))),
@@ -190,8 +191,8 @@ void main() {
         base(),
         isNot(equals(SymbolicFilter(
           typeNames: {'Claim'},
-          createdAfter: DateTime.utc(2026, 1, 1),
-          createdBefore: DateTime.utc(2026, 6, 1),
+          createdAfter: BrainTime.utc(2026, 1, 1),
+          createdBefore: BrainTime.utc(2026, 6, 1),
           producer: 'agent.x',
           attributes: [AttrClause('priority', SymbolicOp.gt, 5)],
         ))),

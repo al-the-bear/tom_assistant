@@ -13,10 +13,13 @@
 //     the plan names — an SSE client that disconnected, a Telegram rate limit
 //     — are the two `StallReason`s, distinguished from `channelClosed`.
 //
-//   * `StallReason` — the closed reason set, and the `isTerminal` /
-//     `retryAfter` fields the engine keys on to decide between *cancel the
-//     run* (a terminal stall — the SSE client is gone) and *yield, then retry
-//     after [retryAfter]* (a transient stall — the rate limit clears).
+//   * `StallReason` — the closed reason set. Terminality is intrinsic to the
+//     reason (`StallReasonTerminality.isTerminal`): the engine keys on it (and
+//     on `retryAfter`) to decide between *cancel the run* (a terminal stall —
+//     the SSE client is gone) and *yield, then retry after [retryAfter]* (a
+//     transient stall — the rate limit clears). `DeliveryStalled.isTerminal`
+//     is a derived getter, never an independently-set field, so a stall can
+//     never disagree with its own reason.
 //
 //   * `Backpressure` — the two stream builders a delivery path returns from
 //     its `DeliverCallback`: `clear` (the chunk was accepted, ready for more)
@@ -73,6 +76,25 @@ enum StallReason {
   channelClosed,
 }
 
+/// Terminality is an intrinsic property of the [StallReason], not a separate
+/// flag a caller chooses.
+///
+/// A [StallReason.clientDisconnected] / [StallReason.channelClosed] stall is
+/// permanent — the wire is gone, so the engine cancels the run. A
+/// [StallReason.rateLimited] stall is transient — the engine yields and
+/// retries. Deriving [DeliveryStalled.isTerminal] from here (rather than
+/// storing an independent field) makes a reason↔terminality contradiction
+/// unrepresentable.
+extension StallReasonTerminality on StallReason {
+  /// Whether a stall with this reason is permanent (`true`) or recoverable
+  /// (`false`).
+  bool get isTerminal => switch (this) {
+        StallReason.clientDisconnected => true,
+        StallReason.channelClosed => true,
+        StallReason.rateLimited => false,
+      };
+}
+
 /// The signal a delivery path surfaces through the `DeliverCallback`'s
 /// backpressure `Stream<OutboundChunk>` — as a stream *error* — when the
 /// originating channel cannot accept further chunks.
@@ -106,13 +128,17 @@ final class DeliveryStalled extends BackpressureSignal {
   /// prototype's channel enum (Q-E.39.2).
   final String channel;
 
-  /// Why the channel stalled.
+  /// Why the channel stalled. Terminality is derived from this reason — see
+  /// [isTerminal].
   final StallReason reason;
 
-  /// Whether the stall is permanent. `true` → the wire is gone (a disconnect /
-  /// a closed channel); the engine must cancel the run, not resume. `false` →
-  /// the stall is transient (a rate limit); the engine yields and retries.
-  final bool isTerminal;
+  /// Whether the stall is permanent, derived from [reason]
+  /// ([StallReasonTerminality.isTerminal]). `true` → the wire is gone (a
+  /// disconnect / a closed channel); the engine must cancel the run, not
+  /// resume. `false` → the stall is transient (a rate limit); the engine
+  /// yields and retries. Not a stored field: a stall cannot disagree with
+  /// its own reason.
+  bool get isTerminal => reason.isTerminal;
 
   /// For a transient stall ([isTerminal] `false`), the minimum delay before a
   /// retry can succeed (the backend's `Retry-After`, when known). `null` for a
@@ -123,21 +149,22 @@ final class DeliveryStalled extends BackpressureSignal {
   /// prompt or the answer body. Defaults to empty.
   final String detail;
 
-  /// Builds a stall signal. A terminal stall must not carry a [retryAfter]
-  /// (there is no retry), and a transient stall's [retryAfter], when supplied,
-  /// must be non-negative.
+  /// Builds a stall signal. Terminality follows [reason]: a stall whose
+  /// reason is terminal ([StallReasonTerminality.isTerminal]) must not carry a
+  /// [retryAfter] (there is no retry), and a [retryAfter], when supplied, must
+  /// be non-negative.
   DeliveryStalled({
     required this.channel,
     required this.reason,
-    required this.isTerminal,
     this.retryAfter,
     this.detail = '',
   }) {
-    if (isTerminal && retryAfter != null) {
+    if (reason.isTerminal && retryAfter != null) {
       throw ArgumentError.value(
         retryAfter,
         'retryAfter',
-        'a terminal stall cannot carry a retryAfter — there is no retry',
+        'a terminal stall (${reason.name}) cannot carry a retryAfter — '
+            'there is no retry',
       );
     }
     if (retryAfter != null && retryAfter!.isNegative) {
@@ -151,48 +178,59 @@ final class DeliveryStalled extends BackpressureSignal {
 
   /// A terminal stall — the wire is gone; the engine cancels the run. Used for
   /// the SSE [StallReason.clientDisconnected] / [StallReason.channelClosed]
-  /// cases (E.37). Redirects to the primary constructor so it shares the same
-  /// validation.
-  DeliveryStalled.terminal({
+  /// cases (E.37). Rejects a transient [reason], so the factory name can never
+  /// disagree with the stored reason.
+  factory DeliveryStalled.terminal({
     required String channel,
     required StallReason reason,
     String detail = '',
-  }) : this(
-          channel: channel,
-          reason: reason,
-          isTerminal: true,
-          detail: detail,
-        );
+  }) {
+    if (!reason.isTerminal) {
+      throw ArgumentError.value(
+        reason,
+        'reason',
+        'DeliveryStalled.terminal requires a terminal reason; '
+            '${reason.name} is transient — use DeliveryStalled.transient',
+      );
+    }
+    return DeliveryStalled(channel: channel, reason: reason, detail: detail);
+  }
 
   /// A transient stall — the channel will recover; the engine yields and
   /// retries after [retryAfter]. Used for the Telegram [StallReason.rateLimited]
-  /// case (E.38). Redirects to the primary constructor so a negative
-  /// [retryAfter] is rejected here too.
-  DeliveryStalled.transient({
+  /// case (E.38). Rejects a terminal [reason] and a negative [retryAfter].
+  factory DeliveryStalled.transient({
     required String channel,
     required StallReason reason,
     Duration? retryAfter,
     String detail = '',
-  }) : this(
-          channel: channel,
-          reason: reason,
-          isTerminal: false,
-          retryAfter: retryAfter,
-          detail: detail,
-        );
+  }) {
+    if (reason.isTerminal) {
+      throw ArgumentError.value(
+        reason,
+        'reason',
+        'DeliveryStalled.transient requires a transient reason; '
+            '${reason.name} is terminal — use DeliveryStalled.terminal',
+      );
+    }
+    return DeliveryStalled(
+      channel: channel,
+      reason: reason,
+      retryAfter: retryAfter,
+      detail: detail,
+    );
+  }
 
   @override
   bool operator ==(Object other) =>
       other is DeliveryStalled &&
       other.channel == channel &&
       other.reason == reason &&
-      other.isTerminal == isTerminal &&
       other.retryAfter == retryAfter &&
       other.detail == detail;
 
   @override
-  int get hashCode =>
-      Object.hash(channel, reason, isTerminal, retryAfter, detail);
+  int get hashCode => Object.hash(channel, reason, retryAfter, detail);
 
   @override
   String toString() => 'DeliveryStalled('

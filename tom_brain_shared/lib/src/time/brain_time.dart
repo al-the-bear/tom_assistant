@@ -13,11 +13,13 @@
 //     demand keeps the round-trip lossless and free.
 //   * The UTC invariant is structural. The constructor accepts only a UTC
 //     `DateTime` (or an int that is by construction zone-agnostic).
-//     `BrainTime` never holds a local-time instant. Compare to the
-//     `BrainEvent.toJson` assertion which catches the invariant only in
-//     checked mode — by the time A.15's migration of `BrainEvent` lands,
-//     local-time slip becomes a compile-time impossibility at the field
-//     level.
+//     `BrainTime` never holds a local-time instant. `BrainEvent` keeps a
+//     raw `DateTime` (its `occurredAt` is the public observability field and
+//     must serialise as ISO-8601 directly) and enforces the same invariant
+//     defensively: `BrainEvent.toJson` throws on a local-time instant.
+//     `BrainTime` makes the slip unrepresentable at the field level;
+//     `BrainEvent` catches it at the serialisation boundary. Both honour the
+//     "UTC on the wire" rule.
 //   * Ordering is total and trivially monotonic — it's an integer
 //     compare. Memory's stack ordering, trail tail-reading, and the
 //     dispatcher's preemption checkpoints all rely on a cheap `<`.
@@ -45,6 +47,7 @@
 //     earlier and a later instant; the asymmetric API is `later
 //     .difference(earlier)`, matching `DateTime.difference`.
 
+import '../ids/ulid.dart';
 import 'clock.dart';
 
 /// Canonical timestamp value type for Tom Brain.
@@ -163,8 +166,9 @@ final class BrainTime implements Comparable<BrainTime> {
 
   /// Upper bound on the ms field — 48 bits, matching the ULID timestamp
   /// range. Picked so any `BrainTime` can drive `Ulid.generate(at: ...)`
-  /// without losing precision.
-  static const int _maxUlidCompatibleMs = 0xFFFFFFFFFFFF;
+  /// without losing precision. References [Ulid.maxTimestampMs] directly so
+  /// the two bounds cannot drift if the ULID timestamp range ever changes.
+  static const int _maxUlidCompatibleMs = Ulid.maxTimestampMs;
 
   /// Returns the canonical integer-ms form, suitable for SQLite indexes
   /// and ULID timestamp prefixes.

@@ -20,6 +20,9 @@
 //   context stays on the kernel side. The dispatcher treats this handle
 //   opaquely (it reads only [principalId] for the memory scope) — Q-D.11.3.
 
+import '../internal/argument_checks.dart';
+import '../internal/collection_equality.dart';
+
 /// The resolved principal behind an inbound request, in the minimal shape
 /// the dispatcher needs. Carried on [Access] so the run / persist path can
 /// scope memory writes to the right principal.
@@ -51,13 +54,7 @@ final class ResolvedIdentity {
     this.displayName,
     Map<String, Object?> claims = const {},
   }) : claims = Map.unmodifiable(claims) {
-    if (principalId.isEmpty) {
-      throw ArgumentError.value(
-        principalId,
-        'principalId',
-        'must be non-empty',
-      );
-    }
+    requireNonEmpty(principalId, 'principalId');
   }
 
   @override
@@ -65,7 +62,7 @@ final class ResolvedIdentity {
       other is ResolvedIdentity &&
       other.principalId == principalId &&
       other.displayName == displayName &&
-      _mapEq(other.claims, claims);
+      mapEquals(other.claims, claims);
 
   @override
   int get hashCode => Object.hash(
@@ -79,14 +76,4 @@ final class ResolvedIdentity {
       'principalId: $principalId, '
       'displayName: $displayName, '
       'claims: $claims)';
-
-  static bool _mapEq(Map<String, Object?> a, Map<String, Object?> b) {
-    if (a.length != b.length) return false;
-    for (final entry in a.entries) {
-      if (!b.containsKey(entry.key) || b[entry.key] != entry.value) {
-        return false;
-      }
-    }
-    return true;
-  }
 }

@@ -175,12 +175,12 @@ CompiledSymbolicFilter compileSymbolicFilter(SymbolicFilter filter) {
 
   if (filter.createdAfter != null) {
     clauses.add('created_at_ms >= ?');
-    bindings.add(filter.createdAfter!.toUtc().millisecondsSinceEpoch);
+    bindings.add(filter.createdAfter!.toMs());
   }
 
   if (filter.createdBefore != null) {
     clauses.add('created_at_ms < ?');
-    bindings.add(filter.createdBefore!.toUtc().millisecondsSinceEpoch);
+    bindings.add(filter.createdBefore!.toMs());
   }
 
   if (filter.producer != null) {

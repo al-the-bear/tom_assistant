@@ -74,21 +74,21 @@ void main() {
     });
 
     test('createdAfter compiles to created_at_ms >= ? with epoch-ms', () {
-      final t = DateTime.utc(2026, 5, 30, 14, 0, 0);
+      final t = BrainTime.utc(2026, 5, 30, 14, 0, 0);
       final compiled = compileSymbolicFilter(
         SymbolicFilter(createdAfter: t),
       );
       expect(compiled.whereSql, equals('created_at_ms >= ?'));
-      expect(compiled.bindings, equals(<Object?>[t.millisecondsSinceEpoch]));
+      expect(compiled.bindings, equals(<Object?>[t.toMs()]));
     });
 
     test('createdBefore compiles to created_at_ms < ? with epoch-ms', () {
-      final t = DateTime.utc(2026, 5, 30, 15, 0, 0);
+      final t = BrainTime.utc(2026, 5, 30, 15, 0, 0);
       final compiled = compileSymbolicFilter(
         SymbolicFilter(createdBefore: t),
       );
       expect(compiled.whereSql, equals('created_at_ms < ?'));
-      expect(compiled.bindings, equals(<Object?>[t.millisecondsSinceEpoch]));
+      expect(compiled.bindings, equals(<Object?>[t.toMs()]));
     });
 
     test('producer compiles to produced_by = ?', () {
@@ -229,7 +229,7 @@ void main() {
     });
 
     test('multiple clauses are AND-ed in declaration order', () {
-      final at = DateTime.utc(2026, 5, 30);
+      final at = BrainTime.utc(2026, 5, 30);
       final compiled = compileSymbolicFilter(
         SymbolicFilter(
           typeNames: const <String>{'Claim'},
@@ -252,7 +252,7 @@ void main() {
         compiled.bindings,
         equals(<Object?>[
           'Claim',
-          at.millisecondsSinceEpoch,
+          at.toMs(),
           'p',
           r'$.text',
           'hello',
@@ -473,8 +473,8 @@ void main() {
       // (before) and late (at the exclusive upper bound).
       final hits = recall.recall(
         filter: SymbolicFilter(
-          createdAfter: DateTime.utc(2026, 5, 30, 11, 0, 0),
-          createdBefore: DateTime.utc(2026, 5, 30, 14, 0, 0),
+          createdAfter: BrainTime.utc(2026, 5, 30, 11, 0, 0),
+          createdBefore: BrainTime.utc(2026, 5, 30, 14, 0, 0),
         ),
       );
       final ids = hits.map((h) => h.nodeId).toSet();

@@ -22,6 +22,8 @@
 //     type only carries the increment and the [isFinal] marker the
 //     wire layer keys on.
 
+import '../internal/text_preview.dart';
+
 /// One increment of a streamed answer.
 ///
 /// The engine / `answer_with_memory_v1` answer step calls
@@ -69,10 +71,7 @@ final class OutboundChunk {
 
   @override
   String toString() => 'OutboundChunk('
-      'textDelta: ${_preview(textDelta)}, '
+      'textDelta: ${previewText(textDelta)}, '
       'isFinal: $isFinal, '
       'index: $index)';
-
-  static String _preview(String s) =>
-      s.length <= 40 ? s : '${s.substring(0, 40)}…';
 }

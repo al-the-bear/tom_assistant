@@ -65,7 +65,7 @@ void main() {
         test('$primitive contributes one toolCall', () {
           final delta = accountant.classify(primitive);
           expect(delta.toolCalls, 1);
-          expect(delta, const EffortMetrics(toolCalls: 1));
+          expect(delta, EffortMetrics(toolCalls: 1));
         });
       }
     });
@@ -81,7 +81,7 @@ void main() {
         test('$primitive contributes one memoryRead', () {
           final delta = accountant.classify(primitive);
           expect(delta.memoryReads, 1);
-          expect(delta, const EffortMetrics(memoryReads: 1));
+          expect(delta, EffortMetrics(memoryReads: 1));
         });
       }
     });
@@ -106,7 +106,7 @@ void main() {
         test('$primitive contributes one memoryWrite', () {
           final delta = accountant.classify(primitive);
           expect(delta.memoryWrites, 1);
-          expect(delta, const EffortMetrics(memoryWrites: 1));
+          expect(delta, EffortMetrics(memoryWrites: 1));
         });
       }
     });

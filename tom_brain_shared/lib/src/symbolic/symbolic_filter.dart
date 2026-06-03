@@ -43,6 +43,8 @@
 //     producer scopes (only the bare string), or attribute column
 //     types — that pairing happens at compile time inside memory.
 
+import '../internal/collection_equality.dart';
+import '../time/brain_time.dart';
 import 'attr_clause.dart';
 
 /// Compiled-down `WHERE`-shape used by the memory symbolic retrieval
@@ -59,10 +61,16 @@ final class SymbolicFilter {
   final Set<String> typeNames;
 
   /// Lower bound (inclusive) on `createdAt`. `null` = open.
-  final DateTime? createdAfter;
+  ///
+  /// A [BrainTime] — the package's canonical timestamp — so the memory
+  /// compiler reads `createdAfter.toMs()` directly against the indexed
+  /// `created_at_ms` column with no zone-coercion step.
+  final BrainTime? createdAfter;
 
   /// Upper bound (exclusive) on `createdAt`. `null` = open.
-  final DateTime? createdBefore;
+  ///
+  /// A [BrainTime], for the same reason as [createdAfter].
+  final BrainTime? createdBefore;
 
   /// Producer-scope filter (a `Scope.producer` value).
   final String? producer;
@@ -98,13 +106,8 @@ final class SymbolicFilter {
     if (createdAfter != other.createdAfter) return false;
     if (createdBefore != other.createdBefore) return false;
     if (producer != other.producer) return false;
-    if (typeNames.length != other.typeNames.length) return false;
-    if (!typeNames.containsAll(other.typeNames)) return false;
-    if (attributes.length != other.attributes.length) return false;
-    for (var i = 0; i < attributes.length; i++) {
-      if (attributes[i] != other.attributes[i]) return false;
-    }
-    return true;
+    if (!setEquals(typeNames, other.typeNames)) return false;
+    return listEquals(attributes, other.attributes);
   }
 
   @override

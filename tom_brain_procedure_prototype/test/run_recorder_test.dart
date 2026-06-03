@@ -25,7 +25,7 @@ import 'package:test/test.dart';
 void main() {
   group('C.31 EffortMetrics', () {
     test('defaults every field to zero', () {
-      const m = EffortMetrics();
+      final m = EffortMetrics();
       expect(m.wallClockMs, 0);
       expect(m.llmCalls, 0);
       expect(m.inputTokens, 0);
@@ -37,18 +37,18 @@ void main() {
     });
 
     test('estimatedTokens is inputTokens + outputTokens', () {
-      const m = EffortMetrics(inputTokens: 120, outputTokens: 80);
+      final m = EffortMetrics(inputTokens: 120, outputTokens: 80);
       expect(m.estimatedTokens, 200);
     });
 
     test('plus sums field-wise', () {
-      const a = EffortMetrics(
+      final a = EffortMetrics(
         llmCalls: 1,
         inputTokens: 10,
         outputTokens: 5,
         memoryReads: 2,
       );
-      const b = EffortMetrics(
+      final b = EffortMetrics(
         llmCalls: 2,
         inputTokens: 7,
         toolCalls: 3,
@@ -64,7 +64,7 @@ void main() {
     });
 
     test('withWallClockMs replaces only the wall clock', () {
-      const m = EffortMetrics(llmCalls: 2, inputTokens: 9);
+      final m = EffortMetrics(llmCalls: 2, inputTokens: 9);
       final stamped = m.withWallClockMs(1234);
       expect(stamped.wallClockMs, 1234);
       expect(stamped.llmCalls, 2);
@@ -72,7 +72,7 @@ void main() {
     });
 
     test('toJson carries the seven fields plus estimatedTokens', () {
-      const m = EffortMetrics(
+      final m = EffortMetrics(
         wallClockMs: 50,
         llmCalls: 1,
         inputTokens: 30,
@@ -94,16 +94,19 @@ void main() {
     });
 
     test('value equality + hashCode', () {
-      const a = EffortMetrics(llmCalls: 1, inputTokens: 2);
-      const b = EffortMetrics(llmCalls: 1, inputTokens: 2);
-      const c = EffortMetrics(llmCalls: 1, inputTokens: 3);
+      final a = EffortMetrics(llmCalls: 1, inputTokens: 2);
+      final b = EffortMetrics(llmCalls: 1, inputTokens: 2);
+      final c = EffortMetrics(llmCalls: 1, inputTokens: 3);
       expect(a, b);
       expect(a.hashCode, b.hashCode);
       expect(a, isNot(c));
     });
 
     test('rejects a negative field', () {
-      expect(() => EffortMetrics(llmCalls: -1), throwsA(isA<AssertionError>()));
+      // EffortMetrics validates in release too (it rides on every
+      // ProcedureRun), so a negative counter throws ArgumentError rather
+      // than asserting.
+      expect(() => EffortMetrics(llmCalls: -1), throwsArgumentError);
     });
   });
 
@@ -283,7 +286,7 @@ void main() {
         await recorder.start(startInfo());
         clock = clock.add(const Duration(milliseconds: 250));
         final record = await recorder.complete(
-          const RunCompletion(
+          RunCompletion(
             status: TrailOutcomeStatus.accepted,
             summary: 'answered from memory',
             effort: EffortMetrics(
@@ -321,7 +324,7 @@ void main() {
         await recorder.start(startInfo());
         clock = clock.add(const Duration(milliseconds: 250));
         final record = await recorder.complete(
-          const RunCompletion(
+          RunCompletion(
             status: TrailOutcomeStatus.accepted,
             summary: 's',
             effort: EffortMetrics(wallClockMs: 999),
@@ -400,7 +403,7 @@ void main() {
         await recorder.start(startInfo());
         clock = clock.add(const Duration(milliseconds: 7));
         await recorder.complete(
-          const RunCompletion(
+          RunCompletion(
             status: TrailOutcomeStatus.rejected,
             summary: 'critique rejected',
             effort: EffortMetrics(llmCalls: 2, inputTokens: 5, outputTokens: 5),
@@ -541,7 +544,7 @@ void main() {
         clock = clock.add(const Duration(milliseconds: 40));
 
         final record = await recorder.complete(
-          const RunCompletion(
+          RunCompletion(
             status: TrailOutcomeStatus.accepted,
             summary: 'done',
             // The engine injects counters the recorder could not observe

@@ -23,6 +23,8 @@
 //   The dispatcher reads `persona.substrateRole`; Phase E produces the
 //   `Persona`. Two phases reference it → shared.
 
+import '../internal/argument_checks.dart';
+
 /// The persona handed to substrate for an inbound request, in the minimal
 /// shape the dispatcher needs. Carried on [Access].
 ///
@@ -47,16 +49,8 @@ final class Persona {
     required this.personaId,
     required this.substrateRole,
   }) {
-    if (personaId.isEmpty) {
-      throw ArgumentError.value(personaId, 'personaId', 'must be non-empty');
-    }
-    if (substrateRole.isEmpty) {
-      throw ArgumentError.value(
-        substrateRole,
-        'substrateRole',
-        'must be non-empty',
-      );
-    }
+    requireNonEmpty(personaId, 'personaId');
+    requireNonEmpty(substrateRole, 'substrateRole');
   }
 
   /// The substrate role every prototype persona resolves to (D.4 / D.38).

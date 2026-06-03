@@ -60,14 +60,15 @@ abstract interface class Clock {
   /// between the two. Components that need both should prefer this over
   /// calling [now] and [nowMs] separately.
   ///
-  /// Note: because `Clock` is an `abstract interface class`, every concrete
-  /// implementer reaches this method via `implements` and therefore must
-  /// supply its own override. The default body is kept as a readable
-  /// reference implementation but is structurally never invoked at runtime;
-  /// the coverage tool flags it as uncovered by design.
-  // coverage:ignore-start
-  BrainTime nowBrainTime() => BrainTime.fromMs(nowMs());
-  // coverage:ignore-end
+  /// Abstract on purpose. `Clock` is an `abstract interface class`, so
+  /// every implementer reaches it via `implements` and cannot inherit a
+  /// default body — a concrete reference implementation here would be dead
+  /// code that the coverage tool can never reach. The canonical
+  /// implementation is `BrainTime.fromMs(nowMs())`; an implementer that
+  /// can read the wall clock atomically (see [SystemClock]) should instead
+  /// drive both views from a single read so the ms-int and the wrapped
+  /// `DateTime` cannot disagree across the jiffy boundary.
+  BrainTime nowBrainTime();
 }
 
 /// Production [Clock] backed by `DateTime.now()`.

@@ -19,24 +19,58 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         BackpressureSignal,
         DeliveryStalled,
         OutboundChunk,
-        StallReason;
+        StallReason,
+        StallReasonTerminality;
 
 void main() {
   group('E.39 DeliveryStalled — fields and constructors', () {
-    test('the primary constructor carries every field', () {
+    test('the primary constructor carries every field and derives terminality',
+        () {
       final DeliveryStalled stalled = DeliveryStalled(
         channel: 'telegram',
         reason: StallReason.rateLimited,
-        isTerminal: false,
         retryAfter: const Duration(seconds: 30),
         detail: 'throttled',
       );
 
       expect(stalled.channel, 'telegram');
       expect(stalled.reason, StallReason.rateLimited);
-      expect(stalled.isTerminal, isFalse);
+      expect(stalled.isTerminal, isFalse); // derived from rateLimited
       expect(stalled.retryAfter, const Duration(seconds: 30));
       expect(stalled.detail, 'throttled');
+    });
+
+    test('isTerminal is derived from the reason, not a constructor argument',
+        () {
+      expect(StallReason.clientDisconnected.isTerminal, isTrue);
+      expect(StallReason.channelClosed.isTerminal, isTrue);
+      expect(StallReason.rateLimited.isTerminal, isFalse);
+
+      expect(
+        DeliveryStalled(channel: 'openai', reason: StallReason.channelClosed)
+            .isTerminal,
+        isTrue,
+      );
+    });
+
+    test('terminal() rejects a transient reason', () {
+      expect(
+        () => DeliveryStalled.terminal(
+          channel: 'telegram',
+          reason: StallReason.rateLimited,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('transient() rejects a terminal reason', () {
+      expect(
+        () => DeliveryStalled.transient(
+          channel: 'openai',
+          reason: StallReason.clientDisconnected,
+        ),
+        throwsArgumentError,
+      );
     });
 
     test('terminal() is permanent and carries no retryAfter', () {
@@ -62,12 +96,11 @@ void main() {
       expect(stalled.retryAfter, const Duration(seconds: 5));
     });
 
-    test('a terminal stall with a retryAfter is rejected', () {
+    test('a terminal-reason stall with a retryAfter is rejected', () {
       expect(
         () => DeliveryStalled(
           channel: 'openai',
           reason: StallReason.clientDisconnected,
-          isTerminal: true,
           retryAfter: const Duration(seconds: 1),
         ),
         throwsArgumentError,

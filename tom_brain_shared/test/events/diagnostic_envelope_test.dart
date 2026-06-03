@@ -81,28 +81,18 @@ void main() {
     });
   });
 
-  group('DiagnosticEnvelope assertions', () {
-    var asserted = false;
-    setUpAll(() {
-      assert(() {
-        asserted = true;
-        return true;
-      }());
-    });
-
+  group('DiagnosticEnvelope validation', () {
     test('rejects negative sequence', () {
-      if (!asserted) return;
       expect(
         () => _envelope(sequence: -1),
-        throwsA(isA<AssertionError>()),
+        throwsArgumentError,
       );
     });
 
     test('rejects empty source', () {
-      if (!asserted) return;
       expect(
         () => _envelope(source: ''),
-        throwsA(isA<AssertionError>()),
+        throwsArgumentError,
       );
     });
 

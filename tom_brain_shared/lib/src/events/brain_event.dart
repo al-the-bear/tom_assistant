@@ -84,7 +84,9 @@ abstract class BrainEvent {
   /// Must be UTC. The base class does not coerce — coercing would silently
   /// hide bugs where a local-time `DateTime` slipped in. Subclasses
   /// constructing from a local clock should call `.toUtc()` at the call
-  /// site. [toJson] asserts the invariant on serialisation.
+  /// site. [toJson] throws an [ArgumentError] if the invariant is violated
+  /// on serialisation — a local-time timestamp must never ride the
+  /// observability wire.
   final DateTime occurredAt;
 
   /// Opaque pointer to the procedure run that produced this event.
@@ -142,10 +144,14 @@ abstract class BrainEvent {
   /// null". Parsers re-introduce nulls structurally when they hit absent
   /// keys.
   Map<String, Object?> toJson() {
-    assert(
-      occurredAt.isUtc,
-      'BrainEvent.occurredAt must be UTC; got $occurredAt',
-    );
+    if (!occurredAt.isUtc) {
+      throw ArgumentError.value(
+        occurredAt,
+        'occurredAt',
+        'BrainEvent.occurredAt must be UTC; a local-time timestamp on the '
+            'observability wire corrupts cross-component trace ordering',
+      );
+    }
     return <String, Object?>{
       'kind': kind,
       'occurredAt': occurredAt.toIso8601String(),

@@ -13,7 +13,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show EffortMetrics;
 void main() {
   group('EffortMetrics', () {
     test('zero is all-zero and estimatedTokens is 0', () {
-      const m = EffortMetrics.zero;
+      final m = EffortMetrics.zero;
       expect(m.wallClockMs, 0);
       expect(m.llmCalls, 0);
       expect(m.inputTokens, 0);
@@ -25,16 +25,16 @@ void main() {
     });
 
     test('default constructor equals zero', () {
-      expect(const EffortMetrics(), EffortMetrics.zero);
+      expect(EffortMetrics(), EffortMetrics.zero);
     });
 
     test('estimatedTokens is inputTokens + outputTokens', () {
-      const m = EffortMetrics(inputTokens: 30, outputTokens: 12);
+      final m = EffortMetrics(inputTokens: 30, outputTokens: 12);
       expect(m.estimatedTokens, 42);
     });
 
     test('plus sums fieldwise', () {
-      const a = EffortMetrics(
+      final a = EffortMetrics(
         wallClockMs: 1,
         llmCalls: 2,
         inputTokens: 3,
@@ -43,7 +43,7 @@ void main() {
         memoryReads: 6,
         memoryWrites: 7,
       );
-      const b = EffortMetrics(
+      final b = EffortMetrics(
         wallClockMs: 10,
         llmCalls: 20,
         inputTokens: 30,
@@ -65,13 +65,13 @@ void main() {
     });
 
     test('plus is the identity with zero', () {
-      const m = EffortMetrics(llmCalls: 3, inputTokens: 9);
+      final m = EffortMetrics(llmCalls: 3, inputTokens: 9);
       expect(m.plus(EffortMetrics.zero), m);
       expect(EffortMetrics.zero.plus(m), m);
     });
 
     test('withWallClockMs replaces only wallClockMs', () {
-      const m = EffortMetrics(
+      final m = EffortMetrics(
         wallClockMs: 5,
         llmCalls: 2,
         inputTokens: 8,
@@ -85,9 +85,9 @@ void main() {
     });
 
     test('value equality and hashCode', () {
-      const a = EffortMetrics(llmCalls: 1, inputTokens: 2);
-      const b = EffortMetrics(llmCalls: 1, inputTokens: 2);
-      const c = EffortMetrics(llmCalls: 1, inputTokens: 3);
+      final a = EffortMetrics(llmCalls: 1, inputTokens: 2);
+      final b = EffortMetrics(llmCalls: 1, inputTokens: 2);
+      final c = EffortMetrics(llmCalls: 1, inputTokens: 3);
 
       expect(a, b);
       expect(a.hashCode, b.hashCode);
@@ -96,7 +96,7 @@ void main() {
 
     test('toJson carries the seven metrics plus the derived estimatedTokens',
         () {
-      const m = EffortMetrics(
+      final m = EffortMetrics(
         wallClockMs: 100,
         llmCalls: 2,
         inputTokens: 30,
@@ -124,16 +124,15 @@ void main() {
 
     test('toJson is unmodifiable', () {
       expect(
-        () => const EffortMetrics().toJson()['wallClockMs'] = 1,
+        () => EffortMetrics().toJson()['wallClockMs'] = 1,
         throwsUnsupportedError,
       );
     });
 
-    test('negative fields trip the asserts', () {
-      expect(() => EffortMetrics(wallClockMs: -1), throwsA(isA<AssertionError>()));
-      expect(() => EffortMetrics(llmCalls: -1), throwsA(isA<AssertionError>()));
-      expect(
-          () => EffortMetrics(memoryWrites: -1), throwsA(isA<AssertionError>()));
+    test('negative fields are rejected with an ArgumentError', () {
+      expect(() => EffortMetrics(wallClockMs: -1), throwsArgumentError);
+      expect(() => EffortMetrics(llmCalls: -1), throwsArgumentError);
+      expect(() => EffortMetrics(memoryWrites: -1), throwsArgumentError);
     });
   });
 }

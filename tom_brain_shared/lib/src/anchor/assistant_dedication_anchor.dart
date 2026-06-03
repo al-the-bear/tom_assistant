@@ -126,10 +126,15 @@ final class AssistantDedicationAnchor {
   ///
   /// Currently `1` — the first revision shipped at Plan step A.17.
   ///
-  /// Bumped via `version.next()` on every accepted text change. The
-  /// substrate's anchor-enforcement test (Plan step B.46) reads this
-  /// field to assert the recorded-anchor-version on test calls; that
-  /// test will catch a text change that ships without a version bump.
+  /// A deliberate plain `int`, not a [BrainVersion]: the substrate
+  /// re-exports it verbatim as an integer trail stamp (see "What this
+  /// module deliberately does NOT own" above — the integer keeps the
+  /// trail crypto-free), so the monotonic-ordering machinery of
+  /// `BrainVersion` would be unused weight here. Bumped by hand
+  /// (`1` → `2` → …) on every accepted text change. The substrate's
+  /// anchor-enforcement test (Plan step B.46) reads this field to
+  /// assert the recorded-anchor-version on test calls; that test will
+  /// catch a text change that ships without a version bump.
   static const int version = 1;
 
   /// Returns [prompt] with the anchor prepended.
