@@ -33,9 +33,8 @@
 //     its constructor-default if that is null.
 
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show promptSha256;
 
 import '../api/cancellation.dart';
 import '../api/llm_call.dart';
@@ -126,7 +125,7 @@ final class OllamaLlmProvider implements LlmProvider {
       providerId: id,
       modelId: response.model.isEmpty ? modelId : response.model,
       anchorHash: prompt.anchorHash,
-      promptHash: _hashPrompt(prompt.body),
+      promptHash: promptSha256(prompt.body),
       tokensIn: response.promptEvalCount ?? 0,
       tokensOut: response.evalCount ?? 0,
       retries: 0,
@@ -182,7 +181,7 @@ final class OllamaLlmProvider implements LlmProvider {
               providerId: id,
               modelId: echoedModel ?? modelId,
               anchorHash: prompt.anchorHash,
-              promptHash: _hashPrompt(prompt.body),
+              promptHash: promptSha256(prompt.body),
               tokensIn: promptEval ?? 0,
               tokensOut: eval ?? 0,
               retries: 0,
@@ -209,7 +208,7 @@ final class OllamaLlmProvider implements LlmProvider {
           providerId: id,
           modelId: echoedModel ?? modelId,
           anchorHash: prompt.anchorHash,
-          promptHash: _hashPrompt(prompt.body),
+          promptHash: promptSha256(prompt.body),
           tokensIn: promptEval ?? 0,
           tokensOut: eval ?? 0,
           retries: 0,
@@ -231,7 +230,7 @@ final class OllamaLlmProvider implements LlmProvider {
           providerId: id,
           modelId: echoedModel ?? modelId,
           anchorHash: prompt.anchorHash,
-          promptHash: _hashPrompt(prompt.body),
+          promptHash: promptSha256(prompt.body),
           tokensIn: promptEval ?? 0,
           tokensOut: eval ?? 0,
           retries: 0,
@@ -319,17 +318,6 @@ final class OllamaLlmProvider implements LlmProvider {
   }
 
   // ─── Internals ────────────────────────────────────────────────
-
-  /// sha256 of [body] formatted as `sha256:<lowercase-hex>`.
-  ///
-  /// Matches the convention used by [WirePrompt.anchorHash] (which
-  /// `tom_brain_shared.AnchorRegistry.currentHash` follows). Keeping
-  /// both hashes on the same prefix lets the trail compare them
-  /// without parsing.
-  static String _hashPrompt(String body) {
-    final digest = sha256.convert(utf8.encode(body));
-    return 'sha256:${digest.toString()}';
-  }
 
   String _newCallId(WirePrompt prompt) {
     final now = DateTime.now().microsecondsSinceEpoch;

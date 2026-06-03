@@ -11,7 +11,9 @@
 // Plan step A.17) into the format the substrate's trail records on
 // every LLM call. The shared layer cannot host the hash because A.9
 // forbids `package:crypto` at the shared-types layer — the anchor
-// constants live there, the hash lives here.
+// constants live there, the hash is computed here via the generic
+// `promptSha256` helper (`tom_core_agentic`, which may depend on
+// `crypto`).
 //
 // What this file owns:
 //
@@ -52,28 +54,26 @@
 //     ships the registry + the exception so the hook lands by
 //     consumption, not by invention.
 //   * The provider-side hashing of `WirePrompt.body`. Providers
-//     (B.14 Ollama, B.15 OpenAI passthrough, B.16 Stub) each call
-//     their own `_hashPrompt(...)` against `package:crypto`. The
-//     registry does not factor that out — the body hash is per-call
-//     and per-provider, the anchor hash is process-wide. Different
-//     lifecycles, different ownership.
+//     (B.14 Ollama, B.15 OpenAI passthrough, B.16 Stub) call the same
+//     `promptSha256` helper this registry does, but on a different
+//     input and lifecycle — the body hash is per-call and
+//     per-provider, the anchor hash is process-wide. Shared helper,
+//     different ownership.
 //
 // Why a static-only class, not a top-level constant or function:
 //
 //   * The hash is *computed*, not declared — a `const` would require
-//     `crypto` to be const-evaluable (it is not). The static method
-//     gives us lazy initialisation and a single owner.
+//     `promptSha256` to be const-evaluable (it is not). The static
+//     method gives us lazy initialisation and a single owner.
 //   * Mirrors the `AssistantDedicationAnchor` static-only shape so
 //     a reader who finds one finds the other.
 //   * The class is `final` so a downstream package cannot subclass
 //     it and override [currentHash]. The substrate's anchor identity
 //     is structural, not configurable.
 
-import 'dart:convert' show utf8;
-
-import 'package:crypto/crypto.dart' show sha256;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show AssistantDedicationAnchor;
+import 'package:tom_core_agentic/tom_core_agentic.dart' show promptSha256;
 
 /// Substrate-side accounting for the assistant-dedication anchor.
 ///
@@ -121,9 +121,9 @@ final class AnchorRegistry {
 
   /// `sha256:<lowercase-hex>` of [AssistantDedicationAnchor.text].
   ///
-  /// The format matches `OllamaLlmProvider._hashPrompt` (B.14),
-  /// `OpenAiPassthroughProvider._hashPrompt` (B.15), and
-  /// `StubLlmProvider._hashPrompt` (B.16) so a trail reader does
+  /// The format matches the providers' body hashes (B.14 Ollama,
+  /// B.15 OpenAI passthrough, B.16 Stub) — all compute through the
+  /// same `promptSha256` helper — so a trail reader does
   /// not have to switch parsers between the prompt hash and the
   /// anchor hash. The two hashes carry different semantics — the
   /// prompt hash is per-call body fingerprint; the anchor hash is
@@ -136,8 +136,7 @@ final class AnchorRegistry {
   static String get currentHash {
     final cached = _cachedHash;
     if (cached != null) return cached;
-    final digest = sha256.convert(utf8.encode(AssistantDedicationAnchor.text));
-    return _cachedHash = 'sha256:$digest';
+    return _cachedHash = promptSha256(AssistantDedicationAnchor.text);
   }
 
   /// Re-export of [AssistantDedicationAnchor.version].

@@ -48,9 +48,8 @@
 //     surfaces — it stays inside the provider construction.
 
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show promptSha256;
 
 import '../api/llm_call.dart';
 import '../api/llm_stream_event.dart';
@@ -170,7 +169,7 @@ final class OpenAiPassthroughProvider implements LlmProvider {
       providerId: id,
       modelId: response.model.isEmpty ? modelId : response.model,
       anchorHash: prompt.anchorHash,
-      promptHash: _hashPrompt(prompt.body),
+      promptHash: promptSha256(prompt.body),
       tokensIn: response.promptTokens ?? 0,
       tokensOut: response.completionTokens ?? 0,
       retries: 0,
@@ -236,7 +235,7 @@ final class OpenAiPassthroughProvider implements LlmProvider {
           providerId: id,
           modelId: echoedModel ?? modelId,
           anchorHash: prompt.anchorHash,
-          promptHash: _hashPrompt(prompt.body),
+          promptHash: promptSha256(prompt.body),
           tokensIn: promptTokens ?? 0,
           tokensOut: completionTokens ?? 0,
           retries: 0,
@@ -264,7 +263,7 @@ final class OpenAiPassthroughProvider implements LlmProvider {
           providerId: id,
           modelId: echoedModel ?? modelId,
           anchorHash: prompt.anchorHash,
-          promptHash: _hashPrompt(prompt.body),
+          promptHash: promptSha256(prompt.body),
           tokensIn: promptTokens ?? 0,
           tokensOut: completionTokens ?? 0,
           retries: 0,
@@ -362,16 +361,6 @@ final class OpenAiPassthroughProvider implements LlmProvider {
   }
 
   // ─── Internals ────────────────────────────────────────────────
-
-  /// sha256 of [body] formatted as `sha256:<lowercase-hex>`. Matches
-  /// the convention used by [WirePrompt.anchorHash] (and
-  /// `tom_brain_shared.AnchorRegistry.currentHash`). Keeping both
-  /// hashes on the same prefix lets the trail compare them without
-  /// parsing.
-  static String _hashPrompt(String body) {
-    final digest = sha256.convert(utf8.encode(body));
-    return 'sha256:${digest.toString()}';
-  }
 
   String _newCallId(WirePrompt prompt) {
     final now = DateTime.now().microsecondsSinceEpoch;

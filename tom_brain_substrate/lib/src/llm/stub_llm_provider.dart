@@ -92,9 +92,8 @@
 //     test's job at the substrate level.
 
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show promptSha256;
 
 import '../api/llm_call.dart';
 import '../api/llm_stream_event.dart';
@@ -269,7 +268,7 @@ final class StubLlmProvider implements LlmProvider {
       providerId: id,
       modelId: modelId,
       anchorHash: prompt.anchorHash,
-      promptHash: _hashPrompt(prompt.body),
+      promptHash: promptSha256(prompt.body),
       tokensIn: prompt.body.length,
       tokensOut: response.length,
       retries: 0,
@@ -310,7 +309,7 @@ final class StubLlmProvider implements LlmProvider {
           providerId: id,
           modelId: modelId,
           anchorHash: prompt.anchorHash,
-          promptHash: _hashPrompt(prompt.body),
+          promptHash: promptSha256(prompt.body),
           tokensIn: prompt.body.length,
           tokensOut: 0,
           retries: 0,
@@ -334,7 +333,7 @@ final class StubLlmProvider implements LlmProvider {
         providerId: id,
         modelId: modelId,
         anchorHash: prompt.anchorHash,
-        promptHash: _hashPrompt(prompt.body),
+        promptHash: promptSha256(prompt.body),
         tokensIn: prompt.body.length,
         tokensOut: response.length,
         retries: 0,
@@ -376,15 +375,6 @@ final class StubLlmProvider implements LlmProvider {
       notes.add('tool_catalogue_present:not_yet_dispatched');
     }
     return notes;
-  }
-
-  /// sha256 of [body] formatted as `sha256:<lowercase-hex>`. Matches
-  /// the convention used by `WirePrompt.anchorHash` and by B.14 / B.15
-  /// providers so the trail can compare prompt + anchor hashes without
-  /// parsing.
-  static String _hashPrompt(String body) {
-    final digest = sha256.convert(utf8.encode(body));
-    return 'sha256:$digest';
   }
 }
 
@@ -438,7 +428,7 @@ final class _AlwaysFailsStubProvider extends StubLlmProvider {
         providerId: id,
         modelId: modelId,
         anchorHash: prompt.anchorHash,
-        promptHash: StubLlmProvider._hashPrompt(prompt.body),
+        promptHash: promptSha256(prompt.body),
         tokensIn: prompt.body.length,
         tokensOut: 0,
         retries: 0,
