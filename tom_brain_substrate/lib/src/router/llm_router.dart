@@ -68,6 +68,7 @@ import 'llm_failure_classifier.dart';
 import 'route_entry.dart';
 import 'router_errors.dart';
 import 'router_policy.dart';
+import 'strict_format_adapter.dart';
 
 /// Routes role-keyed LLM calls across an ordered chain of providers,
 /// with failover classification and per-credential cooldown.
@@ -108,6 +109,11 @@ class LlmRouter {
   /// Classifier used on every caught exception / provider-supplied
   /// failure. Stateless; defaults to [LlmFailureClassifier.shared].
   final LlmFailureClassifier classifier;
+
+  /// Adapter that re-emits a prompt with a strict-format reinforcement
+  /// block on a `format`-class failure (spec § 5.4 / Q-B.43.2).
+  /// Stateless; defaults to [StrictFormatAdapter.shared].
+  final StrictFormatAdapter strictFormatAdapter;
 
   /// Clock seam for tests. Defaults to [DateTime.now].
   final DateTime Function() now;
@@ -155,9 +161,12 @@ class LlmRouter {
     required this.providers,
     required this.policy,
     LlmFailureClassifier? classifier,
+    StrictFormatAdapter? strictFormatAdapter,
     DateTime Function()? now,
     Random? random,
   })  : classifier = classifier ?? LlmFailureClassifier.shared,
+        strictFormatAdapter =
+            strictFormatAdapter ?? StrictFormatAdapter.shared,
         now = now ?? DateTime.now,
         _random = random ?? Random();
 
@@ -244,6 +253,12 @@ class LlmRouter {
       final provider = providers[entry.providerId]!;
       final resolvedOptions = _resolveOptions(options, entry.model);
       int retries = 0;
+      // The prompt actually sent on this route. Starts as the original;
+      // a `format`-class failure swaps it for the strict-format-adapted
+      // prompt before the single re-emit (spec § 5.4). Each route in the
+      // chain starts from the original, so reinforcement never carries
+      // across rotations.
+      var effectivePrompt = prompt;
 
       while (true) {
         if (cancellationToken.isCancelled) {
@@ -263,7 +278,7 @@ class LlmRouter {
 
         try {
           final report =
-              await provider.complete(prompt, resolvedOptions);
+              await provider.complete(effectivePrompt, resolvedOptions);
           attempts.add(RouteAttempt(
             routeKey: _routeKey(entry),
             outcome: 'succeeded',
@@ -304,6 +319,15 @@ class LlmRouter {
               attempts: List<RouteAttempt>.unmodifiable(attempts),
               lastClass: cls,
             );
+          }
+
+          if (_shouldReformatRetry(action, retries, overallWatch, budget)) {
+            retries++;
+            effectivePrompt = strictFormatAdapter.reinforce(
+              prompt,
+              responseFormat: resolvedOptions.responseFormat,
+            );
+            continue;
           }
 
           if (_shouldRetry(action, retries, overallWatch, budget)) {
@@ -404,6 +428,9 @@ class LlmRouter {
       final provider = providers[entry.providerId]!;
       final resolvedOptions = _resolveOptions(options, entry.model);
       int retries = 0;
+      // See the note in [dispatch]: a `format` failure swaps this for the
+      // strict-format-adapted prompt before the single re-emit.
+      var effectivePrompt = prompt;
 
       while (true) {
         if (cancellationToken.isCancelled) {
@@ -429,7 +456,7 @@ class LlmRouter {
 
         try {
           await for (final ev in provider.completeStream(
-            prompt,
+            effectivePrompt,
             resolvedOptions,
           )) {
             if (ev is LlmStreamCompleted) {
@@ -515,6 +542,15 @@ class LlmRouter {
             report: fail.report,
           );
           return;
+        }
+
+        if (_shouldReformatRetry(action, retries, overallWatch, budget)) {
+          retries++;
+          effectivePrompt = strictFormatAdapter.reinforce(
+            prompt,
+            responseFormat: resolvedOptions.responseFormat,
+          );
+          continue;
         }
 
         if (_shouldRetry(action, retries, overallWatch, budget)) {
@@ -633,6 +669,23 @@ class LlmRouter {
       retries < retriesPerClass &&
       overallWatch.elapsedMilliseconds < budget.wallClockMs;
 
+  /// The strict-format re-emit predicate (spec § 5.4 `format` row): on a
+  /// `reformatThenRotate` failure, re-emit the prompt through the
+  /// strict-format adapter exactly *once* (the spec's "single retry",
+  /// fixed at one regardless of [retriesPerClass]) provided the
+  /// wall-clock budget still has room. After the single re-emit
+  /// ([retries] >= 1) the route rotates. Shared by [dispatch] and
+  /// [dispatchStream].
+  bool _shouldReformatRetry(
+    LlmRouterAction action,
+    int retries,
+    Stopwatch overallWatch,
+    Budget budget,
+  ) =>
+      action == LlmRouterAction.reformatThenRotate &&
+      retries < 1 &&
+      overallWatch.elapsedMilliseconds < budget.wallClockMs;
+
   /// Pre-attempt wall-clock budget gate. Returns `false` when [entry] may
   /// still attempt; returns `true` (and records a `skipped:budget_wall_clock`
   /// audit line) when the elapsed wall-clock has reached the budget, so
@@ -685,6 +738,13 @@ class LlmRouter {
         // dispatchable on the next call; only the in-route retry budget
         // is consumed. A future policy field could attach a short
         // cool-off here if a real provider proves it needs one.
+        break;
+      case LlmRouterAction.reformatThenRotate:
+        // No cooldown after a strict-format re-emit also failed. A
+        // `format` failure is prompt-related, not credential-related, so
+        // the route stays dispatchable — a later call with a different
+        // prompt may well succeed. Only the single in-route re-emit was
+        // consumed.
         break;
       case LlmRouterAction.surfaceToCaller:
         // No state change; the caller is in charge.

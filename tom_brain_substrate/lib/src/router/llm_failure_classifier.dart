@@ -100,10 +100,13 @@ enum LlmFailureClass {
   /// Substrate does not silently truncate role prompts.
   contextOverflow('context_overflow', LlmRouterAction.surfaceToCaller),
 
-  /// HTTP 400 + format body. Re-emit with strict-format adapter; single
-  /// retry. At B.18 there is no strict-format adapter yet; the router
-  /// treats this as `retryThenRotate` for the prototype.
-  format('format', LlmRouterAction.retryThenRotate),
+  /// HTTP 400 + format body. Re-emit with the strict-format adapter
+  /// (`StrictFormatAdapter`) for a single retry, then rotate. Distinct
+  /// from `retryThenRotate` because the prompt is *adapted* (a strict-
+  /// format reinforcement block is appended) before the re-emit and the
+  /// retry budget is fixed at one, independent of
+  /// `RouterPolicy.retriesPerClass`. Landed at B.43 (Q-B.43.2).
+  format('format', LlmRouterAction.reformatThenRotate),
 
   /// DNS, connection-refused, TLS. Single retry, rotate on second
   /// failure.
@@ -152,8 +155,17 @@ enum LlmRouterAction {
 
   /// Retry the current route up to [LlmRouter.retriesPerClass] times;
   /// rotate to the next entry after the retry budget is exhausted. Used
-  /// for `overloaded`, `timeout`, `format`, `network`, `unknown`.
+  /// for `overloaded`, `timeout`, `network`, `unknown`.
   retryThenRotate,
+
+  /// Re-emit the prompt once through `StrictFormatAdapter` (appending a
+  /// strict-format reinforcement block), then rotate if the adapted
+  /// re-emit also fails. Used only for `format`. The retry budget is
+  /// fixed at one (the spec's "single retry"), independent of
+  /// [LlmRouter.retriesPerClass]; the route carries no cooldown on
+  /// rotation (a format failure is prompt-related, not credential-
+  /// related, so the route stays dispatchable).
+  reformatThenRotate,
 
   /// Remove the credential for the current route from the session for an
   /// effectively-permanent cooldown. Used for `auth` and `authPermanent`.
