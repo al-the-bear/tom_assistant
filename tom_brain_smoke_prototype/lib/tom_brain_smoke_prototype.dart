@@ -53,13 +53,25 @@
 ///   unit-tested; `bin/e58_process_bench.dart` is the runnable entry point.
 library;
 
+// The nearest-rank percentile maths and the `LatencySummary` are generic
+// (the same maths the memory package's recall-latency tracker derives), so
+// they live in `tom_core_agentic`; re-exported here so the bench's public
+// surface is unchanged for consumers that import this barrel.
+export 'package:tom_core_agentic/tom_core_agentic.dart'
+    show LatencySummary, percentileDuration;
+
+export 'src/bench_tool.dart'
+    show
+        E58BenchExecutor,
+        createE58BenchExecutors,
+        e58BenchTool,
+        e58BenchVersion,
+        e58BenchVersionString;
 export 'src/inspectable_smoke_memory.dart' show InspectableSmokeMemory;
 export 'src/latency_bench.dart'
     show
-        LatencySummary,
         defaultBenchPrompt,
         measureTimeToFirstSseFrame,
-        percentileDuration,
         processBenchP95Target,
         renderLatencyReport,
         runProcessLatencyBench;

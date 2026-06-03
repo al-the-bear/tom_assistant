@@ -78,30 +78,68 @@ final class SmokeProcess {
   /// so a later smoke step can set [SmokeSubstrate.answerChunks] before a run.
   final SmokeSubstrate substrate;
 
-  /// The host-side handle to the in-isolate memory (the marshalling client over
-  /// the production isolate transport). Exposed so a smoke step can read the
-  /// store's post-run state back through [TomBrainMemoryClient.stats] — the one
-  /// read-back that crosses the isolate boundary (E.47).
-  final TomBrainMemoryClient memory;
+  /// The host-side handle to the in-isolate memory client; `null` on the
+  /// in-process transport. Read through the [memory] accessor, which guards the
+  /// transport.
+  final TomBrainMemoryClient? _memory;
 
-  /// The in-process memory store the cognition was booted over, or `null` when
-  /// the harness used the default isolate transport.
-  ///
-  /// Non-null only when [standUpSmokeProcess] was called with an
-  /// `inProcessMemory` (the E.55 path). The cognition and the caller then share
-  /// one [TomBrainMemory] object in the host isolate, so the E.55 conformance
-  /// test can stand the memory MCP server up over *this* reference and inspect
-  /// the post-run graph through the MCP read tools — the cross-isolate
-  /// marshalling client ([memory]) cannot back the MCP server, which forwards
-  /// each tool call to a `TomBrainMemory` directly.
-  final TomBrainMemory? inProcessMemory;
+  /// The in-process memory store the cognition was booted over; `null` on the
+  /// isolate transport. Read through the [inProcessMemory] accessor, which
+  /// guards the transport.
+  final TomBrainMemory? _inProcessMemory;
 
   SmokeProcess._({
     required this.process,
     required this.substrate,
-    required this.memory,
-    required this.inProcessMemory,
-  });
+    required TomBrainMemoryClient? memory,
+    required TomBrainMemory? inProcessMemory,
+  })  : _memory = memory,
+        _inProcessMemory = inProcessMemory;
+
+  /// Whether the cognition was booted over the *in-process* memory transport
+  /// (the E.55 path), as opposed to the default isolate transport. The two
+  /// memory surfaces ([memory] / [inProcessMemory]) are mutually exclusive and
+  /// switch on this flag.
+  bool get isInProcess => _inProcessMemory != null;
+
+  /// The cross-isolate marshalling memory client — the one read-back that
+  /// crosses the isolate boundary (E.47), so a smoke step can read the store's
+  /// post-run state through [TomBrainMemoryClient.stats].
+  ///
+  /// Valid only on the isolate transport. Throws a [StateError] on the
+  /// in-process path ([isInProcess] is true) — read [inProcessMemory] there,
+  /// since the cross-isolate client does not exist on that transport.
+  TomBrainMemoryClient get memory {
+    final TomBrainMemoryClient? client = _memory;
+    if (client == null) {
+      throw StateError(
+        'SmokeProcess.memory is the isolate-transport client, but this process '
+        'was booted in-process — read inProcessMemory instead.',
+      );
+    }
+    return client;
+  }
+
+  /// The in-process memory store the cognition shares with the caller (the E.55
+  /// path). The cognition and the caller hold one [TomBrainMemory] object in the
+  /// host isolate, so the E.55 conformance test can stand the memory MCP server
+  /// up over *this* reference and inspect the post-run graph through the MCP read
+  /// tools — the cross-isolate marshalling client ([memory]) cannot back the MCP
+  /// server, which forwards each tool call to a `TomBrainMemory` directly.
+  ///
+  /// Valid only on the in-process transport. Throws a [StateError] on the
+  /// isolate path ([isInProcess] is false) — read [memory] there.
+  TomBrainMemory get inProcessMemory {
+    final TomBrainMemory? store = _inProcessMemory;
+    if (store == null) {
+      throw StateError(
+        'SmokeProcess.inProcessMemory is only set on the in-process transport '
+        '(standUpSmokeProcess(inProcessMemory: …)); this process was booted '
+        'over the isolate transport — read memory instead.',
+      );
+    }
+    return store;
+  }
 
   /// The port the OpenAI + `/healthz` socket actually bound (OS-assigned when
   /// the harness requested the ephemeral port `0`).
@@ -187,16 +225,15 @@ Future<SmokeProcess> standUpSmokeProcess({
   // caller supplies an [inProcessMemory] (the E.55 path) the boot uses the
   // in-process transport instead, so the cognition and the caller share one
   // `TomBrainMemory` object the MCP server can be stood up over.
+  final String memoryRoot = _uniqueSmokeMemoryRoot();
   final MemoryProvisioningConfig memoryProvisioning = inProcessMemory == null
       ? MemoryProvisioningConfig.isolate(
           factory: spawnSmokeMemory,
-          memoryConfig:
-              MemoryConfig.forTesting(root: 'ztmp/tom_brain_smoke_e46'),
+          memoryConfig: MemoryConfig.forTesting(root: memoryRoot),
         )
       : MemoryProvisioningConfig.inProcess(
           client: inProcessMemory,
-          memoryConfig:
-              MemoryConfig.forTesting(root: 'ztmp/tom_brain_smoke_e55'),
+          memoryConfig: MemoryConfig.forTesting(root: memoryRoot),
         );
   final booted = await BrainProcessBoot.boot(
     BrainProcessConfig(
@@ -249,10 +286,26 @@ Future<SmokeProcess> standUpSmokeProcess({
   return SmokeProcess._(
     process: process,
     substrate: smokeSubstrate,
-    memory: booted.memory.client,
+    // Exactly one memory surface is live per transport: the isolate path keeps
+    // the marshalling client; the in-process path keeps the shared store (and
+    // leaves the isolate client null, so reading the wrong surface throws).
+    memory: inProcessMemory == null ? booted.memory.client : null,
     inProcessMemory: inProcessMemory,
   );
 }
+
+/// Monotonic stand-up counter, mixed into [_uniqueSmokeMemoryRoot] so two
+/// stand-ups in one process never collide on a memory directory.
+int _smokeRootCounter = 0;
+
+/// A unique on-disk memory root for one [standUpSmokeProcess] call.
+///
+/// Two stand-ups in a single run — the E.58 bench drives several, and parallel
+/// tests can overlap — must not share one on-disk directory or they interfere.
+/// The root is keyed by the process id and a monotonic counter, and carries no
+/// plan-step nomenclature (the phase number was harness-coupling, not state).
+String _uniqueSmokeMemoryRoot() => 'ztmp/tom_brain_smoke_${pid}_'
+    '${_smokeRootCounter++}';
 
 /// Resolves the procedure prototype's shipped `scripts/system` directory.
 ///
@@ -283,6 +336,18 @@ Future<Directory> _resolveProcedurePrototypeScripts() async {
 /// bindings, and an unbound token is a `401` (see [IdentityResolver]).
 const String smokeBearerToken = 'smoke-token';
 
+/// An "effectively unlimited" quota figure for the smoke's rate-limit and
+/// daily-quota policies — the smoke never wants to be throttled, so every cap is
+/// set far above any number of requests a smoke run issues.
+const int _unlimitedQuota = 1000000;
+
+/// The satisfy-validation placeholder for `AccessConfig.openAiPort`. The harness
+/// binds the real port through its injected serve seam (an OS-assigned ephemeral
+/// port when [standUpSmokeProcess] is asked for `0`), but `AccessConfig`
+/// validates `openAiPort > 0`, so this non-zero placeholder stands in. The real
+/// bound port is read back from [SmokeProcess.port].
+const int _placeholderPort = 1;
+
 /// The permissive access config the smoke binds: one bearer binding (the
 /// [smokeBearerToken] → a `smoke-user` principal, so a request resolves an
 /// identity and reaches the dispatcher), no rate / quota caps, and an empty
@@ -300,13 +365,13 @@ AccessConfig _smokeAccessConfig(
   Set<String> telegramWhitelist = const <String>{},
 }) =>
     AccessConfig(
-      openAiPort: port > 0 ? port : 1,
+      openAiPort: port > 0 ? port : _placeholderPort,
       rateLimitPolicy: RateLimitPolicy(
-        capacity: 1000000,
-        refillTokens: 1000000,
+        capacity: _unlimitedQuota,
+        refillTokens: _unlimitedQuota.toDouble(),
         refillPeriod: const Duration(seconds: 1),
       ),
-      dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: 1000000),
+      dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: _unlimitedQuota),
       anchorPolicy: AnchorPolicy(disallowedSignatures: const <String>[]),
       bearerTokenBindings: <String, IdentityBinding>{
         smokeBearerToken: IdentityBinding(principalId: 'smoke-user'),

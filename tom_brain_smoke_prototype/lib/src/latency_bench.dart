@@ -30,91 +30,18 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart' show LatencySummary;
+
 import 'smoke_brain.dart' show SmokeProcess, smokeBearerToken;
 
 /// The default prompt the bench drives. Stable text so every sample exercises
 /// the same procedure path (and, after the first, the memory recall warm path).
 const String defaultBenchPrompt = 'how do I automate backups?';
 
-/// The plan's pass target: first-SSE-chunk p95 must not exceed this.
+/// The plan's pass target: first-SSE-chunk p95 must not exceed this. The
+/// generic [LatencySummary.meetsTarget] is target-agnostic; this is the
+/// brain-specific figure the bench gates on.
 const Duration processBenchP95Target = Duration(milliseconds: 250);
-
-/// The nearest-rank percentile of [sorted] (which MUST already be ascending),
-/// for a quantile [q] in `[0, 1]`.
-///
-/// Uses the nearest-rank method on microsecond magnitudes: `rank = ceil(q · n)`,
-/// index `rank − 1`, clamped into range. For `n = 50`, `q = 0.95` ⇒ rank 48 ⇒
-/// the 48th-smallest sample. An empty list is a programming error (a bench with
-/// no samples has nothing to summarise) and throws [ArgumentError].
-Duration percentileDuration(List<Duration> sorted, double q) {
-  if (sorted.isEmpty) {
-    throw ArgumentError.value(sorted, 'sorted', 'must be non-empty');
-  }
-  if (q < 0 || q > 1) {
-    throw ArgumentError.value(q, 'q', 'must be within [0, 1]');
-  }
-  final int n = sorted.length;
-  // rank = ceil(q · n), at least 1; index = rank − 1, clamped to the last slot.
-  final int rank = (q * n).ceil();
-  final int index = (rank < 1 ? 1 : rank) - 1;
-  final int clamped = index < 0
-      ? 0
-      : index > n - 1
-          ? n - 1
-          : index;
-  return sorted[clamped];
-}
-
-/// An immutable summary of a set of latency samples — count, min/max, p50, p95.
-///
-/// Built from raw samples via [LatencySummary.fromSamples], which sorts a copy
-/// (the caller's list is left untouched) and computes the percentiles with
-/// [percentileDuration].
-final class LatencySummary {
-  /// Number of samples the summary was computed from.
-  final int sampleCount;
-
-  /// The smallest sample.
-  final Duration min;
-
-  /// The largest sample.
-  final Duration max;
-
-  /// The 50th-percentile (median) sample.
-  final Duration p50;
-
-  /// The 95th-percentile sample — the figure the plan's target gates on.
-  final Duration p95;
-
-  const LatencySummary({
-    required this.sampleCount,
-    required this.min,
-    required this.max,
-    required this.p50,
-    required this.p95,
-  });
-
-  /// Summarises [samples]. The list MUST be non-empty; a copy is sorted so the
-  /// caller's list is left in its original order.
-  factory LatencySummary.fromSamples(List<Duration> samples) {
-    if (samples.isEmpty) {
-      throw ArgumentError.value(samples, 'samples', 'must be non-empty');
-    }
-    final List<Duration> sorted = List<Duration>.of(samples)..sort();
-    return LatencySummary(
-      sampleCount: sorted.length,
-      min: sorted.first,
-      max: sorted.last,
-      p50: percentileDuration(sorted, 0.50),
-      p95: percentileDuration(sorted, 0.95),
-    );
-  }
-
-  /// Whether the p95 sample is within [target] (default: the plan's
-  /// [processBenchP95Target]) — the bench's pass condition.
-  bool meetsTarget([Duration target = processBenchP95Target]) =>
-      p95 <= target;
-}
 
 /// Measures one inbound-prompt → first-SSE-chunk latency sample.
 ///
@@ -141,9 +68,20 @@ Future<Duration> measureTimeToFirstSseFrame(
   request.add(body);
   final HttpClientResponse response = await request.close();
 
+  // Decode the response line-by-line. A `LineSplitter` reassembles SSE lines
+  // across decoder chunk boundaries (decoder chunks follow network reads, not
+  // SSE lines), so a `data:` token split across two reads — `…da` | `ta: {…}` —
+  // is still matched on the reassembled line. Scanning raw decoder chunks for
+  // `contains('data:')` would miss that split and attribute the sample to a
+  // later frame (inflating the very latency this bench measures) or throw the
+  // "closed before any data: frame" error. SSE data frames begin a line with
+  // `data:`, so a `startsWith` on the reassembled line is both correct and
+  // tighter than a substring scan.
   Duration? firstFrame;
-  await for (final String chunk in response.transform(utf8.decoder)) {
-    if (firstFrame == null && chunk.contains('data:')) {
+  final Stream<String> lines =
+      response.transform(utf8.decoder).transform(const LineSplitter());
+  await for (final String line in lines) {
+    if (firstFrame == null && line.startsWith('data:')) {
       firstFrame = stopwatch.elapsed;
     }
     // Keep draining to completion so the connection returns to the pool; the

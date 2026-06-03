@@ -35,34 +35,37 @@
 // what the E.55 MCP inspection needs to read back. The two phases are
 // distinguished by *when* recall runs relative to the writes, not by any flag.
 //
-// Unlike [SmokeMemory] (which only tallies counts), this memory records full
-// [Node] / [Edge] / [StackEntry] objects so the MCP read tools — `memory.recall`,
-// `memory.get`, `memory.edgesOf`, `memory.stack.list`, `memory.stack.peek` —
-// return real graph contents to the inspecting client.
+// ── What this double adds over the shared base ───────────────────────
+//
+// [RecordingMemoryBase] owns the recording tallies, `stats`, `get`/`getMany`,
+// the trail surface, and the no-op tail. This double additionally records full
+// [Node] (with embedding) / [Edge] objects and the node insertion order, so the
+// MCP read tools — `memory.recall`, `memory.get`, `memory.edgesOf`,
+// `memory.stack.list`, `memory.stack.peek` — return real graph contents to the
+// inspecting client. It therefore overrides the base's four projecting members
+// ([persist], [edge], [recall], [edgesOf]) to project the full graph rather
+// than tallies.
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, StackEntryId, TrailId, Vec, WriteBudget;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show EdgeId, NodeId;
+
+import 'recording_memory_support.dart';
 
 /// An in-process recording [TomBrainMemory] whose graph is readable back through
 /// the memory MCP server (E.55).
 ///
-/// Records every persisted node, every edge, and every stack push as full
-/// domain objects, and serves them through the consumer API the MCP tools call.
-/// [recall] returns the persisted nodes (capped at the query's `k`), so a
-/// post-run MCP `memory.recall` surfaces the run's Event + Conclusion; because
-/// `answer_with_memory_v1` recalls before it persists, the in-run recall still
-/// returns empty and the cold-classification path (InterestItem + `interests`
-/// push) is preserved. Open / close / budget / lifecycle methods the smoke does
-/// not exercise are unobtrusive no-ops.
-final class InspectableSmokeMemory implements TomBrainMemory {
+/// Records every persisted node (with embedding), every edge, and every stack
+/// push as full domain objects, and serves them through the consumer API the
+/// MCP tools call. [recall] returns the persisted nodes (capped at the query's
+/// `k`), so a post-run MCP `memory.recall` surfaces the run's Event + Conclusion;
+/// because `answer_with_memory_v1` recalls before it persists, the in-run recall
+/// still returns empty and the cold-classification path (InterestItem +
+/// `interests` push) is preserved.
+final class InspectableSmokeMemory extends RecordingMemoryBase {
   /// The node type the engine's `RunRecorder` persists as a run bookkeeping
   /// marker (`procedureRunNodeType`). Excluded from [recall] so it never
   /// masquerades as a knowledge hit (see [recall]).
   static const String _procedureRunTypeName = 'ProcedureRun';
-
-  /// Persisted nodes in insertion order, keyed by id.
-  final Map<NodeId, Node> _nodes = <NodeId, Node>{};
 
   /// Insertion order of node ids (recall returns nodes in this order).
   final List<NodeId> _nodeOrder = <NodeId>[];
@@ -70,41 +73,10 @@ final class InspectableSmokeMemory implements TomBrainMemory {
   /// Recorded edges in insertion order.
   final List<Edge> _edges = <Edge>[];
 
-  /// Persisted-node count keyed by `NodeDraft.typeName`.
-  final Map<String, int> _nodeCountByType = <String, int>{};
-
-  /// Edge count keyed by `EdgeType.wireName`.
-  final Map<String, int> _edgeCountByType = <String, int>{};
-
-  final _RecordingStackApi _stacks = _RecordingStackApi();
-
-  int _trailCount = 0;
-
-  @override
-  Future<void> open(MemoryConfig config) async {}
-
-  @override
-  Future<void> close() async {}
-
-  @override
-  Future<void> checkpoint() async {}
-
-  @override
-  Future<MemoryStats> stats() async => MemoryStats(
-        nodeCountByType: Map<String, int>.of(_nodeCountByType),
-        edgeCountByType: Map<String, int>.of(_edgeCountByType),
-        stackSizes: _stacks.sizes(),
-        trailCount: _trailCount,
-        trailBytes: 0,
-        recallLatencyPerMode: const <String, LatencyHistogram>{},
-        classificationConfidenceHistogram: const <String, int>{},
-        migrationProgress: const <String, double>{},
-      );
-
   @override
   Future<NodeId> persist(NodeDraft draft, {required Scope scope}) async {
     final NodeId id = NodeId.generate();
-    _nodes[id] = Node(
+    nodes[id] = Node(
       id: id,
       typeName: draft.typeName,
       values: Map<String, Object?>.of(draft.values),
@@ -112,16 +84,9 @@ final class InspectableSmokeMemory implements TomBrainMemory {
       createdAt: DateTime.now().toUtc(),
     );
     _nodeOrder.add(id);
-    _nodeCountByType.update(draft.typeName, (c) => c + 1, ifAbsent: () => 1);
+    nodeCountByType.update(draft.typeName, (c) => c + 1, ifAbsent: () => 1);
     return id;
   }
-
-  @override
-  Future<Node?> get(NodeId id) async => _nodes[id];
-
-  @override
-  Future<List<Node>> getMany(List<NodeId> ids) async =>
-      <Node>[for (final id in ids) if (_nodes[id] != null) _nodes[id]!];
 
   @override
   Future<EdgeId> edge(
@@ -143,7 +108,7 @@ final class InspectableSmokeMemory implements TomBrainMemory {
         attrs: attrs ?? const <String, Object?>{},
       ),
     );
-    _edgeCountByType.update(type.wireName, (c) => c + 1, ifAbsent: () => 1);
+    edgeCountByType.update(type.wireName, (c) => c + 1, ifAbsent: () => 1);
     return id;
   }
 
@@ -161,8 +126,9 @@ final class InspectableSmokeMemory implements TomBrainMemory {
     // Conclusion after the run for the MCP inspection (see the file header).
     final nodes = <Node>[
       for (final id in _nodeOrder)
-        if (_nodes[id] != null && _nodes[id]!.typeName != _procedureRunTypeName)
-          _nodes[id]!,
+        if (this.nodes[id] != null &&
+            this.nodes[id]!.typeName != _procedureRunTypeName)
+          this.nodes[id]!,
     ];
     final capped = nodes.length <= query.k ? nodes : nodes.sublist(0, query.k);
     return RecallResult(
@@ -180,24 +146,6 @@ final class InspectableSmokeMemory implements TomBrainMemory {
       ),
     );
   }
-
-  @override
-  StackApi get stacks => _stacks;
-
-  @override
-  Future<TrailId> openTrail(ProcedureRunRef run) async {
-    _trailCount++;
-    return TrailId.generate();
-  }
-
-  @override
-  Future<void> appendTrail(TrailId id, TrailEntry entry) async {}
-
-  @override
-  Future<void> closeTrail(TrailId id, TrailOutcome outcome) async {}
-
-  @override
-  Stream<TrailEntry> readTrail(TrailId id) => const Stream<TrailEntry>.empty();
 
   @override
   Future<List<Edge>> edgesOf(
@@ -223,176 +171,4 @@ final class InspectableSmokeMemory implements TomBrainMemory {
         return e.from == id || e.to == id;
     }
   }
-
-  // ─── Every other method is an unused no-op ────────────────────
-
-  @override
-  Future<void> beginRun({
-    required String runId,
-    required WriteBudget budget,
-  }) async {}
-
-  @override
-  Future<void> endRun(String runId) async {}
-
-  @override
-  Future<WriteBudget?> remainingBudget(String runId) async => null;
-
-  @override
-  Future<void> demote(NodeId id, DemotionReason reason) async {}
-
-  @override
-  Future<void> forget(NodeId id, ForgetReason reason) async {}
-
-  @override
-  Future<void> registerNodeType(NodeTypeDecl decl) async {}
-
-  @override
-  Future<List<NodeTypeDecl>> listNodeTypes() async => const <NodeTypeDecl>[];
-
-  @override
-  Future<NodeTypeDecl?> getNodeType(String typeName) async => null;
-
-  @override
-  Stream<Node> stream(StreamQuery query) => const Stream<Node>.empty();
-
-  @override
-  Future<ClassificationResult> classify(
-    Vec embedding, {
-    ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      const ClassificationResult.unknown();
-
-  @override
-  Future<void> updateCentroid(String forKey, Vec centroid) async {}
-
-  @override
-  Future<List<NodeId>> findUncertain({
-    required String forKey,
-    required double low,
-    required double high,
-    int limit = 200,
-  }) async =>
-      const <NodeId>[];
-
-  @override
-  MigrationApi get migrations => _NoopMigrationApi();
-
-  @override
-  Stream<MemoryEvent> events() => const Stream<MemoryEvent>.empty();
-}
-
-/// A recording [StackApi] that serves the inventory + top-K views the MCP
-/// `memory.stack.list` / `memory.stack.peek` tools call.
-class _RecordingStackApi implements StackApi {
-  final Map<String, List<StackEntry>> _byName = <String, List<StackEntry>>{};
-
-  /// The current active size of each known stack.
-  Map<String, int> sizes() => <String, int>{
-        for (final entry in _byName.entries) entry.key: entry.value.length,
-      };
-
-  @override
-  Future<StackEntryId> push(
-    String name,
-    NodeId entry, {
-    double priority = 0.0,
-    Map<String, Object?>? attrs,
-    Scope? scope,
-  }) async {
-    final StackEntryId id = StackEntryId.generate();
-    (_byName[name] ??= <StackEntry>[]).add(
-      StackEntry(
-        id: id,
-        stackName: name,
-        nodeId: entry,
-        priority: priority,
-        pushedAt: DateTime.now().toUtc(),
-        attrs: attrs ?? const <String, Object?>{},
-      ),
-    );
-    return id;
-  }
-
-  @override
-  Future<List<StackSummary>> list() async => <StackSummary>[
-        for (final entry in _byName.entries)
-          StackSummary(
-            name: entry.key,
-            size: entry.value.length,
-            topPriority: entry.value.isEmpty
-                ? 0.0
-                : entry.value
-                    .map((e) => e.priority)
-                    .reduce((a, b) => a > b ? a : b),
-            bootstrap: false,
-          ),
-      ];
-
-  @override
-  Future<StackInfo?> info(String name) async => null;
-
-  @override
-  Future<void> create(StackDecl decl) async {}
-
-  @override
-  Future<void> updatePolicy(String name, StackPolicy policy) async {}
-
-  @override
-  Future<void> delete(String name) async {}
-
-  @override
-  Future<List<StackEntry>> peek(String name, {int k = 16}) async {
-    final entries = _byName[name] ?? const <StackEntry>[];
-    return entries.length <= k ? entries : entries.sublist(0, k);
-  }
-
-  @override
-  Future<StackEntry?> pop(String name) async {
-    final entries = _byName[name];
-    if (entries == null || entries.isEmpty) return null;
-    return entries.removeLast();
-  }
-
-  @override
-  Future<void> update(
-    String name,
-    NodeId entry, {
-    double? priority,
-    StackEntryStatus? status,
-    Map<String, Object?>? attrs,
-  }) async {}
-
-  @override
-  Future<void> remove(String name, NodeId entry) async {
-    _byName[name]?.removeWhere((e) => e.nodeId == entry);
-  }
-
-  @override
-  Stream<StackEntry> streamArchived(String name, {int? limit}) =>
-      const Stream<StackEntry>.empty();
-
-  @override
-  Stream<StackEvent> events(String name) => const Stream<StackEvent>.empty();
-}
-
-class _NoopMigrationApi implements MigrationApi {
-  @override
-  Future<void> start(MigrationDecl decl) async {}
-
-  @override
-  Future<MigrationCursor?> cursor(String migrationId) async => null;
-
-  @override
-  Future<void> saveCursor(
-    String migrationId,
-    Map<String, Object?> position,
-  ) async {}
-
-  @override
-  Future<MigrationStatus?> status(String migrationId) async => null;
-
-  @override
-  Future<List<MigrationStatus>> listInProgress() async =>
-      const <MigrationStatus>[];
 }

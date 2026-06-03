@@ -101,7 +101,7 @@ void main() {
       expect(message['content'], _answerText);
 
       // ── Memory inspect, via the MCP server. ──
-      await _inspectViaMcp(smoke.inProcessMemory!, (mcp) async {
+      await _inspectViaMcp(smoke.inProcessMemory, (mcp) async {
         await _assertConformantGraph(mcp, prompt: prompt, answer: _answerText);
       });
     });
@@ -141,7 +141,7 @@ void main() {
       expect(loopback.sentReceivers.single, ChatReceiver.id(_allowedSender));
 
       // ── Memory inspect, via the MCP server. ──
-      await _inspectViaMcp(smoke.inProcessMemory!, (mcp) async {
+      await _inspectViaMcp(smoke.inProcessMemory, (mcp) async {
         await _assertConformantGraph(mcp, prompt: prompt, answer: _answerText);
       });
     });

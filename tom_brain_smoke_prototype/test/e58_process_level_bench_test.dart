@@ -96,7 +96,7 @@ void main() {
           throwsA(isA<ArgumentError>()));
     });
 
-    test('meetsTarget gates on p95 against the default 250 ms target', () {
+    test('meetsTarget gates on p95 against the plan target', () {
       const LatencySummary within = LatencySummary(
         sampleCount: 3,
         min: Duration(milliseconds: 5),
@@ -111,9 +111,9 @@ void main() {
         p50: Duration(milliseconds: 50),
         p95: Duration(milliseconds: 300),
       );
-      expect(within.meetsTarget(), isTrue);
-      expect(over.meetsTarget(), isFalse);
-      // The default target is the plan's 250 ms figure.
+      expect(within.meetsTarget(processBenchP95Target), isTrue);
+      expect(over.meetsTarget(processBenchP95Target), isFalse);
+      // The plan's target is the brain-specific 250 ms figure.
       expect(processBenchP95Target, const Duration(milliseconds: 250));
       // A custom target is honoured.
       expect(within.meetsTarget(const Duration(milliseconds: 100)), isFalse);
@@ -190,7 +190,7 @@ void main() {
         expect(summary.p95 <= summary.max, isTrue);
         // The plan's pass condition.
         expect(
-          summary.meetsTarget(),
+          summary.meetsTarget(processBenchP95Target),
           isTrue,
           reason: 'p95=${summary.p95.inMilliseconds} ms must be ≤ '
               '${processBenchP95Target.inMilliseconds} ms',
