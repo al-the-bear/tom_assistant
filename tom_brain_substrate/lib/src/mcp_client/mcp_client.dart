@@ -34,11 +34,16 @@
 
 import 'dart:async';
 
-import 'package:dart_mcp/client.dart' as mcp;
-import 'package:dart_mcp/server.dart' as mcp_proto;
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 import 'mcp_errors.dart';
+// MCP protocol types (`MCPClient`, `ServerConnection`, `Implementation`,
+// `InitializeRequest`, `InitializeResult`, `ProtocolVersion`,
+// `ClientCapabilities`, `CallToolRequest`) come through the single
+// MCP-library adapter (todo #5), never `package:dart_mcp` directly. The
+// adapter collapses the upstream `client.dart` / `server.dart` split
+// behind one `mcp.` prefix.
+import 'mcp_library_adapter.dart' as mcp;
 import 'mcp_transport.dart';
 
 /// Identity advertised by this MCP client during the `initialize`
@@ -159,14 +164,14 @@ final class McpClient with CloseGuard {
     // Race the handshake against transport-level failures so a
     // mid-handshake auth rejection surfaces as the typed error
     // rather than as a generic dart_mcp StateError.
-    late mcp_proto.InitializeResult initResult;
+    late mcp.InitializeResult initResult;
     try {
-      initResult = await Future.any(<Future<mcp_proto.InitializeResult>>[
+      initResult = await Future.any(<Future<mcp.InitializeResult>>[
         connection.initialize(
-          mcp_proto.InitializeRequest(
-            protocolVersion: mcp_proto.ProtocolVersion.latestSupported,
-            capabilities: mcp_proto.ClientCapabilities(),
-            clientInfo: mcp_proto.Implementation(
+          mcp.InitializeRequest(
+            protocolVersion: mcp.ProtocolVersion.latestSupported,
+            capabilities: mcp.ClientCapabilities(),
+            clientInfo: mcp.Implementation(
               name: identity.name,
               version: identity.version,
               title: identity.title,
@@ -257,10 +262,10 @@ final class McpSession with CloseGuard {
   final void Function(McpSession) _onClose;
 
   /// Server identity as returned by the `initialize` handshake.
-  final mcp_proto.Implementation serverInfo;
+  final mcp.Implementation serverInfo;
 
   /// Negotiated MCP protocol version.
-  final mcp_proto.ProtocolVersion protocolVersion;
+  final mcp.ProtocolVersion protocolVersion;
 
   McpSession._({
     required McpTransport transport,
@@ -309,7 +314,7 @@ final class McpSession with CloseGuard {
   ) async {
     _assertOpen();
     final result = await _connection.callTool(
-      mcp_proto.CallToolRequest(name: toolName, arguments: arguments),
+      mcp.CallToolRequest(name: toolName, arguments: arguments),
     );
     return McpToolResult(
       isError: result.isError ?? false,
