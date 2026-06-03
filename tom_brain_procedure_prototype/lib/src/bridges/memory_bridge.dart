@@ -49,6 +49,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
     show BrainTime, BrainVersion, NodeId, Vec;
 import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
 
+import '../budget/budget_ledger.dart' show BudgetLedger;
 import 'bridge_call_recorder.dart';
 
 /// Re-exposes the memory primitive set to d4rt procedure scripts.
@@ -71,18 +72,35 @@ class MemoryBridge {
   /// calls its methods, it never constructs the bridge.
   final BridgeCallRecorder? _onCall;
 
+  /// Per-run budget ledger (PE-8). `null` on the shared template bridge and
+  /// whenever the run's header budget enforces no count/spend cap (a
+  /// wall-clock-only budget); the engine binds a per-run instance over the
+  /// run's header budget otherwise. When wired, every primitive call is
+  /// gated through [BudgetLedger.check] before its side effect and folded
+  /// into the ledger's tally after — a call that would exceed an applicable
+  /// cap throws `ProcedureBudgetExceeded` *before* the effect runs.
+  final BudgetLedger? _budget;
+
   /// Wraps [client]. The host constructs this natively and registers the
   /// instance with the d4rt runtime. [onCall], when supplied, records each
-  /// completed primitive call against the issuing run (E.3.2).
-  MemoryBridge(this.client, {BridgeCallRecorder? onCall}) : _onCall = onCall;
+  /// completed primitive call against the issuing run (E.3.2). [budget], when
+  /// supplied, enforces the run's procedure-header budget (PE-8).
+  MemoryBridge(this.client, {BridgeCallRecorder? onCall, BudgetLedger? budget})
+      : _onCall = onCall,
+        _budget = budget;
 
-  /// Delegates to [body], and — when [_onCall] is wired — records the call
-  /// (name [primitive], argument map [input], the flattened [resultOf] of
-  /// the value, and the measured wall-clock cost) before returning the
-  /// value unchanged. With no hook wired the call is a straight delegate
-  /// with zero recording overhead. A throwing [body] propagates without a
-  /// recording — a failed call is not a recorded successful call; the engine
-  /// records the crash on its own path.
+  /// Delegates to [body], gating it through the budget ledger and recording
+  /// it on the run trail when those hooks are wired.
+  ///
+  /// [BudgetLedger.check] runs *before* [body], so a call that would exceed
+  /// an applicable budget throws `ProcedureBudgetExceeded` and the side effect
+  /// never happens. After [body] settles, the call is charged to the ledger
+  /// and recorded (name [primitive], argument map [input], the flattened
+  /// [resultOf] of the value, the measured wall-clock cost). With neither
+  /// hook wired the call is a straight delegate with zero overhead. A throwing
+  /// [body] — or a budget refusal — propagates without a recording: a failed
+  /// or refused call is not a recorded successful call; the engine records the
+  /// crash / refusal on its own path.
   Future<T> _record<T>(
     String primitive,
     Map<String, Object?> input,
@@ -90,38 +108,41 @@ class MemoryBridge {
     required Map<String, Object?> Function(T value) resultOf,
   }) async {
     final onCall = _onCall;
-    if (onCall == null) return body();
+    final budget = _budget;
+    if (onCall == null && budget == null) return body();
+    budget?.check(primitive);
     final watch = Stopwatch()..start();
     final value = await body();
     watch.stop();
-    await onCall(
-      primitive,
-      input,
-      resultOf(value),
-      elapsedMs: watch.elapsedMilliseconds,
-    );
+    final result = resultOf(value);
+    budget?.charge(primitive, result: result);
+    if (onCall != null) {
+      await onCall(primitive, input, result,
+          elapsedMs: watch.elapsedMilliseconds);
+    }
     return value;
   }
 
   /// Void counterpart of [_record] for primitives that return nothing:
   /// they record an empty result map (only the fact and the cost of the
-  /// call), never a return payload.
+  /// call), never a return payload. Same budget gate as [_record].
   Future<void> _recordVoid(
     String primitive,
     Map<String, Object?> input,
     Future<void> Function() body,
   ) async {
     final onCall = _onCall;
-    if (onCall == null) return body();
+    final budget = _budget;
+    if (onCall == null && budget == null) return body();
+    budget?.check(primitive);
     final watch = Stopwatch()..start();
     await body();
     watch.stop();
-    await onCall(
-      primitive,
-      input,
-      _noResult,
-      elapsedMs: watch.elapsedMilliseconds,
-    );
+    budget?.charge(primitive);
+    if (onCall != null) {
+      await onCall(primitive, input, _noResult,
+          elapsedMs: watch.elapsedMilliseconds);
+    }
   }
 
   /// The empty result map void primitives record (they carry no return

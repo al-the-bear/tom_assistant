@@ -60,6 +60,7 @@ export 'src/primitives_native/primitives_native.dart';
 export 'src/procedure_store/procedure_store.dart';
 export 'src/validator/validator.dart';
 export 'src/recorder/recorder.dart';
+export 'src/budget/budget.dart';
 export 'src/preemption/preemption.dart';
 export 'src/api/api.dart';
 export 'src/config/config.dart';

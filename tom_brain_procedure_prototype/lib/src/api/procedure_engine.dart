@@ -67,6 +67,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
+import '../budget/budget.dart';
 import '../d4rt_host/d4rt_dcli_host.dart';
 import '../d4rt_host/procedure_parse_exception.dart';
 import '../preemption/step_deadline.dart';
@@ -99,6 +100,14 @@ const String _runtimeCrashKind = 'procedure.runtime.crash';
 /// syntactically broken newer source). Collapsing them would trigger a wrong
 /// fallback on a parse error (Q-C.46.1).
 const String _parseFailedKind = 'procedure.parse.failed';
+
+/// The typed failure class an uncaught budget refusal is recorded under
+/// (PE-8, § 14). Distinct from a crash: a refused call is a deliberate stop,
+/// so the run closes `budgetExceeded` (not `errored`) and the version chain is
+/// never stepped (an older version would hit the same cap). A procedure that
+/// *catches* `ProcedureBudgetExceeded` never reaches this path — it adapts and
+/// resolves normally.
+const String _budgetExceededKind = ProcedureBudgetExceeded.errorKind;
 
 // `producedNodeIdsOutputKey` — the reserved produced-node-ids key the engine
 // splits off a body's outputs — is owned by `recorder/run_records.dart` (the
@@ -309,8 +318,17 @@ final class ProcedureEngine {
     // runs, so a fresh recording instance over the same client is built per
     // run (the deferred composition-root wiring, Q-C.44.1).
     final recordCall = recorder.recordPrimitiveCall;
+
+    // One budget ledger over this run's header budget, shared by both bridges
+    // so token / tool-call / memory-write spend accumulates in a single place
+    // across memory and substrate calls (PE-8). `null` when the budget
+    // enforces no count/spend cap (a wall-clock-only budget — the deadline
+    // owns that), so the bridges keep their zero-overhead fast path.
+    final ledger = BudgetLedger(loaded.header.budget);
+    final runBudget = ledger.enforces ? ledger : null;
+
     final runMemoryBridge =
-        MemoryBridge(memoryBridge.client, onCall: recordCall);
+        MemoryBridge(memoryBridge.client, onCall: recordCall, budget: runBudget);
     // Bind the run's outbound channel (P1.3 #8) to both halves of the
     // streaming seam: the substrate bridge forwards each `sub.llm(...)` chunk
     // through `onToken`, and the `emit` primitive forwards text the body
@@ -320,6 +338,7 @@ final class ProcedureEngine {
       substrateBridge.client,
       onCall: recordCall,
       onToken: tokenSink,
+      budget: runBudget,
     );
 
     final runPrimitive = RunProcedurePrimitive(
@@ -363,6 +382,30 @@ final class ProcedureEngine {
           host.run(loaded.source, inputs: <Object?>[inputs]),
         ),
         cancellation,
+      );
+    } on ProcedureBudgetExceeded catch (error) {
+      // An *uncaught* budget refusal (PE-8): a bridged call exceeded an
+      // applicable header-budget cap and the procedure did not catch it. This
+      // is a deliberate stop, not a crash — the run closes `budgetExceeded`
+      // (not `errored`), and the fallback executor surfaces the error without
+      // stepping the version chain (an older version would hit the same cap).
+      // A procedure that *catches* `ProcedureBudgetExceeded` adapts inside its
+      // own body and never reaches here.
+      await recorder.recordError(_budgetExceededKind, '$error');
+      final aborted = await recorder.complete(
+        RunCompletion(
+          status: TrailOutcomeStatus.budgetExceeded,
+          summary: 'procedure ${loaded.header.id} exceeded its '
+              '${error.dimension.name} budget',
+        ),
+      );
+      return _outcomeOf(
+        runId: runId,
+        procedureId: loaded.header.id,
+        record: aborted,
+        entries: recorder.entries,
+        result: null,
+        error: error,
       );
     } catch (error) {
       // The step threw before the deadline. Classify it: a source-parse

@@ -59,6 +59,7 @@
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show defaultNowUtc;
 
+import '../budget/procedure_budget_exceeded.dart' show ProcedureBudgetExceeded;
 import '../d4rt_host/procedure_parse_exception.dart'
     show ProcedureSourceParseException;
 import '../procedure_store/procedure_loader.dart' show LoadedProcedure;
@@ -153,6 +154,12 @@ typedef FallbackClock = DateTime Function();
 ///     newer source — stepping the chain would mask the fault and silently run
 ///     stale logic (Q-C.46.1). It surfaces without stepping, like any
 ///     non-fallback class.
+///   - A [ProcedureBudgetExceeded] never triggers fallback (`null`): a budget
+///     refusal (`procedure.budget.exceeded`, PE-8) is a deliberate stop, not a
+///     fault in the version. An older version would run against the same
+///     header budget and hit the same cap, so stepping the chain would only
+///     burn budget on a doomed retry — exactly like an environmental failure.
+///     It surfaces without stepping.
 ///   - A [ClassifiedFailure] triggers fallback when its [failureKind] is one
 ///     of the four [FallbackTrigger] classes, and surfaces otherwise.
 ///   - Any other uncaught error is a [FallbackTrigger.runtimeCrash] — an
@@ -161,6 +168,7 @@ typedef FallbackClock = DateTime Function();
 FallbackTrigger? defaultFallbackClassifier(Object error) {
   if (error is EnvironmentalFailure) return null;
   if (error is ProcedureSourceParseException) return null;
+  if (error is ProcedureBudgetExceeded) return null;
   if (error is ClassifiedFailure) {
     return FallbackTrigger.forKind(error.failureKind);
   }

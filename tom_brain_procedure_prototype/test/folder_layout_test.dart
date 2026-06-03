@@ -40,6 +40,7 @@ const _requiredSubfolders = <String>[
   // update this list, which forces review).
   'api', // C.38–C.41 — ProcedureEngine surface
   'bridges', // C.11–C.15 — MemoryBridge / SubstrateBridge
+  'budget', // Q-C.51.1 — BudgetLedger + procedure.budget.exceeded (PE-8)
   'config', // C.42–C.45 — EngineConfig + observability
   'd4rt_host', // C.16–C.18 — D4rtDcliHost
   'dispatcher', // D.6–D.50 — Dispatcher.accept + coordinator + fallback
@@ -55,9 +56,10 @@ void main() {
     test('subfolder inventory matches the expected size and is unique', () {
       // Sanity-check the list itself so that a stray edit to
       // `_requiredSubfolders` cannot silently shrink or duplicate the
-      // contract. C.8 seeds 9; D.6 adds `dispatcher/` for 10.
-      expect(_requiredSubfolders, hasLength(10));
-      expect(_requiredSubfolders.toSet(), hasLength(10),
+      // contract. C.8 seeds 9; D.6 adds `dispatcher/` for 10; Q-C.51.1 adds
+      // `budget/` for 11.
+      expect(_requiredSubfolders, hasLength(11));
+      expect(_requiredSubfolders.toSet(), hasLength(11),
           reason: 'subfolder list must be free of duplicates');
     });
 
