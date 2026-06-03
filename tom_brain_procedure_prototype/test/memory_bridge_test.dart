@@ -344,6 +344,125 @@ void main() {
       expect(stacks.lastRemoveNode!.value, 'n_00000000000000000000000007');
     });
   });
+
+  // E.3.3 — malformed d4rt-supplied map fields raise a descriptive
+  // FormatException (PE-1: d4rt scripts are an untrusted boundary), not an
+  // opaque TypeError from a bare `as` cast.
+  group('E.3.3 MemoryBridge — descriptive FormatException on bad fields', () {
+    test('proposeNodeType rejects a non-numeric version', () {
+      expect(
+        () => bridge.proposeNodeType(const <String, Object?>{
+          'typeName': 'Widget',
+          'version': 'two',
+        }),
+        throwsA(isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('version must be a number (got'),
+        )),
+      );
+    });
+
+    test('proposeNodeType rejects a non-map schema', () {
+      expect(
+        () => bridge.proposeNodeType(const <String, Object?>{
+          'typeName': 'Widget',
+          'schema': 'not a map',
+        }),
+        throwsA(isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('schema must be a map (got'),
+        )),
+      );
+    });
+
+    test('proposeNodeType rejects a non-map schema entry', () {
+      expect(
+        () => bridge.proposeNodeType(const <String, Object?>{
+          'typeName': 'Widget',
+          'schema': <String, Object?>{'title': 'not a spec'},
+        }),
+        throwsA(isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('schema.title must be a map (got'),
+        )),
+      );
+    });
+
+    test('proposeNodeType rejects a non-string field type', () {
+      expect(
+        () => bridge.proposeNodeType(const <String, Object?>{
+          'typeName': 'Widget',
+          'schema': <String, Object?>{
+            'title': <String, Object?>{'type': 7},
+          },
+        }),
+        throwsA(isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('schema.title.type must be a string (got'),
+        )),
+      );
+    });
+
+    test('proposeNodeType rejects a non-list allowedOutgoing', () {
+      expect(
+        () => bridge.proposeNodeType(const <String, Object?>{
+          'typeName': 'Widget',
+          'allowedOutgoing': 'mentions',
+        }),
+        throwsA(isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('allowedOutgoing must be a list (got'),
+        )),
+      );
+    });
+
+    test('stackCreate rejects a non-string summary', () {
+      expect(
+        () => bridge.stackCreate(const <String, Object?>{
+          'name': 'hot',
+          'summary': 7,
+        }),
+        throwsA(isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('summary must be a string (got'),
+        )),
+      );
+    });
+
+    test('stackCreate rejects a non-map policy', () {
+      expect(
+        () => bridge.stackCreate(const <String, Object?>{
+          'name': 'hot',
+          'policy': 'fifo',
+        }),
+        throwsA(isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('policy must be a map (got'),
+        )),
+      );
+    });
+
+    test('stackCreate rejects a non-numeric policy.maxCount', () {
+      expect(
+        () => bridge.stackCreate(const <String, Object?>{
+          'name': 'hot',
+          'policy': <String, Object?>{'maxCount': 'lots'},
+        }),
+        throwsA(isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('policy.maxCount must be a number (got'),
+        )),
+      );
+    });
+  });
 }
 
 /// Fake `TomBrainMemoryClient` capturing the subset of calls

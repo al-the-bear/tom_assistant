@@ -108,6 +108,19 @@ void main() {
       expect(b.memoryWrites, 6); // default
     });
 
+    test('rejects a non-numeric budget field with a FormatException (E.3.3)',
+        () async {
+      client.streamEvents = _completedStream('ok');
+      await expectLater(
+        bridge.llm('q', budget: const <String, Object?>{'wallClockMs': 'lots'}),
+        throwsA(isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('budget.wallClockMs must be a number (got'),
+        )),
+      );
+    });
+
     test('omits null cost / templateSha from the report map', () async {
       client.streamEvents = <LlmStreamEvent>[
         const LlmStreamCompleted(

@@ -56,6 +56,7 @@
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
 
 import 'bridge_call_recorder.dart';
 
@@ -271,16 +272,27 @@ class SubstrateBridge {
 
   // ── primitive ⇄ domain conversions ────────────────────────────────
 
+  /// Descriptive-`FormatException` reader for the d4rt-supplied budget map.
+  /// d4rt scripts are an untrusted boundary (PE-1): a malformed budget field
+  /// fails with a located error naming it, never an opaque `TypeError`.
+  static const MapFieldReader _reader = MapFieldReader(FormatException.new);
+
   static Budget _buildBudget(Map<String, Object?>? raw) {
     if (raw == null) return defaultBudget;
     final fallback = defaultBudget;
     return Budget(
       wallClockMs:
-          (raw['wallClockMs'] as num?)?.toInt() ?? fallback.wallClockMs,
-      tokenSpend: (raw['tokenSpend'] as num?)?.toInt() ?? fallback.tokenSpend,
-      toolCalls: (raw['toolCalls'] as num?)?.toInt() ?? fallback.toolCalls,
+          _reader.optionalNum(raw, 'wallClockMs', 'budget.wallClockMs')?.toInt() ??
+              fallback.wallClockMs,
+      tokenSpend:
+          _reader.optionalNum(raw, 'tokenSpend', 'budget.tokenSpend')?.toInt() ??
+              fallback.tokenSpend,
+      toolCalls:
+          _reader.optionalNum(raw, 'toolCalls', 'budget.toolCalls')?.toInt() ??
+              fallback.toolCalls,
       memoryWrites:
-          (raw['memoryWrites'] as num?)?.toInt() ?? fallback.memoryWrites,
+          _reader.optionalNum(raw, 'memoryWrites', 'budget.memoryWrites')?.toInt() ??
+              fallback.memoryWrites,
     );
   }
 

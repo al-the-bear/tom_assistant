@@ -47,6 +47,7 @@
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show BrainVersion, NodeId, Vec;
+import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
 
 import 'bridge_call_recorder.dart';
 
@@ -449,25 +450,39 @@ class MemoryBridge {
         'attrs': e.attrs,
       };
 
+  /// Descriptive-`FormatException` reader for the d4rt-supplied declaration
+  /// maps below. d4rt scripts are an untrusted boundary (PE-1): a malformed
+  /// field must fail with a located, engineer-readable error naming the
+  /// offending field, never an opaque `TypeError` from a bare `as` cast.
+  static const MapFieldReader _reader = MapFieldReader(FormatException.new);
+
   static NodeTypeDecl _buildNodeTypeDecl(Map<String, Object?> decl) {
-    final typeName = decl['typeName'] as String?;
+    final typeName =
+        _reader.optionalString(decl, 'typeName', 'proposeNodeType.typeName');
     if (typeName == null || typeName.isEmpty) {
       throw const FormatException(
         'proposeNodeType requires a non-empty "typeName".',
       );
     }
-    final versionValue = decl['version'];
+    final versionValue =
+        _reader.optionalNum(decl, 'version', 'proposeNodeType.version');
     final version = versionValue == null
         ? BrainVersion.initial
-        : BrainVersion.fromInt((versionValue as num).toInt());
+        : BrainVersion.fromInt(versionValue.toInt());
 
-    final schemaRaw = decl['schema'] as Map<Object?, Object?>?;
+    final schemaRaw =
+        _reader.optionalMap(decl, 'schema', 'proposeNodeType.schema');
     final schema = <String, FieldSpec>{};
     if (schemaRaw != null) {
       for (final entry in schemaRaw.entries) {
-        final fieldName = entry.key as String;
-        schema[fieldName] =
-            _buildFieldSpec(fieldName, entry.value as Map<Object?, Object?>);
+        final fieldName =
+            _reader.stringValue(entry.key, 'proposeNodeType.schema key')!;
+        final fieldPath = 'proposeNodeType.schema.$fieldName';
+        schema[fieldName] = _buildFieldSpec(
+          fieldName,
+          _reader.mapValue(entry.value, fieldPath)!,
+          fieldPath,
+        );
       }
     }
 
@@ -478,30 +493,45 @@ class MemoryBridge {
       embeddingPolicy: EmbeddingPolicy.none,
       indexPolicy: const IndexPolicy(),
       retentionPolicy: const RetentionPolicy(),
-      allowedOutgoing: _parseEdgeSet(decl['allowedOutgoing']),
-      allowedIncoming: _parseEdgeSet(decl['allowedIncoming']),
+      allowedOutgoing: _parseEdgeSet(
+          decl, 'allowedOutgoing', 'proposeNodeType.allowedOutgoing'),
+      allowedIncoming: _parseEdgeSet(
+          decl, 'allowedIncoming', 'proposeNodeType.allowedIncoming'),
     );
   }
 
-  static FieldSpec _buildFieldSpec(String name, Map<Object?, Object?> spec) {
+  static FieldSpec _buildFieldSpec(
+    String name,
+    Map<Object?, Object?> spec,
+    String path,
+  ) {
     return FieldSpec(
       name: name,
-      type: FieldType.values.byName((spec['type'] as String?) ?? 'string'),
-      nullable: (spec['nullable'] as bool?) ?? false,
-      ftsEligible: (spec['ftsEligible'] as bool?) ?? false,
-      vectorEligible: (spec['vectorEligible'] as bool?) ?? false,
+      type: FieldType.values
+          .byName(_reader.optionalString(spec, 'type', '$path.type') ?? 'string'),
+      nullable: _reader.optionalBool(spec, 'nullable', '$path.nullable') ?? false,
+      ftsEligible:
+          _reader.optionalBool(spec, 'ftsEligible', '$path.ftsEligible') ?? false,
+      vectorEligible:
+          _reader.optionalBool(spec, 'vectorEligible', '$path.vectorEligible') ??
+              false,
     );
   }
 
-  static Set<EdgeType> _parseEdgeSet(Object? raw) {
+  static Set<EdgeType> _parseEdgeSet(
+    Map<Object?, Object?> decl,
+    String key,
+    String path,
+  ) {
+    final raw = _reader.optionalList(decl, key, path);
     if (raw == null) return const <EdgeType>{};
-    return (raw as List<Object?>)
-        .map((e) => EdgeType.fromWireName(e as String))
+    return raw
+        .map((e) => EdgeType.fromWireName(_reader.stringValue(e, '$path[]')!))
         .toSet();
   }
 
   static StackDecl _buildStackDecl(Map<String, Object?> decl) {
-    final name = decl['name'] as String?;
+    final name = _reader.optionalString(decl, 'name', 'stackCreate.name');
     if (name == null || name.isEmpty) {
       throw const FormatException(
         'stackCreate requires a non-empty "name".',
@@ -509,16 +539,23 @@ class MemoryBridge {
     }
     return StackDecl(
       name: name,
-      summary: (decl['summary'] as String?) ?? '',
-      entryNodeType: (decl['entryNodeType'] as String?) ?? 'Node',
-      harvesterHook: decl['harvesterHook'] as String?,
+      summary: _reader.optionalString(decl, 'summary', 'stackCreate.summary') ?? '',
+      entryNodeType:
+          _reader.optionalString(decl, 'entryNodeType', 'stackCreate.entryNodeType') ??
+              'Node',
+      harvesterHook:
+          _reader.optionalString(decl, 'harvesterHook', 'stackCreate.harvesterHook'),
       policy: _buildStackPolicy(
-        decl['policy'] as Map<Object?, Object?>?,
+        _reader.optionalMap(decl, 'policy', 'stackCreate.policy'),
+        'stackCreate.policy',
       ),
     );
   }
 
-  static StackPolicy _buildStackPolicy(Map<Object?, Object?>? policy) {
+  static StackPolicy _buildStackPolicy(
+    Map<Object?, Object?>? policy,
+    String path,
+  ) {
     if (policy == null) {
       return const StackPolicy(
         priority: PriorityPolicyKind.fifo,
@@ -526,13 +563,15 @@ class MemoryBridge {
       );
     }
     return StackPolicy(
-      priority: PriorityPolicyKind.values
-          .byName((policy['priority'] as String?) ?? 'fifo'),
-      retention: RetentionPolicyKind.values
-          .byName((policy['retention'] as String?) ?? 'unbounded'),
-      maxCount: (policy['maxCount'] as num?)?.toInt(),
-      maxAgeMs: (policy['maxAgeMs'] as num?)?.toInt(),
-      halflifeMs: (policy['halflifeMs'] as num?)?.toInt(),
+      priority: PriorityPolicyKind.values.byName(
+          _reader.optionalString(policy, 'priority', '$path.priority') ?? 'fifo'),
+      retention: RetentionPolicyKind.values.byName(
+          _reader.optionalString(policy, 'retention', '$path.retention') ??
+              'unbounded'),
+      maxCount: _reader.optionalNum(policy, 'maxCount', '$path.maxCount')?.toInt(),
+      maxAgeMs: _reader.optionalNum(policy, 'maxAgeMs', '$path.maxAgeMs')?.toInt(),
+      halflifeMs:
+          _reader.optionalNum(policy, 'halflifeMs', '$path.halflifeMs')?.toInt(),
     );
   }
 }
