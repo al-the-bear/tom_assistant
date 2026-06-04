@@ -319,6 +319,11 @@ class _BootMemory implements TomBrainMemoryClient {
     ),
   );
 
+  /// The classification `classify` returns. `unknown` (far from every
+  /// centroid / cold start) by default, so the step-4 cold-interest path
+  /// fires on the empty-recall boot run.
+  ClassificationResult classifyResult = const ClassificationResult.unknown();
+
   Iterable<({NodeId id, NodeDraft draft})> persistedOfType(String typeName) =>
       persisted.where((p) => p.draft.typeName == typeName);
 
@@ -339,6 +344,13 @@ class _BootMemory implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<ClassificationResult> classify(
+    Vec embedding, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async =>
+      classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {

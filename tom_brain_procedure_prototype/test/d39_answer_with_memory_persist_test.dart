@@ -230,6 +230,12 @@ class _PersistCapturingMemory implements TomBrainMemoryClient {
     ),
   );
 
+  /// The classification `classify` returns. `unknown` (far from every
+  /// centroid / cold start) by default, so the step-4 cold-interest path
+  /// fires; this suite pins the persist + edge post-conditions, not the cold
+  /// path, so the default is left as-is and the run still closes accepted.
+  ClassificationResult classifyResult = const ClassificationResult.unknown();
+
   /// The persisted nodes of a given type, in persist order.
   Iterable<({NodeId id, NodeDraft draft})> persistedOfType(String typeName) =>
       persisted.where((p) => p.draft.typeName == typeName);
@@ -239,6 +245,13 @@ class _PersistCapturingMemory implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<ClassificationResult> classify(
+    Vec embedding, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async =>
+      classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {

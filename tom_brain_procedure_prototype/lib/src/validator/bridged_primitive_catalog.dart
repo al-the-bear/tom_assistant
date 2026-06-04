@@ -32,6 +32,7 @@ final class BridgedPrimitiveCatalog {
   /// set re-exposed by `MemoryBridge`.
   static const Set<String> memory = {
     'recall',
+    'classify',
     'persist',
     'edge',
     'propose_node_type',

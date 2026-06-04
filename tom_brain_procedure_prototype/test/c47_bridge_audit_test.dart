@@ -23,7 +23,7 @@
 //  2. **Bridge-surface signature guard.** The generated `BridgedClass`
 //     carries a `methodSignatures` string per bridged method — the exact
 //     d4rt-facing contract a procedure script binds to. This audit pins
-//     all 15 of them (11 memory + 4 substrate, the § 5.1 surface) to
+//     all 16 of them (12 memory + 4 substrate, the § 5.1 surface) to
 //     literal expected strings. Any edit to a bridge method's d4rt-facing
 //     signature (a param added, removed, retyped, or re-defaulted, then
 //     re-reflected into the `*.b.dart`) drifts the generated string away
@@ -70,13 +70,15 @@ import 'package:tom_brain_procedure_prototype/src/bridges/brain_bridges.b.dart';
 
 /// The authoritative § 5.1 memory surface: bridged method name → the
 /// exact d4rt-facing signature string the generated `BridgedClass`
-/// records. Eleven rows — `recall`, `persist`, `edge`,
+/// records. Twelve rows — `recall`, `classify`, `persist`, `edge`,
 /// `propose_node_type`, and the seven `stack.*` operations (exposed as
 /// `stackList` … `stackRemove` because Dart method names cannot contain a
 /// dot).
 const Map<String, String> _expectedMemorySignatures = <String, String>{
   'recall':
       "Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8})",
+  'classify':
+      "Future<Map<String, Object?>> classify(List<double> embedding, {String target = 'nodeType'})",
   'persist':
       'Future<String> persist(String typeName, Map<String, Object?> values, {required String producer, String? idempotencyKey, String? causedBy, String? runId, List<double>? embedding})',
   'edge':
@@ -136,7 +138,7 @@ void main() {
   }
 
   group('C.47 bridge audit — registered method set is the § 5.1 surface', () {
-    test('MemoryBridge registers exactly the 11 audited memory methods', () {
+    test('MemoryBridge registers exactly the 12 audited memory methods', () {
       final registered = bridgeClassNamed('MemoryBridge').methods.keys.toSet();
       expect(
         registered,
@@ -189,7 +191,7 @@ void main() {
 
   group('C.47 bridge audit — every bridged method roundtrips end-to-end', () {
     test(
-        'each of the 15 methods runs through the interpreter and is recorded',
+        'each of the 16 methods runs through the interpreter and is recorded',
         () async {
       // Seed canned domain results so every outbound flattening leg has
       // something to read. Inbound legs are observed via the doubles'
@@ -240,6 +242,7 @@ void main() {
       // bridged method executed under the interpreter — the roundtrip.
       const memoryBodies = <String, String>{
         'recall': "await mem.recall('q');",
+        'classify': "await mem.classify([0.1, 0.2], target: 'nodeType');",
         'persist': "await mem.persist('Conclusion', {'text': 'x'}, "
             "producer: 'engine');",
         'edge': "await mem.edge('n_00000000000000000000000001', "
@@ -353,6 +356,15 @@ class _AuditMemoryClient implements TomBrainMemoryClient {
         elapsedMs: 0,
       ),
     );
+  }
+
+  @override
+  Future<ClassificationResult> classify(
+    Vec embedding, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async {
+    called.add('classify');
+    return const ClassificationResult.unknown();
   }
 
   @override

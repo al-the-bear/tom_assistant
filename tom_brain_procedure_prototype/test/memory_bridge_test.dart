@@ -112,6 +112,56 @@ void main() {
     });
   });
 
+  group('C.12 MemoryBridge.classify', () {
+    test('converts embedding + target and flattens a confident result',
+        () async {
+      client.classifyResult = const ClassificationResult(
+        decision: ClassificationDecision.confident,
+        bestMatch: 'Conclusion',
+        bestSimilarity: 0.92,
+        secondSimilarity: 0.18,
+      );
+
+      final out = await bridge
+          .classify(const <double>[0.1, 0.2, 0.3], target: 'nodeType');
+
+      // (a) Inbound conversion: the primitive double list became a Vec and
+      // the target name parsed into the enum.
+      expect(client.lastClassifyEmbedding!.values.toList(),
+          [closeTo(0.1, 1e-6), closeTo(0.2, 1e-6), closeTo(0.3, 1e-6)]);
+      expect(client.lastClassifyTarget, ClassificationTarget.nodeType);
+
+      // (b) Outbound flattening: the result triad + decision band.
+      expect(out['decision'], 'confident');
+      expect(out['bestMatch'], 'Conclusion');
+      expect(out['bestSimilarity'], 0.92);
+      expect(out['secondSimilarity'], 0.18);
+    });
+
+    test('defaults the target to nodeType', () async {
+      await bridge.classify(const <double>[0.0]);
+      expect(client.lastClassifyTarget, ClassificationTarget.nodeType);
+    });
+
+    test('flattens an unknown result (cold / far-from-every-centroid)',
+        () async {
+      // `unknown` is the cold-start signal `answer_with_memory_v1` fires on.
+      client.classifyResult = const ClassificationResult.unknown();
+
+      final out = await bridge.classify(const <double>[0.0]);
+
+      expect(out['decision'], 'unknown');
+      expect(out['bestMatch'], isNull);
+    });
+
+    test('rejects an unknown target name', () {
+      expect(
+        () => bridge.classify(const <double>[0.0], target: 'bogus'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+  });
+
   group('C.12 MemoryBridge.persist', () {
     test('builds the draft + scope and returns the id string', () async {
       client.persistId = NodeId.fromString('n_00000000000000000000000009');
@@ -543,10 +593,24 @@ class _FakeMemoryClient implements TomBrainMemoryClient {
 
   NodeTypeDecl? lastNodeTypeDecl;
 
+  Vec? lastClassifyEmbedding;
+  ClassificationTarget? lastClassifyTarget;
+  ClassificationResult classifyResult = const ClassificationResult.unknown();
+
   @override
   Future<RecallResult> recall(RecallQuery query) async {
     lastRecallQuery = query;
     return recallResult;
+  }
+
+  @override
+  Future<ClassificationResult> classify(
+    Vec embedding, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async {
+    lastClassifyEmbedding = embedding;
+    lastClassifyTarget = target;
+    return classifyResult;
   }
 
   @override

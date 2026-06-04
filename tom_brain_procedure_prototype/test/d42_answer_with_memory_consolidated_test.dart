@@ -10,9 +10,11 @@
 // disk procedure, and a *single* run is asserted to satisfy the whole bundle
 // of post-conditions the spec promises (§ 11) — proving the steps compose, not
 // just that each works alone. Two paths are covered because the post-condition
-// set differs by recall outcome:
+// set differs by the classification decision (cold path) and the recall
+// outcome (citations). The cold path is driven by `classify`, not by an empty
+// recall (Q-D.40.1) — this double controls it via `classifyResult`:
 //
-//   WARM  (recall surfaced cited nodes) →
+//   WARM  (`classify` returns `confident`, recall surfaced cited nodes) →
 //     • a streamed answer is produced (the multi-chunk substrate stream is
 //       drained into the single `answer` output — per-token delivery to a live
 //       caller is a Phase E concern, Q-D.38.1);
@@ -21,9 +23,9 @@
 //     • a `derived_from` edge ties the `Conclusion` to *each* cited node;
 //     • a `produced_by` edge ties the `Conclusion` to the authoritative final
 //       `ProcedureRun` node (drawn by the recorder at complete());
-//     • NO interest push (the prompt was not cold).
+//     • NO interest push (the prompt classified confidently).
 //
-//   COLD  (recall surfaced nothing) →
+//   COLD  (`classify` returns `unknown`, recall surfaced nothing) →
 //     • the same streamed-answer + Event + Conclusion + produced_by
 //       post-conditions;
 //     • NO `derived_from` edges (nothing was cited);
@@ -91,8 +93,15 @@ void main() {
   final citedA = NodeId.fromString('n_00000000000000000000000042');
   final citedB = NodeId.fromString('n_00000000000000000000000043');
 
-  /// Seeds the recall double with two text-bearing nodes (a warm recall).
+  /// Seeds the WARM path: the prompt classifies confidently (so no interest is
+  /// pushed) and recall surfaces two text-bearing cited nodes.
   void seedWarmRecall() {
+    memory.classifyResult = const ClassificationResult(
+      decision: ClassificationDecision.confident,
+      bestMatch: 'Conclusion',
+      bestSimilarity: 0.92,
+      secondSimilarity: 0.18,
+    );
     memory.recallResult = RecallResult(
       nodes: <Node>[
         Node(
@@ -193,7 +202,7 @@ void main() {
       'no derived_from', () {
     test('a single run satisfies the full cold post-condition bundle',
         () async {
-      // Default recall is empty → the cold-classification path.
+      // Default classify `unknown` → the cold-classification path.
       substrate.answerChunks = <String>['I have no notes on that yet.'];
 
       final outcome = await runWith('what is a quasar?');
@@ -264,7 +273,7 @@ class _BrainMemory implements TomBrainMemoryClient {
   final List<({NodeId from, EdgeType type, NodeId to})> recordedEdges =
       <({NodeId from, EdgeType type, NodeId to})>[];
 
-  /// Empty by default — the cold path. Tests seed nodes for the warm path.
+  /// Empty by default. Tests seed nodes for the warm path.
   RecallResult recallResult = const RecallResult(
     nodes: <Node>[],
     report: RecallReport(
@@ -275,6 +284,10 @@ class _BrainMemory implements TomBrainMemoryClient {
     ),
   );
 
+  /// `unknown` by default — the cold-classification path. The warm helper sets
+  /// this to `confident` (Q-D.40.1).
+  ClassificationResult classifyResult = const ClassificationResult.unknown();
+
   /// The persisted nodes of a given type, in persist order.
   Iterable<({NodeId id, NodeDraft draft})> persistedOfType(String typeName) =>
       persisted.where((p) => p.draft.typeName == typeName);
@@ -284,6 +297,13 @@ class _BrainMemory implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<ClassificationResult> classify(
+    Vec embedding, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async =>
+      classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {

@@ -277,20 +277,23 @@
 //     the recorder draws the `produced_by` edge to the run
 //     (`d39_answer_with_memory_persist_test.dart`). `requires`→[recall, llm,
 //     persist, edge].
-//   - D.40 ✅ — body step 4 (cold-classification interest push): when recall
-//     comes back empty (the proxy for "prompt embedding far from any
-//     centroid"), persists an `InterestItem` and pushes it onto the
-//     `interests` bootstrap stack
-//     (`d40_answer_with_memory_interest_test.dart`). `requires`→[recall, llm,
-//     persist, edge, stack.push]. Detection reads the recall already in hand;
-//     `embed`/`classify` are not called (Q-D.40.1).
+//   - D.40 ✅ — body step 4 (cold-classification interest push): embeds the
+//     prompt (`sub.embed`) and classifies the embedding against the memory
+//     centroids (`mem.classify`); when the decision is `unknown` (the prompt
+//     sits far from every existing centroid, memory § 7.2), persists an
+//     `InterestItem` and pushes it onto the `interests` bootstrap stack
+//     (`d40_answer_with_memory_interest_test.dart`). `requires`→[recall, embed,
+//     classify, llm, persist, edge, stack.push]. Detection is the true
+//     centroid-distance signal, not the earlier empty-recall proxy (Q-D.40.1).
 //   - D.41 ✅ — body step 5 (automation-candidate note): when the step-1
-//     recall surfaced a prior `Event` whose `summary` equals this prompt (an
-//     identical-shape repetition), emits `note('automation_candidate', …)` on
-//     the run trail — the wire the dispatcher harvester (D.31) keys on
+//     recall surfaced a prior `Event` whose `summary` equals this prompt (a
+//     cheap identical-shape repetition check, spec § 11 step 5), emits
+//     `note('automation_candidate', …)` on the run trail — the wire the
+//     dispatcher harvester (D.31) keys on
 //     (`d41_answer_with_memory_automation_test.dart`). `requires`→[recall,
-//     llm, persist, edge, stack.push, note]. The check reads the recall
-//     already in hand; no second memory query (Q-D.41.1).
+//     embed, classify, llm, persist, edge, stack.push, note]. The repetition
+//     check reads the recall already in hand; no second memory query
+//     (Q-D.41.1).
 //   - D.42 ✅ — `answer_with_memory_v1` consolidated body proof: one synthetic
 //     inbound prompt is driven through the engine against the shipped disk
 //     procedure and a single run is asserted to satisfy the whole

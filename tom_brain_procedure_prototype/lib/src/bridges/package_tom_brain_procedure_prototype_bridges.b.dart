@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Sources: 2 files
-// Generated: 2026-06-03T21:18:06.016463
+// Generated: 2026-06-04T09:43:24.677602
 
 // ignore_for_file: unused_import, deprecated_member_use, prefer_function_declarations_over_variables, implementation_imports, sort_child_properties_last, non_constant_identifier_names, avoid_function_literals_in_foreach_calls, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member
 
@@ -11,6 +11,7 @@ import 'dart:async';
 import 'package:tom_brain_procedure_prototype/src/bridges/bridge_call_recorder.dart' as $tom_brain_procedure_prototype_1;
 import 'package:tom_brain_procedure_prototype/src/bridges/memory_bridge.dart' as $tom_brain_procedure_prototype_2;
 import 'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart' as $tom_brain_procedure_prototype_3;
+import 'package:tom_brain_procedure_prototype/src/budget/budget_ledger.dart' as $tom_brain_procedure_prototype_4;
 import 'package:tom_brain_shared/src/budget/budget.dart' as $tom_brain_shared_1;
 import 'package:tom_brain_shared/src/memory/api/tom_brain_memory_client.dart' as $tom_brain_shared_2;
 import 'package:tom_brain_substrate/src/api/tom_brain_substrate_client.dart' as $tom_brain_substrate_1;
@@ -148,7 +149,8 @@ BridgedClass _createMemoryBridgeBridge() {
         D4.requireMinArgs(positional, 1, 'MemoryBridge');
         final client = D4.getRequiredArg<$tom_brain_shared_2.TomBrainMemoryClient>(positional, 0, 'client', 'MemoryBridge');
         final onCallRaw = named['onCall'];
-        return $tom_brain_procedure_prototype_2.MemoryBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs}) as Future<void>; });
+        final budget = D4.getOptionalNamedArg<$tom_brain_procedure_prototype_4.BudgetLedger?>(named, 'budget');
+        return $tom_brain_procedure_prototype_2.MemoryBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs}) as Future<void>; }, budget: budget);
       },
     },
     getters: {
@@ -168,6 +170,16 @@ BridgedClass _createMemoryBridgeBridge() {
           return t.recall(text, k: k, modes: modes);
         }
         throw StateError('Unreachable: all named parameter combinations should be covered');
+      },
+      'classify': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
+        D4.requireMinArgs(positional, 1, 'classify');
+        if (positional.isEmpty) {
+          throw ArgumentError('classify: Missing required argument "embedding" at position 0');
+        }
+        final embedding = D4.coerceList<double>(positional[0], 'embedding');
+        final target_ = D4.getNamedArgWithDefault<String>(named, 'target', 'nodeType');
+        return t.classify(embedding, target: target_);
       },
       'persist': (visitor, target, positional, named, typeArgs) {
         final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
@@ -263,10 +275,11 @@ BridgedClass _createMemoryBridgeBridge() {
       },
     },
     constructorSignatures: {
-      '': 'MemoryBridge(TomBrainMemoryClient client, {BridgeCallRecorder? onCall})',
+      '': 'MemoryBridge(TomBrainMemoryClient client, {BridgeCallRecorder? onCall, BudgetLedger? budget})',
     },
     methodSignatures: {
       'recall': 'Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8})',
+      'classify': 'Future<Map<String, Object?>> classify(List<double> embedding, {String target = \'nodeType\'})',
       'persist': 'Future<String> persist(String typeName, Map<String, Object?> values, {required String producer, String? idempotencyKey, String? causedBy, String? runId, List<double>? embedding})',
       'edge': 'Future<String> edge(String from, String type, String to, {required String producer, double weight = 1.0, String? idempotencyKey, String? causedBy, String? runId, Map<String, Object?>? attrs})',
       'proposeNodeType': 'Future<void> proposeNodeType(Map<String, Object?> decl)',
@@ -299,7 +312,8 @@ BridgedClass _createSubstrateBridgeBridge() {
         final client = D4.getRequiredArg<$tom_brain_substrate_1.TomBrainSubstrateClient>(positional, 0, 'client', 'SubstrateBridge');
         final onCallRaw = named['onCall'];
         final onTokenRaw = named['onToken'];
-        return $tom_brain_procedure_prototype_3.SubstrateBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs}) as Future<void>; }, onToken: onTokenRaw == null ? null : (String p0) { return D4.callInterpreterCallback(visitor!, onTokenRaw, [p0]) as Future<void>; });
+        final budget = D4.getOptionalNamedArg<$tom_brain_procedure_prototype_4.BudgetLedger?>(named, 'budget');
+        return $tom_brain_procedure_prototype_3.SubstrateBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs}) as Future<void>; }, onToken: onTokenRaw == null ? null : (String p0) { return D4.callInterpreterCallback(visitor!, onTokenRaw, [p0]) as Future<void>; }, budget: budget);
       },
     },
     getters: {
@@ -347,7 +361,7 @@ BridgedClass _createSubstrateBridgeBridge() {
       'defaultBudget': (visitor) => $tom_brain_procedure_prototype_3.SubstrateBridge.defaultBudget,
     },
     constructorSignatures: {
-      '': 'SubstrateBridge(TomBrainSubstrateClient client, {BridgeCallRecorder? onCall, SubstrateTokenSink? onToken})',
+      '': 'SubstrateBridge(TomBrainSubstrateClient client, {BridgeCallRecorder? onCall, SubstrateTokenSink? onToken, BudgetLedger? budget})',
     },
     methodSignatures: {
       'llm': 'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, Map<String, Object?>? budget})',

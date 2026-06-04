@@ -13,8 +13,8 @@
 //                       and loads from the real store+resolver path with a
 //                       valid `answer_with_memory_v1` v1 header that now
 //                       declares
-//                       `requires: [recall, llm, persist, edge, stack.push,
-//                       note]` (D.37–D.41).
+//                       `requires: [recall, embed, classify, llm, persist,
+//                       edge, stack.push, note]` (D.37–D.41).
 //   2. RUNS ACCEPTED  — invoking it through the engine with a `text` input
 //                       resolves an accepted outcome and the recorder writes
 //                       the run to `recent_runs`.
@@ -87,11 +87,22 @@ void main() {
       final loaded = resolver.resolve('answer_with_memory_v1');
       expect(loaded.header.id, 'answer_with_memory_v1');
       expect(loaded.header.version, 1);
-      // D.37–D.41 — the body calls `recall`, `llm`, `persist`/`edge`, the
-      // cold-path `stack.push`, then the repetition `note`, so the header
-      // declares exactly those bridged primitives.
-      expect(loaded.header.requires,
-          <String>['recall', 'llm', 'persist', 'edge', 'stack.push', 'note']);
+      // D.37–D.41 — the body calls `recall`, the cold-path `embed` +
+      // `classify`, `llm`, `persist`/`edge`, the cold-path `stack.push`, then
+      // the repetition `note`, so the header declares exactly those bridged
+      // primitives.
+      expect(
+          loaded.header.requires,
+          <String>[
+            'recall',
+            'embed',
+            'classify',
+            'llm',
+            'persist',
+            'edge',
+            'stack.push',
+            'note',
+          ]);
       // The intended budget caps are declared up front (D.36).
       expect(loaded.header.budget.wallClockMs, 60000);
     });
@@ -202,6 +213,12 @@ class _StatefulMemory implements TomBrainMemoryClient {
     ),
   );
 
+  /// The classification `classify` returns. `unknown` (far from every
+  /// centroid / cold start) by default, so the step-4 cold-interest path
+  /// fires; this artifact suite only checks the run closes accepted, so the
+  /// default is left as-is.
+  ClassificationResult classifyResult = const ClassificationResult.unknown();
+
   @override
   StackApi get stacks => _stacks;
 
@@ -210,6 +227,13 @@ class _StatefulMemory implements TomBrainMemoryClient {
     lastRecallQuery = query;
     return recallResult;
   }
+
+  @override
+  Future<ClassificationResult> classify(
+    Vec embedding, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async =>
+      classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {

@@ -55,8 +55,8 @@ import 'bridge_call_recorder.dart';
 /// Re-exposes the memory primitive set to d4rt procedure scripts.
 ///
 /// Mirrors the memory rows of `tom_brain_procedure_prototype_specification.md`
-/// § 5.1: `recall`, `persist`, `edge`, `propose_node_type`, and the
-/// seven `stack.*` operations. Each method delegates to the wrapped
+/// § 5.1: `recall`, `classify`, `persist`, `edge`, `propose_node_type`,
+/// and the seven `stack.*` operations. Each method delegates to the wrapped
 /// [TomBrainMemoryClient] and converts between d4rt primitives and the
 /// memory domain types.
 class MemoryBridge {
@@ -180,6 +180,53 @@ class MemoryBridge {
           return <String, Object?>{
             'nodes': result.nodes.map(_nodeToMap).toList(),
             'report': _reportToMap(result.report),
+          };
+        },
+        resultOf: (value) => value,
+      );
+
+  // ── classify ────────────────────────────────────────────────────
+
+  /// Classifies [embedding] against the per-key centroids for [target]
+  /// (memory § 7.2; spec § 5.1). This is the LLM-free, centroid-distance
+  /// path — memory measures cosine similarity to each known centroid and
+  /// returns the best match together with the confidence / margin band.
+  ///
+  /// [target] is the centroid family to compare against by wire name
+  /// (`nodeType` or `procedure`); it defaults to `nodeType`. The returned
+  /// map mirrors [ClassificationResult]:
+  ///
+  /// ```
+  /// {
+  ///   'decision': 'confident' | 'uncertain' | 'unknown',
+  ///   'bestMatch': String?,        // null on the cold-start `unknown`
+  ///   'bestSimilarity': double,    // 0.0 when no centroid matched
+  ///   'secondSimilarity': double,  // 0.0 when there is no runner-up
+  /// }
+  /// ```
+  ///
+  /// A `'unknown'` decision is the spec's true cold-classification
+  /// signal: the input sits far from every existing centroid (below
+  /// `minConfidence`) **or** no centroid for [target] exists yet (cold
+  /// start). `answer_with_memory_v1` reads exactly this to fire its
+  /// curiosity / interest path, replacing the earlier empty-recall proxy.
+  Future<Map<String, Object?>> classify(
+    List<double> embedding, {
+    String target = 'nodeType',
+  }) =>
+      _record<Map<String, Object?>>(
+        'classify',
+        <String, Object?>{'target': target},
+        () async {
+          final result = await client.classify(
+            Vec.fromList(embedding),
+            target: ClassificationTarget.values.byName(target),
+          );
+          return <String, Object?>{
+            'decision': result.decision.name,
+            'bestMatch': result.bestMatch,
+            'bestSimilarity': result.bestSimilarity,
+            'secondSimilarity': result.secondSimilarity,
           };
         },
         resultOf: (value) => value,

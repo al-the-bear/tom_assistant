@@ -193,6 +193,12 @@ class _RecallCapturingMemory implements TomBrainMemoryClient {
     ),
   );
 
+  /// The classification `classify` returns. `unknown` (far from every
+  /// centroid / cold start) by default, so the step-4 cold-interest path
+  /// fires; this suite pins recall, not the cold path, so the default is left
+  /// as-is and the run still closes accepted.
+  ClassificationResult classifyResult = const ClassificationResult.unknown();
+
   @override
   StackApi get stacks => _stacks;
 
@@ -201,6 +207,13 @@ class _RecallCapturingMemory implements TomBrainMemoryClient {
     lastRecallQuery = query;
     return recallResult;
   }
+
+  @override
+  Future<ClassificationResult> classify(
+    Vec embedding, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async =>
+      classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {

@@ -5,24 +5,24 @@
 // prompt embedding lands far from any existing centroid (cold-classification
 // path)."
 //
-// The body does not re-embed the prompt or call `classify` — the spec § 4.4
-// header pins this procedure's `requires` to
-// `[recall, llm, persist, edge, note, stack.push]`, and `classify` is not part
-// of the bridged primitive surface at all. The cold signal is read off the
-// recall the body already ran (the four-mode recall runs vector mode): when
-// recall surfaces NO nodes, the prompt found nothing close in memory — the
-// operational proxy for "far from any existing centroid" (Q-D.40.1). The proof
-// obligation is that, when the shipped disk procedure is invoked through the
-// engine:
+// The body implements the plan literally: it embeds the prompt (`sub.embed`)
+// and classifies the vector against memory's node-type centroids
+// (`mem.classify`). A `decision == 'unknown'` is memory's own "far from every
+// centroid (or cold start)" signal (memory § 7.2) — the cold-classification
+// path. `embed` and `classify` are therefore in this procedure's § 4.4
+// `requires` set and on the bridged primitive surface (Q-D.40.1). The cold
+// signal is no longer inferred from an empty recall: this double drives it
+// directly via `classifyResult`. The proof obligation is that, when the
+// shipped disk procedure is invoked through the engine:
 //
-//   COLD  (recall returned nothing) →
+//   COLD  (`classify` returns `unknown`) →
 //     1. PERSISTS an `InterestItem` carrying the prompt as `topic` and a
 //        non-empty `why`.
 //     2. PUSHES that `InterestItem` onto the `interests` bootstrap stack.
 //     3. does NOT report the `InterestItem` in `producedNodeIds` (its schema
 //        forbids an incoming `produced_by` edge — Q-D.40.2).
 //
-//   WARM  (recall returned nodes) →
+//   WARM  (`classify` returns `confident`) →
 //     4. persists NO `InterestItem` and pushes NOTHING onto `interests`.
 //
 //   And in both cases the run still closes accepted with the `answer` output.
@@ -83,8 +83,16 @@ void main() {
         .outcome;
   }
 
-  /// Seeds the recall double with one text-bearing node (the WARM path).
+  /// Seeds the WARM path: the prompt classifies confidently against a known
+  /// centroid (so no interest is pushed), and recall surfaces one text-bearing
+  /// node.
   void seedWarmRecall() {
+    memory.classifyResult = const ClassificationResult(
+      decision: ClassificationDecision.confident,
+      bestMatch: 'Conclusion',
+      bestSimilarity: 0.92,
+      secondSimilarity: 0.18,
+    );
     memory.recallResult = RecallResult(
       nodes: <Node>[
         Node(
@@ -106,7 +114,7 @@ void main() {
   group('D.40-1 the cold path records an InterestItem', () {
     test('an InterestItem carries the prompt as topic and a non-empty why',
         () async {
-      // Default recallResult is empty → cold path.
+      // Default classifyResult is `unknown` → cold path.
       await runWith('what is a quasar?');
 
       final interest = memory.persistedOfType('InterestItem').single;
@@ -201,7 +209,7 @@ class _InterestCapturingMemory implements TomBrainMemoryClient {
   final List<({NodeId from, EdgeType type, NodeId to})> recordedEdges =
       <({NodeId from, EdgeType type, NodeId to})>[];
 
-  /// Empty by default — the cold path. Tests seed nodes for the warm path.
+  /// Empty by default. Tests seed nodes for the warm path.
   RecallResult recallResult = const RecallResult(
     nodes: <Node>[],
     report: RecallReport(
@@ -212,6 +220,10 @@ class _InterestCapturingMemory implements TomBrainMemoryClient {
     ),
   );
 
+  /// `unknown` by default — the cold-classification path. Tests set this to
+  /// `confident` for the warm path (Q-D.40.1).
+  ClassificationResult classifyResult = const ClassificationResult.unknown();
+
   /// The persisted nodes of a given type, in persist order.
   Iterable<({NodeId id, NodeDraft draft})> persistedOfType(String typeName) =>
       persisted.where((p) => p.draft.typeName == typeName);
@@ -221,6 +233,13 @@ class _InterestCapturingMemory implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<ClassificationResult> classify(
+    Vec embedding, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async =>
+      classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {

@@ -31,9 +31,15 @@
 // the stub. This is exactly the observability the spec promises a downstream
 // consumer (§ 11) — the run's effects are in memory, not in the caller's hand.
 //
-// ── The post-condition bundle, by recall outcome (§ 11) ─────────────────
+// ── The post-condition bundle, by classification + recall outcome (§ 11) ─
 //
-//   COLD  (stub recall surfaced nothing) →
+// The cold-classification interest path is driven by `classify`, not by an
+// empty recall: the body embeds the prompt and classifies the vector against
+// memory's centroids, and a `decision == 'unknown'` is the cold signal
+// (Q-D.40.1). The stub memory controls that decision directly via
+// `classifyResult`, independent of what `recall` returns.
+//
+//   COLD  (stub `classify` returns `unknown` — far from every centroid) →
 //     • a streamed answer is produced (the multi-chunk substrate stream is
 //       drained into the `Conclusion.statement`; per-token delivery to a live
 //       caller is a Phase E concern, Q-D.38.1);
@@ -46,10 +52,10 @@
 //       (the cold-classification path, D.40);
 //     • NO `produced_by` edge points at the `InterestItem` (Q-D.40.2).
 //
-//   WARM  (stub recall surfaced cited nodes) →
+//   WARM  (stub `classify` returns `confident`, recall surfaced cited nodes) →
 //     • the same streamed-answer + Event + Conclusion + produced_by bundle;
 //     • a `derived_from` edge ties the `Conclusion` to *each* cited node;
-//     • NO interest push (the prompt was not cold).
+//     • NO interest push (the prompt classified confidently).
 //
 //   REPEAT  (stub recall surfaced a prior `Event` whose `summary` == this
 //            prompt) →
@@ -128,7 +134,7 @@ void main() {
       'interest push, no derived_from', () {
     test('a single accepted user_prompt satisfies the cold post-condition '
         'bundle', () async {
-      // Default stub recall is empty → the cold-classification path.
+      // Default stub classify returns `unknown` → the cold-classification path.
       substrate.answerChunks = <String>['I have no notes on that yet.'];
       final booted = await bootBrain('ztmp/d54_cold');
 
@@ -193,6 +199,14 @@ void main() {
           createdAt: DateTime.utc(2026, 6, 1),
         ),
       ]);
+      // Warm: the prompt classifies confidently against a known centroid, so
+      // the cold-classification interest path does not fire (Q-D.40.1).
+      memory.classifyResult = const ClassificationResult(
+        decision: ClassificationDecision.confident,
+        bestMatch: 'Conclusion',
+        bestSimilarity: 0.92,
+        secondSimilarity: 0.18,
+      );
       substrate.answerChunks = <String>['Back up by rsyncing nightly.'];
       final booted = await bootBrain('ztmp/d54_warm');
 
@@ -242,6 +256,15 @@ void main() {
           createdAt: DateTime.utc(2026, 6, 1),
         ),
       ]);
+      // The topic is already known (the user asked it before), so it
+      // classifies confidently — the signal under test is repetition, not
+      // cold curiosity (Q-D.40.1 / Q-D.41.1).
+      memory.classifyResult = const ClassificationResult(
+        decision: ClassificationDecision.confident,
+        bestMatch: 'Event',
+        bestSimilarity: 0.95,
+        secondSimilarity: 0.10,
+      );
       substrate.answerChunks = <String>['A quasar is a luminous galactic core.'];
       final booted = await bootBrain('ztmp/d54_repeat');
 
@@ -260,7 +283,7 @@ void main() {
     });
 
     test('a cold (non-repeat) prompt emits no automation note', () async {
-      // Default empty recall → cold path, not a repeat.
+      // Default classify `unknown` → cold path, not a repeat.
       final booted = await bootBrain('ztmp/d54_norepeat');
 
       await booted.dispatcher.accept(_accessWith(text: 'what is a pulsar?'));
@@ -339,7 +362,7 @@ class _StubMemory implements TomBrainMemoryClient {
   final List<({NodeId from, EdgeType type, NodeId to})> recordedEdges =
       <({NodeId from, EdgeType type, NodeId to})>[];
 
-  /// Empty by default — the cold path. Tests seed nodes for warm/repeat.
+  /// Empty by default — no cited nodes. Tests seed nodes for warm/repeat.
   RecallResult recallResult = const RecallResult(
     nodes: <Node>[],
     report: RecallReport(
@@ -349,6 +372,12 @@ class _StubMemory implements TomBrainMemoryClient {
       elapsedMs: 0,
     ),
   );
+
+  /// `unknown` by default — the cold-classification path (the prompt sits far
+  /// from every centroid). Tests set this to `confident` for the warm path so
+  /// no interest is pushed. The cold path is driven by `classify`, not by an
+  /// empty recall (Q-D.40.1).
+  ClassificationResult classifyResult = const ClassificationResult.unknown();
 
   /// The persisted nodes of a given type, in persist order.
   Iterable<({NodeId id, NodeDraft draft})> persistedOfType(String typeName) =>
@@ -375,6 +404,13 @@ class _StubMemory implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<ClassificationResult> classify(
+    Vec embedding, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async =>
+      classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {

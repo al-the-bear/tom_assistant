@@ -10,7 +10,7 @@
 ///   - { name: text, type: String, required: true }
 /// outputs:
 ///   - { name: answer, type: String }
-/// requires: [ recall, llm, persist, edge, stack.push, note ]
+/// requires: [ recall, embed, classify, llm, persist, edge, stack.push, note ]
 //
 // answer_with_memory_v1 — the prototype's one real system procedure
 // (`prototype_implementation_plan.md` D.10 / D.36–D.42;
@@ -32,10 +32,14 @@
 // `produced_by` edge to the run record.
 // D.40 (plan): "Push an `InterestItem` to `interests` if the prompt embedding
 // lands far from any existing centroid (cold-classification path)." This is
-// the fourth body step: when the four-mode recall (vector mode included)
-// surfaced nothing, the prompt landed far from anything memory already knows —
-// the brain is curious about a topic it has no memory of — so the body records
-// an `InterestItem` and pushes it onto the `interests` bootstrap stack.
+// the fourth body step, and it implements the plan literally: the body embeds
+// the prompt (`sub.embed`) and classifies that vector against memory's node-
+// type centroids (`mem.classify`). A `decision == 'unknown'` is memory's own
+// signal that the embedding sits below `minConfidence` from every centroid —
+// or that no centroid exists yet (cold start) — i.e. the prompt is genuinely
+// far from anything memory already knows. The brain is curious about a topic
+// it has no memory of, so the body records an `InterestItem` and pushes it
+// onto the `interests` bootstrap stack.
 // D.41 (plan): "Emit a `note('automation_candidate', …)` if the prompt matches
 // a recent identical-shape prompt (cheap repetition check)." This is the fifth
 // body step: step 3 persists every inbound prompt as an `Event` whose
@@ -76,19 +80,24 @@
 // ── How the cold-classification path is detected (Q-D.40.1) ─────────
 //
 // The plan phrases the trigger as "the prompt embedding lands far from any
-// existing centroid (cold-classification path)". The body does not re-embed
-// the prompt or call `classify`: the spec § 4.4 header pins this procedure's
-// `requires` to `[recall, llm, persist, edge, note, stack.push]` — neither
-// `embed` nor `classify` is in that set, and `classify` is not even part of
-// the bridged primitive surface (`BridgedPrimitiveCatalog`). The cold signal
-// is therefore read off the recall the body already ran: recall step 1 runs
-// the four-mode pipeline *including vector mode*, which embeds the prompt and
-// looks for neighbours. When that recall surfaces **no nodes at all**, the
-// prompt embedding found nothing close in memory — the operational proxy for
-// "far from any existing centroid". A topic memory knows nothing about is
-// exactly what the brain should grow curious about, so the body persists an
-// `InterestItem` (`topic` = the prompt, `why` = the cold-path reason) and
-// pushes it onto the `interests` bootstrap stack. See Q-D.40.1.
+// existing centroid (cold-classification path)", and the body implements
+// exactly that — it does **not** infer the cold signal from an empty recall.
+// Step 4 embeds the prompt with `sub.embed` and hands the resulting vector to
+// `mem.classify(embedding, target: 'nodeType')`, the LLM-free centroid-
+// distance classifier (memory § 7.2). The classifier returns one of three
+// decisions; `'unknown'` is precisely "the input is below `minConfidence`
+// against every centroid, or no centroid for the target exists yet (cold
+// start)" — the spec's literal "far from any existing centroid". On that
+// decision the body persists an `InterestItem` (`topic` = the prompt, `why`
+// = the cold-path reason) and pushes it onto the `interests` bootstrap stack.
+//
+// This is the centroid-distance mechanism the spec calls for, not the earlier
+// empty-recall proxy: an empty recall and a cold classification are different
+// facts (a prompt can recall neighbours by BM25/vector yet still sit far from
+// every *centroid*, and vice-versa). `embed` (a substrate tool callout) and
+// `classify` (a memory read) are therefore in this procedure's `requires`
+// header (§ 4.4) and on the bridged primitive surface
+// (`BridgedPrimitiveCatalog`). See Q-D.40.1.
 //
 // ── Why the `InterestItem` is not reported in `producedNodeIds` (Q-D.40.2) ──
 //
@@ -115,9 +124,12 @@
 // body emits `note('automation_candidate', {why, signature})`; the dispatcher
 // harvester (D.31) reads that category off the trail. See Q-D.41.1.
 //
-// Cold path and repeat path are mutually exclusive in practice: the cold-path
-// interest (D.40) fires only when recall returned *nothing*, while a repeat
-// requires recall to have surfaced the prior `Event`.
+// Cold path and repeat path read independent signals: the cold-path interest
+// (D.40) fires on a centroid-distance `classify` decision of `'unknown'`,
+// while a repeat (D.41) fires when recall surfaced a prior `Event` with this
+// exact `summary`. They are not coupled — a prompt could in principle classify
+// `'unknown'` yet also recall a prior identical `Event` (e.g. before any
+// centroid was learned) — and the body evaluates each on its own merits.
 //
 // ── Token streaming and `Access.deliver` (Q-D.38.1; P1.3 #8) ────────
 //
@@ -169,11 +181,13 @@
 // 4–5 — `requires` must match the body's actual calls). As of D.41:
 //   - `text` is `required: true` — step 1 reads it for `recall`, step 2
 //     folds it into the assembled prompt, step 3 persists it as the `Event`,
-//     step 4 records it as the `InterestItem.topic` on the cold path, step 5
-//     uses it as the identical-shape repetition key and the note signature;
-//   - `requires` is `[recall, llm, persist, edge, stack.push, note]` — the
-//     bridged primitives the body calls (memory recall + substrate completion
-//     + node persist + edge creation + the cold-path `interests` stack push +
+//     step 4 embeds it (`sub.embed`) to classify it and records it as the
+//     `InterestItem.topic` on the cold path, step 5 uses it as the
+//     identical-shape repetition key and the note signature;
+//   - `requires` is `[recall, embed, classify, llm, persist, edge,
+//     stack.push, note]` — the bridged primitives the body calls (memory
+//     recall + the cold-path embed/classify pair + substrate completion +
+//     node persist + edge creation + the cold-path `interests` stack push +
 //     the repetition `automation_candidate` trail note). The list is a set;
 //     order is immaterial (the validator compares membership, § 7 row 5);
 //   - the only declared output is `answer` (the concatenated LLM answer
@@ -229,19 +243,23 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     await mem.edge(conclusionId, 'derived_from', nodeId, producer: producer);
   }
 
-  // D.40 — cold-classification interest push. When the four-mode recall
-  // (vector mode included) surfaced nothing, the prompt landed far from any
-  // existing memory/centroid: the brain is curious about a topic it knows
-  // nothing about, so it records an InterestItem and pushes it onto the
-  // `interests` bootstrap stack. The InterestItem is intentionally not added
-  // to `producedNodeIds` — its schema does not permit an incoming
-  // `produced_by` edge (Q-D.40.2).
-  if (_isColdRecall(recall)) {
+  // D.40 — cold-classification interest push. Embed the prompt and classify
+  // the vector against memory's node-type centroids. A `'unknown'` decision
+  // means the embedding is below `minConfidence` from every centroid (or no
+  // centroid exists yet) — the prompt landed far from anything memory already
+  // knows. The brain is curious about a topic it knows nothing about, so it
+  // records an InterestItem and pushes it onto the `interests` bootstrap
+  // stack. The InterestItem is intentionally not added to `producedNodeIds` —
+  // its schema does not permit an incoming `produced_by` edge (Q-D.40.2).
+  final embedding = await sub.embed(text);
+  final classification =
+      await mem.classify(embedding['vec'], target: 'nodeType');
+  if (classification['decision'] == 'unknown') {
     final interestId = await mem.persist(
       'InterestItem',
       {
         'topic': text,
-        'why': 'The prompt matched no existing memory on recall '
+        'why': 'The prompt embedding landed far from every existing centroid '
             '(cold-classification path).',
       },
       producer: producer,
@@ -273,18 +291,6 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     'answer': answer,
     'producedNodeIds': [conclusionId],
   };
-}
-
-/// Whether the recall came back empty — the operational proxy for "the prompt
-/// embedding landed far from any existing centroid" (the cold-classification
-/// path). The four-mode recall runs vector mode, so an empty result means the
-/// prompt found no close neighbour in memory. See Q-D.40.1.
-bool _isColdRecall(Map recall) {
-  final nodes = recall['nodes'];
-  if (nodes is List) {
-    return nodes.isEmpty;
-  }
-  return true;
 }
 
 /// Whether the recall surfaced a prior `Event` carrying *exactly* this

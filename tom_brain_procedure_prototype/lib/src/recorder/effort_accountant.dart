@@ -20,8 +20,9 @@
 //                                    the call's `report`).
 //   - `embed` / `search` / `fetch`→ +1 toolCall (substrate tool callouts
 //                                    other than `llm`).
-//   - `recall` / `stack.list` /
-//     `stack.peek`                → +1 memoryRead.
+//   - `recall` / `classify` /
+//     `stack.list` / `stack.peek` → +1 memoryRead (`classify` reads the
+//                                    centroid table; it never writes).
 //   - `persist` / `edge` /
 //     `propose_node_type` /
 //     `stack.create` / `.push` /
@@ -61,6 +62,7 @@ final class EffortAccountant {
   /// Memory-read primitives — each contributes one `memoryReads`.
   static const Set<String> _readPrimitives = <String>{
     'recall',
+    'classify',
     'stack.list',
     'stack.peek',
     'stackList',

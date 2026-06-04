@@ -89,6 +89,14 @@ void main() {
   /// Seeds the recall double with a prior `Event` carrying [summary] as its
   /// `summary` — the resurfaced earlier turn that makes a prompt a repeat.
   void seedPriorEvent(String summary) {
+    // The topic was asked before, so it classifies confidently — the signal
+    // under test is repetition, not cold curiosity.
+    memory.classifyResult = const ClassificationResult(
+      decision: ClassificationDecision.confident,
+      bestMatch: 'Event',
+      bestSimilarity: 0.95,
+      secondSimilarity: 0.10,
+    );
     memory.recallResult = RecallResult(
       nodes: <Node>[
         Node(
@@ -109,6 +117,12 @@ void main() {
 
   /// Seeds recall with one unrelated `Conclusion` (a warm, non-repeat recall).
   void seedUnrelatedRecall() {
+    memory.classifyResult = const ClassificationResult(
+      decision: ClassificationDecision.confident,
+      bestMatch: 'Conclusion',
+      bestSimilarity: 0.90,
+      secondSimilarity: 0.20,
+    );
     memory.recallResult = RecallResult(
       nodes: <Node>[
         Node(
@@ -169,7 +183,8 @@ void main() {
     });
 
     test('an empty (cold) recall emits no automation note', () async {
-      // Default recallResult is empty → the cold path (D.40), not a repeat.
+      // Default classify `unknown` → the cold path (D.40); recall is empty so
+      // there is no prior Event → not a repeat.
       final outcome = await runWith('what is a quasar?');
 
       expect(automationNotes(outcome), isEmpty);
@@ -208,8 +223,7 @@ class _RepeatCapturingMemory implements TomBrainMemoryClient {
   final List<({NodeId from, EdgeType type, NodeId to})> recordedEdges =
       <({NodeId from, EdgeType type, NodeId to})>[];
 
-  /// Empty by default — the cold path. Tests seed nodes for the warm/repeat
-  /// paths.
+  /// Empty by default. Tests seed nodes for the warm/repeat paths.
   RecallResult recallResult = const RecallResult(
     nodes: <Node>[],
     report: RecallReport(
@@ -220,11 +234,23 @@ class _RepeatCapturingMemory implements TomBrainMemoryClient {
     ),
   );
 
+  /// `unknown` by default — the cold-classification path. Tests with a known
+  /// topic set this to `confident` (Q-D.40.1). The repetition signal under
+  /// test here (D.41) is independent of the classification decision.
+  ClassificationResult classifyResult = const ClassificationResult.unknown();
+
   @override
   StackApi get stacks => _stacks;
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<ClassificationResult> classify(
+    Vec embedding, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async =>
+      classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
