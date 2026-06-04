@@ -192,9 +192,7 @@ final class AccessAssembler {
   }) async {
     String? principalId;
     try {
-      bearerAuthenticator?.authenticate(bearerToken);
-      final ResolvedIdentity identity =
-          identityResolver.resolveOpenAiBearer(bearerToken);
+      final ResolvedIdentity identity = authenticateOpenAi(bearerToken);
       principalId = identity.principalId;
       final Persona persona = personaResolver.resolve(modelId);
       await _admit(
@@ -214,6 +212,27 @@ final class AccessAssembler {
       _emitFailure(error, envelope: envelope, principalId: principalId);
       rethrow;
     }
+  }
+
+  /// Validates an OpenAI bearer credential and resolves the principal, without
+  /// running the cognition admission pipeline — the auth gate the embeddings
+  /// passthrough reuses (E.51.1 / Q-E.51.1).
+  ///
+  /// Embeddings are a substrate passthrough, not a cognition (§ 5.6): they
+  /// never build an `Access`, never touch the dispatcher, and run none of the
+  /// rate-limit / quota / anchor gates (those are reserved for a later
+  /// mediated path, Q-E.2.2). But the live edge is auth-gated, so the
+  /// passthrough must still reject a missing / invalid / unbound credential.
+  /// This runs exactly the auth → identity prefix [admitOpenAi] uses (validate
+  /// the credential when an authenticator is wired, then resolve the principal
+  /// through [IdentityResolver.resolveOpenAiBearer]) and returns the resolved
+  /// [ResolvedIdentity]. It emits no lifecycle event — there is no `Access` to
+  /// correlate — and throws the same typed [BearerAuthFailure] /
+  /// [IdentityResolutionException] for the channel edge (E.45) to map onto the
+  /// OpenAI `401` envelope.
+  ResolvedIdentity authenticateOpenAi(String bearerToken) {
+    bearerAuthenticator?.authenticate(bearerToken);
+    return identityResolver.resolveOpenAiBearer(bearerToken);
   }
 
   /// Admits one Telegram request.

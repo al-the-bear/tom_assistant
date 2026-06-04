@@ -50,6 +50,8 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:tom_chattools/tom_chattools.dart'
     show ChatApi, ChatSettings, TelegramChatConfig;
 
+import '../adapters/openai_http_sse/openai_http_sse_adapter.dart'
+    show EmbeddingSource;
 import '../adapters/telegram/telegram_adapter.dart';
 import '../adapters/telegram/telegram_whitelist.dart';
 import '../config/access_config.dart';
@@ -184,11 +186,13 @@ final class BrainAccessProcess {
 /// graceful-shutdown coordinator over the ordered teardown.
 ///
 /// The optional runtime seams ([bearerAuthenticator], [kindHintEmbedder],
-/// [kindHintClassifier], [clock]) are *not* configuration: they are the
-/// substrate / memory edges (and the test clock) a higher assembly injects.
-/// The CLI default leaves them `null` (no bearer pre-validation, no cheap
-/// classifier — the dispatcher classifies every request). [shutdownSignals] and
-/// [terminate] default to the real `SIGINT` / `SIGTERM` + `exit`; a test injects
+/// [kindHintClassifier], [embeddingSource], [clock]) are *not* configuration:
+/// they are the substrate / memory edges (and the test clock) a higher
+/// assembly injects. The CLI default leaves them `null` (no bearer
+/// pre-validation, no cheap classifier — the dispatcher classifies every
+/// request — and the auth-gated `/v1/embeddings` route answers `501`, since the
+/// embedding service lives in substrate). [shutdownSignals] and [terminate]
+/// default to the real `SIGINT` / `SIGTERM` + `exit`; a test injects
 /// controllers and a recorder.
 Future<BrainAccessProcess> startBrainAccessProcess({
   required AccessConfig config,
@@ -198,6 +202,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
   BearerTokenAuthenticator? bearerAuthenticator,
   KindHintEmbedder? kindHintEmbedder,
   KindHintClassifier? kindHintClassifier,
+  EmbeddingSource? embeddingSource,
   List<Stream<ProcessSignal>>? shutdownSignals,
   ProcessTerminator? terminate,
   Duration shutdownDeadline = defaultShutdownDeadline,
@@ -217,6 +222,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
     brain: brain,
     config: config,
     serve: serve,
+    embeddingSource: embeddingSource,
     clock: clock,
   );
   final _TelegramEdge telegram = await _startTelegram(
@@ -274,12 +280,14 @@ Future<AccessServer> _serveOpenAiAndHealth({
   required ProvisionedBrain brain,
   required AccessConfig config,
   required AccessServeSeam serve,
+  required EmbeddingSource? embeddingSource,
   required DateTime Function()? clock,
 }) async {
   final OpenAiAccessEdge openAiEdge = OpenAiAccessEdge(
     assembler: booted.assembler,
     basePath: config.openAiBasePath,
     models: config.personaVocabulary,
+    embeddingSource: embeddingSource,
   );
   final HealthCheck healthCheck = HealthCheck(
     queueSnapshot: brain.queueSnapshot,

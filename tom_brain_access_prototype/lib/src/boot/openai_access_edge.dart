@@ -53,9 +53,11 @@ import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import '../adapters/openai_http_sse/chat_completion_json.dart';
 import '../adapters/openai_http_sse/chat_completion_request.dart';
+import '../adapters/openai_http_sse/embeddings_request.dart';
+import '../adapters/openai_http_sse/embeddings_response.dart';
 import '../adapters/openai_http_sse/models_response.dart';
 import '../adapters/openai_http_sse/openai_http_sse_adapter.dart'
-    show OpenAiHttpSseAdapter;
+    show EmbeddingSource, OpenAiHttpSseAdapter;
 import '../adapters/openai_http_sse/persona_mapping.dart';
 import '../boot/access_assembler.dart';
 import '../delivery/sse_delivery.dart';
@@ -69,9 +71,16 @@ import 'json_response.dart';
 /// [handler] on the live port (the boot root composes it with the health
 /// endpoint). Every `POST /v1/chat/completions` runs the full E.41 admission
 /// pipeline; `GET /v1/models` is the static persona listing; `POST
-/// /v1/embeddings` is `501` (embeddings are a substrate passthrough the access
-/// process does not own — the dispatcher path is for cognitions, not
-/// embeddings). Any other route is the OpenAI `404` envelope.
+/// /v1/embeddings` is an auth-gated substrate passthrough (Q-E.51.1): it
+/// bearer-auth-gates the request through the assembler's auth gate (the same
+/// gate the chat route runs) and then embeds the inputs through the injected
+/// [EmbeddingSource], rendering the OpenAI list body. Embeddings are a
+/// passthrough, not a cognition (proto spec § 5.6), so the route runs auth and
+/// identity but *not* rate-limit / quota / anchor (Q-E.2.2 reserves that
+/// mediation) and never touches the dispatcher. With no [EmbeddingSource]
+/// wired (the CLI default), the route answers `501` — the same no-source
+/// discipline the format adapter uses. Any other route is the OpenAI `404`
+/// envelope.
 class OpenAiAccessEdge {
   /// The base path every route hangs under. Defaults to the adapter's `/v1`.
   final String basePath;
@@ -83,19 +92,31 @@ class OpenAiAccessEdge {
   final AccessAssembler _assembler;
   final List<String> _models;
 
+  /// The injected embeddings passthrough source, or `null` when no substrate
+  /// embedding service is wired (the CLI default). A well-formed, authenticated
+  /// embeddings request with no source answers `501`. Keeping this a function —
+  /// not a `tom_brain_substrate` type — is what keeps the access edge free of a
+  /// substrate dependency (Plan E.7).
+  final EmbeddingSource? _embeddingSource;
+
   /// Builds the edge over the booted [assembler].
   ///
   /// [basePath] defaults to [OpenAiHttpSseAdapter.basePath] (`/v1`); a config
   /// may override it. [models] is the persona-as-model vocabulary the
   /// `/v1/models` route lists; it defaults to
-  /// [OpenAiPersonaMapping.knownModels].
+  /// [OpenAiPersonaMapping.knownModels]. [embeddingSource] is the passthrough
+  /// seam to substrate's `EmbeddingService` (proto spec § 5.6, Q-E.51.1); when
+  /// omitted (the CLI default) the auth-gated `/v1/embeddings` route answers
+  /// `501`, and boot supplies the real substrate-backed producer.
   OpenAiAccessEdge({
     required AccessAssembler assembler,
     String? basePath,
     List<String>? models,
+    EmbeddingSource? embeddingSource,
   })  : _assembler = assembler,
         basePath = basePath ?? OpenAiHttpSseAdapter.basePath,
-        _models = models ?? OpenAiPersonaMapping.knownModels;
+        _models = models ?? OpenAiPersonaMapping.knownModels,
+        _embeddingSource = embeddingSource;
 
   late final Router _router = _buildRouter();
 
@@ -319,21 +340,92 @@ class OpenAiAccessEdge {
     return decoded is Map<String, Object?> ? decoded : null;
   }
 
-  /// `POST /v1/embeddings` — `501`.
+  /// `POST /v1/embeddings` — the auth-gated substrate passthrough (Q-E.51.1).
   ///
-  /// Embeddings are a substrate passthrough (proto spec § 5.6); the running
-  /// access process drives the dispatcher, which is for cognitions, not the
-  /// embedding service. A higher assembly that needs embeddings mounts the
-  /// format adapter's embeddings route with a substrate-backed source; the
-  /// auth-gated edge does not.
+  /// Embeddings are a passthrough, not a cognition (proto spec § 5.6), so the
+  /// route does not drive the dispatcher. It still runs the assembler's auth
+  /// gate ([AccessAssembler.authenticateOpenAi]) — the live edge has no
+  /// unauthenticated surface — but, being a passthrough, it runs *no*
+  /// rate-limit / quota / anchor mediation (Q-E.2.2 reserves that). Flow:
+  ///
+  ///   1. Lift the bearer token (a missing / malformed header is a `401`).
+  ///   2. Authenticate + resolve identity through the assembler (`401` on a
+  ///      rejected credential or an unresolved identity).
+  ///   3. Parse the body into an [EmbeddingsRequest] (`400` on a malformed
+  ///      body or a bad parameter).
+  ///   4. With no [EmbeddingSource] wired (the CLI default) answer `501`;
+  ///      otherwise embed the inputs through the source and render the OpenAI
+  ///      list body.
   Future<Response> _handleEmbeddings(Request request) async {
-    return _errorResponse(
-      statusCode: 501,
-      message: 'The embeddings surface is not served by the access process '
-          '(it drives the cognition dispatcher, not the embedding service).',
-      type: 'not_implemented',
-      code: 'not_implemented',
+    // ── 1. Bearer credential (E.28). ──
+    final String bearerToken;
+    try {
+      bearerToken = parseBearerHeader(
+        request.headers[authorizationHeaderName],
+      );
+    } on BearerAuthFailure catch (failure) {
+      return _errorFor(failure);
+    }
+
+    // ── 2. Auth gate: authenticate + resolve identity (no cognition gates). ──
+    try {
+      _assembler.authenticateOpenAi(bearerToken);
+    } catch (error) {
+      return _errorFor(error);
+    }
+
+    // ── 3. Parse the OpenAI body (same DTO as the format adapter). ──
+    final Object? json;
+    try {
+      final String raw = await request.readAsString();
+      json = raw.trim().isEmpty ? null : jsonDecode(raw);
+    } on FormatException catch (e) {
+      return _errorResponse(
+        statusCode: 400,
+        message: 'Request body is not valid JSON: ${e.message}',
+        type: 'invalid_request_error',
+        code: 'invalid_body',
+      );
+    }
+
+    return EmbeddingsRequest.parse(json).fold(
+      ok: _respondToEmbeddings,
+      err: (EmbeddingsParseError error) async => _errorResponse(
+        statusCode: 400,
+        message: error.message,
+        type: 'invalid_request_error',
+        code: error.code,
+        param: error.param,
+      ),
     );
+  }
+
+  /// Renders the response for an authenticated, successfully-parsed embeddings
+  /// request.
+  ///
+  /// With no [EmbeddingSource] wired (the CLI default) the route answers `501`
+  /// — the same no-source discipline the format adapter uses. Otherwise the
+  /// inputs are embedded through the injected source and rendered into the
+  /// OpenAI list body; the response `model` is the substrate embedding model's
+  /// actual identity (from the batch), not the request's informational `model`
+  /// string (proto spec § 5.6).
+  Future<Response> _respondToEmbeddings(EmbeddingsRequest request) async {
+    final EmbeddingSource? embeddingSource = _embeddingSource;
+    if (embeddingSource == null) {
+      return _errorResponse(
+        statusCode: 501,
+        message: 'The embeddings passthrough has no embedding service wired '
+            '(the source is supplied at boot).',
+        type: 'not_implemented',
+        code: 'not_implemented',
+      );
+    }
+    final EmbeddingBatch batch = await embeddingSource(request.inputs);
+    final String body = const EmbeddingsResponseRenderer().bodyJson(
+      inputs: request.inputs,
+      batch: batch,
+    );
+    return jsonResponse(body);
   }
 
   /// `GET /v1/models` — the static persona listing (no auth, no body).

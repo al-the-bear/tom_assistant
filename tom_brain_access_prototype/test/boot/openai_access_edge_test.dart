@@ -21,7 +21,10 @@
 //      rate-limit→429, quota→429, anchor→400) with the error envelope.
 //   5. A dispatch failure maps to 500.
 //   6. `GET /v1/models` lists the persona vocabulary; `POST /v1/embeddings` is
-//      501; an unknown route is the OpenAI 404 envelope.
+//      the auth-gated substrate passthrough (Q-E.51.1) — with an
+//      `EmbeddingSource` wired it serves the OpenAI list body, with none wired
+//      it answers 501, and either way an absent / unbound bearer is a 401
+//      before the body is read; an unknown route is the OpenAI 404 envelope.
 //   7. A malformed JSON body is a 400 invalid_request_error.
 //   8. A streaming request commits the 200 stream on the first frame — it
 //      returns *before* the still-in-flight run finishes (true latency), and
@@ -77,6 +80,7 @@ Dispatcher _throwingDispatcher() => Dispatcher(
   int dailyCap = 100,
   List<String> disallowedSignatures = const [],
   List<String>? models,
+  EmbeddingSource? embeddingSource,
 }) {
   final booted = BrainAccessBoot.install(
     dispatcher: dispatcher,
@@ -88,8 +92,38 @@ Dispatcher _throwingDispatcher() => Dispatcher(
       clock: _fixedNow,
     ),
   );
-  final edge = OpenAiAccessEdge(assembler: booted.assembler, models: models);
+  final edge = OpenAiAccessEdge(
+    assembler: booted.assembler,
+    models: models,
+    embeddingSource: embeddingSource,
+  );
   return (edge: edge, booted: booted);
+}
+
+/// Posts an embeddings request body with an optional bearer [token].
+Future<Response> _postEmbeddings(
+  OpenAiAccessEdge edge, {
+  Object? input = 'embed me',
+  String? token = 'secret-token',
+  String? rawBody,
+}) async {
+  final headers = <String, String>{
+    'content-type': 'application/json',
+    if (token != null) 'authorization': 'Bearer $token',
+  };
+  final body = rawBody ??
+      jsonEncode(<String, Object?>{
+        'model': 'tom-embed',
+        'input': input,
+      });
+  return await edge.handler(
+    Request(
+      'POST',
+      Uri.parse('http://localhost/v1/embeddings'),
+      headers: headers,
+      body: body,
+    ),
+  );
 }
 
 /// Posts a chat-completions request body with an optional bearer [token].
@@ -381,20 +415,105 @@ void main() {
       expect(ids, containsAll(<String>['tom-assistant', 'tom-assistant:terse']));
     });
 
-    test('POST /v1/embeddings is 501', () async {
+    test(
+        'POST /v1/embeddings serves the OpenAI list body through the injected '
+        'source (Q-E.51.1)', () async {
+      final seenInputs = <List<String>>[];
+      final f = _edge(
+        dispatcher: _answeringDispatcher().dispatcher,
+        embeddingSource: (inputs) async {
+          seenInputs.add(inputs);
+          return EmbeddingBatch(
+            vectors: [
+              for (final _ in inputs) const [0.1, 0.2, 0.3],
+            ],
+            modelId: 'nomic-embed-text',
+          );
+        },
+      );
+      addTearDown(f.booted.shutdown);
+
+      final response =
+          await _postEmbeddings(f.edge, input: const ['alpha', 'beta']);
+
+      expect(response.statusCode, 200);
+      expect(response.headers['content-type'], contains('application/json'));
+      final body = await _json(response);
+      expect(body['object'], 'list');
+      expect(body['model'], 'nomic-embed-text');
+      final data = body['data'] as List<Object?>;
+      expect(data, hasLength(2));
+      expect((data.first as Map<String, Object?>)['embedding'],
+          const [0.1, 0.2, 0.3]);
+      // The passthrough handed the parsed inputs straight to the source.
+      expect(seenInputs.single, const ['alpha', 'beta']);
+    });
+
+    test('POST /v1/embeddings is 501 when no embedding source is wired',
+        () async {
       final f = _edge(dispatcher: _answeringDispatcher().dispatcher);
       addTearDown(f.booted.shutdown);
 
-      final response = await f.edge.handler(
-        Request(
-          'POST',
-          Uri.parse('http://localhost/v1/embeddings'),
-          headers: {'content-type': 'application/json'},
-          body: '{}',
-        ),
-      );
+      final response = await _postEmbeddings(f.edge);
 
       expect(response.statusCode, 501);
+      final error = (await _json(response))['error'] as Map<String, Object?>;
+      expect(error['code'], 'not_implemented');
+    });
+
+    test('POST /v1/embeddings with a missing bearer is a 401 before the body',
+        () async {
+      var sourceCalled = false;
+      final f = _edge(
+        dispatcher: _answeringDispatcher().dispatcher,
+        embeddingSource: (inputs) async {
+          sourceCalled = true;
+          return const EmbeddingBatch(vectors: [], modelId: 'x');
+        },
+      );
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postEmbeddings(f.edge, token: null);
+
+      expect(response.statusCode, bearerAuthHttpStatus);
+      expect(sourceCalled, isFalse);
+      final error = (await _json(response))['error'] as Map<String, Object?>;
+      expect(error['code'], 'invalid_api_key');
+    });
+
+    test('POST /v1/embeddings with an unbound bearer maps identity to 401',
+        () async {
+      var sourceCalled = false;
+      final f = _edge(
+        dispatcher: _answeringDispatcher().dispatcher,
+        embeddingSource: (inputs) async {
+          sourceCalled = true;
+          return const EmbeddingBatch(vectors: [], modelId: 'x');
+        },
+      );
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postEmbeddings(f.edge, token: 'wrong-token');
+
+      expect(response.statusCode, bearerAuthHttpStatus);
+      expect(sourceCalled, isFalse);
+      final error = (await _json(response))['error'] as Map<String, Object?>;
+      expect(error['code'], 'identity_unresolved');
+    });
+
+    test('POST /v1/embeddings with a malformed body is a 400', () async {
+      final f = _edge(
+        dispatcher: _answeringDispatcher().dispatcher,
+        embeddingSource: (inputs) async =>
+            const EmbeddingBatch(vectors: [], modelId: 'x'),
+      );
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postEmbeddings(f.edge, rawBody: '{not json');
+
+      expect(response.statusCode, 400);
+      final error = (await _json(response))['error'] as Map<String, Object?>;
+      expect(error['type'], 'invalid_request_error');
     });
 
     test('an unknown route is the OpenAI 404 envelope', () async {
