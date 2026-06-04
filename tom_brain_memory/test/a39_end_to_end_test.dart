@@ -244,6 +244,22 @@ void main() {
       );
     }
 
+    Future<NodeId> persistProcedureRun(String summary, String key,
+        {int seed = 1}) {
+      return persister.persist(
+        NodeDraft(
+          typeName: 'ProcedureRun',
+          values: <String, Object?>{
+            'summary': summary,
+            'started_at': '2026-05-30T14:00:00.000Z',
+            'ended_at': null,
+          },
+          embedding: _v768(seed: seed),
+        ),
+        scope: Scope(producer: 'a39:test:r1', idempotencyKey: key),
+      );
+    }
+
     // ═════════════════════════════════════════════════════════════
     // Bootstrap type load
     // ═════════════════════════════════════════════════════════════
@@ -384,9 +400,9 @@ void main() {
         'round-trips via EdgeReader', () async {
       // From the bootstrap manifest:
       //   Claim.allowed_outgoing: [evidence_for, contradicts,
-      //                             derived_from, mentions]
-      //   Claim.allowed_incoming: [evidence_for, contradicts,
       //                             derived_from, mentions, produced_by]
+      //   Claim.allowed_incoming: [evidence_for, contradicts,
+      //                             derived_from, mentions]
       // So Claim --evidence_for--> Claim is permitted at both ends.
       final from = await persistClaim('premise', 'k-from', seed: 1);
       final to = await persistClaim('supported claim', 'k-to', seed: 2);
@@ -487,6 +503,46 @@ void main() {
       expect(after.single, isA<EdgeRejected>());
       expect((after.single as EdgeRejected).reason,
           equals(EdgeRejectionReason.notInAllowedIncoming));
+    });
+
+    test('RunRecorder produced_by direction is accepted by the validating '
+        'store; the reverse is rejected (Q-D.39.2)', () async {
+      // The `RunRecorder` draws `producedNode --produced_by--> run` for
+      // every result node (run_recorder.dart `_drawCompletionEdges`). The
+      // bootstrap schema once listed `produced_by` on the producible
+      // type's allowed_incoming, so this exact edge was rejected against a
+      // validating store and only survived behind a non-validating double.
+      // After the Q-D.39.2 alignment a Conclusion EMITS produced_by toward
+      // the ProcedureRun that produced it, and the run RECEIVES it.
+      final conclusion =
+          await persistConclusion('an answer', 'why', 'k-pb-out', seed: 31);
+      final run = await persistProcedureRun('a run', 'k-pb-run', seed: 32);
+
+      // Recorder direction: produced node --produced_by--> run. Accepted.
+      final edgeId = await edgeWriter.edge(
+          conclusion, EdgeType.producedBy, run, scope: _testScope);
+      final row = db.select(
+        'SELECT from_node, to_node, type FROM edges WHERE id = ?',
+        <Object?>[edgeId.toString()],
+      );
+      expect(row, hasLength(1));
+      expect(row.first['from_node'], equals(conclusion.toString()));
+      expect(row.first['to_node'], equals(run.toString()));
+      expect(row.first['type'], equals('produced_by'));
+
+      // The reversed direction (run --produced_by--> output) is the shape
+      // the contradicted schema implied. It must be rejected: a run is the
+      // producer, not an output, so it has no outgoing produced_by.
+      Object? caught;
+      try {
+        await edgeWriter.edge(
+            run, EdgeType.producedBy, conclusion, scope: _testScope);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, isA<EdgeNotPermitted>());
+      expect((caught as EdgeNotPermitted).side, equals(EdgeEndpointSide.from),
+          reason: 'ProcedureRun.allowed_outgoing must not carry produced_by');
     });
 
     // ═════════════════════════════════════════════════════════════

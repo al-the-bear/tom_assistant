@@ -114,8 +114,11 @@ types:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
       demote_from_indexes: true
-    allowed_outgoing: [evidence_for, contradicts, derived_from, mentions]
-    allowed_incoming: [evidence_for, contradicts, derived_from, mentions, produced_by]
+    # `produced_by` is OUTGOING: a Claim is an output that points back at
+    # the run that produced it (EdgeType.producedBy: "output → producing
+    # run"; Q-D.39.2).
+    allowed_outgoing: [evidence_for, contradicts, derived_from, mentions, produced_by]
+    allowed_incoming: [evidence_for, contradicts, derived_from, mentions]
 
   # 3. Concept — a reusable abstraction (entity, idea, named thing).
   - name: Concept
@@ -150,8 +153,10 @@ types:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
       demote_from_indexes: true
-    allowed_outgoing: [evidence_for, derived_from, mentions]
-    allowed_incoming: [satisfied_by, derived_from, produced_by, mentions]
+    # `produced_by` is OUTGOING: a Conclusion is an output of a run
+    # (EdgeType.producedBy: "output → producing run"; Q-D.39.2).
+    allowed_outgoing: [evidence_for, derived_from, mentions, produced_by]
+    allowed_incoming: [satisfied_by, derived_from, mentions]
 
   # 5. Question — an open inquiry.
   - name: Question
@@ -235,8 +240,10 @@ types:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
       demote_from_indexes: true
-    allowed_outgoing: [targets, mentions, superseded_by]
-    allowed_incoming: [part_of, produced_by, satisfied_by, derived_from, mentions]
+    # `produced_by` is OUTGOING: a Plan is an output of a planning run
+    # (EdgeType.producedBy: "output → producing run"; Q-D.39.2).
+    allowed_outgoing: [targets, mentions, superseded_by, produced_by]
+    allowed_incoming: [part_of, satisfied_by, derived_from, mentions]
 
   # 10. PlanStep — a node of a plan graph.
   - name: PlanStep
@@ -293,8 +300,12 @@ types:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
       demote_from_indexes: false
-    allowed_outgoing: [superseded_by, authored_by, mentions]
-    allowed_incoming: [satisfied_by, produced_by, motivates, mentions, derived_from]
+    # `produced_by` is OUTGOING: a Procedure node is an output of the
+    # authoring run (EdgeType.producedBy: "output → producing run";
+    # Q-D.39.2). `authored_by` (also outgoing) records the author; the two
+    # are distinct edges.
+    allowed_outgoing: [superseded_by, authored_by, mentions, produced_by]
+    allowed_incoming: [satisfied_by, motivates, mentions, derived_from]
 
   # 13. ProcedureRun — one execution of a procedure.
   - name: ProcedureRun
@@ -312,7 +323,11 @@ types:
       default_horizon_ms: null
       reinforcement_resets_horizon: false
       demote_from_indexes: true
-    allowed_outgoing: [produced_by, derived_from, caused_by, mentions]
+    # `produced_by` is INCOMING only: a ProcedureRun is the *producer*,
+    # so its outputs (Claim/Conclusion/Plan/Procedure/Artifact/Trail) point
+    # `produced_by` AT it (EdgeType.producedBy: "output → producing run";
+    # Q-D.39.2). The run never emits produced_by itself.
+    allowed_outgoing: [derived_from, caused_by, mentions]
     allowed_incoming: [produced_by, mentions]
 
   # 14. AutomationIdea — a candidate procedure to author.

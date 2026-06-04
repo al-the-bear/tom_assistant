@@ -213,6 +213,60 @@ void main() {
           reason: 'spec § 4.2: "a Question may not have an outgoing '
               'evidence_for (a Question is not evidence)"');
     });
+
+    test('produced_by points output → producing run (Q-D.39.2)', () {
+      // The authoritative direction is fixed by `EdgeType.producedBy`
+      // dartdoc ("output → producing run") and the `RunRecorder`, which
+      // draws `producedNode --produced_by--> run`. `EdgeWriter` enforces
+      // `allowedOutgoing` on the `from` endpoint and `allowedIncoming` on
+      // the `to` endpoint verbatim, so the manifest grammar *is* what a
+      // validating store accepts. A produced node therefore EMITS
+      // `produced_by` (outgoing); the ProcedureRun that produced it
+      // RECEIVES it (incoming). Listing it the other way round — as the
+      // bootstrap once did for Claim/Conclusion/Plan/Procedure — makes the
+      // recorder's edge `EdgeNotPermitted` against the real store.
+      const emitters = <String>{
+        'Claim',
+        'Conclusion',
+        'Plan',
+        'Procedure',
+        'Artifact',
+        'Trail',
+      };
+      const receivers = <String>{'ProcedureRun'};
+
+      for (final typeName in emitters) {
+        final decl = _decl(manifest, typeName);
+        expect(decl.allowedOutgoing, contains(EdgeType.producedBy),
+            reason: '$typeName is a procedure output — it must EMIT '
+                'produced_by toward the run (outgoing)');
+        expect(decl.allowedIncoming, isNot(contains(EdgeType.producedBy)),
+            reason: '$typeName is the output, not the producer — '
+                'produced_by must not be incoming on it');
+      }
+
+      for (final typeName in receivers) {
+        final decl = _decl(manifest, typeName);
+        expect(decl.allowedIncoming, contains(EdgeType.producedBy),
+            reason: '$typeName is the producing run — it must RECEIVE '
+                'produced_by from its outputs (incoming)');
+        expect(decl.allowedOutgoing, isNot(contains(EdgeType.producedBy)),
+            reason: '$typeName is the producer, never an output — '
+                'produced_by must not be outgoing on it');
+      }
+
+      // The contract is closed: no other bootstrap type touches
+      // produced_by in either direction. A future type that joins the
+      // produced_by grammar must register here too.
+      final emittersAndReceivers = {...emitters, ...receivers};
+      for (final decl in manifest) {
+        if (emittersAndReceivers.contains(decl.typeName)) continue;
+        expect(decl.allowedOutgoing, isNot(contains(EdgeType.producedBy)),
+            reason: '${decl.typeName} is not a known produced_by emitter');
+        expect(decl.allowedIncoming, isNot(contains(EdgeType.producedBy)),
+            reason: '${decl.typeName} is not a known produced_by receiver');
+      }
+    });
   });
 
   group('bootstrap_node_types.yaml — index/retention sanity', () {
