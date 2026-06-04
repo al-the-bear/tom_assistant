@@ -61,6 +61,7 @@
 //     never depends on `tom_brain_memory` / `tom_brain_substrate`).
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
+import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal;
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
     show Dispatcher;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
@@ -223,16 +224,28 @@ final class AccessAssembler {
   /// rate-limit / quota / anchor gates (those are reserved for a later
   /// mediated path, Q-E.2.2). But the live edge is auth-gated, so the
   /// passthrough must still reject a missing / invalid / unbound credential.
-  /// This runs exactly the auth → identity prefix [admitOpenAi] uses (validate
-  /// the credential when an authenticator is wired, then resolve the principal
-  /// through [IdentityResolver.resolveOpenAiBearer]) and returns the resolved
-  /// [ResolvedIdentity]. It emits no lifecycle event — there is no `Access` to
-  /// correlate — and throws the same typed [BearerAuthFailure] /
-  /// [IdentityResolutionException] for the channel edge (E.45) to map onto the
-  /// OpenAI `401` envelope.
+  /// This runs exactly the auth → identity prefix [admitOpenAi] uses and
+  /// returns the resolved [ResolvedIdentity]. It emits no lifecycle event —
+  /// there is no `Access` to correlate — and throws the same typed
+  /// [BearerAuthFailure] / [IdentityResolutionException] for the channel edge
+  /// (E.45) to map onto the OpenAI `401` envelope.
+  ///
+  /// Composition (Q-E.51.4). When a [bearerAuthenticator] is wired it validates
+  /// the credential and yields the principal, which is resolved *directly*
+  /// through [IdentityResolver.resolveOpenAiPrincipal] — identity is never
+  /// re-resolved from the raw secret token, so an authenticated principal with
+  /// no identity binding is one coherent [IdentityResolutionException] (a valid
+  /// JWT for an unprovisioned principal fails resolution, not auth). With no
+  /// authenticator wired the identity registry is the sole gate: the raw token
+  /// is resolved through [IdentityResolver.resolveOpenAiBearer] (an unbound
+  /// token still fails resolution).
   ResolvedIdentity authenticateOpenAi(String bearerToken) {
-    bearerAuthenticator?.authenticate(bearerToken);
-    return identityResolver.resolveOpenAiBearer(bearerToken);
+    final BearerTokenAuthenticator? authenticator = bearerAuthenticator;
+    if (authenticator == null) {
+      return identityResolver.resolveOpenAiBearer(bearerToken);
+    }
+    final TomPrincipal principal = authenticator.authenticate(bearerToken);
+    return identityResolver.resolveOpenAiPrincipal(principal);
   }
 
   /// Admits one Telegram request.

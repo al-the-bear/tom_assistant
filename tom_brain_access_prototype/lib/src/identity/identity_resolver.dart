@@ -147,6 +147,15 @@ final class IdentityResolver {
   /// Telegram user id → binding.
   final Map<String, IdentityBinding> _byTelegramUserId;
 
+  /// Authenticated-principal username → binding, derived from the bearer
+  /// bindings (E.24 / Q-E.51.4). This is the index [resolveOpenAiPrincipal]
+  /// consumes: when a bearer authenticator (E.28) is wired it yields the
+  /// validated principal, and the resolver maps that principal to its binding
+  /// by its non-secret [IdentityBinding.username] — never by the raw secret
+  /// token. Built from the same `bearerTokenBindings`, so there is one
+  /// configured source of truth for the accepted set.
+  final Map<String, IdentityBinding> _byPrincipalUsername;
+
   /// Builds a resolver over the given credential → binding maps. Both maps
   /// are copied defensively into unmodifiable views so the registry cannot
   /// be mutated after construction.
@@ -154,19 +163,55 @@ final class IdentityResolver {
     Map<String, IdentityBinding> bearerTokenBindings = const {},
     Map<String, IdentityBinding> telegramUserIdBindings = const {},
   })  : _byBearerToken = Map.unmodifiable(bearerTokenBindings),
-        _byTelegramUserId = Map.unmodifiable(telegramUserIdBindings);
+        _byTelegramUserId = Map.unmodifiable(telegramUserIdBindings),
+        _byPrincipalUsername = Map.unmodifiable(<String, IdentityBinding>{
+          for (final binding in bearerTokenBindings.values)
+            binding.username: binding,
+        });
 
   /// Resolves an OpenAI [bearerToken] to its [ResolvedIdentity].
   ///
-  /// Throws [IdentityResolutionException] when the token has no binding. The
-  /// token is treated as a secret — it is never echoed into the exception
-  /// or the resolved identity.
+  /// The token-keyed path, used when no bearer authenticator (E.28) is wired —
+  /// the identity registry is then the sole credential gate. Throws
+  /// [IdentityResolutionException] when the token has no binding. The token is
+  /// treated as a secret — it is never echoed into the exception or the
+  /// resolved identity. When an authenticator *is* wired, the assembler uses
+  /// [resolveOpenAiPrincipal] instead, so identity is never re-resolved from
+  /// the raw token (Q-E.51.4).
   ResolvedIdentity resolveOpenAiBearer(String bearerToken) {
     final binding = _byBearerToken[bearerToken];
     if (binding == null) {
       throw const IdentityResolutionException(
         'openai',
         'unrecognised bearer token',
+      );
+    }
+    return _project(binding);
+  }
+
+  /// Resolves an already-validated OpenAI bearer [principal] to its
+  /// [ResolvedIdentity] (Q-E.51.4).
+  ///
+  /// The composed counterpart to [resolveOpenAiBearer]. When a bearer
+  /// authenticator (E.28) is wired, it validates the credential and produces
+  /// the principal; the resolver consumes that principal *directly* rather than
+  /// re-resolving from the raw secret token. The join key is the principal's
+  /// non-secret [TomPrincipal.username], matched against the bearer bindings'
+  /// usernames — so the stable, config-chosen [ResolvedIdentity.principalId]
+  /// (which may differ from the login username) and the binding's claims are
+  /// still the source of truth.
+  ///
+  /// Throws [IdentityResolutionException] when the validated principal has no
+  /// identity binding. This makes "authenticated but not provisioned" (e.g. a
+  /// valid JWT for a principal absent from the registry) one coherent decision
+  /// — a loud failure, never a fabricated identity — instead of an auth pass
+  /// followed by an independent, surprising token-lookup miss.
+  ResolvedIdentity resolveOpenAiPrincipal(TomPrincipal principal) {
+    final binding = _byPrincipalUsername[principal.username];
+    if (binding == null) {
+      throw const IdentityResolutionException(
+        'openai',
+        'authenticated principal has no identity binding',
       );
     }
     return _project(binding);

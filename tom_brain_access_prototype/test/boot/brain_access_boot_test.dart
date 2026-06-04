@@ -25,6 +25,7 @@ import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart';
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
     show Dispatcher;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
+import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal, TomUser;
 
 /// A fixed clock so every emitted `occurredAt` is deterministic.
 DateTime _fixedNow() => DateTime.utc(2026, 6, 2, 12);
@@ -46,6 +47,11 @@ Map<String, IdentityBinding> _oneBearer() => {
 Map<String, IdentityBinding> _oneTelegramUser() => {
       'tg-42': IdentityBinding(principalId: 'principal-1'),
     };
+
+/// An authenticated kernel principal carrying [username] — the shape a wired
+/// [StaticBearerTokenAuthenticator] returns after validating a token.
+TomPrincipal _principal(String username) =>
+    TomPrincipal(authenticated: true, user: TomUser(username: username));
 
 InboundRequest _envelope({
   String text = 'hello there',
@@ -271,6 +277,82 @@ void main() {
       expect(d.routed, isEmpty);
       expect(events.whereType<AccessFailed>().single.failureKind,
           'access.auth.failed');
+    });
+
+    test('a wired authenticator composes authenticate→resolve: the validated '
+        'principal is resolved directly, not the raw token (Q-E.51.4)', () async {
+      final d = _recordingDispatcher();
+      final booted = BrainAccessBoot.install(
+        dispatcher: d.dispatcher,
+        config: BrainAccessConfig(
+          bearerTokenBindings: _oneBearer(), // binding username = 'principal-1'
+          // A JWT-style opaque credential that is NOT itself a binding key, but
+          // authenticates to a principal whose username IS provisioned. The old
+          // gate-then-relookup path would re-resolve the raw token and throw;
+          // composition resolves the *validated principal* and succeeds.
+          bearerAuthenticator: StaticBearerTokenAuthenticator({
+            'jwt-blob-not-a-binding-key': _principal('principal-1'),
+          }),
+          rateLimitPolicy: _openPolicy(),
+          dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: 100),
+          anchorPolicy: AnchorPolicy(disallowedSignatures: const []),
+          clock: _fixedNow,
+        ),
+      );
+      addTearDown(booted.shutdown);
+
+      await booted.assembler.admitOpenAi(
+        bearerToken: 'jwt-blob-not-a-binding-key',
+        modelId: 'tom-assistant',
+        envelope: _envelope(),
+        sink: _CollectingSseSink(),
+      );
+      await pumpEventQueue();
+
+      expect(d.routed.single.identity.principalId, 'principal-1');
+    });
+
+    test('a validated principal absent from the identity registry is one '
+        'coherent identity failure (passed auth, not provisioned)', () async {
+      final d = _recordingDispatcher();
+      final booted = BrainAccessBoot.install(
+        dispatcher: d.dispatcher,
+        config: BrainAccessConfig(
+          bearerTokenBindings: _oneBearer(), // only 'principal-1' is provisioned
+          // The token authenticates (it is a member of the set) but its
+          // principal has no identity binding — composition turns this into a
+          // single IdentityResolutionException rather than passing auth and
+          // failing an independent token lookup.
+          bearerAuthenticator: StaticBearerTokenAuthenticator({
+            'jwt-ish-token': _principal('stranger'),
+          }),
+          rateLimitPolicy: _openPolicy(),
+          dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: 100),
+          anchorPolicy: AnchorPolicy(disallowedSignatures: const []),
+          clock: _fixedNow,
+        ),
+      );
+      addTearDown(booted.shutdown);
+
+      final events = <AccessEvent>[];
+      booted.eventBus.events().listen(events.add);
+
+      await expectLater(
+        booted.assembler.admitOpenAi(
+          bearerToken: 'jwt-ish-token',
+          modelId: 'tom-assistant',
+          envelope: _envelope(),
+          sink: _CollectingSseSink(),
+        ),
+        throwsA(isA<IdentityResolutionException>()),
+      );
+      await pumpEventQueue();
+
+      expect(d.routed, isEmpty);
+      // Auth passed (identity is where it failed), so the failure is the
+      // identity kind, not the auth kind.
+      expect(events.whereType<AccessFailed>().single.failureKind,
+          'access.identity.unresolved');
     });
 
     test('an exhausted rate limit short-circuits before session + classify '

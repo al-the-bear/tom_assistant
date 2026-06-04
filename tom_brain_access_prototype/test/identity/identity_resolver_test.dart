@@ -17,7 +17,13 @@
 // (the auth step E.22/E.28), or dispatcher wiring (boot, E.41+).
 
 import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart';
+import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal, TomUser;
 import 'package:test/test.dart';
+
+/// Builds an authenticated kernel principal carrying [username] — the shape a
+/// `BearerTokenAuthenticator` (E.28) returns after validating a credential.
+TomPrincipal _principal(String username) =>
+    TomPrincipal(authenticated: true, user: TomUser(username: username));
 
 void main() {
   group('IdentityBinding — principal-facts record', () {
@@ -103,6 +109,69 @@ void main() {
               .having((e) => e.channel, 'channel', 'openai')
               .having((e) => e.toString(), 'toString',
                   isNot(contains('sk-unknown-secret'))),
+        ),
+      );
+    });
+  });
+
+  group('IdentityResolver — composed authenticate→resolve (Q-E.51.4)', () {
+    test('resolves an already-validated principal directly, by its username', () {
+      final resolver = IdentityResolver(
+        bearerTokenBindings: {
+          // The binding key is the secret token; its username defaults to the
+          // principalId, the non-secret join key the validated principal
+          // carries.
+          'sk-secret-123': IdentityBinding(
+            principalId: 'alexis',
+            displayName: 'Alexis',
+            claims: const {'tier': 'owner'},
+          ),
+        },
+      );
+
+      // The authenticator validated the credential and produced this principal;
+      // the resolver consumes it directly — it never sees the raw token.
+      final identity = resolver.resolveOpenAiPrincipal(_principal('alexis'));
+
+      expect(identity.principalId, 'alexis');
+      expect(identity.displayName, 'Alexis');
+      expect(identity.claims['tier'], 'owner');
+    });
+
+    test('a username with a distinct configured principalId still resolves '
+        'through the binding', () {
+      final resolver = IdentityResolver(
+        bearerTokenBindings: {
+          'sk-secret-123': IdentityBinding(
+            principalId: 'p-1',
+            username: 'alexis.k',
+          ),
+        },
+      );
+
+      final identity = resolver.resolveOpenAiPrincipal(_principal('alexis.k'));
+
+      // The stable non-secret id is still the configured principalId, not the
+      // login username the principal was keyed on.
+      expect(identity.principalId, 'p-1');
+    });
+
+    test('an authenticated principal with no binding is one coherent failure '
+        '(passed auth, not provisioned)', () {
+      final resolver = IdentityResolver(
+        bearerTokenBindings: {
+          'sk-known': IdentityBinding(principalId: 'alexis'),
+        },
+      );
+
+      // A valid JWT principal absent from the identity registry: auth passed
+      // (the principal exists) but resolution must fail loudly rather than
+      // fabricating an identity.
+      expect(
+        () => resolver.resolveOpenAiPrincipal(_principal('stranger')),
+        throwsA(
+          isA<IdentityResolutionException>()
+              .having((e) => e.channel, 'channel', 'openai'),
         ),
       );
     });
