@@ -54,7 +54,6 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 import 'fallback_executor.dart' show FallbackTrigger;
 import 'procedure_fallback_event.dart' show ProcedureFallback;
 import 'run_coordinator.dart' show RunSlot;
-import 'run_registry.dart' show RunOutcome;
 
 /// Marker / base for every typed dispatcher observability event.
 ///
@@ -199,6 +198,35 @@ final class Resumed extends DispatcherEvent {
 
   @override
   Map<String, Object?> payloadJson() => const <String, Object?>{};
+}
+
+/// The terminal outcome a run reached when the coordinator freed its slot,
+/// carried on the [RunCompleted] dispatcher event.
+///
+/// Mirrors the three run-end paths the coordinator distinguishes: a body that
+/// returned normally ([completed]), one that threw a non-deadline error
+/// ([failed]), and one the coordinator's hard step deadline truncated
+/// ([forceYielded]). The wire form ([status]) is snake-case so it renders
+/// identically to [RunSlotOutcome.status] across the dispatcher's
+/// observability surfaces (Q-D.26.1: the engine `RunRecorder` owns the durable
+/// `recent_runs` record; this enum names the outcome on the event stream).
+enum RunOutcome {
+  /// The run body returned normally.
+  completed,
+
+  /// The run body threw a non-deadline error.
+  failed,
+
+  /// The coordinator's hard step deadline truncated the run.
+  forceYielded;
+
+  /// The snake-case wire string this outcome serialises to on the event
+  /// stream — matching [RunSlotOutcome.status].
+  String get status => switch (this) {
+        RunOutcome.completed => 'completed',
+        RunOutcome.failed => 'failed',
+        RunOutcome.forceYielded => 'force_yielded',
+      };
 }
 
 /// A run finished from the coordinator's perspective (§ 10.3, PE-4

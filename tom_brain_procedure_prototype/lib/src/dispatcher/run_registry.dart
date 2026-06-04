@@ -9,64 +9,33 @@
 // halves. The *engine* half is the `RunRecorder` (C.31): it opens a
 // memory trail, appends every primitive call, and persists the
 // authoritative `ProcedureRun` node carrying the closed effort-metric
-// set. The *dispatcher* half is this registry: it tracks, on the
-// `inflight` / `recent_runs` bootstrap stacks, *which runs the
-// coordinator currently has live*, so an operator (the Tom Forge run
-// inspector) can see the runtime's shape without reaching into the
-// engine.
+// set, pushed onto the `inflight` bootstrap stack at run start and moved
+// to `recent_runs` at run end. The recorder is the **canonical and sole
+// writer** of `ProcedureRun` nodes.
 //
-// In the prototype the coordinator schedules opaque [RunBody] thunks
-// (test bodies and the D.33 free-time scheduler stub) that do **not**
-// yet drive the engine, so this registry is the only thing pushing a
-// run onto `inflight` for coordinator-scheduled work. The reconciliation
-// with the engine recorder — so that a *real* engine run dispatched
-// through the coordinator does not land on `inflight` twice — is a
-// D.36–D.46 concern (when the coordinator's bodies actually invoke the
-// engine). See Q-D.26.1.
+// The *dispatcher* half is this registry, and per Q-D.26.1 it is an
+// **in-memory slot-occupancy view**, not a second `ProcedureRun` writer.
+// It projects which coordinator slot (foreground / background) currently
+// holds which run — operator-visibility state the recorder does not
+// capture, and that lives only as long as the run occupies the slot. A
+// real engine run dispatched through the coordinator therefore lands on
+// `inflight` exactly once (the recorder writes it); the registry never
+// touches memory, so the two-writer collision the earlier D.26 framing
+// risked cannot occur.
 //
-// ── What D.26 / D.27 own (this file) ────────────────────────────────
+// ── Why a view and not a durable second stack ───────────────────────
 //
-// [recordStart] (D.26) — persist a lightweight `status: running`
-// `ProcedureRun` marker node and push its id onto the `inflight` stack,
-// returning the marker id.
-//
-// [recordEnd] (D.27) — the run-end half: on success *or* failure, remove
-// the running marker from `inflight` (membership only — the node stays)
-// and push a `status: completed` / `failed` / `force_yielded`
-// `ProcedureRun` marker onto `recent_runs`. The running marker id from
-// [recordStart] is the handle the coordinator hands back here.
-//
-// ── Node shape ──────────────────────────────────────────────────────
-//
-// Both markers are the same `ProcedureRun` bootstrap node type (#13) the
-// recorder uses, with the run/procedure identity and the coordinator slot
-// the run occupied. The running marker carries `status: running` + a UTC
-// `startedAt`; the finished marker carries the terminal `status` + a UTC
-// `endedAt`. The memory store is immutable (overview principle 6): the
-// running marker, the finished marker, and the recorder's authoritative
-// finished `ProcedureRun` are distinct append-only events, exactly as the
-// recorder's own two-node split (Q-C.31.1) already establishes.
+// Slot occupancy is ephemeral: it answers "what is the coordinator
+// running *right now*", a question whose entire lifetime is bounded by
+// the run's slot occupancy. Persisting it would duplicate facts the
+// recorder already owns durably (the `ProcedureRun` node, its `inflight`
+// membership, its `recent_runs` move) and reintroduce the very
+// two-writer reconciliation Q-D.26.1 closes. The view holds the launch
+// facts in a `Map<RunSlot, RunRegistration>`, set on run start and
+// cleared on run end — no memory write, no held future, no node id to
+// thread back.
 
-import 'package:tom_brain_memory/tom_brain_memory.dart'
-    show NodeDraft, Scope, TomBrainMemoryClient;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, defaultNowUtc;
-
-import '../recorder/run_records.dart'
-    show
-        inflightStackName,
-        procedureRunNodeType,
-        recentRunsStackName,
-        runStatusRunning;
 import 'run_coordinator.dart' show RunSlot;
-
-/// The protocol-significant `producer` namespace every dispatcher-side memory
-/// write attributes itself under (F.5.1).
-///
-/// The `Scope.producer` of a write is matched on by the trace stitcher and the
-/// run inspector, so the `dispatcher` token is a contract, not a cosmetic
-/// label — named once here and reused by the run registry and the sustained-
-/// fallback monitor rather than re-spelled as a bare string at each write site.
-const String dispatcherScopeProducerPrefix = 'dispatcher';
 
 /// The launch facts the coordinator hands the registry when a run begins
 /// occupying a slot (D.26).
@@ -74,8 +43,8 @@ const String dispatcherScopeProducerPrefix = 'dispatcher';
 /// [runId] is the coordinator-assigned run identity (threaded into the
 /// `PreemptionController` record calls too); [procedureId] / [version]
 /// name the procedure the run executes; [slot] is the coordinator slot
-/// the run occupies, so concurrent foreground + background runs appear as
-/// two distinguishable entries on `inflight` (D.28).
+/// the run occupies, so a concurrent foreground + background pair appears
+/// as two distinguishable occupancy entries (D.28).
 final class RunRegistration {
   /// Builds the launch facts.
   const RunRegistration({
@@ -103,143 +72,60 @@ final class RunRegistration {
   final String? parentRunId;
 }
 
-/// The terminal outcome a run reached when the coordinator freed its slot
-/// (D.27), recorded as the finished marker's `status` on `recent_runs`.
+/// An in-memory view of which coordinator slot currently holds which run
+/// (Plan D.26; spec § 8, PE-4 dispatcher half; Q-D.26.1).
 ///
-/// Mirrors the three run-end paths the coordinator distinguishes: a body
-/// that returned normally ([completed]), one that threw a non-deadline
-/// error ([failed]), and one the coordinator's hard step deadline truncated
-/// ([forceYielded]). The registry stays independent of the preemption
-/// controller's `RunSlotOutcome`; the coordinator maps between them.
-enum RunOutcome {
-  /// The run body returned normally.
-  completed,
-
-  /// The run body threw a non-deadline error.
-  failed,
-
-  /// The coordinator's hard step deadline truncated the run.
-  forceYielded;
-
-  /// The string written to the finished marker's `status` field.
-  String get status => switch (this) {
-        RunOutcome.completed => 'completed',
-        RunOutcome.failed => 'failed',
-        RunOutcome.forceYielded => 'force_yielded',
-      };
-}
-
-/// Tracks the coordinator's live runs on the `inflight` bootstrap stack
-/// via the memory client (Plan D.26; spec § 8, PE-4 dispatcher half).
+/// This is a *view*, not a writer: it never touches the memory store. The
+/// engine-side `RunRecorder` (C.31) is the canonical and sole writer of
+/// `ProcedureRun` nodes to `inflight` / `recent_runs`. The registry only
+/// projects, for an operator (the Tom Forge run inspector), which run each
+/// coordinator slot holds for as long as it holds it.
 ///
-/// Wraps the interface-boundary [TomBrainMemoryClient] (PE-10) — never the
-/// concrete store, never `tom_brain_memory/lib/src/`. The host injects
-/// whichever implementation the deployment topology chose (in-process or
-/// isolate-bridged); the registry cannot tell the difference.
+/// One run occupies one slot; a slot holds at most one run. The coordinator
+/// calls [recordStart] when a run takes its slot and [recordEnd] when the
+/// run releases it. Both are synchronous in-memory mutations.
 final class RunRegistry {
-  /// Wraps the interface-boundary [memory] client. [now] is the injectable
-  /// clock; tests pass a fixed clock to assert the marker's `startedAt`.
-  RunRegistry(this.memory, {DateTime Function()? now})
-      : _now = now ?? defaultNowUtc;
+  /// The launch facts of the run currently occupying each slot. A slot is
+  /// absent from the map when no run holds it.
+  final Map<RunSlot, RunRegistration> _occupancy =
+      <RunSlot, RunRegistration>{};
 
-  /// The memory client every write delegates to.
-  final TomBrainMemoryClient memory;
+  /// A read-only snapshot of the current slot occupancy, keyed by the
+  /// coordinator slot each live run holds.
+  Map<RunSlot, RunRegistration> get occupancy =>
+      Map<RunSlot, RunRegistration>.unmodifiable(_occupancy);
 
-  final DateTime Function() _now;
+  /// The run currently occupying [slot], or `null` when the slot is free.
+  RunRegistration? occupant(RunSlot slot) => _occupancy[slot];
 
-  /// Persists a `status: running` `ProcedureRun` marker for [registration]
-  /// and pushes its id onto the `inflight` stack; returns the marker id.
+  /// The launch facts of every run the coordinator currently has live, in
+  /// no defined order.
+  Iterable<RunRegistration> get liveRuns => _occupancy.values;
+
+  /// Whether any run currently occupies a slot.
+  bool get isIdle => _occupancy.isEmpty;
+
+  /// Records that [registration] has taken its slot — the run start half of
+  /// the dispatcher view (D.26).
   ///
-  /// The marker id is the handle the run-end transition (D.27) will use to
-  /// remove the run from `inflight` and push the authoritative finished
-  /// record onto `recent_runs`. Both writes carry a [Scope] attributing
-  /// them to the dispatcher and the run, so a write-budget tracker (A.68)
-  /// and the trace stitcher can follow them back to the producing run.
-  Future<NodeId> recordStart(RunRegistration registration) async {
-    final scope = _scopeFor(registration);
-    final markerId = await memory.persist(
-      _runMarker(
-        registration,
-        status: runStatusRunning,
-        timeField: 'startedAt',
-      ),
-      scope: scope,
-    );
-    await memory.stacks.push(inflightStackName, markerId, scope: scope);
-    return markerId;
+  /// Overwrites any stale occupant of the same slot: the coordinator only
+  /// admits a run to a slot the previous occupant has already released, so a
+  /// collision here would be a coordinator bug, and last-write-wins keeps the
+  /// view consistent with the coordinator's own slot state rather than
+  /// masking the bug behind a thrown error the view has no way to recover.
+  void recordStart(RunRegistration registration) {
+    _occupancy[registration.slot] = registration;
   }
 
-  /// Closes out the run [registration] started under [markerId] (D.27):
-  /// removes the running marker from `inflight` and pushes a terminal
-  /// `ProcedureRun` marker onto `recent_runs`; returns the finished marker id.
+  /// Records that the run occupying [slot] has released it — the run-end half
+  /// of the dispatcher view (D.27).
   ///
-  /// Called on every run end — success ([RunOutcome.completed]), failure
-  /// ([RunOutcome.failed]), or a coordinator deadline force-yield
-  /// ([RunOutcome.forceYielded]). The running marker is removed from
-  /// `inflight` by node id ([markerId], the [recordStart] return value);
-  /// membership removal leaves the running node itself intact (the store is
-  /// append-only — overview principle 6). A *distinct* finished marker node
-  /// is persisted with the terminal `status` + a UTC `endedAt`, then pushed
-  /// onto `recent_runs`. Both writes carry the same dispatcher-attributing
-  /// [Scope] the start write used, so the trace stitcher follows them to the
-  /// producing run.
-  Future<NodeId> recordEnd(
-    RunRegistration registration, {
-    required NodeId markerId,
-    required RunOutcome outcome,
-  }) async {
-    final scope = _scopeFor(registration);
-    // Pop the running marker from `inflight` (membership only — the node
-    // stays addressable by id).
-    await memory.stacks.remove(inflightStackName, markerId);
-    final finishedId = await memory.persist(
-      _runMarker(
-        registration,
-        status: outcome.status,
-        timeField: 'endedAt',
-      ),
-      scope: scope,
-    );
-    await memory.stacks.push(recentRunsStackName, finishedId, scope: scope);
-    return finishedId;
+  /// Called on every run end (success, failure, *or* a coordinator
+  /// hard-step-deadline force-yield); the outcome is irrelevant to occupancy,
+  /// which only tracks *whether* a slot is held. Idempotent: clearing an
+  /// already-free slot is a no-op, so a double run-end signal cannot corrupt
+  /// the view.
+  void recordEnd(RunSlot slot) {
+    _occupancy.remove(slot);
   }
-
-  /// The dispatcher-attributing [Scope] every marker write for [registration]
-  /// carries (F.2.3, F.5.1).
-  ///
-  /// Both the start and end writes attribute to the same `producer` namespace
-  /// (`dispatcher:<procedureId>:<runId>`, anchored on
-  /// [dispatcherScopeProducerPrefix]) and the same `runId`, so the trace
-  /// stitcher and a write-budget tracker (A.68) follow them back to the one
-  /// producing run.
-  Scope _scopeFor(RunRegistration registration) => Scope(
-        producer: '$dispatcherScopeProducerPrefix'
-            ':${registration.procedureId}:${registration.runId}',
-        runId: registration.runId,
-      );
-
-  /// Builds a `ProcedureRun` marker draft for [registration] carrying the
-  /// terminal-or-running [status] under a single timestamp [timeField] (F.2.3).
-  ///
-  /// The running marker stamps `startedAt`; a finished marker stamps `endedAt`.
-  /// Both share the run/procedure identity and the coordinator slot, so the
-  /// run inspector reads either marker with the same shape.
-  NodeDraft _runMarker(
-    RunRegistration registration, {
-    required String status,
-    required String timeField,
-  }) =>
-      NodeDraft(
-        typeName: procedureRunNodeType,
-        values: <String, Object?>{
-          'procedureId': registration.procedureId,
-          'version': registration.version,
-          'runId': registration.runId,
-          'slot': registration.slot.name,
-          if (registration.parentRunId != null)
-            'parentRunId': registration.parentRunId,
-          'status': status,
-          timeField: _now().toUtc().toIso8601String(),
-        },
-      );
 }

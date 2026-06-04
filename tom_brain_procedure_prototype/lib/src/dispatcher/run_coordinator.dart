@@ -127,39 +127,40 @@
 //     events now carry a non-null `runId`. (The preemption-request / resume
 //     events stay id-less — they are about a *transition* of the shared state,
 //     not a single run.)
-//   - **`inflight` integration (PE-4 dispatcher half).** When a [runRegistry]
+//   - **Slot-occupancy view (PE-4 dispatcher half).** When a [runRegistry]
 //     is wired and a submission named the [procedureId] it executes, the
-//     coordinator pushes a `status: running` `ProcedureRun` marker onto the
-//     `inflight` bootstrap stack the moment the run occupies its slot. The
-//     push is fired without blocking the body, preserving the coordinator's
-//     synchronous admission semantics.
+//     coordinator records the run as occupying its slot in the registry the
+//     moment the run takes the slot. Per Q-D.26.1 the registry is an
+//     **in-memory slot-occupancy view**, not a `ProcedureRun` writer: the
+//     engine-side `RunRecorder` (C.31) is the canonical and sole writer of
+//     `ProcedureRun` nodes to `inflight` / `recent_runs`. [RunRegistry.recordStart]
+//     is a synchronous in-memory map set — no memory write, no held future, so
+//     the coordinator's synchronous admission semantics are unchanged.
 //
 // ── What D.27 adds ──────────────────────────────────────────────────
 //
-// D.27 closes the loop the D.26 `inflight` push opened: the run-end half of
-// the PE-4 dispatcher tracking.
+// D.27 closes the loop the D.26 occupancy set opened: the run-end half of the
+// PE-4 dispatcher view.
 //
-//   - The coordinator holds the per-slot `inflight` handle D.26 created (the
-//     `Future<NodeId>` marker plus the [RunRegistration] facts). When a run
-//     ends — success, failure, *or* a hard-step-deadline force-yield — the
-//     coordinator awaits that handle and calls [RunRegistry.recordEnd], which
-//     removes the running marker from `inflight` and pushes a terminal
-//     `ProcedureRun` marker (`status: completed` / `failed` / `force_yielded`)
-//     onto `recent_runs`.
-//   - The run-end write, like the start write, is fired without blocking the
-//     completion path so the coordinator's slot-freeing timing is unchanged.
-//     The held handle is cleared the moment the run ends, so the coordinator
-//     never carries dead state for a finished run.
+//   - When a run ends — success, failure, *or* a hard-step-deadline
+//     force-yield — the coordinator calls [RunRegistry.recordEnd], passing the
+//     slot the run held. That clears the slot from the occupancy view. The
+//     terminal outcome is irrelevant to occupancy (which only tracks *whether*
+//     a slot is held), so no outcome mapping is threaded into the registry; the
+//     terminal status lives on the recorder's durable `recent_runs` node and on
+//     the `RunCompleted` `DispatcherEvent` (D.49).
+//   - The clear is synchronous in-memory work, so the coordinator's
+//     slot-freeing timing is unchanged and it carries no dead state for a
+//     finished run.
 //
 // ── What D.28 locks ─────────────────────────────────────────────────
 //
 // D.28 is a tests-only step (`test/d28_stack_state_runtime_test.dart`): no
 // coordinator change. It pins the PE-4 dispatcher-half lifecycle by asserting
-// the live *membership* of the `inflight` / `recent_runs` bootstrap stacks —
-// `inflight` reflects exactly the runs the coordinator currently has live,
-// `recent_runs` accumulates exactly the finished ones, and concurrent
-// foreground + background appears as two distinct `inflight` entries that each
-// migrate to a distinct `recent_runs` node.
+// the live occupancy of the registry view — it holds exactly the runs the
+// coordinator currently has live, each keyed by the slot it occupies, and
+// concurrent foreground + background appears as two distinct occupied slots
+// that are each cleared as their run ends.
 //
 // ── What D.45 adds ──────────────────────────────────────────────────
 //
@@ -191,8 +192,7 @@
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show NodeId, PreemptionState;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show PreemptionState;
 
 import '../preemption/step_deadline.dart'
     show
@@ -205,7 +205,7 @@ import '../preemption/step_deadline.dart'
 import 'fallback_executor.dart' show ClassifiedFailure;
 import 'preemption_controller.dart' show PreemptionController;
 import 'preemption_event.dart' show PreemptionEvent, RunSlotOutcome;
-import 'run_registry.dart' show RunOutcome, RunRegistration, RunRegistry;
+import 'run_registry.dart' show RunRegistration, RunRegistry;
 
 /// Mints a run id for a freshly-started run in [slot] (D.26).
 ///
@@ -486,12 +486,13 @@ final class RunCoordinator {
   /// consumer's, per the constructor contract, so [close] leaves it open.
   final bool _ownsPreemptionController;
 
-  /// The dispatcher-half `inflight` tracker (D.26), or `null` when the
-  /// coordinator runs without memory-side run tracking. When non-null the
-  /// coordinator pushes a `status: running` `ProcedureRun` marker onto the
-  /// `inflight` stack the moment a run starts in a slot — but only for a
+  /// The dispatcher-half slot-occupancy view (D.26; Q-D.26.1), or `null` when
+  /// the coordinator runs without run tracking. When non-null the coordinator
+  /// records a run as occupying its slot the moment it starts — but only for a
   /// submission that named the [procedureId] it executes (an opaque body with
-  /// no procedure identity is not a memory-trackable run).
+  /// no procedure identity is not a trackable run). The registry is an
+  /// in-memory view, not a `ProcedureRun` writer: the engine `RunRecorder`
+  /// (C.31) is the canonical and sole writer of the durable run nodes.
   final RunRegistry? runRegistry;
 
   /// The run-id mint (D.26). `null` ⇒ the default monotonic counter
@@ -502,18 +503,6 @@ final class RunCoordinator {
 
   /// Backing counter for the default run-id mint.
   int _runSeq = 0;
-
-  /// The live `inflight` handle for the foreground run, or `null` when no
-  /// foreground run is being memory-tracked (D.27). Set by [_registerInflight]
-  /// when a registry is wired and the submission named a procedure id; cleared
-  /// by [_finishInflight] at run end. Holds the `recordStart` marker future and
-  /// the [RunRegistration] facts so the run-end transition can await the marker
-  /// and close it out.
-  _InflightHandle? _foregroundInflight;
-
-  /// The live `inflight` handle for the background run, or `null` (D.27). Same
-  /// lifecycle as [_foregroundInflight], for the background slot.
-  _InflightHandle? _backgroundInflight;
 
   /// The maximum number of foreground runs that may wait behind the running
   /// one in the FIFO queue (excludes the run occupying the slot, D.19).
@@ -826,7 +815,7 @@ final class RunCoordinator {
       marker.complete();
       _record(() =>
           preemptionController.recordRunFinished(slot, slotOutcome, runId: runId));
-      _finishInflight(slot, slotOutcome);
+      _finishInflight(slot);
     }
 
     // The foreground-only tail: pump the next queued run and release a parked
@@ -953,18 +942,14 @@ final class RunCoordinator {
   /// id within a coordinator is unique).
   String _mintRunId(RunSlot slot) => 'disp-${slot.name}-run-${++_runSeq}';
 
-  /// Pushes a `status: running` `ProcedureRun` marker onto `inflight` for a
-  /// run just admitted into [slot] (D.26) and holds the handle for run-end
-  /// close-out (D.27).
+  /// Records a run just admitted into [slot] as occupying that slot in the
+  /// registry view (D.26; Q-D.26.1).
   ///
   /// A no-op when no [runRegistry] is wired or the submission did not name the
   /// [procedureId] it executes — an opaque body has no procedure identity to
-  /// record. The push is fired without blocking the run body: the coordinator
-  /// keeps its synchronous admission semantics (a submission occupies its slot
-  /// immediately), and the memory write proceeds concurrently. The
-  /// `recordStart` marker future and the [RunRegistration] facts are stored in
-  /// the slot's [_InflightHandle] so [_finishInflight] can remove the marker
-  /// from `inflight` and push to `recent_runs` when the run ends.
+  /// record. [RunRegistry.recordStart] is a synchronous in-memory map set, so
+  /// the coordinator keeps its synchronous admission semantics with no memory
+  /// write and no held future to carry across the run.
   void _registerInflight(
     RunSlot slot,
     String runId,
@@ -975,74 +960,28 @@ final class RunCoordinator {
     if (registry == null || procedureId == null) {
       return;
     }
-    final registration = RunRegistration(
-      runId: runId,
-      procedureId: procedureId,
-      version: version,
-      slot: slot,
+    registry.recordStart(
+      RunRegistration(
+        runId: runId,
+        procedureId: procedureId,
+        version: version,
+        slot: slot,
+      ),
     );
-    // Fire the start push without blocking; keep the future as the run-end
-    // handle.
-    final markerFuture = registry.recordStart(registration);
-    final handle = _InflightHandle(markerFuture, registration);
-    switch (slot) {
-      case RunSlot.foreground:
-        _foregroundInflight = handle;
-      case RunSlot.background:
-        _backgroundInflight = handle;
-    }
   }
 
-  /// Closes out the `inflight` handle for a run just ended in [slot] (D.27):
-  /// removes the running marker from `inflight` and pushes a terminal
-  /// `ProcedureRun` marker (mapped from [outcome]) onto `recent_runs`.
+  /// Clears the run just ended in [slot] from the registry's occupancy view
+  /// (D.27; Q-D.26.1).
   ///
-  /// A no-op when the slot has no live handle (no registry wired, or an opaque
-  /// body that was never tracked). The held handle is cleared *before* the
-  /// memory write is fired, so the coordinator carries no dead state for a
-  /// finished run, and the run-end write — like the start write — proceeds
-  /// without blocking the completion path.
-  void _finishInflight(RunSlot slot, RunSlotOutcome outcome) {
-    final registry = runRegistry;
-    final handle = switch (slot) {
-      RunSlot.foreground => _foregroundInflight,
-      RunSlot.background => _backgroundInflight,
-    };
-    if (registry == null || handle == null) {
-      return;
-    }
-    switch (slot) {
-      case RunSlot.foreground:
-        _foregroundInflight = null;
-      case RunSlot.background:
-        _backgroundInflight = null;
-    }
-    unawaited(_closeInflight(registry, handle, outcome));
+  /// A no-op when no [runRegistry] is wired (and idempotent when the slot was
+  /// never occupied — an opaque body that was never tracked). The terminal
+  /// outcome is irrelevant to occupancy, which only tracks *whether* a slot is
+  /// held; the durable terminal record is the engine `RunRecorder`'s job. The
+  /// clear is synchronous in-memory work, so the coordinator's slot-freeing
+  /// timing is unchanged.
+  void _finishInflight(RunSlot slot) {
+    runRegistry?.recordEnd(slot);
   }
-
-  /// Awaits the start-push marker future and hands the run-end facts to the
-  /// registry (D.27). Split out so [_finishInflight] stays synchronous.
-  Future<void> _closeInflight(
-    RunRegistry registry,
-    _InflightHandle handle,
-    RunSlotOutcome outcome,
-  ) async {
-    final NodeId markerId = await handle.markerFuture;
-    await registry.recordEnd(
-      handle.registration,
-      markerId: markerId,
-      outcome: _runOutcomeOf(outcome),
-    );
-  }
-
-  /// Maps the preemption-controller [RunSlotOutcome] (D.24) to the registry's
-  /// [RunOutcome] (D.27) so the finished `recent_runs` marker carries the
-  /// matching terminal status.
-  RunOutcome _runOutcomeOf(RunSlotOutcome outcome) => switch (outcome) {
-        RunSlotOutcome.completed => RunOutcome.completed,
-        RunSlotOutcome.failed => RunOutcome.failed,
-        RunSlotOutcome.forceYielded => RunOutcome.forceYielded,
-      };
 
   /// Maps a [StepDeadline] [outcome] to the [RunSlotOutcome] the controller
   /// records (D.24): a body that finished within the limit is
@@ -1053,24 +992,6 @@ final class RunCoordinator {
         StepCompleted<T>() => RunSlotOutcome.completed,
         StepTruncated<T>() => RunSlotOutcome.forceYielded,
       };
-}
-
-/// The coordinator's live `inflight` tracking for one run (D.27).
-///
-/// Holds the [markerFuture] returned by [RunRegistry.recordStart] (the
-/// running marker's eventual node id, fired without blocking the body) and
-/// the [registration] facts, so the run-end transition can await the marker,
-/// remove it from `inflight`, and push a terminal marker onto `recent_runs`.
-final class _InflightHandle {
-  /// Wraps the start-push [markerFuture] and the [registration] facts.
-  const _InflightHandle(this.markerFuture, this.registration);
-
-  /// The running marker node id, eventually — the handle the run-end
-  /// transition removes from `inflight`.
-  final Future<NodeId> markerFuture;
-
-  /// The launch facts the registry needs to write the finished marker.
-  final RunRegistration registration;
 }
 
 /// A synchronous hold on the coordinator's background slot, handed back by

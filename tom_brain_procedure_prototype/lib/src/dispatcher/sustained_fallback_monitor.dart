@@ -52,7 +52,16 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId;
 
 import 'fallback_executor.dart' show FallbackEventSink, FallbackTrigger;
 import 'procedure_fallback_event.dart' show ProcedureFallback;
-import 'run_registry.dart' show dispatcherScopeProducerPrefix;
+
+/// The protocol-significant `producer` namespace every dispatcher-side memory
+/// write attributes itself under (F.5.1).
+///
+/// The `Scope.producer` of a write is matched on by the trace stitcher and the
+/// run inspector, so the `dispatcher` token is a contract, not a cosmetic
+/// label. The monitor is now the only dispatcher writer that touches memory
+/// (the run registry became a pure in-memory view at Q-D.26.1), so the prefix
+/// lives here beside its single use rather than in `run_registry.dart`.
+const String dispatcherScopeProducerPrefix = 'dispatcher';
 
 /// The bootstrap stack that holds candidate procedures to author / revise
 /// (memory bootstrap stack #2 — `tom_brain_memory` `bootstrap_stacks_installer`).

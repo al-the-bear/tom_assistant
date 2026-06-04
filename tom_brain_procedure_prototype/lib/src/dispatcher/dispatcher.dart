@@ -135,37 +135,37 @@
 // concurrent background submission still raises `RunSlotBusy`. Exported
 // below.
 //
-// D.26 ✅ — `inflight` integration, dispatcher half (`run_registry.dart` +
-// `run_coordinator.dart`): the coordinator now assigns a run id to every run
-// the moment it occupies a slot (an injectable `RunIdMint`, default a
-// monotonic per-coordinator counter) and threads it into the controller's
-// `recordRunStarted` / `recordRunFinished` calls, so the slot enter/exit
-// `PreemptionEvent`s carry a non-null `runId`. When a `RunRegistry` (over the
-// memory client) is wired and a submission names the `procedureId` it
-// executes, the coordinator pushes a `status: running` `ProcedureRun` marker
-// onto the `inflight` bootstrap stack on run start — the dispatcher half of
-// PE-4, distinct from the engine-side `RunRecorder` (C.31). Exported below.
+// D.26 ✅ — run-id assignment + dispatcher-half run tracking
+// (`run_registry.dart` + `run_coordinator.dart`): the coordinator assigns a
+// run id to every run the moment it occupies a slot (an injectable
+// `RunIdMint`, default a monotonic per-coordinator counter) and threads it
+// into the controller's `recordRunStarted` / `recordRunFinished` calls, so the
+// slot enter/exit `PreemptionEvent`s carry a non-null `runId`. When a
+// `RunRegistry` is wired and a submission names the `procedureId` it executes,
+// the coordinator records the run as occupying its slot in the registry on run
+// start — the dispatcher half of PE-4.
 //
-// D.27 ✅ — `recent_runs` integration, dispatcher half (`run_registry.dart` +
-// `run_coordinator.dart`): the run-end half of the PE-4 dispatcher tracking.
-// The coordinator now holds the per-slot `inflight` handle D.26 created and,
-// when a run ends (success, failure, *or* a hard-step-deadline force-yield),
-// calls `RunRegistry.recordEnd` — which removes the running marker from
-// `inflight` and pushes a terminal `ProcedureRun` marker
-// (`status: completed` / `failed` / `force_yielded`) onto `recent_runs`. The
-// run-end write is fired without blocking the completion path, and the held
-// handle is cleared the moment the run ends. `RunOutcome` (the terminal-status
-// enum) is exported below.
+// Per Q-D.26.1 the registry is an **in-memory slot-occupancy view**, not a
+// second `ProcedureRun` writer: the engine-side `RunRecorder` (C.31) is the
+// canonical and sole writer of `ProcedureRun` nodes to `inflight` /
+// `recent_runs`. The registry only projects which coordinator slot
+// (foreground / background) currently holds which run — operator-visibility
+// state the recorder does not capture. Exported below.
 //
-// D.28 ✅ — stack-state-reflects-the-runtime tests
+// D.27 ✅ — run-end half of the dispatcher tracking (`run_registry.dart` +
+// `run_coordinator.dart`): when a run ends (success, failure, *or* a
+// hard-step-deadline force-yield) the coordinator calls
+// `RunRegistry.recordEnd(slot)`, which clears that slot from the occupancy
+// view. The clear is synchronous in-memory work — no memory write, no held
+// future. `RunOutcome` (the terminal-outcome enum carried on the
+// `RunCompleted` event) lives in `dispatcher_event.dart` and is exported below.
+//
+// D.28 ✅ — slot-occupancy-reflects-the-runtime tests
 // (`test/d28_stack_state_runtime_test.dart`): a tests-only step that locks the
-// PE-4 dispatcher-half lifecycle by asserting the live *membership* of the two
-// bootstrap stacks (read through `StackApi.peek`), not just the registry's call
-// history — `inflight` holds exactly the runs the coordinator currently has
-// live, `recent_runs` accumulates exactly the finished ones, and concurrent
-// foreground + background appears as two distinct `inflight` entries that each
-// migrate to a *distinct* `recent_runs` node (the store is append-only). No
-// production change.
+// PE-4 dispatcher-half lifecycle by asserting the registry's live occupancy —
+// it holds exactly the runs the coordinator currently has live, and concurrent
+// foreground + background appear as two distinct occupied slots, each cleared
+// as its run ends. No production change.
 //
 // D.29 ✅ — fallback executor, version-chain walk (`fallback_executor.dart`):
 // the first FallbackExecutor (PE-6) addition. `FallbackExecutor.run` resolves
@@ -427,7 +427,8 @@ export 'dispatcher_event.dart'
         Preempted,
         ProcedureSelected,
         Resumed,
-        RunCompleted;
+        RunCompleted,
+        RunOutcome;
 export 'dispatcher_event_bus.dart' show DispatcherEventBus;
 export 'fallback_executor.dart'
     show
@@ -490,7 +491,7 @@ export 'run_coordinator.dart'
         RunSlotBusy,
         defaultCoordinatorDeadlineGrace,
         defaultCoordinatorHardStepDeadline;
-export 'run_registry.dart' show RunOutcome, RunRegistration, RunRegistry;
+export 'run_registry.dart' show RunRegistration, RunRegistry;
 export 'sustained_fallback_monitor.dart'
     show
         SustainedFallbackMonitor,
