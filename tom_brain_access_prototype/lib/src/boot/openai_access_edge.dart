@@ -473,6 +473,7 @@ class OpenAiAccessEdge {
         message: error.toString(),
         type: 'rate_limit_exceeded',
         code: 'rate_limit_exceeded',
+        headers: _retryAfterHeader(error.retryAfter),
       );
     }
     if (error is DailyQuotaExceeded) {
@@ -481,6 +482,7 @@ class OpenAiAccessEdge {
         message: error.toString(),
         type: 'insufficient_quota',
         code: 'insufficient_quota',
+        headers: _retryAfterHeader(error.retryAfter),
       );
     }
     if (error is AnchorPreCheckRejected) {
@@ -501,12 +503,16 @@ class OpenAiAccessEdge {
 
   /// Builds an OpenAI error-envelope response:
   /// `{ "error": { "message", "type", "param", "code" } }`.
+  ///
+  /// [headers] merge over the JSON content-type — the `429` rate-limit / quota
+  /// envelopes use it to advertise `Retry-After` (Q-E.51.2).
   Response _errorResponse({
     required int statusCode,
     required String message,
     required String type,
     required String code,
     String? param,
+    Map<String, String> headers = const <String, String>{},
   }) {
     final Map<String, Object?> body = <String, Object?>{
       'error': <String, Object?>{
@@ -516,7 +522,17 @@ class OpenAiAccessEdge {
         'code': code,
       },
     };
-    return jsonResponse(jsonEncode(body), status: statusCode);
+    return jsonResponse(jsonEncode(body), status: statusCode, headers: headers);
+  }
+
+  /// The `Retry-After` header advertising the back-off until a retry can
+  /// succeed (Q-E.51.2). OpenAI SDKs read this header to schedule their
+  /// back-off. The value is whole seconds rounded *up* from the exception's
+  /// `retryAfter` so the advertised wait never undershoots the real one — a
+  /// sub-second burst-throttle wait still advertises at least `1`.
+  static Map<String, String> _retryAfterHeader(Duration retryAfter) {
+    final int seconds = (retryAfter.inMilliseconds / 1000).ceil();
+    return <String, String>{'retry-after': '${seconds < 1 ? 1 : seconds}'};
   }
 }
 

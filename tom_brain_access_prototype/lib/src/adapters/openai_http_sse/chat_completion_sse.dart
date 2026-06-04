@@ -85,9 +85,15 @@ final class ChatCompletionSseRenderer {
   /// then the terminal [doneFrame]. The `[DONE]` line is emitted once the
   /// chunk stream completes, regardless of whether a final-marked chunk
   /// arrived, so the wire is always correctly terminated.
+  ///
+  /// The first frame stamps `delta.role = "assistant"` (Q-E.51.2): the real
+  /// OpenAI streaming shape announces the role on the opening chunk, and some
+  /// strict SSE parsers require it. Every later frame omits `role`.
   Stream<String> render(Stream<OutboundChunk> chunks) async* {
+    bool firstChunk = true;
     await for (final OutboundChunk chunk in chunks) {
-      yield frameFor(chunk);
+      yield frameFor(chunk, firstChunk: firstChunk);
+      firstChunk = false;
     }
     yield doneFrame;
   }
@@ -99,10 +105,17 @@ final class ChatCompletionSseRenderer {
   /// empty `delta` object, matching OpenAI's final chunk shape. A
   /// final-marked chunk sets `finish_reason: "stop"`; every other chunk
   /// carries `finish_reason: null`.
-  String frameFor(OutboundChunk chunk) {
-    final Map<String, Object?> delta = chunk.textDelta.isEmpty
-        ? <String, Object?>{}
-        : <String, Object?>{'content': chunk.textDelta};
+  ///
+  /// When [firstChunk] is `true` the delta additionally carries
+  /// `role: "assistant"` (Q-E.51.2) — the OpenAI streaming format announces the
+  /// assistant role on the opening chunk. The caller marks exactly one frame as
+  /// the first ([render] does this automatically; the live SSE delivery path
+  /// tracks it across `deliver` calls).
+  String frameFor(OutboundChunk chunk, {bool firstChunk = false}) {
+    final Map<String, Object?> delta = <String, Object?>{
+      if (firstChunk) 'role': 'assistant',
+      if (chunk.textDelta.isNotEmpty) 'content': chunk.textDelta,
+    };
 
     final Map<String, Object?> payload = <String, Object?>{
       'id': id,

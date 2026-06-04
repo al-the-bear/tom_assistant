@@ -354,6 +354,95 @@ void main() {
       expect(error['code'], 'insufficient_quota');
     });
 
+    test('an exhausted rate limit carries a Retry-After header (Q-E.51.2)',
+        () async {
+      final d = _answeringDispatcher();
+      final f = _edge(
+        dispatcher: d.dispatcher,
+        rateLimitPolicy: RateLimitPolicy(
+          capacity: 1,
+          refillTokens: 1,
+          refillPeriod: const Duration(hours: 1),
+        ),
+      );
+      addTearDown(f.booted.shutdown);
+
+      await _postChat(f.edge, text: 'first', messageId: 'm1');
+      final response = await _postChat(f.edge, text: 'second', messageId: 'm2');
+
+      expect(response.statusCode, rateLimitHttpStatus);
+      final retryAfter = response.headers['retry-after'];
+      expect(retryAfter, isNotNull);
+      expect(int.parse(retryAfter!), greaterThan(0));
+    });
+
+    test('a spent daily quota carries a Retry-After header (Q-E.51.2)',
+        () async {
+      final d = _answeringDispatcher();
+      final f = _edge(dispatcher: d.dispatcher, dailyCap: 1);
+      addTearDown(f.booted.shutdown);
+
+      await _postChat(f.edge, text: 'first', messageId: 'm1');
+      final response = await _postChat(f.edge, text: 'second', messageId: 'm2');
+
+      expect(response.statusCode, quotaHttpStatus);
+      final retryAfter = response.headers['retry-after'];
+      expect(retryAfter, isNotNull);
+      expect(int.parse(retryAfter!), greaterThan(0));
+    });
+
+    test('a streaming 429 reject also carries a Retry-After header (Q-E.51.2)',
+        () async {
+      final d = _answeringDispatcher();
+      final f = _edge(
+        dispatcher: d.dispatcher,
+        rateLimitPolicy: RateLimitPolicy(
+          capacity: 1,
+          refillTokens: 1,
+          refillPeriod: const Duration(hours: 1),
+        ),
+      );
+      addTearDown(f.booted.shutdown);
+
+      await _postChat(f.edge, text: 'first', stream: true, messageId: 'm1');
+      final response =
+          await _postChat(f.edge, text: 'second', stream: true, messageId: 'm2');
+
+      expect(response.statusCode, rateLimitHttpStatus);
+      final retryAfter = response.headers['retry-after'];
+      expect(retryAfter, isNotNull);
+      expect(int.parse(retryAfter!), greaterThan(0));
+    });
+
+    test('a streaming answer stamps delta.role on the first frame only '
+        '(Q-E.51.2)', () async {
+      final dispatcher = Dispatcher(
+        route: (access) async {
+          access.deliver(OutboundChunk(textDelta: 'Hel', isFinal: false));
+          access.deliver(OutboundChunk(textDelta: 'lo ', isFinal: false));
+          access.deliver(OutboundChunk(textDelta: 'world', isFinal: true));
+        },
+      );
+      final f = _edge(dispatcher: dispatcher);
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postChat(f.edge, text: 'hi', stream: true);
+      final wire = await response.readAsString();
+      final List<bool> hasRole = wire
+          .split('\n\n')
+          .where((frame) => frame.contains('"delta"'))
+          .map((frame) {
+        final payload = jsonDecode(frame.substring('data: '.length))
+            as Map<String, Object?>;
+        final delta = (payload['choices'] as List<Object?>).first
+            as Map<String, Object?>;
+        return (delta['delta'] as Map<String, Object?>).containsKey('role');
+      }).toList();
+      // First content frame announces role:"assistant"; the rest do not. The
+      // terminal empty-delta `[DONE]` line has no `"delta"` and is excluded.
+      expect(hasRole, <bool>[true, false, false]);
+    });
+
     test('an anchor pre-check trip maps to 400 content_screened', () async {
       final d = _answeringDispatcher();
       final f = _edge(

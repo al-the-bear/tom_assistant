@@ -241,6 +241,12 @@ final class SseChannelDelivery implements ChannelDelivery {
     final SseSink sink = binding.sink;
     final ChatCompletionSseRenderer renderer = binding.renderer;
     final DeliveryLifecycle lifecycle = DeliveryLifecycle();
+    // The OpenAI streaming shape stamps `delta.role = "assistant"` on the
+    // opening chunk (Q-E.51.2). The delivery path streams chunk-by-chunk
+    // through this closure, so it tracks the first *written* frame here — a
+    // disconnect that drops a chunk before any write leaves the flag set, so
+    // the role still lands on whatever frame is written first.
+    bool firstFrame = true;
 
     return (OutboundChunk chunk) {
       lifecycle.guardNotTerminated(
@@ -264,7 +270,8 @@ final class SseChannelDelivery implements ChannelDelivery {
         );
       }
 
-      sink.write(renderer.frameFor(chunk));
+      sink.write(renderer.frameFor(chunk, firstChunk: firstFrame));
+      firstFrame = false;
       if (chunk.isFinal) {
         lifecycle.terminate();
         sink.write(ChatCompletionSseRenderer.doneFrame);

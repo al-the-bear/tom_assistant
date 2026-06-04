@@ -40,8 +40,9 @@
 // the current day the counter resets to zero (a fresh day, a new allowance).
 // If the counter has already reached [dailyCap] the limiter throws
 // [DailyQuotaExceeded] carrying [DailyQuotaExceeded.retryAfter] — the wait
-// until the next day boundary, the value the OpenAI adapter puts in the
-// `Retry-After` header. Otherwise the counter is incremented and the call is
+// until the next day boundary, the value the OpenAI access edge (E.45) puts in
+// the `429` response's `Retry-After` header (Q-E.51.2). Otherwise the counter
+// is incremented and the call is
 // admitted. A *rejected* request is **not** counted (it consumed no LLM
 // call), so a client that keeps hammering an exhausted quota does not push
 // its own reset further out and the count never overflows past [dailyCap].
@@ -128,10 +129,11 @@ final class DailyQuotaPolicy {
 ///
 /// Carries the non-secret [principalId] (safe to log — it is the stable id,
 /// never the bearer token) and [retryAfter], the wait until the next day
-/// boundary when the allowance refreshes. On the OpenAI channel the adapter
-/// maps this to [quotaHttpStatus] (`429`) and puts `retryAfter` in the
-/// `Retry-After` header; on Telegram it sends [telegramQuotaMessage]. Either
-/// way the request never becomes an `Access` (AC-4).
+/// boundary when the allowance refreshes. On the OpenAI channel the access edge
+/// (E.45) maps this to [quotaHttpStatus] (`429`) and puts `retryAfter` (whole
+/// seconds, rounded up) in the `Retry-After` header; on Telegram it sends
+/// [telegramQuotaMessage]. Either way the request never becomes an `Access`
+/// (AC-4).
 final class DailyQuotaExceeded implements Exception {
   /// The non-secret stable principal id whose daily quota was exhausted.
   final String principalId;

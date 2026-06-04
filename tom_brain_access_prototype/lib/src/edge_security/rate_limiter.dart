@@ -32,8 +32,8 @@
 // and a bucket that has not been seen for a long time is simply full again
 // on its next request. When the bucket cannot afford a token the limiter
 // throws [RateLimitExceeded] carrying the [RateLimitExceeded.retryAfter]
-// wait until one token will have refilled — the value the OpenAI adapter
-// puts in the `Retry-After` header.
+// wait until one token will have refilled — the value the OpenAI access edge
+// (E.45) puts in the `429` response's `Retry-After` header (Q-E.51.2).
 //
 // Persistence. The plan says "bucket state persisted per principal". When an
 // [EdgeStateStore] is supplied the limiter restores every bucket from it on
@@ -132,10 +132,11 @@ final class RateLimitPolicy {
 ///
 /// Carries the non-secret [principalId] (safe to log — it is the stable id,
 /// never the bearer token) and [retryAfter], the wait until one token will
-/// have refilled. On the OpenAI channel the adapter maps this to
-/// [rateLimitHttpStatus] (`429`) and puts `retryAfter` in the `Retry-After`
-/// header; on Telegram it sends [telegramRateLimitMessage]. Either way the
-/// request never becomes an `Access` (AC-4).
+/// have refilled. On the OpenAI channel the access edge (E.45) maps this to
+/// [rateLimitHttpStatus] (`429`) and puts `retryAfter` (whole seconds, rounded
+/// up) in the `Retry-After` header; on Telegram it sends
+/// [telegramRateLimitMessage]. Either way the request never becomes an
+/// `Access` (AC-4).
 final class RateLimitExceeded implements Exception {
   /// The non-secret stable principal id whose bucket was exhausted.
   final String principalId;

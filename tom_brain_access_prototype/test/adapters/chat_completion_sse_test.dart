@@ -156,6 +156,50 @@ void main() {
     });
   });
 
+  group('ChatCompletionSseRenderer — first-chunk delta.role (Q-E.51.2)', () {
+    test('frameFor stamps role:"assistant" on the delta only when firstChunk',
+        () {
+      final Map<String, Object?> first = _choice(_payload(
+          _renderer().frameFor(OutboundChunk(textDelta: 'Hi'),
+              firstChunk: true)))['delta'] as Map<String, Object?>;
+      expect(first['role'], 'assistant');
+      expect(first['content'], 'Hi');
+
+      final Map<String, Object?> later = _choice(_payload(
+          _renderer().frameFor(OutboundChunk(textDelta: 'Hi'))))['delta']
+          as Map<String, Object?>;
+      expect(later.containsKey('role'), isFalse);
+      expect(later['content'], 'Hi');
+    });
+
+    test('a first chunk that is also final carries both role and finish_reason',
+        () {
+      final Map<String, Object?> choice = _choice(_payload(_renderer()
+          .frameFor(OutboundChunk(textDelta: 'only', isFinal: true),
+              firstChunk: true)));
+      expect((choice['delta'] as Map<String, Object?>)['role'], 'assistant');
+      expect(choice['finish_reason'], 'stop');
+    });
+
+    test('render stamps role on the first frame only', () async {
+      final List<String> frames = await _renderer()
+          .render(Stream<OutboundChunk>.fromIterable(<OutboundChunk>[
+            OutboundChunk(textDelta: 'Hel'),
+            OutboundChunk(textDelta: 'lo'),
+            OutboundChunk(textDelta: '!', isFinal: true),
+          ]))
+          .toList();
+
+      final List<bool> hasRole = frames
+          .where((String f) => f != ChatCompletionSseRenderer.doneFrame)
+          .map((String f) => (_choice(_payload(f))['delta']
+              as Map<String, Object?>)
+              .containsKey('role'))
+          .toList();
+      expect(hasRole, <bool>[true, false, false]);
+    });
+  });
+
   group('OpenAiHttpSseAdapter streaming response (E.13)', () {
     test(
         'POST /v1/chat/completions with stream:true and an injected source '

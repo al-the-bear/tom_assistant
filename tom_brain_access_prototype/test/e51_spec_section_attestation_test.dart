@@ -11,8 +11,10 @@
 //   * the persona-as-model vocabulary (§ 5.5 / AC-5),
 //   * the OpenAI route set (§ 5.1 / AC-6),
 //   * the chat-completion wire object types + the documented wire-format gaps
-//     (no `role` on the streaming delta, no `system_fingerprint`, no
-//     `logprobs`) the review flagged (§ 5.3 / 5.4),
+//     (no `system_fingerprint`, no `logprobs`) the review flagged (§ 5.3 /
+//     5.4). The streaming first-chunk `delta.role` gap the review noted was
+//     closed by todo #33 (Q-E.51.2); the sentinel now pins that role *is*
+//     stamped on the first chunk and omitted on the rest,
 //   * the models-list shape + its documented gaps (no `permission` / `root` /
 //     `parent`) (§ 5.7),
 //   * the closed enums the edge depends on — `KindHintDecision` (§ 9 / AC-9),
@@ -111,9 +113,27 @@ void main() {
 
       final Map<String, Object?> delta = choice['delta']! as Map<String, Object?>;
       expect(delta['content'], 'hi');
-      // Documented gap: the prototype never emits a `role` on the delta — the
-      // real OpenAI API stamps role:"assistant" on the first chunk.
+      // A non-first chunk carries no `role` — only content.
       expect(delta.containsKey('role'), isFalse);
+    });
+
+    test('the streaming first chunk stamps delta.role:"assistant" (Q-E.51.2)',
+        () {
+      const renderer = ChatCompletionSseRenderer(
+        id: 'chatcmpl-test',
+        model: 'tom-assistant',
+        created: 1735689600,
+      );
+      // Closed by todo #33: the real OpenAI API announces the assistant role on
+      // the opening chunk; the prototype now matches. The first frame carries
+      // role:"assistant"; every later frame omits it (asserted above).
+      final Map<String, Object?> firstDelta = ((_decodeFrame(renderer.frameFor(
+                  OutboundChunk(textDelta: 'hi'),
+                  firstChunk: true))['choices']! as List<Object?>)
+              .single as Map<String, Object?>)['delta']!
+          as Map<String, Object?>;
+      expect(firstDelta['role'], 'assistant');
+      expect(firstDelta['content'], 'hi');
     });
 
     test('finish_reason is "stop" on final, null otherwise; empty terminator '
