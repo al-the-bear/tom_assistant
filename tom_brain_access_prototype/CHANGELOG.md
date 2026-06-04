@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — Phase E (todo #36): cross-channel `users` block (Q-E.24.2 / Q-E.49.2)
+
+A first-class `access.users:` config block replaces the hand-matched
+`principalId`-string convention. Each human is declared **once** (id +
+optional username/numericId/displayName/claims + per-channel credentials), and
+the per-channel identity bindings are *derived* from it — so one person
+resolves to one `principalId` across the OpenAI and Telegram channels, with the
+channel distinction living only in the session key (E.25).
+
+- `lib/src/config/access_config.dart` — **new `AccessUser`** value class
+  (id, username [defaults to id], numericId [default -1], displayName, claims,
+  `openAiBearerTokens`, `telegramUserIds`); throws on empty id or zero
+  credentials; `toBinding()` projects to an `IdentityBinding`. New
+  `AccessConfig.bindingsForUsers(...)` projects an `Iterable<AccessUser>` onto
+  the `(bearerTokenBindings, telegramUserIdBindings)` pair, rejecting duplicate
+  user ids and credentials shared between two people. New `users` field on
+  `AccessConfig`.
+- `lib/src/config/access_config_loader.dart` — parses the `access.users:` list
+  (replacing the old `access.openai.bearerTokens` / `access.telegram.users`
+  credential maps) and derives the two runtime binding maps from it. AccessUser
+  / projection `ArgumentError`s are translated to dotted-path
+  `AccessConfigException`s. Forward-only schema (AC-12) preserved.
+- Docs: spec § 13.1, the config + main barrels updated to describe the `users`
+  block. Tests migrated + extended in
+  `test/config/access_config_loader_test.dart`.
+
 ## 0.0.1 — 2026-06-02 (Phase E.45)
 
 The executable + the boot root that ties the running process together — the

@@ -20,10 +20,15 @@
 //   * Requires the `access:` block and parses every documented field.
 //     Within `access:`, unknown keys are rejected at every level (AC-12).
 //   * Builds the concrete edge-security policies (`RateLimitPolicy`,
-//     `DailyQuotaPolicy`, `AnchorPolicy`) and the identity bindings the
-//     resolvers consume — `AccessConfig` is ready-to-wire, not a raw map.
-//   * Expands `${NAME}` tokens in string secrets (bearer-token keys, the
-//     Telegram bot token) from the caller-supplied env map.
+//     `DailyQuotaPolicy`, `AnchorPolicy`). Identity is declared once per
+//     human under `access.users` (Q-E.24.2): each `AccessUser` owns its
+//     OpenAI + Telegram credentials, and the loader projects them onto the
+//     two runtime binding maps the resolvers consume (so one person maps to
+//     one `principalId` across both channels) — `AccessConfig` is
+//     ready-to-wire, not a raw map.
+//   * Expands `${NAME}` tokens in string secrets (each user's OpenAI
+//     bearer-token entries, the Telegram bot token) from the caller-supplied
+//     env map. Telegram user ids are public and used verbatim.
 //
 // What the loader does NOT do:
 //
@@ -140,6 +145,7 @@ abstract final class AccessConfigLoader {
       const <String>{
         'openai',
         'telegram',
+        'users',
         'rateLimit',
         'quota',
         'anchor',
@@ -152,12 +158,21 @@ abstract final class AccessConfigLoader {
     );
 
     final openAi = _requireMap(node, 'openai', 'access.openai');
-    final (port, basePath, bearerBindings) = _parseOpenAi(openAi, env);
+    final (port, basePath) = _parseOpenAi(openAi);
 
-    final (telegramToken, telegramBindings) = _parseTelegram(
+    final telegramToken = _parseTelegram(
       _optionalMap(node, 'telegram', 'access.telegram'),
       env,
     );
+
+    // The declared humans are the single declarative identity source; the
+    // two runtime binding maps are their projection (Q-E.24.2). Bearer-token
+    // secrets are `${ENV}`-expanded; Telegram user ids are verbatim.
+    final users = _parseUsers(
+      _optionalList(node, 'users', 'access.users'),
+      env,
+    );
+    final (bearerBindings, telegramBindings) = _projectUserBindings(users);
 
     final rateLimit = _parseRateLimit(
       _requireMap(node, 'rateLimit', 'access.rateLimit'),
@@ -184,6 +199,7 @@ abstract final class AccessConfigLoader {
       openAiPort: port,
       openAiBasePath: basePath,
       telegramBotToken: telegramToken,
+      users: users,
       bearerTokenBindings: bearerBindings,
       telegramUserIdBindings: telegramBindings,
       rateLimitPolicy: rateLimit,
@@ -196,14 +212,14 @@ abstract final class AccessConfigLoader {
     );
   }
 
-  /// Parses `access.openai` → (port, basePath, bearer bindings).
-  static (int, String, Map<String, IdentityBinding>) _parseOpenAi(
-    YamlMap node,
-    Map<String, String> env,
-  ) {
+  /// Parses `access.openai` → (port, basePath).
+  ///
+  /// Identity now lives under `access.users` (Q-E.24.2), so this section
+  /// carries only the channel transport config.
+  static (int, String) _parseOpenAi(YamlMap node) {
     _rejectUnknownKeys(
       node,
-      const <String>{'port', 'basePath', 'bearerTokens'},
+      const <String>{'port', 'basePath'},
       'access.openai',
     );
     final port = _requireInt(node, 'port', 'access.openai.port');
@@ -224,24 +240,21 @@ abstract final class AccessConfigLoader {
         '(got "$basePath").',
       );
     }
-    final bearer = _parseBindings(
-      _optionalMap(node, 'bearerTokens', 'access.openai.bearerTokens'),
-      env,
-      'access.openai.bearerTokens',
-      expandKey: true,
-    );
-    return (port, basePath, bearer);
+    return (port, basePath);
   }
 
-  /// Parses `access.telegram` → (bot token, user bindings).
-  static (String?, Map<String, IdentityBinding>) _parseTelegram(
+  /// Parses `access.telegram` → bot token.
+  ///
+  /// The whitelist now lives under `access.users` (Q-E.24.2), so this
+  /// section carries only the bot token.
+  static String? _parseTelegram(
     YamlMap? node,
     Map<String, String> env,
   ) {
-    if (node == null) return (null, const <String, IdentityBinding>{});
+    if (node == null) return null;
     _rejectUnknownKeys(
       node,
-      const <String>{'botToken', 'users'},
+      const <String>{'botToken'},
       'access.telegram',
     );
     String? token = _optionalString(
@@ -257,75 +270,54 @@ abstract final class AccessConfigLoader {
         );
       }
     }
-    final users = _parseBindings(
-      _optionalMap(node, 'users', 'access.telegram.users'),
-      env,
-      'access.telegram.users',
-      expandKey: false,
-    );
-    return (token, users);
+    return token;
   }
 
-  /// Parses a `key → binding` map (bearer tokens or Telegram user ids).
+  /// Parses `access.users` → the declared humans (Q-E.24.2).
   ///
-  /// When [expandKey] is true the key is `${ENV}`-expanded (bearer-token
-  /// secrets); otherwise it is used verbatim (Telegram user ids are not
-  /// secrets).
-  static Map<String, IdentityBinding> _parseBindings(
-    YamlMap? node,
+  /// Each list entry is one [AccessUser]: a stable `id` (the `principalId`),
+  /// the human facts, and the per-channel credentials. The list is the
+  /// single declarative identity source; [_projectUserBindings] turns it into
+  /// the two runtime binding maps the resolvers consume.
+  static List<AccessUser> _parseUsers(
+    YamlList? node,
     Map<String, String> env,
-    String path, {
-    required bool expandKey,
-  }) {
-    if (node == null) return const <String, IdentityBinding>{};
-    final result = <String, IdentityBinding>{};
-    for (final keyDyn in node.keys) {
-      if (keyDyn is! String) {
+  ) {
+    if (node == null) return const <AccessUser>[];
+    final users = <AccessUser>[];
+    for (var i = 0; i < node.length; i++) {
+      final entry = node[i];
+      if (entry is! YamlMap) {
         throw AccessConfigException(
-          '$path keys must be strings (got ${keyDyn.runtimeType}).',
+          'access.users[$i] must be a map (got ${entry.runtimeType}).',
         );
       }
-      final rawKey = keyDyn;
-      final key = expandKey ? _expandEnv(rawKey, env, '$path key') : rawKey;
-      if (key.isEmpty) {
-        throw AccessConfigException('$path keys must be non-empty.');
-      }
-      final entryDyn = node[rawKey];
-      if (entryDyn is! YamlMap) {
-        throw AccessConfigException(
-          '$path["$rawKey"] must be a map (got ${entryDyn.runtimeType}).',
-        );
-      }
-      if (result.containsKey(key)) {
-        throw AccessConfigException(
-          '$path has a duplicate binding key "$key" after `\${ENV}` '
-          'expansion.',
-        );
-      }
-      result[key] = _parseBinding(entryDyn, '$path["$rawKey"]');
+      users.add(_parseUser(entry, env, 'access.users[$i]'));
     }
-    return result;
+    return users;
   }
 
-  static IdentityBinding _parseBinding(YamlMap node, String path) {
+  static AccessUser _parseUser(
+    YamlMap node,
+    Map<String, String> env,
+    String path,
+  ) {
     _rejectUnknownKeys(
       node,
       const <String>{
-        'principalId',
+        'id',
         'username',
         'numericId',
         'displayName',
         'claims',
+        'openaiBearerTokens',
+        'telegramUserIds',
       },
       path,
     );
-    final principalId = _requireString(
-      node,
-      'principalId',
-      '$path.principalId',
-    );
-    if (principalId.isEmpty) {
-      throw AccessConfigException('$path.principalId must be non-empty.');
+    final id = _requireString(node, 'id', '$path.id');
+    if (id.isEmpty) {
+      throw AccessConfigException('$path.id must be non-empty.');
     }
     final username = _optionalString(node, 'username', '$path.username');
     final numericId =
@@ -335,25 +327,87 @@ abstract final class AccessConfigLoader {
       'displayName',
       '$path.displayName',
     );
-    final claimsNode = _optionalMap(node, 'claims', '$path.claims');
-    final claims = <String, Object?>{};
-    if (claimsNode != null) {
-      for (final ck in claimsNode.keys) {
-        if (ck is! String) {
-          throw AccessConfigException(
-            '$path.claims keys must be strings (got ${ck.runtimeType}).',
-          );
-        }
-        claims[ck] = _unwrapScalar(claimsNode[ck]);
-      }
-    }
-    return IdentityBinding(
-      principalId: principalId,
-      username: username,
-      numericId: numericId,
-      displayName: displayName,
-      claims: claims,
+    final claims = _parseClaims(
+      _optionalMap(node, 'claims', '$path.claims'),
+      '$path.claims',
     );
+    // Bearer tokens are secrets → `${ENV}`-expanded; Telegram user ids are
+    // public → verbatim (Q-E.49.2: the whitelist key is the identity binding).
+    final bearerTokens = _parseStringList(
+      _optionalList(node, 'openaiBearerTokens', '$path.openaiBearerTokens'),
+      '$path.openaiBearerTokens',
+      env: env,
+      expandEntries: true,
+    );
+    final telegramIds = _parseStringList(
+      _optionalList(node, 'telegramUserIds', '$path.telegramUserIds'),
+      '$path.telegramUserIds',
+    );
+    try {
+      return AccessUser(
+        id: id,
+        username: username,
+        numericId: numericId,
+        displayName: displayName,
+        claims: claims,
+        openAiBearerTokens: bearerTokens,
+        telegramUserIds: telegramIds,
+      );
+    } on ArgumentError catch (e) {
+      throw AccessConfigException('$path: ${e.message ?? e.toString()}');
+    }
+  }
+
+  /// Projects the declared [users] onto the two runtime binding maps,
+  /// translating the projection's [ArgumentError] (a shared user id / shared
+  /// credential) into a path-prefixed [AccessConfigException].
+  static (Map<String, IdentityBinding>, Map<String, IdentityBinding>)
+      _projectUserBindings(List<AccessUser> users) {
+    try {
+      return AccessConfig.bindingsForUsers(users);
+    } on ArgumentError catch (e) {
+      throw AccessConfigException('access.users: ${e.message ?? e.toString()}');
+    }
+  }
+
+  /// Parses a list of strings, optionally `${ENV}`-expanding each entry.
+  static List<String> _parseStringList(
+    YamlList? node,
+    String path, {
+    Map<String, String> env = const {},
+    bool expandEntries = false,
+  }) {
+    if (node == null) return const <String>[];
+    final result = <String>[];
+    for (var i = 0; i < node.length; i++) {
+      final v = node[i];
+      if (v is! String) {
+        throw AccessConfigException(
+          '$path[$i] must be a string (got ${v.runtimeType}).',
+        );
+      }
+      final entry = expandEntries ? _expandEnv(v, env, '$path[$i]') : v;
+      if (entry.isEmpty) {
+        throw AccessConfigException('$path[$i] must be non-empty.');
+      }
+      result.add(entry);
+    }
+    return result;
+  }
+
+  /// Parses an opaque, flat-scalar claims map.
+  static Map<String, Object?> _parseClaims(YamlMap? node, String path) {
+    final claims = <String, Object?>{};
+    if (node == null) return claims;
+    for (final ck in node.keys) {
+      if (ck is! String) {
+        throw AccessConfigException(
+          '$path keys must be strings (got ${ck.runtimeType}).',
+        );
+      }
+      claims[ck] = _unwrapScalar(node[ck]);
+    }
+    return claims;
   }
 
   static RateLimitPolicy _parseRateLimit(YamlMap node) {

@@ -9,9 +9,11 @@
 //
 // - E.44 ✅ — `AccessConfig` (`access_config.dart`): the typed `access:`
 //   section of the whole-process YAML — the OpenAI adapter port + base
-//   path, the Telegram bot token + the user-id whitelist (expressed as
-//   identity bindings, one source of truth), the OpenAI bearer-token
-//   bindings, the rate-limit / daily-quota / anchor-signature policies,
+//   path, the Telegram bot token, the `users:` block (one human declared
+//   once: id + display + claims + OpenAI bearer tokens + Telegram user
+//   ids, projected onto the per-channel identity bindings so one person
+//   resolves to one `principalId` across both channels — Q-E.24.2 /
+//   Q-E.49.2), the rate-limit / daily-quota / anchor-signature policies,
 //   the persona vocabulary, the session window, and the embedding-cache
 //   TTL. A pure data holder — it builds no runtime collaborator; the boot
 //   root (E.45) maps it onto `BrainAccessConfig`, injecting the runtime

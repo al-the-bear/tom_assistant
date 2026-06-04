@@ -1,28 +1,36 @@
 // E.44 — whole-process YAML config loader conformance tests.
 //
-// What this file locks (proto spec § 11.4 / § 13.1; AC-11 / AC-12):
+// What this file locks (proto spec § 11.4 / § 13.1; AC-11 / AC-12;
+// Q-E.24.2):
 //
 //   1. A well-formed `access:` section roundtrips into a typed
 //      `AccessConfig` with every documented field — OpenAI port + base
-//      path, Telegram bot token + whitelist, bearer + Telegram identity
-//      bindings, the rate-limit / quota / anchor policies, the persona
-//      vocabulary, the session window, and the embedding-cache TTL.
-//   2. The single whole-process file may carry the four sibling sections
+//      path, Telegram bot token, the declared `users` block, the bearer +
+//      Telegram identity bindings *derived from those users*, the
+//      rate-limit / quota / anchor policies, the persona vocabulary, the
+//      session window, and the embedding-cache TTL.
+//   2. The `users` block is the single declarative identity source: one
+//      human, one `principalId`, with credentials across both channels —
+//      the same person's OpenAI and Telegram credentials resolve to one
+//      identity (Q-E.24.2).
+//   3. The single whole-process file may carry the four sibling sections
 //      (`substrate:` / `memory:` / `engine:` / `dispatcher:`) alongside
 //      `access:`; the access loader reads only `access:` and ignores the
 //      rest — proving the "one file feeds all five loaders" structure.
-//   3. Defaults: an omitted `basePath` → `/v1`; omitted `telegram` → no
-//      channel; omitted `anchor` → disabled screen; omitted `personas` →
-//      `null` (the default vocabulary); omitted `session` → the canonical
-//      `defaultMaxWindowTurns`; omitted `classifier` → 5-minute TTL.
-//   4. Forward-only schema (AC-12): an unknown top-level section, and an
-//      unknown key *within* `access:` (or any subsection), is rejected at
-//      load — never silently ignored.
-//   5. `${ENV}` substitution expands bearer-token keys and the Telegram
-//      bot token from the supplied env map; an undefined token is a loud
-//      error; the loader never reads `Platform.environment` itself.
-//   6. Required-field and type errors carry the dotted key path.
-//   7. The whole surface reaches through the package barrel.
+//   4. Defaults: an omitted `basePath` → `/v1`; omitted `telegram` → no
+//      channel; omitted `users` → no bindings; omitted `anchor` → disabled
+//      screen; omitted `personas` → `null` (the default vocabulary);
+//      omitted `session` → the canonical `defaultMaxWindowTurns`; omitted
+//      `classifier` → 5-minute TTL.
+//   5. Forward-only schema (AC-12): an unknown top-level section, and an
+//      unknown key *within* `access:` (or any subsection / user entry), is
+//      rejected at load — never silently ignored.
+//   6. `${ENV}` substitution expands each user's OpenAI bearer-token entries
+//      and the Telegram bot token from the supplied env map; an undefined
+//      token is a loud error; the loader never reads `Platform.environment`
+//      itself; Telegram user ids are verbatim.
+//   7. Required-field and type errors carry the dotted key path.
+//   8. The whole surface reaches through the package barrel.
 
 import 'package:test/test.dart';
 import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart';
@@ -43,22 +51,23 @@ access:
   openai:
     port: 8080
     basePath: /v1
-    bearerTokens:
-      "secret-token-alice":
-        principalId: alice
-        username: alice_login
-        displayName: Alice
-        numericId: 7
-        claims:
-          role: user
-          tier: 2
   telegram:
     botToken: "bot-123:abc"
-    users:
-      "12345":
-        principalId: alice
-      "67890":
-        principalId: bob
+  users:
+    - id: alice
+      username: alice_login
+      displayName: Alice
+      numericId: 7
+      claims:
+        role: user
+        tier: 2
+      openaiBearerTokens:
+        - "secret-token-alice"
+      telegramUserIds:
+        - "12345"
+    - id: bob
+      telegramUserIds:
+        - "67890"
   rateLimit:
     capacity: 30
     refillTokens: 30
@@ -104,7 +113,22 @@ void main() {
       expect(config.openAiBasePath, '/v1');
     });
 
-    test('parses the bearer-token identity bindings', () {
+    test('parses the declared users (Q-E.24.2)', () {
+      expect(config.users.map((u) => u.id), ['alice', 'bob']);
+      final alice = config.users.first;
+      expect(alice.username, 'alice_login');
+      expect(alice.displayName, 'Alice');
+      expect(alice.numericId, 7);
+      expect(alice.claims['role'], 'user');
+      expect(alice.claims['tier'], 2);
+      expect(alice.openAiBearerTokens, ['secret-token-alice']);
+      expect(alice.telegramUserIds, ['12345']);
+      final bob = config.users[1];
+      expect(bob.openAiBearerTokens, isEmpty);
+      expect(bob.telegramUserIds, ['67890']);
+    });
+
+    test('derives the bearer-token bindings from the users block', () {
       expect(config.bearerTokenBindings.keys, ['secret-token-alice']);
       final binding = config.bearerTokenBindings['secret-token-alice']!;
       expect(binding.principalId, 'alice');
@@ -115,13 +139,27 @@ void main() {
       expect(binding.claims['tier'], 2);
     });
 
-    test('parses the Telegram bot token and the whitelist bindings', () {
+    test('derives the Telegram bindings + whitelist from the users block', () {
       expect(config.telegramBotToken, 'bot-123:abc');
       expect(config.hasTelegram, isTrue);
       expect(config.telegramUserIdBindings.keys, ['12345', '67890']);
       expect(config.telegramUserIdBindings['12345']!.principalId, 'alice');
+      expect(config.telegramUserIdBindings['67890']!.principalId, 'bob');
       // The whitelist is the binding key set (one source of truth).
       expect(config.telegramWhitelist, {'12345', '67890'});
+    });
+
+    test('unifies one human across both channels (Q-E.24.2)', () {
+      // Alice's OpenAI bearer credential and her Telegram credential resolve
+      // to the *same* principal id and the same human facts — the channel
+      // distinction lives in the session key (E.25), not the identity.
+      final viaBearer = config.bearerTokenBindings['secret-token-alice']!;
+      final viaTelegram = config.telegramUserIdBindings['12345']!;
+      expect(viaBearer.principalId, viaTelegram.principalId);
+      expect(viaBearer.username, viaTelegram.username);
+      expect(viaBearer.numericId, viaTelegram.numericId);
+      expect(viaBearer.displayName, viaTelegram.displayName);
+      expect(viaTelegram.claims['tier'], 2);
     });
 
     test('parses the rate-limit policy', () {
@@ -157,6 +195,241 @@ void main() {
     });
   });
 
+  group('E.44 user block (Q-E.24.2)', () {
+    test('a user may have only an OpenAI credential', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: svc
+      openaiBearerTokens: ["sk-svc"]
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.bearerTokenBindings.keys, ['sk-svc']);
+      expect(config.telegramUserIdBindings, isEmpty);
+      expect(config.telegramWhitelist, isEmpty);
+    });
+
+    test('a user may carry several OpenAI bearer tokens', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: alice
+      openaiBearerTokens: ["sk-a1", "sk-a2"]
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.bearerTokenBindings.keys, ['sk-a1', 'sk-a2']);
+      expect(config.bearerTokenBindings['sk-a1']!.principalId, 'alice');
+      expect(config.bearerTokenBindings['sk-a2']!.principalId, 'alice');
+    });
+
+    test('username defaults to the user id when omitted', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: alice
+      openaiBearerTokens: ["sk-a"]
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.bearerTokenBindings['sk-a']!.username, 'alice');
+    });
+
+    test('a user with no credentials is a loud error', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: ghost
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('access.users[0]'),
+              contains('at least one credential')),
+        )),
+      );
+    });
+
+    test('a duplicate user id is rejected', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: alice
+      openaiBearerTokens: ["sk-a"]
+    - id: alice
+      telegramUserIds: ["123"]
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('access.users'), contains('duplicate user id')),
+        )),
+      );
+    });
+
+    test('a bearer token shared by two users is rejected', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: alice
+      openaiBearerTokens: ["sk-shared"]
+    - id: bob
+      openaiBearerTokens: ["sk-shared"]
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('access.users'),
+              contains('shared by two users')),
+        )),
+      );
+    });
+
+    test('a Telegram id shared by two users is rejected', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: alice
+      telegramUserIds: ["999"]
+    - id: bob
+      telegramUserIds: ["999"]
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('access.users'),
+              contains('shared by two users')),
+        )),
+      );
+    });
+
+    test('rejects an unknown key within a user entry', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: alice
+      openaiBearerTokens: ["sk-a"]
+      mystery: 1
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.users[0] has unknown key "mystery"'),
+        )),
+      );
+    });
+
+    test('rejects a non-list users section', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    alice: { openaiBearerTokens: ["sk-a"] }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.users'),
+        )),
+      );
+    });
+
+    test('rejects a non-map user entry', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    - "not-a-map"
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.users[0] must be a map'),
+        )),
+      );
+    });
+
+    test('an empty user id is rejected', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: ""
+      openaiBearerTokens: ["sk-a"]
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.users[0].id must be non-empty'),
+        )),
+      );
+    });
+
+    test('an empty bearer-token entry is rejected', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: alice
+      openaiBearerTokens: [""]
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.users[0].openaiBearerTokens[0] must be non-empty'),
+        )),
+      );
+    });
+  });
+
   group('E.44 defaults', () {
     late AccessConfig config;
 
@@ -175,7 +448,8 @@ void main() {
       expect(config.telegramWhitelist, isEmpty);
     });
 
-    test('no bearer tokens ⇒ empty bindings', () {
+    test('no users section ⇒ no users, empty bindings', () {
+      expect(config.users, isEmpty);
       expect(config.bearerTokenBindings, isEmpty);
     });
 
@@ -324,18 +598,19 @@ access:
   });
 
   group('E.44 \${ENV} substitution', () {
-    test('expands bearer-token keys and the Telegram bot token', () {
+    test('expands user bearer-token entries and the Telegram bot token', () {
       const doc = r'''
 access:
   openai:
     port: 8080
-    bearerTokens:
-      "${ALICE_TOKEN}":
-        principalId: alice
   telegram:
     botToken: "${TG_TOKEN}"
-    users:
-      "111": { principalId: alice }
+  users:
+    - id: alice
+      openaiBearerTokens:
+        - "${ALICE_TOKEN}"
+      telegramUserIds:
+        - "111"
   rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
   quota: { dailyCap: 1 }
 ''';
@@ -355,8 +630,10 @@ access:
 access:
   openai:
     port: 8080
-    bearerTokens:
-      "${MISSING}": { principalId: alice }
+  users:
+    - id: alice
+      openaiBearerTokens:
+        - "${MISSING}"
   rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
   quota: { dailyCap: 1 }
 ''';
@@ -370,13 +647,14 @@ access:
       );
     });
 
-    test('Telegram user ids are NOT env-expanded (verbatim keys)', () {
+    test('Telegram user ids are NOT env-expanded (verbatim)', () {
       const doc = r'''
 access:
   openai: { port: 8080 }
-  telegram:
-    users:
-      "${LITERAL}": { principalId: alice }
+  users:
+    - id: alice
+      telegramUserIds:
+        - "${LITERAL}"
   rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
   quota: { dailyCap: 1 }
 ''';
@@ -549,6 +827,84 @@ access:
       );
       expect(
         () => config.bearerTokenBindings['x'] = IdentityBinding(principalId: 'b'),
+        throwsUnsupportedError,
+      );
+    });
+  });
+
+  group('E.44 AccessUser construction guards (Q-E.24.2)', () {
+    test('rejects an empty id', () {
+      expect(
+        () => AccessUser(id: '', openAiBearerTokens: const ['sk-a']),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects a user with no credentials', () {
+      expect(
+        () => AccessUser(id: 'ghost'),
+        throwsArgumentError,
+      );
+    });
+
+    test('username defaults to the id', () {
+      final user = AccessUser(id: 'alice', telegramUserIds: const ['1']);
+      expect(user.username, 'alice');
+    });
+
+    test('toBinding carries the user facts onto one binding', () {
+      final user = AccessUser(
+        id: 'alice',
+        username: 'alice_login',
+        numericId: 7,
+        displayName: 'Alice',
+        claims: const {'role': 'user'},
+        openAiBearerTokens: const ['sk-a'],
+      );
+      final binding = user.toBinding();
+      expect(binding.principalId, 'alice');
+      expect(binding.username, 'alice_login');
+      expect(binding.numericId, 7);
+      expect(binding.displayName, 'Alice');
+      expect(binding.claims['role'], 'user');
+    });
+
+    test('bindingsForUsers projects credentials across both channels', () {
+      final (bearer, telegram) = AccessConfig.bindingsForUsers([
+        AccessUser(
+          id: 'alice',
+          openAiBearerTokens: const ['sk-a'],
+          telegramUserIds: const ['12345'],
+        ),
+      ]);
+      expect(bearer['sk-a']!.principalId, 'alice');
+      expect(telegram['12345']!.principalId, 'alice');
+    });
+
+    test('bindingsForUsers rejects a shared credential', () {
+      expect(
+        () => AccessConfig.bindingsForUsers([
+          AccessUser(id: 'alice', openAiBearerTokens: const ['sk-x']),
+          AccessUser(id: 'bob', openAiBearerTokens: const ['sk-x']),
+        ]),
+        throwsArgumentError,
+      );
+    });
+
+    test('users list is an unmodifiable defensive copy', () {
+      final config = AccessConfig(
+        openAiPort: 1,
+        rateLimitPolicy: RateLimitPolicy(
+          capacity: 1,
+          refillTokens: 1,
+          refillPeriod: const Duration(seconds: 1),
+        ),
+        dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: 1),
+        anchorPolicy: AnchorPolicy(disallowedSignatures: const []),
+        users: [AccessUser(id: 'a', telegramUserIds: const ['1'])],
+      );
+      expect(
+        () => config.users.add(AccessUser(id: 'b', telegramUserIds: const ['2'])),
         throwsUnsupportedError,
       );
     });

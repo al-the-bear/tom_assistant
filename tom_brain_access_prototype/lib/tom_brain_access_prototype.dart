@@ -385,9 +385,11 @@
 ///   a test supplies a probe. Mounting it on a live port is E.45.
 /// - E.44 ✅ — whole-process YAML config loader (config/): `AccessConfig` is
 ///   the typed `access:` section of the single whole-process YAML file —
-///   OpenAI adapter port + base path, the Telegram bot token + the user-id
-///   whitelist (expressed as identity bindings, one source of truth), the
-///   OpenAI bearer-token bindings, the rate-limit / daily-quota / anchor
+///   OpenAI adapter port + base path, the Telegram bot token, the `users:`
+///   block (each human declared once — id + display + claims + OpenAI bearer
+///   tokens + Telegram user ids — projected onto the per-channel identity
+///   bindings so one person resolves to one `principalId` across both
+///   channels; Q-E.24.2 / Q-E.49.2), the rate-limit / daily-quota / anchor
 ///   policies, the persona vocabulary, the session window, and the
 ///   embedding-cache TTL. `AccessConfigLoader` parses that file the
 ///   `tom_build_base` way (`package:yaml`'s `loadYaml`, dotted-key-path
