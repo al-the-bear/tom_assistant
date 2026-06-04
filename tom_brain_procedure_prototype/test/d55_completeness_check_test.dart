@@ -137,7 +137,7 @@ void main() {
     });
 
     test('a fallback on v1 surfaces — it is never stepped below', () {
-      final floor = ProcedureFallback(
+      final floor = FallbackTried(
         occurredAt: _at,
         procedureId: SystemProcedures.answerWithMemoryV1,
         fromVersion: 1,

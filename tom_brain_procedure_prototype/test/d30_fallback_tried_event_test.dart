@@ -1,10 +1,9 @@
-// D.30 — `ProcedureFallback` event emission tests.
+// D.30 — `FallbackTried` event emission tests.
 //
 // Covers the event the `FallbackExecutor` emits on every fallback-class
-// failure (PE-6, def § 6: "Every fallback emits a `ProcedureFallback`
-// event"):
+// failure (PE-6, def § 6: "Every fallback emits a fallback event"):
 //
-//   - the `ProcedureFallback` event shape — `kind`, `payloadJson`,
+//   - the `FallbackTried` event shape — `kind`, `payloadJson`,
 //     `surfaced`, `toJson` (base-field threading, UTC assertion);
 //   - the executor emits exactly one event per fallback-class failure: a
 //     step-down carries `toVersion` (`surfaced: false`); a fallback-class
@@ -16,6 +15,11 @@
 //   - no sink wired is a no-op (no crash);
 //   - `runId` / `causedBy` thread onto every emitted event, and an injected
 //     clock stamps `occurredAt`.
+//
+// `FallbackTried` is the single fallback event — both the executor's
+// `FallbackEventSink` emission and the closed-taxonomy `DispatcherEvent`
+// variant (the earlier duplicate `ProcedureFallback` + its copy factory were
+// collapsed away, Q-D.30.1 / Q-D.49.2).
 //
 // As in the D.29 tests, the executor's *what-a-version-does* is a synthetic
 // `VersionAttempt`, so these tests stay independent of the engine.
@@ -56,11 +60,11 @@ ProcedureResolver _resolver(String id, List<int> versions) =>
     ProcedureResolver([for (final v in versions) _loaded(id, v)]);
 
 void main() {
-  group('ProcedureFallback event shape', () {
+  group('FallbackTried event shape', () {
     final occurredAt = DateTime.utc(2026, 6, 2, 10, 30);
 
     test('a step-down event carries toVersion and is not surfaced', () {
-      final event = ProcedureFallback(
+      final event = FallbackTried(
         occurredAt: occurredAt,
         runId: 'r_1',
         causedBy: 'ev_0',
@@ -70,7 +74,7 @@ void main() {
         trigger: FallbackTrigger.contractViolation,
       );
       expect(event.surfaced, isFalse);
-      expect(event.kind, 'dispatcher.procedure-fallback');
+      expect(event.kind, 'dispatcher.fallback-tried');
       expect(event.payloadJson(), <String, Object?>{
         'procedureId': 'answer_v',
         'fromVersion': 3,
@@ -81,7 +85,7 @@ void main() {
     });
 
     test('a surfaced event omits toVersion and marks surfaced', () {
-      final event = ProcedureFallback(
+      final event = FallbackTried(
         occurredAt: occurredAt,
         procedureId: 'answer_v',
         fromVersion: 1,
@@ -96,7 +100,7 @@ void main() {
     });
 
     test('toJson threads the base fields and asserts UTC', () {
-      final event = ProcedureFallback(
+      final event = FallbackTried(
         occurredAt: occurredAt,
         runId: 'r_1',
         causedBy: 'ev_0',
@@ -106,7 +110,7 @@ void main() {
         trigger: FallbackTrigger.deadlineExceeded,
       );
       final json = event.toJson();
-      expect(json['kind'], 'dispatcher.procedure-fallback');
+      expect(json['kind'], 'dispatcher.fallback-tried');
       expect(json['occurredAt'], occurredAt.toIso8601String());
       expect(json['runId'], 'r_1');
       expect(json['causedBy'], 'ev_0');
@@ -117,7 +121,7 @@ void main() {
   group('FallbackExecutor emission — single-version chain (prototype shape)',
       () {
     test('a fallback-class failure on v1 emits one surfaced event', () async {
-      final events = <ProcedureFallback>[];
+      final events = <FallbackTried>[];
       final executor = FallbackExecutor(
         _resolver('answer_v', [1]),
         onFallback: events.add,
@@ -138,7 +142,7 @@ void main() {
     });
 
     test('a successful run emits no event', () async {
-      final events = <ProcedureFallback>[];
+      final events = <FallbackTried>[];
       final executor = FallbackExecutor(
         _resolver('answer_v', [1]),
         onFallback: events.add,
@@ -151,7 +155,7 @@ void main() {
     });
 
     test('an environmental failure emits no event', () async {
-      final events = <ProcedureFallback>[];
+      final events = <FallbackTried>[];
       final executor = FallbackExecutor(
         _resolver('answer_v', [1]),
         onFallback: events.add,
@@ -164,7 +168,7 @@ void main() {
     });
 
     test('a non-fallback classified failure emits no event', () async {
-      final events = <ProcedureFallback>[];
+      final events = <FallbackTried>[];
       final executor = FallbackExecutor(
         _resolver('answer_v', [1]),
         onFallback: events.add,
@@ -189,7 +193,7 @@ void main() {
 
   group('FallbackExecutor emission — multi-version chain', () {
     test('each step-down emits a step event; the last surfaces', () async {
-      final events = <ProcedureFallback>[];
+      final events = <FallbackTried>[];
       final executor = FallbackExecutor(
         _resolver('answer_v', [1, 2, 3]),
         onFallback: events.add,
@@ -230,7 +234,7 @@ void main() {
 
     test('a version that succeeds mid-chain emits only the prior step events',
         () async {
-      final events = <ProcedureFallback>[];
+      final events = <FallbackTried>[];
       final executor = FallbackExecutor(
         _resolver('answer_v', [1, 2, 3]),
         onFallback: events.add,
@@ -255,7 +259,7 @@ void main() {
 
     test('an environmental failure on the newest version emits no event',
         () async {
-      final events = <ProcedureFallback>[];
+      final events = <FallbackTried>[];
       final executor = FallbackExecutor(
         _resolver('answer_v', [1, 2, 3]),
         onFallback: events.add,
@@ -270,7 +274,7 @@ void main() {
 
   group('FallbackExecutor emission — base-field threading', () {
     test('runId / causedBy and the injected clock stamp every event', () async {
-      final events = <ProcedureFallback>[];
+      final events = <FallbackTried>[];
       final stamp = DateTime.utc(2026, 6, 2, 12);
       final executor = FallbackExecutor(
         _resolver('answer_v', [1, 2]),

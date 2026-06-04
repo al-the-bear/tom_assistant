@@ -31,29 +31,37 @@
 // `AutomationIdea` push can be built directly on top without re-deriving the
 // chain walk.
 //
-// ── What D.30 adds (this file + `procedure_fallback_event.dart`) ─────
+// ── What D.30 adds (this file + the `FallbackTried` variant) ─────────
 //
-// The `ProcedureFallback` event emission. The executor takes an optional
+// The fallback event emission. The executor takes an optional
 // [FallbackEventSink]; on **every** fallback-class failure (a
-// [FallbackTrigger] fired) it emits one [ProcedureFallback] — `surfaced:
+// [FallbackTrigger] fired) it emits one [FallbackTried] — `surfaced:
 // false` carrying `toVersion` when an older version exists (a step-down),
 // `surfaced: true` with `toVersion: null` when the failing version is the
 // oldest in the chain (the failure surfaces). Non-fallback failures
 // (environmental, or a typed failure outside the four classes) and successes
-// emit nothing. Def § 6: "Every fallback emits a `ProcedureFallback` event."
+// emit nothing. Def § 6: "Every fallback emits a fallback event."
+//
+// [FallbackTried] is the single fallback event — both the executor's
+// `FallbackEventSink` emission here and the closed-taxonomy
+// `DispatcherEvent` variant (it lives in `dispatcher_event.dart`). The
+// earlier working name `ProcedureFallback` and its copy factory were
+// collapsed into the one spec-named event (Q-D.30.1 / Q-D.49.2): a duplicate
+// event with a 1:1 copy factory is a DRY weak point. See the
+// `dispatcher_event.dart` header.
 //
 // ── What D.31 adds (kept out of this file) ──────────────────────────
 //
 // The aggregate sustained-fallback signal lives in
 // `sustained_fallback_monitor.dart`: `SustainedFallbackMonitor` is a windowed
-// counter over the [ProcedureFallback] stream this executor emits — on ≥ 3
-// fallback edges within 24 h for one procedure id it pushes one
+// counter over the [FallbackTried] stream this executor emits — on ≥ 3
+// fallback edges within 24 h for one procedure *version* it pushes one
 // `AutomationIdea: revise procedure X` onto the `automation_ideas` stack. Wire
 // it to this executor via `monitor.asSink` as the `onFallback` sink.
 //
 // In the prototype only `v1` of any procedure exists, so a chain is a
 // singleton and a fallback-class failure on it has nowhere to step: the
-// executor surfaces the failure, but still emits one [ProcedureFallback]
+// executor surfaces the failure, but still emits one [FallbackTried]
 // (`surfaced: true`), so the observability surface is exercised exactly as it
 // will be once multiple versions exist.
 
@@ -64,7 +72,7 @@ import '../d4rt_host/procedure_parse_exception.dart'
     show ProcedureSourceParseException;
 import '../procedure_store/procedure_loader.dart' show LoadedProcedure;
 import '../procedure_store/procedure_resolver.dart' show ProcedureResolver;
-import 'procedure_fallback_event.dart' show ProcedureFallback;
+import 'dispatcher_event.dart' show FallbackTried;
 
 /// The four typed run-failure classes that step the fallback chain down to
 /// an older version (def § 6, spec § 10.4, PE-6).
@@ -131,12 +139,12 @@ typedef FailureClassifier = FallbackTrigger? Function(Object error);
 /// throwing the failure the executor classifies.
 typedef VersionAttempt<T> = Future<T> Function(LoadedProcedure version);
 
-/// Sink the executor calls with each [ProcedureFallback] it emits (D.30).
+/// Sink the executor calls with each [FallbackTried] it emits (D.30).
 ///
 /// Injected into [FallbackExecutor]; the composition root wires it to the
 /// dispatcher's event bus, and the D.31 sustained-fallback counter subscribes
 /// to the same stream. `null` (the default) disables emission.
-typedef FallbackEventSink = void Function(ProcedureFallback event);
+typedef FallbackEventSink = void Function(FallbackTried event);
 
 /// Clock the executor stamps onto every emitted event's `occurredAt` (D.30).
 ///
@@ -302,7 +310,7 @@ final class FallbackOutcome<T> {
 final class FallbackExecutor {
   /// Builds an executor over [resolver]. [classifier] decides which failures
   /// step the chain (default: [defaultFallbackClassifier]). [onFallback], when
-  /// supplied, receives a [ProcedureFallback] on every fallback-class failure
+  /// supplied, receives a [FallbackTried] on every fallback-class failure
   /// (D.30); [clock] stamps those events' `occurredAt` (default: the UTC wall
   /// clock).
   FallbackExecutor(
@@ -320,16 +328,16 @@ final class FallbackExecutor {
   /// Decides which failures step the chain and which surface (PE-6).
   final FailureClassifier classify;
 
-  /// Sink for [ProcedureFallback] events, or `null` to disable emission.
+  /// Sink for [FallbackTried] events, or `null` to disable emission.
   final FallbackEventSink? _onFallback;
 
-  /// Stamps `occurredAt` on every emitted [ProcedureFallback].
+  /// Stamps `occurredAt` on every emitted [FallbackTried].
   final FallbackClock _clock;
 
   /// Walks the fallback chain for [procedureId], attempting each version with
   /// [attempt] until one succeeds or the chain is exhausted / surfaces.
   ///
-  /// [runId] / [causedBy] are threaded onto every emitted [ProcedureFallback]
+  /// [runId] / [causedBy] are threaded onto every emitted [FallbackTried]
   /// so a consumer can stitch the fallback into the run's causal trace.
   ///
   /// Throws [ProcedureNotFound] (from [ProcedureResolver.fallbackChain]) when
@@ -363,7 +371,7 @@ final class FallbackExecutor {
         final trigger = classify(error);
         attempts.add(FallbackAttempt.failed(version, trigger, error));
         final stepsDown = trigger != null && hasOlderVersion;
-        // D.30: every fallback-class failure emits a `ProcedureFallback` —
+        // D.30: every fallback-class failure emits a `FallbackTried` —
         // a step-down carries the next-older `toVersion`; a fallback-class
         // failure on the oldest version surfaces with `toVersion: null`.
         if (trigger != null) {
@@ -395,7 +403,7 @@ final class FallbackExecutor {
     throw StateError('fallback chain walk for "$procedureId" did not return');
   }
 
-  /// Builds and emits one [ProcedureFallback] when a sink is wired (D.30).
+  /// Builds and emits one [FallbackTried] when a sink is wired (D.30).
   void _emitFallback({
     required String procedureId,
     required int fromVersion,
@@ -406,7 +414,7 @@ final class FallbackExecutor {
   }) {
     final sink = _onFallback;
     if (sink == null) return;
-    sink(ProcedureFallback(
+    sink(FallbackTried(
       occurredAt: _clock(),
       runId: runId,
       causedBy: causedBy,

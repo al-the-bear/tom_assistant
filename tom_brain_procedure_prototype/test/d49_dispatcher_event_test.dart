@@ -13,7 +13,6 @@
 //     payload with the null-omission rule.
 //   - `runId` is nullable on the base (access-scoped variants carry none)
 //     but required + non-null on `RunCompleted`.
-//   - `FallbackTried.fromProcedureFallback` preserves every fact.
 //   - `DispatcherEvent` is a closed sealed sum — an exhaustive `switch`
 //     over the seven variants compiles without a default.
 //   - `DispatcherEventBus` fans events out (broadcast), preserves emission
@@ -258,33 +257,6 @@ void main() {
       expect(stepped.surfaced, isFalse);
       expect(stepped.payloadJson()['toVersion'], 2);
       expect(stepped.payloadJson()['surfaced'], false);
-    });
-  });
-
-  group('D.49-4: FallbackTried.fromProcedureFallback', () {
-    test('preserves base fields + every fallback fact', () {
-      final source = ProcedureFallback(
-        occurredAt: _at,
-        runId: 'run_1',
-        causedBy: 'ev_0',
-        procedureId: 'answer_with_memory_v1',
-        fromVersion: 1,
-        toVersion: null,
-        trigger: FallbackTrigger.deadlineExceeded,
-      );
-      final tried = FallbackTried.fromProcedureFallback(source);
-
-      expect(tried.occurredAt, _at);
-      expect(tried.runId, 'run_1');
-      expect(tried.causedBy, 'ev_0');
-      expect(tried.procedureId, 'answer_with_memory_v1');
-      expect(tried.fromVersion, 1);
-      expect(tried.toVersion, isNull);
-      expect(tried.trigger, FallbackTrigger.deadlineExceeded);
-      expect(tried.surfaced, isTrue);
-      // Same facts, dispatcher-stream kind.
-      expect(tried.kind, 'dispatcher.fallback-tried');
-      expect(source.kind, 'dispatcher.procedure-fallback');
     });
   });
 

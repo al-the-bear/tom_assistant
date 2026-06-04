@@ -28,7 +28,7 @@
 //     deadline, and the supervising `PreemptionController`.
 //   - Fallback executor (§ 10.4, PE-6): walks the procedure version
 //     chain on the four typed run-failure classes only; emits
-//     `ProcedureFallback`; pushes an `AutomationIdea` on sustained
+//     `FallbackTried`; pushes an `AutomationIdea` on sustained
 //     fallback.
 //   - Free-time scheduler stub (§ 10.5): exercises the background slot so
 //     preemption can be proven end-to-end.
@@ -182,30 +182,33 @@
 // `FallbackOutcome` so D.31 (sustained-fallback `AutomationIdea` push) builds
 // on top without re-walking the chain. Exported below.
 //
-// D.30 ✅ — `ProcedureFallback` event emission (`procedure_fallback_event.dart`
-// + `fallback_executor.dart`): the executor now takes an optional
-// `FallbackEventSink` (+ injectable `FallbackClock`) and emits one
-// `ProcedureFallback` on **every** fallback-class failure (def § 6: "Every
-// fallback emits a `ProcedureFallback` event"). A step-down carries the
-// next-older `toVersion` (`surfaced: false`); a fallback-class failure on the
-// oldest version surfaces with `toVersion: null` (`surfaced: true`).
-// Non-fallback failures (environmental / outside the four classes) and
-// successes emit nothing. In the prototype the singleton `[v1]` chain always
-// surfaces, but the event still fires — the observability surface is exercised
-// exactly as it will be once multiple versions exist. `run` threads optional
-// `runId` / `causedBy` onto the events. Exported below.
+// D.30 ✅ — `FallbackTried` event emission (`fallback_executor.dart` emits the
+// `DispatcherEvent` variant declared in `dispatcher_event.dart`): the executor
+// takes an optional `FallbackEventSink` (+ injectable `FallbackClock`) and emits
+// one `FallbackTried` on **every** fallback-class failure (def § 6: "Every
+// fallback emits a fallback event"). A step-down carries the next-older
+// `toVersion` (`surfaced: false`); a fallback-class failure on the oldest
+// version surfaces with `toVersion: null` (`surfaced: true`). Non-fallback
+// failures (environmental / outside the four classes) and successes emit
+// nothing. In the prototype the singleton `[v1]` chain always surfaces, but the
+// event still fires — the observability surface is exercised exactly as it will
+// be once multiple versions exist. `run` threads optional `runId` / `causedBy`
+// onto the events. `FallbackTried` is the single fallback event — both the
+// executor's sink emission and the closed-taxonomy `DispatcherEvent` variant
+// (the earlier duplicate working name `ProcedureFallback` + its copy factory
+// were collapsed away, Q-D.30.1 / Q-D.49.2). Exported below.
 //
 // D.31 ✅ — sustained-fallback `AutomationIdea` push
 // (`sustained_fallback_monitor.dart`): the aggregate signal on top of the
-// per-edge `ProcedureFallback` events. `SustainedFallbackMonitor` keeps a
-// sliding 24 h window of fallback edges per procedure id (default threshold 3,
-// both injectable) and, the moment a window first crosses the sustained
-// threshold, pushes exactly one `AutomationIdea: revise procedure X` onto the
-// `automation_ideas` bootstrap stack (def § 6). The push fires once per
-// sustained episode — the 4th, 5th, … edge in the same burst do not re-push;
-// the episode re-arms only once activity subsides below the threshold. Wire it
-// to the executor via `monitor.asSink` (fire-and-forget) or call `record`
-// directly. Exported below.
+// per-edge `FallbackTried` events. `SustainedFallbackMonitor` keeps a
+// sliding 24 h window of fallback edges per failing `(procedure id, version)`
+// (default threshold 3, both injectable) and, the moment a window first crosses
+// the sustained threshold, pushes exactly one `AutomationIdea: revise procedure
+// X` onto the `automation_ideas` bootstrap stack (def § 6: "against a specific
+// version"). The push fires once per sustained episode — the 4th, 5th, … edge in
+// the same burst do not re-push; the episode re-arms only once activity subsides
+// below the threshold. Wire it to the executor via `monitor.asSink`
+// (fire-and-forget) or call `record` directly. Exported below.
 //
 // D.33 ✅ — free-time scheduler stub (`free_time_scheduler.dart`): the
 // `FreeTimeScheduler` kernel that, on each `tick`, picks at most one entry
@@ -238,7 +241,7 @@
 //   - D.26 ✅ — `inflight` integration (dispatcher half); D.27 ✅ —
 //     `recent_runs` integration (dispatcher half); D.28 ✅ — stack-state tests.
 //   - D.29 ✅ — `FallbackExecutor` version-chain walk; D.30 ✅ —
-//     `ProcedureFallback` events; D.31 ✅ — sustained-fallback
+//     `FallbackTried` events; D.31 ✅ — sustained-fallback
 //     `AutomationIdea` push; D.32 ✅ — end-to-end fallback-event +
 //     idea-push-at-threshold tests (`d32_fallback_end_to_end_test.dart`).
 //   - D.33 ✅ — free-time scheduler stub (`free_time_scheduler.dart`);
@@ -363,12 +366,13 @@
 //     the coordinator, and the fallback executor. Mirrors `EngineEvent` /
 //     `EngineEventBus` (C.44). Unlike `EngineEvent`, `runId` stays nullable
 //     (access-scoped variants fire before a run id is minted); only
-//     `RunCompleted` narrows it to required. `FallbackTried` is the
-//     dispatcher-stream representation of the executor's `ProcedureFallback`
-//     (D.30) — build one with `FallbackTried.fromProcedureFallback`. Lives in
-//     this `dispatcher/` folder (beside `PreemptionEvent` / `ProcedureFallback`),
-//     not `config/`, so it reuses the runtime types without a `config/ →
-//     dispatcher/` edge. Exported below.
+//     `RunCompleted` narrows it to required. `FallbackTried` is the single
+//     fallback event — the executor (D.30) emits it directly on its
+//     `FallbackEventSink` and it is also the closed-taxonomy `DispatcherEvent`
+//     variant (the earlier duplicate `ProcedureFallback` + copy factory were
+//     collapsed away, Q-D.30.1 / Q-D.49.2). Lives in this `dispatcher/` folder
+//     (beside `PreemptionEvent`), not `config/`, so it reuses the runtime types
+//     without a `config/ → dispatcher/` edge. Exported below.
 //   - D.50 ✅ — observability conformance (`test/d50_dispatcher_conformance_test.dart`,
 //     tests-only): closes the config-roundtrip half at the config↔runtime
 //     boundary (a round-tripped `DispatcherConfig` drives a `RunCoordinator`
@@ -475,7 +479,6 @@ export 'preemption_event.dart'
         RunSlotEntered,
         RunSlotExited,
         RunSlotOutcome;
-export 'procedure_fallback_event.dart' show ProcedureFallback;
 export 'procedure_selector.dart'
     show ProcedureSelector, SystemProcedures, defaultProcedureRouting;
 export 'run_coordinator.dart'

@@ -631,14 +631,14 @@ void main() {
   });
 
   group('D.53-6 fallback — a fallback-class failure surfaces an event', () {
-    test('a contract violation emits one ProcedureFallback and surfaces',
+    test('a contract violation emits one FallbackTried and surfaces',
         () async {
       // The real fallback chain for the shipped procedure (a v1-only singleton
       // in the prototype), driven behind the dispatcher's schedule stage.
       final resolver = await ProcedureResolver.fromStore(
         DiskProcedureStore(systemDir: Directory('scripts/system')),
       );
-      final events = <ProcedureFallback>[];
+      final events = <FallbackTried>[];
       final executor = FallbackExecutor(
         resolver,
         onFallback: events.add,
@@ -664,7 +664,7 @@ void main() {
 
       expect(events, hasLength(1),
           reason: 'every fallback-class failure emits exactly one '
-              'ProcedureFallback (def § 6)');
+              'FallbackTried (def § 6)');
       final fallback = events.single;
       expect(fallback.procedureId, SystemProcedures.answerWithMemoryV1);
       expect(fallback.trigger, FallbackTrigger.contractViolation);

@@ -3,14 +3,14 @@
 // Plan step D.32 (the dedicated test step for "D.8 — Fallback executor (v0)"):
 // "Tests: fallback events emitted; idea-push triggered exactly at threshold."
 //
-// D.30 unit-tested the `ProcedureFallback` emission against a synthetic sink,
+// D.30 unit-tested the `FallbackTried` emission against a synthetic sink,
 // and D.31 unit-tested the `SustainedFallbackMonitor` window by driving
 // `record` directly. D.32 closes the loop: it wires a real `FallbackExecutor`
 // to a real `SustainedFallbackMonitor` through `monitor.asSink` and proves the
 // two halves *together*, end-to-end —
 //
 //   1. **fallback events emitted** — every fallback-class run-failure that
-//      walks the chain surfaces exactly one `ProcedureFallback` out of the
+//      walks the chain surfaces exactly one `FallbackTried` out of the
 //      executor (a tee sink captures them); successes and environmental
 //      failures emit nothing;
 //   2. **idea-push triggered exactly at threshold** — those emitted events,
@@ -74,7 +74,7 @@ void main() {
   group('D.32 — fallback events emitted + idea-push exactly at threshold', () {
     late _RecordingMemory memory;
     late SustainedFallbackMonitor monitor;
-    late List<ProcedureFallback> emitted;
+    late List<FallbackTried> emitted;
     late FallbackEventSink tee;
     late DateTime base;
     late int emitCount;
@@ -82,7 +82,7 @@ void main() {
     setUp(() {
       memory = _RecordingMemory();
       monitor = SustainedFallbackMonitor(memory);
-      emitted = <ProcedureFallback>[];
+      emitted = <FallbackTried>[];
       base = DateTime.utc(2026, 6, 2, 9);
       emitCount = 0;
       // A tee sink: capture every emitted event (half 1) AND feed the monitor
@@ -127,7 +127,7 @@ void main() {
       }).toList();
     }
 
-    test('a fallback-class run emits exactly one surfaced ProcedureFallback',
+    test('a fallback-class run emits exactly one surfaced FallbackTried',
         () async {
       final outcome = await runOnce(
         'answer_with_memory_v1',
@@ -220,7 +220,7 @@ void main() {
     test('environmental failures emit nothing and never reach the threshold',
         () async {
       // Three environmental failures: a newer version cannot fix the
-      // environment, so none emit a ProcedureFallback and none count.
+      // environment, so none emit a FallbackTried and none count.
       for (var i = 0; i < 3; i++) {
         await runOnce('proc_a', const _EnvError());
         await pumpEventQueue();

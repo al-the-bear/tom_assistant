@@ -1,18 +1,19 @@
 // D.31 — sustained-fallback `AutomationIdea` push tests.
 //
 // Plan step D.31: "Implement the `AutomationIdea: revise procedure X` push to
-// the `automation_ideas` stack on sustained fallback (≥ 3 within 24 h for the
-// same id)." Plan step D.32 (the dedicated test step) asks for "idea-push
-// triggered exactly at threshold"; these tests pin that contract now, on the
-// code D.31 builds.
+// the `automation_ideas` stack on sustained fallback (≥ 3 within 24 h for a
+// specific version)." Plan step D.32 (the dedicated test step) asks for
+// "idea-push triggered exactly at threshold"; these tests pin that contract
+// now, on the code D.31 builds.
 //
 // The `SustainedFallbackMonitor` is a windowed counter over the
-// `ProcedureFallback` stream the `FallbackExecutor` emits (D.30). The suite
-// drives it directly through `record`, controlling each event's `occurredAt`
-// so the 24 h window is exercised deterministically without a wall clock, and
-// reads the live membership of the `automation_ideas` bootstrap stack through
-// a membership-modeling memory double (the same shape the D.28 suite uses for
-// `inflight` / `recent_runs`).
+// `FallbackTried` stream the `FallbackExecutor` emits (D.30), keyed by the
+// failing `(procedure id, version)` pair (def § 6: "against a specific
+// version"). The suite drives it directly through `record`, controlling each
+// event's `occurredAt` so the 24 h window is exercised deterministically
+// without a wall clock, and reads the live membership of the `automation_ideas`
+// bootstrap stack through a membership-modeling memory double (the same shape
+// the D.28 suite uses for `inflight` / `recent_runs`).
 
 import 'dart:async';
 
@@ -29,8 +30,8 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
         TrailOutcome;
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
     show
+        FallbackTried,
         FallbackTrigger,
-        ProcedureFallback,
         SustainedFallbackMonitor,
         automationIdeaNodeType,
         automationIdeasStackName,
@@ -50,17 +51,19 @@ void main() {
       t0 = DateTime.utc(2026, 6, 2, 9);
     });
 
-    /// A surfaced `ProcedureFallback` (the prototype's singleton-`[v1]` shape)
-    /// for [procedureId] at [at], triggered by [trigger].
-    ProcedureFallback fallback(
+    /// A surfaced `FallbackTried` for [procedureId] [version] at [at],
+    /// triggered by [trigger]. Defaults to the prototype's singleton-`[v1]`
+    /// shape; pass [version] to exercise the per-version keying.
+    FallbackTried fallback(
       String procedureId,
       DateTime at, {
+      int version = 1,
       FallbackTrigger trigger = FallbackTrigger.runtimeCrash,
     }) =>
-        ProcedureFallback(
+        FallbackTried(
           occurredAt: at,
           procedureId: procedureId,
-          fromVersion: 1,
+          fromVersion: version,
           toVersion: null,
           trigger: trigger,
         );
@@ -118,7 +121,12 @@ void main() {
       expect(ideas.single.values['description'], 'revise procedure proc_a');
       expect(
         ideas.single.values['motivation'],
-        allOf(contains('proc_a'), contains('3 times'), contains('24h')),
+        allOf(
+          contains('proc_a'),
+          contains('v1'),
+          contains('3 times'),
+          contains('24h'),
+        ),
       );
       // Pushed onto the automation_ideas stack exactly once.
       expect(memory.pushedStacks, <String>[automationIdeasStackName]);
@@ -224,6 +232,57 @@ void main() {
       );
     });
 
+    test('separate versions of one procedure are counted independently',
+        () async {
+      final monitor = SustainedFallbackMonitor(memory);
+
+      // Two versions of the same id fall back interleaved. Each version is its
+      // own sustained-fallback episode (def § 6: "against a specific version"),
+      // so neither reaches the threshold off the other's edges; each fires only
+      // at its own third edge.
+      expect(await monitor.record(fallback('proc_a', t0, version: 1)), isNull);
+      expect(await monitor.record(fallback('proc_a', t0, version: 2)), isNull);
+      expect(
+        await monitor.record(
+            fallback('proc_a', t0.add(const Duration(hours: 1)), version: 1)),
+        isNull,
+      );
+      expect(
+        await monitor.record(
+            fallback('proc_a', t0.add(const Duration(hours: 1)), version: 2)),
+        isNull,
+      );
+      // v1's third edge fires v1's idea; v2 is still at two edges.
+      expect(
+        await monitor.record(
+            fallback('proc_a', t0.add(const Duration(hours: 2)), version: 1)),
+        isNotNull,
+      );
+      expect(await ideaNodes(), hasLength(1));
+
+      // v2's third edge fires a second, independent idea.
+      expect(
+        await monitor.record(
+            fallback('proc_a', t0.add(const Duration(hours: 2)), version: 2)),
+        isNotNull,
+      );
+      expect(await ideaNodes(), hasLength(2));
+
+      // Both ideas name the same procedure; the version distinction lives in the
+      // write provenance (producer / idempotency key) and the motivation.
+      final producers =
+          memory.persistedScopes.map((s) => s.producer).toSet();
+      expect(producers, <String>{
+        'dispatcher:sustained-fallback:proc_a:v1',
+        'dispatcher:sustained-fallback:proc_a:v2',
+      });
+      final motivations = (await ideaNodes())
+          .map((n) => n.values['motivation'] as String)
+          .toList();
+      expect(motivations.any((m) => m.contains('v1')), isTrue);
+      expect(motivations.any((m) => m.contains('v2')), isTrue);
+    });
+
     test('the motivation breakdown reflects the in-window trigger mix',
         () async {
       final monitor = SustainedFallbackMonitor(memory);
@@ -250,10 +309,10 @@ void main() {
 
       final persistScope = memory.persistedScopes.single;
       expect(persistScope.producer,
-          'dispatcher:sustained-fallback:proc_a');
+          'dispatcher:sustained-fallback:proc_a:v1');
       expect(persistScope.idempotencyKey, isNotNull);
       expect(persistScope.idempotencyKey,
-          contains('automation-idea:sustained-fallback:proc_a'));
+          contains('automation-idea:sustained-fallback:proc_a:v1'));
     });
 
     test('a custom threshold and window are honoured', () async {

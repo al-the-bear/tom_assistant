@@ -18,14 +18,13 @@
 // `EngineEvent` lives in `config/` because the engine half placed its
 // observability surface there (C.44). The *dispatcher* half already
 // keeps its event families in this `dispatcher/` folder —
-// `PreemptionEvent` (D.23) and `ProcedureFallback` (D.30) both live
-// here, beside the runtime that emits them. Placing `DispatcherEvent`
-// here keeps every dispatcher event in one module and, crucially, lets
-// the `RunCompleted` / `FallbackTried` variants *reuse* the existing
-// dispatcher runtime types (`RunOutcome`, `RunSlot`, `FallbackTrigger`,
-// `ProcedureFallback`) without a `config/ → dispatcher/` import edge.
-// Spec § 13's "Configuration + observability" grouping is a document
-// section, not a folder mandate. See Q-D.49.1.
+// `PreemptionEvent` (D.23) lives here, beside the runtime that emits it.
+// Placing `DispatcherEvent` here keeps every dispatcher event in one
+// module and, crucially, lets the `RunCompleted` / `FallbackTried`
+// variants *reuse* the existing dispatcher runtime types (`RunOutcome`,
+// `RunSlot`, `FallbackTrigger`) without a `config/ → dispatcher/` import
+// edge. Spec § 13's "Configuration + observability" grouping is a
+// document section, not a folder mandate. See Q-D.49.1.
 //
 // ── `runId` stays nullable (it does NOT narrow like `EngineEvent`) ───
 //
@@ -37,22 +36,21 @@
 // `runId`; the run-scoped variants (`RunCompleted`, `Preempted`,
 // `Resumed`) carry one, the access-scoped variants do not.
 //
-// ── `FallbackTried` vs the existing `ProcedureFallback` ─────────────
+// ── `FallbackTried` is the one fallback event ───────────────────────
 //
-// Spec § 13 names this dispatcher-stream variant `FallbackTried`; the
-// plan (D.30) and definition (§ 6) name the executor's emission
-// `ProcedureFallback` (Q-D.30.1 already flagged the divergence). Both
-// names survive: `ProcedureFallback` is what the `FallbackExecutor`
-// emits on its `FallbackEventSink`; `FallbackTried` is the
-// `DispatcherEvent`-stream representation of the same fact. The
-// composition root translates one to the other with the
-// [FallbackTried.fromProcedureFallback] factory, so the field mapping
-// is written once and locked by a test. See Q-D.49.2.
+// Spec § 13 names this dispatcher-stream variant `FallbackTried`. The
+// plan (D.30) and definition (§ 6) used the working name
+// `ProcedureFallback` for the executor's emission, but a duplicate event
+// with a copy factory is a DRY weak point (Q-D.30.1 / Q-D.49.2): there is
+// now exactly one fallback event, `FallbackTried`, which the
+// `FallbackExecutor` emits directly on its `FallbackEventSink` and which is
+// also the closed-taxonomy `DispatcherEvent` variant. The spec name wins
+// because it matches the past-tense `DispatcherEvent` naming convention
+// and the closed seven-variant taxonomy this file owns.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 
 import 'fallback_executor.dart' show FallbackTrigger;
-import 'procedure_fallback_event.dart' show ProcedureFallback;
 import 'run_coordinator.dart' show RunSlot;
 
 /// Marker / base for every typed dispatcher observability event.
@@ -268,10 +266,10 @@ final class RunCompleted extends DispatcherEvent {
       };
 }
 
-/// A fallback edge fired during a `FallbackExecutor.run` chain walk — the
-/// `DispatcherEvent`-stream representation of a [ProcedureFallback]
-/// (§ 10.4, PE-6; def § 6). Carries the same facts; build one from a
-/// [ProcedureFallback] with [fromProcedureFallback].
+/// A fallback edge fired during a `FallbackExecutor.run` chain walk
+/// (§ 10.4, PE-6; def § 6) — the single fallback observability event, both
+/// the executor's `FallbackEventSink` emission and the closed-taxonomy
+/// `DispatcherEvent` variant.
 final class FallbackTried extends DispatcherEvent {
   /// The procedure id whose version chain was walked.
   final String procedureId;
@@ -296,20 +294,6 @@ final class FallbackTried extends DispatcherEvent {
     required this.toVersion,
     required this.trigger,
   });
-
-  /// Builds a [FallbackTried] from the executor's [ProcedureFallback]
-  /// emission, preserving the base fields and the fallback facts. This is
-  /// the single point where the two event names are bridged (file header).
-  factory FallbackTried.fromProcedureFallback(ProcedureFallback event) =>
-      FallbackTried(
-        occurredAt: event.occurredAt,
-        runId: event.runId,
-        causedBy: event.causedBy,
-        procedureId: event.procedureId,
-        fromVersion: event.fromVersion,
-        toVersion: event.toVersion,
-        trigger: event.trigger,
-      );
 
   /// Whether the failure surfaced to the caller because [fromVersion] was
   /// the oldest version in the chain (no older version to step to).

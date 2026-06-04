@@ -41,10 +41,10 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
         TrailOutcome;
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
     show
+        FallbackTried,
         FallbackTrigger,
         PreemptionController,
         PreemptionEvent,
-        ProcedureFallback,
         RunCoordinator,
         RunSlot,
         RunSlotBusy,
@@ -225,7 +225,7 @@ void main() {
 
     setUp(() => t0 = DateTime.utc(2026, 6, 2, 9));
 
-    ProcedureFallback fallback(DateTime at) => ProcedureFallback(
+    FallbackTried fallback(DateTime at) => FallbackTried(
           occurredAt: at,
           procedureId: 'proc_a',
           fromVersion: 1,
