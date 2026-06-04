@@ -1,35 +1,35 @@
 // Accept-and-route integration tests (Plan step D.17;
-// `tom_brain_procedure_prototype_specification.md` § 10.1–10.2).
+// `tom_brain_procedure_prototype_specification.md` § 10.1–10.2; Q-E.50.1).
 //
-// D.14–D.16 landed the three dispatcher pipeline stages as standalone,
-// independently tested units:
+// D.14–D.16 landed the dispatcher pipeline stages as standalone, independently
+// tested units:
 //
 //   - D.14 — `Dispatcher.accept(Access)` entry surface (admit → observe →
 //     route, over an injected `DispatchRoute`).
-//   - D.15 — `InboundClassifier.classify(Access)` (kind-hint pass-through +
+//   - D.15 — `InboundClassifier.classify(Access)` (the no-hint
 //     `classify_inbound_v1` fallback).
-//   - D.16 — `ProcedureSelector.select(kind)` (`user_prompt` →
-//     `answer_with_memory_v1`; else `UnsupportedProcedureKind`).
+//   - D.16 — `ProcedureSelector` (two doors: `select(kind)` and
+//     `resolveHintedProcedure(id)`).
 //
-// D.17 is the *integration* step the plan calls for: prove the three stages
-// compose correctly through the single entry point. The real coordinator
-// (`RunCoordinator`, D.18) does not exist yet, so the schedule stage is a
-// fake that records the resolved procedure id — exactly the seam the
-// coordinator will fill (Q-D.14.1). The route built here is the
-// `classify → select → schedule` chain `Dispatcher.accept` hands an
-// admitted access to.
+// D.17 is the *integration* step the plan calls for: prove the stages compose
+// correctly through the single entry point, via the one route-resolution
+// function `resolveProcedureId` (Q-E.50.1) that production and these tests
+// share. The real coordinator (`RunCoordinator`, D.18) does not exist yet, so
+// the schedule stage is a fake that records the resolved procedure id —
+// exactly the seam the coordinator will fill (Q-D.14.1).
 //
-// The two contracts D.17 pins (Plan D.17 verbatim):
+// The two contracts D.17 pins:
 //
-//   1. "accept-and-route succeeds for `user_prompt`" — an inbound carrying
-//      a `user_prompt` hint, and an un-hinted inbound (fallback →
-//      `user_prompt`), both reach the schedule stage with
-//      `answer_with_memory_v1`.
-//   2. "unknown kinds rejected loudly" — an inbound carrying any other kind
-//      raises `UnsupportedProcedureKind`, the error propagates *unchanged*
-//      through `accept` (the D.14 failure-propagation contract), the
-//      schedule stage never runs, and nothing is delivered back to the
-//      channel.
+//   1. "accept-and-route succeeds" — an inbound carrying a confident
+//      `answer_with_memory_v1` procedure-id hint (routed directly) and an
+//      un-hinted inbound (fallback → `user_prompt` → `answer_with_memory_v1`)
+//      both reach the schedule stage with `answer_with_memory_v1`.
+//   2. "unknown routes rejected loudly" — an inbound carrying an unknown
+//      procedure-id hint raises `UnknownProcedureHint`; a no-hint inbound the
+//      fallback classifies as an unknown kind raises
+//      `UnsupportedProcedureKind`. Both propagate *unchanged* through `accept`
+//      (the D.14 failure-propagation contract), the schedule stage never
+//      runs, and nothing is delivered back to the channel.
 
 import 'dart:async';
 
@@ -41,7 +41,9 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
         InboundClassifier,
         ProcedureSelector,
         SystemProcedures,
-        UnsupportedProcedureKind;
+        UnknownProcedureHint,
+        UnsupportedProcedureKind,
+        resolveProcedureId;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
         Access,
@@ -53,7 +55,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         ResolvedIdentity,
         Session;
 
-/// Records every chunk a route is asked to deliver, so the unknown-kind
+/// Records every chunk a route is asked to deliver, so the unknown-route
 /// tests can prove a rejected request streams *nothing* back to the channel.
 class _RecordingDeliver {
   final List<OutboundChunk> chunks = <OutboundChunk>[];
@@ -87,42 +89,48 @@ Access _accessWith({
       deliver: deliver ?? (chunk) => Stream<OutboundChunk>.value(chunk),
     );
 
-/// Builds a [Dispatcher] whose route is the real `classify → select →
-/// schedule` chain: the D.15 classifier and D.16 selector wired together,
-/// with [schedule] standing in for the D.18 coordinator.
+/// Builds a [Dispatcher] whose route is the real `resolveProcedureId →
+/// schedule` chain: the D.15 classifier and D.16 selector wired together
+/// through the production route-resolution function, with [schedule] standing
+/// in for the D.18 coordinator.
 ///
-/// This mirrors how the production wiring (D.18+) composes the stages behind
-/// the `DispatchRoute` seam (Q-D.14.1); D.17 exercises that composition
-/// through the single `Dispatcher.accept` entry point.
+/// This mirrors how the production wiring (`BrainProcessBoot._buildRoute`)
+/// composes the stages behind the `DispatchRoute` seam (Q-D.14.1) — it calls
+/// the *same* `resolveProcedureId`, so the two cannot drift.
 Dispatcher _wiredDispatcher({
   required _RecordingSchedule schedule,
   void Function(Access)? onAccepted,
+  InboundClassifier? classifier,
 }) {
-  final classifier = InboundClassifier();
+  final theClassifier = classifier ?? InboundClassifier();
   final selector = ProcedureSelector();
   return Dispatcher(
     onAccepted: onAccepted,
     route: (access) async {
-      final kind = classifier.classify(access);
-      final procedureId = selector.select(kind);
+      final procedureId = resolveProcedureId(
+        access,
+        classifier: theClassifier,
+        selector: selector,
+      );
       await schedule(procedureId, access);
     },
   );
 }
 
 void main() {
-  group('D.17 accept-and-route — succeeds for user_prompt', () {
-    test('an explicit user_prompt hint routes to answer_with_memory_v1',
+  group('D.17 accept-and-route — succeeds', () {
+    test('a confident procedure-id hint routes directly to that procedure',
         () async {
       final schedule = _RecordingSchedule();
       final dispatcher = _wiredDispatcher(schedule: schedule);
 
-      await dispatcher.accept(_accessWith(kindHint: InboundKinds.userPrompt));
+      await dispatcher.accept(
+          _accessWith(kindHint: SystemProcedures.answerWithMemoryV1));
 
       expect(schedule.scheduled,
           <String>[SystemProcedures.answerWithMemoryV1],
-          reason: 'classify (user_prompt) → select (answer_with_memory_v1) → '
-              'schedule, end to end through accept');
+          reason: 'a centroid procedure-id hint routes directly through '
+              'resolveHintedProcedure, end to end through accept');
     });
 
     test('an un-hinted inbound falls back to user_prompt and routes the same',
@@ -138,7 +146,7 @@ void main() {
           <String>[SystemProcedures.answerWithMemoryV1]);
     });
 
-    test('a whitespace-only hint is treated as absent and still routes',
+    test('a whitespace-only hint is treated as absent and falls back',
         () async {
       final schedule = _RecordingSchedule();
       final dispatcher = _wiredDispatcher(schedule: schedule);
@@ -151,16 +159,15 @@ void main() {
               'answer_with_memory_v1');
     });
 
-    test('a padded user_prompt hint is trimmed before selection', () async {
+    test('a padded procedure-id hint is trimmed before routing', () async {
       final schedule = _RecordingSchedule();
       final dispatcher = _wiredDispatcher(schedule: schedule);
 
-      await dispatcher.accept(_accessWith(kindHint: '  user_prompt  '));
+      await dispatcher.accept(_accessWith(kindHint: '  answer_with_memory_v1  '));
 
       expect(schedule.scheduled,
           <String>[SystemProcedures.answerWithMemoryV1],
-          reason: 'the classifier trims the hint so selection sees the '
-              'canonical kind, not an unsupported padded variant');
+          reason: 'the route trims the hint before matching the procedure id');
     });
 
     test('admission is observed before the route schedules', () async {
@@ -171,14 +178,15 @@ void main() {
       final dispatcher = Dispatcher(
         onAccepted: (_) => order.add('observed'),
         route: (access) async {
-          final kind = classifier.classify(access);
-          final id = selector.select(kind);
+          final id = resolveProcedureId(access,
+              classifier: classifier, selector: selector);
           order.add('routed');
           await schedule(id, access);
         },
       );
 
-      await dispatcher.accept(_accessWith(kindHint: InboundKinds.userPrompt));
+      await dispatcher.accept(
+          _accessWith(kindHint: SystemProcedures.answerWithMemoryV1));
 
       expect(order, <String>['observed', 'routed'],
           reason: 'the entry observation fires before any pipeline work');
@@ -191,8 +199,8 @@ void main() {
       final dispatcher = _wiredDispatcher(schedule: schedule);
 
       await dispatcher.accept(_accessWith(text: 'first'));
-      await dispatcher.accept(
-          _accessWith(text: 'second', kindHint: InboundKinds.userPrompt));
+      await dispatcher.accept(_accessWith(
+          text: 'second', kindHint: SystemProcedures.answerWithMemoryV1));
 
       expect(schedule.scheduled, <String>[
         SystemProcedures.answerWithMemoryV1,
@@ -201,49 +209,68 @@ void main() {
     });
   });
 
-  group('D.17 accept-and-route — unknown kinds rejected loudly', () {
-    test('an unknown kind raises UnsupportedProcedureKind through accept',
-        () async {
+  group('D.17 accept-and-route — unknown routes rejected loudly', () {
+    test('an unknown procedure-id hint raises UnknownProcedureHint through '
+        'accept', () async {
       final schedule = _RecordingSchedule();
       final dispatcher = _wiredDispatcher(schedule: schedule);
 
       await expectLater(
         dispatcher.accept(_accessWith(kindHint: 'background_research')),
-        throwsA(isA<UnsupportedProcedureKind>()),
-        reason: 'selection rejects a non-routed kind and the error '
+        throwsA(isA<UnknownProcedureHint>()),
+        reason: 'the hint names no shipped procedure and the error '
             'propagates unchanged through accept (D.14 contract)',
       );
     });
 
-    test('the rejection names the offending kind and the supported set',
-        () async {
+    test('the rejection names the offending hint and the known set', () async {
       final schedule = _RecordingSchedule();
       final dispatcher = _wiredDispatcher(schedule: schedule);
 
       await expectLater(
-        dispatcher.accept(_accessWith(kindHint: 'mystery_kind')),
+        dispatcher.accept(_accessWith(kindHint: 'mystery_procedure')),
         throwsA(
-          isA<UnsupportedProcedureKind>()
-              .having((e) => e.kind, 'kind', 'mystery_kind')
-              .having((e) => e.supportedKinds, 'supportedKinds',
-                  <String>[InboundKinds.userPrompt])
+          isA<UnknownProcedureHint>()
+              .having((e) => e.procedureId, 'procedureId', 'mystery_procedure')
+              .having((e) => e.knownProcedureIds, 'knownProcedureIds',
+                  <String>[SystemProcedures.answerWithMemoryV1])
               .having((e) => e.toString(), 'toString',
-                  contains('mystery_kind')),
+                  contains('mystery_procedure')),
         ),
       );
     });
 
-    test('the schedule stage never runs for an unknown kind', () async {
+    test('a no-hint inbound the fallback maps to an unknown kind raises '
+        'UnsupportedProcedureKind', () async {
+      final schedule = _RecordingSchedule();
+      // The no-hint door: a fallback emitting a kind the selector cannot map.
+      final dispatcher = _wiredDispatcher(
+        schedule: schedule,
+        classifier: InboundClassifier(fallback: (_) => 'mystery_kind'),
+      );
+
+      await expectLater(
+        dispatcher.accept(_accessWith()),
+        throwsA(
+          isA<UnsupportedProcedureKind>()
+              .having((e) => e.kind, 'kind', 'mystery_kind')
+              .having((e) => e.supportedKinds, 'supportedKinds',
+                  <String>[InboundKinds.userPrompt]),
+        ),
+      );
+    });
+
+    test('the schedule stage never runs for an unknown hint', () async {
       final schedule = _RecordingSchedule();
       final dispatcher = _wiredDispatcher(schedule: schedule);
 
       await expectLater(
-        dispatcher.accept(_accessWith(kindHint: 'unsupported')),
-        throwsA(isA<UnsupportedProcedureKind>()),
+        dispatcher.accept(_accessWith(kindHint: 'unsupported_procedure')),
+        throwsA(isA<UnknownProcedureHint>()),
       );
 
       expect(schedule.scheduled, isEmpty,
-          reason: 'rejection happens at selection, before scheduling');
+          reason: 'rejection happens at routing, before scheduling');
     });
 
     test('a rejected request streams nothing back to the channel', () async {
@@ -252,16 +279,16 @@ void main() {
       final dispatcher = _wiredDispatcher(schedule: schedule);
 
       await expectLater(
-        dispatcher.accept(
-            _accessWith(kindHint: 'unsupported', deliver: deliver.call)),
-        throwsA(isA<UnsupportedProcedureKind>()),
+        dispatcher.accept(_accessWith(
+            kindHint: 'unsupported_procedure', deliver: deliver.call)),
+        throwsA(isA<UnknownProcedureHint>()),
       );
 
       expect(deliver.chunks, isEmpty,
           reason: 'a loud rejection delivers no answer to the channel');
     });
 
-    test('admission is still observed even when the kind is rejected',
+    test('admission is still observed even when the route is rejected',
         () async {
       final observed = <Access>[];
       final schedule = _RecordingSchedule();
@@ -270,15 +297,15 @@ void main() {
       final dispatcher = Dispatcher(
         onAccepted: observed.add,
         route: (access) async {
-          final kind = classifier.classify(access);
-          final id = selector.select(kind);
+          final id = resolveProcedureId(access,
+              classifier: classifier, selector: selector);
           await schedule(id, access);
         },
       );
 
       await expectLater(
-        dispatcher.accept(_accessWith(kindHint: 'unsupported')),
-        throwsA(isA<UnsupportedProcedureKind>()),
+        dispatcher.accept(_accessWith(kindHint: 'unsupported_procedure')),
+        throwsA(isA<UnknownProcedureHint>()),
       );
 
       expect(observed, hasLength(1),

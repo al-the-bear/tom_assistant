@@ -63,7 +63,6 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         Access,
         DeliverCallback,
         EdgeId,
-        InboundKinds,
         InboundRequest,
         NodeId,
         OutboundChunk,
@@ -422,7 +421,8 @@ final class _ContractViolation implements Exception, ClassifiedFailure {
 
 Access _accessWith({
   String text = 'what is a quasar?',
-  String? kindHint = InboundKinds.userPrompt,
+  // A confident centroid hint names the procedure id to run (Q-E.50.1).
+  String? kindHint = SystemProcedures.answerWithMemoryV1,
   DeliverCallback? deliver,
 }) =>
     Access(
@@ -471,18 +471,21 @@ void main() {
     });
   });
 
-  group('D.53-2 unknown procedure kind — rejected loudly through accept', () {
-    test('a non-routed kind raises UnsupportedProcedureKind through accept',
-        () async {
-      // The real classify → select pipeline behind the entry surface, with a
-      // schedule stage that records whether it ever ran.
+  group('D.53-2 unknown procedure-id hint — rejected loudly through accept',
+      () {
+    test('an unknown procedure-id hint raises UnknownProcedureHint through '
+        'accept', () async {
+      // The real resolveProcedureId pipeline behind the entry surface, with a
+      // schedule stage that records whether it ever ran. A confident centroid
+      // hint names a procedure id (Q-E.50.1); one naming no shipped procedure
+      // is rejected loudly.
       final scheduled = <String>[];
       final classifier = InboundClassifier();
       final selector = ProcedureSelector();
       final dispatcher = Dispatcher(
         route: (access) async {
-          final kind = classifier.classify(access);
-          final id = selector.select(kind);
+          final id = resolveProcedureId(access,
+              classifier: classifier, selector: selector);
           scheduled.add(id);
         },
       );
@@ -490,16 +493,17 @@ void main() {
       await expectLater(
         dispatcher.accept(_accessWith(kindHint: 'background_research')),
         throwsA(
-          isA<UnsupportedProcedureKind>()
-              .having((e) => e.kind, 'kind', 'background_research')
-              .having((e) => e.supportedKinds, 'supportedKinds',
-                  <String>[InboundKinds.userPrompt]),
+          isA<UnknownProcedureHint>()
+              .having(
+                  (e) => e.procedureId, 'procedureId', 'background_research')
+              .having((e) => e.knownProcedureIds, 'knownProcedureIds',
+                  <String>[SystemProcedures.answerWithMemoryV1]),
         ),
-        reason: 'selection rejects the kind and the error propagates unchanged '
-            'through accept (the D.14 failure-propagation contract)',
+        reason: 'the hint names no shipped procedure and the error propagates '
+            'unchanged through accept (the D.14 failure-propagation contract)',
       );
       expect(scheduled, isEmpty,
-          reason: 'rejection happens at selection, before scheduling');
+          reason: 'rejection happens at routing, before scheduling');
     });
   });
 

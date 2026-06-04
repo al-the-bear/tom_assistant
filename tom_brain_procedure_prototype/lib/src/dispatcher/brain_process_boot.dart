@@ -69,6 +69,7 @@ import '../procedure_store/procedure_resolver.dart';
 import 'dispatcher_entry.dart';
 import 'inbound_classifier.dart';
 import 'memory_provisioning.dart';
+import 'procedure_routing.dart';
 import 'procedure_selector.dart';
 import 'run_coordinator.dart';
 
@@ -528,10 +529,12 @@ abstract final class BrainProcessBoot {
   /// Builds the `classify → select → schedule` route the [Dispatcher] hands
   /// each admitted [Access] to.
   ///
-  /// The route classifies the inbound kind (kind-hint pass-through, else the
-  /// `classify_inbound_v1` stub, D.15), selects the procedure id
+  /// The route resolves the procedure id (`resolveProcedureId`, Q-E.50.1): a
+  /// confident centroid hint on `access.envelope.kindHint` routes directly to
+  /// the procedure (`UnknownProcedureHint` if it names none), else the
+  /// `classify_inbound_v1` stub (D.15) produces a kind that selection maps
   /// (`user_prompt` → `answer_with_memory_v1`, else `UnsupportedProcedureKind`,
-  /// D.16), and schedules the run on the foreground slot of the shared
+  /// D.16). It then schedules the run on the foreground slot of the shared
   /// [coordinator] (D.18). The procedure reads the inbound prompt off the
   /// `text` argument.
   ///
@@ -555,9 +558,15 @@ abstract final class BrainProcessBoot {
     required ProcedureEngine engine,
   }) {
     return (Access access) async {
-      final kind = classifier.classify(access);
-      // `UnsupportedProcedureKind` propagates unchanged through accept (D.16).
-      final procedureId = selector.select(kind);
+      // A confident centroid hint routes directly to its procedure; a no-hint
+      // inbound falls back through classify → select (Q-E.50.1). Either
+      // failure (`UnknownProcedureHint` / `UnsupportedProcedureKind`)
+      // propagates unchanged through accept (D.16).
+      final procedureId = resolveProcedureId(
+        access,
+        classifier: classifier,
+        selector: selector,
+      );
 
       // The per-run outbound channel (P1.3 #8): each delta the run streams is
       // delivered as a non-final chunk and drained for backpressure so a

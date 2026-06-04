@@ -13,9 +13,25 @@
 // of procedures the prototype actually ships — the boundary at which an
 // unanticipated kind fails loudly (Q-D.15.1) instead of being silently
 // dropped or guessed.
+//
+// The selector owns *two* doors into the same closed procedure set
+// (Q-E.50.1):
+//
+//   - [ProcedureSelector.select] — the **no-hint** door. The fallback
+//     classifier (D.15) emits an inbound *kind*; this maps kind → procedure
+//     id (`user_prompt` → `answer_with_memory_v1`), rejecting an unknown kind
+//     with `UnsupportedProcedureKind`.
+//   - [ProcedureSelector.resolveHintedProcedure] — the **confident-hint**
+//     door. The Phase-E heuristic classifier (E.33) already chose a procedure
+//     (memory's centroid `bestMatch`), attached as `Access.envelope.kindHint`;
+//     this validates that *procedure id* against the shipped set, rejecting an
+//     unknown one with `UnknownProcedureHint`. The kind → procedure map is
+//     **not** consulted — a centroid hint names the procedure to run, not a
+//     kind, so it survives the moment a second procedure exists.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show InboundKinds;
 
+import 'unknown_procedure_hint.dart';
 import 'unsupported_procedure_kind.dart';
 
 /// Well-known system-procedure ids the dispatcher selects.
@@ -64,6 +80,16 @@ final class ProcedureSelector {
   /// caller (or a trail entry) can report the accepted set.
   List<String> get supportedKinds => List<String>.unmodifiable(_routing.keys);
 
+  /// The procedure ids this selector recognises, in first-seen order and
+  /// de-duplicated (several kinds may route to one procedure).
+  ///
+  /// The accepted set for [resolveHintedProcedure]: a confident centroid hint
+  /// (E.33) is routed only if it names one of these. Distinct from
+  /// [supportedKinds] — kinds are the classifier's vocabulary, procedure ids
+  /// are the engine's (Q-E.50.1).
+  List<String> get knownProcedureIds =>
+      List<String>.unmodifiable(_routing.values.toSet());
+
   /// Resolves [kind] to the procedure id to run.
   ///
   /// For the prototype `user_prompt` → `answer_with_memory_v1`. Any other
@@ -71,6 +97,11 @@ final class ProcedureSelector {
   /// loudly, never silently. The thrown error names the offending kind and
   /// the supported set, and (per the D.14 contract) propagates unchanged
   /// through `Dispatcher.accept`.
+  ///
+  /// This is the **no-hint** door: it is reached only when the inbound
+  /// carried no confident centroid hint and the fallback classifier (D.15)
+  /// produced a kind. A confident hint routes through
+  /// [resolveHintedProcedure] instead, bypassing this kind → procedure map.
   String select(String kind) {
     final procedureId = _routing[kind];
     if (procedureId == null) {
@@ -80,5 +111,29 @@ final class ProcedureSelector {
       );
     }
     return procedureId;
+  }
+
+  /// Resolves a confident kind-hint that already names a *procedure id*
+  /// (Q-E.50.1).
+  ///
+  /// The Phase-E heuristic classifier (E.33) attaches memory's centroid
+  /// `bestMatch` — a procedure id, not an inbound kind — as
+  /// `Access.envelope.kindHint`. When confident, the dispatcher routes it
+  /// directly: this trims [procedureId] and returns it if it names a shipped
+  /// procedure ([knownProcedureIds]). The kind → procedure map is **not**
+  /// consulted — a procedure-id hint is already the routing target.
+  ///
+  /// A hint that names no shipped procedure (a centroid/classifier drift) is
+  /// rejected with [UnknownProcedureHint] — loudly, never silently — and the
+  /// error propagates unchanged through `Dispatcher.accept` (D.14).
+  String resolveHintedProcedure(String procedureId) {
+    final trimmed = procedureId.trim();
+    if (!_routing.values.contains(trimmed)) {
+      throw UnknownProcedureHint(
+        procedureId: trimmed,
+        knownProcedureIds: knownProcedureIds,
+      );
+    }
+    return trimmed;
   }
 }

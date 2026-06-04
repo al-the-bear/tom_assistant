@@ -1,13 +1,15 @@
-// Inbound-classifier tests (Plan step D.15; spec § 10.2).
+// Inbound-classifier tests (Plan step D.15; spec § 10.2; Q-E.50.1).
 //
-// D.15 delivers `InboundClassifier.classify(Access)` — stage two of the
-// dispatcher's `accept → classify → select → schedule` pipeline. These
-// tests pin the classifier's one decision in isolation:
+// D.15 delivers `InboundClassifier.classify(Access)` — the *no-hint* branch
+// of stage two of the dispatcher's `accept → classify → select → schedule`
+// pipeline. After Q-E.50.1 the confident-hint branch is no longer this
+// classifier's concern: the route (`resolveProcedureId`) routes a procedure-id
+// hint directly. So the classifier owns exactly one decision — run the
+// injected fallback (`classify_inbound_v1` by default). These tests pin that:
 //
-//   1. Kind-hint pass-through: a non-blank `envelope.kindHint` is accepted
-//      verbatim (trimmed), and the fallback is not consulted.
-//   2. Fallback: an absent or whitespace-only hint routes to
-//      `classify_inbound_v1`, which for the prototype returns `user_prompt`.
+//   1. `classify` always delegates to the fallback (it never inspects the
+//      hint — a present hint does not short-circuit the fallback here).
+//   2. The fallback receives the access unchanged; its verdict is returned.
 //   3. The classifier never reads the prompt body.
 
 import 'dart:async';
@@ -32,64 +34,39 @@ Access _accessWith({String text = 'what is the time?', String? kindHint}) =>
     );
 
 void main() {
-  group('D.15 classifier — kind-hint pass-through', () {
-    test('accepts a pre-filled kind-hint verbatim', () {
-      final classifier = InboundClassifier(
-        fallback: (_) => fail('fallback must not run when a hint is present'),
-      );
-
-      expect(
-        classifier.classify(_accessWith(kindHint: 'user_prompt')),
-        'user_prompt',
-      );
-    });
-
-    test('passes through an arbitrary (future) kind-hint unchanged', () {
-      // The real classifier emits kinds the prototype does not anticipate;
-      // the dispatcher must not narrow them to a closed set here.
-      final classifier = InboundClassifier(
-        fallback: (_) => fail('fallback must not run when a hint is present'),
-      );
-
-      expect(
-        classifier.classify(_accessWith(kindHint: 'background_research')),
-        'background_research',
-      );
-    });
-
-    test('trims surrounding whitespace off a present hint', () {
-      final classifier = InboundClassifier(fallback: (_) => 'should-not-run');
-
-      expect(
-        classifier.classify(_accessWith(kindHint: '  user_prompt\n')),
-        'user_prompt',
-      );
-    });
-  });
-
-  group('D.15 classifier — fallback', () {
-    test('falls back to classify_inbound_v1 when no hint is present', () {
+  group('D.15 classifier — always runs the no-hint fallback', () {
+    test('delegates to the fallback when no hint is present', () {
       // Default fallback is the prototype stub → user_prompt.
       final classifier = InboundClassifier();
 
-      expect(
-        classifier.classify(_accessWith()),
-        InboundKinds.userPrompt,
-      );
+      expect(classifier.classify(_accessWith()), InboundKinds.userPrompt);
     });
 
-    test('treats a whitespace-only hint as absent (falls back)', () {
+    test('still delegates to the fallback even if a hint is present', () {
+      // After Q-E.50.1 the route handles the confident-hint branch; this
+      // classifier never short-circuits on the hint. The route only reaches
+      // here on the no-hint path, so a present hint must not change the
+      // classifier's behaviour.
       var fallbackRan = false;
       final classifier = InboundClassifier(fallback: (_) {
         fallbackRan = true;
         return InboundKinds.userPrompt;
       });
 
-      final kind = classifier.classify(_accessWith(kindHint: '   \t\n'));
+      final kind =
+          classifier.classify(_accessWith(kindHint: 'answer_with_memory_v1'));
 
       expect(fallbackRan, isTrue,
-          reason: 'a blank hint carries no kind; the fallback decides');
+          reason: 'the classifier no longer reads the hint; the fallback '
+              'decides unconditionally');
       expect(kind, InboundKinds.userPrompt);
+    });
+
+    test('returns the injected fallback verdict verbatim', () {
+      final classifier =
+          InboundClassifier(fallback: (_) => 'custom_kind');
+
+      expect(classifier.classify(_accessWith()), 'custom_kind');
     });
 
     test('hands the access through to the injected fallback', () {

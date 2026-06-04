@@ -468,9 +468,11 @@ void main() {
           (firstChunk['choices'] as List<Object?>).first
               as Map<String, Object?>;
       expect(choice.containsKey('logprobs'), isFalse);
-      // The first-chunk `delta.role` (OpenAI sends it) is not emitted.
-      expect((choice['delta'] as Map<String, Object?>).containsKey('role'),
-          isFalse);
+      // The first-chunk `delta.role` gap is *closed* (Q-E.51.2 / current_todos
+      // #33): the opening frame announces `role:"assistant"` like the real
+      // OpenAI stream. (Later frames omit it — pinned by the access-package
+      // sentinel `e51_spec_section_attestation_test.dart`.)
+      expect((choice['delta'] as Map<String, Object?>)['role'], 'assistant');
     });
   });
 

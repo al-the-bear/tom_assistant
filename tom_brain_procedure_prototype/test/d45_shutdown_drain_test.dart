@@ -180,7 +180,9 @@ void main() {
         );
 
     Access userPrompt(String text) => Access(
-          envelope: InboundRequest(text: text, kindHint: 'user_prompt'),
+          // A confident centroid hint names the procedure id (Q-E.50.1).
+          envelope: InboundRequest(
+              text: text, kindHint: SystemProcedures.answerWithMemoryV1),
           identity: ResolvedIdentity(principalId: 'p1'),
           session: Session(sessionId: 's1'),
           persona: Persona.assistant(),

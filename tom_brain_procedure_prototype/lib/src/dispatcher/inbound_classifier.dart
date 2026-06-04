@@ -2,20 +2,21 @@
 // `tom_brain_procedure_prototype_specification.md` § 10.2).
 //
 // The second stage of the dispatcher's `accept → classify → select →
-// schedule` pipeline. Given an admitted [Access], it produces the *inbound
-// kind* string that procedure selection (D.16) maps to a procedure id.
+// schedule` pipeline. Given an admitted [Access] that carried *no confident
+// centroid hint*, it produces the *inbound kind* string that procedure
+// selection (D.16) maps to a procedure id.
 //
-// Policy (spec § 10.2, Plan D.15):
+// Policy (spec § 10.2, Plan D.15; Q-E.50.1):
 //
-//   1. **Kind-hint pass-through.** The Phase-E heuristic classifier (E.33)
-//      pre-fills `access.envelope.kindHint` when it is confident. The
-//      dispatcher *accepts* that hint verbatim — it does not re-classify a
-//      request the edge already classified.
-//   2. **Fallback.** When no hint is present (null or whitespace-only), the
-//      dispatcher runs `classify_inbound_v1` — a stub for the prototype.
-//      The real heuristic/script version arrives later (Plan D.15: "the
-//      real version arrives later"); for the prototype every un-hinted
-//      inbound is a plain `user_prompt`.
+//   The confident-hint branch is **not** this classifier's concern. The
+//   Phase-E heuristic classifier (E.33) pre-fills `access.envelope.kindHint`
+//   with a *procedure id* (memory's centroid `bestMatch`); the route
+//   (`resolveProcedureId`) routes that hint directly to the procedure,
+//   bypassing the kind → procedure map. This classifier is reached only on
+//   the **no-hint** path, where it runs `classify_inbound_v1` — a stub for
+//   the prototype. The real heuristic/script version arrives later (Plan
+//   D.15: "the real version arrives later"); for the prototype every
+//   un-hinted inbound is a plain `user_prompt`.
 //
 // Kinds are open strings, not a closed enum, deliberately. The real
 // classifier will emit kinds this prototype never anticipates; a sealed
@@ -45,41 +46,31 @@ typedef ClassifyFallback = String Function(Access access);
 /// argument, so it is trivially testable and safe to call repeatedly.
 String classifyInboundV1(Access access) => InboundKinds.userPrompt;
 
-/// The dispatcher's inbound classifier (Plan D.15; spec § 10.2).
+/// The dispatcher's no-hint inbound classifier (Plan D.15; spec § 10.2).
 ///
-/// Stage two of the dispatcher pipeline: turns an admitted [Access] into an
-/// inbound-kind string for selection (D.16). It owns one decision —
-/// accept the edge's kind-hint, or fall back to `classify_inbound_v1`.
+/// Stage two of the dispatcher pipeline, on the **no-hint** branch only: turns
+/// an admitted [Access] that carried no confident centroid hint into an
+/// inbound-kind string for selection (D.16). The confident-hint branch routes
+/// directly via `resolveProcedureId` (Q-E.50.1) and never reaches here.
 final class InboundClassifier {
   /// Builds a classifier over a [fallback] (default [classifyInboundV1]).
   ///
   /// The fallback is injectable so the prototype stub can be replaced by
-  /// the real classifier later, and so tests can prove the pass-through /
-  /// fallback boundary without depending on the stub's verdict.
+  /// the real classifier later, and so tests can observe whether the no-hint
+  /// path ran (E.50) without depending on the stub's verdict.
   InboundClassifier({ClassifyFallback fallback = classifyInboundV1})
       : _fallback = fallback;
 
   final ClassifyFallback _fallback;
 
-  /// Classifies [access] into an inbound kind.
+  /// Classifies [access] into an inbound kind via the [fallback].
   ///
-  /// Kind-hint pass-through: a non-blank `access.envelope.kindHint`
-  /// (pre-filled by the Phase-E heuristic classifier) is accepted and
-  /// returned, trimmed of surrounding whitespace — the dispatcher does not
-  /// second-guess a hint the edge was confident enough to attach.
-  ///
-  /// Fallback: an absent (`null`) or whitespace-only hint means "no hint";
-  /// the [fallback] (`classify_inbound_v1` by default) then decides.
-  ///
-  /// The classifier never reads the prompt *body* (`envelope.text`): the
-  /// prototype's stub fallback ignores it, and the kind-hint path consults
-  /// only the hint. The body is the answer step's concern (D.37), not the
+  /// Reached only on the no-hint path: the route (`resolveProcedureId`) has
+  /// already established that `access.envelope.kindHint` was absent or blank,
+  /// so this classifier never inspects the hint — the [fallback]
+  /// (`classify_inbound_v1` by default) decides. The classifier never reads
+  /// the prompt *body* (`envelope.text`) either: the prototype's stub ignores
+  /// it, and the body is the answer step's concern (D.37), not the
   /// classifier's.
-  String classify(Access access) {
-    final hint = access.envelope.kindHint;
-    if (hint != null && hint.trim().isNotEmpty) {
-      return hint.trim();
-    }
-    return _fallback(access);
-  }
+  String classify(Access access) => _fallback(access);
 }

@@ -33,6 +33,8 @@ import 'dart:io';
 import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
     show KindHintClassification, KindHintDecision;
 import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryStats;
+import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+    show SystemProcedures;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show Access, InboundKinds;
 import 'package:tom_brain_smoke_prototype/tom_brain_smoke_prototype.dart';
@@ -108,13 +110,15 @@ void main() {
         },
         // E.33: the centroid classifier seam (memory's
         // `classify(embedding, ClassificationTarget.procedure)`). It returns a
-        // confident match on `user_prompt` so the edge attaches a kind-hint the
-        // dispatcher routes to `answer_with_memory_v1`.
+        // confident match naming the *procedure id* `answer_with_memory_v1`
+        // (Q-E.50.1: the centroid hint keys on a procedure id, not an inbound
+        // kind), so the edge attaches a kind-hint the dispatcher resolves
+        // directly to that procedure — bypassing the kind → procedure map.
         kindHintClassifier: (List<double> embedding) async {
           classifyCalls++;
           return const KindHintClassification(
             decision: KindHintDecision.confident,
-            procedureId: InboundKinds.userPrompt,
+            procedureId: SystemProcedures.answerWithMemoryV1,
           );
         },
         // The dispatcher's no-hint fallback (the prototype's LLM-classifier

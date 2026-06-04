@@ -78,7 +78,6 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         Access,
         DeliverCallback,
         EdgeId,
-        InboundKinds,
         InboundRequest,
         NodeId,
         OutboundChunk,
@@ -318,7 +317,8 @@ void main() {
 
 Access _accessWith({
   String text = 'what is a quasar?',
-  String? kindHint = InboundKinds.userPrompt,
+  // A confident centroid hint names the procedure id to run (Q-E.50.1).
+  String? kindHint = SystemProcedures.answerWithMemoryV1,
   DeliverCallback? deliver,
 }) =>
     Access(

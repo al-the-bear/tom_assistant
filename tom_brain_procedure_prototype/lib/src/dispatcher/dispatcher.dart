@@ -18,10 +18,12 @@
 //     single entry point; consumes an `Access` object (envelope /
 //     identity / session / persona / `deliver`), never a wire protocol,
 //     and delivers only via `Access.deliver`.
-//   - Classification + selection (§ 10.2): accepts a pre-filled
-//     kind-hint from the access layer; `user_prompt` routes to
-//     `answer_with_memory_v1`; anything else surfaces
-//     `UnsupportedProcedureKind`.
+//   - Classification + selection (§ 10.2, Q-E.50.1): a confident centroid
+//     kind-hint from the access layer is a *procedure id* and routes
+//     directly (`resolveHintedProcedure`; `UnknownProcedureHint` if it names
+//     no shipped procedure); a no-hint inbound falls back through
+//     classify → select (`user_prompt` → `answer_with_memory_v1`; anything
+//     else surfaces `UnsupportedProcedureKind`).
 //   - Foreground / background coordinator (§ 10.3, PE-5): `RunCoordinator`
 //     (≤ 1 foreground + ≤ 1 background), FIFO foreground queue,
 //     cooperative preemption at the *next* engine checkpoint, hard step
@@ -46,30 +48,39 @@
 // D.15+), and the `DispatcherEntryObserver` hook the D.48 logger / D.49
 // event stream will drive. Exported below.
 //
-// D.15 ✅ — inbound classifier (`inbound_classifier.dart`): stage two of
-// the pipeline. `InboundClassifier.classify(Access)` accepts the Phase-E
-// kind-hint verbatim when present and falls back to the prototype's
-// `classify_inbound_v1` stub (every un-hinted inbound → `user_prompt`)
-// otherwise. Kinds are open strings; `InboundKinds.userPrompt` (in
-// `tom_brain_shared` since D.52) is the one the prototype routes.
+// D.15 ✅ — inbound classifier (`inbound_classifier.dart`): the *no-hint*
+// branch of stage two. `InboundClassifier.classify(Access)` runs the
+// prototype's `classify_inbound_v1` stub (every un-hinted inbound →
+// `user_prompt`). The confident-hint branch is no longer this classifier's
+// concern (Q-E.50.1): the route routes a procedure-id hint directly. Kinds
+// are open strings; `InboundKinds.userPrompt` (in `tom_brain_shared` since
+// D.52) is the one the prototype routes.
 //
 // D.16 ✅ — procedure selection (`procedure_selector.dart` +
-// `unsupported_procedure_kind.dart`): stage three of the pipeline.
-// `ProcedureSelector.select(kind)` maps the classifier's inbound-kind
-// string to a procedure id — `user_prompt` → `answer_with_memory_v1`
-// (`SystemProcedures.answerWithMemoryV1`); anything else is rejected loudly
-// with `UnsupportedProcedureKind`. The routing table is injectable
-// (`defaultProcedureRouting` is the prototype's single entry). Exported
-// below.
+// `unsupported_procedure_kind.dart` + `unknown_procedure_hint.dart`): stage
+// three of the pipeline, two doors into one closed procedure set (Q-E.50.1).
+// The **no-hint** door — `ProcedureSelector.select(kind)` — maps the
+// classifier's inbound-kind string to a procedure id (`user_prompt` →
+// `answer_with_memory_v1`, `SystemProcedures.answerWithMemoryV1`); an unknown
+// kind is rejected loudly with `UnsupportedProcedureKind`. The
+// **confident-hint** door — `ProcedureSelector.resolveHintedProcedure(id)` —
+// validates a centroid procedure-id hint (E.33) against `knownProcedureIds`,
+// rejecting an unknown one with `UnknownProcedureHint`, never consulting the
+// kind → procedure map. The route helper (`procedure_routing.dart`,
+// `resolveProcedureId`) picks the door from `Access.envelope.kindHint`. The
+// routing table is injectable (`defaultProcedureRouting` is the prototype's
+// single entry). Exported below.
 //
 // D.17 ✅ — accept-and-route integration tests
-// (`test/d17_accept_and_route_test.dart`): prove the three stages compose
-// through the single `Dispatcher.accept` entry point. `user_prompt`
-// (explicit hint, un-hinted fallback, or padded/blank hint) routes end to
-// end to `answer_with_memory_v1`; any unknown kind raises
-// `UnsupportedProcedureKind` unchanged through `accept`, never schedules,
-// and delivers nothing back to the channel. Test-only step — no new public
-// symbol.
+// (`test/d17_accept_and_route_test.dart`): prove the stages compose through
+// the single `Dispatcher.accept` entry point via `resolveProcedureId`. A
+// confident `answer_with_memory_v1` procedure-id hint routes directly; an
+// un-hinted (or blank-hinted) inbound falls back through classify → select to
+// the same procedure (Q-E.50.1). An unknown procedure-id hint raises
+// `UnknownProcedureHint` and an unknown no-hint kind raises
+// `UnsupportedProcedureKind` — both unchanged through `accept`, never
+// scheduling, delivering nothing back to the channel. Test-only step — no new
+// public symbol.
 //
 // D.18 ✅ — foreground / background run coordinator core
 // (`run_coordinator.dart`): the *schedule* stage. `RunCoordinator` tracks at
@@ -482,6 +493,7 @@ export 'preemption_event.dart'
         RunSlotEntered,
         RunSlotExited,
         RunSlotOutcome;
+export 'procedure_routing.dart' show resolveProcedureId;
 export 'procedure_selector.dart'
     show ProcedureSelector, SystemProcedures, defaultProcedureRouting;
 export 'run_coordinator.dart'
@@ -505,4 +517,6 @@ export 'sustained_fallback_monitor.dart'
         automationIdeasStackName,
         defaultSustainedFallbackThreshold,
         defaultSustainedFallbackWindow;
+export 'unknown_procedure_hint.dart'
+    show UnknownProcedureHint, unknownProcedureHintCode;
 export 'unsupported_procedure_kind.dart' show UnsupportedProcedureKind;

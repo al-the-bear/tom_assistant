@@ -80,7 +80,8 @@ void main() {
       );
 
   Access userPrompt(String text) => Access(
-        envelope: InboundRequest(text: text, kindHint: 'user_prompt'),
+        envelope:
+            InboundRequest(text: text, kindHint: SystemProcedures.answerWithMemoryV1),
         identity: ResolvedIdentity(principalId: 'p1'),
         session: Session(sessionId: 's1'),
         persona: Persona.assistant(),

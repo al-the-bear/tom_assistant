@@ -1,12 +1,17 @@
 // Procedure-selection tests (Plan step D.16; spec § 10.2).
 //
-// D.16 delivers `ProcedureSelector.select(kind)` — stage three of the
-// dispatcher's `accept → classify → select → schedule` pipeline. These
-// tests pin the selector's one decision in isolation:
+// D.16 delivers `ProcedureSelector` — stage three of the dispatcher's
+// `accept → classify → select → schedule` pipeline. After Q-E.50.1 the
+// selector owns *two* doors into one closed procedure set. These tests pin
+// both in isolation:
 //
-//   1. Accept-and-route: `user_prompt` → `answer_with_memory_v1`.
-//   2. Reject loudly: any other kind raises `UnsupportedProcedureKind`,
-//      and the error names the offender + the supported set.
+//   1. The no-hint door (`select(kind)`): `user_prompt` →
+//      `answer_with_memory_v1`; any other kind raises
+//      `UnsupportedProcedureKind`, naming the offender + the supported set.
+//   2. The confident-hint door (`resolveHintedProcedure(id)`): a procedure-id
+//      hint that names a shipped procedure routes directly (trimmed); an
+//      unknown id raises `UnknownProcedureHint`. The kind → procedure map is
+//      not consulted.
 //   3. The routing table is injectable + defensively copied.
 
 import 'package:test/test.dart';
@@ -15,6 +20,7 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
     show
         ProcedureSelector,
         SystemProcedures,
+        UnknownProcedureHint,
         UnsupportedProcedureKind,
         defaultProcedureRouting;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show InboundKinds;
@@ -42,6 +48,76 @@ void main() {
 
     test('supportedKinds reports the one routed kind', () {
       expect(ProcedureSelector().supportedKinds, <String>['user_prompt']);
+    });
+  });
+
+  group('D.16 selection — confident-hint door (Q-E.50.1)', () {
+    test('a procedure-id hint that names a shipped procedure routes directly',
+        () {
+      final selector = ProcedureSelector();
+
+      // The hint IS the procedure id (the centroid bestMatch), not a kind —
+      // it routes without ever touching the kind → procedure map.
+      expect(
+        selector.resolveHintedProcedure(SystemProcedures.answerWithMemoryV1),
+        SystemProcedures.answerWithMemoryV1,
+      );
+    });
+
+    test('the hint is trimmed before it is matched', () {
+      expect(
+        ProcedureSelector()
+            .resolveHintedProcedure('  answer_with_memory_v1\n'),
+        SystemProcedures.answerWithMemoryV1,
+      );
+    });
+
+    test('knownProcedureIds reports the shipped procedure set', () {
+      expect(ProcedureSelector().knownProcedureIds,
+          <String>[SystemProcedures.answerWithMemoryV1]);
+    });
+
+    test('an inbound *kind* is not a procedure id — it is rejected', () {
+      // `user_prompt` is the kind the no-hint door routes; as a procedure-id
+      // hint it names no shipped procedure. This is exactly the conflation
+      // Q-E.50.1 removes: the two namespaces no longer overlap.
+      final selector = ProcedureSelector();
+
+      expect(
+        () => selector.resolveHintedProcedure(InboundKinds.userPrompt),
+        throwsA(isA<UnknownProcedureHint>()),
+      );
+    });
+
+    test('an unknown procedure-id hint raises UnknownProcedureHint naming '
+        'the offender + the known set', () {
+      final selector = ProcedureSelector();
+
+      try {
+        selector.resolveHintedProcedure('research_v1');
+        fail('expected UnknownProcedureHint');
+      } on UnknownProcedureHint catch (e) {
+        expect(e.procedureId, 'research_v1');
+        expect(e.knownProcedureIds,
+            <String>[SystemProcedures.answerWithMemoryV1]);
+        expect(e.code, 'procedure.hint.unknown');
+        expect(e.message, contains('research_v1'));
+        expect(e.message, contains('answer_with_memory_v1'));
+        expect(e.toString(), startsWith('UnknownProcedureHint:'));
+      }
+    });
+
+    test('a custom routing exposes its de-duplicated procedure ids', () {
+      // Two kinds routing to the same procedure collapse to one known id.
+      final selector = ProcedureSelector(routing: const <String, String>{
+        'user_prompt': 'answer_with_memory_v1',
+        'background_research': 'research_v1',
+        'follow_up': 'answer_with_memory_v1',
+      });
+
+      expect(selector.knownProcedureIds,
+          <String>['answer_with_memory_v1', 'research_v1']);
+      expect(selector.resolveHintedProcedure('research_v1'), 'research_v1');
     });
   });
 

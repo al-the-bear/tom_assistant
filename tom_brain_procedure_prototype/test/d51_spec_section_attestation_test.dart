@@ -204,6 +204,31 @@ void main() {
       expect(() => ProcedureSelector().select('telegram_command'),
           throwsA(isA<UnsupportedProcedureKind>()));
     });
+
+    // Spec § 10.2 (Q-E.50.1): a confident centroid hint names a *procedure id*
+    // and routes directly through resolveHintedProcedure, bypassing the
+    // kind → procedure map; an unknown id surfaces UnknownProcedureHint.
+    test('a confident procedure-id hint routes directly to that procedure',
+        () {
+      expect(
+          ProcedureSelector()
+              .resolveHintedProcedure(SystemProcedures.answerWithMemoryV1),
+          SystemProcedures.answerWithMemoryV1);
+    });
+
+    test('the known-procedure set is the single shipped procedure', () {
+      expect(ProcedureSelector().knownProcedureIds,
+          <String>[SystemProcedures.answerWithMemoryV1]);
+    });
+
+    test('an unknown procedure-id hint is rejected loudly', () {
+      expect(() => ProcedureSelector().resolveHintedProcedure('telegram_v1'),
+          throwsA(isA<UnknownProcedureHint>()));
+    });
+
+    test('the unknown-procedure-hint wire code carries its spec spelling', () {
+      expect(unknownProcedureHintCode, 'procedure.hint.unknown');
+    });
   });
 
   // §10.3 / §13 — foreground queue depth default agrees across runtime/config.
