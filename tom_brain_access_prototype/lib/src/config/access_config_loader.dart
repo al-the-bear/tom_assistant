@@ -368,8 +368,11 @@ abstract final class AccessConfigLoader {
       _optionalMap(node, 'claims', '$path.claims'),
       '$path.claims',
     );
-    // Bearer tokens are secrets → `${ENV}`-expanded; Telegram user ids are
-    // public → verbatim (Q-E.49.2: the whitelist key is the identity binding).
+    // Both bearer tokens and Telegram user ids `${ENV}`-expand: the ids are
+    // public, but sourcing the owner whitelist from the environment (e.g.
+    // `${TELEGRAM_TOM_BRAIN_USER}` out of the shell profile) is the deployment
+    // workflow, and a literal numeric id carries no `${}` so expansion is a
+    // no-op for it (Q-E.49.2: the expanded value is the identity binding key).
     final bearerTokens = _parseStringList(
       _optionalList(node, 'openaiBearerTokens', '$path.openaiBearerTokens'),
       '$path.openaiBearerTokens',
@@ -379,6 +382,8 @@ abstract final class AccessConfigLoader {
     final telegramIds = _parseStringList(
       _optionalList(node, 'telegramUserIds', '$path.telegramUserIds'),
       '$path.telegramUserIds',
+      env: env,
+      expandEntries: true,
     );
     try {
       return AccessUser(

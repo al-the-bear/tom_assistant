@@ -25,10 +25,10 @@
 //   5. Forward-only schema (AC-12): an unknown top-level section, and an
 //      unknown key *within* `access:` (or any subsection / user entry), is
 //      rejected at load — never silently ignored.
-//   6. `${ENV}` substitution expands each user's OpenAI bearer-token entries
-//      and the Telegram bot token from the supplied env map; an undefined
-//      token is a loud error; the loader never reads `Platform.environment`
-//      itself; Telegram user ids are verbatim.
+//   6. `${ENV}` substitution expands each user's OpenAI bearer-token entries,
+//      the Telegram bot token, and each user's Telegram user ids from the
+//      supplied env map; an undefined token is a loud error; the loader never
+//      reads `Platform.environment` itself.
 //   7. Required-field and type errors carry the dotted key path.
 //   8. The whole surface reaches through the package barrel.
 
@@ -830,20 +830,63 @@ access:
       );
     });
 
-    test('Telegram user ids are NOT env-expanded (verbatim)', () {
+    test('expands a user\'s Telegram user ids from the env map', () {
+      // The deployment workflow sources the owner whitelist from the shell
+      // profile (e.g. `${TELEGRAM_TOM_BRAIN_USER}`); the expanded numeric id —
+      // not the placeholder — becomes the identity-binding key a real sender
+      // is matched against.
       const doc = r'''
 access:
   openai: { port: 8080 }
   users:
     - id: alice
       telegramUserIds:
-        - "${LITERAL}"
+        - "${OWNER_ID}"
   rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
   quota: { dailyCap: 1 }
 ''';
-      // No env supplied; the user id is used verbatim and does not raise.
+      final config = AccessConfigLoader.parse(
+        doc,
+        envVars: const {'OWNER_ID': '279417862'},
+      );
+      expect(config.telegramUserIdBindings.keys, ['279417862']);
+    });
+
+    test('an undefined Telegram-user-id env var is a loud error', () {
+      const doc = r'''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: alice
+      telegramUserIds:
+        - "${MISSING_OWNER}"
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('undefined env var `\${MISSING_OWNER}`'),
+        )),
+      );
+    });
+
+    test('a literal numeric Telegram user id is unaffected by expansion', () {
+      const doc = r'''
+access:
+  openai: { port: 8080 }
+  users:
+    - id: alice
+      telegramUserIds:
+        - "279417862"
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      // No `${}` in a numeric id, so expansion is a no-op and no env is needed.
       final config = AccessConfigLoader.parse(doc);
-      expect(config.telegramUserIdBindings.keys, [r'${LITERAL}']);
+      expect(config.telegramUserIdBindings.keys, ['279417862']);
     });
   });
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — `telegramUserIds` now `${ENV}`-expand (Q-E.49.2 revised)
+
+The owner whitelist is sourced from the shell profile in deployment (e.g.
+`${TELEGRAM_TOM_BRAIN_USER}` out of `.bashrc`), so each user's
+`telegramUserIds` entries now `${ENV}`-expand from the supplied env map, exactly
+like the bearer-token keys and the Telegram bot token. Previously they were
+taken verbatim — a `${VAR}` placeholder was stored as a literal whitelist key
+that no numeric sender could ever match, silently rejecting every real message.
+A literal numeric id carries no `${}`, so the change is a no-op for it; an
+undefined env var is now a loud error (matching the bearer-token / bot-token
+behavior).
+
+- `lib/src/config/access_config_loader.dart` — `_parseUser` passes
+  `env: env, expandEntries: true` to the `telegramUserIds` `_parseStringList`
+  call; the expanded value is the identity-binding key.
+- `test/config/access_config_loader_test.dart` — the "Telegram user ids are NOT
+  env-expanded (verbatim)" test is replaced by three: expansion from the env
+  map, an undefined-env-var loud error, and a literal-numeric-id no-op.
+
 ## Unreleased — Phase E (todo #36): cross-channel `users` block (Q-E.24.2 / Q-E.49.2)
 
 A first-class `access.users:` config block replaces the hand-matched
