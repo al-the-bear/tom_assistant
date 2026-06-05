@@ -81,7 +81,12 @@ void main() {
       expect(budget.wallClockMs, 60000);
       expect(budget.tokenSpend, 8000);
       expect(budget.toolCalls, 12);
-      expect(budget.memoryWrites, 6);
+      // 16 covers the procedure's worst-case writes: Event + Conclusion + one
+      // derived_from edge per cited recall node (up to k=8) + the cold-path
+      // InterestItem + its stack push (2 + 8 + 2 = 12) with headroom. A cap
+      // below that refused a write the successCriterion requires and closed the
+      // run `budgetExceeded` with no answer (silent on buffered Telegram).
+      expect(budget.memoryWrites, 16);
     });
   });
 }

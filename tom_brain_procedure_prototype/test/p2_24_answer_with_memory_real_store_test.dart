@@ -204,8 +204,9 @@ void main() {
       // Seed a prior Event whose `summary` is *exactly* this prompt — the
       // resurfaced earlier turn that (a) gives the new Conclusion a node to be
       // derived_from, and (b) makes this prompt an identical-shape repeat. One
-      // seed keeps the run's writes (Event + Conclusion + 1 edge + InterestItem
-      // + stack push = 5) under the script's `memoryWrites: 6` header budget.
+      // seed keeps the run's writes small and deterministic (Event + Conclusion
+      // + 1 edge + InterestItem + stack push = 5), comfortably under the
+      // script's `memoryWrites: 16` header budget.
       await store.persist(
         NodeDraft(
           typeName: 'Event',

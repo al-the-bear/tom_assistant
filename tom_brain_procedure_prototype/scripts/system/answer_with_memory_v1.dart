@@ -5,7 +5,7 @@
 /// successCriterion: A streamed answer is delivered and an Event + Conclusion
 ///   + edges are persisted (the recall → answer → persist loop; the body is
 ///   built across D.37–D.42).
-/// budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 12, memoryWrites: 6 }
+/// budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 12, memoryWrites: 16 }
 /// inputs:
 ///   - { name: text, type: String, required: true }
 /// outputs:
@@ -254,6 +254,14 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   );
 
   // derived_from: the Conclusion was derived from each recalled node it cited.
+  // Why the memoryWrites budget is 16: a single answer legitimately writes the
+  // Event + the Conclusion + one `derived_from` edge per cited recall node (up
+  // to the recall k of 8) + the cold-path InterestItem + its stack push — a
+  // worst case of 2 + 8 + 2 = 12. A cap below that refuses a write the
+  // successCriterion *requires* ("an Event + Conclusion + edges are
+  // persisted"), closing the run `budgetExceeded` with no `answer` output — and
+  // on the buffered Telegram channel (flushed only on the final chunk) that is
+  // total silence. 16 covers the worst case with headroom.
   final cited = _citedNodeIds(recall);
   for (final nodeId in cited) {
     await mem.edge(conclusionId, 'derived_from', nodeId, producer: producer);

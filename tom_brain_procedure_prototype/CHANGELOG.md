@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — `answer_with_memory_v1` memoryWrites budget raised 6 → 16
+
+The procedure's `memoryWrites` cap was structurally too small for its own
+declared behaviour. A single answer legitimately writes the Event + the
+Conclusion + one `derived_from` edge per cited recall node (up to the recall k
+of 8) + the cold-path InterestItem + its stack push — a worst case of
+`2 + 8 + 2 = 12`. With the cap at 6, a normal recall blew the budget at the
+interest-push step, closing the run `budgetExceeded` with no `answer` output. On
+the buffered Telegram channel (flushed only on the run's final chunk) that meant
+total silence; a live "Who are you?" prompt produced no reply at all. The cap is
+now 16 — the worst case plus headroom. `d36_answer_with_memory_header_test.dart`
+asserts the new value.
+
 ## 0.0.1 — 2026-06-01 (Phase C.6)
 
 Initial project scaffold:
