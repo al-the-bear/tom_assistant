@@ -99,6 +99,13 @@ abstract interface class OutboundChunkSink {
 /// disconnect cancels that subscription, which sets [isDisconnected] (the
 /// signal the delivery path reads to surface a terminal stall) and fires the
 /// optional [onClientDisconnect] hook.
+///
+/// The optional [onFirstChunk] hook fires once, when the first chunk is
+/// forwarded. The live edge (plan-2 #30) uses it the way the SSE sink uses
+/// `onFirstFrame`: to commit to a `200` streamed body only after the
+/// edge-security gates have passed. The gates all run *before* the first
+/// `OutboundChunk` is delivered, so the first chunk is the signal that delivery
+/// has begun and the status can no longer be a `4xx` (P1.3 #9).
 final class StreamControllerChunkSink implements OutboundChunkSink {
   late final StreamController<OutboundChunk> _controller =
       StreamController<OutboundChunk>(onCancel: _handleCancel);
@@ -108,14 +115,24 @@ final class StreamControllerChunkSink implements OutboundChunkSink {
   /// (E.39 surfaces the stall signal that drives it).
   final void Function()? _onClientDisconnect;
 
+  /// Called once, on the first [add]. Optional; the live edge uses it to race
+  /// "delivery started" against a gate rejection (P1.3 #9).
+  final void Function()? _onFirstChunk;
+
   bool _closed = false;
   bool _disconnected = false;
+  bool _firstChunkForwarded = false;
 
   /// Builds a runtime chunk-stream sink. [onClientDisconnect] — when supplied —
   /// fires once if the answer-stream subscription is cancelled before the
-  /// answer finishes (a client disconnect).
-  StreamControllerChunkSink({void Function()? onClientDisconnect})
-      : _onClientDisconnect = onClientDisconnect;
+  /// answer finishes (a client disconnect). [onFirstChunk] — when supplied —
+  /// fires once on the first [add], signalling the edge that delivery has begun
+  /// (P1.3 #9).
+  StreamControllerChunkSink({
+    void Function()? onClientDisconnect,
+    void Function()? onFirstChunk,
+  })  : _onClientDisconnect = onClientDisconnect,
+        _onFirstChunk = onFirstChunk;
 
   /// The raw `OutboundChunk` stream the originating adapter drains and renders
   /// into its own dialect. Single-subscription: the one adapter renderer
@@ -135,6 +152,10 @@ final class StreamControllerChunkSink implements OutboundChunkSink {
         'OutboundChunk added after the wire was closed — the chunk-stream '
         'delivery path must not forward past the final chunk',
       );
+    }
+    if (!_firstChunkForwarded) {
+      _firstChunkForwarded = true;
+      _onFirstChunk?.call();
     }
     _controller.add(chunk);
   }

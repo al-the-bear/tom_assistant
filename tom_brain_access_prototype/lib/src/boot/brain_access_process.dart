@@ -15,8 +15,18 @@
 //   * the OpenAI HTTP/SSE edge (E.45) — auth-gated `/v1/` routes;
 //   * the `GET /healthz` endpoint (E.43) — mounted on the same port,
 //     *outside* the `/v1/` base path, reporting on the whole process;
+//   * the Ollama edge (plan-2 #30) — when an Ollama port is configured, an
+//     auth-gated `/api/chat` + `/api/generate` socket on its own port;
+//   * the Anthropic Messages edge (plan-2 #31) — when an Anthropic port is
+//     configured, an auth-gated `/v1/messages` socket on its own port;
 //   * the Telegram edge (E.45) — when a bot token is configured, a
 //     long-polling adapter feeding the same admission core.
+//
+// The Ollama and Anthropic edges each own their whole port (their own 404
+// envelope), so they bind directly through the serve seam — only the OpenAI
+// edge shares its socket with `/healthz` via a `Cascade`. All three HTTP
+// channels drive the *one* admission core, so a request authenticates against
+// the same shared bearer-token bindings regardless of dialect.
 //
 // The OpenAI routes and the health route share one socket via a shelf
 // `Cascade`: the health router answers `/healthz` and 404s everything else,
@@ -59,10 +69,12 @@ import '../edge_security/edge_security.dart'
     show BearerTokenAuthenticator, EdgeStateStore, JsonFileEdgeStateStore;
 import '../heuristic_classifier/heuristic_kind_hint_classifier.dart'
     show KindHintClassifier, KindHintEmbedder;
+import 'anthropic_access_edge.dart';
 import 'brain_access_boot.dart';
 import 'brain_provisioner.dart';
 import 'graceful_shutdown.dart';
 import 'health_check.dart';
+import 'ollama_access_edge.dart';
 import 'openai_access_edge.dart';
 import 'telegram_access_edge.dart';
 
@@ -148,11 +160,21 @@ final class BrainAccessProcess {
   /// The port the OpenAI + health socket is listening on.
   final int port;
 
+  /// The port the Ollama socket is listening on, or `null` when no Ollama
+  /// channel was configured.
+  final int? ollamaPort;
+
+  /// The port the Anthropic Messages socket is listening on, or `null` when no
+  /// Anthropic channel was configured.
+  final int? anthropicPort;
+
   final GracefulShutdown _gracefulShutdown;
   final Future<void> Function() _teardown;
 
   BrainAccessProcess._({
     required this.port,
+    required this.ollamaPort,
+    required this.anthropicPort,
     required GracefulShutdown gracefulShutdown,
     required Future<void> Function() teardown,
   })  : _gracefulShutdown = gracefulShutdown,
@@ -225,14 +247,29 @@ Future<BrainAccessProcess> startBrainAccessProcess({
     embeddingSource: embeddingSource,
     clock: clock,
   );
+  final AccessServer? ollamaServer = await _serveOllama(
+    booted: booted,
+    config: config,
+    serve: serve,
+  );
+  final AccessServer? anthropicServer = await _serveAnthropic(
+    booted: booted,
+    config: config,
+    serve: serve,
+  );
   final _TelegramEdge telegram = await _startTelegram(
     booted: booted,
     config: config,
     telegramChatApiFactory: telegramChatApiFactory,
   );
+  final List<AccessServer> servers = <AccessServer>[
+    server,
+    ?ollamaServer,
+    ?anthropicServer,
+  ];
   final (GracefulShutdown gracefulShutdown, Future<void> Function() teardown) =
       _installShutdown(
-    server: server,
+    servers: servers,
     booted: booted,
     brain: brain,
     telegram: telegram,
@@ -243,9 +280,51 @@ Future<BrainAccessProcess> startBrainAccessProcess({
 
   return BrainAccessProcess._(
     port: server.port,
+    ollamaPort: ollamaServer?.port,
+    anthropicPort: anthropicServer?.port,
     gracefulShutdown: gracefulShutdown,
     teardown: teardown,
   );
+}
+
+/// Phase 5b-ii — stand up the optional Ollama socket on its own port (plan-2
+/// #30). When [config] has an Ollama port, binds a fresh [OllamaAccessEdge]
+/// driving the *same* admission core through the [serve] seam; otherwise
+/// returns `null`. The Ollama edge owns the whole port (its own 404 envelope),
+/// so — unlike the OpenAI + health pairing — there is no `Cascade` here.
+Future<AccessServer?> _serveOllama({
+  required BootedAccessLayer booted,
+  required AccessConfig config,
+  required AccessServeSeam serve,
+}) async {
+  if (!config.hasOllama) {
+    return null;
+  }
+  final OllamaAccessEdge edge = OllamaAccessEdge(
+    assembler: booted.assembler,
+    basePath: config.ollamaBasePath,
+  );
+  return serve(edge.handler, config.ollamaPort!);
+}
+
+/// Phase 5b-iii — stand up the optional Anthropic Messages socket on its own
+/// port (plan-2 #31). When [config] has an Anthropic port, binds a fresh
+/// [AnthropicAccessEdge] driving the *same* admission core through the [serve]
+/// seam; otherwise returns `null`. The Anthropic edge owns the whole port (its
+/// own `not_found_error` 404), so there is no `Cascade` here.
+Future<AccessServer?> _serveAnthropic({
+  required BootedAccessLayer booted,
+  required AccessConfig config,
+  required AccessServeSeam serve,
+}) async {
+  if (!config.hasAnthropic) {
+    return null;
+  }
+  final AnthropicAccessEdge edge = AnthropicAccessEdge(
+    assembler: booted.assembler,
+    basePath: config.anthropicBasePath,
+  );
+  return serve(edge.handler, config.anthropicPort!);
 }
 
 /// Phase 5a — compose the admission core over the already-booted dispatcher
@@ -345,7 +424,7 @@ Future<_TelegramEdge> _startTelegram({
 /// with the error exit code, so the process exits either way. Returns the
 /// coordinator and the bounded teardown (the process handle needs both).
 (GracefulShutdown, Future<void> Function()) _installShutdown({
-  required AccessServer server,
+  required List<AccessServer> servers,
   required BootedAccessLayer booted,
   required ProvisionedBrain brain,
   required _TelegramEdge telegram,
@@ -358,7 +437,9 @@ Future<_TelegramEdge> _startTelegram({
     if (tornDown) return;
     tornDown = true;
     await telegram.stop();
-    await server.close();
+    for (final AccessServer server in servers) {
+      await server.close();
+    }
     await booted.shutdown();
     await brain.shutdown();
   }

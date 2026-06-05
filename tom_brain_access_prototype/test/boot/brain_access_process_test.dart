@@ -68,6 +68,21 @@ class _CaptureServe {
   }
 }
 
+/// A serve seam that captures *every* socket the process stands up, keyed by
+/// the port it bound. Lets a multi-channel process (OpenAI + Ollama +
+/// Anthropic) be driven with no real sockets.
+class _MultiCaptureServe {
+  final Map<int, Handler> handlers = <int, Handler>{};
+  final List<_FakeAccessServer> servers = <_FakeAccessServer>[];
+
+  Future<AccessServer> call(Handler handler, int port) async {
+    final bound = _FakeAccessServer(port == 0 ? 4242 : port);
+    handlers[bound.port] = handler;
+    servers.add(bound);
+    return bound;
+  }
+}
+
 QueueSnapshot _idleSnapshot() => QueueSnapshot(
       foregroundRunning: false,
       foregroundWaiting: 0,
@@ -104,9 +119,13 @@ AccessConfig _config({
   bool telegram = false,
   bool bearer = false,
   String? edgeStateDir,
+  int? ollamaPort,
+  int? anthropicPort,
 }) =>
     AccessConfig(
       openAiPort: 7654,
+      ollamaPort: ollamaPort,
+      anthropicPort: anthropicPort,
       rateLimitPolicy: _openPolicy(),
       dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: 100),
       anchorPolicy: AnchorPolicy(disallowedSignatures: const []),
@@ -118,6 +137,19 @@ AccessConfig _config({
           ? {'secret-token': IdentityBinding(principalId: 'principal-1')}
           : const {},
       edgeStateDirectory: edgeStateDir,
+    );
+
+Future<Response> _post(Handler handler, String path, String body) async =>
+    await handler(
+      Request(
+        'POST',
+        Uri.parse('http://localhost$path'),
+        headers: const <String, String>{
+          'content-type': 'application/json',
+          'authorization': 'Bearer secret-token',
+        },
+        body: body,
+      ),
     );
 
 Future<Response> _get(Handler handler, String path) async =>
@@ -245,6 +277,93 @@ void main() {
       expect(built, isNotNull);
       // The adapter initialised the channel (it drives its long-poll loop).
       expect(built!.initializeCount, greaterThanOrEqualTo(1));
+    });
+  });
+
+  group('startBrainAccessProcess — Ollama + Anthropic channels', () {
+    test('no extra socket is stood up when no Ollama / Anthropic port is set',
+        () async {
+      final serve = _MultiCaptureServe();
+      final process = await startBrainAccessProcess(
+        config: _config(),
+        brain: _provisionedBrain().brain,
+        serve: serve.call,
+        clock: _fixedNow,
+        shutdownSignals: const [],
+        terminate: (_) {},
+      );
+      addTearDown(process.stop);
+
+      expect(process.ollamaPort, isNull);
+      expect(process.anthropicPort, isNull);
+      // Only the OpenAI + health socket was bound.
+      expect(serve.servers.map((s) => s.port), [7654]);
+    });
+
+    test('configured Ollama + Anthropic ports each stand up their own socket '
+        'driving the shared admission core', () async {
+      final serve = _MultiCaptureServe();
+      final process = await startBrainAccessProcess(
+        config: _config(bearer: true, ollamaPort: 8081, anthropicPort: 8082),
+        brain: _provisionedBrain().brain,
+        serve: serve.call,
+        clock: _fixedNow,
+        shutdownSignals: const [],
+        terminate: (_) {},
+      );
+      addTearDown(process.stop);
+
+      expect(process.port, 7654);
+      expect(process.ollamaPort, 8081);
+      expect(process.anthropicPort, 8082);
+      expect(serve.servers.map((s) => s.port).toSet(), {7654, 8081, 8082});
+
+      // The Ollama socket answers /api/chat against the shared bearer binding.
+      final ollama = await _post(
+        serve.handlers[8081]!,
+        '/api/chat',
+        jsonEncode(<String, Object?>{
+          'model': 'tom-assistant',
+          'stream': false,
+          'messages': <Object?>[
+            <String, Object?>{'role': 'user', 'content': 'hi'},
+          ],
+        }),
+      );
+      expect(ollama.statusCode, 200);
+
+      // The Anthropic socket answers /v1/messages against the same binding.
+      final anthropic = await _post(
+        serve.handlers[8082]!,
+        '/v1/messages',
+        jsonEncode(<String, Object?>{
+          'model': 'tom-assistant',
+          'max_tokens': 1024,
+          'messages': <Object?>[
+            <String, Object?>{'role': 'user', 'content': 'hi'},
+          ],
+        }),
+      );
+      expect(anthropic.statusCode, 200);
+      final anthropicBody =
+          jsonDecode(await anthropic.readAsString()) as Map<String, Object?>;
+      expect(anthropicBody['type'], 'message');
+    });
+
+    test('teardown closes every stood-up socket', () async {
+      final serve = _MultiCaptureServe();
+      final process = await startBrainAccessProcess(
+        config: _config(bearer: true, ollamaPort: 8081, anthropicPort: 8082),
+        brain: _provisionedBrain().brain,
+        serve: serve.call,
+        shutdownSignals: const [],
+        terminate: (_) {},
+      );
+
+      await process.stop();
+
+      expect(serve.servers.length, 3);
+      expect(serve.servers.every((s) => s.closed), isTrue);
     });
   });
 

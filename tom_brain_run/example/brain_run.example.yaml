@@ -45,6 +45,22 @@ access:
     port: 8080
     basePath: /v1
 
+  # Ollama HTTP edge — OPTIONAL. Set a port to expose POST /api/chat and
+  # POST /api/generate in Ollama's NDJSON / buffered-JSON dialect. It drives the
+  # SAME admission core as the OpenAI edge, so the same bearer tokens (sent as
+  # `Authorization: Bearer`) authenticate here.
+  ollama:
+    port: 8081
+    basePath: /api
+
+  # Anthropic Messages HTTP edge — OPTIONAL. Set a port to expose
+  # POST /v1/messages in Anthropic's named-SSE / buffered-Message dialect. Same
+  # shared bearer tokens, sent in the `x-api-key` header (or `Authorization:
+  # Bearer` as a fallback).
+  anthropic:
+    port: 8082
+    basePath: /v1
+
   # Telegram bot — OPTIONAL. Set botToken to enable long-polling intake.
   telegram:
     botToken: ${TELEGRAM_BOT_TOKEN}            # from @BotFather

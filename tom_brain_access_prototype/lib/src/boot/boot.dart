@@ -78,6 +78,8 @@ export 'graceful_shutdown.dart'
         shutdownExitOk;
 export 'health_check.dart'
     show HealthCheck, QueueSnapshot, QueueSnapshotSource;
+export 'anthropic_access_edge.dart' show AnthropicAccessEdge;
+export 'ollama_access_edge.dart' show OllamaAccessEdge;
 export 'openai_access_edge.dart' show OpenAiAccessEdge;
 export 'telegram_access_edge.dart'
     show
