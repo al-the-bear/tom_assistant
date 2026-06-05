@@ -1,0 +1,69 @@
+# Example whole-process run config for the tom_brain prototype.
+#
+# Consumed by two launchers, both reading this one file:
+#   * tom_brain_run/bin/brain_serve.dart       — substrate + memory + access
+#   * tom_brain_memory/bin/memory_mcp_server.dart — the `memory:` section only
+#
+# `${ENV}` references are expanded from the launching process's environment
+# (memory.root, memory.sqliteVec.binariesRoot, access.telegram.botToken, and
+# each user's openaiBearerTokens). Copy this file, fill in real values (or set
+# the env vars), and pass the copy as the launcher's argument.
+
+# ── Substrate: where tokens actually come from ───────────────────────────────
+substrate:
+  providers:
+    - id: omlx
+      kind: openai          # oMLX exposes an OpenAI-compatible endpoint
+      baseUrl: ${TOM_BRAIN_OMLX_BASE_URI}      # e.g. http://10.8.0.7:8000/
+      models:
+        - ${TOM_BRAIN_OMLX_MODEL}              # e.g. gemma-4-26b-a4b-it-4bit
+    - id: ollama
+      kind: ollama
+      baseUrl: ${TOM_BRAIN_OLLAMA_BASE_URI}    # e.g. http://127.0.0.1:11434/
+      models:
+        - ${TOM_BRAIN_OLLAMA_EMBED_MODEL}      # e.g. nomic-embed-text
+  roleRoutes:
+    assistant_to_user:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+  embedding:
+    providerId: ollama
+    model: ${TOM_BRAIN_OLLAMA_EMBED_MODEL}
+    dims: 768
+    normalize: true
+
+# ── Memory: the on-disk knowledge graph + the packaged vec0 binary ───────────
+memory:
+  root: ${TOM_BRAIN_MEMORY_ROOT}               # a writable directory; created if absent
+  sqliteVec:
+    binariesRoot: ${TOM_BINARIES_ROOT}/sqlite_vec   # holds <platform>/vec0.<ext>
+
+# ── Access: the channels prompts arrive on ───────────────────────────────────
+access:
+  # OpenAI HTTP/SSE edge — REQUIRED (the only mandatory channel).
+  openai:
+    port: 8080
+    basePath: /v1
+
+  # Telegram bot — OPTIONAL. Set botToken to enable long-polling intake.
+  telegram:
+    botToken: ${TELEGRAM_BOT_TOKEN}            # from @BotFather
+
+  # Declarative identity source. A Telegram message is only admitted if its
+  # sender's numeric id is whitelisted here; an OpenAI request is admitted if
+  # its bearer matches.
+  users:
+    - id: owner
+      displayName: Owner
+      openaiBearerTokens:
+        - ${TOM_BRAIN_OPENAI_TOKEN}            # any opaque string you'll send as Bearer
+      telegramUserIds:
+        - ${TELEGRAM_OWNER_USER_ID}            # your numeric Telegram user id
+
+  rateLimit:
+    capacity: 60
+    refillTokens: 60
+    refillPeriodSeconds: 60
+
+  quota:
+    dailyCap: 1000
