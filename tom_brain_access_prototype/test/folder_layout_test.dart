@@ -1,15 +1,16 @@
 // Folder-layout contract test (E.8 access layout).
 //
-// Locks the `lib/src/<module>/` layout required by Plan step E.8: nine
-// leaf modules, two of them nested under a shared `adapters/` grouping
-// directory. It also locks the per-folder barrel-file convention used
+// Locks the `lib/src/<module>/` layout required by Plan step E.8 (extended
+// by plan items #27 and #28): eleven leaf modules, four of them nested under
+// a shared `adapters/` grouping directory. It also locks the per-folder
+// barrel-file convention used
 // across the Tom Brain projects (siblings: `tom_brain_shared`,
 // `tom_brain_memory`, `tom_brain_substrate`, `tom_brain_procedure_prototype`)
 // and the top-level barrel re-export.
 //
 // What this test asserts:
 //
-//   1. Each of the nine leaf-module directories exists under `lib/src/`.
+//   1. Each of the eleven leaf-module directories exists under `lib/src/`.
 //   2. Each leaf module contains a `<leaf>.dart` barrel file.
 //   3. The top-level barrel `lib/tom_brain_access_prototype.dart`
 //      re-exports every one of those barrels (one `export` line each).
@@ -32,13 +33,15 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// Leaf-module paths relative to `lib/src/`, per Plan step E.8. Two are
+/// Leaf-module paths relative to `lib/src/`, per Plan step E.8. Four are
 /// nested under the `adapters/` grouping directory. Order matters only as
 /// documentation; the assertions check sets, not order. Subsequent plan
 /// steps may extend the inventory (and must update this list, which forces
 /// review against the plan).
 const _leafModules = <String>[
   'adapters/openai_http_sse', // E.11–E.18 — OpenAI HTTP/SSE adapter
+  'adapters/ollama', // #27 — Ollama HTTP adapter
+  'adapters/anthropic', // #28 — Anthropic Messages HTTP adapter
   'adapters/telegram', // E.19–E.23 — Telegram adapter
   'identity', // E.24–E.27 — IdentityResolver / SessionManager / PersonaResolver
   'edge_security', // E.28–E.32 — auth / rate-limit / quota / anchor pre-check
@@ -67,9 +70,11 @@ void main() {
   group('folder layout (E.8 access modules)', () {
     test('leaf-module inventory matches the expected size and is unique', () {
       // Sanity-check the list itself so a stray edit cannot silently
-      // shrink or duplicate the contract. E.8 declares nine leaf modules.
-      expect(_leafModules, hasLength(9));
-      expect(_leafModules.toSet(), hasLength(9),
+      // shrink or duplicate the contract. E.8 declared nine leaf modules;
+      // plan item #27 added the Ollama adapter for ten, and #28 the
+      // Anthropic adapter for eleven.
+      expect(_leafModules, hasLength(11));
+      expect(_leafModules.toSet(), hasLength(11),
           reason: 'leaf-module list must be free of duplicates');
     });
 
@@ -126,7 +131,7 @@ void main() {
     });
 
     test('no unexpected directories are present under lib/src/adapters/', () {
-      // The `adapters/` grouping holds exactly the two channel adapters.
+      // The `adapters/` grouping holds exactly the four channel adapters.
       final actual = Directory('lib/src/adapters')
           .listSync()
           .whereType<Directory>()

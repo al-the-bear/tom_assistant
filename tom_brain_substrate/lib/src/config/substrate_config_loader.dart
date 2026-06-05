@@ -2,7 +2,10 @@
 // the YAML shape in `substrate_specification.md` § 9.
 //
 // Modelled on `tom_brain_memory`'s `MemoryConfigLoader` (A.83):
-// same `loadYaml` + `YamlMap` plumbing, same dotted-key-path
+// same plain-map plumbing (the document is parsed once into a plain
+// `Map<Object?, Object?>` via `loadYamlAsMap`, then read through the
+// shared `YamlConfigReader` — no `package:yaml` `YamlMap`/`YamlList`
+// in the read path, prototype-plan-2 item 5), same dotted-key-path
 // error messages, same `${ENV}` substitution for string-valued
 // fields, same "no I/O until `loadFromFile`" discipline.
 //
@@ -58,7 +61,6 @@
 import 'dart:io';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart';
-import 'package:yaml/yaml.dart';
 
 import '../mcp_client/mcp_auth.dart' show McpAuthConfig;
 import '../router/llm_failure_classifier.dart' show LlmFailureClass;
@@ -86,21 +88,22 @@ abstract final class SubstrateConfigLoader {
     String content, {
     Map<String, String> envVars = const {},
   }) {
-    final dynamic doc;
+    final Map<String, Object?> doc;
     try {
-      doc = loadYaml(content);
-    } on YamlException catch (e) {
-      throw SubstrateConfigException(
-        'YAML parse failed: ${e.message}',
-      );
+      doc = loadYamlAsMap(content, errorFactory: SubstrateConfigException.new);
+    } on SubstrateConfigException {
+      // Non-map root (e.g. a top-level list or scalar) — surfaced by
+      // `loadYamlAsMap` through our own factory with a "must be a map"
+      // message. Pass it through unchanged.
+      rethrow;
+    } on FormatException catch (e) {
+      // `package:yaml`'s `YamlException` is a `FormatException`; catching
+      // the supertype keeps `package:yaml` out of the read path while
+      // still rewrapping syntax errors as substrate-config errors.
+      throw SubstrateConfigException('YAML parse failed: ${e.message}');
     }
-    if (doc is! YamlMap) {
-      throw const SubstrateConfigException(
-        'Config root must be a YAML map (got a non-map document).',
-      );
-    }
-    final dynamic node = doc['substrate'];
-    if (node is! YamlMap) {
+    final node = doc['substrate'];
+    if (node is! Map<Object?, Object?>) {
       throw const SubstrateConfigException(
         'Missing top-level `substrate:` map.',
       );
@@ -129,7 +132,7 @@ abstract final class SubstrateConfigLoader {
   // ---------------------------------------------------------------
 
   static SubstrateConfig _parseSubstrate(
-    YamlMap node,
+    Map<Object?, Object?> node,
     Map<String, String> env,
   ) {
     final providersNode = _requireList(
@@ -196,14 +199,14 @@ abstract final class SubstrateConfigLoader {
   }
 
   static List<ProviderProfile> _parseProviders(
-    YamlList node,
+    List<Object?> node,
     Map<String, String> env,
   ) {
     final result = <ProviderProfile>[];
     final seenIds = <String>{};
     for (var i = 0; i < node.length; i++) {
       final entry = node[i];
-      if (entry is! YamlMap) {
+      if (entry is! Map<Object?, Object?>) {
         throw SubstrateConfigException(
           'substrate.providers[$i] must be a map (got ${entry.runtimeType}).',
         );
@@ -330,18 +333,20 @@ abstract final class SubstrateConfigLoader {
         return ProviderKind.ollama;
       case 'openai':
         return ProviderKind.openai;
+      case 'anthropic':
+        return ProviderKind.anthropic;
       case 'stub':
         return ProviderKind.stub;
       default:
         throw SubstrateConfigException(
-          '$path must be one of `ollama`, `openai`, `stub` '
+          '$path must be one of `ollama`, `openai`, `anthropic`, `stub` '
           '(got "$raw").',
         );
     }
   }
 
   static ProviderAuthConfig _parseProviderAuth(
-    YamlMap? node,
+    Map<Object?, Object?>? node,
     Map<String, String> env,
     String path,
   ) {
@@ -397,7 +402,7 @@ abstract final class SubstrateConfigLoader {
   }
 
   static Map<String, List<RoleRouteEntryConfig>> _parseRoleRoutes(
-    YamlMap node,
+    Map<Object?, Object?> node,
   ) {
     final result = <String, List<RoleRouteEntryConfig>>{};
     for (final keyDyn in node.keys) {
@@ -414,7 +419,7 @@ abstract final class SubstrateConfigLoader {
         );
       }
       final listNode = node[roleId];
-      if (listNode is! YamlList) {
+      if (listNode is! List<Object?>) {
         throw SubstrateConfigException(
           'substrate.roleRoutes.$roleId must be a list '
           '(got ${listNode.runtimeType}).',
@@ -423,7 +428,7 @@ abstract final class SubstrateConfigLoader {
       final entries = <RoleRouteEntryConfig>[];
       for (var i = 0; i < listNode.length; i++) {
         final raw = listNode[i];
-        if (raw is! YamlMap) {
+        if (raw is! Map<Object?, Object?>) {
           throw SubstrateConfigException(
             'substrate.roleRoutes.$roleId[$i] must be a map '
             '(got ${raw.runtimeType}).',
@@ -494,7 +499,7 @@ abstract final class SubstrateConfigLoader {
     return Map<String, List<RoleRouteEntryConfig>>.unmodifiable(result);
   }
 
-  static EmbeddingChoice _parseEmbedding(YamlMap node) {
+  static EmbeddingChoice _parseEmbedding(Map<Object?, Object?> node) {
     final providerId = _requireString(
       node,
       'providerId',
@@ -539,7 +544,7 @@ abstract final class SubstrateConfigLoader {
     );
   }
 
-  static RouterTunables _parseRouter(YamlMap? node) {
+  static RouterTunables _parseRouter(Map<Object?, Object?>? node) {
     // Omitted block ⇒ all-defaults (cooldownByClass left null so
     // RouterPolicy supplies its own default schedule).
     if (node == null) return RouterTunables.defaults;
@@ -589,7 +594,7 @@ abstract final class SubstrateConfigLoader {
   /// **complete** schedule (a class absent from it gets zero cooldown
   /// at the policy layer); an unknown class code is a hard error so a
   /// typo is never silently dropped.
-  static Map<LlmFailureClass, Duration>? _parseCooldowns(YamlMap? node) {
+  static Map<LlmFailureClass, Duration>? _parseCooldowns(Map<Object?, Object?>? node) {
     if (node == null) return null;
     final result = <LlmFailureClass, Duration>{};
     for (final keyDyn in node.keys) {
@@ -624,7 +629,7 @@ abstract final class SubstrateConfigLoader {
   }
 
   static WebSearchConfig _parseWebSearch(
-    YamlMap? node,
+    Map<Object?, Object?>? node,
     Map<String, String> env,
   ) {
     if (node == null) {
@@ -662,7 +667,7 @@ abstract final class SubstrateConfigLoader {
       }
       final name = keyDyn;
       final entryNode = providersNode[name];
-      if (entryNode is! YamlMap) {
+      if (entryNode is! Map<Object?, Object?>) {
         throw SubstrateConfigException(
           'substrate.webSearch.providers.$name must be a map '
           '(got ${entryNode.runtimeType}).',
@@ -703,7 +708,7 @@ abstract final class SubstrateConfigLoader {
   }
 
   static WebFetchConfig _parseWebFetch(
-    YamlMap? node,
+    Map<Object?, Object?>? node,
     Map<String, String> env,
   ) {
     if (node == null) return const WebFetchConfig();
@@ -737,7 +742,7 @@ abstract final class SubstrateConfigLoader {
   }
 
   static McpClientConfigBlock _parseMcpClient(
-    YamlMap? node,
+    Map<Object?, Object?>? node,
     Map<String, String> env,
   ) {
     if (node == null) return const McpClientConfigBlock();
@@ -758,7 +763,7 @@ abstract final class SubstrateConfigLoader {
         );
       }
       final entryNode = endpointsNode[id];
-      if (entryNode is! YamlMap) {
+      if (entryNode is! Map<Object?, Object?>) {
         throw SubstrateConfigException(
           'substrate.mcpClient.endpoints.$id must be a map '
           '(got ${entryNode.runtimeType}).',
@@ -772,7 +777,7 @@ abstract final class SubstrateConfigLoader {
   }
 
   static McpEndpointConfig _parseMcpEndpoint(
-    YamlMap node,
+    Map<Object?, Object?> node,
     String id,
     Map<String, String> env,
   ) {
@@ -868,7 +873,7 @@ abstract final class SubstrateConfigLoader {
   }
 
   static McpAuthConfig _parseMcpAuth(
-    YamlMap? node,
+    Map<Object?, Object?>? node,
     Map<String, String> env,
     String path,
   ) {
@@ -916,7 +921,7 @@ abstract final class SubstrateConfigLoader {
     }
   }
 
-  static Map<String, PriceEntry> _parsePriceTable(YamlMap? node) {
+  static Map<String, PriceEntry> _parsePriceTable(Map<Object?, Object?>? node) {
     if (node == null) return const {};
     final result = <String, PriceEntry>{};
     for (final keyDyn in node.keys) {
@@ -937,7 +942,7 @@ abstract final class SubstrateConfigLoader {
         );
       }
       final entryNode = node[key];
-      if (entryNode is! YamlMap) {
+      if (entryNode is! Map<Object?, Object?>) {
         throw SubstrateConfigException(
           'substrate.priceTable["$key"] must be a map '
           '(got ${entryNode.runtimeType}).',
@@ -1070,34 +1075,34 @@ abstract final class SubstrateConfigLoader {
     errorFactory: SubstrateConfigException.new,
   );
 
-  static String _requireString(YamlMap node, String key, String path) =>
+  static String _requireString(Map<Object?, Object?> node, String key, String path) =>
       _types.requireString(node, key, path);
 
-  static String? _optionalString(YamlMap node, String key, String path) =>
+  static String? _optionalString(Map<Object?, Object?> node, String key, String path) =>
       _types.optionalString(node, key, path);
 
-  static int _requireInt(YamlMap node, String key, String path) =>
+  static int _requireInt(Map<Object?, Object?> node, String key, String path) =>
       _types.requireInt(node, key, path);
 
-  static int? _optionalInt(YamlMap node, String key, String path) =>
+  static int? _optionalInt(Map<Object?, Object?> node, String key, String path) =>
       _types.optionalInt(node, key, path);
 
-  static double _requireDouble(YamlMap node, String key, String path) =>
+  static double _requireDouble(Map<Object?, Object?> node, String key, String path) =>
       _types.requireDouble(node, key, path);
 
-  static bool? _optionalBool(YamlMap node, String key, String path) =>
+  static bool? _optionalBool(Map<Object?, Object?> node, String key, String path) =>
       _types.optionalBool(node, key, path);
 
-  static YamlMap _requireMap(YamlMap node, String key, String path) =>
+  static Map<Object?, Object?> _requireMap(Map<Object?, Object?> node, String key, String path) =>
       _types.requireMap(node, key, path);
 
-  static YamlMap? _optionalMap(YamlMap node, String key) =>
+  static Map<Object?, Object?>? _optionalMap(Map<Object?, Object?> node, String key) =>
       _types.optionalMap(node, key);
 
-  static YamlList _requireList(YamlMap node, String key, String path) =>
+  static List<Object?> _requireList(Map<Object?, Object?> node, String key, String path) =>
       _types.requireList(node, key, path);
 
-  static YamlList? _optionalList(YamlMap node, String key, String path) =>
+  static List<Object?>? _optionalList(Map<Object?, Object?> node, String key, String path) =>
       _types.optionalList(node, key, path);
 
   static Uri _parseUri(String raw, String path) => _types.parseUri(raw, path);

@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Sources: 2 files
-// Generated: 2026-06-04T09:43:24.677602
+// Generated: 2026-06-05T14:11:56.519662
 
 // ignore_for_file: unused_import, deprecated_member_use, prefer_function_declarations_over_variables, implementation_imports, sort_child_properties_last, non_constant_identifier_names, avoid_function_literals_in_foreach_calls, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member
 
@@ -87,6 +87,16 @@ class PackageTomBrainProcedurePrototypeBridge {
     };
   }
 
+  /// GEN-107: Library re-exports declared by the bridged source
+  /// libraries. Each tuple mirrors a Dart `export '…'` directive.
+  /// Consumed by `registerBridges` via `D4rt.registerLibraryReExport`
+  /// (mirrored on `D4rtRunner` in tom_d4rt_ast).
+  static List<({String source, String target, Set<String>? show, Set<String>? hide})>
+  bridgeReExports() {
+    return [
+    ];
+  }
+
   /// Registers all bridges with an interpreter.
   ///
   /// [importPath] is the package import path that D4rt scripts will use
@@ -150,11 +160,13 @@ BridgedClass _createMemoryBridgeBridge() {
         final client = D4.getRequiredArg<$tom_brain_shared_2.TomBrainMemoryClient>(positional, 0, 'client', 'MemoryBridge');
         final onCallRaw = named['onCall'];
         final budget = D4.getOptionalNamedArg<$tom_brain_procedure_prototype_4.BudgetLedger?>(named, 'budget');
-        return $tom_brain_procedure_prototype_2.MemoryBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs}) as Future<void>; }, budget: budget);
+        final agentName = D4.getOptionalNamedArg<String?>(named, 'agentName');
+        return $tom_brain_procedure_prototype_2.MemoryBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return Future.value(D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs})); }, budget: budget, agentName: agentName);
       },
     },
     getters: {
       'client': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge').client,
+      'agentName': (visitor, target) => D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge').agentName,
     },
     methods: {
       'recall': (visitor, target, positional, named, typeArgs) {
@@ -273,9 +285,35 @@ BridgedClass _createMemoryBridgeBridge() {
         final nodeId = D4.getRequiredArg<String>(positional, 1, 'nodeId', 'stackRemove');
         return t.stackRemove(name, nodeId);
       },
+      'demote': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
+        D4.requireMinArgs(positional, 2, 'demote');
+        final nodeId = D4.getRequiredArg<String>(positional, 0, 'nodeId', 'demote');
+        final reason = D4.getRequiredArg<String>(positional, 1, 'reason', 'demote');
+        return t.demote(nodeId, reason);
+      },
+      'updateCentroid': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
+        D4.requireMinArgs(positional, 2, 'updateCentroid');
+        final forKey = D4.getRequiredArg<String>(positional, 0, 'forKey', 'updateCentroid');
+        if (positional.length <= 1) {
+          throw ArgumentError('updateCentroid: Missing required argument "centroid" at position 1');
+        }
+        final centroid = D4.coerceList<double>(positional[1], 'centroid');
+        return t.updateCentroid(forKey, centroid);
+      },
+      'findUncertain': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_2.MemoryBridge>(target, 'MemoryBridge');
+        D4.requireMinArgs(positional, 1, 'findUncertain');
+        final forKey = D4.getRequiredArg<String>(positional, 0, 'forKey', 'findUncertain');
+        final low = D4.getRequiredNamedArg<double>(named, 'low', 'findUncertain');
+        final high = D4.getRequiredNamedArg<double>(named, 'high', 'findUncertain');
+        final limit = D4.getNamedArgWithDefault<int>(named, 'limit', 200);
+        return t.findUncertain(forKey, low: low, high: high, limit: limit);
+      },
     },
     constructorSignatures: {
-      '': 'MemoryBridge(TomBrainMemoryClient client, {BridgeCallRecorder? onCall, BudgetLedger? budget})',
+      '': 'MemoryBridge(TomBrainMemoryClient client, {BridgeCallRecorder? onCall, BudgetLedger? budget, String? agentName})',
     },
     methodSignatures: {
       'recall': 'Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8})',
@@ -290,9 +328,13 @@ BridgedClass _createMemoryBridgeBridge() {
       'stackPop': 'Future<Map<String, Object?>?> stackPop(String name)',
       'stackUpdate': 'Future<void> stackUpdate(String name, String nodeId, {double? priority, String? status, Map<String, Object?>? attrs})',
       'stackRemove': 'Future<void> stackRemove(String name, String nodeId)',
+      'demote': 'Future<void> demote(String nodeId, String reason)',
+      'updateCentroid': 'Future<void> updateCentroid(String forKey, List<double> centroid)',
+      'findUncertain': 'Future<List<String>> findUncertain(String forKey, {required double low, required double high, int limit = 200})',
     },
     getterSignatures: {
       'client': 'TomBrainMemoryClient get client',
+      'agentName': 'String? get agentName',
     },
   );
 }
@@ -313,7 +355,7 @@ BridgedClass _createSubstrateBridgeBridge() {
         final onCallRaw = named['onCall'];
         final onTokenRaw = named['onToken'];
         final budget = D4.getOptionalNamedArg<$tom_brain_procedure_prototype_4.BudgetLedger?>(named, 'budget');
-        return $tom_brain_procedure_prototype_3.SubstrateBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs}) as Future<void>; }, onToken: onTokenRaw == null ? null : (String p0) { return D4.callInterpreterCallback(visitor!, onTokenRaw, [p0]) as Future<void>; }, budget: budget);
+        return $tom_brain_procedure_prototype_3.SubstrateBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return Future.value(D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs})); }, onToken: onTokenRaw == null ? null : ((String p0) { return Future.value(D4.callInterpreterCallback(visitor!, onTokenRaw, [p0])); }) as Future<void> Function(String), budget: budget);
       },
     },
     getters: {
@@ -388,6 +430,7 @@ BridgedClass _createLlmCompletionFailureBridge() {
     nativeType: $tom_brain_procedure_prototype_3.LlmCompletionFailure,
     name: 'LlmCompletionFailure',
     isAssignable: (v) => v is $tom_brain_procedure_prototype_3.LlmCompletionFailure,
+    hierarchyDepth: 1,
     constructors: {
       '': (visitor, positional, named) {
         final classCode = D4.getRequiredNamedArg<String>(named, 'classCode', 'LlmCompletionFailure');

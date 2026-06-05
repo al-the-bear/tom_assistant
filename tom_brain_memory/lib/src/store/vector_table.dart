@@ -278,9 +278,9 @@ abstract interface class VectorIndexBackend {
 ///   embedding float[<dims>]
 /// )
 ///
-/// -- insertRow (REPLACE semantics)
+/// -- insertRow (REPLACE semantics; vec0 has no UPSERT, so DELETE+INSERT)
+/// DELETE FROM <table> WHERE node_id = ?
 /// INSERT INTO <table>(node_id, embedding) VALUES (?, ?)
-///   ON CONFLICT(node_id) DO UPDATE SET embedding = excluded.embedding
 ///
 /// -- deleteRow
 /// DELETE FROM <table> WHERE node_id = ?
@@ -316,13 +316,20 @@ final class Vec0VirtualTableBackend implements VectorIndexBackend {
     Uint8List vectorBlob,
     int dims,
   ) {
-    // sqlite-vec's INSERT … ON CONFLICT DO UPDATE pattern is supported
-    // from vec0 0.1.x onwards (the version we pin in
-    // `tom_binaries/sqlite_vec/`). The "replace" semantics match the
-    // two-DB coordinator's recovery contract.
+    // vec0 virtual tables do NOT support UPSERT — an
+    // `INSERT … ON CONFLICT(node_id) DO UPDATE` raises
+    // "UPSERT not implemented for virtual table" on the pinned binary.
+    // The "replace" semantics the two-DB coordinator's recovery
+    // contract needs (a replayed write must converge to the same final
+    // state) are expressed as DELETE-then-INSERT instead, reusing the
+    // same DELETE primitive `deleteRow` uses. A missing row makes the
+    // DELETE a no-op, so this is a plain INSERT on the common path.
     db.execute(
-      'INSERT INTO "$tableName"(node_id, embedding) VALUES (?, ?) '
-      'ON CONFLICT(node_id) DO UPDATE SET embedding = excluded.embedding',
+      'DELETE FROM "$tableName" WHERE node_id = ?',
+      <Object?>[nodeId],
+    );
+    db.execute(
+      'INSERT INTO "$tableName"(node_id, embedding) VALUES (?, ?)',
       <Object?>[nodeId, vectorBlob],
     );
   }

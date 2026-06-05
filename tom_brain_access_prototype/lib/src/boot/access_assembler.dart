@@ -68,6 +68,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import '../adapters/openai_http_sse/chat_completion_sse.dart';
 import '../delivery/channel_delivery.dart';
+import '../delivery/chunk_stream_delivery.dart';
 import '../delivery/delivery_registry.dart';
 import '../delivery/sse_delivery.dart';
 import '../delivery/telegram_delivery.dart';
@@ -232,20 +233,43 @@ final class AccessAssembler {
   ///
   /// Composition (Q-E.51.4). When a [bearerAuthenticator] is wired it validates
   /// the credential and yields the principal, which is resolved *directly*
-  /// through [IdentityResolver.resolveOpenAiPrincipal] — identity is never
+  /// through [IdentityResolver.resolveBearerPrincipal] — identity is never
   /// re-resolved from the raw secret token, so an authenticated principal with
   /// no identity binding is one coherent [IdentityResolutionException] (a valid
   /// JWT for an unprovisioned principal fails resolution, not auth). With no
   /// authenticator wired the identity registry is the sole gate: the raw token
-  /// is resolved through [IdentityResolver.resolveOpenAiBearer] (an unbound
-  /// token still fails resolution).
-  ResolvedIdentity authenticateOpenAi(String bearerToken) {
+  /// is resolved through [IdentityResolver.resolveBearer] (an unbound token
+  /// still fails resolution).
+  ResolvedIdentity authenticateOpenAi(String bearerToken) =>
+      _authenticateBearer(bearerToken, AccessChannel.openai);
+
+  /// Validates a bearer credential arriving over [channel] and resolves the
+  /// principal — the channel-blind auth → identity prefix the three HTTP bearer
+  /// channels share (OpenAI E.28, Ollama #27, Anthropic #28).
+  ///
+  /// Identity is channel-blind (E.24): all bearer channels share one
+  /// `bearerTokenBindings` map, so the only thing [channel] varies is the name
+  /// stamped onto an [IdentityResolutionException]. When a [bearerAuthenticator]
+  /// is wired it validates the credential and the principal is resolved through
+  /// [IdentityResolver.resolveBearerPrincipal]; otherwise the raw token is
+  /// resolved through [IdentityResolver.resolveBearer]. Either way an unbound
+  /// credential surfaces as a typed failure, never a fabricated identity.
+  ResolvedIdentity _authenticateBearer(
+    String bearerToken,
+    AccessChannel channel,
+  ) {
     final BearerTokenAuthenticator? authenticator = bearerAuthenticator;
     if (authenticator == null) {
-      return identityResolver.resolveOpenAiBearer(bearerToken);
+      return identityResolver.resolveBearer(
+        bearerToken,
+        channel: channel.wireName,
+      );
     }
     final TomPrincipal principal = authenticator.authenticate(bearerToken);
-    return identityResolver.resolveOpenAiPrincipal(principal);
+    return identityResolver.resolveBearerPrincipal(
+      principal,
+      channel: channel.wireName,
+    );
   }
 
   /// Admits one Telegram request.
@@ -278,6 +302,91 @@ final class AccessAssembler {
         persona: persona,
         buildBinding: (resolvedIdentity, effectiveEnvelope) =>
             TelegramDeliveryBinding(
+          identity: resolvedIdentity,
+          envelope: effectiveEnvelope,
+          sink: sink,
+        ),
+      );
+    } catch (error) {
+      _emitFailure(error, envelope: envelope, principalId: principalId);
+      rethrow;
+    }
+  }
+
+  /// Admits one Ollama HTTP request (plan-2 #27).
+  ///
+  /// Ollama is a bearer HTTP channel like OpenAI, but its adapter renders its
+  /// own NDJSON / buffered-JSON dialect from the raw `OutboundChunk` stream
+  /// rather than reusing the SSE frames — so it delivers over a
+  /// [ChunkStreamDeliveryBinding] (the sink the adapter drains), not an
+  /// [SseDeliveryBinding]. Everything else mirrors [admitOpenAi]: auth →
+  /// identity → the shared [_admit] pipeline. See [_admitHttpChunkStream].
+  Future<void> admitOllama({
+    required String bearerToken,
+    String? modelId,
+    required InboundRequest envelope,
+    required OutboundChunkSink sink,
+  }) =>
+      _admitHttpChunkStream(
+        channel: AccessChannel.ollama,
+        bearerToken: bearerToken,
+        modelId: modelId,
+        envelope: envelope,
+        sink: sink,
+      );
+
+  /// Admits one Anthropic Messages HTTP request (plan-2 #28).
+  ///
+  /// Anthropic is a bearer HTTP channel like OpenAI, but its adapter renders
+  /// its own named-SSE / buffered-Message dialect from the raw `OutboundChunk`
+  /// stream — so, like Ollama, it delivers over a [ChunkStreamDeliveryBinding].
+  /// Everything else mirrors [admitOpenAi]: auth → identity → the shared
+  /// [_admit] pipeline. See [_admitHttpChunkStream].
+  Future<void> admitAnthropic({
+    required String bearerToken,
+    String? modelId,
+    required InboundRequest envelope,
+    required OutboundChunkSink sink,
+  }) =>
+      _admitHttpChunkStream(
+        channel: AccessChannel.anthropic,
+        bearerToken: bearerToken,
+        modelId: modelId,
+        envelope: envelope,
+        sink: sink,
+      );
+
+  /// The shared admission edge for the adapter-renders HTTP bearer channels
+  /// (Ollama #27, Anthropic #28).
+  ///
+  /// The chunk-stream analogue of [admitOpenAi]: the credential is authenticated
+  /// for [channel] (the channel-blind [_authenticateBearer] prefix), the persona
+  /// resolves from [modelId], and the request runs the shared [_admit] pipeline
+  /// with a [ChunkStreamDeliveryBinding] carrying [sink] — the raw-chunk wire the
+  /// originating adapter drains and renders into its own dialect. On any failure
+  /// it emits a correlated `AccessFailed` and rethrows, exactly as the other
+  /// edges do, so the channel edge can map the error onto its wire shape.
+  Future<void> _admitHttpChunkStream({
+    required AccessChannel channel,
+    required String bearerToken,
+    required String? modelId,
+    required InboundRequest envelope,
+    required OutboundChunkSink sink,
+  }) async {
+    String? principalId;
+    try {
+      final ResolvedIdentity identity =
+          _authenticateBearer(bearerToken, channel);
+      principalId = identity.principalId;
+      final Persona persona = personaResolver.resolve(modelId);
+      await _admit(
+        channel: channel,
+        identity: identity,
+        envelope: envelope,
+        persona: persona,
+        buildBinding: (resolvedIdentity, effectiveEnvelope) =>
+            ChunkStreamDeliveryBinding(
+          channel: channel,
           identity: resolvedIdentity,
           envelope: effectiveEnvelope,
           sink: sink,

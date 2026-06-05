@@ -43,6 +43,9 @@ final class BridgedPrimitiveCatalog {
     'stack.pop',
     'stack.update',
     'stack.remove',
+    'demote',
+    'updateCentroid',
+    'findUncertain',
   };
 
   /// Substrate primitives (C.13), re-exposed by `SubstrateBridge`.

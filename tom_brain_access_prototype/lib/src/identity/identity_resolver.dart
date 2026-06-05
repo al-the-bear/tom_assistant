@@ -113,7 +113,7 @@ final class IdentityBinding {
 /// identity so the mismatch is loud, not silent.
 final class IdentityResolutionException implements Exception {
   /// Names the channel whose credential could not be resolved
-  /// (`'openai'` / `'telegram'`).
+  /// (`'openai'` / `'ollama'` / `'anthropic'` / `'telegram'`).
   final String channel;
 
   /// A non-secret description of what failed. For Telegram this is the user
@@ -169,53 +169,77 @@ final class IdentityResolver {
             binding.username: binding,
         });
 
-  /// Resolves an OpenAI [bearerToken] to its [ResolvedIdentity].
+  /// Resolves a bearer [bearerToken] arriving over [channel] to its
+  /// [ResolvedIdentity].
   ///
   /// The token-keyed path, used when no bearer authenticator (E.28) is wired —
-  /// the identity registry is then the sole credential gate. Throws
-  /// [IdentityResolutionException] when the token has no binding. The token is
-  /// treated as a secret — it is never echoed into the exception or the
+  /// the identity registry is then the sole credential gate. Identity itself is
+  /// channel-blind (E.24): the OpenAI, Ollama (#27), and Anthropic (#28) HTTP
+  /// channels all share one `bearerTokenBindings` map, so the same token
+  /// resolves to the same principal whichever HTTP dialect it arrived on. The
+  /// [channel] is carried only so an unbound-token failure names the channel
+  /// the request came in on, keeping logs readable across the resolvers.
+  ///
+  /// Throws [IdentityResolutionException] when the token has no binding. The
+  /// token is treated as a secret — never echoed into the exception or the
   /// resolved identity. When an authenticator *is* wired, the assembler uses
-  /// [resolveOpenAiPrincipal] instead, so identity is never re-resolved from
+  /// [resolveBearerPrincipal] instead, so identity is never re-resolved from
   /// the raw token (Q-E.51.4).
-  ResolvedIdentity resolveOpenAiBearer(String bearerToken) {
+  ResolvedIdentity resolveBearer(String bearerToken, {required String channel}) {
     final binding = _byBearerToken[bearerToken];
     if (binding == null) {
-      throw const IdentityResolutionException(
-        'openai',
-        'unrecognised bearer token',
-      );
+      throw IdentityResolutionException(channel, 'unrecognised bearer token');
     }
     return _project(binding);
   }
 
-  /// Resolves an already-validated OpenAI bearer [principal] to its
-  /// [ResolvedIdentity] (Q-E.51.4).
+  /// Resolves an OpenAI [bearerToken] to its [ResolvedIdentity].
   ///
-  /// The composed counterpart to [resolveOpenAiBearer]. When a bearer
-  /// authenticator (E.28) is wired, it validates the credential and produces
-  /// the principal; the resolver consumes that principal *directly* rather than
-  /// re-resolving from the raw secret token. The join key is the principal's
-  /// non-secret [TomPrincipal.username], matched against the bearer bindings'
-  /// usernames — so the stable, config-chosen [ResolvedIdentity.principalId]
-  /// (which may differ from the login username) and the binding's claims are
-  /// still the source of truth.
+  /// Convenience delegate to [resolveBearer] with `channel: 'openai'`, kept so
+  /// the OpenAI call sites (and the embeddings passthrough) read at their own
+  /// channel name.
+  ResolvedIdentity resolveOpenAiBearer(String bearerToken) =>
+      resolveBearer(bearerToken, channel: 'openai');
+
+  /// Resolves an already-validated bearer [principal] arriving over [channel]
+  /// to its [ResolvedIdentity] (Q-E.51.4).
+  ///
+  /// The composed counterpart to [resolveBearer]. When a bearer authenticator
+  /// (E.28) is wired, it validates the credential and produces the principal;
+  /// the resolver consumes that principal *directly* rather than re-resolving
+  /// from the raw secret token. The join key is the principal's non-secret
+  /// [TomPrincipal.username], matched against the bearer bindings' usernames —
+  /// so the stable, config-chosen [ResolvedIdentity.principalId] (which may
+  /// differ from the login username) and the binding's claims are still the
+  /// source of truth. The bindings are channel-blind, so the same principal
+  /// resolves identically across the HTTP channels; [channel] only names the
+  /// failure.
   ///
   /// Throws [IdentityResolutionException] when the validated principal has no
   /// identity binding. This makes "authenticated but not provisioned" (e.g. a
   /// valid JWT for a principal absent from the registry) one coherent decision
   /// — a loud failure, never a fabricated identity — instead of an auth pass
   /// followed by an independent, surprising token-lookup miss.
-  ResolvedIdentity resolveOpenAiPrincipal(TomPrincipal principal) {
+  ResolvedIdentity resolveBearerPrincipal(
+    TomPrincipal principal, {
+    required String channel,
+  }) {
     final binding = _byPrincipalUsername[principal.username];
     if (binding == null) {
-      throw const IdentityResolutionException(
-        'openai',
+      throw IdentityResolutionException(
+        channel,
         'authenticated principal has no identity binding',
       );
     }
     return _project(binding);
   }
+
+  /// Resolves an already-validated OpenAI bearer [principal] to its
+  /// [ResolvedIdentity].
+  ///
+  /// Convenience delegate to [resolveBearerPrincipal] with `channel: 'openai'`.
+  ResolvedIdentity resolveOpenAiPrincipal(TomPrincipal principal) =>
+      resolveBearerPrincipal(principal, channel: 'openai');
 
   /// Resolves a Telegram [userId] to its [ResolvedIdentity].
   ///

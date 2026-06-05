@@ -79,17 +79,20 @@ import '../router/llm_failure_classifier.dart' show LlmFailureClass;
 import '../router/route_entry.dart' show RouteEntry, RouteConditions;
 import '../router/router_policy.dart' show RouterPolicy;
 
-/// Provider kind discriminator. Mirrors the substrate's three
-/// concrete `LlmProvider` implementations (B.14 / B.15 / B.16).
+/// Provider kind discriminator. Mirrors the substrate's concrete
+/// `LlmProvider` implementations (B.14 / B.15 / B.16 / plan-2 item 10).
 ///
-/// A `kind` other than these three is a config-load error — the
-/// loader has no constructor to dispatch to.
+/// A `kind` other than these is a config-load error — the loader has no
+/// constructor to dispatch to.
 enum ProviderKind {
   /// `OllamaLlmProvider` against a local Ollama daemon.
   ollama,
 
   /// `OpenAiPassthroughProvider` against any OpenAI-format vendor.
   openai,
+
+  /// `AnthropicLlmProvider` against the Anthropic Messages API.
+  anthropic,
 
   /// `StubLlmProvider` — test-only, no transport.
   stub,

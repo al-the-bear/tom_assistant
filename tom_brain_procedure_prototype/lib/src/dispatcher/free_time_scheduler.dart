@@ -71,7 +71,10 @@
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show StackEntry, StackSummary, TomBrainMemoryClient;
 
-import 'run_coordinator.dart' show RunBody, RunCoordinator;
+import '../api/procedure_engine.dart' show ProcedureEngine;
+import '../api/procedure_invocation.dart' show ProcedureInvocation;
+import '../api/procedure_outcome.dart' show ProcedureOutcome;
+import 'run_coordinator.dart' show RunBody, RunCoordinator, RunSlotBusy;
 
 /// A stack is *hot* when its size is strictly greater than this threshold
 /// (§ 5.3: "size above threshold"). The prototype default `0` makes any
@@ -219,10 +222,19 @@ final class FreeTimeScheduler {
   /// the runtime-tracking `inflight` / `recent_runs`). [hotSizeThreshold] and
   /// [hotPriorityThreshold] define the § 5.3 hotness test (size strictly above
   /// the size threshold OR top priority at/above the priority threshold).
+  /// [engine] is the optional procedure engine the explicit single-shot
+  /// [triggerMaintenance] path runs a *named* maintenance procedure through
+  /// (plan #23). It is genuinely optional: the stack-harvest [tick] path needs
+  /// no engine (its background body comes from [workFactory]), so the D.33–D.35
+  /// suites construct the scheduler without one. A scheduler built without an
+  /// engine that is asked to [triggerMaintenance] throws [StateError] — the two
+  /// background-driving modes are distinct and a caller picks one by what it
+  /// supplies.
   FreeTimeScheduler({
     required this.coordinator,
     required this.memory,
     required this.workFactory,
+    this.engine,
     List<String> schedulableStacks = defaultSchedulableStacks,
     this.hotSizeThreshold = defaultHotSizeThreshold,
     this.hotPriorityThreshold = defaultHotPriorityThreshold,
@@ -231,6 +243,11 @@ final class FreeTimeScheduler {
   /// The coordinator the scheduler submits background runs to and reads the
   /// foreground / background slot state from.
   final RunCoordinator coordinator;
+
+  /// The procedure engine the explicit [triggerMaintenance] path runs a named
+  /// maintenance procedure through, or `null` when the scheduler was built for
+  /// the stack-harvest [tick] path only.
+  final ProcedureEngine? engine;
 
   /// The memory client the scheduler reads stack sizes / priorities from and
   /// pops the chosen entry through.
@@ -304,6 +321,56 @@ final class FreeTimeScheduler {
       version: work.version,
     );
     return FreeTimeSchedulerTick.scheduled(pick, runFuture);
+  }
+
+  /// Explicitly runs a single *named* maintenance procedure on the background
+  /// slot — the minimal, manual, single-shot trigger of plan #23.
+  ///
+  /// This is the deliberately weak counterpart to [tick]: where [tick] harvests
+  /// a hot-stack entry and routes it through [workFactory], this path takes a
+  /// [procedureId] the caller names (e.g. a dreaming agent such as
+  /// `dream_extract_v1`) and submits one engine-backed run into the background
+  /// slot. It fires *only when invoked* — there is no timer, no loop, no
+  /// autonomous dreaming — so the prototype exercises the background slot (and
+  /// the PE-5 preemption boundary) on demand without an autonomous scheduler.
+  ///
+  /// The run is driven through the same [coordinator] the inbound (foreground)
+  /// path uses, so a foreground arrival cooperatively preempts it at the
+  /// procedure's next `yield_if_foreground_waiting()` checkpoint and it resumes
+  /// once the foreground chain drains (PE-5). [arguments] are the procedure's
+  /// inputs; [version] selects the procedure version (the prototype's only
+  /// version is 1).
+  ///
+  /// Returns the run's [ProcedureOutcome] future. Throws [RunSlotBusy]
+  /// synchronously when a background run is already live — at most one
+  /// background run at a time (def § 7.1, PE-5) — and [StateError] when the
+  /// scheduler was constructed without an [engine] (stack-harvest mode only).
+  Future<ProcedureOutcome> triggerMaintenance(
+    String procedureId, {
+    Map<String, Object?> arguments = const <String, Object?>{},
+    int version = 1,
+  }) {
+    final engine = this.engine;
+    if (engine == null) {
+      throw StateError(
+        'FreeTimeScheduler.triggerMaintenance($procedureId) requires an '
+        'engine, but this scheduler was constructed without one '
+        '(stack-harvest tick mode only).',
+      );
+    }
+    return coordinator.submitBackground<ProcedureOutcome>(
+      () => engine
+          .invoke(
+            ProcedureInvocation(
+              procedureId: procedureId,
+              arguments: arguments,
+              version: version,
+            ),
+          )
+          .outcome,
+      procedureId: procedureId,
+      version: version,
+    );
   }
 
   /// Picks the highest-priority hot stack among the [summaries], restricted to

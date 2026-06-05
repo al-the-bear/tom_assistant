@@ -57,6 +57,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
     show AccessLayerInstaller, AccessLayerShutdown, Dispatcher;
 
+import '../delivery/chunk_stream_delivery.dart';
 import '../delivery/delivery_registry.dart';
 import '../delivery/sse_delivery.dart';
 import '../delivery/telegram_delivery.dart';
@@ -199,7 +200,8 @@ abstract final class BrainAccessBoot {
   /// the running [BootedAccessLayer].
   ///
   /// Constructs the event bus, the delivery registry (its `onDelivered` sink
-  /// wired to the bus, both delivery paths registered), the three resolvers,
+  /// wired to the bus, all four delivery paths registered — SSE, Telegram, and
+  /// the Ollama / Anthropic chunk-stream paths), the three resolvers,
   /// the three edge-security limiters, the optional bearer authenticator, and
   /// the optional classifier (built only when both seams are supplied, with the
   /// embed seam wrapped in the E.34 cache), then wires them into one
@@ -215,7 +217,9 @@ abstract final class BrainAccessBoot {
       clock: config.clock,
     )
       ..register(const SseChannelDelivery())
-      ..register(const TelegramChannelDelivery());
+      ..register(const TelegramChannelDelivery())
+      ..register(const ChunkStreamChannelDelivery(AccessChannel.ollama))
+      ..register(const ChunkStreamChannelDelivery(AccessChannel.anthropic));
 
     final AccessAssembler assembler = AccessAssembler(
       dispatcher: dispatcher,

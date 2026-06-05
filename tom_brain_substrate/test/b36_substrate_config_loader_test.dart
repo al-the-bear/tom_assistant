@@ -152,13 +152,16 @@ void main() {
 
   group('B.36 SubstrateConfigLoader.parse — structural failures', () {
     test('non-map root', () {
+      // A top-level list (or scalar) fails inside `loadYamlAsMap`, which
+      // raises a `SubstrateConfigException` (our error factory) carrying
+      // the canonical "<root> must be a map (got …)." message.
       expect(
         () => SubstrateConfigLoader.parse('- not a map'),
         throwsA(
           isA<SubstrateConfigException>().having(
             (e) => e.message,
             'message',
-            contains('non-map document'),
+            contains('must be a map'),
           ),
         ),
       );
@@ -253,7 +256,7 @@ substrate:
           isA<SubstrateConfigException>().having(
             (e) => e.message,
             'message',
-            contains('one of `ollama`, `openai`, `stub`'),
+            contains('one of `ollama`, `openai`, `anthropic`, `stub`'),
           ),
         ),
       );
@@ -1249,6 +1252,50 @@ substrate:
       },
     );
   });
+
+  // The real prototype deployment (plan-2 item 2 / runtime_preconditions.md):
+  // oMLX serves the substrate LLM over an OpenAI-compatible endpoint on the
+  // fleet VPN; Ollama serves `nomic-embed-text` (768 d) embeddings locally.
+  // This exercises the migrated plain-map loader against the exact shape the
+  // assembled prototype loads, both in-memory and from disk via `loadFromFile`.
+  group('B.36 SubstrateConfigLoader — real deployment fixture', () {
+    test('parses the oMLX + Ollama deployment config', () {
+      final cfg = SubstrateConfigLoader.parse(_realDeploymentYaml);
+
+      // oMLX: OpenAI-compatible chat LLM, no auth (local server), one model.
+      final omlx = cfg.providers.firstWhere((p) => p.id == 'omlx');
+      expect(omlx.kind, equals(ProviderKind.openai));
+      expect(omlx.baseUrl, equals(Uri.parse('http://10.8.0.7:8000/v1/')));
+      expect(omlx.auth.isNone, isTrue);
+      expect(omlx.models, equals(['gemma-4-26b-a4b-it-4bit']));
+
+      // Ollama: embeddings host.
+      final ollama = cfg.providers.firstWhere((p) => p.id == 'ollama');
+      expect(ollama.kind, equals(ProviderKind.ollama));
+      expect(ollama.baseUrl, equals(Uri.parse('http://localhost:11434')));
+
+      // The LLM roles route to oMLX; embeddings come from Ollama at 768 d.
+      expect(cfg.roleRoutes['analyser']!.single.providerId, equals('omlx'));
+      expect(
+        cfg.roleRoutes['analyser']!.single.model,
+        equals('gemma-4-26b-a4b-it-4bit'),
+      );
+      expect(cfg.embedding.providerId, equals('ollama'));
+      expect(cfg.embedding.model, equals('nomic-embed-text'));
+      expect(cfg.embedding.dims, equals(768));
+    });
+
+    test('loads the deployment config from disk via loadFromFile', () async {
+      final file = await _writeTempYaml(_realDeploymentYaml);
+      try {
+        final cfg = SubstrateConfigLoader.loadFromFile(file.path);
+        expect(cfg.providers.map((p) => p.id), containsAll(['omlx', 'ollama']));
+        expect(cfg.embedding.dims, equals(768));
+      } finally {
+        await file.parent.delete(recursive: true);
+      }
+    });
+  });
 }
 
 // ─── Fixtures ────────────────────────────────────────────────────
@@ -1318,6 +1365,37 @@ substrate:
     providerId: stub-provider
     model: any
     dims: 1
+''';
+
+// The real prototype deployment shape (runtime_preconditions.md):
+// oMLX (OpenAI-compatible LLM, VPN `10.8.0.7:8000`, no auth) + Ollama
+// (`nomic-embed-text`, 768 d embeddings, localhost). oMLX serves no
+// embedding model, so embeddings are split onto Ollama.
+const String _realDeploymentYaml = '''
+substrate:
+  providers:
+    - id: omlx
+      kind: openai
+      baseUrl: http://10.8.0.7:8000/v1/
+      models:
+        - gemma-4-26b-a4b-it-4bit
+    - id: ollama
+      kind: ollama
+      baseUrl: http://localhost:11434
+      models:
+        - nomic-embed-text
+  roleRoutes:
+    analyser:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    assistant_to_user:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+  embedding:
+    providerId: ollama
+    model: nomic-embed-text
+    dims: 768
+    normalize: true
 ''';
 
 Future<File> _writeTempYaml(String content) async {

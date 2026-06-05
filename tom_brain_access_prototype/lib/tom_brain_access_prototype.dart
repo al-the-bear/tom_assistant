@@ -472,6 +472,8 @@ library;
 // Every barrel is doc-comment-only at E.8 (no symbols yet); a
 // comment-only Dart library is a valid re-export target.
 export 'src/adapters/openai_http_sse/openai_http_sse.dart';
+export 'src/adapters/ollama/ollama.dart';
+export 'src/adapters/anthropic/anthropic.dart';
 export 'src/adapters/telegram/telegram.dart';
 export 'src/identity/identity.dart';
 export 'src/edge_security/edge_security.dart';

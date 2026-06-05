@@ -57,7 +57,6 @@ const _expectedEmbeddedFields = <String, List<String>>{
   'PlanStep': ['description'],
   'Artifact': ['summary'],
   'Procedure': ['name', 'summary'],
-  'ProcedureRun': ['summary'],
   'AutomationIdea': ['description', 'motivation'],
   'InterestItem': ['topic', 'why'],
   'NodeType': ['type_name', 'schema_summary'],
@@ -66,7 +65,16 @@ const _expectedEmbeddedFields = <String, List<String>>{
 };
 
 /// Types the spec marks as carrying no embedding.
-const _noEmbeddingTypes = <String>{'Stack', 'StackEntry', 'Tombstone'};
+// `ProcedureRun` is operational run metadata: the recorder writes a
+// `running` start marker (no summary) and a final record without ever
+// producing an embedding vector, and memory does not embed lazily — so the
+// only satisfiable policy is `none` (spec § 4.1).
+const _noEmbeddingTypes = <String>{
+  'Stack',
+  'StackEntry',
+  'Tombstone',
+  'ProcedureRun',
+};
 
 /// Per-type "Key edges" from spec § 4.1, as a flat unordered set. The
 /// manifest may add edges (e.g. `mentions` everywhere) but MUST contain
@@ -160,7 +168,8 @@ void main() {
       }
     });
 
-    test('Stack / StackEntry / Tombstone declare no embedding', () {
+    test('Stack / StackEntry / Tombstone / ProcedureRun declare no embedding',
+        () {
       for (final typeName in _noEmbeddingTypes) {
         final decl = _decl(manifest, typeName);
         expect(decl.embeddingPolicy.isNone, isTrue,

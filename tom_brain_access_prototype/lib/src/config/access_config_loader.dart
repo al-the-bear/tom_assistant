@@ -144,6 +144,8 @@ abstract final class AccessConfigLoader {
       node,
       const <String>{
         'openai',
+        'ollama',
+        'anthropic',
         'telegram',
         'users',
         'rateLimit',
@@ -157,8 +159,24 @@ abstract final class AccessConfigLoader {
       'access',
     );
 
-    final openAi = _requireMap(node, 'openai', 'access.openai');
-    final (port, basePath) = _parseOpenAi(openAi);
+    // OpenAI is the always-present channel (its port is required); Ollama (#27)
+    // and Anthropic (#28) are optional bearer HTTP channels with the same
+    // port + basePath shape, so all three share `_parsePortAndBasePath`.
+    final (port, basePath) = _parsePortAndBasePath(
+      _requireMap(node, 'openai', 'access.openai'),
+      'access.openai',
+      '/v1',
+    );
+    final (ollamaPort, ollamaBasePath) = _parseOptionalChannel(
+      _optionalMap(node, 'ollama', 'access.ollama'),
+      'access.ollama',
+      '/api',
+    );
+    final (anthropicPort, anthropicBasePath) = _parseOptionalChannel(
+      _optionalMap(node, 'anthropic', 'access.anthropic'),
+      'access.anthropic',
+      '/v1',
+    );
 
     final telegramToken = _parseTelegram(
       _optionalMap(node, 'telegram', 'access.telegram'),
@@ -198,6 +216,10 @@ abstract final class AccessConfigLoader {
     return AccessConfig(
       openAiPort: port,
       openAiBasePath: basePath,
+      ollamaPort: ollamaPort,
+      ollamaBasePath: ollamaBasePath,
+      anthropicPort: anthropicPort,
+      anthropicBasePath: anthropicBasePath,
       telegramBotToken: telegramToken,
       users: users,
       bearerTokenBindings: bearerBindings,
@@ -212,35 +234,50 @@ abstract final class AccessConfigLoader {
     );
   }
 
-  /// Parses `access.openai` → (port, basePath).
+  /// Parses one bearer HTTP channel's transport block → (port, basePath).
   ///
-  /// Identity now lives under `access.users` (Q-E.24.2), so this section
-  /// carries only the channel transport config.
-  static (int, String) _parseOpenAi(YamlMap node) {
-    _rejectUnknownKeys(
-      node,
-      const <String>{'port', 'basePath'},
-      'access.openai',
-    );
-    final port = _requireInt(node, 'port', 'access.openai.port');
+  /// The shared shape of the `access.openai` (E.11), `access.ollama` (#27),
+  /// and `access.anthropic` (#28) sections: a required `port` (`> 0`) and an
+  /// optional `basePath` (defaulting to [defaultBasePath], and required to be a
+  /// non-empty `/`-rooted path when present). Identity lives under
+  /// `access.users` (Q-E.24.2), so a channel block carries transport config
+  /// only. [path] is the dotted key path for error messages.
+  static (int, String) _parsePortAndBasePath(
+    YamlMap node,
+    String path,
+    String defaultBasePath,
+  ) {
+    _rejectUnknownKeys(node, const <String>{'port', 'basePath'}, path);
+    final port = _requireInt(node, 'port', '$path.port');
     if (port <= 0) {
-      throw const AccessConfigException(
-        'access.openai.port must be > 0.',
-      );
+      throw AccessConfigException('$path.port must be > 0.');
     }
-    final basePath = _optionalString(
-          node,
-          'basePath',
-          'access.openai.basePath',
-        ) ??
-        '/v1';
+    final basePath =
+        _optionalString(node, 'basePath', '$path.basePath') ?? defaultBasePath;
     if (basePath.isEmpty || !basePath.startsWith('/')) {
       throw AccessConfigException(
-        'access.openai.basePath must be a non-empty path starting with "/" '
+        '$path.basePath must be a non-empty path starting with "/" '
         '(got "$basePath").',
       );
     }
     return (port, basePath);
+  }
+
+  /// Parses an *optional* bearer HTTP channel block → (port?, basePath).
+  ///
+  /// The Ollama (#27) and Anthropic (#28) channels are only configured when
+  /// their section is present. Absent → `(null, defaultBasePath)` (the channel
+  /// is off); present → delegates to [_parsePortAndBasePath] (the same
+  /// required-port / optional-basePath contract as OpenAI). The non-null base
+  /// path is harmless when the port is null — `AccessConfig` only consults it
+  /// when the channel is on.
+  static (int?, String) _parseOptionalChannel(
+    YamlMap? node,
+    String path,
+    String defaultBasePath,
+  ) {
+    if (node == null) return (null, defaultBasePath);
+    return _parsePortAndBasePath(node, path, defaultBasePath);
   }
 
   /// Parses `access.telegram` → bot token.
@@ -646,8 +683,12 @@ abstract final class AccessConfigLoader {
   static double? _optionalDouble(YamlMap node, String key, String path) =>
       _types.optionalDouble(node, key, path);
 
+  // Why: the shared reader widened its return type to `Map<Object?, Object?>`
+  // (so it accepts any decoded map), but indexing a `YamlMap` still yields a
+  // `YamlMap`, which every caller here is typed against — the cast restores the
+  // node-typed contract without re-typing the call chain.
   static YamlMap _requireMap(YamlMap node, String key, String path) =>
-      _types.requireMap(node, key, path);
+      _types.requireMap(node, key, path) as YamlMap;
 
   /// Optional map — kept local rather than delegated. The shared
   /// [YamlConfigReader.optionalMap] reports by *key* (`Field \`x\` must be a
@@ -666,7 +707,7 @@ abstract final class AccessConfigLoader {
   }
 
   static YamlList? _optionalList(YamlMap node, String key, String path) =>
-      _types.optionalList(node, key, path);
+      _types.optionalList(node, key, path) as YamlList?;
 
   /// Unwraps a YAML scalar into a plain Dart value for the opaque claims
   /// map. Nested maps / lists are rejected — claims are flat scalars.

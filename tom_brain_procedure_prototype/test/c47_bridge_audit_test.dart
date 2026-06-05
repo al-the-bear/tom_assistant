@@ -23,7 +23,7 @@
 //  2. **Bridge-surface signature guard.** The generated `BridgedClass`
 //     carries a `methodSignatures` string per bridged method — the exact
 //     d4rt-facing contract a procedure script binds to. This audit pins
-//     all 16 of them (12 memory + 4 substrate, the § 5.1 surface) to
+//     all 19 of them (15 memory + 4 substrate, the § 5.1 surface) to
 //     literal expected strings. Any edit to a bridge method's d4rt-facing
 //     signature (a param added, removed, retyped, or re-defaulted, then
 //     re-reflected into the `*.b.dart`) drifts the generated string away
@@ -70,10 +70,11 @@ import 'package:tom_brain_procedure_prototype/src/bridges/brain_bridges.b.dart';
 
 /// The authoritative § 5.1 memory surface: bridged method name → the
 /// exact d4rt-facing signature string the generated `BridgedClass`
-/// records. Twelve rows — `recall`, `classify`, `persist`, `edge`,
-/// `propose_node_type`, and the seven `stack.*` operations (exposed as
+/// records. Fifteen rows — `recall`, `classify`, `persist`, `edge`,
+/// `propose_node_type`, the seven `stack.*` operations (exposed as
 /// `stackList` … `stackRemove` because Dart method names cannot contain a
-/// dot).
+/// dot), and the three dreaming-agent lifecycle/classifier maintenance
+/// methods `demote`, `updateCentroid`, and `findUncertain`.
 const Map<String, String> _expectedMemorySignatures = <String, String>{
   'recall':
       "Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8})",
@@ -94,6 +95,11 @@ const Map<String, String> _expectedMemorySignatures = <String, String>{
   'stackUpdate':
       'Future<void> stackUpdate(String name, String nodeId, {double? priority, String? status, Map<String, Object?>? attrs})',
   'stackRemove': 'Future<void> stackRemove(String name, String nodeId)',
+  'demote': 'Future<void> demote(String nodeId, String reason)',
+  'updateCentroid':
+      'Future<void> updateCentroid(String forKey, List<double> centroid)',
+  'findUncertain':
+      'Future<List<String>> findUncertain(String forKey, {required double low, required double high, int limit = 200})',
 };
 
 /// The authoritative § 5.1 substrate surface: four rows — `llm`, `embed`,
@@ -138,7 +144,7 @@ void main() {
   }
 
   group('C.47 bridge audit — registered method set is the § 5.1 surface', () {
-    test('MemoryBridge registers exactly the 12 audited memory methods', () {
+    test('MemoryBridge registers exactly the 15 audited memory methods', () {
       final registered = bridgeClassNamed('MemoryBridge').methods.keys.toSet();
       expect(
         registered,
@@ -191,7 +197,7 @@ void main() {
 
   group('C.47 bridge audit — every bridged method roundtrips end-to-end', () {
     test(
-        'each of the 16 methods runs through the interpreter and is recorded',
+        'each of the 19 methods runs through the interpreter and is recorded',
         () async {
       // Seed canned domain results so every outbound flattening leg has
       // something to read. Inbound legs are observed via the doubles'
@@ -258,6 +264,11 @@ void main() {
             "'n_00000000000000000000000006', priority: 0.5);",
         'stackRemove': "await mem.stackRemove('s', "
             "'n_00000000000000000000000007');",
+        'demote': "await mem.demote('n_00000000000000000000000008', "
+            "'prunerDecision');",
+        'updateCentroid': "await mem.updateCentroid('Claim', [0.1, 0.2]);",
+        'findUncertain':
+            "await mem.findUncertain('Claim', low: 0.0, high: 1.0);",
       };
       const substrateBodies = <String, String>{
         'llm': "await sub.llm('q');",
@@ -389,6 +400,27 @@ class _AuditMemoryClient implements TomBrainMemoryClient {
   @override
   Future<void> registerNodeType(NodeTypeDecl decl) async {
     called.add('proposeNodeType');
+  }
+
+  @override
+  Future<void> demote(NodeId id, DemotionReason reason) async {
+    called.add('demote');
+  }
+
+  @override
+  Future<void> updateCentroid(String forKey, Vec centroid) async {
+    called.add('updateCentroid');
+  }
+
+  @override
+  Future<List<NodeId>> findUncertain({
+    required String forKey,
+    required double low,
+    required double high,
+    int limit = 200,
+  }) async {
+    called.add('findUncertain');
+    return const <NodeId>[];
   }
 
   @override

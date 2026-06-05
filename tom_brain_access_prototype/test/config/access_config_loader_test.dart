@@ -474,6 +474,189 @@ access:
     });
   });
 
+  group('#29 Ollama + Anthropic channels', () {
+    // Plan-2 #29 adds two optional bearer HTTP channels alongside OpenAI.
+    // They share the OpenAI transport shape (required port, optional
+    // `/`-rooted basePath) but carry their own listening port + mount path;
+    // identity / personas / policies remain the shared ones.
+
+    test('the full document declares neither channel ⇒ both off', () {
+      final config = AccessConfigLoader.parse(_fullDoc);
+      expect(config.hasOllama, isFalse);
+      expect(config.hasAnthropic, isFalse);
+    });
+
+    test('a declared ollama section turns the channel on', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  ollama:
+    port: 11434
+    basePath: /api
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.hasOllama, isTrue);
+      expect(config.ollamaPort, 11434);
+      expect(config.ollamaBasePath, '/api');
+      // The Anthropic sibling is still off — the two are independent.
+      expect(config.hasAnthropic, isFalse);
+      expect(config.anthropicPort, isNull);
+    });
+
+    test('a declared anthropic section turns the channel on', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  anthropic:
+    port: 8443
+    basePath: /v1
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.hasAnthropic, isTrue);
+      expect(config.anthropicPort, 8443);
+      expect(config.anthropicBasePath, '/v1');
+      expect(config.hasOllama, isFalse);
+      expect(config.ollamaPort, isNull);
+    });
+
+    test('all four channels may coexist in one document', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  telegram: { botToken: "bot-1:x" }
+  ollama: { port: 11434 }
+  anthropic: { port: 8443 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.openAiPort, 8080);
+      expect(config.hasTelegram, isTrue);
+      expect(config.hasOllama, isTrue);
+      expect(config.hasAnthropic, isTrue);
+    });
+
+    test('basePath defaults to /api (ollama) and /v1 (anthropic) when omitted',
+        () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  ollama: { port: 11434 }
+  anthropic: { port: 8443 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.ollamaBasePath, '/api');
+      expect(config.anthropicBasePath, '/v1');
+    });
+
+    test('an omitted section ⇒ channel off, default base path retained', () {
+      // _minimalDoc declares only OpenAI; both optional channels are absent.
+      final config = AccessConfigLoader.parse(_minimalDoc);
+      expect(config.hasOllama, isFalse);
+      expect(config.ollamaPort, isNull);
+      expect(config.ollamaBasePath, '/api');
+      expect(config.hasAnthropic, isFalse);
+      expect(config.anthropicPort, isNull);
+      expect(config.anthropicBasePath, '/v1');
+    });
+
+    test('rejects a non-positive ollama port', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  ollama: { port: 0 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.ollama.port must be > 0'),
+        )),
+      );
+    });
+
+    test('rejects a missing required anthropic port', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  anthropic: { basePath: /v1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.anthropic.port'),
+        )),
+      );
+    });
+
+    test('rejects an ollama base path that is not /-rooted', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  ollama: { port: 11434, basePath: "api" }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.ollama.basePath'),
+        )),
+      );
+    });
+
+    test('rejects an unknown key within the ollama section', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  ollama: { port: 11434, mystery: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.ollama has unknown key "mystery"'),
+        )),
+      );
+    });
+
+    test('rejects an unknown key within the anthropic section', () {
+      const doc = '''
+access:
+  openai: { port: 8080 }
+  anthropic: { port: 8443, mystery: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.anthropic has unknown key "mystery"'),
+        )),
+      );
+    });
+  });
+
   group('E.44 edgeState (P1.4)', () {
     test('parses access.edgeState.directory', () {
       const doc = '''

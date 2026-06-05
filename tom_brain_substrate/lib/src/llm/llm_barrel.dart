@@ -98,6 +98,23 @@
 //     `StubLlmProvider.splitByWord`) so tests can compose multi-chunk
 //     stream shapes without redefining boilerplate.
 
+// What this barrel adds at plan-2 item 10:
+//
+//   * `AnthropicLlmProvider` — fourth concrete provider against the
+//     Anthropic Messages API (`/v1/messages`, `x-api-key`,
+//     `anthropic-version`) on top of the [AnthropicHttpClient]
+//     wire-shape seam. Carries the REQUIRED `max_tokens` resolution and
+//     surfaces `response_format` (unsupported by Messages) as a note.
+//   * `AnthropicHttpClient` (interface) + `DefaultAnthropicHttpClient`
+//     (production impl) — the testable wire seam.
+//   * The Anthropic-side value classes (`AnthropicMessage`,
+//     `AnthropicGenerationOptions`, `AnthropicChatResponse`,
+//     `AnthropicStreamFragment`) and the `AnthropicHttpException`
+//     thrown by the production transport. The exception is a
+//     `WireHttpException` subtype, so the router's
+//     `LlmFailureClassifier` maps it onto the failover taxonomy without
+//     any Anthropic-specific classifier code.
+
 // What this barrel adds at B.23:
 //
 //   * `AnchorRegistry` — substrate-side accounting of the assistant-
@@ -115,6 +132,8 @@
 //     the registry.
 
 export 'anchor_registry.dart';
+export 'anthropic_http_client.dart';
+export 'anthropic_llm_provider.dart';
 export 'llm_provider.dart';
 export 'ollama_http_client.dart';
 export 'ollama_llm_provider.dart';

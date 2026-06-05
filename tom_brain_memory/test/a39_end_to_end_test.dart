@@ -244,17 +244,22 @@ void main() {
       );
     }
 
-    Future<NodeId> persistProcedureRun(String summary, String key,
-        {int seed = 1}) {
+    // ProcedureRun is operational metadata: it declares EmbeddingPolicy.none
+    // (spec § 4.1), so the draft carries no embedding. Field shape mirrors
+    // the RunRecorder's final record (camelCase; § 4.1).
+    Future<NodeId> persistProcedureRun(String summary, String key) {
       return persister.persist(
         NodeDraft(
           typeName: 'ProcedureRun',
           values: <String, Object?>{
+            'procedureId': 'p_a39',
+            'version': 1,
+            'runId': 'r_a39',
+            'status': 'accepted',
             'summary': summary,
-            'started_at': '2026-05-30T14:00:00.000Z',
-            'ended_at': null,
+            'startedAt': '2026-05-30T14:00:00.000Z',
+            'trailId': 't_a39',
           },
-          embedding: _v768(seed: seed),
         ),
         scope: Scope(producer: 'a39:test:r1', idempotencyKey: key),
       );
@@ -516,7 +521,7 @@ void main() {
       // the ProcedureRun that produced it, and the run RECEIVES it.
       final conclusion =
           await persistConclusion('an answer', 'why', 'k-pb-out', seed: 31);
-      final run = await persistProcedureRun('a run', 'k-pb-run', seed: 32);
+      final run = await persistProcedureRun('a run', 'k-pb-run');
 
       // Recorder direction: produced node --produced_by--> run. Accepted.
       final edgeId = await edgeWriter.edge(

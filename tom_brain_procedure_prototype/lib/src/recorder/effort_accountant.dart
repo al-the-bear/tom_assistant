@@ -21,15 +21,21 @@
 //   - `embed` / `search` / `fetch`→ +1 toolCall (substrate tool callouts
 //                                    other than `llm`).
 //   - `recall` / `classify` /
-//     `stack.list` / `stack.peek` → +1 memoryRead (`classify` reads the
-//                                    centroid table; it never writes).
+//     `stack.list` / `stack.peek` /
+//     `findUncertain`             → +1 memoryRead (`classify` and
+//                                    `findUncertain` read the centroid
+//                                    table; neither writes).
 //   - `persist` / `edge` /
 //     `propose_node_type` /
 //     `stack.create` / `.push` /
 //     `.pop` / `.update` /
-//     `.remove`                   → +1 memoryWrite (any call that
+//     `.remove` / `demote` /
+//     `updateCentroid`            → +1 memoryWrite (any call that
 //                                    mutates the store; `pop` mutates by
-//                                    removing the top entry).
+//                                    removing the top entry, `demote` by
+//                                    changing lifecycle status,
+//                                    `updateCentroid` by replacing a
+//                                    centroid row).
 //   - `runProcedure` / `note` /
 //     `yield_if_foreground_waiting`→ zero (engine-native control flow has
 //                                    no direct substrate/memory cost; a
@@ -67,6 +73,9 @@ final class EffortAccountant {
     'stack.peek',
     'stackList',
     'stackPeek',
+    // `findUncertain` reads the centroid table to surface borderline nodes
+    // (§ 7.4); it writes nothing.
+    'findUncertain',
   };
 
   /// Store-mutating primitives — each contributes one `memoryWrites`.
@@ -85,6 +94,11 @@ final class EffortAccountant {
     'stackPop',
     'stackUpdate',
     'stackRemove',
+    // `demote` mutates a node's lifecycle status (§ 9.5); `updateCentroid`
+    // replaces a centroid row (§ 7.3). Both change the store, so each charges
+    // one memoryWrite.
+    'demote',
+    'updateCentroid',
   };
 
   /// Substrate tool callouts other than `llm` — each contributes one

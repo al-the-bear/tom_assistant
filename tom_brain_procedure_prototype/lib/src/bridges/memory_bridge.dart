@@ -46,7 +46,7 @@
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show BrainTime, BrainVersion, NodeId, Vec;
+    show BrainTime, BrainVersion, DemotionReason, NodeId, Vec;
 import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
 
 import '../budget/budget_ledger.dart' show BudgetLedger;
@@ -81,12 +81,29 @@ class MemoryBridge {
   /// cap throws `ProcedureBudgetExceeded` *before* the effect runs.
   final BudgetLedger? _budget;
 
+  /// The cognitive-agent identity this run writes under, or `null` for a
+  /// non-agent run (PE-10 / memory § 9). When set, every write this bridge
+  /// issues carries it as the write's [Scope.agentName], so the memory
+  /// store's `AgentRegistry` confines the write to the agent's declared
+  /// scopes and rejects an out-of-scope write with `AgentScopeViolation`.
+  /// A `null` agentName leaves writes unscoped — the user-facing procedures
+  /// (`answer_with_memory_v1`) run this way. The engine threads it from the
+  /// run's procedure binding; a dream/cognitive procedure run binds its
+  /// agent id, an ordinary run binds `null`.
+  final String? agentName;
+
   /// Wraps [client]. The host constructs this natively and registers the
   /// instance with the d4rt runtime. [onCall], when supplied, records each
   /// completed primitive call against the issuing run (E.3.2). [budget], when
-  /// supplied, enforces the run's procedure-header budget (PE-8).
-  MemoryBridge(this.client, {BridgeCallRecorder? onCall, BudgetLedger? budget})
-      : _onCall = onCall,
+  /// supplied, enforces the run's procedure-header budget (PE-8). [agentName],
+  /// when supplied, scopes every write this bridge issues to that registered
+  /// cognitive agent (memory § 9).
+  MemoryBridge(
+    this.client, {
+    BridgeCallRecorder? onCall,
+    BudgetLedger? budget,
+    this.agentName,
+  })  : _onCall = onCall,
         _budget = budget;
 
   /// Delegates to [body], gating it through the budget ledger and recording
@@ -266,6 +283,7 @@ class MemoryBridge {
               idempotencyKey: idempotencyKey,
               causedBy: causedBy,
               runId: runId,
+              agentName: agentName,
             ),
           );
           return id.value;
@@ -306,6 +324,7 @@ class MemoryBridge {
               idempotencyKey: idempotencyKey,
               causedBy: causedBy,
               runId: runId,
+              agentName: agentName,
             ),
             weight: weight,
             attrs: attrs,
@@ -391,7 +410,7 @@ class MemoryBridge {
             attrs: attrs,
             scope: producer == null
                 ? null
-                : Scope(producer: producer, runId: runId),
+                : Scope(producer: producer, runId: runId, agentName: agentName),
           );
           return id.value;
         },
@@ -452,6 +471,75 @@ class MemoryBridge {
         'stackRemove',
         <String, Object?>{'name': name, 'nodeId': nodeId},
         () => client.stacks.remove(name, NodeId.fromString(nodeId)),
+      );
+
+  // ── demote ──────────────────────────────────────────────────────
+
+  /// Demotes a node — hides it from retrieval, keeps it addressable by
+  /// id (memory § 9.5). Reversible. [reason] is the [DemotionReason] wire
+  /// name (`retentionHorizon`, `prunerDecision`, `supersession`,
+  /// `migrationArchive`, `operatorOverride`).
+  ///
+  /// The `Pruner` (`dream_prune_v1`) and `Reconsolidator`
+  /// (`dream_reconsolidate_v1`) are the cognitive callers — a Pruner
+  /// "cannot create new nodes, only demote". `demote` carries no agent
+  /// scope: the store's `AgentRegistry` guards node / edge / stack *writes*
+  /// (graph mutations), and demotion mutates lifecycle status, not the
+  /// graph, so it passes through scope enforcement. The Pruner's
+  /// *inability* to create — its empty node write-scope set — is what the
+  /// registry enforces; demotion is the one mutation that remains open to
+  /// it.
+  Future<void> demote(String nodeId, String reason) => _recordVoid(
+        'demote',
+        <String, Object?>{'nodeId': nodeId, 'reason': reason},
+        () => client.demote(
+          NodeId.fromString(nodeId),
+          DemotionReason.values.byName(reason),
+        ),
+      );
+
+  // ── update_centroid ─────────────────────────────────────────────
+
+  /// Replaces the centroid for [forKey] (a node-type name or procedure id)
+  /// with [centroid] (memory § 7.3). `dream_recentroid_v1` is the only
+  /// normal-operation writer — memory never auto-recomputes.
+  Future<void> updateCentroid(String forKey, List<double> centroid) =>
+      _recordVoid(
+        'updateCentroid',
+        <String, Object?>{'forKey': forKey},
+        () => client.updateCentroid(forKey, Vec.fromList(centroid)),
+      );
+
+  // ── find_uncertain ──────────────────────────────────────────────
+
+  /// Returns the ids of nodes whose best similarity against the centroid
+  /// for [forKey] falls in `[low, high]` (memory § 7.4) — the borderline
+  /// batch `dream_recentroid_v1` sends to an LLM for re-classification.
+  /// [limit] caps the returned id count.
+  Future<List<String>> findUncertain(
+    String forKey, {
+    required double low,
+    required double high,
+    int limit = 200,
+  }) =>
+      _record<List<String>>(
+        'findUncertain',
+        <String, Object?>{
+          'forKey': forKey,
+          'low': low,
+          'high': high,
+          'limit': limit,
+        },
+        () async {
+          final ids = await client.findUncertain(
+            forKey: forKey,
+            low: low,
+            high: high,
+            limit: limit,
+          );
+          return ids.map((id) => id.value).toList();
+        },
+        resultOf: (ids) => <String, Object?>{'ids': ids},
       );
 
   // ── primitive ⇄ domain conversions ──────────────────────────────

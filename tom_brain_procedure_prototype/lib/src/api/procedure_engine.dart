@@ -327,8 +327,18 @@ final class ProcedureEngine {
     final ledger = BudgetLedger(loaded.header.budget);
     final runBudget = ledger.enforces ? ledger : null;
 
-    final runMemoryBridge =
-        MemoryBridge(memoryBridge.client, onCall: recordCall, budget: runBudget);
+    // The per-run bridge preserves the template bridge's agent identity
+    // (PE-10 / memory § 9): when the engine is wired for a cognitive-agent
+    // run (a dream/maintenance procedure), `memoryBridge.agentName` names the
+    // registered agent and every write this run issues carries it, so the
+    // memory store's `AgentRegistry` confines the run to its declared scopes.
+    // A user-facing run leaves it `null` and writes unscoped.
+    final runMemoryBridge = MemoryBridge(
+      memoryBridge.client,
+      onCall: recordCall,
+      budget: runBudget,
+      agentName: memoryBridge.agentName,
+    );
     // Bind the run's outbound channel (P1.3 #8) to both halves of the
     // streaming seam: the substrate bridge forwards each `sub.llm(...)` chunk
     // through `onToken`, and the `emit` primitive forwards text the body

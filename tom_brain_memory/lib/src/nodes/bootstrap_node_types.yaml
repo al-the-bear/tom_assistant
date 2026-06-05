@@ -90,7 +90,14 @@ types:
     schema:
       summary: { type: string, fts: true }
       payload: { type: json }
-      occurred_at: { type: string }
+      # `occurred_at` is the optional wall-clock the *originator* of an event
+      # stamps when it has one (an ingest pipeline, a procedure with a clock).
+      # The spec's Event contract is `summary, payload` (§ 4.1); occurred_at is
+      # an auxiliary refinement. A cognitive d4rt procedure has no clock
+      # primitive, so the user-facing `answer_with_memory_v1` records an
+      # inbound-prompt Event without it and the store's own `createdAt` stamp
+      # carries the wall-clock. Hence nullable.
+      occurred_at: { type: string, nullable: true }
     embedding:
       source_fields: [summary]
     index:
@@ -308,14 +315,33 @@ types:
     allowed_incoming: [satisfied_by, motivates, mentions, derived_from]
 
   # 13. ProcedureRun — one execution of a procedure.
+  # Field shape mirrors what the sole producer — the procedure prototype's
+  # `RunRecorder` — actually writes. The recorder appends two immutable
+  # records per run (overview principle 6): a lightweight `running` start
+  # marker, then the authoritative final record. The start marker omits the
+  # at-completion fields (`summary`, `finishedAt`, `effort`,
+  # `producedNodeIds`), so those are nullable; the final record fills them.
+  # Keys are camelCase to match the recorder and the procedure subsystem's
+  # reserved `producedNodeIds` return key, not the natural-memory snake_case
+  # used by Event/Claim/etc.
   - name: ProcedureRun
     version: 1
     schema:
-      summary: { type: string, fts: true }
-      started_at: { type: string }
-      ended_at: { type: string, nullable: true }
-    embedding:
-      source_fields: [summary]
+      procedureId: { type: string }
+      version: { type: integer }
+      runId: { type: string }
+      parentRunId: { type: string, nullable: true }
+      status: { type: string }
+      summary: { type: string, fts: true, nullable: true }
+      startedAt: { type: string }
+      finishedAt: { type: string, nullable: true }
+      effort: { type: json, nullable: true }
+      producedNodeIds: { type: json, nullable: true }
+      trailId: { type: string }
+    # Run records are operational metadata, not semantic content: the
+    # recorder never produces an embedding for them, and memory does not
+    # embed lazily, so the only satisfiable policy is `none`.
+    embedding: none
     index:
       fts_fields: [summary]
       vector_fields: []

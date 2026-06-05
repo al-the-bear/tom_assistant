@@ -1020,10 +1020,10 @@ packages:
     dependency: transitive
     description:
       name: tom_d4rt
-      sha256: f910bea8352d282cb41af3397f9fbdd2728667217008764a97c7ec6a6c627ecc
+      sha256: fcb988896276bfa78e7cd3f25a7e39541f6f526bac9d4a6e25f45979812ac7a5
       url: "https://pub.dev"
     source: hosted
-    version: "1.8.19"
+    version: "1.8.20"
   tom_d4rt_dcli:
     dependency: transitive
     description:
@@ -1210,5 +1210,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.3"
+  yaml_edit:
+    dependency: transitive
+    description:
+      name: yaml_edit
+      sha256: "07c9e63ba42519745182b88ca12264a7ba2484d8239958778dfe4d44fe760488"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.4"
 sdks:
   dart: ">=3.10.8 <4.0.0"

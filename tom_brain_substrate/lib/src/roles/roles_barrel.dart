@@ -87,6 +87,14 @@
 
 export 'allowed_action.dart';
 export 'bootstrap_roles.dart';
+// Plan-2 item 11 — `loadFileBackedRoleRegistry({promptsDir})`: the
+// on-disk counterpart to `bootstrapRoleRegistry()`. Reads each role's
+// persona voice from `<promptsDir>/<role>.system.md` when present, and
+// falls back to the in-code bootstrap template otherwise. Only
+// `personaText` is sourced from disk; the structured policy stays the
+// in-code authority. The anchor stays injected unconditionally on every
+// assembled prompt regardless of source.
+export 'file_backed_role_loader.dart';
 export 'role_budget_defaults.dart';
 export 'role_registry.dart';
 export 'role_template.dart';

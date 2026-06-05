@@ -230,13 +230,22 @@ void main() {
   });
 
   group('E.51-7 — AccessChannel closed set (§ 7.2 / § 10.1)', () {
-    test('exactly two channels with their wire names', () {
+    // The spec (§ 7.2 / § 10.1) predates the Ollama (plan-2 #27) and Anthropic
+    // (plan-2 #28) HTTP channels; both are bearer HTTP channels that join the
+    // same admission pipeline (plan-2 #29). The closed set is therefore now
+    // four, with `openai` / `telegram` retaining their declared positions so
+    // the existing two stay pinned.
+    test('exactly four channels with their wire names', () {
       expect(AccessChannel.values, <AccessChannel>[
         AccessChannel.openai,
         AccessChannel.telegram,
+        AccessChannel.ollama,
+        AccessChannel.anthropic,
       ]);
       expect(AccessChannel.openai.wireName, 'openai');
       expect(AccessChannel.telegram.wireName, 'telegram');
+      expect(AccessChannel.ollama.wireName, 'ollama');
+      expect(AccessChannel.anthropic.wireName, 'anthropic');
     });
   });
 

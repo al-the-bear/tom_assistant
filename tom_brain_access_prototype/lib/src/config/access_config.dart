@@ -208,6 +208,24 @@ final class AccessConfig {
   /// [OpenAiHttpSseAdapter.basePath] (`/v1`).
   final String openAiBasePath;
 
+  /// The TCP port the Ollama HTTP adapter (plan-2 #27) listens on, or `null`
+  /// when no Ollama channel is configured. `> 0` when present. The bearer
+  /// tokens / persona vocabulary it accepts are the shared ones — only the
+  /// listening port (and [ollamaBasePath]) are Ollama-specific.
+  final int? ollamaPort;
+
+  /// The base path the Ollama routes mount under (`/api/chat`, `/api/generate`).
+  /// Defaults to `/api`. Only meaningful when [ollamaPort] is set.
+  final String ollamaBasePath;
+
+  /// The TCP port the Anthropic Messages HTTP adapter (plan-2 #28) listens on,
+  /// or `null` when no Anthropic channel is configured. `> 0` when present.
+  final int? anthropicPort;
+
+  /// The base path the Anthropic route mounts under (`/v1/messages`). Defaults
+  /// to `/v1`. Only meaningful when [anthropicPort] is set.
+  final String anthropicBasePath;
+
   /// The Telegram bot token (E.19), or `null` when no Telegram channel is
   /// configured. `${ENV}`-expanded at load.
   final String? telegramBotToken;
@@ -267,6 +285,10 @@ final class AccessConfig {
     required this.dailyQuotaPolicy,
     required this.anchorPolicy,
     this.openAiBasePath = OpenAiHttpSseAdapter.basePath,
+    this.ollamaPort,
+    this.ollamaBasePath = '/api',
+    this.anthropicPort,
+    this.anthropicBasePath = '/v1',
     this.telegramBotToken,
     List<AccessUser> users = const [],
     Map<String, IdentityBinding> bearerTokenBindings = const {},
@@ -280,6 +302,12 @@ final class AccessConfig {
         telegramUserIdBindings = Map.unmodifiable(telegramUserIdBindings) {
     if (openAiPort <= 0) {
       throw ArgumentError.value(openAiPort, 'openAiPort', 'must be > 0');
+    }
+    if (ollamaPort != null && ollamaPort! <= 0) {
+      throw ArgumentError.value(ollamaPort, 'ollamaPort', 'must be > 0');
+    }
+    if (anthropicPort != null && anthropicPort! <= 0) {
+      throw ArgumentError.value(anthropicPort, 'anthropicPort', 'must be > 0');
     }
     if (sessionMaxWindowTurns < 1) {
       throw ArgumentError.value(
@@ -305,6 +333,12 @@ final class AccessConfig {
 
   /// Whether a Telegram channel is configured (a bot token is present).
   bool get hasTelegram => telegramBotToken != null;
+
+  /// Whether an Ollama channel is configured (a listening port is present).
+  bool get hasOllama => ollamaPort != null;
+
+  /// Whether an Anthropic channel is configured (a listening port is present).
+  bool get hasAnthropic => anthropicPort != null;
 
   /// Projects a list of declared [users] onto the two runtime binding maps
   /// `(bearerTokenBindings, telegramUserIdBindings)` (Q-E.24.2).

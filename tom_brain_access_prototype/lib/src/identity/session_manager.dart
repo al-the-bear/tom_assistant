@@ -74,7 +74,17 @@ enum AccessChannel {
   openai('openai'),
 
   /// The Telegram adapter (E.4).
-  telegram('telegram');
+  telegram('telegram'),
+
+  /// The Ollama HTTP adapter (plan-2 #27). A bearer HTTP channel like
+  /// [openai]; its adapter renders its own NDJSON / buffered-JSON dialect
+  /// from the raw `OutboundChunk` stream (it does not reuse the SSE path).
+  ollama('ollama'),
+
+  /// The Anthropic Messages HTTP adapter (plan-2 #28). A bearer HTTP channel
+  /// like [openai]; its adapter renders its own named-SSE / buffered-Message
+  /// dialect from the raw `OutboundChunk` stream.
+  anthropic('anthropic');
 
   const AccessChannel(this.wireName);
 

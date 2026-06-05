@@ -223,18 +223,34 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // the procedure id as the producer (Q-D.39.3).
   final producer = 'answer_with_memory_v1';
 
-  // The inbound prompt becomes an immutable Event.
+  // The real memory store does not embed lazily (#24; node_persister.dart
+  // EmbeddingPolicyViolation.missingEmbedding) — every node type that declares
+  // an embedding policy requires the *writer* to supply a dimension-correct
+  // vector. Event, Conclusion and InterestItem all declare one, so the body
+  // embeds before each persist. The prompt is embedded once here and reused
+  // for the Event (whose `summary` is the prompt), the cold-path
+  // classification (step 4) and the cold-path InterestItem (whose `topic` is
+  // the prompt); only the Conclusion needs its own embedding (over the answer).
+  final promptEmbedding = await sub.embed(text);
+
+  // The inbound prompt becomes an immutable Event. `payload` is empty for a
+  // bare prompt; `occurred_at` is omitted — the cognition layer has no clock
+  // primitive, so the store's `createdAt` stamp carries the wall-clock (the
+  // bootstrap `Event.occurred_at` is nullable for exactly this reason).
   await mem.persist(
     'Event',
-    {'summary': text},
+    {'summary': text, 'payload': <String, Object?>{}},
     producer: producer,
+    embedding: promptEmbedding['vec'],
   );
 
-  // The answer becomes a Conclusion.
+  // The answer becomes a Conclusion, embedded over the answer statement.
+  final answerEmbedding = await sub.embed(answer);
   final conclusionId = await mem.persist(
     'Conclusion',
     {'statement': answer, 'rationale': 'Answered from recalled memory.'},
     producer: producer,
+    embedding: answerEmbedding['vec'],
   );
 
   // derived_from: the Conclusion was derived from each recalled node it cited.
@@ -251,9 +267,8 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // records an InterestItem and pushes it onto the `interests` bootstrap
   // stack. The InterestItem is intentionally not added to `producedNodeIds` —
   // its schema does not permit an incoming `produced_by` edge (Q-D.40.2).
-  final embedding = await sub.embed(text);
   final classification =
-      await mem.classify(embedding['vec'], target: 'nodeType');
+      await mem.classify(promptEmbedding['vec'], target: 'nodeType');
   if (classification['decision'] == 'unknown') {
     final interestId = await mem.persist(
       'InterestItem',
@@ -263,6 +278,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
             '(cold-classification path).',
       },
       producer: producer,
+      embedding: promptEmbedding['vec'],
     );
     await mem.stackPush('interests', interestId, producer: producer);
   }

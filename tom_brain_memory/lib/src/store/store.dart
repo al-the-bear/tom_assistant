@@ -112,6 +112,7 @@ export 'boot_integrity.dart'
         embeddingModelMarkerPath,
         kEmbeddingModelMarkerFileName;
 export 'memory_directory.dart' show MemoryDirectory;
+export 'sqlite_tom_brain_memory.dart' show SqliteTomBrainMemory;
 export 'schema_migrator.dart'
     show
         SchemaMigration,

@@ -169,7 +169,7 @@ final class ChatCompletionRequest {
       ));
     }
 
-    final String? prompt = _lastUserPrompt(rawMessages);
+    final String? prompt = lastUserText(rawMessages);
     if (prompt == null) {
       return const Err(ChatCompletionParseError(
         message: "'messages' must contain a user message with text content.",
@@ -199,41 +199,5 @@ final class ChatCompletionRequest {
       model: model,
       stream: stream ?? false,
     ));
-  }
-
-  /// Returns the trimmed text content of the last `user` message in
-  /// [messages], or `null` if there is no user message with usable text.
-  ///
-  /// Content may be a plain string (the common case) or the OpenAI
-  /// content-part array (`[{type: 'text', text: '…'}, …]`), in which case
-  /// the `text` parts are concatenated. Any other content shape contributes
-  /// no text.
-  static String? _lastUserPrompt(List<Object?> messages) {
-    for (final Object? message in messages.reversed) {
-      if (message is! _Json) continue;
-      if (message['role'] != 'user') continue;
-      final String text = _contentText(message['content']);
-      if (text.trim().isNotEmpty) return text.trim();
-    }
-    return null;
-  }
-
-  /// Extracts the text from a message `content` value: a bare string is
-  /// returned as-is; a content-part array contributes the `text` of each
-  /// `{type: 'text', text: …}` part; anything else yields the empty string.
-  static String _contentText(Object? content) {
-    if (content is String) return content;
-    if (content is List) {
-      final StringBuffer buffer = StringBuffer();
-      for (final Object? part in content) {
-        if (part is _Json &&
-            part['type'] == 'text' &&
-            part['text'] is String) {
-          buffer.write(part['text'] as String);
-        }
-      }
-      return buffer.toString();
-    }
-    return '';
   }
 }

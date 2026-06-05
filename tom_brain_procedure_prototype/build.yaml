@@ -4,7 +4,8 @@
 # bridges/memory_bridge.dart and bridges/substrate_bridge.dart").
 #
 # Configures tom_d4rt_generator's `d4rt_bridge_builder` (factory
-# `d4rtBridgeBuilder`, dev-dep pinned `^1.8.24` at C.9) to generate the D4rt
+# `d4rtBridgeBuilder`, dev-dep pinned `^1.9.0` — re-pinned from the C.9
+# `^1.8.24` by prototype-plan-2 item 1) to generate the D4rt
 # bridge code for the engine's two bridge source classes:
 #
 #   - lib/src/bridges/memory_bridge.dart     -> MemoryBridge    (authored at C.12)

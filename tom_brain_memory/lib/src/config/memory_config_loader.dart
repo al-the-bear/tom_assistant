@@ -550,11 +550,15 @@ abstract final class MemoryConfigLoader {
   static bool? _optionalBool(YamlMap node, String key, String path) =>
       _types.optionalBool(node, key, path);
 
+  // `YamlConfigReader.requireMap` / `optionalMap` are domain-free and
+  // typed `Map<Object?, Object?>`; for a YamlMap input the nested value
+  // they return is itself a YamlMap at runtime, so the cast back is safe
+  // and keeps the YamlMap-typed call sites unchanged.
   static YamlMap _requireMap(YamlMap node, String key, String path) =>
-      _types.requireMap(node, key, path);
+      _types.requireMap(node, key, path) as YamlMap;
 
   static YamlMap? _optionalMap(YamlMap node, String key) =>
-      _types.optionalMap(node, key);
+      _types.optionalMap(node, key) as YamlMap?;
 
   static String _expandEnv(String input, Map<String, String> env, String path) =>
       YamlConfigReader(env: env, errorFactory: MemoryConfigException.new)

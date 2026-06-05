@@ -29,6 +29,7 @@
 // has shipped.
 
 import '../api/tom_brain_memory.dart';
+import '../store/sqlite_tom_brain_memory.dart';
 
 /// Constructs the in-isolate `TomBrainMemory` instance.
 ///
@@ -44,3 +45,19 @@ import '../api/tom_brain_memory.dart';
 /// host drives `memory.open(config)` via `OpenMemoryRequest` after
 /// the worker is ready.
 typedef MemoryFactory = Future<TomBrainMemory> Function();
+
+/// The production [MemoryFactory]: constructs the concrete on-disk
+/// [SqliteTomBrainMemory] store the isolate host hosts.
+///
+/// This is the top-level function the file-level doc above promised
+/// "Production wiring … passes in the composition root". Passing it to
+/// `TomBrainMemoryIsolateHost(factory: createSqliteTomBrainMemory)`
+/// spawns a worker whose held memory is the real store; the host then
+/// drives `memory.open(config)` via `OpenMemoryRequest`.
+///
+/// It satisfies the [MemoryFactory] sendability constraint — a
+/// top-level tear-off captures no closure state — and returns an
+/// *unopened* instance, leaving `open(config)` to the first
+/// `OpenMemoryRequest`.
+Future<TomBrainMemory> createSqliteTomBrainMemory() async =>
+    SqliteTomBrainMemory();

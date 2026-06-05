@@ -49,6 +49,12 @@
 //   is complete.
 
 export 'channel_delivery.dart' show ChannelDelivery, DeliveryBinding;
+export 'chunk_stream_delivery.dart'
+    show
+        ChunkStreamChannelDelivery,
+        ChunkStreamDeliveryBinding,
+        OutboundChunkSink,
+        StreamControllerChunkSink;
 export 'delivery_registry.dart' show DeliveryRegistry, UnknownDeliveryChannel;
 export 'sse_delivery.dart'
     show

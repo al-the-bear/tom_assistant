@@ -118,13 +118,6 @@ dependencies:
   # direct deps) requires the explicit pin here. Refreshing the
   # dependency-surface test contract per `dependency_surface_test.dart`.
   crypto: ^3.0.0
-  # B.36 — `SubstrateConfigLoader` parses `substrate:` YAML using
-  # `package:yaml` (`loadYaml` / `YamlMap`). Mirrors the precedent set
-  # by `tom_brain_memory`'s `MemoryConfigLoader`. The workspace rule
-  # (no transitive deps as direct deps without an explicit pin) means
-  # `yaml` lives here as a direct dependency even though it would be
-  # available transitively via the test framework.
-  yaml: ^3.1.0
 
 dev_dependencies:
   lints: ^6.0.0
