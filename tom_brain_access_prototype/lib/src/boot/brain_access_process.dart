@@ -324,6 +324,12 @@ Future<_TelegramEdge> _startTelegram({
     authorizedInbound: adapter.authorizedInboundRequests,
   );
   edge.start();
+  // Ping each whitelisted owner that the link is live, naming the host this
+  // brain is running on (best-effort — a send failure never blocks bring-up).
+  await edge.announceStartup(
+    recipientUserIds: config.telegramWhitelist,
+    host: Platform.localHostname,
+  );
   return _TelegramEdge(adapter, edge);
 }
 

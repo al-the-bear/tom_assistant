@@ -51,6 +51,15 @@ import '../delivery/telegram_delivery.dart' show ChatApiTelegramSink;
 import '../edge_security/edge_security.dart';
 import 'access_assembler.dart';
 
+/// Builds the startup announcement the Telegram channel sends to each
+/// whitelisted owner when the process comes up: a one-line "I'm alive on this
+/// host" ping identifying the [host] the brain is running on.
+///
+/// A pure function so the wording is one named place (and unit-testable without
+/// a `ChatApi`); [TelegramAccessEdge.announceStartup] is what actually sends it.
+String telegramStartupAnnouncement(String host) =>
+    'Telegram link to tom_brain from host $host just started.';
+
 /// The live Telegram channel of the running access process (E.45).
 ///
 /// Construct one per running process over the booted [AccessAssembler] and the
@@ -88,6 +97,29 @@ class TelegramAccessEdge {
   void start() {
     if (_subscription != null) return;
     _subscription = _authorizedInbound.listen(_admit);
+  }
+
+  /// Sends a best-effort "process just started" announcement to each
+  /// whitelisted owner in [recipientUserIds], identifying the [host] the brain
+  /// is running on (the message is [telegramStartupAnnouncement]).
+  ///
+  /// Best-effort: a send that throws for one recipient is swallowed (the same
+  /// posture as the graceful decline) so a notification failure never blocks
+  /// the channel coming up, and never stops the announcement reaching the other
+  /// owners. Each owner is sent the message in turn.
+  Future<void> announceStartup({
+    required Iterable<String> recipientUserIds,
+    required String host,
+  }) async {
+    final String message = telegramStartupAnnouncement(host);
+    for (final String userId in recipientUserIds) {
+      try {
+        await _chatApi.sendMessage(ChatReceiver.id(userId), message);
+      } catch (_) {
+        // Best-effort: a failure to announce to one owner must not stop the
+        // channel coming up, nor the announcement reaching the others.
+      }
+    }
   }
 
   /// Stops admitting requests: cancels the subscription.
