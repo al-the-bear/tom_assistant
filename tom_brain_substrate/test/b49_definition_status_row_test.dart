@@ -202,14 +202,24 @@ void main() {
     });
 
     test('forward-looking rows for unfinished phases remain ⏳', () {
-      // The companion rows for Phase C / D / E components and for
-      // the end-to-end smoke must NOT be flipped to ✅ by this
-      // step. If a later phase tries to silently piggy-back on
-      // B.49, this guard surfaces the drift.
+      // The companion rows for the still-unbuilt Phase C / D
+      // components must NOT be flipped to ✅ by this step. If a later
+      // phase tries to silently piggy-back on B.49, this guard
+      // surfaces the drift.
+      //
+      // `End-to-end smoke` was originally guarded here too, but it was
+      // *legitimately* flipped ⏳→✅ at the Phase-E close (E.57 audit,
+      // commit b5a98062 — `tom_brain_smoke_prototype` 42/42). That is a
+      // real, documented phase progression, not the silent B.49-era
+      // piggy-back this sentinel was written to catch. Per this file's
+      // own scope note ("deliberately does *not* assert anything about
+      // Phase … E components — those have their own per-phase
+      // sentinels"), a now-finished Phase-E deliverable no longer
+      // belongs in this Phase-B forward-looking guard, so it is dropped.
+      // The two genuinely-still-⏳ Phase-C/D rows stay guarded.
       const forwardRows = <String>[
         '`tom_brain_procedure_engine` (prototype)',
         '`tom_brain_access` (prototype)',
-        'End-to-end smoke',
       ];
       for (final needle in forwardRows) {
         final row = _findRow(
