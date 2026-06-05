@@ -51,7 +51,10 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
         ClassifyFallback,
         MemoryProvisioningConfig;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
-    show TomBrainSubstrateClient;
+    show SubstrateConfig, TomBrainSubstrateClient;
+
+import 'brain_run_config.dart';
+import 'brain_substrate_builder.dart' show buildSubstrate;
 
 /// Boots the real cognition (the injected [substrate] + the real on-disk
 /// isolate-hosted `SqliteTomBrainMemory`) and projects it into a
@@ -63,6 +66,14 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
 /// on-disk root and the packaged `vec0` binary (the store loads the sqlite-vec
 /// extension at `open`, so a real `binariesRoot` is required).
 ///
+/// [substrateConfig] is the parsed `substrate:` config the boot opens the
+/// substrate against — when non-null, `BrainProcessBoot.boot` calls
+/// `substrate.open(substrateConfig)`, which validates that every routed role is
+/// registered before any run issues an `llm` call. Production passes the same
+/// config `buildSubstrate` manufactured the substrate from; the #30 stub-LLM
+/// test passes `null` (its `SmokeSubstrate.open` is a no-op, so there is no
+/// registry to validate against).
+///
 /// [systemScriptsDir] points the procedure store at the system-scripts
 /// directory; the default resolves the procedure prototype's shipped
 /// `scripts/system` (where `answer_with_memory_v1` lives), regardless of the
@@ -72,6 +83,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
 Future<ProvisionedBrain> provisionBrain({
   required TomBrainSubstrateClient substrate,
   required MemoryConfig memoryConfig,
+  SubstrateConfig? substrateConfig,
   Directory? systemScriptsDir,
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
@@ -84,6 +96,7 @@ Future<ProvisionedBrain> provisionBrain({
   final booted = await BrainProcessBoot.boot(
     BrainProcessConfig(
       substrate: substrate,
+      substrateConfig: substrateConfig,
       memoryProvisioning: MemoryProvisioningConfig.isolate(
         factory: createSqliteTomBrainMemory,
         memoryConfig: memoryConfig,
@@ -122,6 +135,7 @@ Future<ProvisionedBrain> provisionBrain({
 BrainProvisioner brainProvisioner({
   required TomBrainSubstrateClient substrate,
   required MemoryConfig memoryConfig,
+  SubstrateConfig? substrateConfig,
   Directory? systemScriptsDir,
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
@@ -129,6 +143,7 @@ BrainProvisioner brainProvisioner({
     (AccessConfig config) => provisionBrain(
           substrate: substrate,
           memoryConfig: memoryConfig,
+          substrateConfig: substrateConfig,
           systemScriptsDir: systemScriptsDir,
           classifyFallback: classifyFallback,
           foregroundQueueDepth: foregroundQueueDepth,
@@ -176,6 +191,7 @@ Future<BrainProcess> standUpBrainProcess({
   required AccessConfig config,
   required TomBrainSubstrateClient substrate,
   required MemoryConfig memoryConfig,
+  SubstrateConfig? substrateConfig,
   Directory? systemScriptsDir,
   AccessServeSeam serve = serveWithShelfIo,
   ClassifyFallback? classifyFallback,
@@ -184,6 +200,7 @@ Future<BrainProcess> standUpBrainProcess({
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
     memoryConfig: memoryConfig,
+    substrateConfig: substrateConfig,
     systemScriptsDir: systemScriptsDir,
     classifyFallback: classifyFallback,
     foregroundQueueDepth: foregroundQueueDepth,
@@ -204,6 +221,40 @@ Future<BrainProcess> standUpBrainProcess({
   }
 
   return BrainProcess._(process);
+}
+
+/// Stands the whole cognition up from a parsed whole-process [runConfig]
+/// (Plan-2 step #31) — the single entry point that takes a loaded
+/// `BrainRunConfig` and returns a running [BrainProcess].
+///
+/// Manufactures the real substrate from `runConfig.substrate` (via
+/// [buildSubstrate]), then provisions + stands the access process up over the
+/// real on-disk memory (`runConfig.memory`) under the access policies
+/// (`runConfig.access`). The same `runConfig.substrate` is threaded through the
+/// boot as the `substrateConfig`, so `substrate.open` validates routed roles.
+///
+/// The [serve] seam binds the socket — the default ([serveWithShelfIo]) binds
+/// `runConfig.access.openAiPort` (production); a test injects a seam that binds
+/// an ephemeral port. A caller that needs to override the role registry or wire
+/// real web tools calls [buildSubstrate] + [standUpBrainProcess] directly.
+Future<BrainProcess> standUpBrainProcessFromConfig(
+  BrainRunConfig runConfig, {
+  Directory? systemScriptsDir,
+  AccessServeSeam serve = serveWithShelfIo,
+  ClassifyFallback? classifyFallback,
+  int foregroundQueueDepth = 4,
+}) {
+  final TomBrainSubstrateClient substrate = buildSubstrate(runConfig.substrate);
+  return standUpBrainProcess(
+    config: runConfig.access,
+    substrate: substrate,
+    memoryConfig: runConfig.memory,
+    substrateConfig: runConfig.substrate,
+    systemScriptsDir: systemScriptsDir,
+    serve: serve,
+    classifyFallback: classifyFallback,
+    foregroundQueueDepth: foregroundQueueDepth,
+  );
 }
 
 /// Resolves the procedure prototype's shipped `scripts/system` directory.

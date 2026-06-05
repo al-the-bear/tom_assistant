@@ -1,5 +1,5 @@
-// buildOmlxOllamaSubstrate — the real substrate composition root for the
-// prototype's run assembly (Plan-2 step #30).
+// buildSubstrate — the real `SubstrateConfig → InProcessTomBrainSubstrate`
+// manufacturer for the prototype's run assembly (Plan-2 step #31).
 //
 // The substrate facade `InProcessTomBrainSubstrate` is a *wirer*, not a
 // *manufacturer*: its constructor takes already-assembled collaborators (a role
@@ -7,124 +7,92 @@
 // substrate package deliberately ships no `SubstrateConfig → facade` builder —
 // "The composition root (test, app boot) constructs providers + router +
 // embedding service + web tools and hands them to the facade" (the facade's own
-// header). This file IS that composition root for the prototype's run shape:
-// the LLM substrate routed through an OpenAI-format passthrough provider against
-// an oMLX endpoint, embeddings through Ollama's `nomic-embed-text`.
+// header). This file IS that composition root for the prototype's run shape: it
+// reads a parsed [SubstrateConfig] (loaded from the whole-process YAML's
+// `substrate:` section by `SubstrateConfigLoader`) and manufactures the live
+// facade.
 //
-// ── What it builds ───────────────────────────────────────────────────
+// ── What it builds, from the config ──────────────────────────────────
 //
-//   * The LLM provider — an `OpenAiPassthroughProvider` pointed at the oMLX
-//     endpoint. oMLX speaks the OpenAI `/v1/chat/completions` dialect, so the
-//     passthrough provider is the right transport.
-//   * The router — every role the bootstrap registry knows routes to that one
-//     LLM provider. The prototype's `answer_with_memory_v1` only ever calls the
-//     `assistant_to_user` role, but routing every registered role to the same
-//     provider means a procedure that reaches another role (analyser /
-//     sub_thinker / recaller / evaluator) gets the substrate LLM rather than a
-//     `NoRouteAvailable` surprise — a defensive, single-provider routing table.
-//   * The embedding service — an `OllamaEmbeddingService` over its own
-//     `OllamaLlmProvider` (Ollama's `/api/embeddings` is a separate transport
-//     from the chat LLM). 768-dim `nomic-embed-text`, normalized, matching the
-//     memory bootstrap embedding identity.
+//   * One concrete `LlmProvider` per `config.providers` row, keyed by id:
+//       - `ProviderKind.openai` → `OpenAiPassthroughProvider` against the
+//         row's `baseUrl` (oMLX speaks the OpenAI `/v1/chat/completions`
+//         dialect, so the passthrough provider is the right transport).
+//       - `ProviderKind.ollama` → `OllamaLlmProvider` against the row's
+//         `baseUrl`.
+//       - `ProviderKind.anthropic` / `ProviderKind.stub` → a located
+//         `SubstrateConfigException`: the run builder manufactures only the
+//         two real transports the prototype's run shape uses. (A stub belongs
+//         in a *test* composition root — `SmokeSubstrate` — not the real run
+//         assembly; Anthropic is out of the prototype's substrate scope.)
+//   * The router — `LlmRouter` over the manufactured provider map, with the
+//     `RouterPolicy` the config projects (`config.buildRouterPolicy()`:
+//     role → ordered route chain, cooldown / retry tunables). Routing is
+//     entirely config-driven; the builder owns no route table.
+//   * The embedding service — an `OllamaEmbeddingService` over the *same*
+//     manufactured Ollama provider named by `config.embedding.providerId`
+//     (Ollama's `/api/embeddings` rides the same transport as its chat LLM).
+//     The embedding dims / model / normalize come straight from
+//     `config.embedding`.
 //   * Web tools — the no-web posture by default (see [NoWebSearch] /
 //     [NoWebFetch]). The prototype's procedures do not search or fetch; this is
 //     an honest "no web configured" stance, not a cognition double. A caller
-//     that wires real `DefaultWebSearch` / `DefaultWebFetch` passes them in.
+//     that wires real web tools passes them in.
 //
-// Everything is parameter-driven: the endpoint URIs, the model ids, and the
-// embedding tunables are arguments, so the run assembly (or a future
-// whole-process config loader, Plan-2 step #31) supplies them without this
-// builder owning any config-file parsing.
+// ── What it deliberately does NOT do ─────────────────────────────────
+//
+//   * It does not resolve secret references. A provider whose `auth` carries a
+//     `secretRef` (rather than an inline token) is a located error: the run
+//     builder has no secret-file resolver, and silently dropping the
+//     credential would route unauthenticated. Inline tokens flow through.
+//   * It does not call `facade.open(config)`. Role-registry validation is the
+//     boot's job — `BrainProcessBoot.boot` calls `substrate.open(...)` when
+//     `provisionBrain` threads the parsed `SubstrateConfig` through
+//     `BrainProcessConfig.substrateConfig`. Validating here too would be a
+//     second, redundant validation surface.
 
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
-/// The default embedding model — Ollama-hosted `nomic-embed-text` (768-dim),
-/// matching the memory subsystem's bootstrap embedding identity.
-const String defaultEmbeddingModel = 'nomic-embed-text';
-
-/// The dimensionality `nomic-embed-text` returns. Pinned so a misconfigured
-/// model swap surfaces as an `EmbeddingDimensionMismatch` rather than silently
-/// corrupting the vector index.
-const int defaultEmbeddingDims = 768;
-
-/// The provider id the LLM substrate registers under (the router's route
-/// target). Stable so a route table built elsewhere can reference it.
-const String defaultLlmProviderId = 'omlx';
-
-/// The provider id the embedding transport registers under. Distinct from
-/// [defaultLlmProviderId] — embeddings flow through Ollama, the chat LLM
-/// through the oMLX passthrough.
-const String defaultEmbeddingProviderId = 'ollama';
-
-/// Builds the prototype's real substrate: an oMLX-backed OpenAI-passthrough LLM
-/// routed for every bootstrap role, plus Ollama embeddings, behind the
-/// `InProcessTomBrainSubstrate` facade (Plan-2 step #30).
+/// Builds the prototype's real substrate from a parsed [SubstrateConfig]
+/// (Plan-2 step #31).
 ///
-/// [omlxBaseUri] is the oMLX OpenAI-format base (e.g. `http://127.0.0.1:8080`);
-/// [llmModel] the model id the substrate asks oMLX for. [omlxApiKey] is the
-/// optional bearer the passthrough provider sends (oMLX usually needs none).
+/// [config] is the typed `substrate:` section of the whole-process YAML,
+/// produced by `SubstrateConfigLoader`. Every endpoint, model, route, and
+/// embedding tunable is read from it — the builder owns no defaults beyond the
+/// no-web posture.
 ///
-/// [ollamaBaseUri] is the Ollama base (e.g. `http://127.0.0.1:11434`);
-/// [embeddingModel] / [embeddingDims] / [embeddingNormalize] tune the embedding
-/// identity (defaults: `nomic-embed-text`, 768, normalized).
+/// [roleRegistry] overrides the bootstrap registry (the registry the boot later
+/// validates routed roles against); [webSearch] / [webFetch] override the
+/// no-web default. All three are seams for a richer assembly to inject through.
 ///
-/// [roleRegistry] overrides the bootstrap registry (every role it carries is
-/// routed to the LLM provider); [webSearch] / [webFetch] override the no-web
-/// default. All four are seams for a richer assembly to inject through.
-InProcessTomBrainSubstrate buildOmlxOllamaSubstrate({
-  required Uri omlxBaseUri,
-  required String llmModel,
-  required Uri ollamaBaseUri,
-  String? omlxApiKey,
-  String embeddingModel = defaultEmbeddingModel,
-  int embeddingDims = defaultEmbeddingDims,
-  bool embeddingNormalize = true,
-  String llmProviderId = defaultLlmProviderId,
-  String embeddingProviderId = defaultEmbeddingProviderId,
+/// Throws [SubstrateConfigException] with a located message when a provider row
+/// names an unmanufacturable kind (`anthropic` / `stub`), a network provider
+/// declares no `baseUrl`, an `auth` uses an unresolved `secretRef`, or the
+/// embedding provider is absent or not an Ollama provider.
+InProcessTomBrainSubstrate buildSubstrate(
+  SubstrateConfig config, {
   RoleRegistry? roleRegistry,
   WebSearch? webSearch,
   WebFetch? webFetch,
 }) {
-  final RoleRegistry registry = roleRegistry ?? bootstrapRoleRegistry();
+  // ── Manufacture one concrete provider per config row. ──
+  final Map<String, LlmProvider> providers = <String, LlmProvider>{};
+  for (final ProviderProfile profile in config.providers) {
+    providers[profile.id] = _buildProvider(profile);
+  }
 
-  // ── The chat LLM: OpenAI-format passthrough against oMLX. ──
-  final OpenAiPassthroughProvider llmProvider = OpenAiPassthroughProvider(
-    id: llmProviderId,
-    baseUri: omlxBaseUri,
-    defaultModel: llmModel,
-    apiKey: omlxApiKey,
+  // ── The router: every route comes from the config's projected policy. ──
+  final LlmRouter router = LlmRouter(
+    providers: providers,
+    policy: config.buildRouterPolicy(),
   );
-  final Map<String, LlmProvider> providers = <String, LlmProvider>{
-    llmProvider.id: llmProvider,
-  };
 
-  // Every registered role routes to the single LLM provider (see file header
-  // for why every role, not just `assistant_to_user`).
-  final RouterPolicy policy = RouterPolicy(
-    roleRoutes: <String, List<RouteEntry>>{
-      for (final String roleId in registry.ids)
-        roleId: <RouteEntry>[
-          RouteEntry(providerId: llmProvider.id, model: llmModel),
-        ],
-    },
-  );
-  final LlmRouter router = LlmRouter(providers: providers, policy: policy);
-
-  // ── Embeddings: a separate Ollama transport. ──
-  final OllamaLlmProvider embeddingProvider = OllamaLlmProvider(
-    id: embeddingProviderId,
-    baseUri: ollamaBaseUri,
-    defaultModel: embeddingModel,
-  );
-  final OllamaEmbeddingService embeddingService = OllamaEmbeddingService(
-    provider: embeddingProvider,
-    model: embeddingModel,
-    dims: embeddingDims,
-    normalize: embeddingNormalize,
-  );
+  // ── Embeddings: reuse the manufactured Ollama provider the config names. ──
+  final OllamaEmbeddingService embeddingService =
+      _buildEmbeddingService(config, providers);
 
   return InProcessTomBrainSubstrate(
-    roleRegistry: registry,
+    roleRegistry: roleRegistry ?? bootstrapRoleRegistry(),
     providers: providers,
     router: router,
     embeddingService: embeddingService,
@@ -133,12 +101,105 @@ InProcessTomBrainSubstrate buildOmlxOllamaSubstrate({
   );
 }
 
+/// Manufactures one concrete [LlmProvider] for a config [profile].
+///
+/// `openai` / `ollama` map to their real transports; `anthropic` / `stub` are
+/// out of the run builder's scope and surface as located errors.
+LlmProvider _buildProvider(ProviderProfile profile) {
+  switch (profile.kind) {
+    case ProviderKind.openai:
+      return OpenAiPassthroughProvider(
+        id: profile.id,
+        baseUri: _requireBaseUrl(profile),
+        // The provider's *default* model; the router selects the actual model
+        // per route. The loader guarantees `models` is non-empty.
+        defaultModel: profile.models.first,
+        apiKey: _inlineApiKey(profile),
+      );
+    case ProviderKind.ollama:
+      return OllamaLlmProvider(
+        id: profile.id,
+        baseUri: _requireBaseUrl(profile),
+        defaultModel: profile.models.first,
+      );
+    case ProviderKind.anthropic:
+    case ProviderKind.stub:
+      throw SubstrateConfigException(
+        'substrate.providers["${profile.id}"].kind = ${profile.kind.name}: the '
+        'run substrate builder manufactures only `openai` and `ollama` '
+        'providers. A `stub` belongs in a test composition root (SmokeSubstrate), '
+        'and `anthropic` is outside the prototype run shape.',
+      );
+  }
+}
+
+/// Builds the embedding service from `config.embedding`, reusing the already
+/// manufactured Ollama provider it names.
+///
+/// The loader cross-validates that `embedding.providerId` references a known
+/// provider, so the lookup miss here only fires if a hand-built config skipped
+/// that invariant — it is still reported with a located message.
+OllamaEmbeddingService _buildEmbeddingService(
+  SubstrateConfig config,
+  Map<String, LlmProvider> providers,
+) {
+  final EmbeddingChoice choice = config.embedding;
+  final LlmProvider? provider = providers[choice.providerId];
+  if (provider == null) {
+    throw SubstrateConfigException(
+      'substrate.embedding.providerId "${choice.providerId}" does not match '
+      'any provider in substrate.providers.',
+    );
+  }
+  if (provider is! OllamaLlmProvider) {
+    throw SubstrateConfigException(
+      'substrate.embedding.providerId "${choice.providerId}" is not an Ollama '
+      'provider; the run substrate builder embeds only through Ollama '
+      '(/api/embeddings).',
+    );
+  }
+  return OllamaEmbeddingService(
+    provider: provider,
+    model: choice.model,
+    dims: choice.dims,
+    normalize: choice.normalize,
+  );
+}
+
+/// Returns a network provider's `baseUrl`, or a located error when absent.
+Uri _requireBaseUrl(ProviderProfile profile) {
+  final Uri? baseUrl = profile.baseUrl;
+  if (baseUrl == null) {
+    throw SubstrateConfigException(
+      'substrate.providers["${profile.id}"] is a ${profile.kind.name} provider '
+      'but declares no baseUrl; a network transport requires one.',
+    );
+  }
+  return baseUrl;
+}
+
+/// Returns the inline API key for a provider, or `null` when its auth is
+/// `none`. A `secretRef` (file-backed credential) is a located error — the run
+/// builder has no secret resolver.
+String? _inlineApiKey(ProviderProfile profile) {
+  final ProviderAuthConfig auth = profile.auth;
+  if (auth.isNone) return null;
+  final String? secretRef = auth.apiKeySecretRef;
+  if (secretRef != null) {
+    throw SubstrateConfigException(
+      'substrate.providers["${profile.id}"].auth uses secretRef "$secretRef"; '
+      'the run substrate builder does not resolve secret files — supply an '
+      'inline token or wire a secret resolver.',
+    );
+  }
+  return auth.apiKeyInlineToken;
+}
+
 /// The no-web search posture: every query resolves to an empty hit list.
 ///
 /// Not a stub double — an honest "no web search is configured for this process"
 /// stance. The prototype's procedures never search; a richer assembly that
-/// wants live search passes a `DefaultWebSearch` to [buildOmlxOllamaSubstrate]
-/// instead.
+/// wants live search passes a `DefaultWebSearch` to [buildSubstrate] instead.
 final class NoWebSearch implements WebSearch {
   /// Builds the no-web search.
   const NoWebSearch();

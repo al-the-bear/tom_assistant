@@ -57,6 +57,15 @@ dependencies:
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
+  # The #31 Verify suite manufactures the *real* substrate (OpenAI-passthrough +
+  # Ollama providers), whose default wire HTTP client is sourced from the
+  # `tom_core_kernel` factory via the active `TomPlatformUtils`. A bare
+  # `dart test` process runs the fallback platform (its `httpClient()` throws
+  # `UnimplementedError`); the production entrypoint installs the standalone
+  # platform at startup, so the test does the same via `standalonePlatformUtils`.
+  # Mirrors `tom_brain_substrate`'s live-provider smoke (p2_12).
+  tom_core_server:
+    path: ../../tom_ai/core/tom_core_server
   # The #30 test boots the real on-disk memory with a *stub LLM*. `SmokeSubstrate`
   # is the canonical, compile-checked `TomBrainSubstrateClient` stub the smoke
   # already ships "as a library symbol (not a test fixture) so the harness and
@@ -65,3 +74,11 @@ dev_dependencies:
   # boots `buildOmlxOllamaSubstrate`.
   tom_brain_smoke_prototype:
     path: ../tom_brain_smoke_prototype
+  # The #32 LIVE end-to-end test inspects the run's on-disk memory **through the
+  # memory MCP server** (its real external inspection surface,
+  # `memory_specification.md` § 3.2) rather than via a private store seam. It
+  # stands `TomBrainMemoryMcpServer` up over an in-host `StreamChannel<String>`
+  # pair and drives it with a real `dart_mcp` client — the same harness shape the
+  # smoke's E.55 conformance test and the memory package's MCP suites use.
+  dart_mcp: ^0.5.0
+  stream_channel: ^2.1.4
