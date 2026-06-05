@@ -80,4 +80,8 @@ export 'health_check.dart'
     show HealthCheck, QueueSnapshot, QueueSnapshotSource;
 export 'openai_access_edge.dart' show OpenAiAccessEdge;
 export 'telegram_access_edge.dart'
-    show TelegramAccessEdge, telegramStartupAnnouncement;
+    show
+        TelegramAccessEdge,
+        telegramStartupAnnouncement,
+        telegramProcessingAcknowledgement,
+        telegramProcessingPreviewLength;

@@ -117,6 +117,33 @@ void main() {
       expect(f.chatApi.sentReceivers.last.value, 'tg-42');
     });
 
+    test(
+        'an admitted request first sends the immediate "Processing" ack, then '
+        'the answer', () async {
+      final d = _answeringDispatcher();
+      final f = _edge(dispatcher: d.dispatcher);
+      addTearDown(f.booted.shutdown);
+      addTearDown(f.inbound.close);
+
+      f.edge.start();
+      f.inbound.add(_inbound(text: 'Who are you?'));
+      await pumpEventQueue();
+
+      // The ack echoing the prompt precedes the answer (so a slow/failing run
+      // never leaves the sender staring at silence), both to the same sender.
+      expect(
+        f.chatApi.sentMessages,
+        equals([
+          telegramProcessingAcknowledgement('Who are you?'),
+          'the answer',
+        ]),
+      );
+      expect(
+        f.chatApi.sentReceivers.map((r) => r.value),
+        equals(['tg-42', 'tg-42']),
+      );
+    });
+
     test('a rate-limited request draws the graceful rate-limit decline',
         () async {
       final d = _answeringDispatcher();
@@ -247,6 +274,29 @@ void main() {
           recorder.sentMessages,
           equals([telegramStartupAnnouncement('bomber')]),
         );
+      });
+    });
+
+    group('telegramProcessingAcknowledgement', () {
+      test('echoes a short prompt whole behind the "Processing:" prefix', () {
+        expect(
+          telegramProcessingAcknowledgement('Who are you?'),
+          'Processing: Who are you?',
+        );
+      });
+
+      test('truncates a long prompt to its first 200 characters', () {
+        final String longPrompt = 'x' * 500;
+        final String ack = telegramProcessingAcknowledgement(longPrompt);
+
+        expect(ack, 'Processing: ${'x' * telegramProcessingPreviewLength}');
+        // 'Processing: ' (12) + 200 preview chars.
+        expect(ack.length, 12 + telegramProcessingPreviewLength);
+      });
+
+      test('a prompt exactly at the preview length is echoed whole', () {
+        final String exact = 'y' * telegramProcessingPreviewLength;
+        expect(telegramProcessingAcknowledgement(exact), 'Processing: $exact');
       });
     });
   });

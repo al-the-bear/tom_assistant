@@ -284,10 +284,18 @@ final class AccessAssembler {
   ///
   /// Throws (after emitting a correlated `AccessFailed`) the typed edge failure
   /// for the channel edge (E.45) to map onto the graceful Telegram message.
+  ///
+  /// [onAdmitted], when supplied, is awaited once the request has passed every
+  /// edge gate and is about to be dispatched — the seam the Telegram edge uses
+  /// to send its immediate "Processing" acknowledgement (so a gate-rejected
+  /// request, which never reaches dispatch, draws only its decline and not a
+  /// contradictory ack). It runs *before* `dispatcher.accept`, so the ack
+  /// precedes the streamed answer.
   Future<void> admitTelegram({
     required String userId,
     required InboundRequest envelope,
     required TelegramSink sink,
+    Future<void> Function()? onAdmitted,
   }) async {
     String? principalId;
     try {
@@ -306,6 +314,7 @@ final class AccessAssembler {
           envelope: effectiveEnvelope,
           sink: sink,
         ),
+        onAdmitted: onAdmitted,
       );
     } catch (error) {
       _emitFailure(error, envelope: envelope, principalId: principalId);
@@ -412,6 +421,7 @@ final class AccessAssembler {
     required InboundRequest envelope,
     required Persona persona,
     required _BuildBinding buildBinding,
+    Future<void> Function()? onAdmitted,
   }) async {
     final String principalId = identity.principalId;
 
@@ -447,6 +457,14 @@ final class AccessAssembler {
     eventBus.emit(
       AccessCreated.fromAccess(access, occurredAt: _clock().toUtc()),
     );
+
+    // The request is fully admitted and about to be dispatched: fire the
+    // post-admission hook (the Telegram edge's immediate "Processing" ack)
+    // before the run streams, so a gate-rejected request never reaches here and
+    // the ack always precedes the answer.
+    if (onAdmitted != null) {
+      await onAdmitted();
+    }
 
     await dispatcher.accept(access);
   }

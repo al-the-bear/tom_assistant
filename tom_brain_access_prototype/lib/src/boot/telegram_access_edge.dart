@@ -60,6 +60,28 @@ import 'access_assembler.dart';
 String telegramStartupAnnouncement(String host) =>
     'Telegram link to tom_brain from host $host just started.';
 
+/// The number of leading prompt characters echoed back in the immediate
+/// "Processing" acknowledgement ([telegramProcessingAcknowledgement]).
+const int telegramProcessingPreviewLength = 200;
+
+/// Builds the immediate acknowledgement the Telegram channel sends the moment a
+/// request is admitted, before the (potentially slow) cognition runs: a single
+/// line echoing the first [telegramProcessingPreviewLength] characters of the
+/// [prompt] so the sender sees their message was received while the answer is
+/// still being produced.
+///
+/// A pure function so the wording is one named, unit-testable place (mirroring
+/// [telegramStartupAnnouncement]); [TelegramAccessEdge] is what actually sends
+/// it. A prompt at or under the preview length is echoed whole; a longer one is
+/// truncated to its first [telegramProcessingPreviewLength] characters (no
+/// ellipsis — the preview is a debugging echo, not a rendered excerpt).
+String telegramProcessingAcknowledgement(String prompt) {
+  final String preview = prompt.length <= telegramProcessingPreviewLength
+      ? prompt
+      : prompt.substring(0, telegramProcessingPreviewLength);
+  return 'Processing: $preview';
+}
+
 /// The live Telegram channel of the running access process (E.45).
 ///
 /// Construct one per running process over the booted [AccessAssembler] and the
@@ -149,9 +171,31 @@ class TelegramAccessEdge {
         userId: userId,
         envelope: request,
         sink: ChatApiTelegramSink(chatApi: _chatApi, receiver: receiver),
+        onAdmitted: () => _acknowledge(receiver, request.text),
       );
     } catch (error) {
       await _decline(receiver, error);
+    }
+  }
+
+  /// Sends the immediate "Processing" acknowledgement to [receiver]
+  /// (best-effort — a failure to send it is swallowed).
+  ///
+  /// Fired by the assembler once a request has passed every edge gate and is
+  /// about to be dispatched (its `onAdmitted` hook), so the sender sees their
+  /// message echoed back while the cognition runs. A gate-rejected request
+  /// never reaches this point — it draws its graceful decline instead, not a
+  /// contradictory "Processing" line. Buffered Telegram delivery only flushes
+  /// the answer on the run's final chunk, so without this a slow — or failing —
+  /// run would leave the sender staring at silence.
+  Future<void> _acknowledge(ChatReceiver receiver, String prompt) async {
+    try {
+      await _chatApi.sendMessage(
+        receiver,
+        telegramProcessingAcknowledgement(prompt),
+      );
+    } catch (_) {
+      // Best-effort: the ack is a courtesy, never a precondition for the run.
     }
   }
 

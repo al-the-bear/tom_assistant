@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Telegram channel sends an immediate "Processing" acknowledgement
+
+A whitelisted Telegram prompt now draws an immediate `Processing: <first 200
+characters of the prompt>` line the moment it is admitted, before the cognition
+runs. Telegram delivery is buffered — the answer is flushed only on the run's
+final chunk — so a slow (or failing) run previously left the sender staring at
+silence with no confirmation their message had even arrived.
+
+The ack fires only for an *admitted* request: `AccessAssembler.admitTelegram`
+gained an `onAdmitted` hook that runs after every edge gate passes and before
+`dispatcher.accept`, and `TelegramAccessEdge` passes it the acknowledgement
+send. A gate-rejected request (rate-limit / quota / anchor) never reaches the
+hook, so it still draws only its graceful decline — not a contradictory
+"Processing" line — and the ack always precedes the streamed answer. The
+wording lives in the pure, unit-tested `telegramProcessingAcknowledgement`
+(mirroring `telegramStartupAnnouncement`); the send is best-effort (a failure to
+ack never blocks the run).
+
 ## Unreleased — `telegramUserIds` now `${ENV}`-expand (Q-E.49.2 revised)
 
 The owner whitelist is sourced from the shell profile in deployment (e.g.
