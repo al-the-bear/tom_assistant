@@ -13,6 +13,11 @@
 //   * `ResolvedIdentity` — minimal principal handle (`resolved_identity.dart`).
 //   * `Session`          — minimal conversation handle (`session.dart`).
 //   * `Persona`          — persona → substrate-role handle (`persona.dart`).
+//   * `PriorTurn` /
+//     `RemoteToolResult` /
+//     `RemoteToolDef`    — Extension-G request-fidelity element types
+//                          (`request_fidelity.dart`); populate the four
+//                          optional `InboundRequest` history/tool fields.
 //   * `DeliverCallback`  — the `deliver` field's function type (typedef below).
 //
 // Ownership boundary (D.4 — "still owned by Phase E; the dispatcher only
@@ -48,6 +53,8 @@ export 'backpressure.dart'
 export 'inbound_request.dart' show InboundRequest;
 export 'outbound_chunk.dart' show OutboundChunk;
 export 'persona.dart' show Persona;
+export 'request_fidelity.dart'
+    show PriorTurn, RemoteToolDef, RemoteToolResult;
 export 'resolved_identity.dart' show ResolvedIdentity;
 export 'session.dart' show Session;
 

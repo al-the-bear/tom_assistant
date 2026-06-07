@@ -153,6 +153,12 @@ export 'src/symbolic/symbolic.dart'
 // off the shared `BrainEvent` base. The variants carry routing identity and
 // counts only — never the prompt text or the answer body. One `export` for
 // the whole `access.dart` surface (D.11 shape + D.12 events).
+// G.19 also re-exports the three Extension-G request-fidelity element types
+// (`PriorTurn` / `RemoteToolResult` / `RemoteToolDef`) from the same library —
+// the typed elements that populate `InboundRequest`'s four optional
+// history/tool fields (`priorTurns` / `toolResults` / `remoteTools`;
+// `sessionId` is a plain `String?`). Phase E decodes them from the wire
+// payload; `call_llm_v1` consumes them (hub § 22.1 / access § 4.2).
 export 'src/access/access.dart'
     show
         Access,
@@ -164,6 +170,9 @@ export 'src/access/access.dart'
         InboundRequest,
         OutboundChunk,
         Persona,
+        PriorTurn,
+        RemoteToolDef,
+        RemoteToolResult,
         ResolvedIdentity,
         Session;
 

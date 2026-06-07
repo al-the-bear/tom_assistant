@@ -38,7 +38,9 @@
 //     `classify_inbound_v1` fallback. This type only carries the hint.
 
 import 'package:tom_core_agentic/tom_core_agentic.dart'
-    show mapEquals, textPreview;
+    show listEquals, mapEquals, textPreview;
+
+import 'request_fidelity.dart';
 
 /// The normalised inbound request — one user prompt, decoded from its
 /// originating channel into the channel-agnostic shape the dispatcher's
@@ -83,6 +85,39 @@ final class InboundRequest {
   /// envelope. Defaults to an empty map.
   final Map<String, Object?> metadata;
 
+  // ── Extension G (G.19): full request fidelity (hub § 22.1, access § 4.2). ──
+  //
+  // The gateway stops discarding everything but the last user message. All
+  // four fields are optional and default empty/null, so a pre-Extension-G
+  // caller that supplies only `text` (+ the envelope identity above) is
+  // structurally unchanged — PE-9 holds because both producer (Phase E) and
+  // consumer (`call_llm_v1`) ship in the same change. `text` stays the
+  // *live* prompt (the last user message); these fields are the history /
+  // tool context around it, so the dispatcher's read-surface is untouched.
+
+  /// The full inbound `messages[]` history the client supplied, as ordered
+  /// `(role, text)` turns — **excluding** the last user message, which stays
+  /// the live [text]. Empty for a single-turn channel (e.g. Telegram).
+  /// Stored as an unmodifiable defensive copy.
+  final List<PriorTurn> priorTurns;
+
+  /// Client-executed tool results echoed back on a follow-up turn
+  /// (hub § 22.8) — results for tool calls the brain previously proposed.
+  /// Empty unless the client is continuing a remote-tool round. Stored as
+  /// an unmodifiable defensive copy.
+  final List<RemoteToolResult> toolResults;
+
+  /// The client-supplied `tools[]` declarations the brain may *propose*
+  /// calling but never executes (hub § 22.8). Empty unless the client
+  /// declared tools. Stored as an unmodifiable defensive copy.
+  final List<RemoteToolDef> remoteTools;
+
+  /// The session id the client echoed from a prior response
+  /// (request field / `X-Tom-Session` header, hub § 22.9), associating
+  /// this call with a kept history. `null` when the client sent none —
+  /// the request is then routed to the default session.
+  final String? sessionId;
+
   /// Builds an immutable inbound request. [text] must contain at least
   /// one non-whitespace character; the empty / whitespace-only case is
   /// the "empty inbound request" D.13 requires be rejected.
@@ -93,7 +128,14 @@ final class InboundRequest {
     this.messageId,
     this.streaming = false,
     Map<String, Object?> metadata = const {},
-  }) : metadata = Map.unmodifiable(metadata) {
+    List<PriorTurn> priorTurns = const [],
+    List<RemoteToolResult> toolResults = const [],
+    List<RemoteToolDef> remoteTools = const [],
+    this.sessionId,
+  })  : metadata = Map.unmodifiable(metadata),
+        priorTurns = List.unmodifiable(priorTurns),
+        toolResults = List.unmodifiable(toolResults),
+        remoteTools = List.unmodifiable(remoteTools) {
     if (text.trim().isEmpty) {
       throw ArgumentError.value(
         text,
@@ -111,7 +153,11 @@ final class InboundRequest {
       other.conversationId == conversationId &&
       other.messageId == messageId &&
       other.streaming == streaming &&
-      mapEquals(other.metadata, metadata);
+      mapEquals(other.metadata, metadata) &&
+      listEquals(other.priorTurns, priorTurns) &&
+      listEquals(other.toolResults, toolResults) &&
+      listEquals(other.remoteTools, remoteTools) &&
+      other.sessionId == sessionId;
 
   @override
   int get hashCode => Object.hash(
@@ -121,6 +167,10 @@ final class InboundRequest {
         messageId,
         streaming,
         Object.hashAllUnordered(metadata.keys),
+        Object.hashAll(priorTurns),
+        Object.hashAll(toolResults),
+        Object.hashAll(remoteTools),
+        sessionId,
       );
 
   @override
@@ -130,5 +180,9 @@ final class InboundRequest {
       'conversationId: $conversationId, '
       'messageId: $messageId, '
       'streaming: $streaming, '
-      'metadata: $metadata)';
+      'metadata: $metadata, '
+      'priorTurns: ${priorTurns.length}, '
+      'toolResults: ${toolResults.length}, '
+      'remoteTools: ${remoteTools.length}, '
+      'sessionId: $sessionId)';
 }

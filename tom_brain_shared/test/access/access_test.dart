@@ -25,6 +25,9 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         InboundRequest,
         OutboundChunk,
         Persona,
+        PriorTurn,
+        RemoteToolDef,
+        RemoteToolResult,
         ResolvedIdentity,
         Session;
 
@@ -98,6 +101,133 @@ void main() {
     test('toString previews long prompts and never throws', () {
       final r = InboundRequest(text: 'x' * 200);
       expect(r.toString(), contains('…'));
+    });
+
+    // Extension G (G.19): four optional request-fidelity fields.
+
+    test('Extension-G fields default empty/null', () {
+      final r = InboundRequest(text: 'hi');
+      expect(r.priorTurns, isEmpty);
+      expect(r.toolResults, isEmpty);
+      expect(r.remoteTools, isEmpty);
+      expect(r.sessionId, isNull);
+    });
+
+    test('a text-only request is structurally equal to the old shape '
+        '(PE-9 regression guard)', () {
+      // Two requests built with only `text` — the pre-Extension-G shape —
+      // must remain equal and hash equal. The new fields, defaulting to
+      // empty/null, contribute nothing to identity for an old caller.
+      final oldShape = InboundRequest(text: 'unchanged');
+      final alsoOld = InboundRequest(text: 'unchanged');
+      expect(oldShape, equals(alsoOld));
+      expect(oldShape.hashCode, equals(alsoOld.hashCode));
+    });
+
+    test('carries all four Extension-G fields when supplied', () {
+      final r = InboundRequest(
+        text: 'go',
+        priorTurns: [
+          PriorTurn(role: 'user', text: 'earlier?'),
+          PriorTurn(role: 'assistant', text: 'earlier!'),
+        ],
+        toolResults: [RemoteToolResult(toolCallId: 'c1', content: '42')],
+        remoteTools: [RemoteToolDef(name: 'get_weather')],
+        sessionId: 'sess-9',
+      );
+      expect(r.priorTurns, hasLength(2));
+      expect(r.priorTurns.first.role, 'user');
+      expect(r.toolResults.single.toolCallId, 'c1');
+      expect(r.remoteTools.single.name, 'get_weather');
+      expect(r.sessionId, 'sess-9');
+    });
+
+    test('a request with all four fields round-trips through equality', () {
+      InboundRequest build() => InboundRequest(
+            text: 'go',
+            priorTurns: [PriorTurn(role: 'user', text: 'q')],
+            toolResults: [RemoteToolResult(toolCallId: 'c1', content: 'r')],
+            remoteTools: [RemoteToolDef(name: 'tool', description: 'd')],
+            sessionId: 'sess-1',
+          );
+      final a = build();
+      final b = build();
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+    });
+
+    test('inequality when any single Extension-G field differs', () {
+      final base = InboundRequest(
+        text: 'go',
+        priorTurns: [PriorTurn(role: 'user', text: 'q')],
+        toolResults: [RemoteToolResult(toolCallId: 'c1', content: 'r')],
+        remoteTools: [RemoteToolDef(name: 'tool')],
+        sessionId: 'sess-1',
+      );
+      final diffTurns = InboundRequest(
+        text: 'go',
+        priorTurns: [PriorTurn(role: 'user', text: 'other')],
+        toolResults: [RemoteToolResult(toolCallId: 'c1', content: 'r')],
+        remoteTools: [RemoteToolDef(name: 'tool')],
+        sessionId: 'sess-1',
+      );
+      final diffResults = InboundRequest(
+        text: 'go',
+        priorTurns: [PriorTurn(role: 'user', text: 'q')],
+        toolResults: [RemoteToolResult(toolCallId: 'c1', content: 'other')],
+        remoteTools: [RemoteToolDef(name: 'tool')],
+        sessionId: 'sess-1',
+      );
+      final diffTools = InboundRequest(
+        text: 'go',
+        priorTurns: [PriorTurn(role: 'user', text: 'q')],
+        toolResults: [RemoteToolResult(toolCallId: 'c1', content: 'r')],
+        remoteTools: [RemoteToolDef(name: 'other')],
+        sessionId: 'sess-1',
+      );
+      final diffSession = InboundRequest(
+        text: 'go',
+        priorTurns: [PriorTurn(role: 'user', text: 'q')],
+        toolResults: [RemoteToolResult(toolCallId: 'c1', content: 'r')],
+        remoteTools: [RemoteToolDef(name: 'tool')],
+        sessionId: 'sess-2',
+      );
+      expect(base, isNot(equals(diffTurns)));
+      expect(base, isNot(equals(diffResults)));
+      expect(base, isNot(equals(diffTools)));
+      expect(base, isNot(equals(diffSession)));
+    });
+
+    test('priorTurns / toolResults / remoteTools are unmodifiable '
+        'defensive copies', () {
+      final turns = [PriorTurn(role: 'user', text: 'q')];
+      final results = [RemoteToolResult(toolCallId: 'c1', content: 'r')];
+      final tools = [RemoteToolDef(name: 'tool')];
+      final r = InboundRequest(
+        text: 'go',
+        priorTurns: turns,
+        toolResults: results,
+        remoteTools: tools,
+      );
+      // Mutating the sources must not leak in.
+      turns.add(PriorTurn(role: 'assistant', text: 'leak'));
+      results.add(RemoteToolResult(toolCallId: 'c2', content: 'leak'));
+      tools.add(RemoteToolDef(name: 'leak'));
+      expect(r.priorTurns, hasLength(1));
+      expect(r.toolResults, hasLength(1));
+      expect(r.remoteTools, hasLength(1));
+      expect(
+        () => r.priorTurns.add(PriorTurn(role: 'x', text: 'y')),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => r.toolResults.add(RemoteToolResult(toolCallId: 'x', content: 'y')),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => r.remoteTools.add(RemoteToolDef(name: 'x')),
+        throwsUnsupportedError,
+      );
     });
   });
 
