@@ -78,7 +78,7 @@ void main() {
   });
 
   group('C.14 generated bridge output — structure', () {
-    test('AllBridge exposes exactly the three authored bridged classes', () {
+    test('AllBridge exposes exactly the four authored bridged classes', () {
       final names = AllBridge.bridgeClasses().map((b) => b.name).toSet();
       expect(
         names,
@@ -86,9 +86,11 @@ void main() {
           'MemoryBridge',
           'SubstrateBridge',
           'LlmCompletionFailure',
+          'ToolBridge',
         }),
         reason: 'C.12 MemoryBridge + C.13 SubstrateBridge (and its '
-            'LlmCompletionFailure carrier) must all be bridged.',
+            'LlmCompletionFailure carrier) + Extension F step 6 ToolBridge '
+            'must all be bridged.',
       );
     });
 
@@ -105,6 +107,10 @@ void main() {
       expect(
         uris['LlmCompletionFailure'],
         'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart',
+      );
+      expect(
+        uris['ToolBridge'],
+        'package:tom_brain_procedure_prototype/src/bridges/tool_bridge.dart',
       );
     });
 

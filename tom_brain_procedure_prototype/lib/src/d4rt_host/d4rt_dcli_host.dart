@@ -80,6 +80,7 @@ import 'package:tom_d4rt_dcli/tom_d4rt_cli_api.dart';
 import '../bridges/brain_bridges_registrar.dart';
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
+import '../bridges/tool_bridge.dart';
 import '../config/sandbox_config.dart';
 import 'procedure_parse_exception.dart';
 
@@ -136,6 +137,7 @@ final class D4rtDcliHost {
   D4rtDcliHost({
     required this.memoryBridge,
     required this.substrateBridge,
+    this.toolBridge,
     String dataDirectory = _defaultDataDirectory,
     NativePrimitiveInstaller? installNativePrimitives,
     this.sandbox = const SandboxConfig.locked(),
@@ -157,6 +159,10 @@ final class D4rtDcliHost {
   /// The d4rt global name the [SubstrateBridge] instance is bound to.
   static const String substrateGlobal = 'sub';
 
+  /// The d4rt global name the [ToolBridge] instance is bound to, when one is
+  /// supplied (Extension F step 6).
+  static const String toolGlobal = 'tool';
+
   /// Tool label the composed [D4rtCliApi] reports (`toolName`).
   static const String _hostToolName = 'TomBrainEngine';
 
@@ -170,6 +176,13 @@ final class D4rtDcliHost {
 
   /// The substrate bridge injected as the [substrateGlobal] global.
   final SubstrateBridge substrateBridge;
+
+  /// The tool bridge injected as the [toolGlobal] global, or `null` when the
+  /// host runs without the `tool.list` / `tool.invoke` surface (Extension F
+  /// step 6). Optional because the prototype's `answer_with_memory_v1`
+  /// reaches memory + substrate only; a host that runs the scripted LLM loop
+  /// supplies one.
+  final ToolBridge? toolBridge;
 
   /// The sandbox switches this host booted under (C.17). Defaults to
   /// [SandboxConfig.locked] — the prototype's only configuration.
@@ -213,6 +226,19 @@ final class D4rtDcliHost {
       substrateBridge,
       BrainBridges.substrateLibrary,
     );
+
+    // 2b. The tool bridge, when the host runs the scripted LLM loop
+    //     (Extension F step 6). Injected under its bridge library URI so an
+    //     importing script sees the `tool` global. Optional — the
+    //     prototype's `answer_with_memory_v1` runs without it.
+    final tools = toolBridge;
+    if (tools != null) {
+      _interpreter.registerGlobalVariable(
+        toolGlobal,
+        tools,
+        BrainBridges.toolLibrary,
+      );
+    }
 
     // 3. Engine-native primitives (C.19–C.22 fill the seam).
     installNativePrimitives?.call(_interpreter);

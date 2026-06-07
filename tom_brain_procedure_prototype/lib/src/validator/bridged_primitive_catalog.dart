@@ -70,12 +70,18 @@ final class BridgedPrimitiveCatalog {
     'decide',
   };
 
+  /// Tool-calling primitives (Extension F step 6), re-exposed by
+  /// `ToolBridge`. `tool.list` enumerates the policy-narrowed tool set;
+  /// `tool.invoke` runs one tool by name.
+  static const Set<String> tools = {'tool.list', 'tool.invoke'};
+
   /// Every canonical `requires` name the prototype recognises.
   static const Set<String> all = {
     ...memory,
     ...substrate,
     ...engineNative,
     ...sugar,
+    ...tools,
   };
 
   /// Whether [name] is a recognised bridged primitive.

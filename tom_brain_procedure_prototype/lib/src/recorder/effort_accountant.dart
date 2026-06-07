@@ -101,12 +101,17 @@ final class EffortAccountant {
     'updateCentroid',
   };
 
-  /// Substrate tool callouts other than `llm` — each contributes one
-  /// `toolCalls`.
+  /// Tool callouts — each contributes one `toolCalls`. The substrate tool
+  /// callouts other than `llm` (`embed` / `search` / `fetch`), plus
+  /// `tool.invoke` (Extension F step 6): invoking a registered tool is one
+  /// tool call, so the budget ledger can pre-charge it (PE-8). `tool.list`
+  /// only enumerates and is deliberately absent — it scores zero.
   static const Set<String> _toolPrimitives = <String>{
     'embed',
     'search',
     'fetch',
+    'tool.invoke',
+    'toolInvoke',
   };
 
   /// The metric delta the [primitive] call contributed.

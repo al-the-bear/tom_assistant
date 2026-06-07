@@ -32,15 +32,16 @@ import 'package:tom_d4rt/d4rt.dart';
 
 import 'brain_bridges.b.dart';
 
-/// Registers the engine's two bridges (`MemoryBridge`, `SubstrateBridge`)
-/// — plus the `LlmCompletionFailure` value carried by the substrate
-/// bridge — with a D4rt [interpreter].
+/// Registers the engine's bridges (`MemoryBridge`, `SubstrateBridge`,
+/// `ToolBridge`) — plus the `LlmCompletionFailure` value carried by the
+/// substrate bridge — with a D4rt [interpreter].
 ///
 /// Mirrors the registration the generated dartscript file would perform:
 /// the bridges are registered under each source-file library path so a
-/// d4rt procedure script can import them from either
-/// `lib/src/bridges/memory_bridge.dart` or
-/// `lib/src/bridges/substrate_bridge.dart`.
+/// d4rt procedure script can import them from
+/// `lib/src/bridges/memory_bridge.dart`,
+/// `lib/src/bridges/substrate_bridge.dart`, or
+/// `lib/src/bridges/tool_bridge.dart`.
 final class BrainBridges {
   const BrainBridges._();
 
@@ -62,11 +63,19 @@ final class BrainBridges {
   static const String substrateLibrary =
       'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart';
 
-  /// Registers every generated bridge with [interpreter] under both
-  /// bridge library paths. Idempotent at the call-site level: callers
-  /// register once per interpreter at host boot (C.16).
+  /// The library URI under which the tool bridge is importable from a d4rt
+  /// script. Canonical `package:` URI for `ToolBridge`'s source file (see
+  /// [memoryLibrary] for why a `package:` URI is required). Added at
+  /// Extension F step 6 — the `tool.list` / `tool.invoke` primitive pair.
+  static const String toolLibrary =
+      'package:tom_brain_procedure_prototype/src/bridges/tool_bridge.dart';
+
+  /// Registers every generated bridge with [interpreter] under each bridge
+  /// library path. Idempotent at the call-site level: callers register once
+  /// per interpreter at host boot (C.16).
   static void register(D4rt interpreter) {
     AllBridge.registerBridges(interpreter, memoryLibrary);
     AllBridge.registerBridges(interpreter, substrateLibrary);
+    AllBridge.registerBridges(interpreter, toolLibrary);
   }
 }

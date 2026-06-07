@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
-// Sources: 2 files
-// Generated: 2026-06-05T14:11:56.519662
+// Sources: 3 files
+// Generated: 2026-06-07T13:11:44.423335
 
 // ignore_for_file: unused_import, deprecated_member_use, prefer_function_declarations_over_variables, implementation_imports, sort_child_properties_last, non_constant_identifier_names, avoid_function_literals_in_foreach_calls, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member
 
@@ -11,7 +11,11 @@ import 'dart:async';
 import 'package:tom_brain_procedure_prototype/src/bridges/bridge_call_recorder.dart' as $tom_brain_procedure_prototype_1;
 import 'package:tom_brain_procedure_prototype/src/bridges/memory_bridge.dart' as $tom_brain_procedure_prototype_2;
 import 'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart' as $tom_brain_procedure_prototype_3;
-import 'package:tom_brain_procedure_prototype/src/budget/budget_ledger.dart' as $tom_brain_procedure_prototype_4;
+import 'package:tom_brain_procedure_prototype/src/bridges/tool_bridge.dart' as $tom_brain_procedure_prototype_4;
+import 'package:tom_brain_procedure_prototype/src/budget/budget_ledger.dart' as $tom_brain_procedure_prototype_5;
+import 'package:tom_brain_procedure_prototype/src/tools/tool_context.dart' as $tom_brain_procedure_prototype_6;
+import 'package:tom_brain_procedure_prototype/src/tools/tool_policy.dart' as $tom_brain_procedure_prototype_7;
+import 'package:tom_brain_procedure_prototype/src/tools/tool_registry.dart' as $tom_brain_procedure_prototype_8;
 import 'package:tom_brain_shared/src/budget/budget.dart' as $tom_brain_shared_1;
 import 'package:tom_brain_shared/src/memory/api/tom_brain_memory_client.dart' as $tom_brain_shared_2;
 import 'package:tom_brain_substrate/src/api/tom_brain_substrate_client.dart' as $tom_brain_substrate_1;
@@ -24,6 +28,7 @@ class PackageTomBrainProcedurePrototypeBridge {
       _createMemoryBridgeBridge(),
       _createSubstrateBridgeBridge(),
       _createLlmCompletionFailureBridge(),
+      _createToolBridgeBridge(),
     ];
   }
 
@@ -36,6 +41,7 @@ class PackageTomBrainProcedurePrototypeBridge {
       'MemoryBridge': 'package:tom_brain_procedure_prototype/src/bridges/memory_bridge.dart',
       'SubstrateBridge': 'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart',
       'LlmCompletionFailure': 'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart',
+      'ToolBridge': 'package:tom_brain_procedure_prototype/src/bridges/tool_bridge.dart',
     };
   }
 
@@ -140,6 +146,7 @@ class PackageTomBrainProcedurePrototypeBridge {
     return [
       'package:tom_brain_procedure_prototype/src/bridges/memory_bridge.dart',
       'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart',
+      'package:tom_brain_procedure_prototype/src/bridges/tool_bridge.dart',
     ];
   }
 
@@ -159,7 +166,7 @@ BridgedClass _createMemoryBridgeBridge() {
         D4.requireMinArgs(positional, 1, 'MemoryBridge');
         final client = D4.getRequiredArg<$tom_brain_shared_2.TomBrainMemoryClient>(positional, 0, 'client', 'MemoryBridge');
         final onCallRaw = named['onCall'];
-        final budget = D4.getOptionalNamedArg<$tom_brain_procedure_prototype_4.BudgetLedger?>(named, 'budget');
+        final budget = D4.getOptionalNamedArg<$tom_brain_procedure_prototype_5.BudgetLedger?>(named, 'budget');
         final agentName = D4.getOptionalNamedArg<String?>(named, 'agentName');
         return $tom_brain_procedure_prototype_2.MemoryBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return Future.value(D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs})); }, budget: budget, agentName: agentName);
       },
@@ -354,7 +361,7 @@ BridgedClass _createSubstrateBridgeBridge() {
         final client = D4.getRequiredArg<$tom_brain_substrate_1.TomBrainSubstrateClient>(positional, 0, 'client', 'SubstrateBridge');
         final onCallRaw = named['onCall'];
         final onTokenRaw = named['onToken'];
-        final budget = D4.getOptionalNamedArg<$tom_brain_procedure_prototype_4.BudgetLedger?>(named, 'budget');
+        final budget = D4.getOptionalNamedArg<$tom_brain_procedure_prototype_5.BudgetLedger?>(named, 'budget');
         return $tom_brain_procedure_prototype_3.SubstrateBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return Future.value(D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs})); }, onToken: onTokenRaw == null ? null : ((String p0) { return Future.value(D4.callInterpreterCallback(visitor!, onTokenRaw, [p0])); }) as Future<void> Function(String), budget: budget);
       },
     },
@@ -463,6 +470,51 @@ BridgedClass _createLlmCompletionFailureBridge() {
       'classCode': 'String get classCode',
       'message': 'String get message',
       'report': 'Map<String, Object?> get report',
+    },
+  );
+}
+
+// =============================================================================
+// ToolBridge Bridge
+// =============================================================================
+
+BridgedClass _createToolBridgeBridge() {
+  return BridgedClass(
+    nativeType: $tom_brain_procedure_prototype_4.ToolBridge,
+    name: 'ToolBridge',
+    isAssignable: (v) => v is $tom_brain_procedure_prototype_4.ToolBridge,
+    constructors: {
+      '': (visitor, positional, named) {
+        D4.requireMinArgs(positional, 3, 'ToolBridge');
+        final registry = D4.getRequiredArg<$tom_brain_procedure_prototype_8.ToolRegistry>(positional, 0, '_registry', 'ToolBridge');
+        final policy = D4.getRequiredArg<$tom_brain_procedure_prototype_7.ToolPolicy>(positional, 1, '_policy', 'ToolBridge');
+        final context = D4.getRequiredArg<$tom_brain_procedure_prototype_6.ToolContext>(positional, 2, '_context', 'ToolBridge');
+        return $tom_brain_procedure_prototype_4.ToolBridge(registry, policy, context);
+      },
+    },
+    methods: {
+      'list': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_4.ToolBridge>(target, 'ToolBridge');
+        final filter = D4.getOptionalNamedArg<String?>(named, 'filter');
+        return t.list(filter: filter);
+      },
+      'invoke': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_4.ToolBridge>(target, 'ToolBridge');
+        D4.requireMinArgs(positional, 2, 'invoke');
+        final name = D4.getRequiredArg<String>(positional, 0, 'name', 'invoke');
+        if (positional.length <= 1) {
+          throw ArgumentError('invoke: Missing required argument "args" at position 1');
+        }
+        final args = D4.coerceMap<String, Object?>(positional[1], 'args');
+        return t.invoke(name, args);
+      },
+    },
+    constructorSignatures: {
+      '': 'ToolBridge(ToolRegistry _registry, ToolPolicy _policy, ToolContext _context)',
+    },
+    methodSignatures: {
+      'list': 'Future<List<Map<String, Object?>>> list({String? filter})',
+      'invoke': 'Future<Map<String, Object?>> invoke(String name, Map<String, Object?> args)',
     },
   );
 }

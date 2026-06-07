@@ -41,3 +41,6 @@ export 'brain_bridges_registrar.dart';
 export 'bridge_call_recorder.dart' show BridgeCallRecorder;
 export 'memory_bridge.dart';
 export 'substrate_bridge.dart';
+// Extension F step 6 — the `tool.list` / `tool.invoke` bridged primitive
+// pair over the tool-calling core (`src/tools/`).
+export 'tool_bridge.dart';
