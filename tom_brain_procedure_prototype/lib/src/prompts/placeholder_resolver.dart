@@ -52,10 +52,18 @@ final class PlaceholderResolver {
     D4rtExpressionContext? context,
     this.strict = true,
     this.maxRecursion = 10,
-  }) : context = context ?? D4rtExpressionContext();
+    Map<String, String>? environment,
+  })  : context = context ?? D4rtExpressionContext(),
+        environment = environment ?? Platform.environment;
 
   /// The d4rt evaluation state expressions resolve against.
   final D4rtExpressionContext context;
+
+  /// The environment `${env:NAME}` reads from. Defaults to the live
+  /// process environment ([Platform.environment]); an explicit map makes
+  /// the env form injectable (config loaders pass a fixed map so a
+  /// `${env:NAME}` apiKey resolves deterministically, § 21.6).
+  final Map<String, String> environment;
 
   /// When true, an unknown `${name}` / `${env:NAME}` errors with
   /// [PlaceholderUnresolvedException]; when false it renders as empty.
@@ -133,7 +141,7 @@ final class PlaceholderResolver {
   }
 
   String _resolveEnv(String name) {
-    final value = Platform.environment[name];
+    final value = environment[name];
     if (value != null) {
       return value;
     }

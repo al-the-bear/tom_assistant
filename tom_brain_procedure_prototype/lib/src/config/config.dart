@@ -83,4 +83,15 @@ export 'engine_event.dart'
         StepYielded;
 export 'engine_event_bus.dart' show EngineEventBus;
 export 'engine_log.dart' show EngineLog, EngineLogCategory;
+export 'llm_config_errors.dart'
+    show
+        LlmConfigInvalid,
+        ModelConfigMissing,
+        ProvidersMissing,
+        llmConfigInvalidCode,
+        modelConfigMissingCode,
+        providersMissingCode;
+export 'model_config.dart' show ModelConfig, ModelConfigStore;
+export 'provider_config.dart'
+    show ProviderApiType, ProviderConfig, ProviderRegistry, ToolProtocol;
 export 'sandbox_config.dart' show SandboxConfig;
