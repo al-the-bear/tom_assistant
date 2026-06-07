@@ -83,6 +83,20 @@ export 'engine_event.dart'
         StepYielded;
 export 'engine_event_bus.dart' show EngineEventBus;
 export 'engine_log.dart' show EngineLog, EngineLogCategory;
+// Extension G step 25 — the history config split (§ 22.6) + the history
+// subsystem's typed observability taxonomy + bus (§ 22.10).
+export 'history_event.dart'
+    show
+        HistoryCompactionFailed,
+        HistoryCompactionTruncated,
+        HistoryEvent,
+        HistoryEventSink,
+        HistoryRemoteToolNoSession,
+        HistorySessionUnknown,
+        HistoryWireMalformed;
+export 'history_event_bus.dart' show HistoryEventBus;
+export 'history_policy.dart'
+    show HistoryPolicy, defaultHistoryCompactionTemplate;
 // Extension F step 16 — the scripted-LLM-loop observability stream (§ 13).
 export 'llm_event.dart'
     show

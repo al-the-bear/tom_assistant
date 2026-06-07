@@ -24,6 +24,7 @@ library;
 
 import 'dart:io';
 
+import 'package:tom_brain_shared/tom_brain_shared.dart' show HistorySizing;
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 import 'llm_config_errors.dart';
@@ -31,13 +32,15 @@ import 'llm_config_errors.dart';
 /// One logical model's identity + sampling — an immutable value object.
 final class ModelConfig {
   /// Builds a model config. The sampling fields are optional (a provider
-  /// applies its own defaults when one is absent).
+  /// applies its own defaults when one is absent); the [history] sizing
+  /// defaults to the standard window (§ 22.6b).
   const ModelConfig({
     required this.id,
     required this.providerNames,
     this.temperature,
     this.maxTokens,
     this.topP,
+    this.history = const HistorySizing.standard(),
   });
 
   /// The logical model id (also the `models/<id>.yaml` filename stem).
@@ -54,6 +57,11 @@ final class ModelConfig {
 
   /// Nucleus-sampling top-p, or `null` to use the provider default.
   final double? topP;
+
+  /// The conversation-history sizing knobs — scaled with the model's context
+  /// budget (§ 22.6b). A missing `history:` block defaults to the standard
+  /// sizing (raw 10 / threshold 40 / 1024 tokens / 6000 chars), not an error.
+  final HistorySizing history;
 
   /// The name this model is known by on provider [providerId], or `null`
   /// when the model is not offered there.
@@ -113,13 +121,54 @@ final class ModelConfig {
       }
     }
 
+    final history = _parseHistorySizing(reader.optionalMap(doc, 'history'), reader);
+
     return ModelConfig(
       id: id,
       providerNames: Map.unmodifiable(providerNames),
       temperature: temperature,
       maxTokens: maxTokens,
       topP: topP,
+      history: history,
     );
+  }
+
+  /// Parses the optional `history:` sizing [block] (§ 22.6b).
+  ///
+  /// An absent block defaults to [HistorySizing.standard]; an absent knob
+  /// keeps its default; a present knob must be a strictly-positive integer
+  /// (a non-positive or non-integer value is a located [LlmConfigInvalid]).
+  static HistorySizing _parseHistorySizing(
+    Map<Object?, Object?>? block,
+    YamlConfigReader reader,
+  ) {
+    if (block == null) return const HistorySizing.standard();
+    return HistorySizing(
+      rawCount: _positiveOr(reader, block, 'rawCount', 'model.history.rawCount', 10),
+      compactionThreshold: _positiveOr(
+          reader, block, 'compactionThreshold', 'model.history.compactionThreshold', 40),
+      maxCompactedTokens: _positiveOr(
+          reader, block, 'maxCompactedTokens', 'model.history.maxCompactedTokens', 1024),
+      maxCompactedChars: _positiveOr(
+          reader, block, 'maxCompactedChars', 'model.history.maxCompactedChars', 6000),
+    );
+  }
+
+  /// Reads a strictly-positive integer at [key] (located by [path]), or
+  /// [fallback] when absent. A non-positive value throws [LlmConfigInvalid].
+  static int _positiveOr(
+    YamlConfigReader reader,
+    Map<Object?, Object?> block,
+    String key,
+    String path,
+    int fallback,
+  ) {
+    final value = reader.optionalInt(block, key, path);
+    if (value == null) return fallback;
+    if (value <= 0) {
+      throw LlmConfigInvalid('must be strictly positive', path: path);
+    }
+    return value;
   }
 
   /// The filename stem (`gemma_4_26b` for `…/gemma_4_26b.yaml`).
@@ -136,6 +185,7 @@ final class ModelConfig {
       other.temperature == temperature &&
       other.maxTokens == maxTokens &&
       other.topP == topP &&
+      other.history == history &&
       _sameNames(other.providerNames, providerNames);
 
   @override
@@ -144,6 +194,7 @@ final class ModelConfig {
         temperature,
         maxTokens,
         topP,
+        history,
         Object.hashAllUnordered(
           providerNames.entries.map((e) => Object.hash(e.key, e.value)),
         ),
@@ -159,7 +210,8 @@ final class ModelConfig {
 
   @override
   String toString() => 'ModelConfig(id: $id, temperature: $temperature, '
-      'maxTokens: $maxTokens, topP: $topP, providerNames: $providerNames)';
+      'maxTokens: $maxTokens, topP: $topP, providerNames: $providerNames, '
+      'history: $history)';
 }
 
 /// Loads per-model configs from a `models/` directory by logical id.

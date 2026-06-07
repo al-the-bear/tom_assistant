@@ -45,6 +45,7 @@ import 'dart:io';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
+import 'history_policy.dart';
 import 'llm_config_errors.dart';
 import 'model_config.dart';
 import 'provider_config.dart';
@@ -163,6 +164,7 @@ final class PromptTemplateConfig {
     required this.user,
     this.toolPolicy,
     this.setup,
+    this.history = const HistoryPolicy.standard(),
   });
 
   /// The prompt type id (also the `<type>.yaml` filename stem).
@@ -192,6 +194,11 @@ final class PromptTemplateConfig {
 
   /// The user scaffold, kept verbatim (placeholder-bearing).
   final String user;
+
+  /// The behavioural history flags for this prompt type (§ 22.6a). A missing
+  /// `history:` block defaults to [HistoryPolicy.standard] (every flag on, the
+  /// default compaction template), not an error.
+  final HistoryPolicy history;
 
   /// Reads and parses a prompt template at [file].
   ///
@@ -260,6 +267,12 @@ final class PromptTemplateConfig {
     final system = reader.requireString(doc, 'system', 'prompt_template.system');
     final user = reader.requireString(doc, 'user', 'prompt_template.user');
 
+    final history = HistoryPolicy.fromYamlBlock(
+      reader.optionalMap(doc, 'history'),
+      reader,
+      'prompt_template.history',
+    );
+
     return PromptTemplateConfig(
       id: id,
       role: role,
@@ -270,6 +283,7 @@ final class PromptTemplateConfig {
       setup: setup,
       system: system,
       user: user,
+      history: history,
     );
   }
 

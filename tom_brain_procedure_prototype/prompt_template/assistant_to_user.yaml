@@ -1,0 +1,45 @@
+# assistant_to_user — the user-facing conversational prompt template (layer 3
+# of the three-layer model configuration;
+# tom_brain_procedure_prototype_specification.md § 21.5, § 22.6a).
+#
+# This is the standard conversational prompt type `call_llm_v1` assembles for a
+# user turn: it assumes the `assistant_to_user` role (so the assistant-
+# dedication anchor, PE-7, is reachable as ${role.anchor}) and routes through
+# the gemma_4_26b model on oMLX, falling back to Ollama.
+#
+# The `history:` block is the per-prompt-type *behavioural* half of the history
+# config split (§ 22.6a): which history sources are sent, whether history is a
+# real prior-turns array, and which template compaction uses. The *sizing* half
+# lives on the model config (models/gemma_4_26b.yaml, § 22.6b). A missing
+# `history:` block on either layer falls back to the documented defaults, so the
+# block below is illustrative — present to document the flags.
+
+id: assistant_to_user
+role: assistant_to_user
+
+# The {config, provider} routing/fallback chain. First reachable pair wins.
+models:
+  - { config: gemma_4_26b, provider: omlx }
+  - { config: gemma_4_26b, provider: ollama }
+
+# Default tool surface for the user-facing turn (read-only by default; the loop
+# may still propose remote tools the client executes, § 22.8).
+tools: []
+toolPolicy: read_only
+
+# Behavioural history flags (§ 22.6a). These are the documented defaults.
+history:
+  useLocal: true            # send the brain's own session history
+  useRemote: true           # send the client-provided messages[]
+  injectAsPriorTurns: true  # on => real prior-turns array; off => placeholders only
+  compactionTemplate: compact_history_v1   # which template compaction uses
+
+system: |
+  ${role.anchor}
+
+  You are answering the user directly. Be accurate, concise, and helpful. When
+  earlier context is relevant, draw on the conversation so far:
+  ${history.compacted}
+
+user: |
+  ${prompt}

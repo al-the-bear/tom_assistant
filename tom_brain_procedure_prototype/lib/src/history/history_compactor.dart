@@ -21,6 +21,7 @@
 // when the call is made (hub § 22.4, "runs under the same anchor"), so the
 // stubbed seam here needs no role resolution.
 
+import '../config/history_policy.dart' show defaultHistoryCompactionTemplate;
 import '../config/prompt_template_config.dart';
 import '../prompts/placeholder_resolver.dart';
 import '../primitives_native/trail_note.dart';
@@ -38,10 +39,12 @@ const String historyCompactionFailedCategory = 'history.compaction.failed';
 const String historyCompactionTruncatedCategory =
     'history.compaction.truncated';
 
-/// The default compaction prompt template type (hub § 22.4). The template's
-/// `history.compactionTemplate` flag overrides this once it is parsed
-/// (Plan step G.25); here it is the fixed default.
-const String defaultCompactionTemplate = 'compact_history_v1';
+/// The default compaction prompt template type (hub § 22.4), re-exported from
+/// the canonical config-layer constant ([defaultHistoryCompactionTemplate]) so
+/// the compactor and the prompt template's `history.compactionTemplate` flag
+/// (Plan step G.25, `HistoryPolicy.compactionTemplate`) share one source of
+/// truth. A template's `history.compactionTemplate` overrides this per type.
+const String defaultCompactionTemplate = defaultHistoryCompactionTemplate;
 
 /// The assembled scaffolds handed to the [HistoryCompactionSubstrate] — the
 /// `compact_history_v1` template with its `${history.compacted}` /
