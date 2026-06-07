@@ -199,6 +199,22 @@ final class MemoryConfig {
   /// and `checkpoints/` underneath.
   final String root;
 
+  /// Optional memory profile (memory § 2.5).
+  ///
+  /// When `null` the store uses the legacy single-tenant layout
+  /// directly under [root] (`<root>/memory.db`, …). When set to a
+  /// profile name `p`, the whole handle — `memory.db`, `vectors.db`,
+  /// `trails/`, `tombstones/`, `checkpoints/` — is scoped under
+  /// `<root>/profiles/<p>/`, so recall / classify / persist / trails /
+  /// stacks all operate inside that one profile and never cross-talk
+  /// with another. The path resolution lives on the
+  /// `MemoryConfigPaths` extension (`config/memory_config_paths.dart`),
+  /// which derives the effective `dataDir` from this field.
+  ///
+  /// Profile names are validated (no path separators, no `.`/`..`) by
+  /// the profile registry before they reach here.
+  final String? profile;
+
   /// sqlite-vec extension configuration.
   final SqliteVecConfig sqliteVec;
 
@@ -223,6 +239,7 @@ final class MemoryConfig {
   const MemoryConfig({
     required this.root,
     required this.sqliteVec,
+    this.profile,
     this.retrieval = const RetrievalConfig(),
     this.trails = const TrailsConfig(),
     this.classification = const ClassificationConfig(),
@@ -230,6 +247,25 @@ final class MemoryConfig {
     this.mcpServer = const McpServerConfig(),
     this.replication = const ReplicationConfig(),
   });
+
+  /// Returns a copy of this config bound to [profile] (memory § 2.5).
+  ///
+  /// Every other field is preserved verbatim; only the profile binding
+  /// changes. Passing `null` returns a profile-unbound copy (the
+  /// legacy single-tenant layout). The profile registry uses this to
+  /// spawn a child handle scoped to one profile from the unbound base
+  /// config it was opened with.
+  MemoryConfig withProfile(String? profile) => MemoryConfig(
+        root: root,
+        sqliteVec: sqliteVec,
+        profile: profile,
+        retrieval: retrieval,
+        trails: trails,
+        classification: classification,
+        budgets: budgets,
+        mcpServer: mcpServer,
+        replication: replication,
+      );
 
   /// Convenience constructor for tests: a single-rooted config
   /// pointing at a temp directory with sensible defaults and

@@ -99,6 +99,7 @@ import '../nodes/node_type_registry.dart';
 import '../nodes/node_type_yaml_loader.dart';
 import '../observability/memory_event_bus.dart';
 import '../observability/memory_stats_collector.dart';
+import '../profiles/sqlite_memory_profile_registry.dart';
 import '../retrieval/bm25_recall.dart';
 import '../retrieval/fts5_catalog.dart';
 import '../retrieval/fts5_writer.dart';
@@ -225,6 +226,14 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
 
   /// Assembles the [stats] snapshot from per-subsystem source tear-offs.
   late MemoryStatsCollector _statsCollector;
+
+  /// The profile-administration surface ([profiles]) over the
+  /// `<memory-root>/profiles/` tier (memory § 2.5). Built in [open]
+  /// from the profile-unbound base config, a child-store factory, and
+  /// the event bus's `emit` sink. Holds no long-lived handle — every
+  /// create / seed / drop opens, works, and closes a short-lived child
+  /// store — so [close] has nothing to release here.
+  late SqliteMemoryProfileRegistry _profiles;
 
   /// Creates an unopened store.
   ///
@@ -416,7 +425,36 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
       migrationProgress: _migrationProgress,
     );
 
+    // 11. Profile administration (memory § 2.5). The registry operates
+    //     on the `<root>/profiles/` sibling tier, so it takes the
+    //     profile-*unbound* base config; child handles it spawns share
+    //     this store's injected `sqlite` + `clock`. Profile lifecycle
+    //     events ride this store's bus via `_eventBus.emit`.
+    _profiles = SqliteMemoryProfileRegistry(
+      baseConfig: config.withProfile(null),
+      childStoreFactory: () =>
+          SqliteTomBrainMemory(sqlite: _sqlite, clock: _clock),
+      emit: _eventBus.emit,
+      clock: _clock,
+    );
+
     _isOpen = true;
+  }
+
+  /// The profile-administration surface over the
+  /// `<memory-root>/profiles/` tier (memory § 2.5).
+  ///
+  /// `list` / `exists` / `createProfile` / `seedProfile` /
+  /// `dropProfile`. A profile scopes a whole handle — open a
+  /// profile-bound store via `open(config.withProfile(name))` to read
+  /// or write inside one. `dropProfile` is a whole-store delete
+  /// (reset-to-zero) and is deliberately absent from the read-only MCP
+  /// server (memory § 3.2).
+  ///
+  /// Throws a [StateError] if read before [open] completes.
+  MemoryProfileRegistry get profiles {
+    _ensureOpen('profiles');
+    return _profiles;
   }
 
   /// Installs a vector index for each distinct embedding model declared

@@ -18,6 +18,7 @@
 
 // api/ — the consumer-facing contract + observability / scope value types.
 export 'api/memory_event.dart' show MemoryEvent;
+export 'api/memory_profile_registry.dart' show MemoryProfileRegistry;
 export 'api/memory_stats.dart' show LatencyHistogram, MemoryStats;
 export 'api/scope.dart' show DemotionReason, ForgetReason, Scope;
 export 'api/tom_brain_memory_client.dart' show TomBrainMemoryClient;

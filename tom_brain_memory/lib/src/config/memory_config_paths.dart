@@ -17,20 +17,43 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryConfig;
 /// Filesystem layout under [MemoryConfig.root].
 ///
 /// The store creates `memory.db`, `vectors.db`, `trails/`,
-/// `tombstones/`, and `checkpoints/` underneath the configured root.
+/// `tombstones/`, and `checkpoints/` underneath the *effective data
+/// directory* ([dataDir]) — which is [MemoryConfig.root] for a
+/// profile-unbound config and `<root>/profiles/<profile>` when a
+/// profile is bound (memory § 2.5). Resolving every operational path
+/// off [dataDir] is what scopes the whole handle to one profile.
 extension MemoryConfigPaths on MemoryConfig {
-  /// Resolves the `memory.db` path under [root].
-  String get memoryDbPath => '$root${Platform.pathSeparator}memory.db';
+  /// The effective data directory for this config.
+  ///
+  /// `<root>` when [MemoryConfig.profile] is `null` (legacy
+  /// single-tenant layout); `<root>/profiles/<profile>` when a profile
+  /// is bound. All other path getters derive from this, so a
+  /// profile-bound config keeps its `memory.db`, `vectors.db`, and the
+  /// three subdirectories entirely inside the profile directory.
+  String get dataDir {
+    final p = profile;
+    if (p == null) return root;
+    final sep = Platform.pathSeparator;
+    return '$root${sep}profiles$sep$p';
+  }
 
-  /// Resolves the `vectors.db` path under [root].
-  String get vectorsDbPath => '$root${Platform.pathSeparator}vectors.db';
+  /// The `<root>/profiles/` directory that holds every profile's data
+  /// directory. Independent of the bound profile — the registry lists
+  /// and creates siblings here.
+  String get profilesDir => '$root${Platform.pathSeparator}profiles';
 
-  /// Resolves the `trails/` directory under [root].
-  String get trailsDir => '$root${Platform.pathSeparator}trails';
+  /// Resolves the `memory.db` path under [dataDir].
+  String get memoryDbPath => '$dataDir${Platform.pathSeparator}memory.db';
 
-  /// Resolves the `tombstones/` directory under [root].
-  String get tombstonesDir => '$root${Platform.pathSeparator}tombstones';
+  /// Resolves the `vectors.db` path under [dataDir].
+  String get vectorsDbPath => '$dataDir${Platform.pathSeparator}vectors.db';
 
-  /// Resolves the `checkpoints/` directory under [root].
-  String get checkpointsDir => '$root${Platform.pathSeparator}checkpoints';
+  /// Resolves the `trails/` directory under [dataDir].
+  String get trailsDir => '$dataDir${Platform.pathSeparator}trails';
+
+  /// Resolves the `tombstones/` directory under [dataDir].
+  String get tombstonesDir => '$dataDir${Platform.pathSeparator}tombstones';
+
+  /// Resolves the `checkpoints/` directory under [dataDir].
+  String get checkpointsDir => '$dataDir${Platform.pathSeparator}checkpoints';
 }

@@ -36,6 +36,8 @@ import 'dart:io';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryConfig;
 
+import '../config/memory_config_paths.dart';
+
 /// The canonical filesystem view of a memory root.
 ///
 /// Construct via [MemoryDirectory.openOrCreate]; do not instantiate
@@ -93,7 +95,9 @@ final class MemoryDirectory {
     required this.wasCreated,
   });
 
-  /// Opens the memory directory at [config].root, creating any
+  /// Opens the memory directory at [config]'s effective data directory
+  /// (`MemoryConfigPaths.dataDir` — `<root>` unbound, or
+  /// `<root>/profiles/<profile>` when a profile is bound), creating any
   /// missing pieces of the canonical layout.
   ///
   /// Contract:
@@ -117,15 +121,19 @@ final class MemoryDirectory {
   /// per memory open and the host benefits from being able to
   /// resolve paths before scheduling any other async work.
   static MemoryDirectory openOrCreate(MemoryConfig config) {
-    final rawRoot = config.root;
-    if (rawRoot.isEmpty) {
+    if (config.root.isEmpty) {
       throw ArgumentError.value(
-        rawRoot,
+        config.root,
         'config.root',
         'memory root path must be non-empty',
       );
     }
 
+    // Scope the whole layout to the effective data directory: `<root>`
+    // for a profile-unbound config, `<root>/profiles/<profile>` when a
+    // profile is bound (memory § 2.5). `createSync(recursive: true)`
+    // below materialises the intermediate `profiles/` segment.
+    final rawRoot = config.dataDir;
     final rootDir = Directory(rawRoot);
     final rootEntityType = FileSystemEntity.typeSync(
       rawRoot,
