@@ -316,6 +316,44 @@ void main() {
       expect(a.hashCode, equals(b.hashCode));
       expect(a, isNot(equals(c)));
     });
+
+    test('memoryProfile is optional and null by default (Extension H § 4.4)',
+        () {
+      final s = Session(sessionId: 's1');
+      expect(s.memoryProfile, isNull);
+    });
+
+    test('memoryProfile carries the pinned profile when set', () {
+      final s = Session(sessionId: 's1', memoryProfile: 'work');
+      expect(s.memoryProfile, 'work');
+    });
+
+    test('memoryProfile participates in equality / hashCode', () {
+      final a = Session(sessionId: 's', memoryProfile: 'work');
+      final b = Session(sessionId: 's', memoryProfile: 'work');
+      final c = Session(sessionId: 's', memoryProfile: 'home');
+      final d = Session(sessionId: 's');
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+      expect(a, isNot(equals(c)));
+      expect(a, isNot(equals(d)));
+    });
+
+    test('withMemoryProfile stamps a profile without touching identity', () {
+      final s = Session(sessionId: 's1', conversationId: 'c1');
+      final pinned = s.withMemoryProfile('work');
+      expect(pinned.sessionId, 's1');
+      expect(pinned.conversationId, 'c1');
+      expect(pinned.memoryProfile, 'work');
+      // The original is unchanged (immutable copy).
+      expect(s.memoryProfile, isNull);
+    });
+
+    test('withMemoryProfile(null) clears the profile back to process default',
+        () {
+      final s = Session(sessionId: 's1', memoryProfile: 'work');
+      expect(s.withMemoryProfile(null).memoryProfile, isNull);
+    });
   });
 
   group('Persona', () {

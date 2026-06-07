@@ -75,6 +75,7 @@ import '../delivery/telegram_delivery.dart';
 import '../edge_security/edge_security.dart';
 import '../heuristic_classifier/heuristic_kind_hint_classifier.dart';
 import '../identity/identity_resolver.dart';
+import '../identity/memory_profile_selector.dart';
 import '../identity/persona_resolver.dart';
 import '../identity/session_manager.dart';
 import 'access_event_bus.dart';
@@ -439,6 +440,18 @@ final class AccessAssembler {
       envelope: envelope,
     );
 
+    // ── Memory-profile selection (Extension H, access spec § 7.4): pick the
+    //    profile this conversation recalls against and stamp it on the session
+    //    handle. Disabled / unwired → the process default (no pinned name); a
+    //    selector outage degrades gracefully (PE-6), it is not a failure. ──
+    final MemoryProfileSelectionOutcome profileOutcome =
+        await sessionManager.selectMemoryProfile(
+      resolution: session,
+      envelope: envelope,
+    );
+    final Session stampedSession =
+        session.session.withMemoryProfile(profileOutcome.profile);
+
     // ── Classify (graceful, AC-9): attach a confident kind-hint or leave the
     //    envelope untouched; a classifier outage is not a failure. ──
     final InboundRequest effectiveEnvelope = await _classify(envelope);
@@ -451,7 +464,7 @@ final class AccessAssembler {
     final Access access = Access(
       envelope: effectiveEnvelope,
       identity: identity,
-      session: session.session,
+      session: stampedSession,
       persona: persona,
       deliver: deliver,
       history: session.history,

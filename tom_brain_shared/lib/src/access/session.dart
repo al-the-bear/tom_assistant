@@ -35,24 +35,45 @@ final class Session {
   /// `null` when the channel is single-turn / conversationless.
   final String? conversationId;
 
+  /// The memory profile this conversation is pinned to (Extension H,
+  /// access spec § 4.4 / § 7.4). `null` when the conversation uses the
+  /// process default profile — either selection is off, or no confident
+  /// pick has been made yet. When set, the procedure layer opens that
+  /// profile for retrieval (hub § 23.5 / § 23.6). Access' `SessionManager`
+  /// is the only writer (via the `MemoryProfileSelector`); the dispatcher
+  /// reads it through `Access`.
+  final String? memoryProfile;
+
   /// Builds an immutable session handle. [sessionId] must be non-empty.
   Session({
     required this.sessionId,
     this.conversationId,
+    this.memoryProfile,
   }) {
     requireNonEmpty(sessionId, 'sessionId');
   }
+
+  /// Returns a copy with [memoryProfile] replaced — the seam access uses to
+  /// stamp the selected profile onto an otherwise-built handle. Passing
+  /// `null` clears the profile back to the process default. Identity
+  /// ([sessionId], [conversationId]) is preserved.
+  Session withMemoryProfile(String? memoryProfile) => Session(
+        sessionId: sessionId,
+        conversationId: conversationId,
+        memoryProfile: memoryProfile,
+      );
 
   @override
   bool operator ==(Object other) =>
       other is Session &&
       other.sessionId == sessionId &&
-      other.conversationId == conversationId;
+      other.conversationId == conversationId &&
+      other.memoryProfile == memoryProfile;
 
   @override
-  int get hashCode => Object.hash(sessionId, conversationId);
+  int get hashCode => Object.hash(sessionId, conversationId, memoryProfile);
 
   @override
-  String toString() =>
-      'Session(sessionId: $sessionId, conversationId: $conversationId)';
+  String toString() => 'Session(sessionId: $sessionId, '
+      'conversationId: $conversationId, memoryProfile: $memoryProfile)';
 }

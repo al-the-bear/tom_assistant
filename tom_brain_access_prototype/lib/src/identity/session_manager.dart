@@ -66,7 +66,11 @@
 // an empty answer.
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
+import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+    show SelectionSettings;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
+
+import 'memory_profile_selector.dart';
 
 /// The originating channel of an inbound request — the second component of a
 /// global history key.
@@ -154,13 +158,39 @@ final class SessionResolution {
       'mintedNewId: $mintedNewId, unknownSessionId: $unknownSessionId)';
 }
 
-/// One per-session entry: its dedicated history plus the activity clock
-/// [SessionManager.evictIdle] reads. Private to the library — only the manager
-/// mutates it.
+/// One per-session entry: its dedicated history, the activity clock
+/// [SessionManager.evictIdle] reads, and the Extension-H memory-profile
+/// selection state the manager threads across the conversation's turns
+/// (access spec § 7.4). Private to the library — only the manager mutates it.
 class _SessionEntry {
   final ConversationHistory history;
   DateTime lastActivityAt;
-  _SessionEntry({required this.history, required this.lastActivityAt});
+
+  /// The confidently pinned memory profile, or `null` while the conversation is
+  /// still on the default (never selected, or last selection inconclusive).
+  String? pinnedProfile;
+
+  /// Whether a selection pass has ever run for this session — distinguishes the
+  /// first admitted prompt (always selects, when enabled) from later turns.
+  bool everSelected;
+
+  /// Whether the last selection pass was inconclusive (below threshold, unknown
+  /// profile, or selector failure) and the conversation is on the default,
+  /// awaiting a re-check. Drives the `access.profile.repinned` transition.
+  bool selectionInconclusive;
+
+  /// Turns elapsed since the last selector call while inconclusive — the
+  /// `recheckEveryNTurns` window counter. Reset to `0` on every selector call.
+  int turnsSinceProfileCheck;
+
+  _SessionEntry({
+    required this.history,
+    required this.lastActivityAt,
+    this.pinnedProfile,
+    this.everSelected = false,
+    this.selectionInconclusive = false,
+    this.turnsSinceProfileCheck = 0,
+  });
 }
 
 /// An opaque, point-in-time deep copy of a [SessionManager]'s two history
@@ -198,6 +228,17 @@ final class SessionManager {
   final SessionIdMinter _mint;
   final DateTime Function() _now;
 
+  /// The memory-profile selector (Extension H, access spec § 7.4), or `null`
+  /// when none is wired. When `null` — or when [_selection] is disabled —
+  /// [selectMemoryProfile] makes no selector call and the conversation stays on
+  /// the process default profile.
+  final MemoryProfileSelector? _profileSelector;
+
+  /// The selection policy: whether selection is enabled, the default profile
+  /// name, the inconclusive threshold, the re-check window, and whether to feed
+  /// the selector the conversation history (`useHistory`).
+  final SelectionSettings _selection;
+
   /// The "all prompts" history per (principal, channel). Never idle-evicted.
   final Map<(String, AccessChannel), ConversationHistory> _globals = {};
 
@@ -211,13 +252,21 @@ final class SessionManager {
   /// process-unique counter+timestamp closure); a deployment may inject a UUID
   /// minter. [now] is the clock used for the per-session activity timestamps
   /// [evictIdle] reads (default: [systemClock]), injectable so tests can drive
-  /// eviction deterministically.
+  /// eviction deterministically. [profileSelector] is the Extension-H selector
+  /// (access spec § 7.4); when omitted (or when [selection] is disabled),
+  /// [selectMemoryProfile] never calls the substrate and the conversation stays
+  /// on the process default profile. [selection] is the selection policy
+  /// (default: disabled).
   SessionManager({
     this.sizing = const HistorySizing.standard(),
     SessionIdMinter? sessionIdMinter,
     DateTime Function()? now,
+    MemoryProfileSelector? profileSelector,
+    SelectionSettings selection = const SelectionSettings(),
   })  : _mint = sessionIdMinter ?? _defaultMinter(),
-        _now = now ?? systemClock;
+        _now = now ?? systemClock,
+        _profileSelector = profileSelector,
+        _selection = selection;
 
   /// The number of dedicated per-session histories currently held — *not* the
   /// global histories (which are bounded by the active (principal, channel)
@@ -311,6 +360,141 @@ final class SessionManager {
     );
   }
 
+  /// Runs the Extension-H memory-profile selection pass for a just-resolved
+  /// request (access spec § 7.4; hub § 23.6). Access owns the session, so access
+  /// owns which memory profile a conversation recalls against; the dispatcher
+  /// reads the pinned name off `Session.memoryProfile` downstream.
+  ///
+  /// The state machine, per session:
+  ///
+  ///   * selection disabled, or no selector wired → `disabled`, process default
+  ///     (no pinned name), no selector call.
+  ///   * already confidently pinned → `alreadyPinned`, the pinned name reused,
+  ///     no selector call.
+  ///   * within the re-check window after an inconclusive pick → `deferred`, the
+  ///     default profile, no selector call.
+  ///   * otherwise run the `profile_selector` role (first prompt, or the
+  ///     re-check window reached). On the result:
+  ///     - confidence ≥ `inconclusiveThreshold` and a known profile → pin it
+  ///       (`pinned`, or `repinned` + `access.profile.repinned` when a prior
+  ///       pick was inconclusive);
+  ///     - below threshold → `inconclusive`, the default profile, re-check after
+  ///       the window;
+  ///     - unknown profile → `profileUnknown` + `access.profile.unknown`,
+  ///       default, stay inconclusive;
+  ///     - selector throws → `selectorUnavailable` +
+  ///       `access.profile.selector.unavailable`, default, stay inconclusive
+  ///       (PE-6 graceful degrade).
+  ///
+  /// [resolution] must come from a prior [resolve] on this manager (its session
+  /// id keys the per-session selection state). [envelope] supplies the prompt;
+  /// the conversation history (when `selection.useHistory`) is read from
+  /// [resolution]'s history.
+  Future<MemoryProfileSelectionOutcome> selectMemoryProfile({
+    required SessionResolution resolution,
+    required InboundRequest envelope,
+  }) async {
+    final selector = _profileSelector;
+    if (!_selection.enabled || selector == null) {
+      return const MemoryProfileSelectionOutcome(
+        status: MemoryProfileSelectionStatus.disabled,
+        profile: null,
+      );
+    }
+
+    final entry = _sessions[resolution.sessionId];
+    if (entry == null) {
+      // The resolution was not produced by this manager — no session state to
+      // pin against. Degrade to the process default.
+      return const MemoryProfileSelectionOutcome(
+        status: MemoryProfileSelectionStatus.disabled,
+        profile: null,
+      );
+    }
+
+    // Already confident → reuse, no selector call.
+    if (entry.pinnedProfile != null) {
+      return MemoryProfileSelectionOutcome(
+        status: MemoryProfileSelectionStatus.alreadyPinned,
+        profile: entry.pinnedProfile,
+      );
+    }
+
+    // Not yet pinned. After the first (inconclusive) pass, defer the re-run
+    // until the re-check window is reached.
+    if (entry.everSelected) {
+      entry.turnsSinceProfileCheck++;
+      if (entry.turnsSinceProfileCheck < _selection.recheckEveryNTurns) {
+        return MemoryProfileSelectionOutcome(
+          status: MemoryProfileSelectionStatus.deferred,
+          profile: _selection.defaultProfile,
+        );
+      }
+    }
+
+    final history = _selection.useHistory
+        ? resolution.history.durableRecord
+        : const <HistoryTurn>[];
+
+    final ProfileSelection pick;
+    try {
+      pick = await selector.select(prompt: envelope.text, history: history);
+    } on Object {
+      // PE-6 graceful degrade: a selector failure falls back to the default and
+      // stays inconclusive, so the next window re-runs.
+      entry.everSelected = true;
+      entry.selectionInconclusive = true;
+      entry.turnsSinceProfileCheck = 0;
+      return MemoryProfileSelectionOutcome(
+        status: MemoryProfileSelectionStatus.selectorUnavailable,
+        profile: _selection.defaultProfile,
+        code: accessProfileSelectorUnavailableCode,
+      );
+    }
+
+    final wasInconclusive = entry.selectionInconclusive;
+    entry.everSelected = true;
+    entry.turnsSinceProfileCheck = 0;
+
+    if (!pick.isKnownProfile) {
+      entry.selectionInconclusive = true;
+      return MemoryProfileSelectionOutcome(
+        status: MemoryProfileSelectionStatus.profileUnknown,
+        profile: _selection.defaultProfile,
+        confidence: pick.confidence,
+        code: accessProfileUnknownCode,
+      );
+    }
+
+    if (pick.confidence >= _selection.inconclusiveThreshold) {
+      entry.pinnedProfile = pick.profile;
+      entry.selectionInconclusive = false;
+      return MemoryProfileSelectionOutcome(
+        status: wasInconclusive
+            ? MemoryProfileSelectionStatus.repinned
+            : MemoryProfileSelectionStatus.pinned,
+        profile: pick.profile,
+        confidence: pick.confidence,
+        code: wasInconclusive ? accessProfileRepinnedCode : null,
+      );
+    }
+
+    // Below threshold → inconclusive, use the default, re-check after the window.
+    entry.selectionInconclusive = true;
+    return MemoryProfileSelectionOutcome(
+      status: MemoryProfileSelectionStatus.inconclusive,
+      profile: _selection.defaultProfile,
+      confidence: pick.confidence,
+    );
+  }
+
+  /// Returns the confidently pinned memory profile for [sessionId] without
+  /// creating or mutating it, or `null` when none is pinned (selection off,
+  /// never selected, or the last pick was inconclusive). A read-only accessor
+  /// for inspection (boot diagnostics, tests).
+  String? peekMemoryProfile(String sessionId) =>
+      _sessions[sessionId]?.pinnedProfile;
+
   /// Returns the dedicated per-session history for [sessionId] without
   /// creating or mutating it, or `null` if no session has been registered
   /// under that id. A read-only accessor for inspection (boot diagnostics,
@@ -334,11 +518,7 @@ final class SessionManager {
           for (final e in _globals.entries) e.key: _copyHistory(e.value),
         },
         {
-          for (final e in _sessions.entries)
-            e.key: _SessionEntry(
-              history: _copyHistory(e.value.history),
-              lastActivityAt: e.value.lastActivityAt,
-            ),
+          for (final e in _sessions.entries) e.key: _copyEntry(e.value),
         },
       );
 
@@ -355,13 +535,21 @@ final class SessionManager {
     _sessions
       ..clear()
       ..addAll({
-        for (final e in snapshot._sessions.entries)
-          e.key: _SessionEntry(
-            history: _copyHistory(e.value.history),
-            lastActivityAt: e.value.lastActivityAt,
-          ),
+        for (final e in snapshot._sessions.entries) e.key: _copyEntry(e.value),
       });
   }
+
+  /// Deep-copies a [_SessionEntry], carrying its history and its Extension-H
+  /// selection state so a restart preserves the pinned profile and the
+  /// re-check window position (access spec § 7.4 / § 21.10).
+  static _SessionEntry _copyEntry(_SessionEntry e) => _SessionEntry(
+        history: _copyHistory(e.history),
+        lastActivityAt: e.lastActivityAt,
+        pinnedProfile: e.pinnedProfile,
+        everSelected: e.everSelected,
+        selectionInconclusive: e.selectionInconclusive,
+        turnsSinceProfileCheck: e.turnsSinceProfileCheck,
+      );
 
   /// Deep-copies a [ConversationHistory] via its restore seam. [HistoryTurn] is
   /// immutable, so copying the list references is a full deep copy.

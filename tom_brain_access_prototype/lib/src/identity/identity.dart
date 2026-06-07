@@ -21,5 +21,6 @@
 // E.27 ⏳ — the resolution-test sweep (token / user-id / session / persona).
 
 export 'identity_resolver.dart';
+export 'memory_profile_selector.dart';
 export 'persona_resolver.dart';
 export 'session_manager.dart';
