@@ -112,13 +112,14 @@ const String toolSurfaceUnavailableCode = 'tool.surface_unavailable';
 
 /// Raised when a tool that needs an optional [ToolContext] surface (the web
 /// surface for `web.*`, the engine surface for `script.run_d4rt` /
-/// `procedure.*`) runs in a context that did not supply it.
+/// `procedure.*`, the VS Code surface for the merged `vscode.*` tools) runs in
+/// a context that did not supply it.
 ///
-/// A memory-only run carries no web/engine surface; exposing such a tool there
-/// is a wiring mistake the policy should have prevented, so it surfaces loudly
-/// rather than silently returning an empty result.
+/// A memory-only run carries no web/engine/vscode surface; exposing such a
+/// tool there is a wiring mistake the policy should have prevented, so it
+/// surfaces loudly rather than silently returning an empty result.
 final class ToolSurfaceUnavailable implements Exception {
-  /// The name of the missing surface (`web`, `engine`).
+  /// The name of the missing surface (`web`, `engine`, `vscode`).
   final String surface;
 
   /// The tool that needed it.

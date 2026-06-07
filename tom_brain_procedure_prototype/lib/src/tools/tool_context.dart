@@ -21,9 +21,11 @@
 // it re-derives a constrained one (a path-checked file handle, a budget-gated
 // memory write) when it runs.
 //
-// `web` / `engine` are nullable because the surfaces they wrap genuinely do
-// not exist on every run; a tool handed a context without the surface it needs
-// raises `ToolSurfaceUnavailable` rather than silently degrading. `budget`,
+// `web` / `engine` / `vscode` are nullable because the surfaces they wrap
+// genuinely do not exist on every run (the `vscode` surface only when the
+// prototype is colocated with a VS Code extension and the merge profile is on,
+// § 21.8); a tool handed a context without the surface it needs raises
+// `ToolSurfaceUnavailable` rather than silently degrading. `budget`,
 // `memory`, and `fileScopeRoot` stay required.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show TomBrainMemoryClient;
@@ -32,6 +34,7 @@ import '../budget/budget_ledger.dart' show BudgetLedger;
 import 'todo_store.dart';
 import 'tool_engine_surface.dart';
 import 'tool_web_surface.dart';
+import 'vscode_tool_source.dart';
 
 /// The bridges a [BrainTool] may use, and nothing else (PE-1).
 ///
@@ -64,9 +67,14 @@ final class ToolContext {
   /// route through, or `null` on a run that exposes none.
   final ToolEngineSurface? engine;
 
+  /// The optional VS Code extension surface the merged `vscode.*` tools
+  /// (§ 21.8) route through, or `null` on a run not colocated with a VS Code
+  /// extension (or with the merge profile off).
+  final VsCodeToolSource? vscode;
+
   /// Builds the surface. [budget], [memory], and [fileScopeRoot] are required;
-  /// [todos] defaults to a fresh run-scoped store; [web] and [engine] are
-  /// supplied only when the run exposes tools that need them.
+  /// [todos] defaults to a fresh run-scoped store; [web], [engine], and
+  /// [vscode] are supplied only when the run exposes tools that need them.
   ToolContext({
     required this.budget,
     required this.memory,
@@ -74,5 +82,6 @@ final class ToolContext {
     TodoStore? todos,
     this.web,
     this.engine,
+    this.vscode,
   }) : todos = todos ?? TodoStore();
 }

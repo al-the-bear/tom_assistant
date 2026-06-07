@@ -42,3 +42,7 @@ export 'tool_policy.dart' show ToolPolicy;
 export 'tool_policy_config.dart' show ToolPolicyConfig;
 export 'tool_registry.dart' show ToolRegistry;
 export 'tool_web_surface.dart' show ToolWebSurface;
+// Extension F step 13 — the VS Code extension tool merge (§ 21.8).
+export 'vscode_tool_source.dart' show VsCodeToolDefinition, VsCodeToolSource;
+export 'vscode_tools.dart'
+    show VsCodeBrainTool, mergeVsCodeTools, vsCodeToolSurfaceName;
