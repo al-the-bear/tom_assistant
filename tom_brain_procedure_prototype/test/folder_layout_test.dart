@@ -1,16 +1,18 @@
 // Folder-layout contract test (C.8 engine layout + D.6 dispatcher half).
 //
 // Locks the `lib/src/<folder>/` subfolder inventory: the nine engine
-// subfolders required by Plan step C.8 plus the `dispatcher/` subfolder
-// added by Plan step D.6 (the first dispatcher-half addition to this
-// project). It also locks the per-folder barrel-file convention used
+// subfolders required by Plan step C.8, the `dispatcher/` subfolder added
+// by Plan step D.6 (the first dispatcher-half addition to this project),
+// the `budget/` subfolder (Q-C.51.1), and the `prompts/` subfolder added
+// by Extension F step 1 (the placeholder system). It also locks the
+// per-folder barrel-file convention used
 // across the Tom Brain projects (siblings: `tom_brain_shared`,
 // `tom_brain_memory`, `tom_brain_substrate`) and the top-level barrel
 // re-export.
 //
 // What this test asserts:
 //
-//   1. Each of the ten subfolders exists under `lib/src/`.
+//   1. Each of the twelve subfolders exists under `lib/src/`.
 //   2. Each subfolder contains a `<folder>.dart` barrel file.
 //   3. The top-level barrel `lib/tom_brain_procedure_prototype.dart`
 //      re-exports every one of those subfolder barrels (one `export`
@@ -47,6 +49,7 @@ const _requiredSubfolders = <String>[
   'preemption', // C.34–C.37 — PreemptionState + deadline
   'primitives_native', // C.19–C.22 — runProcedure / note / yield
   'procedure_store', // C.23–C.26 — store + loader + resolver
+  'prompts', // Ext-F step 1 — PlaceholderResolver / Stack (§ 21.5, § 21.7)
   'recorder', // C.31–C.33 — RunRecorder + effort accounting
   'validator', // C.27–C.30 — header / sandbox / contract validators
 ];
@@ -57,9 +60,9 @@ void main() {
       // Sanity-check the list itself so that a stray edit to
       // `_requiredSubfolders` cannot silently shrink or duplicate the
       // contract. C.8 seeds 9; D.6 adds `dispatcher/` for 10; Q-C.51.1 adds
-      // `budget/` for 11.
-      expect(_requiredSubfolders, hasLength(11));
-      expect(_requiredSubfolders.toSet(), hasLength(11),
+      // `budget/` for 11; Ext-F step 1 adds `prompts/` for 12.
+      expect(_requiredSubfolders, hasLength(12));
+      expect(_requiredSubfolders.toSet(), hasLength(12),
           reason: 'subfolder list must be free of duplicates');
     });
 
