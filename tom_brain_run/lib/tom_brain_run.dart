@@ -46,3 +46,36 @@ export 'src/provision_brain.dart'
         provisionBrain,
         standUpBrainProcess,
         standUpBrainProcessFromConfig;
+
+// ── Retrieval eval harness (Plan-2 ext step #33; spec § 23.8) ─────────
+export 'src/eval/procedure_engine_eval_environment.dart'
+    show
+        EvalProfileBinder,
+        EvalProfileBinding,
+        ProcedureEngineEvalEnvironment,
+        evalDocToDraft,
+        evalIdsFromRecall;
+export 'src/eval/retrieval_eval_config.dart'
+    show
+        EvalCorpusItem,
+        EvalExpectation,
+        EvalQuery,
+        RetrievalEvalConfig,
+        RetrievalEvalConfigException,
+        StrategySetSpec;
+export 'src/eval/retrieval_eval_environment.dart'
+    show EvalSeedDoc, RetrievalEvalEnvironment;
+export 'src/eval/retrieval_eval_harness.dart' show RetrievalEvalHarness;
+export 'src/eval/retrieval_eval_report.dart' show RetrievalEvalReport;
+export 'src/eval/retrieval_metrics.dart'
+    show
+        allRetrievalMetrics,
+        mrrMetric,
+        ndcgAtK,
+        ndcgMetric,
+        precisionAtK,
+        precisionAtKMetric,
+        recallAtK,
+        recallAtKMetric,
+        reciprocalRank,
+        scoreQuery;

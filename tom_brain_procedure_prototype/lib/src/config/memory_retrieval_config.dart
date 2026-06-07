@@ -85,10 +85,13 @@ final class StrategyConfig {
   /// Whether this is an LLM-bearing strategy (carries a [role]).
   bool get isLlm => role != null;
 
-  /// A copy with [enabled] flipped; every other field is preserved.
-  StrategyConfig copyWith({bool? enabled}) => StrategyConfig(
+  /// A copy with [enabled] and/or [weight] overridden; every other field is
+  /// preserved. Passing `weight` retunes the strategy's RRF fusion weight
+  /// without touching its enablement, role, or params — the lever an eval
+  /// harness pulls to model a "deliberately weakened" weight set (§ 23.8).
+  StrategyConfig copyWith({bool? enabled, double? weight}) => StrategyConfig(
         enabled: enabled ?? this.enabled,
-        weight: weight,
+        weight: weight ?? this.weight,
         k: k,
         role: role,
         params: params,
@@ -298,6 +301,39 @@ final class MemoryRetrievalConfig {
       for (final sc in family.value.entries) {
         final on = keep.contains('${family.key}.${sc.key}');
         byName[sc.key] = sc.value.copyWith(enabled: on);
+      }
+      next[family.key] = byName;
+    }
+    return MemoryRetrievalConfig(
+      profile: profile,
+      budget: budget,
+      fusion: fusion,
+      diversity: diversity,
+      rerank: rerank,
+      strategies: next,
+      selection: selection,
+    );
+  }
+
+  /// A copy with the fusion `weight` of each strategy named `family.name` in
+  /// [pathWeights] retuned to the given value; every other strategy and field
+  /// is preserved (enablement included). The symmetric companion to
+  /// [withOnly]: where `withOnly` decides *which* strategies contribute,
+  /// `withWeights` decides *how much* a contributing strategy counts in RRF
+  /// fusion. A path that does not name a known strategy is ignored.
+  ///
+  /// This is the mechanism the retrieval eval harness (§ 23.8) uses to model a
+  /// "deliberately weakened" weight set — drop a high-signal strategy's weight
+  /// toward zero and the relevant nodes it used to surface sink in the fused
+  /// ranking, producing a measurable metric drop.
+  MemoryRetrievalConfig withWeights(Map<String, double> pathWeights) {
+    final next = <String, Map<String, StrategyConfig>>{};
+    for (final family in strategies.entries) {
+      final byName = <String, StrategyConfig>{};
+      for (final sc in family.value.entries) {
+        final weight = pathWeights['${family.key}.${sc.key}'];
+        byName[sc.key] =
+            weight == null ? sc.value : sc.value.copyWith(weight: weight);
       }
       next[family.key] = byName;
     }

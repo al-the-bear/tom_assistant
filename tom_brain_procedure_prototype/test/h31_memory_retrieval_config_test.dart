@@ -140,6 +140,45 @@ strategies:
     });
   });
 
+  group('H.31-model withWeights retunes named strategy weights only', () {
+    test('a named strategy is retuned; enablement and others are untouched',
+        () {
+      final base = MemoryRetrievalConfig.defaults();
+      final cfg = base.withWeights(<String, double>{
+        'vector.prompt': 0.01,
+        'graphWalk.seed_from_concepts': 0.0,
+      });
+
+      // The named weights moved …
+      expect(cfg.strategy('vector', 'prompt')!.weight, 0.01);
+      expect(cfg.strategy('graphWalk', 'seed_from_concepts')!.weight, 0.0);
+      // … enablement is preserved (withWeights never flips a strategy) …
+      expect(cfg.strategy('vector', 'prompt')!.enabled, isTrue);
+      expect(cfg.strategy('graphWalk', 'seed_from_concepts')!.enabled, isTrue);
+      // … and an unnamed strategy keeps its default weight.
+      expect(cfg.strategy('vector', 'hypothetical_answers')!.weight,
+          base.strategy('vector', 'hypothetical_answers')!.weight);
+    });
+
+    test('an unknown path is ignored; the retuned weight reaches the conductor',
+        () {
+      final cfg = MemoryRetrievalConfig.defaults().withWeights(
+        <String, double>{'vector.prompt': 0.25, 'no.such_strategy': 9.0},
+      );
+      final seeds = cfg.toConductorMap()['seeds'] as Map<String, Object?>;
+      final vp = seeds['vector.prompt'] as Map<String, Object?>;
+      expect(vp['weight'], 0.25);
+    });
+
+    test('StrategyConfig.copyWith can override weight in isolation', () {
+      const sc = StrategyConfig(enabled: true, weight: 1.0, k: 8);
+      final tuned = sc.copyWith(weight: 0.5);
+      expect(tuned.weight, 0.5);
+      expect(tuned.enabled, isTrue);
+      expect(tuned.k, 8);
+    });
+  });
+
   group('H.31-model the non-LLM constraint is enforceable', () {
     test('hasEnabledLlmStrategy is true when an LLM strategy is on', () {
       expect(MemoryRetrievalConfig.defaults().hasEnabledLlmStrategy, isTrue);

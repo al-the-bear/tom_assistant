@@ -52,6 +52,11 @@ dependencies:
     path: ../tom_brain_memory
   tom_brain_shared:
     path: ../tom_brain_shared
+  # The retrieval eval harness (Plan-2 ext step #33; spec § 23.8) parses its
+  # `retrieval_eval.yaml` through the canonical plain-map loader so no
+  # `YamlMap`/`YamlList` node leaks into a `RetrievalEvalConfig`.
+  tom_core_agentic:
+    path: ../../tom_ai/core/tom_core_agentic
   tom_basics: ^1.0.0
   # The production entrypoint (`bin/brain_serve.dart`) and the #31 Verify suite
   # both manufacture the *real* substrate (OpenAI-passthrough + Ollama
