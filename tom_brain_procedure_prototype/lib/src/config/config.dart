@@ -87,11 +87,20 @@ export 'llm_config_errors.dart'
     show
         LlmConfigInvalid,
         ModelConfigMissing,
+        PromptTemplateMissing,
         ProvidersMissing,
         llmConfigInvalidCode,
         modelConfigMissingCode,
+        promptTemplateMissingCode,
         providersMissingCode;
 export 'model_config.dart' show ModelConfig, ModelConfigStore;
+export 'prompt_template_config.dart'
+    show
+        PromptModelRef,
+        PromptTemplateConfig,
+        PromptTemplateStore,
+        ResolvedPromptModel,
+        ToolPolicyProfile;
 export 'provider_config.dart'
     show ProviderApiType, ProviderConfig, ProviderRegistry, ToolProtocol;
 export 'sandbox_config.dart' show SandboxConfig;

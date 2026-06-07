@@ -31,6 +31,10 @@ const String providersMissingCode = 'providers.missing';
 /// `model_config.missing` row.
 const String modelConfigMissingCode = 'model_config.missing';
 
+/// Wire code for an absent `prompt_template/<type>.yaml`. Matches the
+/// § 21.10 `prompt_template.missing` row.
+const String promptTemplateMissingCode = 'prompt_template.missing';
+
 /// Wire code for a structurally invalid providers/model document.
 const String llmConfigInvalidCode = 'llm.config.invalid';
 
@@ -78,6 +82,33 @@ final class ModelConfigMissing implements Exception {
   /// Human-readable explanation, reused by [toString].
   String get message =>
       'model config "$modelId" not found at "$path"';
+
+  @override
+  String toString() => '$code: $message';
+}
+
+/// Thrown when a requested `prompt_template/<type>.yaml` does not exist.
+///
+/// Carries the prompt [type] that was requested and the [path] that was
+/// looked up, so the failure identifies both *which* template is missing
+/// and *where* the loader expected its file. Mirrors [ModelConfigMissing]
+/// (the § 21.10 failure table shares the `prompt_template.missing` /
+/// `model_config.missing` row).
+final class PromptTemplateMissing implements Exception {
+  /// Records the absent prompt template for [type] at [path].
+  const PromptTemplateMissing(this.type, this.path);
+
+  /// The prompt type whose template file is missing (the filename stem).
+  final String type;
+
+  /// The filesystem path that was expected to hold the template.
+  final String path;
+
+  /// The wire code carried by every prompt-template-missing failure.
+  String get code => promptTemplateMissingCode;
+
+  /// Human-readable explanation, reused by [toString].
+  String get message => 'prompt template "$type" not found at "$path"';
 
   @override
   String toString() => '$code: $message';
