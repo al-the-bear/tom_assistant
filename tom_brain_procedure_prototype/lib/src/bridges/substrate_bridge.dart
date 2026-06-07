@@ -70,11 +70,14 @@
 // whichever implementation the deployment topology chose; the bridge
 // cannot tell the difference.
 
+import 'dart:convert' show jsonDecode;
+
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
 
 import '../budget/budget_ledger.dart' show BudgetLedger;
+import '../config/provider_config.dart' show ToolProtocol;
 import 'bridge_call_recorder.dart';
 
 /// Re-exposes the substrate primitive set to d4rt procedure scripts.
@@ -122,20 +125,47 @@ class SubstrateBridge {
   /// the call when the count cap is reached).
   final BudgetLedger? _budget;
 
+  /// Per-run note sink for the low-level tool-protocol seam (Extension F
+  /// step 10). The substrate package is protocol-unaware, so the `json_text`
+  /// fallback's malformed-tool-call diagnostic (`llm.toolcall.parse.failed`)
+  /// has to be observed here rather than on the substrate. `null` on the
+  /// shared template bridge and wherever the run does not bind a recorder —
+  /// the note is then dropped on this low-level path (the `call_llm_v1` loop,
+  /// step 11, is the consumer that turns it into a trail `note`). Symmetric to
+  /// [_onCall] / [_onToken]: not part of the d4rt-facing surface.
+  final SubstrateNoteSink? _onNote;
+
+  /// Resolves a provider id to its wire tool protocol (Extension F step 2 /
+  /// step 10). `null` ⇒ every provider is treated as [ToolProtocol.openai]
+  /// (the default the prototype shipped before tool-calling), so existing
+  /// callers and tests see no behaviour change. The host binds the real
+  /// registry-backed resolver at boot wiring (plan step 15); this constructor
+  /// hook is only the seam. Not part of the d4rt-facing surface — a procedure
+  /// script never selects a protocol; the substrate hides it (Q-F.4).
+  final ToolProtocolResolver? _toolProtocolOf;
+
   /// Wraps [client]. The host constructs this natively and registers the
   /// instance with the d4rt runtime. [onCall], when supplied, records each
   /// completed primitive call against the issuing run (E.3.2). [onToken], when
   /// supplied, receives each [llm] chunk's text delta live as it streams
   /// (P1.3 #7 — the external/user-request path). [budget], when supplied,
-  /// enforces the run's procedure-header budget (PE-8).
+  /// enforces the run's procedure-header budget (PE-8). [onNote], when
+  /// supplied, receives the low-level tool-protocol diagnostics
+  /// (`llm.toolcall.parse.failed`); [toolProtocolOf], when supplied, selects a
+  /// provider's wire tool protocol (defaulting to [ToolProtocol.openai]) —
+  /// both Extension F step 10.
   SubstrateBridge(
     this.client, {
     BridgeCallRecorder? onCall,
     SubstrateTokenSink? onToken,
     BudgetLedger? budget,
+    SubstrateNoteSink? onNote,
+    ToolProtocolResolver? toolProtocolOf,
   })  : _onCall = onCall,
         _onToken = onToken,
-        _budget = budget;
+        _budget = budget,
+        _onNote = onNote,
+        _toolProtocolOf = toolProtocolOf;
 
   /// Delegates to [body], gating it through the budget ledger and recording
   /// it on the run trail when those hooks are wired.
@@ -192,7 +222,7 @@ class SubstrateBridge {
   // ── llm ───────────────────────────────────────────────────────────
 
   /// Runs an LLM completion through the substrate and returns the
-  /// generated text plus the call report.
+  /// generated text, any proposed tool calls, and the call report.
   ///
   /// [prompt] is supplied to the role template as the `prompt` input
   /// (Q-C.13.3); the bridge never supplies a raw wire prompt, so the
@@ -202,26 +232,59 @@ class SubstrateBridge {
   /// `toolCalls`, `memoryWrites`); when omitted, [defaultBudget]
   /// applies.
   ///
-  /// Returns `{'text': <concatenated answer>, 'report': {...}}` where
-  /// the report mirrors [LlmCallReport]. Throws [LlmCompletionFailure]
-  /// when the stream terminates with [LlmStreamFailed].
+  /// [tools] is an optional tool catalogue in the `tool.list` wire shape —
+  /// a list of `{name, description?, input_schema?}` maps (Extension F
+  /// step 10, § 21.1). When supplied, it rides onto [LlmOptions.toolCatalogue]
+  /// so the role may propose tool calls. A malformed entry (missing `name`,
+  /// non-map entry, wrong field types) surfaces a located [FormatException]
+  /// (PE-1) — d4rt is an untrusted boundary.
+  ///
+  /// The returned `toolCalls` is uniform regardless of provider (Q-F.4): the
+  /// substrate's wire protocol is hidden behind the resolved provider's
+  /// [ToolProtocol] (selected by the injected [ToolProtocolResolver],
+  /// defaulting to [ToolProtocol.openai]):
+  ///
+  ///   - [ToolProtocol.openai] — the provider emits native
+  ///     [LlmStreamToolCallProposed] events; they are collected verbatim into
+  ///     the uniform shape.
+  ///   - [ToolProtocol.jsonText] — a non-tool-calling model emits a simple
+  ///     JSON tool-call object (`{"tool": …, "arguments": {…}}`, optionally
+  ///     markdown-fenced) in the completion text; it is parsed into the *same*
+  ///     uniform shape. A completion that is plain prose yields an empty
+  ///     `toolCalls`; a malformed JSON tool-call object yields an empty
+  ///     `toolCalls` plus an `llm.toolcall.parse.failed` note, and the text
+  ///     falls through as the no-tool answer.
+  ///
+  /// This is the *only* widening of the low-level surface; it adds no turn
+  /// loop — that lives entirely in `call_llm_v1` (step 11).
+  ///
+  /// Returns `{'text': …, 'toolCalls': [{id, name, arguments}…], 'report':
+  /// {...}}` — `text` is the concatenated answer, `toolCalls` is empty when
+  /// none, and the report mirrors [LlmCallReport]. Throws
+  /// [LlmCompletionFailure] when the
+  /// stream terminates with [LlmStreamFailed].
   Future<Map<String, Object?>> llm(
     String prompt, {
     String role = defaultRole,
+    List<Object?>? tools,
     Map<String, Object?>? budget,
   }) =>
       _record<Map<String, Object?>>(
         'llm',
         <String, Object?>{'prompt': prompt, 'role': role},
         () async {
+          final catalogue = _buildToolCatalogue(tools);
           final call = LlmCall(
             roleId: role,
             inputs: <String, Object?>{'prompt': prompt},
+            options: LlmOptions(toolCatalogue: catalogue),
             budget: _buildBudget(budget),
           );
 
           final buffer = StringBuffer();
+          final nativeToolCalls = <Object?>[];
           final onToken = _onToken;
+          String? providerId;
 
           await for (final event in client.completeStream(call)) {
             switch (event) {
@@ -235,9 +298,34 @@ class SubstrateBridge {
                 // HTTP status. With no sink bound the chunk is only buffered
                 // (the internal / free-time path).
                 if (onToken != null) await onToken(text);
+              case LlmStreamToolCallProposed(
+                  :final toolCallId,
+                  :final toolName,
+                  :final arguments,
+                ):
+                // Native (openai-protocol) tool call: collect into the uniform
+                // shape. Under json_text the provider never emits these — the
+                // tool call rides in the completion text instead.
+                nativeToolCalls.add(<String, Object?>{
+                  'id': toolCallId,
+                  'name': toolName,
+                  'arguments': arguments,
+                });
+              case LlmStreamStarted(providerId: final id):
+                providerId = id;
               case LlmStreamCompleted(:final report):
+                final protocol = _toolProtocolOf
+                        ?.call(providerId ?? report.providerId) ??
+                    ToolProtocol.openai;
+                final toolCalls = await _resolveToolCalls(
+                  protocol,
+                  nativeToolCalls,
+                  buffer.toString(),
+                  catalogue,
+                );
                 return <String, Object?>{
                   'text': buffer.toString(),
+                  'toolCalls': toolCalls,
                   'report': _reportToMap(report),
                 };
               case LlmStreamFailed(:final failure, report: final failReport):
@@ -246,12 +334,6 @@ class SubstrateBridge {
                   message: failure.message,
                   report: _reportToMap(failReport),
                 );
-              case LlmStreamStarted():
-              case LlmStreamToolCallProposed():
-                // Started carries no text; tool-call resolution is the
-                // dispatcher's job (Phase D) and is not exercised by
-                // `answer_with_memory_v1`. Both are ignored here.
-                break;
             }
           }
 
@@ -265,6 +347,137 @@ class SubstrateBridge {
         },
         resultOf: (value) => value,
       );
+
+  /// Resolves the uniform `toolCalls` list from whichever wire protocol the
+  /// resolved provider speaks (Q-F.4).
+  ///
+  /// Under [ToolProtocol.openai] the substrate already surfaced native tool
+  /// calls as [LlmStreamToolCallProposed] events, collected verbatim into
+  /// [native]; this returns them unchanged. Under [ToolProtocol.jsonText] a
+  /// non-tool-calling model embeds the tool call in [text]; it is parsed into
+  /// the same `{id, name, arguments}` shape — but only when [catalogue] is
+  /// non-empty (a completion with no tools on offer is never a tool call).
+  Future<List<Object?>> _resolveToolCalls(
+    ToolProtocol protocol,
+    List<Object?> native,
+    String text,
+    ToolCatalogue catalogue,
+  ) async {
+    switch (protocol) {
+      case ToolProtocol.openai:
+        return native;
+      case ToolProtocol.jsonText:
+        if (catalogue.isEmpty) return const <Object?>[];
+        return _parseJsonTextToolCalls(text);
+    }
+  }
+
+  /// Parses a `json_text`-protocol completion into the uniform `toolCalls`
+  /// shape, or surfaces the typed parse-failure note.
+  ///
+  /// The model is asked to answer with a bare `{"tool": …, "arguments": {…}}`
+  /// object (optionally wrapped in a ```json fence) when it wants a tool;
+  /// anything else is a plain prose answer. The heuristic: after de-fencing
+  /// and trimming, text that does not start with `{` is prose ⇒ empty list, no
+  /// note. Text that does start with `{` is *meant* to be a tool call, so a
+  /// failure to read it as one (`jsonDecode` throws, the value is not a map,
+  /// or it has no String `tool` key) is a malformed tool call ⇒ empty list
+  /// plus an `llm.toolcall.parse.failed` note (the text still falls through as
+  /// the no-tool answer).
+  Future<List<Object?>> _parseJsonTextToolCalls(String text) async {
+    final stripped = _stripJsonFence(text.trim());
+    if (!stripped.startsWith('{')) {
+      // Plain prose answer — not a tool call, not a malformation.
+      return const <Object?>[];
+    }
+
+    Object? decoded;
+    try {
+      decoded = jsonDecode(stripped);
+    } on FormatException {
+      await _noteToolCallParseFailed(text);
+      return const <Object?>[];
+    }
+
+    if (decoded is! Map) {
+      await _noteToolCallParseFailed(text);
+      return const <Object?>[];
+    }
+    final tool = decoded['tool'];
+    if (tool is! String) {
+      await _noteToolCallParseFailed(text);
+      return const <Object?>[];
+    }
+
+    final rawArgs = decoded['arguments'];
+    final arguments = <String, Object?>{};
+    if (rawArgs is Map) {
+      rawArgs.forEach((Object? key, Object? value) {
+        arguments['$key'] = value;
+      });
+    }
+    return <Object?>[
+      <String, Object?>{'id': null, 'name': tool, 'arguments': arguments},
+    ];
+  }
+
+  /// Emits the `llm.toolcall.parse.failed` note when a `json_text` completion
+  /// looked like a tool call but could not be read as one. A no-op when no
+  /// [SubstrateNoteSink] is bound (the low-level path's default).
+  Future<void> _noteToolCallParseFailed(String text) async {
+    await _onNote?.call(
+      'llm.toolcall.parse.failed',
+      <String, Object?>{'text': text},
+    );
+  }
+
+  /// Strips a leading/trailing markdown code fence (```` ```json `` … `` ``` ````)
+  /// from [text], returning the inner content trimmed. Text without a fence is
+  /// returned unchanged.
+  static String _stripJsonFence(String text) {
+    if (!text.startsWith('```')) return text;
+    var inner = text;
+    final firstNewline = inner.indexOf('\n');
+    if (firstNewline != -1) inner = inner.substring(firstNewline + 1);
+    if (inner.endsWith('```')) inner = inner.substring(0, inner.length - 3);
+    return inner.trim();
+  }
+
+  /// Builds a [ToolCatalogue] from the d4rt-supplied [tools] list (each entry
+  /// a `{name, description?, input_schema?}` map in the `tool.list` wire
+  /// shape). `null`/empty ⇒ [ToolCatalogue.empty]. A malformed entry surfaces
+  /// a located [FormatException] via [_reader] (PE-1).
+  static ToolCatalogue _buildToolCatalogue(List<Object?>? tools) {
+    if (tools == null || tools.isEmpty) return ToolCatalogue.empty;
+    final descriptors = <ToolDescriptor>[];
+    for (var i = 0; i < tools.length; i++) {
+      final map = _reader.mapValue(tools[i], 'tools[$i]')!;
+      final name = _reader.requireString(map, 'name', 'tools[$i].name');
+      final description =
+          _reader.optionalString(map, 'description', 'tools[$i].description') ??
+              '';
+      final schema =
+          _reader.optionalMap(map, 'input_schema', 'tools[$i].input_schema');
+      descriptors.add(ToolDescriptor(
+        name: name,
+        description: description,
+        parametersSchema:
+            schema == null ? const <String, Object?>{} : _coerceStringKeys(schema),
+      ));
+    }
+    return ToolCatalogue(descriptors);
+  }
+
+  /// Coerces a d4rt map with potentially `Object?` keys into the
+  /// `Map<String, Object?>` [ToolDescriptor.parametersSchema] requires.
+  /// A non-String key surfaces a located [FormatException] (PE-1).
+  static Map<String, Object?> _coerceStringKeys(Map<Object?, Object?> raw) {
+    final out = <String, Object?>{};
+    raw.forEach((Object? key, Object? value) {
+      out[_reader.stringValue(key, 'input_schema key')!] = value;
+    });
+    return out;
+  }
 
   // ── embed ─────────────────────────────────────────────────────────
 
@@ -432,6 +645,32 @@ class SubstrateBridge {
 /// so the downstream consumer (the OpenAI SSE edge, wired in #8–#9) preserves
 /// ordering and backpressure.
 typedef SubstrateTokenSink = Future<void> Function(String textDelta);
+
+/// Receives a low-level tool-protocol diagnostic from [SubstrateBridge.llm]
+/// (Extension F step 10).
+///
+/// The only category emitted today is `llm.toolcall.parse.failed` — a
+/// `json_text` completion that looked like a tool call but could not be read
+/// as one. The engine binds a per-run sink that folds the note onto the run's
+/// trail (the `call_llm_v1` loop, step 11, is the consumer); the shared
+/// template bridge and internal paths leave it unbound and the note is
+/// dropped. [category] is the dotted note category; [payload] carries the
+/// diagnostic detail (the offending completion text).
+typedef SubstrateNoteSink = Future<void> Function(
+  String category,
+  Map<String, Object?> payload,
+);
+
+/// Resolves a provider id to the wire [ToolProtocol] it speaks (Extension F
+/// step 2 / step 10).
+///
+/// The substrate package is protocol-unaware, so the bridge needs this seam to
+/// know whether to collect native [LlmStreamToolCallProposed] events
+/// ([ToolProtocol.openai]) or parse a JSON tool-call object out of the
+/// completion text ([ToolProtocol.jsonText]). The host binds a registry-backed
+/// resolver at boot wiring (plan step 15); an unbound resolver treats every
+/// provider as [ToolProtocol.openai].
+typedef ToolProtocolResolver = ToolProtocol Function(String providerId);
 
 /// Thrown by [SubstrateBridge.llm] when the substrate stream terminates
 /// with [LlmStreamFailed].

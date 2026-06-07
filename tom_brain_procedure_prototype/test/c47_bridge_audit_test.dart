@@ -106,7 +106,7 @@ const Map<String, String> _expectedMemorySignatures = <String, String>{
 /// `search`, `fetch`.
 const Map<String, String> _expectedSubstrateSignatures = <String, String>{
   'llm':
-      'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, Map<String, Object?>? budget})',
+      'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, List<Object?>? tools, Map<String, Object?>? budget})',
   'embed': 'Future<Map<String, Object?>> embed(String text)',
   'search':
       'Future<Map<String, Object?>> search(String query, {String? provider, int k = 10})',
