@@ -33,6 +33,12 @@
 //                       policy is deliberate; see Q-D.11.1).
 //   * `streaming`     ← `false`. Telegram is single-message — one consolidated
 //                       answer, no SSE (def § Q13; proto spec § 6.2 / § 6.3).
+//   * `sessionId`     ← the chat id (same value as `conversationId`). Telegram
+//                       has no `X-Tom-Session` header, so the chat *is* the
+//                       kept session (proto spec § 5.2; step #20: "Telegram
+//                       fills only `sessionId`, chat-id keyed"). The other
+//                       Extension-G fidelity fields stay empty (single-message
+//                       channel, no client tool loop).
 //
 // Scope discipline (per-substep posture carried from E.19). E.20 is the
 // inbound mapping and nothing downstream:
@@ -128,12 +134,20 @@ extension TelegramInboundMapping on ChatMessage {
       ));
     }
 
+    final String conversationId = _telegramConversationId();
     return Ok(InboundRequest(
       text: body,
-      conversationId: _telegramConversationId(),
+      conversationId: conversationId,
       messageId: platformMessageId ?? id,
       streaming: false,
       metadata: {telegramSenderIdMetadataKey: sender.id},
+      // Telegram has no `X-Tom-Session` header (it is not an HTTP gateway), so
+      // it keys the session on the chat id — the single-user private chat *is*
+      // the kept session (proto spec § 5.2; step #20: "Telegram fills only
+      // `sessionId`, chat-id keyed"). The other Extension-G fidelity fields
+      // (priorTurns / toolResults / remoteTools) stay empty: Telegram is a
+      // single-message channel with no client-side tool loop.
+      sessionId: conversationId,
     ));
   }
 

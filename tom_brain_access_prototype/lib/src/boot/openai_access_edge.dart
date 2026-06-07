@@ -167,9 +167,13 @@ class OpenAiAccessEdge {
       );
     }
 
+    // The session the client wants this request associated with (proto spec
+    // § 5.2). `null` when the header is absent → routed to the default session.
+    final String? sessionId = request.headers[tomSessionHeaderName];
+
     return ChatCompletionRequest.parse(json).fold(
       ok: (ChatCompletionRequest parsed) =>
-          _admitAndRespond(bearerToken, parsed),
+          _admitAndRespond(bearerToken, parsed, sessionId),
       err: (ChatCompletionParseError error) async => _errorResponse(
         statusCode: 400,
         message: error.message,
@@ -187,10 +191,11 @@ class OpenAiAccessEdge {
   Future<Response> _admitAndRespond(
     String bearerToken,
     ChatCompletionRequest request,
+    String? sessionId,
   ) {
     return request.stream
-        ? _admitStreaming(bearerToken, request)
-        : _admitBuffered(bearerToken, request);
+        ? _admitStreaming(bearerToken, request, sessionId)
+        : _admitBuffered(bearerToken, request, sessionId);
   }
 
   /// Streams the answer live as SSE, emitting real per-token frames (P1.3 #9).
@@ -208,6 +213,7 @@ class OpenAiAccessEdge {
   Future<Response> _admitStreaming(
     String bearerToken,
     ChatCompletionRequest request,
+    String? sessionId,
   ) async {
     // Completes when delivery has begun (first frame), or with the gate error
     // when admission throws before any frame — the status-decision race.
@@ -217,7 +223,7 @@ class OpenAiAccessEdge {
         if (!committed.isCompleted) committed.complete();
       },
     );
-    final InboundRequest envelope = request.toInboundRequest();
+    final InboundRequest envelope = request.toInboundRequest(sessionId: sessionId);
 
     // Run admission concurrently with the race. It is not awaited here: the
     // edge returns as soon as the status is decided and the run keeps streaming
@@ -278,9 +284,10 @@ class OpenAiAccessEdge {
   Future<Response> _admitBuffered(
     String bearerToken,
     ChatCompletionRequest request,
+    String? sessionId,
   ) async {
     final _CapturingSseSink sink = _CapturingSseSink();
-    final InboundRequest envelope = request.toInboundRequest();
+    final InboundRequest envelope = request.toInboundRequest(sessionId: sessionId);
     try {
       await _assembler.admitOpenAi(
         bearerToken: bearerToken,

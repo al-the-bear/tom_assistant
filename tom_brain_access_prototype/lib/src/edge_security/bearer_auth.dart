@@ -63,6 +63,14 @@ import 'package:tom_core_kernel/tom_core_kernel.dart'
 /// look this key up directly.
 const String authorizationHeaderName = 'authorization';
 
+/// The HTTP request header every gateway edge reads to associate an inbound
+/// request with a kept session (proto spec § 5.2, hub § 22.9). Lower-cased
+/// because shelf normalises header names to lower-case; the edges look this
+/// key up directly in the `Request.headers` map and thread the value into
+/// `toInboundRequest(sessionId:)`. `null` when the client sent none — the
+/// request is then routed to the default session.
+const String tomSessionHeaderName = 'x-tom-session';
+
 /// The credential scheme the OpenAI channel uses. Compared
 /// case-insensitively against the first token of the `Authorization`
 /// header (RFC 7235 auth-schemes are case-insensitive).

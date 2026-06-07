@@ -134,8 +134,11 @@ final class OllamaParseError {
 /// [InboundRequest].
 final class OllamaRequest {
   /// The prompt text — the last `user` message's content (`/api/chat`) or the
-  /// `prompt` field (`/api/generate`). Always non-empty: a request with no
-  /// usable prompt is a parse failure, not an empty prompt.
+  /// `prompt` field (`/api/generate`). Usually non-empty, but **empty** for a
+  /// `/api/chat` client tool-loop follow-up: a request whose conversation ends
+  /// on a `tool` result with no new user text carries an empty [prompt] and a
+  /// populated [toolResults]. A request with neither a user message nor a tool
+  /// result is a parse failure, not an empty prompt.
   final String prompt;
 
   /// The raw `model` string, used as a persona id. `null` when the request
@@ -153,14 +156,34 @@ final class OllamaRequest {
   /// renderers use.
   final OllamaApiShape shape;
 
+  /// The preceding `messages[]` turns (everything before the live user
+  /// message, excluding the `tool` results), in wire order. Empty for a
+  /// single-message request and for every `/api/generate` request. Extension G
+  /// (hub § 22.1).
+  final List<PriorTurn> priorTurns;
+
+  /// The client-executed `role: 'tool'` results echoed back on a follow-up
+  /// turn, keyed by `tool_call_id`. Empty unless the client is continuing a
+  /// remote-tool round (`/api/chat` only). Extension G (hub § 22.8).
+  final List<RemoteToolResult> toolResults;
+
+  /// The client-declared top-level `tools[]` the brain may *propose* but never
+  /// executes. Empty unless the client declared tools. Extension G
+  /// (hub § 22.8).
+  final List<RemoteToolDef> remoteTools;
+
   /// Builds the DTO directly. Callers normally use [parseChat] /
   /// [parseGenerate]; this is exposed for tests and for any adapter that
-  /// constructs the shape itself.
+  /// constructs the shape itself. The three Extension-G lists default empty so
+  /// a pre-Extension-G caller is unchanged.
   const OllamaRequest({
     required this.prompt,
     required this.model,
     required this.stream,
     required this.shape,
+    this.priorTurns = const <PriorTurn>[],
+    this.toolResults = const <RemoteToolResult>[],
+    this.remoteTools = const <RemoteToolDef>[],
   });
 
   /// Projects this wire request onto the channel-agnostic [InboundRequest]
@@ -170,26 +193,42 @@ final class OllamaRequest {
   ///
   /// [conversationId] and [messageId] are optional channel-identity values
   /// the adapter fills when it has them; the Ollama HTTP wire carries neither
-  /// natively, so they default to `null`.
+  /// natively, so they default to `null`. [sessionId] is the value the edge
+  /// lifts from the `X-Tom-Session` request header (proto spec § 5.2); `null`
+  /// when the client sent none.
   InboundRequest toInboundRequest({
     String? conversationId,
     String? messageId,
+    String? sessionId,
   }) =>
       InboundRequest(
         text: prompt,
         conversationId: conversationId,
         messageId: messageId,
         streaming: stream,
+        priorTurns: priorTurns,
+        toolResults: toolResults,
+        remoteTools: remoteTools,
+        sessionId: sessionId,
       );
 
   /// Decodes and validates a `POST /api/chat` body.
   ///
-  /// The prompt is the last `user` message's plain-string content. Returns
-  /// `Ok(OllamaRequest)` (shape [OllamaApiShape.chat]) on success, or
-  /// `Err(OllamaParseError)` for a non-object body, a missing / non-array /
-  /// empty `messages`, no usable user message, or a non-string `model` /
-  /// non-bool `stream`.
-  static Result<OllamaRequest, OllamaParseError> parseChat(Object? body) {
+  /// Ollama chat is OpenAI-shaped, so the live prompt is the last `user`
+  /// message (after the last tool result), the preceding turns become
+  /// [priorTurns], `role: 'tool'` entries become [toolResults], and the
+  /// top-level `tools[]` become [remoteTools] — all via the shared OpenAI
+  /// reducers. Returns `Ok(OllamaRequest)` (shape [OllamaApiShape.chat]) on
+  /// success, or `Err(OllamaParseError)` for a non-object body, a missing /
+  /// non-array / empty `messages`, a conversation with no user turn at all, or
+  /// a non-string `model` / non-bool `stream`. A trailing tool result with no
+  /// new user text is the valid client tool-loop follow-up (empty prompt,
+  /// populated [toolResults]). A wrong-shape sub-entry is dropped and reported
+  /// through [onMalformed] with [accessWireHistoryMalformed] (proto spec § 11).
+  static Result<OllamaRequest, OllamaParseError> parseChat(
+    Object? body, {
+    void Function(String reason)? onMalformed,
+  }) {
     final _Json json;
     switch (requireJsonObject(body, OllamaParseError.new)) {
       case Err(:final error):
@@ -214,8 +253,15 @@ final class OllamaRequest {
       ));
     }
 
-    final String? prompt = _lastUserContent(rawMessages);
-    if (prompt == null) {
+    final RequestFidelity fidelity =
+        reduceOpenAiMessages(rawMessages, onMalformed: onMalformed);
+    final List<RemoteToolDef> remoteTools =
+        openAiShapeRemoteTools(json['tools'], onMalformed: onMalformed);
+
+    // No live prompt AND no tool result → the conversation carries no user
+    // turn at all. A trailing tool result with an empty prompt is the valid
+    // client tool-loop follow-up.
+    if (fidelity.prompt.isEmpty && fidelity.toolResults.isEmpty) {
       return const Err(OllamaParseError(
         message: "'messages' must contain a user message with text content.",
         code: 'no_user_message',
@@ -225,8 +271,11 @@ final class OllamaRequest {
 
     return _withModelAndStream(
       json: json,
-      prompt: prompt,
+      prompt: fidelity.prompt,
       shape: OllamaApiShape.chat,
+      priorTurns: fidelity.priorTurns,
+      toolResults: fidelity.toolResults,
+      remoteTools: remoteTools,
     );
   }
 
@@ -236,7 +285,16 @@ final class OllamaRequest {
   /// (shape [OllamaApiShape.generate]) on success, or `Err(OllamaParseError)`
   /// for a non-object body, a missing `prompt`, a non-string / blank
   /// `prompt`, or a non-string `model` / non-bool `stream`.
-  static Result<OllamaRequest, OllamaParseError> parseGenerate(Object? body) {
+  ///
+  /// `/api/generate` is single-shot: it carries no `messages[]` history and no
+  /// `tools[]`, so the three Extension-G fidelity fields stay empty. The
+  /// [onMalformed] parameter is accepted for signature parity with [parseChat]
+  /// (so both satisfy the edge's parser function type) but is never invoked —
+  /// there is no sub-entry to drop.
+  static Result<OllamaRequest, OllamaParseError> parseGenerate(
+    Object? body, {
+    void Function(String reason)? onMalformed,
+  }) {
     final _Json json;
     switch (requireJsonObject(body, OllamaParseError.new)) {
       case Err(:final error):
@@ -270,11 +328,15 @@ final class OllamaRequest {
 
   /// Reads the optional `model` / `stream` fields shared by both endpoints
   /// and assembles the [OllamaRequest]. `stream` defaults to **true** (the
-  /// Ollama default) when absent.
+  /// Ollama default) when absent. The three Extension-G fidelity lists default
+  /// empty so [parseGenerate] (single-shot, no history) omits them.
   static Result<OllamaRequest, OllamaParseError> _withModelAndStream({
     required _Json json,
     required String prompt,
     required OllamaApiShape shape,
+    List<PriorTurn> priorTurns = const <PriorTurn>[],
+    List<RemoteToolResult> toolResults = const <RemoteToolResult>[],
+    List<RemoteToolDef> remoteTools = const <RemoteToolDef>[],
   }) {
     final String? model;
     switch (optionalStringField(json, 'model', OllamaParseError.new)) {
@@ -297,22 +359,9 @@ final class OllamaRequest {
       model: model,
       stream: stream ?? true,
       shape: shape,
+      priorTurns: priorTurns,
+      toolResults: toolResults,
+      remoteTools: remoteTools,
     ));
-  }
-
-  /// Returns the trimmed plain-string content of the last `user` message in
-  /// [messages], or `null` if none has usable text. Ollama content is a bare
-  /// string (no OpenAI content-part array), so a non-string `content`
-  /// contributes nothing.
-  static String? _lastUserContent(List<Object?> messages) {
-    for (final Object? message in messages.reversed) {
-      if (message is! _Json) continue;
-      if (message['role'] != 'user') continue;
-      final Object? content = message['content'];
-      if (content is String && content.trim().isNotEmpty) {
-        return content.trim();
-      }
-    }
-    return null;
   }
 }

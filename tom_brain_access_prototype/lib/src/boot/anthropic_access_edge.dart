@@ -117,8 +117,13 @@ class AnthropicAccessEdge {
       );
     }
 
+    // The session the client wants this request associated with (proto spec
+    // § 5.2). `null` when the header is absent → routed to the default session.
+    final String? sessionId = request.headers[tomSessionHeaderName];
+
     return AnthropicRequest.parse(json).fold(
-      ok: (AnthropicRequest parsed) => _admitAndRespond(bearerToken, parsed),
+      ok: (AnthropicRequest parsed) =>
+          _admitAndRespond(bearerToken, parsed, sessionId),
       err: (AnthropicParseError error) async => _errorResponse(
         statusCode: 400,
         type: 'invalid_request_error',
@@ -146,10 +151,11 @@ class AnthropicAccessEdge {
   Future<Response> _admitAndRespond(
     String bearerToken,
     AnthropicRequest request,
+    String? sessionId,
   ) {
     return request.stream
-        ? _admitStreaming(bearerToken, request)
-        : _admitBuffered(bearerToken, request);
+        ? _admitStreaming(bearerToken, request, sessionId)
+        : _admitBuffered(bearerToken, request, sessionId);
   }
 
   /// Streams the answer live as the Anthropic named-SSE event sequence.
@@ -162,6 +168,7 @@ class AnthropicAccessEdge {
   Future<Response> _admitStreaming(
     String bearerToken,
     AnthropicRequest request,
+    String? sessionId,
   ) async {
     final Completer<void> committed = Completer<void>();
     final StreamControllerChunkSink sink = StreamControllerChunkSink(
@@ -169,7 +176,7 @@ class AnthropicAccessEdge {
         if (!committed.isCompleted) committed.complete();
       },
     );
-    final InboundRequest envelope = request.toInboundRequest();
+    final InboundRequest envelope = request.toInboundRequest(sessionId: sessionId);
 
     unawaited(
       _assembler
@@ -219,9 +226,10 @@ class AnthropicAccessEdge {
   Future<Response> _admitBuffered(
     String bearerToken,
     AnthropicRequest request,
+    String? sessionId,
   ) async {
     final _CapturingChunkSink sink = _CapturingChunkSink();
-    final InboundRequest envelope = request.toInboundRequest();
+    final InboundRequest envelope = request.toInboundRequest(sessionId: sessionId);
     try {
       await _assembler.admitAnthropic(
         bearerToken: bearerToken,

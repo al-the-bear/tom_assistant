@@ -84,9 +84,12 @@ final class ChatCompletionParseError {
 /// adapter routes [model] to `PersonaResolver` (E.15) and uses
 /// [toInboundRequest] to produce the dispatcher-facing [InboundRequest].
 final class ChatCompletionRequest {
-  /// The prompt text — the content of the *last* `user` message in the
-  /// `messages` array (proto spec § 5.2). Always non-empty: a request whose
-  /// last user message has no usable text is a parse failure, not an empty
+  /// The live prompt text — the content of the *last* `user` message in the
+  /// `messages` array (proto spec § 5.2). Usually non-empty, but **empty**
+  /// for a client tool-loop follow-up: a request whose conversation ends on a
+  /// `tool` result with no new user text carries an empty [prompt] and a
+  /// populated [toolResults] (proto spec § 5.2 / hub § 22.8). A request with
+  /// neither a user message nor a tool result is a parse failure, not an empty
   /// prompt.
   final String prompt;
 
@@ -102,12 +105,32 @@ final class ChatCompletionRequest {
   /// [InboundRequest.streaming]. Defaults to `false`.
   final bool stream;
 
+  /// The preceding `messages[]` turns (everything before the live user
+  /// message, excluding the `tool` results), in wire order. Empty for a
+  /// single-message request. Extension G (hub § 22.1).
+  final List<PriorTurn> priorTurns;
+
+  /// The client-executed `role: 'tool'` results echoed back on a follow-up
+  /// turn, keyed by `tool_call_id`. Empty unless the client is continuing a
+  /// remote-tool round. Extension G (hub § 22.8).
+  final List<RemoteToolResult> toolResults;
+
+  /// The client-declared top-level `tools[]` the brain may *propose* but never
+  /// executes. Empty unless the client declared tools. Extension G
+  /// (hub § 22.8).
+  final List<RemoteToolDef> remoteTools;
+
   /// Builds the DTO directly. Callers normally use [parse]; this is exposed
   /// for tests and for any future adapter that constructs the shape itself.
+  /// The three Extension-G lists default empty so a pre-Extension-G caller
+  /// that supplies only [prompt] / [model] / [stream] is unchanged.
   const ChatCompletionRequest({
     required this.prompt,
     required this.model,
     required this.stream,
+    this.priorTurns = const <PriorTurn>[],
+    this.toolResults = const <RemoteToolResult>[],
+    this.remoteTools = const <RemoteToolDef>[],
   });
 
   /// Projects this wire request onto the channel-agnostic [InboundRequest]
@@ -118,16 +141,23 @@ final class ChatCompletionRequest {
   ///
   /// [conversationId] and [messageId] are optional channel-identity values
   /// the adapter fills when it has them; for OpenAI HTTP the wire carries
-  /// neither natively, so they default to `null`.
+  /// neither natively, so they default to `null`. [sessionId] is the value
+  /// the edge lifts from the `X-Tom-Session` request header (proto spec
+  /// § 5.2); `null` when the client sent none.
   InboundRequest toInboundRequest({
     String? conversationId,
     String? messageId,
+    String? sessionId,
   }) =>
       InboundRequest(
         text: prompt,
         conversationId: conversationId,
         messageId: messageId,
         streaming: stream,
+        priorTurns: priorTurns,
+        toolResults: toolResults,
+        remoteTools: remoteTools,
+        sessionId: sessionId,
       );
 
   /// Decodes and validates an already-JSON-decoded request [body].
@@ -136,15 +166,22 @@ final class ChatCompletionRequest {
   /// `Object?` so a non-object body (a JSON array, number, or `null`) is a
   /// reported failure rather than a thrown cast. Returns:
   ///
-  ///   * `Ok(ChatCompletionRequest)` when `messages` yields a usable last
-  ///     user message and `model` / `stream` (if present) have the right
-  ///     types;
+  ///   * `Ok(ChatCompletionRequest)` when `messages` yields a usable live
+  ///     prompt **or** a client tool-loop follow-up (a trailing `tool` result
+  ///     with no new user text), and `model` / `stream` (if present) have the
+  ///     right types;
   ///   * `Err(ChatCompletionParseError)` otherwise.
+  ///
+  /// A wrong-shape `messages[]` / `tools[]` sub-entry is dropped and reported
+  /// through [onMalformed] with [accessWireHistoryMalformed] (proto spec
+  /// § 11); the live prompt still parses. A wholly unparseable body is the
+  /// pre-existing `invalid_body` / `400`.
   ///
   /// This method is pure: no I/O, no throwing on malformed input.
   static Result<ChatCompletionRequest, ChatCompletionParseError> parse(
-    Object? body,
-  ) {
+    Object? body, {
+    void Function(String reason)? onMalformed,
+  }) {
     final _Json json;
     switch (requireJsonObject(body, ChatCompletionParseError.new)) {
       case Err(:final error):
@@ -169,8 +206,15 @@ final class ChatCompletionRequest {
       ));
     }
 
-    final String? prompt = lastUserText(rawMessages);
-    if (prompt == null) {
+    final RequestFidelity fidelity =
+        reduceOpenAiMessages(rawMessages, onMalformed: onMalformed);
+    final List<RemoteToolDef> remoteTools =
+        openAiShapeRemoteTools(json['tools'], onMalformed: onMalformed);
+
+    // No live prompt AND no tool result → the conversation carries no user
+    // turn at all (a system-/assistant-only body). A trailing tool result
+    // with an empty prompt is the valid client tool-loop follow-up.
+    if (fidelity.prompt.isEmpty && fidelity.toolResults.isEmpty) {
       return const Err(ChatCompletionParseError(
         message: "'messages' must contain a user message with text content.",
         code: 'no_user_message',
@@ -195,9 +239,12 @@ final class ChatCompletionRequest {
     }
 
     return Ok(ChatCompletionRequest(
-      prompt: prompt,
+      prompt: fidelity.prompt,
       model: model,
       stream: stream ?? false,
+      priorTurns: fidelity.priorTurns,
+      toolResults: fidelity.toolResults,
+      remoteTools: remoteTools,
     ));
   }
 }

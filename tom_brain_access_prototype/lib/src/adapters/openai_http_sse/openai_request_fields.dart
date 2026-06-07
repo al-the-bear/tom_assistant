@@ -100,38 +100,35 @@ Result<bool?, E> optionalBoolField<E>(
   return Ok(raw);
 }
 
-/// Returns the trimmed text of the last `user` message in [messages], or
-/// `null` when none carries usable text.
-///
-/// The Anthropic Messages parser
-/// (`adapters/anthropic/anthropic_requests.dart`) reduces its `messages`
-/// array exactly as the OpenAI `chat/completions` parser does — content is a
-/// bare string OR the `[{type: 'text', text: '…'}, …]` content-part array,
-/// both wire dialects sharing the same shape. This is that shared reduction,
-/// extracted on its second consumer so the two parsers cannot drift. (The
-/// Ollama parser keeps its own string-only reader: Ollama has no content-part
-/// array, so its reduction is a *different* contract, not a third copy of
-/// this one.)
-///
-/// [content] handling: a bare string is taken as-is; a content-part array
-/// concatenates the `text` of each `{type: 'text', text: …}` part; any other
-/// shape contributes nothing. A message whose reduced text is blank is
-/// skipped, scanning newest-first.
-String? lastUserText(List<Object?> messages) {
-  for (final Object? message in messages.reversed) {
-    if (message is! JsonObject) continue;
-    if (message['role'] != 'user') continue;
-    final String text = _contentText(message['content']);
-    if (text.trim().isNotEmpty) return text.trim();
-  }
-  return null;
-}
+/// The diagnostic reason a wrong-shape history / tool sub-entry is dropped
+/// (proto spec § 11). The gateway parsers report it through their
+/// `onMalformed` callback; the live prompt still parses (a wholly
+/// unparseable body stays the existing `access.wire.malformed` `400`).
+const String accessWireHistoryMalformed = 'access.wire.history.malformed';
 
-/// Extracts the text from a message `content` value for [lastUserText]: a
-/// bare string is returned as-is; a content-part array contributes the `text`
-/// of each `{type: 'text', text: …}` part; anything else yields the empty
-/// string.
-String _contentText(Object? content) {
+/// The full request fidelity reduced from a `messages[]` array: the live
+/// [prompt] (the last user message *after* the last tool result, or empty
+/// when the conversation ends on a tool result — the client tool-loop
+/// follow-up), the preceding [priorTurns], and the client-executed
+/// [toolResults]. The top-level `tools[]` are reduced separately by
+/// [openAiShapeRemoteTools]; together they populate `InboundRequest`'s four
+/// Extension-G fields (proto spec § 5.2, hub § 22.1).
+typedef RequestFidelity = ({
+  String prompt,
+  List<PriorTurn> priorTurns,
+  List<RemoteToolResult> toolResults,
+});
+
+/// Extracts the text from a message `content` value: a bare string is
+/// returned as-is; a content-part array concatenates the `text` of each
+/// `{type: 'text', text: …}` part; anything else yields the empty string.
+///
+/// Shared by the OpenAI and Anthropic reductions — both dialects carry the
+/// identical content shape (a bare string OR the `[{type:'text',text:…}]`
+/// array). Anthropic's `tool_use` / `tool_result` blocks contribute no text
+/// here (they are not `type: 'text'`), so an assistant turn that is only a
+/// `tool_use` reduces to the empty string.
+String messageContentText(Object? content) {
   if (content is String) return content;
   if (content is List) {
     final StringBuffer buffer = StringBuffer();
@@ -145,4 +142,145 @@ String _contentText(Object? content) {
     return buffer.toString();
   }
   return '';
+}
+
+/// Returns the index of the *live* user message in [messages], or `-1` when
+/// there is none (the conversation ends on a tool result — a client tool-loop
+/// follow-up with no new user text).
+///
+/// The live message is the last `user` message that carries text **and** sits
+/// after the last tool result, as judged by [isToolResult] (the dialect-
+/// specific predicate: an OpenAI `role: 'tool'` message, or an Anthropic
+/// user message carrying a `tool_result` block). "Last user with text"
+/// alone would mis-pick an earlier question as the live prompt on a
+/// follow-up turn; gating it behind the last tool-result position is what
+/// makes the trailing-`tool_result` case parse as empty-prompt.
+int liveUserIndex(
+  List<Object?> messages, {
+  required bool Function(Object?) isToolResult,
+}) {
+  int lastUserWithText = -1;
+  int lastToolResult = -1;
+  for (int i = 0; i < messages.length; i++) {
+    final Object? message = messages[i];
+    if (message is JsonObject &&
+        message['role'] == 'user' &&
+        messageContentText(message['content']).trim().isNotEmpty) {
+      lastUserWithText = i;
+    }
+    if (isToolResult(message)) lastToolResult = i;
+  }
+  return lastUserWithText > lastToolResult ? lastUserWithText : -1;
+}
+
+/// True when [message] is an OpenAI-shaped tool result — a `role: 'tool'`
+/// message carrying a non-empty `tool_call_id`. A `role: 'tool'` entry with
+/// no id is *not* a valid tool result (it is malformed), so it does not count
+/// toward the live-prompt cutoff in [liveUserIndex].
+bool _openAiIsToolResult(Object? message) =>
+    message is JsonObject &&
+    message['role'] == 'tool' &&
+    message['tool_call_id'] is String &&
+    (message['tool_call_id'] as String).trim().isNotEmpty;
+
+/// Reduces an OpenAI-shaped `messages[]` array to its [RequestFidelity].
+///
+/// The live prompt is [messageContentText] of the message at [liveUserIndex]
+/// (trimmed), or empty for a client tool-loop follow-up. Every `role: 'tool'`
+/// message with a valid `tool_call_id` becomes a [RemoteToolResult]; every
+/// other non-live message that carries text becomes a [PriorTurn] (an
+/// empty-text turn — e.g. an assistant message with `content: null` — is
+/// dropped silently, carrying no replayable text). A wrong-shape sub-entry (a
+/// non-object message, or a `role: 'tool'` entry with no id) is dropped and
+/// reported through [onMalformed] with [accessWireHistoryMalformed]; the live
+/// prompt still parses.
+///
+/// Shared by the OpenAI `chat/completions` parser and the Ollama `/api/chat`
+/// parser — Ollama chat is OpenAI-shaped (its plain-string content is handled
+/// by [messageContentText]).
+RequestFidelity reduceOpenAiMessages(
+  List<Object?> messages, {
+  void Function(String reason)? onMalformed,
+}) {
+  final int liveIndex =
+      liveUserIndex(messages, isToolResult: _openAiIsToolResult);
+  String prompt = '';
+  final List<PriorTurn> priorTurns = <PriorTurn>[];
+  final List<RemoteToolResult> toolResults = <RemoteToolResult>[];
+
+  for (int i = 0; i < messages.length; i++) {
+    final Object? message = messages[i];
+    if (message is! JsonObject) {
+      onMalformed?.call(accessWireHistoryMalformed);
+      continue;
+    }
+    if (i == liveIndex) {
+      prompt = messageContentText(message['content']).trim();
+      continue;
+    }
+    final Object? role = message['role'];
+    if (role == 'tool') {
+      final Object? id = message['tool_call_id'];
+      if (id is! String || id.trim().isEmpty) {
+        onMalformed?.call(accessWireHistoryMalformed);
+        continue;
+      }
+      final Object? content = message['content'];
+      toolResults.add(RemoteToolResult(
+        toolCallId: id,
+        content: content is String ? content : messageContentText(content),
+      ));
+      continue;
+    }
+    if (role is! String || role.trim().isEmpty) {
+      onMalformed?.call(accessWireHistoryMalformed);
+      continue;
+    }
+    final String text = messageContentText(message['content']);
+    if (text.trim().isEmpty) continue;
+    priorTurns.add(PriorTurn(role: role, text: text));
+  }
+  return (prompt: prompt, priorTurns: priorTurns, toolResults: toolResults);
+}
+
+/// Reduces an OpenAI-shaped top-level `tools[]` array to its [RemoteToolDef]
+/// list. Each entry is `{type: 'function', function: {name, description?,
+/// parameters?}}`; a wrong-shape entry (non-object, missing `function`, or a
+/// blank `name`) is dropped and reported through [onMalformed] with
+/// [accessWireHistoryMalformed]. `null` / a non-list `tools` yields the empty
+/// list (a non-list is reported as malformed).
+///
+/// Shared by the OpenAI `chat/completions` parser and the Ollama `/api/chat`
+/// parser (Ollama mirrors the OpenAI tools shape).
+List<RemoteToolDef> openAiShapeRemoteTools(
+  Object? rawTools, {
+  void Function(String reason)? onMalformed,
+}) {
+  if (rawTools == null) return const <RemoteToolDef>[];
+  if (rawTools is! List) {
+    onMalformed?.call(accessWireHistoryMalformed);
+    return const <RemoteToolDef>[];
+  }
+  final List<RemoteToolDef> tools = <RemoteToolDef>[];
+  for (final Object? entry in rawTools) {
+    if (entry is! JsonObject || entry['function'] is! JsonObject) {
+      onMalformed?.call(accessWireHistoryMalformed);
+      continue;
+    }
+    final JsonObject function = entry['function'] as JsonObject;
+    final Object? name = function['name'];
+    if (name is! String || name.trim().isEmpty) {
+      onMalformed?.call(accessWireHistoryMalformed);
+      continue;
+    }
+    final Object? description = function['description'];
+    final Object? parameters = function['parameters'];
+    tools.add(RemoteToolDef(
+      name: name,
+      description: description is String ? description : null,
+      inputSchema:
+          parameters is JsonObject ? parameters : const <String, Object?>{},
+    ));
+  }
+  return tools;
 }

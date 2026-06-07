@@ -106,12 +106,31 @@ final class AnthropicRequest {
   /// SSE-vs-JSON render path and feeds [InboundRequest.streaming].
   final bool stream;
 
+  /// The preceding `messages[]` turns (everything before the live user
+  /// message, excluding the `tool_result` carriers), in wire order. Empty for
+  /// a single-message request. Extension G (hub § 22.1).
+  final List<PriorTurn> priorTurns;
+
+  /// The client-executed `tool_result` blocks echoed back on a follow-up
+  /// turn, keyed by `tool_use_id`. Empty unless the client is continuing a
+  /// remote-tool round. Extension G (hub § 22.8).
+  final List<RemoteToolResult> toolResults;
+
+  /// The client-declared top-level `tools[]` the brain may *propose* but never
+  /// executes (Anthropic `{name, description?, input_schema?}` shape). Empty
+  /// unless the client declared tools. Extension G (hub § 22.8).
+  final List<RemoteToolDef> remoteTools;
+
   /// Builds the DTO directly. Callers normally use [parse]; this is exposed
-  /// for tests and for any adapter that constructs the shape itself.
+  /// for tests and for any adapter that constructs the shape itself. The three
+  /// Extension-G lists default empty so a pre-Extension-G caller is unchanged.
   const AnthropicRequest({
     required this.prompt,
     required this.model,
     required this.stream,
+    this.priorTurns = const <PriorTurn>[],
+    this.toolResults = const <RemoteToolResult>[],
+    this.remoteTools = const <RemoteToolDef>[],
   });
 
   /// Projects this wire request onto the channel-agnostic [InboundRequest]
@@ -121,26 +140,49 @@ final class AnthropicRequest {
   ///
   /// [conversationId] and [messageId] are optional channel-identity values
   /// the adapter fills when it has them; the Anthropic HTTP wire carries
-  /// neither natively, so they default to `null`.
+  /// neither natively, so they default to `null`. [sessionId] is the value the
+  /// edge lifts from the `X-Tom-Session` request header (proto spec § 5.2);
+  /// `null` when the client sent none.
   InboundRequest toInboundRequest({
     String? conversationId,
     String? messageId,
+    String? sessionId,
   }) =>
       InboundRequest(
         text: prompt,
         conversationId: conversationId,
         messageId: messageId,
         streaming: stream,
+        priorTurns: priorTurns,
+        toolResults: toolResults,
+        remoteTools: remoteTools,
+        sessionId: sessionId,
       );
 
   /// Decodes and validates a `POST /v1/messages` body.
   ///
-  /// The prompt is the last `user` message's content (string or content-part
-  /// array). Returns `Ok(AnthropicRequest)` on success, or
-  /// `Err(AnthropicParseError)` for a non-object body, a missing / non-array /
-  /// empty `messages`, no usable user message, or a non-string `model` /
-  /// non-bool `stream`. `max_tokens` and `system` are ignored.
-  static Result<AnthropicRequest, AnthropicParseError> parse(Object? body) {
+  /// The live prompt is the last `user` message's text content (string or
+  /// content-part array) that sits after the last `tool_result` carrier;
+  /// the preceding turns become [priorTurns], every `tool_result` block
+  /// becomes a [RemoteToolResult], and the top-level `tools[]` become
+  /// [remoteTools]. Returns:
+  ///
+  ///   * `Ok(AnthropicRequest)` when `messages` yields a usable live prompt
+  ///     **or** a client tool-loop follow-up (a trailing `tool_result` with no
+  ///     new user text), and `model` / `stream` (if present) have the right
+  ///     types;
+  ///   * `Err(AnthropicParseError)` for a non-object body, a missing /
+  ///     non-array / empty `messages`, a conversation with no user turn at all,
+  ///     or a non-string `model` / non-bool `stream`.
+  ///
+  /// A wrong-shape `messages[]` / `tools[]` sub-entry is dropped and reported
+  /// through [onMalformed] with [accessWireHistoryMalformed] (proto spec
+  /// § 11); the live prompt still parses. `max_tokens` and `system` are
+  /// ignored. This method is pure: no I/O, no throwing on malformed input.
+  static Result<AnthropicRequest, AnthropicParseError> parse(
+    Object? body, {
+    void Function(String reason)? onMalformed,
+  }) {
     final _Json json;
     switch (requireJsonObject(body, AnthropicParseError.new)) {
       case Err(:final error):
@@ -165,8 +207,15 @@ final class AnthropicRequest {
       ));
     }
 
-    final String? prompt = lastUserText(rawMessages);
-    if (prompt == null) {
+    final RequestFidelity fidelity =
+        _reduceAnthropicMessages(rawMessages, onMalformed: onMalformed);
+    final List<RemoteToolDef> remoteTools =
+        _anthropicRemoteTools(json['tools'], onMalformed: onMalformed);
+
+    // No live prompt AND no tool result → the conversation carries no user
+    // turn at all (a system-/assistant-only body). A trailing tool result with
+    // an empty prompt is the valid client tool-loop follow-up.
+    if (fidelity.prompt.isEmpty && fidelity.toolResults.isEmpty) {
       return const Err(AnthropicParseError(
         message: "'messages' must contain a user message with text content.",
         code: 'no_user_message',
@@ -191,9 +240,135 @@ final class AnthropicRequest {
     }
 
     return Ok(AnthropicRequest(
-      prompt: prompt,
+      prompt: fidelity.prompt,
       model: model,
       stream: stream ?? false,
+      priorTurns: fidelity.priorTurns,
+      toolResults: fidelity.toolResults,
+      remoteTools: remoteTools,
     ));
   }
+}
+
+/// True when [message] is an Anthropic-shaped tool-result carrier — a message
+/// whose `content` array holds at least one `{type: 'tool_result',
+/// tool_use_id: non-empty}` block. A `tool_result` block with no id is *not*
+/// a valid carrier (it is malformed), so it does not count toward the
+/// live-prompt cutoff in [liveUserIndex].
+bool _anthropicMessageHasToolResult(Object? message) {
+  if (message is! _Json) return false;
+  final Object? content = message['content'];
+  if (content is! List) return false;
+  return content.any((Object? part) =>
+      part is _Json &&
+      part['type'] == 'tool_result' &&
+      part['tool_use_id'] is String &&
+      (part['tool_use_id'] as String).trim().isNotEmpty);
+}
+
+/// Reduces an Anthropic-shaped `messages[]` array to its [RequestFidelity].
+///
+/// The live prompt is [messageContentText] of the message at [liveUserIndex]
+/// (trimmed), or empty for a client tool-loop follow-up. Every `tool_result`
+/// block with a valid `tool_use_id` becomes a [RemoteToolResult]; every other
+/// non-live message that carries text becomes a [PriorTurn] (an assistant turn
+/// that is only a `tool_use` reduces to empty text via [messageContentText]
+/// and is dropped). A wrong-shape sub-entry (a non-object message) is dropped
+/// and reported through [onMalformed] with [accessWireHistoryMalformed].
+RequestFidelity _reduceAnthropicMessages(
+  List<Object?> messages, {
+  void Function(String reason)? onMalformed,
+}) {
+  final int liveIndex =
+      liveUserIndex(messages, isToolResult: _anthropicMessageHasToolResult);
+  String prompt = '';
+  final List<PriorTurn> priorTurns = <PriorTurn>[];
+  final List<RemoteToolResult> toolResults = <RemoteToolResult>[];
+
+  for (int i = 0; i < messages.length; i++) {
+    final Object? message = messages[i];
+    if (message is! _Json) {
+      onMalformed?.call(accessWireHistoryMalformed);
+      continue;
+    }
+    if (i == liveIndex) {
+      prompt = messageContentText(message['content']).trim();
+      continue;
+    }
+    if (_anthropicMessageHasToolResult(message)) {
+      _collectAnthropicToolResults(message['content'], toolResults, onMalformed);
+      continue;
+    }
+    final Object? role = message['role'];
+    if (role is! String || role.trim().isEmpty) {
+      onMalformed?.call(accessWireHistoryMalformed);
+      continue;
+    }
+    final String text = messageContentText(message['content']);
+    if (text.trim().isEmpty) continue;
+    priorTurns.add(PriorTurn(role: role, text: text));
+  }
+  return (prompt: prompt, priorTurns: priorTurns, toolResults: toolResults);
+}
+
+/// Appends every `{type: 'tool_result', tool_use_id: non-empty}` block in
+/// [content] to [into] as a [RemoteToolResult]. A `tool_result` block with a
+/// blank / missing `tool_use_id` is dropped and reported through [onMalformed].
+void _collectAnthropicToolResults(
+  Object? content,
+  List<RemoteToolResult> into,
+  void Function(String reason)? onMalformed,
+) {
+  if (content is! List) return;
+  for (final Object? part in content) {
+    if (part is! _Json || part['type'] != 'tool_result') continue;
+    final Object? id = part['tool_use_id'];
+    if (id is! String || id.trim().isEmpty) {
+      onMalformed?.call(accessWireHistoryMalformed);
+      continue;
+    }
+    final Object? blockContent = part['content'];
+    into.add(RemoteToolResult(
+      toolCallId: id,
+      content: blockContent is String
+          ? blockContent
+          : messageContentText(blockContent),
+    ));
+  }
+}
+
+/// Reduces an Anthropic-shaped top-level `tools[]` array to its [RemoteToolDef]
+/// list. Each entry is `{name, description?, input_schema?}` (note: no
+/// `function` wrapper, unlike OpenAI); a wrong-shape entry (non-object or a
+/// blank `name`) is dropped and reported through [onMalformed]. `null` /
+/// a non-list `tools` yields the empty list (a non-list is reported malformed).
+List<RemoteToolDef> _anthropicRemoteTools(
+  Object? rawTools, {
+  void Function(String reason)? onMalformed,
+}) {
+  if (rawTools == null) return const <RemoteToolDef>[];
+  if (rawTools is! List) {
+    onMalformed?.call(accessWireHistoryMalformed);
+    return const <RemoteToolDef>[];
+  }
+  final List<RemoteToolDef> tools = <RemoteToolDef>[];
+  for (final Object? entry in rawTools) {
+    if (entry is! _Json) {
+      onMalformed?.call(accessWireHistoryMalformed);
+      continue;
+    }
+    final Object? name = entry['name'];
+    if (name is! String || name.trim().isEmpty) {
+      onMalformed?.call(accessWireHistoryMalformed);
+      continue;
+    }
+    final Object? description = entry['description'];
+    final Object? schema = entry['input_schema'];
+    tools.add(RemoteToolDef(
+      name: name,
+      description: description is String ? description : null,
+      inputSchema: schema is _Json ? schema : const <String, Object?>{},
+    ));
+  }
+  return tools;
 }

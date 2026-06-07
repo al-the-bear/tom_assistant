@@ -127,8 +127,13 @@ class OllamaAccessEdge {
       );
     }
 
+    // The session the client wants this request associated with (proto spec
+    // § 5.2). `null` when the header is absent → routed to the default session.
+    final String? sessionId = request.headers[tomSessionHeaderName];
+
     return parse(json).fold(
-      ok: (OllamaRequest parsed) => _admitAndRespond(bearerToken, parsed),
+      ok: (OllamaRequest parsed) =>
+          _admitAndRespond(bearerToken, parsed, sessionId),
       err: (OllamaParseError error) async =>
           _errorResponse(statusCode: 400, message: error.message),
     );
@@ -138,10 +143,14 @@ class OllamaAccessEdge {
   ///
   /// A streaming request takes the live NDJSON path ([_admitStreaming]); a
   /// non-streaming request takes the buffered JSON path ([_admitBuffered]).
-  Future<Response> _admitAndRespond(String bearerToken, OllamaRequest request) {
+  Future<Response> _admitAndRespond(
+    String bearerToken,
+    OllamaRequest request,
+    String? sessionId,
+  ) {
     return request.stream
-        ? _admitStreaming(bearerToken, request)
-        : _admitBuffered(bearerToken, request);
+        ? _admitStreaming(bearerToken, request, sessionId)
+        : _admitBuffered(bearerToken, request, sessionId);
   }
 
   /// Streams the answer live as Ollama NDJSON (the default path).
@@ -153,14 +162,18 @@ class OllamaAccessEdge {
   /// to the live sink (gates passed → `200` stream) against
   /// [AccessAssembler.admitOllama] throwing (a gate / pre-delivery dispatch
   /// failure → the error envelope). Whichever resolves first decides the status.
-  Future<Response> _admitStreaming(String bearerToken, OllamaRequest request) async {
+  Future<Response> _admitStreaming(
+    String bearerToken,
+    OllamaRequest request,
+    String? sessionId,
+  ) async {
     final Completer<void> committed = Completer<void>();
     final StreamControllerChunkSink sink = StreamControllerChunkSink(
       onFirstChunk: () {
         if (!committed.isCompleted) committed.complete();
       },
     );
-    final InboundRequest envelope = request.toInboundRequest();
+    final InboundRequest envelope = request.toInboundRequest(sessionId: sessionId);
 
     unawaited(
       _assembler
@@ -209,9 +222,13 @@ class OllamaAccessEdge {
 
   /// Buffers the forwarded chunks and renders one Ollama JSON object (the
   /// non-streaming path).
-  Future<Response> _admitBuffered(String bearerToken, OllamaRequest request) async {
+  Future<Response> _admitBuffered(
+    String bearerToken,
+    OllamaRequest request,
+    String? sessionId,
+  ) async {
     final _CapturingChunkSink sink = _CapturingChunkSink();
-    final InboundRequest envelope = request.toInboundRequest();
+    final InboundRequest envelope = request.toInboundRequest(sessionId: sessionId);
     try {
       await _assembler.admitOllama(
         bearerToken: bearerToken,
