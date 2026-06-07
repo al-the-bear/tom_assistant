@@ -47,3 +47,12 @@ export 'tool_bridge.dart';
 // Extension F step 8 — the `mcp.servers` / `mcp.list` / `mcp.call` bridged
 // primitive trio over the MCP client (`src/mcp/`).
 export 'mcp_bridge.dart';
+// Extension F step 14 — the `vscode.call` bridged primitive (§ 21.9) and its
+// narrow `VsCodeScriptingSurface` port (the prototype stays decoupled from
+// `tom_vscode_scripting_api`, PE-10).
+export 'vscode_scripting_bridge.dart' show VsCodeScriptingBridge;
+export 'vscode_scripting_surface.dart'
+    show
+        VsCodeScriptingFailure,
+        VsCodeScriptingSurface,
+        vsCodeScriptingFailureCode;

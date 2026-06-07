@@ -33,16 +33,18 @@ import 'package:tom_d4rt/d4rt.dart';
 import 'brain_bridges.b.dart';
 
 /// Registers the engine's bridges (`MemoryBridge`, `SubstrateBridge`,
-/// `ToolBridge`, `McpBridge`) — plus the `LlmCompletionFailure` value carried
-/// by the substrate bridge — with a D4rt [interpreter].
+/// `ToolBridge`, `McpBridge`, `VsCodeScriptingBridge`) — plus the
+/// `LlmCompletionFailure` value carried by the substrate bridge — with a D4rt
+/// [interpreter].
 ///
 /// Mirrors the registration the generated dartscript file would perform:
 /// the bridges are registered under each source-file library path so a
 /// d4rt procedure script can import them from
 /// `lib/src/bridges/memory_bridge.dart`,
 /// `lib/src/bridges/substrate_bridge.dart`,
-/// `lib/src/bridges/tool_bridge.dart`, or
-/// `lib/src/bridges/mcp_bridge.dart`.
+/// `lib/src/bridges/tool_bridge.dart`,
+/// `lib/src/bridges/mcp_bridge.dart`, or
+/// `lib/src/bridges/vscode_scripting_bridge.dart`.
 final class BrainBridges {
   const BrainBridges._();
 
@@ -78,6 +80,14 @@ final class BrainBridges {
   static const String mcpLibrary =
       'package:tom_brain_procedure_prototype/src/bridges/mcp_bridge.dart';
 
+  /// The library URI under which the VS Code scripting bridge is importable
+  /// from a d4rt script. Canonical `package:` URI for `VsCodeScriptingBridge`'s
+  /// source file (see [memoryLibrary] for why a `package:` URI is required).
+  /// Added at Extension F step 14 — the `vscode.call` primitive (§ 21.9).
+  static const String vscodeScriptingLibrary =
+      'package:tom_brain_procedure_prototype/src/bridges/'
+      'vscode_scripting_bridge.dart';
+
   /// Registers every generated bridge with [interpreter] under each bridge
   /// library path. Idempotent at the call-site level: callers register once
   /// per interpreter at host boot (C.16).
@@ -86,5 +96,6 @@ final class BrainBridges {
     AllBridge.registerBridges(interpreter, substrateLibrary);
     AllBridge.registerBridges(interpreter, toolLibrary);
     AllBridge.registerBridges(interpreter, mcpLibrary);
+    AllBridge.registerBridges(interpreter, vscodeScriptingLibrary);
   }
 }

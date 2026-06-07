@@ -25,3 +25,6 @@
 
 export 'd4rt_dcli_host.dart';
 export 'procedure_parse_exception.dart' show ProcedureSourceParseException;
+// Extension F step 14 — the `installVsCodeIntegration` installer factory for
+// the `vscode.call` bridge (§ 21.9, § 6).
+export 'vscode_scripting_install.dart' show vsCodeScriptingInstaller;

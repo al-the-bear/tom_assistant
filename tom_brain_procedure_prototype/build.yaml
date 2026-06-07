@@ -73,6 +73,7 @@ targets:
                 - lib/src/bridges/substrate_bridge.dart
                 - lib/src/bridges/tool_bridge.dart
                 - lib/src/bridges/mcp_bridge.dart
+                - lib/src/bridges/vscode_scripting_bridge.dart
               outputPath: lib/src/bridges/brain_bridges.b.dart
           # Keep every generated artifact inside the existing `bridges/`
           # folder. The builder always runs the per-package orchestrator,

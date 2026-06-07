@@ -17,7 +17,8 @@
 //      the authored bridged classes (`MemoryBridge`, `SubstrateBridge`,
 //      and the substrate failure carrier `LlmCompletionFailure` at
 //      C.12/C.13; `ToolBridge` at Extension F step 6; `McpBridge` at
-//      Extension F step 8) with their canonical source URIs.
+//      Extension F step 8; `VsCodeScriptingBridge` at Extension F step 14)
+//      with their canonical source URIs.
 //   3. REGISTERS — `BrainBridges.register(D4rt())` registers those
 //      classes with a real D4rt interpreter (the tom_core_d4rt
 //      registration layer), and a d4rt script imported under a bridge
@@ -79,7 +80,7 @@ void main() {
   });
 
   group('C.14 generated bridge output — structure', () {
-    test('AllBridge exposes exactly the five authored bridged classes', () {
+    test('AllBridge exposes exactly the six authored bridged classes', () {
       final names = AllBridge.bridgeClasses().map((b) => b.name).toSet();
       expect(
         names,
@@ -89,10 +90,12 @@ void main() {
           'LlmCompletionFailure',
           'ToolBridge',
           'McpBridge',
+          'VsCodeScriptingBridge',
         }),
         reason: 'C.12 MemoryBridge + C.13 SubstrateBridge (and its '
             'LlmCompletionFailure carrier) + Extension F step 6 ToolBridge + '
-            'Extension F step 8 McpBridge must all be bridged.',
+            'Extension F step 8 McpBridge + Extension F step 14 '
+            'VsCodeScriptingBridge must all be bridged.',
       );
     });
 
@@ -117,6 +120,11 @@ void main() {
       expect(
         uris['McpBridge'],
         'package:tom_brain_procedure_prototype/src/bridges/mcp_bridge.dart',
+      );
+      expect(
+        uris['VsCodeScriptingBridge'],
+        'package:tom_brain_procedure_prototype/src/bridges/'
+            'vscode_scripting_bridge.dart',
       );
     });
 

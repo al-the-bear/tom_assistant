@@ -86,6 +86,15 @@ final class BridgedPrimitiveCatalog {
   /// the canonical `requires` name), which [callTokensFor] also accepts.
   static const Set<String> scriptedLlm = {'sub.llm'};
 
+  /// VS Code scripting-API primitive (Extension F step 14), re-exposed by
+  /// `VsCodeScriptingBridge`. `vscode.call` invokes one scripting-API method
+  /// directly (§ 21.9) — distinct from the merged extension *tools* a
+  /// procedure reaches through `tool.invoke` (§ 21.8). Callable only on a run
+  /// colocated with the extension and with the `enableVsCodeIntegration`
+  /// switch on (§ 6); the body spells it `vscodeCall` ([callTokensFor] accepts
+  /// both).
+  static const Set<String> vscodeScripting = {'vscode.call'};
+
   /// Every canonical `requires` name the prototype recognises.
   static const Set<String> all = {
     ...memory,
@@ -95,6 +104,7 @@ final class BridgedPrimitiveCatalog {
     ...tools,
     ...mcp,
     ...scriptedLlm,
+    ...vscodeScripting,
   };
 
   /// Whether [name] is a recognised bridged primitive.

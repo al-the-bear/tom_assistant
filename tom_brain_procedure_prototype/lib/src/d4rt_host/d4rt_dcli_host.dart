@@ -169,6 +169,14 @@ final class D4rtDcliHost {
   /// supplied (Extension F step 8).
   static const String mcpGlobal = 'mcp';
 
+  /// The d4rt global name the `VsCodeScriptingBridge` instance is bound to,
+  /// when the `enableVsCodeIntegration` switch is on and its installer is
+  /// supplied (Extension F step 14, § 21.9). The installer
+  /// (`vsCodeScriptingInstaller`) registers the bridge under this global; the
+  /// host owns only the switch, not the bridge (§ 6), so the constant lives
+  /// here while the installer that uses it lives in `vscode_scripting_install`.
+  static const String vsCodeScriptingGlobal = 'vscode';
+
   /// Tool label the composed [D4rtCliApi] reports (`toolName`).
   static const String _hostToolName = 'TomBrainEngine';
 
