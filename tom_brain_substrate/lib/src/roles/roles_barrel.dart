@@ -95,6 +95,14 @@ export 'bootstrap_roles.dart';
 // in-code authority. The anchor stays injected unconditionally on every
 // assembled prompt regardless of source.
 export 'file_backed_role_loader.dart';
+// Plan Extension-H step #29 — the six retrieval roles (substrate § 6.2a).
+// A separate, optional roster (template + cheap-route config + a
+// deterministic, never-throwing output parser per role). The bootstrap
+// roster is untouched: `bootstrapRoleRegistry()` still returns exactly the
+// five prototype roles; `bootstrapRoleRegistryWithRetrieval()` composes
+// the eleven-role thinking + retrieval roster. Adding the roles is
+// config-only — no router / registry / template engine change.
+export 'retrieval/retrieval_barrel.dart';
 export 'role_budget_defaults.dart';
 export 'role_registry.dart';
 export 'role_template.dart';
