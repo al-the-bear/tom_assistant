@@ -80,6 +80,12 @@ final class BridgedPrimitiveCatalog {
   /// server's advertised tools; `mcp.call` runs one MCP tool by name.
   static const Set<String> mcp = {'mcp.servers', 'mcp.list', 'mcp.call'};
 
+  /// The high-level scripted-LLM sugar (Extension F step 9). `sub.llm` is an
+  /// implicit nested `runProcedure(procedure ?? 'call_llm_v1', …)` call
+  /// (§ 21.1); the body spells it `subLlm` (the dotted→camel call-token of
+  /// the canonical `requires` name), which [callTokensFor] also accepts.
+  static const Set<String> scriptedLlm = {'sub.llm'};
+
   /// Every canonical `requires` name the prototype recognises.
   static const Set<String> all = {
     ...memory,
@@ -88,6 +94,7 @@ final class BridgedPrimitiveCatalog {
     ...sugar,
     ...tools,
     ...mcp,
+    ...scriptedLlm,
   };
 
   /// Whether [name] is a recognised bridged primitive.

@@ -51,6 +51,12 @@ export 'recursion_limit_exceeded.dart'
     show RecursionLimitExceeded, recursionLimitExceededCode;
 export 'run_procedure_primitive.dart'
     show ProcedureCall, ProcedureExecutor, RunProcedurePrimitive;
+export 'scripted_llm_sugar.dart'
+    show
+        defaultScriptedLlmProcedureId,
+        defaultScriptedLlmRole,
+        registerScriptedLlmSugar,
+        scriptedLlmSugarName;
 export 'sugar_aliases.dart' show registerSugarAliases, sugarAliasProcedureIds;
 export 'trail_note.dart' show TrailNote, TrailSink, automationCandidateCategory;
 export 'yield_primitive.dart' show YieldPrimitive;

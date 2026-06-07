@@ -46,6 +46,7 @@ import 'emit_primitive.dart';
 import 'note_primitive.dart';
 import 'procedure_inputs_bridge.dart';
 import 'run_procedure_primitive.dart';
+import 'scripted_llm_sugar.dart';
 import 'sugar_aliases.dart';
 import 'yield_primitive.dart';
 
@@ -159,6 +160,13 @@ void Function(D4rt) nativePrimitivesInstaller({
     // (C.40, § 5.2). Registered after the primitives so they share the
     // engine-native library and the one `RunProcedurePrimitive`.
     registerSugarAliases(interpreter, runProcedurePrimitive);
+
+    // The high-level scripted-LLM sugar `subLlm` — an implicit nested
+    // `runProcedure(procedure ?? 'call_llm_v1', {...}, depthDelta: 1)` call
+    // (Extension F step 9, § 21.1). Shares the same `RunProcedurePrimitive`,
+    // so the depth cap (PE-3), run recording (PE-4), and effort roll-up are
+    // inherited unchanged.
+    registerScriptedLlmSugar(interpreter, runProcedurePrimitive);
   };
 }
 
