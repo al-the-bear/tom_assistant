@@ -103,15 +103,18 @@ final class EffortAccountant {
 
   /// Tool callouts — each contributes one `toolCalls`. The substrate tool
   /// callouts other than `llm` (`embed` / `search` / `fetch`), plus
-  /// `tool.invoke` (Extension F step 6): invoking a registered tool is one
-  /// tool call, so the budget ledger can pre-charge it (PE-8). `tool.list`
-  /// only enumerates and is deliberately absent — it scores zero.
+  /// `tool.invoke` (Extension F step 6) and `mcp.call` (Extension F step 8):
+  /// invoking a registered tool or an MCP tool is one tool call, so the
+  /// budget ledger can pre-charge it (PE-8). `tool.list` / `mcp.servers` /
+  /// `mcp.list` only enumerate and are deliberately absent — they score zero.
   static const Set<String> _toolPrimitives = <String>{
     'embed',
     'search',
     'fetch',
     'tool.invoke',
     'toolInvoke',
+    'mcp.call',
+    'mcpCall',
   };
 
   /// The metric delta the [primitive] call contributed.

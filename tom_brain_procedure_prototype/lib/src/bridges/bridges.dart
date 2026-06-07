@@ -44,3 +44,6 @@ export 'substrate_bridge.dart';
 // Extension F step 6 — the `tool.list` / `tool.invoke` bridged primitive
 // pair over the tool-calling core (`src/tools/`).
 export 'tool_bridge.dart';
+// Extension F step 8 — the `mcp.servers` / `mcp.list` / `mcp.call` bridged
+// primitive trio over the MCP client (`src/mcp/`).
+export 'mcp_bridge.dart';

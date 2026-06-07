@@ -75,6 +75,11 @@ final class BridgedPrimitiveCatalog {
   /// `tool.invoke` runs one tool by name.
   static const Set<String> tools = {'tool.list', 'tool.invoke'};
 
+  /// MCP-client primitives (Extension F step 8), re-exposed by `McpBridge`.
+  /// `mcp.servers` enumerates the configured servers; `mcp.list` lists a
+  /// server's advertised tools; `mcp.call` runs one MCP tool by name.
+  static const Set<String> mcp = {'mcp.servers', 'mcp.list', 'mcp.call'};
+
   /// Every canonical `requires` name the prototype recognises.
   static const Set<String> all = {
     ...memory,
@@ -82,6 +87,7 @@ final class BridgedPrimitiveCatalog {
     ...engineNative,
     ...sugar,
     ...tools,
+    ...mcp,
   };
 
   /// Whether [name] is a recognised bridged primitive.

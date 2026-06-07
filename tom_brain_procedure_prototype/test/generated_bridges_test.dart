@@ -14,9 +14,10 @@
 //      generator outputs are present and the broken dartscript / relaxer
 //      files are absent.
 //   2. STRUCTURE — the generated delegating `AllBridge` exposes exactly
-//      the three bridged classes authored at C.12/C.13 (`MemoryBridge`,
-//      `SubstrateBridge`, and the substrate failure carrier
-//      `LlmCompletionFailure`) with their canonical source URIs.
+//      the authored bridged classes (`MemoryBridge`, `SubstrateBridge`,
+//      and the substrate failure carrier `LlmCompletionFailure` at
+//      C.12/C.13; `ToolBridge` at Extension F step 6; `McpBridge` at
+//      Extension F step 8) with their canonical source URIs.
 //   3. REGISTERS — `BrainBridges.register(D4rt())` registers those
 //      classes with a real D4rt interpreter (the tom_core_d4rt
 //      registration layer), and a d4rt script imported under a bridge
@@ -78,7 +79,7 @@ void main() {
   });
 
   group('C.14 generated bridge output — structure', () {
-    test('AllBridge exposes exactly the four authored bridged classes', () {
+    test('AllBridge exposes exactly the five authored bridged classes', () {
       final names = AllBridge.bridgeClasses().map((b) => b.name).toSet();
       expect(
         names,
@@ -87,10 +88,11 @@ void main() {
           'SubstrateBridge',
           'LlmCompletionFailure',
           'ToolBridge',
+          'McpBridge',
         }),
         reason: 'C.12 MemoryBridge + C.13 SubstrateBridge (and its '
-            'LlmCompletionFailure carrier) + Extension F step 6 ToolBridge '
-            'must all be bridged.',
+            'LlmCompletionFailure carrier) + Extension F step 6 ToolBridge + '
+            'Extension F step 8 McpBridge must all be bridged.',
       );
     });
 
@@ -111,6 +113,10 @@ void main() {
       expect(
         uris['ToolBridge'],
         'package:tom_brain_procedure_prototype/src/bridges/tool_bridge.dart',
+      );
+      expect(
+        uris['McpBridge'],
+        'package:tom_brain_procedure_prototype/src/bridges/mcp_bridge.dart',
       );
     });
 

@@ -4,8 +4,9 @@
 // subfolders required by Plan step C.8, the `dispatcher/` subfolder added
 // by Plan step D.6 (the first dispatcher-half addition to this project),
 // the `budget/` subfolder (Q-C.51.1), the `prompts/` subfolder added by
-// Extension F step 1 (the placeholder system), and the `tools/` subfolder
-// added by Extension F step 4 (the tool-calling core). It also locks the
+// Extension F step 1 (the placeholder system), the `tools/` subfolder
+// added by Extension F step 4 (the tool-calling core), and the `mcp/`
+// subfolder added by Extension F step 8 (the MCP client). It also locks the
 // per-folder barrel-file convention used
 // across the Tom Brain projects (siblings: `tom_brain_shared`,
 // `tom_brain_memory`, `tom_brain_substrate`) and the top-level barrel
@@ -13,7 +14,7 @@
 //
 // What this test asserts:
 //
-//   1. Each of the thirteen subfolders exists under `lib/src/`.
+//   1. Each of the fourteen subfolders exists under `lib/src/`.
 //   2. Each subfolder contains a `<folder>.dart` barrel file.
 //   3. The top-level barrel `lib/tom_brain_procedure_prototype.dart`
 //      re-exports every one of those subfolder barrels (one `export`
@@ -47,6 +48,7 @@ const _requiredSubfolders = <String>[
   'config', // C.42–C.45 — EngineConfig + observability
   'd4rt_host', // C.16–C.18 — D4rtDcliHost
   'dispatcher', // D.6–D.50 — Dispatcher.accept + coordinator + fallback
+  'mcp', // Ext-F step 8 — McpClient + connection pool (§ 21.3, § 21.10)
   'preemption', // C.34–C.37 — PreemptionState + deadline
   'primitives_native', // C.19–C.22 — runProcedure / note / yield
   'procedure_store', // C.23–C.26 — store + loader + resolver
@@ -63,9 +65,9 @@ void main() {
       // `_requiredSubfolders` cannot silently shrink or duplicate the
       // contract. C.8 seeds 9; D.6 adds `dispatcher/` for 10; Q-C.51.1 adds
       // `budget/` for 11; Ext-F step 1 adds `prompts/` for 12; Ext-F step 4
-      // adds `tools/` for 13.
-      expect(_requiredSubfolders, hasLength(13));
-      expect(_requiredSubfolders.toSet(), hasLength(13),
+      // adds `tools/` for 13; Ext-F step 8 adds `mcp/` for 14.
+      expect(_requiredSubfolders, hasLength(14));
+      expect(_requiredSubfolders.toSet(), hasLength(14),
           reason: 'subfolder list must be free of duplicates');
     });
 

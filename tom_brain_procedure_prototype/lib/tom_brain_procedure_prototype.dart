@@ -72,6 +72,8 @@ export 'src/config/config.dart';
 // `call_llm_v1` loop through this same surface.
 export 'src/prompts/prompts.dart';
 export 'src/tools/tools.dart';
+// Step 8 — the MCP client (`mcp.servers` / `mcp.list` / `mcp.call`, § 21.3).
+export 'src/mcp/mcp.dart';
 
 // D.6 — dispatcher half. The dispatcher consumes the engine surface
 // above (`ProcedureEngine`) and adds the `accept(Access)` entry point,

@@ -78,6 +78,7 @@ import 'package:tom_d4rt/d4rt.dart';
 import 'package:tom_d4rt_dcli/tom_d4rt_cli_api.dart';
 
 import '../bridges/brain_bridges_registrar.dart';
+import '../bridges/mcp_bridge.dart';
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../bridges/tool_bridge.dart';
@@ -138,6 +139,7 @@ final class D4rtDcliHost {
     required this.memoryBridge,
     required this.substrateBridge,
     this.toolBridge,
+    this.mcpBridge,
     String dataDirectory = _defaultDataDirectory,
     NativePrimitiveInstaller? installNativePrimitives,
     this.sandbox = const SandboxConfig.locked(),
@@ -163,6 +165,10 @@ final class D4rtDcliHost {
   /// supplied (Extension F step 6).
   static const String toolGlobal = 'tool';
 
+  /// The d4rt global name the [McpBridge] instance is bound to, when one is
+  /// supplied (Extension F step 8).
+  static const String mcpGlobal = 'mcp';
+
   /// Tool label the composed [D4rtCliApi] reports (`toolName`).
   static const String _hostToolName = 'TomBrainEngine';
 
@@ -183,6 +189,13 @@ final class D4rtDcliHost {
   /// reaches memory + substrate only; a host that runs the scripted LLM loop
   /// supplies one.
   final ToolBridge? toolBridge;
+
+  /// The MCP bridge injected as the [mcpGlobal] global, or `null` when the
+  /// host runs without the `mcp.servers` / `mcp.list` / `mcp.call` surface
+  /// (Extension F step 8). Optional because the prototype's
+  /// `answer_with_memory_v1` reaches memory + substrate only; a host whose
+  /// procedures call out to MCP servers supplies one.
+  final McpBridge? mcpBridge;
 
   /// The sandbox switches this host booted under (C.17). Defaults to
   /// [SandboxConfig.locked] — the prototype's only configuration.
@@ -237,6 +250,19 @@ final class D4rtDcliHost {
         toolGlobal,
         tools,
         BrainBridges.toolLibrary,
+      );
+    }
+
+    // 2c. The MCP bridge, when the host's procedures call out to MCP servers
+    //     (Extension F step 8). Injected under its bridge library URI so an
+    //     importing script sees the `mcp` global. Optional — the prototype's
+    //     `answer_with_memory_v1` runs without it.
+    final mcp = mcpBridge;
+    if (mcp != null) {
+      _interpreter.registerGlobalVariable(
+        mcpGlobal,
+        mcp,
+        BrainBridges.mcpLibrary,
       );
     }
 

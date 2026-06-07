@@ -33,15 +33,16 @@ import 'package:tom_d4rt/d4rt.dart';
 import 'brain_bridges.b.dart';
 
 /// Registers the engine's bridges (`MemoryBridge`, `SubstrateBridge`,
-/// `ToolBridge`) — plus the `LlmCompletionFailure` value carried by the
-/// substrate bridge — with a D4rt [interpreter].
+/// `ToolBridge`, `McpBridge`) — plus the `LlmCompletionFailure` value carried
+/// by the substrate bridge — with a D4rt [interpreter].
 ///
 /// Mirrors the registration the generated dartscript file would perform:
 /// the bridges are registered under each source-file library path so a
 /// d4rt procedure script can import them from
 /// `lib/src/bridges/memory_bridge.dart`,
-/// `lib/src/bridges/substrate_bridge.dart`, or
-/// `lib/src/bridges/tool_bridge.dart`.
+/// `lib/src/bridges/substrate_bridge.dart`,
+/// `lib/src/bridges/tool_bridge.dart`, or
+/// `lib/src/bridges/mcp_bridge.dart`.
 final class BrainBridges {
   const BrainBridges._();
 
@@ -70,6 +71,13 @@ final class BrainBridges {
   static const String toolLibrary =
       'package:tom_brain_procedure_prototype/src/bridges/tool_bridge.dart';
 
+  /// The library URI under which the MCP bridge is importable from a d4rt
+  /// script. Canonical `package:` URI for `McpBridge`'s source file (see
+  /// [memoryLibrary] for why a `package:` URI is required). Added at
+  /// Extension F step 8 — the `mcp.servers` / `mcp.list` / `mcp.call` trio.
+  static const String mcpLibrary =
+      'package:tom_brain_procedure_prototype/src/bridges/mcp_bridge.dart';
+
   /// Registers every generated bridge with [interpreter] under each bridge
   /// library path. Idempotent at the call-site level: callers register once
   /// per interpreter at host boot (C.16).
@@ -77,5 +85,6 @@ final class BrainBridges {
     AllBridge.registerBridges(interpreter, memoryLibrary);
     AllBridge.registerBridges(interpreter, substrateLibrary);
     AllBridge.registerBridges(interpreter, toolLibrary);
+    AllBridge.registerBridges(interpreter, mcpLibrary);
   }
 }
