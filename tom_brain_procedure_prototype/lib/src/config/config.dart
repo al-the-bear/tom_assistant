@@ -118,6 +118,23 @@ export 'llm_config_errors.dart'
         modelConfigMissingCode,
         promptTemplateMissingCode,
         providersMissingCode;
+// Extension H step #31 — the `memory_retrieval/` config family (§ 23.4):
+// the typed catalogue model, its strategy/budget/fusion/diversity/rerank/
+// selection blocks, and the two typed load-failure wire codes.
+export 'memory_retrieval_config.dart'
+    show
+        DiversitySettings,
+        FusionSettings,
+        MemoryRetrievalConfig,
+        RerankSettings,
+        RetrievalBudget,
+        SelectionSettings,
+        StrategyConfig;
+export 'memory_retrieval_config_invalid.dart'
+    show
+        MemoryRetrievalConfigInvalid,
+        memoryRetrievalConfigInvalidCode,
+        retrievalConfigLlmInMemoryCode;
 export 'model_config.dart' show ModelConfig, ModelConfigStore;
 export 'prompt_template_config.dart'
     show

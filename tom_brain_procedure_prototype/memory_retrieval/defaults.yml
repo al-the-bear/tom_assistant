@@ -1,0 +1,59 @@
+# memory_retrieval/defaults.yml — Extension H shared catalogue (spec § 23.4).
+#
+# The single source of truth every surface overlay narrows. Loaded through the
+# canonical plain-map loader (no YamlMap leak) and mutated via the
+# AST-preserving writer; a missing block / strategy / field is never an error —
+# it falls through the shallow merge to this file, and an absent field here to
+# the documented constant baked into `MemoryRetrievalConfig`.
+#
+# Resolution per surface is `defaults ← surface ← call_type` (later wins per
+# field). Each strategy is `enabled` plus, for a scored seed, a fusion `weight`
+# and per-seed cap `k`; an LLM strategy additionally carries a `role:` (the
+# substrate role that computes its seeds) — that `role:` is the structural LLM
+# marker the memory MCP surface forbids (retrieval.config.llm_in_memory).
+profile: default              # active memory profile (a session may override, § 23.6)
+
+budget:                        # the retrieval slice of the per-prompt budget (§ 5.4); set generously
+  maxLlmCalls: 12             # cap on retrieval-time PAID substrate calls (free/local not debited, Q-H.16)
+  maxRecallCalls: 64          # cap on the memory.recall fan-out
+  wallClockMs: 20000
+  k: 24                       # final memories assembled into the answer prompt (post-fusion cap)
+
+fusion:    { method: rrf, rrfK: 60 }                                  # reciprocal-rank fusion (§ 23.3)
+diversity: { method: mmr, lambda: 0.7 }                              # MMR: 1.0 relevance … 0.0 diversity
+rerank:    { enabled: false, role: retrieval_reranker, keepTop: 12 } # optional LLM re-rank (deferred)
+
+strategies:
+  vector:
+    prompt:               { enabled: true,  weight: 1.0, k: 12 }                                    # raw prompt → embedding (the naive-recall seed)
+    questions:            { enabled: true,  weight: 0.8, k: 8, role: recall_planner,   maxQuestions: 3 }      # LLM: decomposed sub-questions
+    hypothetical_answers: { enabled: true,  weight: 1.2, k: 8, role: hypothesis_writer, samplesPerQuestion: 1 } # LLM: HyDE answers
+    keyphrases:           { enabled: false, weight: 0.6, k: 6 }                                     # extracted key phrases
+    recent_context:       { enabled: true,  weight: 0.5, k: 6, turns: 4 }                           # last N turns as a seed
+    prior_conclusions:    { enabled: true,  weight: 0.5, k: 6, count: 5 }                           # recent Conclusion nodes
+  bm25:
+    prompt_terms:         { enabled: true,  weight: 0.8, k: 12 }                                    # raw prompt terms (lexical)
+    keyphrases:           { enabled: true,  weight: 0.7, k: 8 }                                     # extracted key phrases (lexical)
+    llm_query_terms:      { enabled: false, weight: 0.9, k: 8, role: query_term_writer }            # LLM: rewritten query terms
+    entity_terms:         { enabled: false, weight: 0.6, k: 6 }                                     # named entities (lexical)
+    synonym_expansion:    { enabled: false, weight: 0.5, k: 6, role: query_term_writer }            # LLM: synonym expansion
+  symbolic:
+    type_filter_by_classify: { enabled: true,  weight: 0.4, confidence: 0.6 }                       # cheap classify → node-type filter
+    type_filter_by_llm:      { enabled: false, weight: 0.5, role: category_selector }               # LLM: node-type selection
+    time_window:             { enabled: false, weight: 0.3, windowDays: 30 }                        # recency window filter
+    scope_filter:            { enabled: true,  weight: 0.0 }                                        # always-on constraint, not a scored seed
+    attr_equality:           { enabled: false, weight: 0.3 }                                        # attribute-equality filter
+  graphWalk:
+    seed_from_vector_hits:      { enabled: true,  weight: 0.7, seeds: 6, depth: 2 }                 # walk from top vector hits
+    seed_from_concepts:         { enabled: true,  weight: 0.8, seeds: 4, depth: 2, confidence: 0.6 } # walk from classified concepts
+    seed_from_llm_picked:       { enabled: false, weight: 0.9, role: category_selector }            # LLM: walk from picked concepts
+    edge_type_selection_by_llm: { enabled: false, role: category_selector }                         # LLM: pick which edges to traverse
+    edge_type_default:          { enabled: true,  edges: [supports, refines, contradicts, about], depth: 2 } # default edge set
+
+selection:                     # history-driven profile selection (§ 23.6, Q-H.9)
+  enabled: false
+  role: profile_selector
+  default: default
+  useHistory: true             # feed full priorTurns/messages[] to the selector; false = first-prompt-only
+  recheckEveryNTurns: 5
+  inconclusiveThreshold: 0.5

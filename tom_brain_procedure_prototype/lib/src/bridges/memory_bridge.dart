@@ -212,6 +212,13 @@ class MemoryBridge {
   ///
   /// Each entry of [seeds] is a primitive map the script assembled (see
   /// [_buildSeed] for the shape); [k] caps the post-fusion result list.
+  /// [rrfK] is the RRF smoothing constant and [lambda] the MMR
+  /// relevance/diversity trade-off — both default to the system-wide values
+  /// ([FusionPolicy.defaultRrf] / [DiversityPolicy.defaultMmr]) so an
+  /// unspecified call is byte-identical to the prior signature. The retrieval
+  /// conductor (Extension-H step #31) flows the resolved `memory_retrieval/`
+  /// fusion / diversity knobs through these.
+  ///
   /// `recallMulti` is a wire-capable operation on [TomBrainMemoryClient]
   /// itself — its [MultiRecallQuery] carries no closures, so it crosses the
   /// isolate boundary intact. The bridge therefore calls it transport-blind
@@ -223,14 +230,23 @@ class MemoryBridge {
   Future<Map<String, Object?>> recallMulti(
     List<Object?> seeds, {
     int k = 20,
+    int rrfK = 60,
+    double lambda = 0.7,
   }) =>
       _record<Map<String, Object?>>(
         'recallMulti',
-        <String, Object?>{'seeds': seeds, 'k': k},
+        <String, Object?>{
+          'seeds': seeds,
+          'k': k,
+          'rrfK': rrfK,
+          'lambda': lambda,
+        },
         () async {
           final query = MultiRecallQuery(
             seeds: seeds.map(_buildSeed).toList(),
             k: k,
+            fusion: FusionPolicy(rrfK: rrfK),
+            diversity: DiversityPolicy(lambda: lambda),
           );
           final result = await client.recallMulti(query);
           return <String, Object?>{

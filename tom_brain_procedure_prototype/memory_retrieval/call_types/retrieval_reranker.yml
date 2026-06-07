@@ -1,0 +1,12 @@
+# memory_retrieval/call_types/retrieval_reranker.yml — a stripped-down set for
+# a rerank-only call (§ 23.4).
+#
+# The per-call-type layer (3) is OPTIONAL: a call type with no file inherits its
+# calling surface's config verbatim. This overlay is applied last
+# (`defaults ← surface ← call_type`), so it narrows whatever surface invoked it:
+# it strips the expensive expansion seeds and turns the LLM re-rank on with a
+# tighter keepTop, leaving the cheap lexical / vector seeds the surface enabled.
+strategies:
+  vector:    { questions: { enabled: false }, hypothetical_answers: { enabled: false } }
+  graphWalk: { seed_from_vector_hits: { enabled: false }, seed_from_concepts: { enabled: false } }
+rerank: { enabled: true, keepTop: 8 }

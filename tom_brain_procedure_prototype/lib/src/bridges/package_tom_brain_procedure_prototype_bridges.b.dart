@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Sources: 5 files
-// Generated: 2026-06-07T22:35:01.898049
+// Generated: 2026-06-08T00:02:37.209968
 
 // ignore_for_file: unused_import, deprecated_member_use, prefer_function_declarations_over_variables, implementation_imports, sort_child_properties_last, non_constant_identifier_names, avoid_function_literals_in_foreach_calls, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member
 
@@ -213,7 +213,9 @@ BridgedClass _createMemoryBridgeBridge() {
         }
         final seeds = D4.coerceList<Object?>(positional[0], 'seeds');
         final k = D4.getNamedArgWithDefault<int>(named, 'k', 20);
-        return t.recallMulti(seeds, k: k);
+        final rrfK = D4.getNamedArgWithDefault<int>(named, 'rrfK', 60);
+        final lambda = D4.getNamedArgWithDefault<double>(named, 'lambda', 0.7);
+        return t.recallMulti(seeds, k: k, rrfK: rrfK, lambda: lambda);
       },
       'classify': (visitor, target, positional, named, typeArgs) {
         final t = D4.validateTarget<$tom_brain_procedure_prototype_3.MemoryBridge>(target, 'MemoryBridge');
@@ -349,7 +351,7 @@ BridgedClass _createMemoryBridgeBridge() {
     },
     methodSignatures: {
       'recall': 'Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8})',
-      'recallMulti': 'Future<Map<String, Object?>> recallMulti(List<Object?> seeds, {int k = 20})',
+      'recallMulti': 'Future<Map<String, Object?>> recallMulti(List<Object?> seeds, {int k = 20, int rrfK = 60, double lambda = 0.7})',
       'classify': 'Future<Map<String, Object?>> classify(List<double> embedding, {String target = \'nodeType\'})',
       'persist': 'Future<String> persist(String typeName, Map<String, Object?> values, {required String producer, String? idempotencyKey, String? causedBy, String? runId, List<double>? embedding})',
       'edge': 'Future<String> edge(String from, String type, String to, {required String producer, double weight = 1.0, String? idempotencyKey, String? causedBy, String? runId, Map<String, Object?>? attrs})',

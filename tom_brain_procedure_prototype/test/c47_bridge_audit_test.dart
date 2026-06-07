@@ -80,7 +80,7 @@ const Map<String, String> _expectedMemorySignatures = <String, String>{
   'recall':
       "Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8})",
   'recallMulti':
-      'Future<Map<String, Object?>> recallMulti(List<Object?> seeds, {int k = 20})',
+      'Future<Map<String, Object?>> recallMulti(List<Object?> seeds, {int k = 20, int rrfK = 60, double lambda = 0.7})',
   'classify':
       "Future<Map<String, Object?>> classify(List<double> embedding, {String target = 'nodeType'})",
   'persist':

@@ -1,0 +1,19 @@
+# memory_retrieval/memory_mcp.yml — the memory MCP server (NON-LLM ONLY, § 23.4/§ 23.7).
+#
+# A thin overlay over defaults.yml. The memory server may host ONLY non-LLM
+# strategies — any strategy carrying a `role:` (an LLM strategy), or an enabled
+# `rerank` (which uses a role), is rejected at load with the wire code
+# `retrieval.config.llm_in_memory` (MemoryRetrievalConfig.checkNonLlm). The
+# explicit `enabled: false` lines below make that constraint self-documenting:
+# the LLM seeds default-on in the catalogue are turned off here so the server
+# boots.
+strategies:
+  vector:
+    questions:            { enabled: false }   # LLM strategy — must be off here anyway
+    hypothetical_answers: { enabled: false }   # LLM strategy
+  bm25:
+    llm_query_terms:      { enabled: false }   # LLM strategy
+    synonym_expansion:    { enabled: false }   # LLM strategy
+  symbolic:
+    type_filter_by_llm:   { enabled: false }   # LLM strategy
+rerank: { enabled: false }                     # rerank uses a role ⇒ never in the memory server

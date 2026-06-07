@@ -1,0 +1,16 @@
+# memory_retrieval/brain_mcp.yml — the brain.retrieve MCP server (ANY strategy, § 23.4).
+#
+# A thin overlay over defaults.yml. `brain.retrieve` is the only surface that
+# depends on both memory and substrate (PE-10), so it may enable any strategy —
+# LLM and non-LLM alike. A thorough machine-facing recall: turn the remaining
+# LLM seeds on and enable the LLM re-rank.
+strategies:
+  vector:
+    keyphrases:           { enabled: true }
+  bm25:
+    llm_query_terms:      { enabled: true }
+  symbolic:
+    type_filter_by_llm:   { enabled: true }
+  graphWalk:
+    seed_from_llm_picked: { enabled: true }
+rerank: { enabled: true }

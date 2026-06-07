@@ -1,0 +1,12 @@
+# memory_retrieval/access.yml — the in-process access prompt path (§ 23.4).
+#
+# A thin overlay over defaults.yml. This is the default config for the
+# `retrieve_for_prompt_v1` conductor (§ 23.2) when run on the primary in-process
+# prompt path. Balanced for an interactive session: the cheap LLM seeds on, the
+# expensive ones off, re-rank off for latency. Because the access path owns the
+# conversation session, it is the surface that runs history-driven profile
+# selection (§ 23.6).
+strategies:
+  vector:
+    hypothetical_answers: { enabled: true }
+selection: { enabled: true }                   # access owns the session ⇒ it runs profile selection (§ 23.6)
