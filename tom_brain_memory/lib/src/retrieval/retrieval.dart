@@ -69,7 +69,7 @@ export 'fts5_catalog.dart' show Fts5Catalog;
 export 'fts5_writer.dart' show Fts5Writer;
 export 'graph_walk_recall.dart'
     show GraphWalkRecall, GraphWalkRecallCandidate, kDefaultEdgeTypeWeight;
-export 'recall_events.dart' show RecallCompleted;
+export 'recall_events.dart' show MultiRecallCompleted, RecallCompleted;
 export 'recall_executor.dart'
     show
         Bm25ModeFn,
@@ -91,11 +91,14 @@ export 'package:tom_brain_shared/tom_brain_shared.dart'
         FusionPolicy,
         FusionStrategy,
         GraphWalkPolicy,
+        MultiRecallQuery,
         RecallBudget,
         RecallMode,
+        RecallProvenanceEntry,
         RecallQuery,
         RecallReport,
         RecallResult,
+        RecallSeed,
         ReRankHook,
         StreamCursor,
         StreamQuery,
@@ -103,7 +106,13 @@ export 'package:tom_brain_shared/tom_brain_shared.dart'
         SymbolicOp;
 export 'mmr.dart'
     show MmrInput, MmrSelected, kDefaultMmrLambda, mmrDiversify;
-export 'rrf.dart' show RrfFusedCandidate, kDefaultRrfK, rrfFuse;
+export 'rrf.dart'
+    show
+        RrfFusedCandidate,
+        SeedFusedCandidate,
+        kDefaultRrfK,
+        rrfFuse,
+        rrfFuseSeeds;
 export 'stream_cursor_store.dart'
     show JsonFileStreamCursorStore, StreamCursorStore;
 export 'symbolic_recall.dart'

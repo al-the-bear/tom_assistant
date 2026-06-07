@@ -182,6 +182,48 @@ abstract class RecordingMemoryBase implements TomBrainMemory {
 
   @override
   Stream<MemoryEvent> events() => const Stream<MemoryEvent>.empty();
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      const RecallResult(
+        nodes: <Node>[],
+        report: RecallReport(
+          candidatesPerMode: <RecallMode, int>{},
+          fusionStrategy: FusionStrategy.rrf,
+          diversityStrategy: DiversityStrategy.mmr,
+          elapsedMs: 0,
+        ),
+      );
+
+  @override
+  MemoryProfileRegistry get profiles => NoopProfileRegistry();
+
+  @override
+  String? get currentProfile => null;
+}
+
+/// A no-op [MemoryProfileRegistry] shared by both smoke memory doubles.
+/// The smoke harness never materialises a profile; the registry exists
+/// only so the doubles concretely realise the in-process marker.
+class NoopProfileRegistry implements MemoryProfileRegistry {
+  @override
+  Future<List<String>> list() async => const <String>[];
+
+  @override
+  Future<bool> exists(String name) async => false;
+
+  @override
+  Future<void> createProfile(String name) async {}
+
+  @override
+  Future<void> seedProfile(
+    String name,
+    List<NodeDraft> drafts, {
+    required Scope scope,
+  }) async {}
+
+  @override
+  Future<void> dropProfile(String name) async {}
 }
 
 /// A recording [StackApi] shared by both smoke memory doubles.

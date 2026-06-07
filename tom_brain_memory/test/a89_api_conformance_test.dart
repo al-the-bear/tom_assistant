@@ -418,6 +418,48 @@ final class ConformanceFakeMemory implements TomBrainMemory {
       migrationProgress: <String, double>{},
     );
   }
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      const RecallResult(
+        nodes: <Node>[],
+        report: RecallReport(
+          candidatesPerMode: <RecallMode, int>{},
+          fusionStrategy: FusionStrategy.rrf,
+          diversityStrategy: DiversityStrategy.mmr,
+          elapsedMs: 0,
+          embeddingsCallouts: 0,
+          reRankInvoked: false,
+          degraded: false,
+        ),
+      );
+
+  @override
+  MemoryProfileRegistry get profiles => _ConformanceFakeProfileRegistry();
+
+  @override
+  String? get currentProfile => null;
+}
+
+class _ConformanceFakeProfileRegistry implements MemoryProfileRegistry {
+  @override
+  Future<List<String>> list() async => const <String>[];
+
+  @override
+  Future<bool> exists(String name) async => false;
+
+  @override
+  Future<void> createProfile(String name) async {}
+
+  @override
+  Future<void> seedProfile(
+    String name,
+    List<NodeDraft> drafts, {
+    required Scope scope,
+  }) async {}
+
+  @override
+  Future<void> dropProfile(String name) async {}
 }
 
 /// In-memory backing for [StackApi]. Top-level so the isolate side

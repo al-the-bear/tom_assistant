@@ -209,6 +209,45 @@ final class RecordingFakeMemory implements TomBrainMemory {
 
   @override
   Stream<MemoryEvent> events() => const Stream<MemoryEvent>.empty();
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      const RecallResult(
+        nodes: <Node>[],
+        report: RecallReport(
+          candidatesPerMode: <RecallMode, int>{},
+          fusionStrategy: FusionStrategy.rrf,
+          diversityStrategy: DiversityStrategy.mmr,
+          elapsedMs: 0,
+        ),
+      );
+
+  @override
+  MemoryProfileRegistry get profiles => _NoopProfileRegistry();
+
+  @override
+  String? get currentProfile => null;
+}
+
+class _NoopProfileRegistry implements MemoryProfileRegistry {
+  @override
+  Future<List<String>> list() async => const <String>[];
+
+  @override
+  Future<bool> exists(String name) async => false;
+
+  @override
+  Future<void> createProfile(String name) async {}
+
+  @override
+  Future<void> seedProfile(
+    String name,
+    List<NodeDraft> drafts, {
+    required Scope scope,
+  }) async {}
+
+  @override
+  Future<void> dropProfile(String name) async {}
 }
 
 class _NoopStackApi implements StackApi {

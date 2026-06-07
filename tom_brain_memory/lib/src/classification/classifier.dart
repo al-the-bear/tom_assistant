@@ -269,6 +269,8 @@ final class Classifier {
         return CentroidStore.nodeTypeKeyPrefix;
       case ClassificationTarget.procedure:
         return CentroidStore.procedureKeyPrefix;
+      case ClassificationTarget.concept:
+        return CentroidStore.conceptKeyPrefix;
     }
   }
 

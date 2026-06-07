@@ -18,7 +18,7 @@
 // The discriminator (`memory.recall-completed`) follows the
 // per-component convention documented on `MemoryEvent`.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent, RecallMode, RecallReport;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryEvent, RecallMode, RecallProvenanceEntry, RecallReport;
 
 /// Emitted when `RecallExecutor.recall` finishes a recall call.
 ///
@@ -72,5 +72,68 @@ final class RecallCompleted extends MemoryEvent {
         'embeddingsCallouts': report.embeddingsCallouts,
         'reRankInvoked': report.reRankInvoked,
         'degraded': report.degraded,
+      };
+}
+
+/// Emitted when `RecallExecutor.recallMulti` finishes a multi-seed
+/// recall call (§ 6.5, Extension H).
+///
+/// Spec § 16 names `MultiRecallCompleted` as "carries per-seed
+/// candidate counts + fused result provenance". The per-seed counts
+/// ([seedCandidateCounts]) are index-aligned with the
+/// `MultiRecallQuery.seeds` list; [provenance] is the same per-node
+/// provenance the call returned on `RecallResult.provenance`.
+///
+/// Like its single-seed sibling [RecallCompleted], it fires once per
+/// call (including the empty-seeds and degraded paths) and threads
+/// `runId` / `causedBy` from the optional `Scope`.
+final class MultiRecallCompleted extends MemoryEvent {
+  /// Pre-fusion candidate count per seed, index-aligned with the
+  /// `MultiRecallQuery.seeds` list.
+  final List<int> seedCandidateCounts;
+
+  /// Number of nodes the recall ultimately returned (post-fusion,
+  /// post-diversify, truncated to `MultiRecallQuery.k`).
+  final int returnedCount;
+
+  /// The cost / candidacy report the same call returned. Held by
+  /// reference; consumers MUST treat it as read-only.
+  final RecallReport report;
+
+  /// Per-node seed provenance the call returned, index-aligned with
+  /// the result node list.
+  final List<RecallProvenanceEntry> provenance;
+
+  const MultiRecallCompleted({
+    required this.seedCandidateCounts,
+    required this.returnedCount,
+    required this.report,
+    required this.provenance,
+    required super.occurredAt,
+    super.runId,
+    super.causedBy,
+  });
+
+  @override
+  String get kind => 'memory.multi-recall-completed';
+
+  @override
+  Map<String, Object?> payloadJson() => <String, Object?>{
+        'seedCandidateCounts':
+            seedCandidateCounts.toList(growable: false),
+        'returnedCount': returnedCount,
+        'fusionStrategy': report.fusionStrategy.name,
+        'diversityStrategy': report.diversityStrategy.name,
+        if (report.diversityLambda != null)
+          'diversityLambda': report.diversityLambda,
+        'elapsedMs': report.elapsedMs,
+        'degraded': report.degraded,
+        'provenance': provenance
+            .map((e) => <String, Object?>{
+                  'nodeId': e.nodeId.value,
+                  'seedIndexes': e.seedIndexes.toList(growable: false),
+                  'fusedScore': e.fusedScore,
+                })
+            .toList(growable: false),
       };
 }

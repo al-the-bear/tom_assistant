@@ -111,7 +111,7 @@ void main() {
       return sessionId!;
     }
 
-    test('initialize + tools/list advertise the seven v1 tools cross-process',
+    test('initialize + tools/list advertise the ten v1 tools cross-process',
         () async {
       final sessionId = await openSession();
 
@@ -130,11 +130,14 @@ void main() {
         names,
         equals({
           'memory.recall',
+          'memory.recall.multi',
           'memory.get',
           'memory.edgesOf',
           'memory.stack.list',
           'memory.stack.peek',
           'memory.classify',
+          'memory.profiles.list',
+          'memory.profile.current',
           'memory.persistNote',
         }),
       );
@@ -269,6 +272,63 @@ void main() {
       );
       expect(payload['decision'], equals('confident'));
       expect(payload['bestMatch'], equals('Question'));
+    });
+
+    test('memory.recall.multi fuses seeds + provenance cross-process '
+        '(no substrate call)', () async {
+      final sessionId = await openSession();
+      final payload = await _callTool(
+        client,
+        url(),
+        sessionId,
+        id: 3,
+        name: 'memory.recall.multi',
+        arguments: {
+          'seeds': [
+            {'mode': 'bm25', 'text': 'why is the sky blue', 'weight': 2.0},
+            {'mode': 'bm25', 'text': 'rayleigh scattering', 'weight': 1.0},
+          ],
+          'k': 10,
+        },
+      );
+      // The fused node crossed the boundary with its node payload …
+      final nodes = payload['nodes'] as List;
+      expect(nodes, hasLength(1));
+      expect((nodes.single as Map)['typeName'], equals('Question'));
+      // … and its provenance, index-aligned with the node list, naming
+      // the two surfacing seeds and carrying the fused score.
+      final provenance = payload['provenance'] as List;
+      expect(provenance, hasLength(1));
+      final entry = provenance.single as Map<String, Object?>;
+      expect(entry['seedIndexes'], equals([0, 1]));
+      expect(entry['fusedScore'], equals(0.5));
+      expect((payload['report'] as Map)['fusionStrategy'], equals('rrf'));
+    });
+
+    test('memory.profiles.list returns the real profile names cross-process',
+        () async {
+      final sessionId = await openSession();
+      final payload = await _callTool(
+        client,
+        url(),
+        sessionId,
+        id: 3,
+        name: 'memory.profiles.list',
+      );
+      expect(payload['profiles'], equals(['eval_a', 'eval_b']));
+    });
+
+    test('memory.profile.current returns the bound profile cross-process',
+        () async {
+      final sessionId = await openSession();
+      final payload = await _callTool(
+        client,
+        url(),
+        sessionId,
+        id: 3,
+        name: 'memory.profile.current',
+      );
+      expect(payload['profile'], equals('eval_a'));
     });
 
     test('memory.persistNote (the one v1 write) round-trips cross-process',

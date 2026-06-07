@@ -62,6 +62,22 @@
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeId, RecallMode;
 
+// ─── Multi-seed weighted fusion (§ 6.5, Extension H) ────────────────
+//
+// `rrfFuse` (below) fuses per-**mode** lists with equal weight — the
+// agreement-weighting is implicit in the mode count. Multi-seed recall
+// (`recallMulti`) fuses per-**seed** lists, and each seed carries an
+// explicit `weight`, so it needs a parallel primitive whose
+// contribution per list is scaled:
+//
+//   score(d) = Σ_seeds weight_seed · 1 / (k_rrf + rank_seed(d))
+//
+// The output carries per-seed ranks (keyed by the seed's index in the
+// `MultiRecallQuery.seeds` list) so the `RecallProvenanceEntry`
+// surfaced to the caller can name which seeds found each node without
+// re-running the math. Determinism and the edge-case refusals match
+// `rrfFuse`.
+
 /// Default RRF smoothing constant.
 ///
 /// Matches `FusionPolicy.defaultRrf.rrfK` and the value Cormack,
@@ -193,4 +209,132 @@ List<RrfFusedCandidate> rrfFuse({
     return List<RrfFusedCandidate>.unmodifiable(fused.sublist(0, cap));
   }
   return List<RrfFusedCandidate>.unmodifiable(fused);
+}
+
+/// One row in the fused output of [rrfFuseSeeds].
+///
+/// Carries the per-seed ranks (keyed by the seed's index in the
+/// `MultiRecallQuery.seeds` list) alongside the weighted fused score,
+/// so the `RecallProvenanceEntry` the caller sees can attribute the
+/// node back to the seeds that surfaced it.
+final class SeedFusedCandidate {
+  /// The node this row scores.
+  final NodeId nodeId;
+
+  /// The weighted fused score. Higher = more relevant.
+  final double score;
+
+  /// Seed-index → 1-indexed rank, for the seeds that surfaced this
+  /// node. Sorted ascending by seed index for stable stringification.
+  final Map<int, int> seedRanks;
+
+  const SeedFusedCandidate({
+    required this.nodeId,
+    required this.score,
+    required this.seedRanks,
+  });
+
+  /// The seed indices that surfaced this node, ascending. Convenience
+  /// over `seedRanks.keys` for provenance construction.
+  List<int> get seedIndexes =>
+      seedRanks.keys.toList(growable: false)..sort();
+
+  @override
+  String toString() => 'SeedFusedCandidate(id: $nodeId, score: '
+      '${score.toStringAsFixed(6)}, seedRanks: $seedRanks)';
+}
+
+/// Fuses per-seed ranked candidate lists into a single ranking using
+/// weighted Reciprocal Rank Fusion (§ 6.5).
+///
+/// Contract:
+///
+///   * [seedRankedLists] — one ordered list per seed, index-aligned
+///     with [seedWeights]. Position in each list is the rank
+///     (position 0 → rank 1, …). A seed that produced no candidates is
+///     an empty list at its index — it contributes nothing and is
+///     simply skipped. Lists are read but never mutated.
+///   * [seedWeights] — fusion weight per seed, same length as
+///     [seedRankedLists]. Each must be `>= 0`. A weight of `0.0`
+///     removes the seed's contribution entirely (it neither scores nor
+///     appears in any node's `seedRanks`).
+///   * [kRrf] — RRF smoothing constant, `>= 0`. Throws [ArgumentError]
+///     when negative.
+///   * [cap] — optional cap on the returned list length. `null` =
+///     everything; `<= 0` = empty.
+///   * Returns an unmodifiable, descending-score list. Ties are broken
+///     by ascending `NodeId.compareTo`.
+///   * Within a single seed's list, the first occurrence of a `NodeId`
+///     wins; later occurrences are ignored.
+///
+/// The function is **pure**.
+List<SeedFusedCandidate> rrfFuseSeeds({
+  required List<List<NodeId>> seedRankedLists,
+  required List<double> seedWeights,
+  int kRrf = kDefaultRrfK,
+  int? cap,
+}) {
+  if (kRrf < 0) {
+    throw ArgumentError.value(kRrf, 'kRrf', 'must be >= 0');
+  }
+  if (seedRankedLists.length != seedWeights.length) {
+    throw ArgumentError(
+      'rrfFuseSeeds: seedRankedLists (${seedRankedLists.length}) and '
+      'seedWeights (${seedWeights.length}) must be the same length',
+    );
+  }
+  for (final w in seedWeights) {
+    if (w < 0) {
+      throw ArgumentError.value(w, 'seedWeights', 'must be >= 0');
+    }
+  }
+  if (cap != null && cap <= 0) {
+    return const <SeedFusedCandidate>[];
+  }
+  if (seedRankedLists.isEmpty) return const <SeedFusedCandidate>[];
+
+  final scoreByNode = <String, double>{};
+  final ranksByNode = <String, Map<int, int>>{};
+  final nodeRefByString = <String, NodeId>{};
+
+  for (var seedIndex = 0; seedIndex < seedRankedLists.length; seedIndex++) {
+    final weight = seedWeights[seedIndex];
+    if (weight == 0.0) continue; // zero-weight seed contributes nothing
+    final list = seedRankedLists[seedIndex];
+    final seenInThisSeed = <String>{};
+    for (var i = 0; i < list.length; i++) {
+      final id = list[i];
+      final key = id.value;
+      if (!seenInThisSeed.add(key)) continue; // first (best) rank wins
+      final rank = i + 1; // 1-indexed
+      final contribution = weight * (1.0 / (kRrf + rank));
+      scoreByNode.update(key, (s) => s + contribution,
+          ifAbsent: () => contribution);
+      (ranksByNode[key] ??= <int, int>{})[seedIndex] = rank;
+      nodeRefByString[key] ??= id;
+    }
+  }
+
+  if (scoreByNode.isEmpty) return const <SeedFusedCandidate>[];
+
+  final fused = scoreByNode.entries
+      .map(
+        (e) => SeedFusedCandidate(
+          nodeId: nodeRefByString[e.key]!,
+          score: e.value,
+          seedRanks: Map<int, int>.unmodifiable(ranksByNode[e.key]!),
+        ),
+      )
+      .toList(growable: false);
+
+  fused.sort((a, b) {
+    final byScore = b.score.compareTo(a.score); // descending
+    if (byScore != 0) return byScore;
+    return a.nodeId.compareTo(b.nodeId); // ascending tie-break
+  });
+
+  if (cap != null && fused.length > cap) {
+    return List<SeedFusedCandidate>.unmodifiable(fused.sublist(0, cap));
+  }
+  return List<SeedFusedCandidate>.unmodifiable(fused);
 }

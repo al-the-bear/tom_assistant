@@ -131,7 +131,7 @@
 
 import 'dart:math' as math;
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock, DiversityStrategy, FusionStrategy, GraphWalkPolicy, MemoryEvent, Node, NodeId, RecallMode, RecallQuery, RecallReport, RecallResult, ReRankHook, Scope, SymbolicFilter, SystemClock, Vec;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock, DiversityStrategy, FusionStrategy, GraphWalkPolicy, MemoryEvent, MultiRecallQuery, Node, NodeId, RecallBudget, RecallMode, RecallProvenanceEntry, RecallQuery, RecallReport, RecallResult, RecallSeed, ReRankHook, Scope, SymbolicFilter, SystemClock, Vec;
 
 import '../cognitive_agents/shaking_events.dart';
 
@@ -465,6 +465,220 @@ final class RecallExecutor {
     );
   }
 
+  /// Runs the multi-seed recall pipeline for [query] (memory § 6.5,
+  /// Extension H) and returns the fused-and-diversified result plus the
+  /// per-node seed provenance and cost report.
+  ///
+  /// Contract:
+  ///
+  ///   * Each [MultiRecallQuery.seeds] entry runs through the same
+  ///     § 6.1 mode executors as single-seed `recall`, under its own
+  ///     [RecallSeed.k] per-seed cap. A seed whose required payload for
+  ///     its mode is absent (or whose mode degrades) contributes an
+  ///     empty ranked list at its index — exactly as the equivalent
+  ///     single-mode `recall` would.
+  ///   * The per-seed ranked lists are fused with weighted RRF
+  ///     ([rrfFuseSeeds]) honouring each [RecallSeed.weight], then
+  ///     diversified with MMR (or passed through when
+  ///     `DiversityStrategy.off`), and truncated to [MultiRecallQuery.k].
+  ///   * The returned [RecallResult.provenance] is index-aligned with
+  ///     [RecallResult.nodes]: one [RecallProvenanceEntry] per returned
+  ///     node naming the seed indices that surfaced it and its fused
+  ///     score.
+  ///   * Instantiates no LLM. The empty-seeds list yields an empty
+  ///     result. Wall-clock budget exceeded → partial result with
+  ///     `degraded = true`.
+  ///   * [scope] only supplies `runId` / `causedBy` for the emitted
+  ///     `MultiRecallCompleted`.
+  Future<RecallResult> recallMulti(
+    MultiRecallQuery query, {
+    Scope? scope,
+  }) async {
+    final startMs = _clock.nowMs();
+
+    final seeds = query.seeds;
+    final seedRankedLists = <List<NodeId>>[];
+    final seedWeights = <double>[];
+    final seedCandidateCounts = <int>[];
+    final candidatesPerMode = <RecallMode, int>{};
+    final bm25ScoreByNodeId = <String, double>{};
+    var degraded = false;
+
+    for (final seed in seeds) {
+      // Budget short-circuit between seeds. A seed we skip past the
+      // budget still occupies its index (empty list) so provenance
+      // stays index-aligned with `MultiRecallQuery.seeds`.
+      if (_overBudget(startMs, query.budget.wallClockMs)) {
+        degraded = true;
+        seedRankedLists.add(const <NodeId>[]);
+        seedWeights.add(seed.weight);
+        seedCandidateCounts.add(0);
+        continue;
+      }
+      final synthetic = _seedToQuery(seed, query.budget.wallClockMs);
+      final result = _runMode(seed.mode, synthetic, bm25ScoreByNodeId);
+      seedRankedLists.add(result.ranked);
+      seedWeights.add(seed.weight);
+      seedCandidateCounts.add(result.candidateCount);
+      candidatesPerMode.update(
+        seed.mode,
+        (n) => n + result.candidateCount,
+        ifAbsent: () => result.candidateCount,
+      );
+      if (result.degraded) degraded = true;
+    }
+
+    // Weighted-RRF fusion over the per-seed ranked lists. `rrfFuseSeeds`
+    // handles the empty-seeds and all-empty cases by returning `const
+    // []`.
+    final fused = rrfFuseSeeds(
+      seedRankedLists: seedRankedLists,
+      seedWeights: seedWeights,
+      kRrf: query.fusion.rrfK,
+    );
+
+    final overAfterFuse = _overBudget(startMs, query.budget.wallClockMs);
+    if (overAfterFuse) degraded = true;
+
+    // Diversify (MMR) or pass through, capped at query.k.
+    final selected = overAfterFuse
+        ? fused.take(query.k).toList(growable: false)
+        : _diversifySeeds(query, fused, bm25ScoreByNodeId);
+
+    final selectedIds =
+        selected.map((c) => c.nodeId).toList(growable: false);
+
+    // Bulk-materialise in selection order. `getMany` preserves input
+    // order and elides missing ids.
+    final materialised = await _nodeReader(selectedIds);
+
+    // Build provenance aligned with the *returned* node list (a node
+    // elided by `getMany` drops out of both the node list and its
+    // provenance entry).
+    final candidateByNode = <String, SeedFusedCandidate>{
+      for (final c in selected) c.nodeId.value: c,
+    };
+    final provenance = <RecallProvenanceEntry>[];
+    for (final node in materialised) {
+      final c = candidateByNode[node.id.value];
+      if (c == null) continue; // defensive: getMany never invents ids
+      provenance.add(
+        RecallProvenanceEntry(
+          nodeId: node.id,
+          seedIndexes: c.seedIndexes,
+          fusedScore: c.score,
+        ),
+      );
+    }
+
+    final endMs = _clock.nowMs();
+    final report = RecallReport(
+      candidatesPerMode: Map<RecallMode, int>.unmodifiable(candidatesPerMode),
+      fusionStrategy: query.fusion.strategy,
+      diversityStrategy: query.diversity.strategy,
+      diversityLambda: query.diversity.strategy == DiversityStrategy.mmr
+          ? query.diversity.lambda
+          : null,
+      elapsedMs: (endMs - startMs).clamp(0, _maxElapsedMs),
+      embeddingsCallouts: 0,
+      reRankInvoked: false,
+      degraded: degraded,
+    );
+
+    if (degraded) {
+      MemoryLog.retrieval.warn(
+        () => 'recallMulti degraded after ${report.elapsedMs}ms '
+            '(seeds=${seeds.length}, k=${query.k}, '
+            'returned=${materialised.length})',
+      );
+    } else {
+      MemoryLog.retrieval.debug(
+        () => 'recallMulti ok in ${report.elapsedMs}ms '
+            '(seeds=${seeds.length}, k=${query.k}, '
+            'returned=${materialised.length})',
+      );
+    }
+
+    // Spec § 16 — `MultiRecallCompleted` (carries per-seed candidate
+    // counts + fused-result provenance). One event per call, including
+    // the empty-seeds and degraded paths.
+    final sink = _eventSink;
+    if (sink != null) {
+      sink(
+        MultiRecallCompleted(
+          seedCandidateCounts:
+              List<int>.unmodifiable(seedCandidateCounts),
+          returnedCount: provenance.length,
+          report: report,
+          provenance: List<RecallProvenanceEntry>.unmodifiable(provenance),
+          occurredAt: _clock.now(),
+          runId: scope?.runId,
+          causedBy: scope?.causedBy,
+        ),
+      );
+    }
+
+    return RecallResult(
+      nodes: List<Node>.unmodifiable(materialised),
+      report: report,
+      provenance: List<RecallProvenanceEntry>.unmodifiable(provenance),
+    );
+  }
+
+  /// Projects one [RecallSeed] onto a synthetic single-mode
+  /// [RecallQuery] so the per-mode executors (`_runMode`) can run it
+  /// unchanged. The per-seed cap [RecallSeed.k] becomes the synthetic
+  /// query's `perModeK`; [wallClockMs] is the shared multi-seed budget.
+  ///
+  /// BM25 seeds prefer [RecallSeed.terms] (joined on space) over
+  /// [RecallSeed.text], mirroring the single-payload BM25 contract.
+  static RecallQuery _seedToQuery(RecallSeed seed, int wallClockMs) {
+    final terms = seed.terms;
+    final bm25Text =
+        (terms != null && terms.isNotEmpty) ? terms.join(' ') : seed.text;
+    return RecallQuery(
+      modes: {seed.mode},
+      text: seed.mode == RecallMode.bm25 ? bm25Text : seed.text,
+      embedding: seed.embedding,
+      seeds: seed.startNodes,
+      filter: seed.filter,
+      k: seed.k,
+      budget: RecallBudget(perModeK: seed.k, wallClockMs: wallClockMs),
+    );
+  }
+
+  /// MMR diversification over the weighted-RRF fused seed candidates.
+  /// Mirrors [_diversify] but operates on [SeedFusedCandidate].
+  List<SeedFusedCandidate> _diversifySeeds(
+    MultiRecallQuery query,
+    List<SeedFusedCandidate> fused,
+    Map<String, double> bm25ScoreByNodeId,
+  ) {
+    if (fused.isEmpty) return const <SeedFusedCandidate>[];
+    switch (query.diversity.strategy) {
+      case DiversityStrategy.off:
+        return fused.take(query.k).toList(growable: false);
+      case DiversityStrategy.mmr:
+        final inputs = fused
+            .map((c) => MmrInput<SeedFusedCandidate>(
+                  item: c,
+                  relevance: c.score,
+                ))
+            .toList(growable: false);
+        final selected = mmrDiversify<SeedFusedCandidate>(
+          candidates: inputs,
+          similarity: (a, b) => _bm25SimilarityByNodeId(
+            a.nodeId,
+            b.nodeId,
+            bm25ScoreByNodeId,
+          ),
+          k: query.k,
+          lambda: query.diversity.lambda,
+        );
+        return selected.map((s) => s.item).toList(growable: false);
+    }
+  }
+
   // ─── Internal: per-mode dispatch ─────────────────────────────────
 
   _ModeResult _runMode(
@@ -736,9 +950,20 @@ final class RecallExecutor {
     RrfFusedCandidate a,
     RrfFusedCandidate b,
     Map<String, double> bm25ScoreByNodeId,
+  ) =>
+      _bm25SimilarityByNodeId(a.nodeId, b.nodeId, bm25ScoreByNodeId);
+
+  /// BM25-score-derived similarity keyed directly by [NodeId] — the
+  /// shared core of [_bm25Similarity], reused by the multi-seed
+  /// diversifier ([_diversifySeeds]) which carries `SeedFusedCandidate`
+  /// rather than `RrfFusedCandidate`.
+  static double _bm25SimilarityByNodeId(
+    NodeId a,
+    NodeId b,
+    Map<String, double> bm25ScoreByNodeId,
   ) {
-    final rawA = bm25ScoreByNodeId[a.nodeId.value];
-    final rawB = bm25ScoreByNodeId[b.nodeId.value];
+    final rawA = bm25ScoreByNodeId[a.value];
+    final rawB = bm25ScoreByNodeId[b.value];
     if (rawA == null || rawB == null) return 0.0;
     final relA = _squashBm25(rawA);
     final relB = _squashBm25(rawB);

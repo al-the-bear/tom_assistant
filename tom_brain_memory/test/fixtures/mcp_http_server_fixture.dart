@@ -34,7 +34,13 @@ import 'dart:io';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, StackEntryId, Vec;
+    show
+        EdgeId,
+        MultiRecallQuery,
+        NodeId,
+        RecallProvenanceEntry,
+        StackEntryId,
+        Vec;
 
 /// The marker prefix the parent process scans stdout for. Kept in sync
 /// with the consumer in `mcp_cross_process_test.dart`.
@@ -134,10 +140,56 @@ class _SeededMemory implements TomBrainMemory {
   Future<NodeId> persist(NodeDraft draft, {required Scope scope}) async =>
       NodeId.fromString('n_${_ulid('P001')}');
 
+  /// A deterministic multi-seed fusion result. The seeded node is
+  /// surfaced by both seeds (`seedIndexes: [0, 1]`) so the client can
+  /// assert that the provenance crossed the process boundary intact.
+  /// No substrate / LLM is involved — the executor would embed text
+  /// seeds through the storage-stack embedder, never an LLM, and this
+  /// double simply returns the canned fusion.
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      RecallResult(
+        nodes: [_seedNode()],
+        report: const RecallReport(
+          candidatesPerMode: {RecallMode.bm25: 2},
+          fusionStrategy: FusionStrategy.rrf,
+          diversityStrategy: DiversityStrategy.mmr,
+          diversityLambda: 0.7,
+          elapsedMs: 4,
+        ),
+        provenance: [
+          RecallProvenanceEntry(
+            nodeId: _seedNodeId,
+            seedIndexes: const [0, 1],
+            fusedScore: 0.5,
+          ),
+        ],
+      );
+
+  @override
+  MemoryProfileRegistry get profiles => _SeededProfiles();
+
+  @override
+  String? get currentProfile => 'eval_a';
+
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(
         '_SeededMemory does not implement ${invocation.memberName}; the '
-        'cross-process fixture only exercises the seven v1 tool methods.',
+        'cross-process fixture only exercises the v1 tool methods.',
+      );
+}
+
+/// A deterministic profile registry — only `list` is reachable through
+/// the read-only MCP surface (`memory.profiles.list`); every mutating
+/// member raises to keep the boundary explicit.
+class _SeededProfiles implements MemoryProfileRegistry {
+  @override
+  Future<List<String>> list() async => const ['eval_a', 'eval_b'];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(
+        '_SeededProfiles does not implement ${invocation.memberName}; the '
+        'cross-process fixture only exercises list.',
       );
 }
 

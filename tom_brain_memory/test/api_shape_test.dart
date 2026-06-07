@@ -380,6 +380,37 @@ class _FakeMemory implements TomBrainMemory {
 
   @override
   Future<MemoryStats> stats() async => MemoryStats.empty;
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      const RecallResult(nodes: <Node>[], report: _emptyReport);
+
+  @override
+  MemoryProfileRegistry get profiles => _FakeProfileRegistry();
+
+  @override
+  String? get currentProfile => null;
+}
+
+class _FakeProfileRegistry implements MemoryProfileRegistry {
+  @override
+  Future<List<String>> list() async => const <String>[];
+
+  @override
+  Future<bool> exists(String name) async => false;
+
+  @override
+  Future<void> createProfile(String name) async {}
+
+  @override
+  Future<void> seedProfile(
+    String name,
+    List<NodeDraft> drafts, {
+    required Scope scope,
+  }) async {}
+
+  @override
+  Future<void> dropProfile(String name) async {}
 }
 
 const RecallReport _emptyReport = RecallReport(

@@ -4,7 +4,14 @@
 // `RecallReport` cost breakdown. Reports always ride along so a
 // caller can append them to the run's trail without a second
 // query.
+//
+// Multi-seed recall (`recallMulti`, § 6.5, Extension H) returns the
+// same `RecallResult` shape, additionally populating the optional
+// `provenance` list: one `RecallProvenanceEntry` per returned node,
+// recording which seeds surfaced it and the fused score. Single-seed
+// `recall` leaves `provenance` null.
 
+import '../../ids/ids.dart' show NodeId;
 import '../nodes/node.dart';
 import 'recall_query.dart';
 
@@ -54,16 +61,49 @@ final class RecallReport {
   });
 }
 
-/// `TomBrainMemory.recall` output.
+/// Per-node provenance for a multi-seed recall (§ 6.5).
+///
+/// One entry per node returned by `recallMulti`, aligned by index with
+/// `RecallResult.nodes`. Records which seeds (by their index in the
+/// `MultiRecallQuery.seeds` list) surfaced the node and the fused score
+/// that ranked it. Single-seed `recall` does not produce these.
+final class RecallProvenanceEntry {
+  /// The node this entry describes (matches the same-index entry in
+  /// `RecallResult.nodes`).
+  final NodeId nodeId;
+
+  /// Indices into `MultiRecallQuery.seeds` of the seeds that surfaced
+  /// this node, ascending. Always non-empty — a node with no surfacing
+  /// seed cannot appear in the result.
+  final List<int> seedIndexes;
+
+  /// The fused (weighted-RRF) score that ranked this node. Higher =
+  /// more relevant.
+  final double fusedScore;
+
+  const RecallProvenanceEntry({
+    required this.nodeId,
+    required this.seedIndexes,
+    required this.fusedScore,
+  });
+}
+
+/// `TomBrainMemory.recall` / `recallMulti` output.
 final class RecallResult {
-  /// Final ranked list of nodes — at most `RecallQuery.k` entries.
+  /// Final ranked list of nodes — at most `RecallQuery.k` (or
+  /// `MultiRecallQuery.k`) entries.
   final List<Node> nodes;
 
   /// Cost / candidacy report. Always present.
   final RecallReport report;
 
+  /// Per-node seed provenance, index-aligned with [nodes]. Populated
+  /// by `recallMulti` (§ 6.5); `null` for single-seed `recall`.
+  final List<RecallProvenanceEntry>? provenance;
+
   const RecallResult({
     required this.nodes,
     required this.report,
+    this.provenance,
   });
 }

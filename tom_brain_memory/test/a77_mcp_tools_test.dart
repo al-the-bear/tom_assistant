@@ -78,7 +78,7 @@ void main() {
       expect(list.tools, isEmpty);
     });
 
-    test('with memory, listTools advertises exactly the seven v1 tools',
+    test('with memory, listTools advertises exactly the ten v1 tools',
         () async {
       final fake = _FakeMemory();
       final env = _TestEnv(memory: fake);
@@ -91,19 +91,22 @@ void main() {
         names,
         equals({
           'memory.recall',
+          'memory.recall.multi',
           'memory.get',
           'memory.edgesOf',
           'memory.stack.list',
           'memory.stack.peek',
           'memory.classify',
+          'memory.profiles.list',
+          'memory.profile.current',
           'memory.persistNote',
         }),
       );
-      // Closed set: the spec § 3.2 contract is a closed seven-tool
-      // surface. Any additional tool registered through
-      // `registerMemoryTools` would be a silent extension and would
-      // break this assertion.
-      expect(names, hasLength(7));
+      // Closed set: the spec § 3.2 contract is a closed ten-tool
+      // surface (H.28 added the three profile/multi-recall read tools).
+      // Any additional tool registered through `registerMemoryTools`
+      // would be a silent extension and would break this assertion.
+      expect(names, hasLength(10));
     });
   });
 

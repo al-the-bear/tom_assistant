@@ -318,7 +318,7 @@ void main() {
   });
 
   group('H.27 — *Verify*: read-only MCP server exposes no profile admin', () {
-    test('the advertised tool surface is exactly the closed seven read tools '
+    test('the advertised tool surface is exactly the closed ten read tools '
         '— no create/drop/seed', () async {
       final env = _McpEnv(memory: _ProfilelessFakeMemory());
       addTearDown(env.shutdown);
@@ -327,11 +327,14 @@ void main() {
       final list = await env.connection.listTools();
       final names = list.tools.map((t) => t.name).toSet();
 
-      // No profile-admin tool is reachable over the read-only surface.
+      // No profile-admin *write* tool is reachable over the read-only
+      // surface. H.28 added read-only `memory.profiles.list` /
+      // `memory.profile.current` (introspection), so a bare "profile"
+      // substring is no longer disqualifying — only the genuinely
+      // mutating create / drop / seed verbs are forbidden.
       final adminLike = names.where((n) {
         final lower = n.toLowerCase();
-        return lower.contains('profile') ||
-            lower.contains('create') ||
+        return lower.contains('create') ||
             lower.contains('drop') ||
             lower.contains('seed');
       });
@@ -339,16 +342,20 @@ void main() {
           reason: 'profile create/drop/seed must never be on the read-only '
               'MCP server (memory § 2.5 / § 3.2)');
 
-      // And the surface is exactly the closed seven read tools.
+      // And the surface is exactly the closed ten read tools (H.28 added
+      // the three profile/multi-recall read tools).
       expect(
         names,
         equals(<String>{
           'memory.recall',
+          'memory.recall.multi',
           'memory.get',
           'memory.edgesOf',
           'memory.stack.list',
           'memory.stack.peek',
           'memory.classify',
+          'memory.profiles.list',
+          'memory.profile.current',
           'memory.persistNote',
         }),
       );

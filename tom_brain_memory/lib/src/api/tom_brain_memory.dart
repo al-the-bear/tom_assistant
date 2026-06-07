@@ -6,7 +6,22 @@
 // is declared there, and consumers (dispatcher, procedure engine,
 // MCP server, cognitive agents) target the client interface
 // rather than this class. `TomBrainMemory` extends
-// `TomBrainMemoryClient` and adds no new abstract members for v1.
+// `TomBrainMemoryClient`.
+//
+// Step H.28 (Extension H) adds the first in-process-only abstract
+// members — the surfaces the MCP server reaches for through the
+// in-process marker that the isolate adapter does not carry:
+//
+//   * `recallMulti` (memory § 6.5) — multi-seed weighted-RRF recall.
+//   * `profiles` (memory § 2.5) — the profile-administration surface.
+//     `dropProfile` is a whole-store reset, so this never crosses to
+//     the read-only MCP server's write path; the read tools call only
+//     `profiles.list`.
+//   * `currentProfile` (memory § 3.1, reconciled at H.28) — the
+//     profile name this handle is bound to, or `null` for the
+//     unbound single-tenant layout. A synchronous introspection of
+//     the value captured at `open`, so it lands here on the in-process
+//     marker rather than the async client surface.
 //
 // Why this class still exists as its own type:
 //
@@ -29,7 +44,8 @@
 // bridge (§ 3.3) re-exports the methods as the primitive set
 // d4rt scripts call.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show TomBrainMemoryClient;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show MemoryProfileRegistry, MultiRecallQuery, RecallResult, TomBrainMemoryClient;
 
 /// The in-process Dart base class for the brain's property-graph
 /// memory.
@@ -46,6 +62,29 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show TomBrainMemoryClien
 /// implement [TomBrainMemoryClient] (lighter, isolate-adapter-
 /// compatible).
 abstract class TomBrainMemory implements TomBrainMemoryClient {
-  // A.78: no in-process-only abstract members yet. Added on
-  // demand as concrete in-process implementations need them.
+  /// Multi-seed weighted-RRF recall (memory § 6.5, Extension H).
+  ///
+  /// Runs each [MultiRecallQuery.seeds] entry through the § 6.1 mode
+  /// implementations, fuses the per-seed ranked lists with RRF
+  /// honouring each seed's weight, diversifies with MMR, and returns
+  /// one [RecallResult] whose `provenance` records which seeds
+  /// surfaced each node and its fused score. Instantiates no LLM —
+  /// text seeds are embedded by the storage-stack embedder, exactly as
+  /// single-seed `recall` already does.
+  Future<RecallResult> recallMulti(MultiRecallQuery query);
+
+  /// The profile-administration surface over the
+  /// `<memory-root>/profiles/` tier (memory § 2.5).
+  ///
+  /// `list` / `exists` / `createProfile` / `seedProfile` /
+  /// `dropProfile`. The read-only MCP server exposes only
+  /// `profiles.list` (memory § 3.2); `dropProfile` is a whole-store
+  /// reset and never crosses that boundary.
+  MemoryProfileRegistry get profiles;
+
+  /// The profile name this handle is bound to, or `null` for the
+  /// profile-unbound single-tenant layout (memory § 3.1, reconciled at
+  /// H.28). Captured from `MemoryConfig.profile` at `open`; reset to
+  /// `null` on `close`.
+  String? get currentProfile;
 }

@@ -17,6 +17,12 @@ enum ClassificationTarget {
   /// `classify_inbound_v1` to find the right procedure by similarity
   /// to historical accepted invocations.
   procedure,
+
+  /// Match against per-`Concept` centroids (Extension H, § 7.1). Lets
+  /// `classify(promptEmbedding, target: concept)` name the nearest
+  /// semantic categories with no LLM — the cheap path that seeds
+  /// `graphWalk.seed_from_concepts`.
+  concept,
 }
 
 /// Decision band for a classification call.

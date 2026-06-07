@@ -235,6 +235,12 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   /// store — so [close] has nothing to release here.
   late SqliteMemoryProfileRegistry _profiles;
 
+  /// The profile name this handle is bound to, captured from
+  /// `MemoryConfig.profile` at [open] and reset to `null` on [close]
+  /// (memory § 3.1, reconciled at H.28). `null` = the profile-unbound
+  /// single-tenant layout.
+  String? _currentProfile;
+
   /// Creates an unopened store.
   ///
   /// [sqlite] defaults to the process-global `sqlite3` instance;
@@ -438,6 +444,10 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
       clock: _clock,
     );
 
+    // H.28 — capture the profile binding for `currentProfile`
+    // introspection (memory § 3.1). `null` is the unbound layout.
+    _currentProfile = config.profile;
+
     _isOpen = true;
   }
 
@@ -452,6 +462,7 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   /// server (memory § 3.2).
   ///
   /// Throws a [StateError] if read before [open] completes.
+  @override
   MemoryProfileRegistry get profiles {
     _ensureOpen('profiles');
     return _profiles;
@@ -540,7 +551,14 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
     _checkpointDatabase(_vectorsDb);
     _memoryDb.dispose();
     _vectorsDb.dispose();
+    _currentProfile = null;
     _isOpen = false;
+  }
+
+  @override
+  String? get currentProfile {
+    _ensureOpen('currentProfile');
+    return _currentProfile;
   }
 
   @override
@@ -710,6 +728,12 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   }
 
   @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async {
+    _ensureOpen('recallMulti');
+    return _recallExecutor.recallMulti(query);
+  }
+
+  @override
   Stream<Node> stream(StreamQuery query) {
     _ensureOpen('stream');
     return _streamNodes(query);
@@ -800,30 +824,68 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   }
 
   @override
-  Future<void> updateCentroid(String forKey, Vec centroid) async {
+  Future<void> updateCentroid(
+    String forKey,
+    Vec centroid, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async {
     _ensureOpen('updateCentroid');
     // Q-A.63.2 (option 3): the abstract surface carries only
     // `(forKey, centroid)`; the concrete store derives the two fields
     // `CentroidStore.update` additionally needs — the embedding model
-    // id and the accepted-example count — by hidden lookup. At #17 the
-    // resolvable keys are the registered node types; the example count
-    // is the live (active) row count of that type.
-    final decl = _registry.get(forKey);
-    if (decl == null) {
-      throw ArgumentError.value(
-        forKey,
-        'forKey',
-        'SqliteTomBrainMemory.updateCentroid: no registered node type '
-            '"$forKey" to derive the embedding model from',
-      );
+    // id and the accepted-example count — by hidden lookup. H.28 adds
+    // the optional `target` so a `dream_recentroid_v1` concept pass can
+    // write per-`Concept` centroids through the same surface.
+    switch (target) {
+      case ClassificationTarget.nodeType:
+        // At #17 the resolvable keys are the registered node types; the
+        // example count is the live (active) row count of that type.
+        final decl = _registry.get(forKey);
+        if (decl == null) {
+          throw ArgumentError.value(
+            forKey,
+            'forKey',
+            'SqliteTomBrainMemory.updateCentroid: no registered node '
+                'type "$forKey" to derive the embedding model from',
+          );
+        }
+        _centroidStore.update(
+          forKey: CentroidStore.keyForNodeType(forKey),
+          embeddingModelId: decl.embeddingPolicy.modelIdentity,
+          centroid: centroid,
+          exampleCount: _countActiveNodesOfType(forKey),
+        );
+      case ClassificationTarget.concept:
+        // A Concept centroid is keyed by the concept *name* (`forKey`),
+        // not by a node type. The embedding model is the one the
+        // `Concept` node type itself declares (concept centroids are
+        // means of Concept-node embeddings); the example count is the
+        // live count of `Concept` rows feeding the cold-start gate
+        // (memory § 7.1, reconciled at H.28).
+        final conceptDecl = _registry.get('Concept');
+        if (conceptDecl == null) {
+          throw StateError(
+            'SqliteTomBrainMemory.updateCentroid: the bootstrap '
+            '"Concept" node type is not registered; cannot derive the '
+            'embedding model for a per-Concept centroid.',
+          );
+        }
+        _centroidStore.update(
+          forKey: CentroidStore.keyForConcept(forKey),
+          embeddingModelId: conceptDecl.embeddingPolicy.modelIdentity,
+          centroid: centroid,
+          exampleCount: _countActiveNodesOfType('Concept'),
+        );
+      case ClassificationTarget.procedure:
+        // Procedure centroids are owned by tom_brain_procedure's
+        // authoring pass, which derives the model + example count from
+        // the procedure registry — not resolvable from this store.
+        throw UnimplementedError(
+          'SqliteTomBrainMemory.updateCentroid: Procedure-target '
+          'centroids are written by the procedure layer, not the '
+          'memory store. See memory § 7.1.',
+        );
     }
-    final exampleCount = _countActiveNodesOfType(forKey);
-    _centroidStore.update(
-      forKey: CentroidStore.keyForNodeType(forKey),
-      embeddingModelId: decl.embeddingPolicy.modelIdentity,
-      centroid: centroid,
-      exampleCount: exampleCount,
-    );
   }
 
   @override

@@ -247,6 +247,13 @@ final class UncertainFinder {
           'edge, which lands alongside tom_brain_procedure. See '
           'Q-A.65.2 in prototype_implementation_questions.md.',
         );
+      case ClassificationTarget.concept:
+        throw UnimplementedError(
+          'UncertainFinder.find: Concept-keyed findUncertain '
+          '("$forKey") is not part of Extension H — concept centroids '
+          'are recomputed by dream_recentroid_v1, not surfaced through '
+          'the borderline-node batch path. See memory § 7.1.',
+        );
     }
   }
 

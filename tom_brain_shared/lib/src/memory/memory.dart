@@ -75,7 +75,9 @@ export 'retrieval/recall_query.dart'
         ReRankHook,
         SymbolicFilter,
         SymbolicOp;
-export 'retrieval/recall_result.dart' show RecallReport, RecallResult;
+export 'retrieval/multi_recall_query.dart' show MultiRecallQuery, RecallSeed;
+export 'retrieval/recall_result.dart'
+    show RecallProvenanceEntry, RecallReport, RecallResult;
 export 'retrieval/stream_query.dart' show StreamCursor, StreamQuery;
 
 // stacks/ — the mind-state CRUD surface + its value-type shapes.

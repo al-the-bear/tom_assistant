@@ -186,6 +186,12 @@ final class CentroidStore {
   /// (`'Procedure:research_v1'`, …).
   static const String procedureKeyPrefix = 'Procedure:';
 
+  /// Namespace prefix for per-`Concept` centroid keys
+  /// (`'Concept:machine_learning'`, …) — Extension H, spec § 7.1. A
+  /// Concept centroid is keyed by the concept *name*, not the `Concept`
+  /// node type, so two concepts get two rows.
+  static const String conceptKeyPrefix = 'Concept:';
+
   /// Builds the canonical centroid key for a node type. Use this at
   /// every call site rather than concatenating by hand — a typo in
   /// the prefix would silently put the row in the wrong namespace.
@@ -212,6 +218,19 @@ final class CentroidStore {
     return '$procedureKeyPrefix$procedureId';
   }
 
+  /// Builds the canonical centroid key for a concept name (Extension H,
+  /// spec § 7.1).
+  static String keyForConcept(String conceptName) {
+    if (conceptName.isEmpty) {
+      throw ArgumentError.value(
+        conceptName,
+        'conceptName',
+        'CentroidStore.keyForConcept: conceptName must be non-empty',
+      );
+    }
+    return '$conceptKeyPrefix$conceptName';
+  }
+
   /// Returns the [ClassificationTarget] a [forKey] belongs to, or
   /// `null` when the key carries no recognised namespace.
   ///
@@ -224,6 +243,9 @@ final class CentroidStore {
     }
     if (forKey.startsWith(procedureKeyPrefix)) {
       return ClassificationTarget.procedure;
+    }
+    if (forKey.startsWith(conceptKeyPrefix)) {
+      return ClassificationTarget.concept;
     }
     return null;
   }

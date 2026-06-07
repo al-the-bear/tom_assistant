@@ -1,8 +1,12 @@
-// A.77 — MCP tool registrations for the seven v1 tools in
+// A.77 — MCP tool registrations for the ten v1 tools in
 // `memory_specification.md` § 3.2.
 //
-// The seven tools are the read-only retrieval surface plus the one
-// constrained write (`memory.persistNote`). Each tool is a thin
+// The ten tools are the read-only retrieval surface plus the one
+// constrained write (`memory.persistNote`). H.28 (Extension H) added
+// three read tools — `memory.recall.multi` (multi-seed weighted-RRF
+// recall, § 6.5), `memory.profiles.list`, and `memory.profile.current`
+// (the profile-introspection surface, § 2.5 / § 3.1) — plus the
+// `target: concept` arm on `memory.classify`. Each tool is a thin
 // marshalling shim: parse arguments from the JSON-RPC `arguments`
 // map, call into the in-process `TomBrainMemory` Dart API, and encode
 // the result as a `CallToolResult` carrying a single `TextContent`
@@ -88,7 +92,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, Edge, EdgeDirection, EdgeType, Node, NodeDraft, NodeId, RecallBudget, RecallMode, RecallQuery, RecallResult, Scope, StackEntry, StackSummary, Vec;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, Edge, EdgeDirection, EdgeType, MultiRecallQuery, Node, NodeDraft, NodeId, RecallBudget, RecallMode, RecallQuery, RecallResult, RecallSeed, Scope, StackEntry, StackSummary, Vec;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal;
 
 import '../api/tom_brain_memory.dart';
@@ -108,7 +112,7 @@ import 'mcp_write_forbidden.dart';
 /// testable without coupling the tool helpers to the server class.
 typedef PrincipalResolver = TomPrincipal? Function();
 
-/// Registers the seven v1 tools (memory spec § 3.2) on [server] with
+/// Registers the ten v1 tools (memory spec § 3.2) on [server] with
 /// implementations that forward to [memory].
 ///
 /// Producer attribution on `memory.persistNote` reads the principal
@@ -118,8 +122,13 @@ typedef PrincipalResolver = TomPrincipal? Function();
 ///
 /// Called once per `TomBrainMemoryMcpServer` construction (from the
 /// server constructor body when the optional `memory` parameter is
-/// non-null). The seven tools are registered in the order they appear
-/// in the spec table — listTools output mirrors that ordering.
+/// non-null). The tools are registered in the order they appear in the
+/// spec table — listTools output mirrors that ordering.
+///
+/// `memory` is typed as the in-process [TomBrainMemory] marker (not the
+/// narrower client surface) because the H.28 read tools reach for the
+/// in-process-only `recallMulti` / `profiles` / `currentProfile`
+/// surfaces that the isolate adapter does not carry.
 void registerMemoryTools(
   ToolsSupport server,
   TomBrainMemory memory, {
@@ -128,6 +137,10 @@ void registerMemoryTools(
   server.registerTool(
     _recallTool,
     (request) => _runRecall(request, memory),
+  );
+  server.registerTool(
+    _recallMultiTool,
+    (request) => _runRecallMulti(request, memory),
   );
   server.registerTool(_getTool, (request) => _runGet(request, memory));
   server.registerTool(
@@ -145,6 +158,14 @@ void registerMemoryTools(
   server.registerTool(
     _classifyTool,
     (request) => _runClassify(request, memory),
+  );
+  server.registerTool(
+    _profilesListTool,
+    (request) => _runProfilesList(request, memory),
+  );
+  server.registerTool(
+    _profileCurrentTool,
+    (request) => _runProfileCurrent(request, memory),
   );
   server.registerTool(
     _persistNoteTool,
@@ -200,6 +221,70 @@ final _recallTool = Tool(
         minimum: 1,
       ),
     },
+    additionalProperties: false,
+  ),
+);
+
+final _recallMultiTool = Tool(
+  name: 'memory.recall.multi',
+  description:
+      'Multi-seed weighted-RRF retrieval (§ 6.5). Runs each seed through '
+      'its single mode (BM25, vector, graph-walk, symbolic), fuses the '
+      'per-seed ranked lists with RRF honouring each seed\'s weight, '
+      'applies MMR, and returns one node list with per-node seed '
+      'provenance. Instantiates no LLM; text seeds are embedded by the '
+      'storage-stack model.',
+  annotations: ToolAnnotations(readOnlyHint: true, openWorldHint: false),
+  inputSchema: ObjectSchema(
+    properties: {
+      'seeds': Schema.list(
+        description: 'The seed array. Each seed is an object: '
+            '{mode, text?, embedding?, terms?, startNodes?, weight?, k?}. '
+            'mode is one of bm25, vector, graphWalk, symbolic.',
+        items: ObjectSchema(
+          properties: {
+            'mode': Schema.string(
+              description: 'One of bm25, vector, graphWalk, symbolic.',
+            ),
+            'text': Schema.string(
+              description: 'Query text for BM25 / vector seeds.',
+            ),
+            'embedding': Schema.list(
+              description: 'Pre-computed vector for a vector seed.',
+              items: Schema.num(),
+            ),
+            'terms': Schema.list(
+              description: 'Explicit BM25 query terms (BM25 mode).',
+              items: Schema.string(),
+            ),
+            'startNodes': Schema.list(
+              description: 'Seed node ids for a graph-walk seed.',
+              items: Schema.string(),
+            ),
+            'weight': Schema.num(
+              description: 'Fusion weight (>= 0). Default 1.0.',
+            ),
+            'k': Schema.int(
+              description: 'Per-seed candidate cap. Default 64.',
+              minimum: 1,
+            ),
+          },
+          required: ['mode'],
+          additionalProperties: false,
+        ),
+      ),
+      'k': Schema.int(
+        description: 'Post-fusion cap on the returned node list. '
+            'Default: $_defaultRecallK.',
+        minimum: 1,
+      ),
+      'wallClockMs': Schema.int(
+        description: 'Wall-clock budget in milliseconds. '
+            'Default: $_defaultRecallWallClockMs.',
+        minimum: 1,
+      ),
+    },
+    required: ['seeds'],
     additionalProperties: false,
   ),
 );
@@ -287,10 +372,35 @@ final _classifyTool = Tool(
         items: Schema.num(),
       ),
       'target': Schema.string(
-        description: 'One of "nodeType" (default) or "procedure".',
+        description: 'One of "nodeType" (default), "procedure", or '
+            '"concept".',
       ),
     },
     required: ['embedding'],
+    additionalProperties: false,
+  ),
+);
+
+final _profilesListTool = Tool(
+  name: 'memory.profiles.list',
+  description: 'Lists the names of every memory profile that currently '
+      'exists under the memory root (§ 2.5). Read-only introspection — '
+      'creating, seeding, and dropping profiles are never exposed over '
+      'MCP.',
+  annotations: ToolAnnotations(readOnlyHint: true, openWorldHint: false),
+  inputSchema: ObjectSchema(
+    properties: {},
+    additionalProperties: false,
+  ),
+);
+
+final _profileCurrentTool = Tool(
+  name: 'memory.profile.current',
+  description: 'Returns the name of the profile this store is bound to, '
+      'or null when the store operates on the unprofiled root (§ 3.1).',
+  annotations: ToolAnnotations(readOnlyHint: true, openWorldHint: false),
+  inputSchema: ObjectSchema(
+    properties: {},
     additionalProperties: false,
   ),
 );
@@ -344,6 +454,41 @@ Future<CallToolResult> _runRecall(
   final query = _parseRecallQuery(args);
   final result = await memory.recall(query);
   return _ok(_encodeRecallResult(result));
+}
+
+Future<CallToolResult> _runRecallMulti(
+  CallToolRequest request,
+  TomBrainMemory memory,
+) async {
+  final args = request.arguments ?? const <String, Object?>{};
+  final seedsRaw = args['seeds'];
+  if (seedsRaw is! List) {
+    return _err('Argument "seeds" is required and must be a list of seeds.');
+  }
+  final parsed = _parseMultiRecallQuery(args, seedsRaw);
+  if (parsed == null) {
+    return _err(
+      'Every seed must be an object with a "mode" of bm25, vector, '
+      'graphWalk, or symbolic.',
+    );
+  }
+  final result = await memory.recallMulti(parsed);
+  return _ok(_encodeMultiRecallResult(result));
+}
+
+Future<CallToolResult> _runProfilesList(
+  CallToolRequest request,
+  TomBrainMemory memory,
+) async {
+  final names = await memory.profiles.list();
+  return _ok({'profiles': names});
+}
+
+Future<CallToolResult> _runProfileCurrent(
+  CallToolRequest request,
+  TomBrainMemory memory,
+) async {
+  return _ok({'profile': memory.currentProfile});
 }
 
 Future<CallToolResult> _runGet(
@@ -463,9 +608,12 @@ Future<CallToolResult> _runClassify(
       target = ClassificationTarget.nodeType;
     case 'procedure':
       target = ClassificationTarget.procedure;
+    case 'concept':
+      target = ClassificationTarget.concept;
     default:
       return _err(
-        'Argument "target" must be "nodeType" or "procedure"; got "$targetName".',
+        'Argument "target" must be "nodeType", "procedure", or "concept"; '
+        'got "$targetName".',
       );
   }
   final result = await memory.classify(embedding, target: target);
@@ -582,6 +730,82 @@ RecallQuery _parseRecallQuery(Map<String, Object?> args) {
     modes: modes,
     text: text,
     embedding: embedding,
+    seeds: seeds,
+    k: k,
+    budget: RecallBudget(wallClockMs: wallClockMs),
+  );
+}
+
+/// Parses a `memory.recall.multi` argument map into a
+/// [MultiRecallQuery], or returns `null` when any seed is malformed
+/// (missing / unknown `mode`, or not an object).
+///
+/// A seed whose mode-required payload is absent is *not* rejected here:
+/// it is constructed as a degraded seed that contributes an empty
+/// ranked list, mirroring how the executor (and single-mode `recall`)
+/// degrade. Only a structurally-broken seed — not an object, or no
+/// recognised mode — fails the whole call, because such a seed cannot
+/// be mapped to a [RecallMode] at all.
+MultiRecallQuery? _parseMultiRecallQuery(
+  Map<String, Object?> args,
+  List<Object?> seedsRaw,
+) {
+  final seeds = <RecallSeed>[];
+  for (final raw in seedsRaw) {
+    if (raw is! Map) return null;
+    final seedArgs = raw.cast<String, Object?>();
+    final mode = _parseMode(seedArgs['mode']);
+    if (mode == null) return null;
+    final text = seedArgs['text'] as String?;
+    final embedding = seedArgs.containsKey('embedding')
+        ? _parseEmbedding(seedArgs['embedding'])
+        : null;
+    List<String>? terms;
+    final termsRaw = seedArgs['terms'];
+    if (termsRaw is List) {
+      terms = [for (final t in termsRaw) if (t is String) t];
+      if (terms.isEmpty) terms = null;
+    }
+    Set<NodeId>? startNodes;
+    final startNodesRaw = seedArgs['startNodes'];
+    if (startNodesRaw is List) {
+      final ids = <NodeId>{};
+      for (final s in startNodesRaw) {
+        if (s is String) {
+          try {
+            ids.add(NodeId.fromString(s));
+          } on FormatException {
+            // Skip malformed seed ids rather than failing the call —
+            // they reflect upstream drift, not a tool-shape error
+            // (mirrors `_parseRecallQuery`).
+          }
+        }
+      }
+      if (ids.isNotEmpty) startNodes = ids;
+    }
+    final weightRaw = seedArgs['weight'];
+    final weight = (weightRaw is num && weightRaw.isFinite && weightRaw >= 0)
+        ? weightRaw.toDouble()
+        : 1.0;
+    final k = _coerceIntArg(seedArgs['k']);
+    seeds.add(
+      RecallSeed(
+        mode: mode,
+        text: text,
+        embedding: embedding,
+        terms: terms,
+        startNodes: startNodes,
+        weight: weight,
+        k: (k != null && k > 0) ? k : 64,
+      ),
+    );
+  }
+  final k = _coerceIntArg(args['k']) ??
+      _logDefaulted('k', args['k'], _defaultRecallK);
+  final wallClockMs = _coerceIntArg(args['wallClockMs']) ??
+      _logDefaulted(
+          'wallClockMs', args['wallClockMs'], _defaultRecallWallClockMs);
+  return MultiRecallQuery(
     seeds: seeds,
     k: k,
     budget: RecallBudget(wallClockMs: wallClockMs),
@@ -724,6 +948,22 @@ Map<String, Object?> _encodeRecallResult(RecallResult r) => {
         'degraded': r.report.degraded,
       },
     };
+
+Map<String, Object?> _encodeMultiRecallResult(RecallResult r) {
+  final base = _encodeRecallResult(r);
+  final provenance = r.provenance;
+  base['provenance'] = provenance == null
+      ? null
+      : [
+          for (final entry in provenance)
+            <String, Object?>{
+              'nodeId': entry.nodeId.value,
+              'seedIndexes': entry.seedIndexes,
+              'fusedScore': entry.fusedScore,
+            },
+        ];
+  return base;
+}
 
 // ─── CallToolResult helpers ───────────────────────────────────────
 
