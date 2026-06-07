@@ -141,16 +141,19 @@
 ///   credential throws `IdentityResolutionException` (the auth step E.22/E.28
 ///   validates the credential first; an unbound one here is a config drift,
 ///   surfaced loudly, not a fabricated identity).
-/// - E.25 ✅ — `SessionManager` (identity/): resolves an inbound request to
-///   a sliding-window session keyed by (principal, channel, conversation id)
-///   — `AccessChannel` (the channel discriminator), `SessionKey` (the
-///   record-keyed triple), `SessionTurn` / `SessionNode` (the window). Reuse
-///   is *by key, not by re-creation* (AC-8): the second request on the same
-///   key returns the same node (same `sessionId`) with the new turn appended
-///   and the window slid at `maxWindowTurns`. The node projects onto the
-///   shared `Session` handle (§ 4.4); the node store is in-process for the
-///   prototype (memory-node persistence is wired through the dispatcher at
-///   E.27 / E.55 — the access layer never depends on `tom_brain_memory`).
+/// - E.25 / Ext-G ✅ — `SessionManager` (identity/): resolves an inbound
+///   request to the `ConversationHistory` the engine answers from, against two
+///   stores — a per-(principal, channel) **global** history ("all prompts")
+///   and a per-session history keyed by a brain-minted id. `AccessChannel`
+///   (the channel discriminator), `SessionIdMinter` (the brain-owned id
+///   space), `SessionResolution` (handle + history + the `mintedNewId` /
+///   `unknownSessionId` flags), `SessionHistoriesSnapshot` (the restart seam).
+///   A sessionless request mints a fresh id and appends to the global; a known
+///   echoed id appends to both and answers from its dedicated history; an
+///   unknown id recovers gracefully (`access.session.unknown`, § 14), never a
+///   throw (§ 7.2 / § 21.2). The store is in-process for the prototype
+///   (memory-node persistence is wired through the dispatcher at E.27 / E.55 —
+///   the access layer never depends on `tom_brain_memory`).
 /// - E.26 ✅ — `PersonaResolver` (identity/): resolves a model id (or its
 ///   absence) to the `Persona` the dispatcher hands to substrate. The three
 ///   persona-as-model ids (`tom-assistant`, `tom-assistant:terse`,

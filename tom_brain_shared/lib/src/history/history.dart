@@ -179,6 +179,27 @@ final class ConversationHistory {
     String compactedSummary = '',
   }) : _compactedSummary = compactedSummary;
 
+  /// Rehydrates a history from a snapshot of its four working views.
+  ///
+  /// The restart seam (access spec § 21.10; hub Hard principle 6): a persisted
+  /// session is rebuilt from its [sizing], its [compactedSummary], and its
+  /// three turn views ([rawWindow], [pending], [durableRecord]). Each list is
+  /// copied into the store's own backing list, so the restored history shares
+  /// no mutable state with its source — a later append on either side cannot
+  /// leak into the other. [HistoryTurn] is immutable, so copying the list
+  /// references is a full deep copy of the turn data.
+  ConversationHistory.restore({
+    required this.sizing,
+    required String compactedSummary,
+    required List<HistoryTurn> rawWindow,
+    required List<HistoryTurn> pending,
+    required List<HistoryTurn> durableRecord,
+  }) : _compactedSummary = compactedSummary {
+    _rawWindow.addAll(rawWindow);
+    _pending.addAll(pending);
+    _record.addAll(durableRecord);
+  }
+
   /// The newest [HistorySizing.rawCount] turns, kept verbatim. Unmodifiable.
   List<HistoryTurn> get rawWindow => List.unmodifiable(_rawWindow);
 

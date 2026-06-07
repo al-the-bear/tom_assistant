@@ -51,7 +51,6 @@ import '../edge_security/anchor_precheck.dart';
 import '../edge_security/quota.dart';
 import '../edge_security/rate_limiter.dart';
 import '../identity/identity_resolver.dart';
-import '../identity/session_manager.dart' show defaultMaxWindowTurns;
 import 'access_config.dart';
 
 /// Parses + materialises [AccessConfig] from the whole-process YAML.
@@ -152,7 +151,6 @@ abstract final class AccessConfigLoader {
         'quota',
         'anchor',
         'personas',
-        'session',
         'classifier',
         'edgeState',
       },
@@ -202,9 +200,6 @@ abstract final class AccessConfigLoader {
     final personas = _parsePersonas(
       _optionalList(node, 'personas', 'access.personas'),
     );
-    final sessionWindow = _parseSession(
-      _optionalMap(node, 'session', 'access.session'),
-    );
     final cacheTtl = _parseClassifier(
       _optionalMap(node, 'classifier', 'access.classifier'),
     );
@@ -228,7 +223,6 @@ abstract final class AccessConfigLoader {
       dailyQuotaPolicy: quota,
       anchorPolicy: anchor,
       personaVocabulary: personas,
-      sessionMaxWindowTurns: sessionWindow,
       embeddingCacheTtl: cacheTtl,
       edgeStateDirectory: edgeStateDir,
     );
@@ -564,27 +558,6 @@ abstract final class AccessConfigLoader {
       );
     }
     return result;
-  }
-
-  static int _parseSession(YamlMap? node) {
-    if (node == null) return defaultMaxWindowTurns;
-    _rejectUnknownKeys(
-      node,
-      const <String>{'maxWindowTurns'},
-      'access.session',
-    );
-    final turns = _optionalInt(
-          node,
-          'maxWindowTurns',
-          'access.session.maxWindowTurns',
-        ) ??
-        defaultMaxWindowTurns;
-    if (turns < 1) {
-      throw const AccessConfigException(
-        'access.session.maxWindowTurns must be >= 1.',
-      );
-    }
-    return turns;
   }
 
   static Duration _parseClassifier(YamlMap? node) {

@@ -78,7 +78,6 @@ import '../edge_security/anchor_precheck.dart';
 import '../edge_security/quota.dart';
 import '../edge_security/rate_limiter.dart';
 import '../identity/identity_resolver.dart';
-import '../identity/session_manager.dart' show defaultMaxWindowTurns;
 
 /// Raised when the whole-process YAML's `access:` section (or the
 /// document's top-level shape) is malformed (E.44).
@@ -263,9 +262,6 @@ final class AccessConfig {
   /// default (`OpenAiPersonaMapping.knownModels`).
   final List<String>? personaVocabulary;
 
-  /// The session sliding-window capacity (E.25). `>= 1`.
-  final int sessionMaxWindowTurns;
-
   /// The embedding-cache TTL (E.34). Strictly positive.
   final Duration embeddingCacheTtl;
 
@@ -294,7 +290,6 @@ final class AccessConfig {
     Map<String, IdentityBinding> bearerTokenBindings = const {},
     Map<String, IdentityBinding> telegramUserIdBindings = const {},
     this.personaVocabulary,
-    this.sessionMaxWindowTurns = defaultMaxWindowTurns,
     this.embeddingCacheTtl = const Duration(minutes: 5),
     this.edgeStateDirectory,
   })  : users = List.unmodifiable(users),
@@ -308,13 +303,6 @@ final class AccessConfig {
     }
     if (anthropicPort != null && anthropicPort! <= 0) {
       throw ArgumentError.value(anthropicPort, 'anthropicPort', 'must be > 0');
-    }
-    if (sessionMaxWindowTurns < 1) {
-      throw ArgumentError.value(
-        sessionMaxWindowTurns,
-        'sessionMaxWindowTurns',
-        'must be >= 1',
-      );
     }
     if (embeddingCacheTtl <= Duration.zero) {
       throw ArgumentError.value(

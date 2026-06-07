@@ -21,7 +21,9 @@ import 'package:test/test.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
         Access,
+        ConversationHistory,
         DeliverCallback,
+        HistoryTurn,
         InboundRequest,
         OutboundChunk,
         Persona,
@@ -434,6 +436,50 @@ void main() {
       expect(s, contains('Access('));
       expect(s, contains('<callback>'));
       expect(called, isFalse);
+    });
+
+    // Extension G (step #22): the optional `history` handoff.
+
+    test('history defaults to null when unsupplied', () {
+      expect(_validAccess().history, isNull);
+    });
+
+    test('carries the supplied history by reference identity', () {
+      final history = ConversationHistory()
+        ..append(HistoryTurn(userPrompt: 'q', brainAnswer: 'a'));
+      final access = Access(
+        envelope: InboundRequest(text: 'hello'),
+        identity: ResolvedIdentity(principalId: 'p1'),
+        session: Session(sessionId: 's1'),
+        persona: Persona.assistant(),
+        deliver: _echoDeliver,
+        history: history,
+      );
+      expect(identical(access.history, history), isTrue);
+      expect(access.toString(), contains('<history>'));
+    });
+
+    test('two no-history Accesses remain equal / hash-equal '
+        '(PE-9 regression guard)', () {
+      final shared = _echoDeliver;
+      final a = _validAccess(deliver: shared);
+      final b = _validAccess(deliver: shared);
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+    });
+
+    test('a history difference breaks equality', () {
+      final shared = _echoDeliver;
+      final withHistory = Access(
+        envelope: InboundRequest(text: 'hello'),
+        identity: ResolvedIdentity(principalId: 'p1'),
+        session: Session(sessionId: 's1'),
+        persona: Persona.assistant(),
+        deliver: shared,
+        history: ConversationHistory(),
+      );
+      final without = _validAccess(deliver: shared);
+      expect(withHistory, isNot(equals(without)));
     });
   });
 }

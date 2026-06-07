@@ -120,10 +120,6 @@ final class BrainAccessConfig {
   /// default; only consulted when the classifier is built.
   final Duration embeddingCacheTtl;
 
-  /// The session sliding-window capacity (E.25). Defaults to
-  /// [defaultMaxWindowTurns].
-  final int sessionMaxWindowTurns;
-
   /// Clock for the session turns, the edge-security limiters, the embedding
   /// cache, and the emitted lifecycle events. Defaults to [DateTime.now];
   /// tests inject a fixed clock.
@@ -152,7 +148,6 @@ final class BrainAccessConfig {
     this.kindHintEmbedder,
     this.kindHintClassifier,
     this.embeddingCacheTtl = const Duration(minutes: 5),
-    this.sessionMaxWindowTurns = defaultMaxWindowTurns,
     DateTime Function()? clock,
     this.rateLimitStore,
     this.quotaStore,
@@ -227,10 +222,7 @@ abstract final class BrainAccessBoot {
         bearerTokenBindings: config.bearerTokenBindings,
         telegramUserIdBindings: config.telegramUserIdBindings,
       ),
-      sessionManager: SessionManager(
-        maxWindowTurns: config.sessionMaxWindowTurns,
-        now: config.clock,
-      ),
+      sessionManager: SessionManager(now: config.clock),
       personaResolver: PersonaResolver(knownModels: config.personaVocabulary),
       rateLimiter: RateLimiter(
         policy: config.rateLimitPolicy,

@@ -9,9 +9,12 @@
 //   * Identity (E.24) resolves the *person* — one `principalId` per credential,
 //     channel-blind, the same id whether the request arrived over OpenAI or
 //     Telegram.
-//   * Session (E.25) keys on that `principalId` + channel + conversation; reuse
-//     across calls returns the *same* node (AC-8), and the channel splits one
-//     person into two sessions.
+//   * Session (E.25 / Ext-G) resolves the conversation against two histories: a
+//     per-(principal, channel) global "all prompts" history every request
+//     appends to, and a per-session history keyed by a brain-minted id. A
+//     sessionless request mints a fresh id and answers from the global; an
+//     echoed known id answers from its dedicated history; the channel splits
+//     one person into two globals (§ 7.2).
 //   * Persona (E.26) maps the model id (or its absence) to a `Persona`; an
 //     absent / unrecognised model defaults (AC-5) while identity and session
 //     stay stable.
@@ -116,9 +119,9 @@ void main() {
     });
   });
 
-  group('E.27 — session reuse across calls', () {
-    test('repeated calls on one identity + channel + conversation reuse the '
-        'same node (AC-8)', () {
+  group('E.27 / Ext-G — session resolution across calls', () {
+    test('repeated sessionless calls mint distinct ids but the global history '
+        'accumulates both (§ 7.2)', () {
       final identity = _identityResolver().resolveOpenAiBearer(_bearerToken);
       final sessions = SessionManager();
 
@@ -133,53 +136,87 @@ void main() {
         envelope: _inbound(text: 'again', conversationId: 'c1'),
       );
 
-      // Same node, not a re-creation — the second turn appended.
-      expect(identical(first, second), isTrue);
-      expect(second.sessionId, first.sessionId);
-      expect(second.totalTurns, 2);
-      expect(sessions.sessionCount, 1);
+      // The brain owns the id space — each sessionless turn mints a fresh id.
+      expect(second.sessionId, isNot(first.sessionId));
+      expect(first.mintedNewId, isTrue);
+      expect(second.mintedNewId, isTrue);
+      // Both turns landed in the one global "all prompts" history.
+      final global = sessions.peekGlobal(
+        principalId: identity.principalId,
+        channel: AccessChannel.openai,
+      );
+      expect(
+        [for (final t in global!.durableRecord) t.userPrompt],
+        ['hello', 'again'],
+      );
     });
 
-    test('the same person on a different channel is a different session', () {
+    test('an echoed minted id answers from the dedicated per-session history',
+        () {
+      final identity = _identityResolver().resolveOpenAiBearer(_bearerToken);
+      final sessions = SessionManager();
+
+      final minted = sessions.resolve(
+        identity: identity,
+        channel: AccessChannel.openai,
+        envelope: _inbound(text: 'first', conversationId: 'c1'),
+      );
+      final attached = sessions.resolve(
+        identity: identity,
+        channel: AccessChannel.openai,
+        envelope: InboundRequest(
+          text: 'second',
+          conversationId: 'c1',
+          sessionId: minted.sessionId,
+        ),
+      );
+
+      expect(attached.mintedNewId, isFalse);
+      expect(attached.unknownSessionId, isFalse);
+      expect(attached.sessionId, minted.sessionId);
+      expect(
+        [for (final t in attached.history.durableRecord) t.userPrompt],
+        ['second'],
+      );
+    });
+
+    test('the same person on a different channel is a different global history',
+        () {
       final resolver = _identityResolver();
       final openAiIdentity = resolver.resolveOpenAiBearer(_bearerToken);
       final telegramIdentity = resolver.resolveTelegramUser(_telegramUserId);
       final sessions = SessionManager();
 
-      final openAiSession = sessions.resolve(
+      sessions.resolve(
         identity: openAiIdentity,
         channel: AccessChannel.openai,
         envelope: _inbound(text: 'over openai', conversationId: 'shared'),
       );
-      final telegramSession = sessions.resolve(
+      sessions.resolve(
         identity: telegramIdentity,
         channel: AccessChannel.telegram,
         envelope: _inbound(text: 'over telegram', conversationId: 'shared'),
       );
 
-      // Same principal id, same conversation id — but the channel splits them.
-      expect(openAiSession.key.principalId, telegramSession.key.principalId);
-      expect(identical(openAiSession, telegramSession), isFalse);
-      expect(openAiSession.sessionId, isNot(telegramSession.sessionId));
-      expect(sessions.sessionCount, 2);
-    });
-
-    test('different conversations on one channel are different sessions', () {
-      final identity = _identityResolver().resolveOpenAiBearer(_bearerToken);
-      final sessions = SessionManager();
-
-      sessions.resolve(
-        identity: identity,
+      // Same principal id — but the channel splits the global histories.
+      expect(openAiIdentity.principalId, telegramIdentity.principalId);
+      final openAiGlobal = sessions.peekGlobal(
+        principalId: openAiIdentity.principalId,
         channel: AccessChannel.openai,
-        envelope: _inbound(text: 'first thread', conversationId: 'c1'),
       );
-      sessions.resolve(
-        identity: identity,
-        channel: AccessChannel.openai,
-        envelope: _inbound(text: 'second thread', conversationId: 'c2'),
+      final telegramGlobal = sessions.peekGlobal(
+        principalId: telegramIdentity.principalId,
+        channel: AccessChannel.telegram,
       );
-
-      expect(sessions.sessionCount, 2);
+      expect(identical(openAiGlobal, telegramGlobal), isFalse);
+      expect(
+        [for (final t in openAiGlobal!.durableRecord) t.userPrompt],
+        ['over openai'],
+      );
+      expect(
+        [for (final t in telegramGlobal!.durableRecord) t.userPrompt],
+        ['over telegram'],
+      );
     });
   });
 
@@ -208,12 +245,13 @@ void main() {
 
   group('E.27 — the three resolvers compose into one coherent edge result', () {
     test('a multi-turn conversation keeps identity + persona stable while the '
-        'session accumulates turns', () {
+        'dedicated history accumulates turns', () {
       final identityResolver = _identityResolver();
       final sessions = SessionManager();
       final personas = PersonaResolver();
 
-      // Turn 1 — the caller names a persona model id.
+      // Turn 1 — sessionless; the caller names a persona model id. The brain
+      // mints a fresh session id and answers from the global history.
       final identity1 = identityResolver.resolveOpenAiBearer(_bearerToken);
       final session1 = sessions.resolve(
         identity: identity1,
@@ -226,15 +264,16 @@ void main() {
       );
       final persona1 = personas.resolve('tom-assistant:verbose');
 
-      // Turn 2 — same person, same conversation, no model id named.
+      // Turn 2 — same person, echoing turn 1's minted id, no model id named.
       final identity2 = identityResolver.resolveOpenAiBearer(_bearerToken);
       final session2 = sessions.resolve(
         identity: identity2,
         channel: AccessChannel.openai,
-        envelope: _inbound(
+        envelope: InboundRequest(
           text: 'turn two',
           conversationId: 'thread-1',
           messageId: 'm2',
+          sessionId: session1.sessionId,
         ),
       );
       final persona2 = personas.resolve(null);
@@ -243,14 +282,24 @@ void main() {
       expect(identity1, identity2);
       expect(identity2.principalId, _principalId);
 
-      // The session is reused (same node) and accumulates both turns.
-      expect(identical(session1, session2), isTrue);
-      expect(session2.totalTurns, 2);
-      expect(session2.window.last.messageId, 'm2');
+      // Turn 2 resolved the dedicated history turn 1 minted (a known id).
+      expect(session2.mintedNewId, isFalse);
+      expect(session2.sessionId, session1.sessionId);
+      expect(
+        [for (final t in session2.history.durableRecord) t.userPrompt],
+        ['turn two'],
+      );
 
-      // The session is keyed by the resolved principal id — the resolvers
-      // cohere through it.
-      expect(session2.key.principalId, identity2.principalId);
+      // The global history accumulates every prompt of the person + channel —
+      // the resolvers cohere through the resolved principal id.
+      final global = sessions.peekGlobal(
+        principalId: identity2.principalId,
+        channel: AccessChannel.openai,
+      );
+      expect(
+        [for (final t in global!.durableRecord) t.userPrompt],
+        ['turn one', 'turn two'],
+      );
 
       // Persona reflects each turn's model id independently of identity /
       // session: the named verbose persona on turn 1, the default on turn 2.
@@ -258,20 +307,19 @@ void main() {
       expect(persona2, Persona.assistant());
     });
 
-    test('the session handle projection carries the conversation the edge '
+    test('the resolved session handle carries the conversation the edge '
         'resolved', () {
       final identity = _identityResolver().resolveTelegramUser(_telegramUserId);
       final sessions = SessionManager();
 
-      final node = sessions.resolve(
+      final res = sessions.resolve(
         identity: identity,
         channel: AccessChannel.telegram,
         envelope: _inbound(text: 'hi', conversationId: 'tg-chat-7'),
       );
-      final handle = node.toSessionHandle();
 
-      expect(handle.sessionId, node.sessionId);
-      expect(handle.conversationId, 'tg-chat-7');
+      expect(res.session.sessionId, res.sessionId);
+      expect(res.session.conversationId, 'tg-chat-7');
     });
   });
 }

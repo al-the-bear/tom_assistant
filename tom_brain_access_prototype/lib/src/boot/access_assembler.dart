@@ -430,9 +430,10 @@ final class AccessAssembler {
     quotaLimiter.check(principalId);
     anchorPreCheck.check(envelope.text);
 
-    // ── Session: record this turn against the sliding window (the request is
-    //    now fully admitted, so it legitimately gets a turn). ──
-    final SessionNode node = sessionManager.resolve(
+    // ── Session: resolve the conversation and record this turn against its
+    //    histories (the request is now fully admitted, so it legitimately gets
+    //    a turn). The resolution carries the history the engine answers from. ──
+    final SessionResolution session = sessionManager.resolve(
       identity: identity,
       channel: channel,
       envelope: envelope,
@@ -450,9 +451,10 @@ final class AccessAssembler {
     final Access access = Access(
       envelope: effectiveEnvelope,
       identity: identity,
-      session: node.toSessionHandle(),
+      session: session.session,
       persona: persona,
       deliver: deliver,
+      history: session.history,
     );
     eventBus.emit(
       AccessCreated.fromAccess(access, occurredAt: _clock().toUtc()),

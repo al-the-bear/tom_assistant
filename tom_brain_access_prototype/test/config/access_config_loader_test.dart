@@ -20,8 +20,7 @@
 //   4. Defaults: an omitted `basePath` → `/v1`; omitted `telegram` → no
 //      channel; omitted `users` → no bindings; omitted `anchor` → disabled
 //      screen; omitted `personas` → `null` (the default vocabulary);
-//      omitted `session` → the canonical `defaultMaxWindowTurns`; omitted
-//      `classifier` → 5-minute TTL.
+//      omitted `classifier` → 5-minute TTL.
 //   5. Forward-only schema (AC-12): an unknown top-level section, and an
 //      unknown key *within* `access:` (or any subsection / user entry), is
 //      rejected at load — never silently ignored.
@@ -81,8 +80,6 @@ access:
   personas:
     - tom-assistant
     - tom-assistant:terse
-  session:
-    maxWindowTurns: 12
   classifier:
     embeddingCacheTtlSeconds: 120
 ''';
@@ -182,8 +179,7 @@ void main() {
       expect(config.personaVocabulary, ['tom-assistant', 'tom-assistant:terse']);
     });
 
-    test('parses the session window and the embedding-cache TTL', () {
-      expect(config.sessionMaxWindowTurns, 12);
+    test('parses the embedding-cache TTL', () {
       expect(config.embeddingCacheTtl, const Duration(seconds: 120));
     });
 
@@ -459,10 +455,6 @@ access:
 
     test('no personas ⇒ null (default vocabulary)', () {
       expect(config.personaVocabulary, isNull);
-    });
-
-    test('no session section ⇒ canonical default window', () {
-      expect(config.sessionMaxWindowTurns, defaultMaxWindowTurns);
     });
 
     test('no classifier section ⇒ 5-minute TTL', () {

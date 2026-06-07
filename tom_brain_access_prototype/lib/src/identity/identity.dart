@@ -1,19 +1,21 @@
 // Identity, session, and persona resolution.
 //
 // Owns `IdentityResolver` (OpenAI bearer tokens + Telegram user-ids →
-// internal `TomPrincipal`), `SessionManager` (a sliding window keyed by
-// principal / channel / conversation-id, persisted as `Session` nodes in
-// memory), and `PersonaResolver` (model-id-or-default → `Persona`
-// template, handed to substrate via the `Access` object). See
-// `tom_brain_access_prototype_specification.md` § Identity and Plan
-// steps E.24 – E.27.
+// internal `TomPrincipal`), `SessionManager` (the two-history conversation
+// resolver — a per-(principal, channel) global history plus a per-session
+// `ConversationHistory` keyed by a brain-minted id), and `PersonaResolver`
+// (model-id-or-default → `Persona` template, handed to substrate via the
+// `Access` object). See `tom_brain_access_prototype_specification.md`
+// § 7.2 / § 21.2 and Plan steps E.24 – E.27.
 //
 // E.24 ✅ — `IdentityResolver` (+ `IdentityBinding`,
 // `IdentityResolutionException`): credential → `TomPrincipal` →
 // `ResolvedIdentity`, resolved once at the edge (AC-7).
-// E.25 ✅ — `SessionManager` (+ `AccessChannel`, `SessionKey`,
-// `SessionTurn`, `SessionNode`): a sliding window keyed by (principal,
-// channel, conversation id); reuse-by-key, not re-creation (AC-8).
+// E.25 / Ext-G ✅ — `SessionManager` (+ `AccessChannel`, `SessionIdMinter`,
+// `SessionResolution`, `SessionHistoriesSnapshot`): resolves every request
+// against a global "all prompts" history and a per-session history, minting a
+// fresh id when one is absent or unrecognised; hands the engine the history it
+// answers from (§ 7.2 / § 21.2).
 // E.26 ✅ — `PersonaResolver`: model-id-or-default → `Persona`, reusing the
 // shared `OpenAiPersonaMapping.knownModels` vocabulary (AC-5).
 // E.27 ⏳ — the resolution-test sweep (token / user-id / session / persona).

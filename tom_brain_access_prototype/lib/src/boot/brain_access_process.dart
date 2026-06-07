@@ -519,7 +519,6 @@ BrainAccessConfig _toBrainAccessConfig(
     kindHintEmbedder: kindHintEmbedder,
     kindHintClassifier: kindHintClassifier,
     embeddingCacheTtl: config.embeddingCacheTtl,
-    sessionMaxWindowTurns: config.sessionMaxWindowTurns,
     clock: clock,
     rateLimitStore: rateLimitStore,
     quotaStore: quotaStore,

@@ -40,6 +40,7 @@
 
 import 'dart:async';
 
+import '../history/history.dart';
 import 'inbound_request.dart';
 import 'outbound_chunk.dart';
 import 'persona.dart';
@@ -105,9 +106,20 @@ final class Access {
   /// answer chunk. See [DeliverCallback].
   final DeliverCallback deliver;
 
-  /// Builds an immutable `Access`. All five fields are required — an
-  /// `Access` with a missing field could not be routed, scoped, answered,
-  /// or delivered.
+  /// The conversation history the engine answers from — the per-session
+  /// history for a sessioned request, the per-(principal, channel) global
+  /// history otherwise (access spec § 7.2 / § 21.2). The `SessionManager`
+  /// resolves it and rides it onto the `Access` alongside [session]; the
+  /// engine reads it to assemble the model's conversation window.
+  ///
+  /// Optional: the dispatcher's own conformance tests (D.53) build synthetic
+  /// `Access` objects that exercise routing without a history, so a missing
+  /// history is `null`, not an error. The assembler (E.41+) always sets it.
+  final ConversationHistory? history;
+
+  /// Builds an immutable `Access`. The five core fields are required — an
+  /// `Access` with a missing one could not be routed, scoped, answered, or
+  /// delivered. [history] is optional (see its doc).
   ///
   /// Construction of [envelope] already rejects an empty / whitespace-only
   /// prompt (see `InboundRequest`), so an "empty inbound request" can
@@ -118,6 +130,7 @@ final class Access {
     required this.session,
     required this.persona,
     required this.deliver,
+    this.history,
   });
 
   /// Value equality over the four value fields plus reference identity of
@@ -131,7 +144,8 @@ final class Access {
       other.identity == identity &&
       other.session == session &&
       other.persona == persona &&
-      identical(other.deliver, deliver);
+      identical(other.deliver, deliver) &&
+      identical(other.history, history);
 
   @override
   int get hashCode => Object.hash(
@@ -140,6 +154,7 @@ final class Access {
         session,
         persona,
         identityHashCode(deliver),
+        identityHashCode(history),
       );
 
   @override
@@ -148,5 +163,6 @@ final class Access {
       'identity: $identity, '
       'session: $session, '
       'persona: $persona, '
-      'deliver: <callback>)';
+      'deliver: <callback>'
+      '${history == null ? '' : ', history: <history>'})';
 }

@@ -165,4 +165,65 @@ void main() {
       expect(() => h.durableRecord.add(_turn(2)), throwsUnsupportedError);
     });
   });
+
+  group('G.21-7 restore — the restart rehydration seam (step #22)', () {
+    test('restore round-trips the four working views', () {
+      const sizing = HistorySizing(rawCount: 2, compactionThreshold: 3);
+      final original = ConversationHistory(sizing: sizing);
+      for (var i = 0; i < 5; i++) {
+        original.append(_turn(i));
+      }
+      original.applyCompaction('summary of 0..2');
+      original.append(_turn(5));
+
+      final restored = ConversationHistory.restore(
+        sizing: original.sizing,
+        compactedSummary: original.compactedSummary,
+        rawWindow: original.rawWindow,
+        pending: original.pending,
+        durableRecord: original.durableRecord,
+      );
+
+      expect(conversationHistoriesEqual(restored, original), isTrue);
+    });
+
+    test('restore deep-copies — later source mutation does not leak', () {
+      final original = ConversationHistory(
+        sizing: const HistorySizing(rawCount: 2, compactionThreshold: 10),
+      );
+      original.append(_turn(0));
+      original.append(_turn(1));
+
+      final restored = ConversationHistory.restore(
+        sizing: original.sizing,
+        compactedSummary: original.compactedSummary,
+        rawWindow: original.rawWindow,
+        pending: original.pending,
+        durableRecord: original.durableRecord,
+      );
+
+      // Mutating the source after the restore must not change the copy.
+      original.append(_turn(2));
+      expect(restored.durableRecord, hasLength(2));
+      expect(restored.rawWindow, [_turn(0), _turn(1)]);
+    });
+
+    test('a restored history keeps appending under its own sizing', () {
+      const sizing = HistorySizing(rawCount: 1, compactionThreshold: 5);
+      final original = ConversationHistory(sizing: sizing)..append(_turn(0));
+      final restored = ConversationHistory.restore(
+        sizing: original.sizing,
+        compactedSummary: original.compactedSummary,
+        rawWindow: original.rawWindow,
+        pending: original.pending,
+        durableRecord: original.durableRecord,
+      );
+
+      restored.append(_turn(1));
+      // rawCount 1 → newest stays raw, the older spills to pending.
+      expect(restored.rawWindow, [_turn(1)]);
+      expect(restored.pending, [_turn(0)]);
+      expect(restored.durableRecord, [_turn(0), _turn(1)]);
+    });
+  });
 }

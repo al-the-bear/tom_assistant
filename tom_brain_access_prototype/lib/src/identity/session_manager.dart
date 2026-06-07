@@ -1,74 +1,81 @@
 // `SessionManager` — the edge step that resolves *which conversation* an
-// inbound request belongs to (E.25).
+// inbound request belongs to and hands the engine the history it answers
+// from (Extension G; plan step #22; access spec § 7.2 / § 21.2).
 //
-// What this file owns (Plan § Phase E, substep E.25; proto spec § 7.2;
-// AC-8):
+// What this file owns:
 //
-//   * `AccessChannel` — the channel discriminator (`openai` / `telegram`).
-//     It is the second component of the session key. Identity is the
-//     *person* (E.24, channel-blind by design — same `principalId` on both
-//     channels); the channel distinction lives here, so the same
-//     principal's OpenAI session and Telegram session are different
-//     sessions (proto spec § 7.1 / § 7.2).
-//   * `SessionKey` — the (principal, channel, conversation id) triple a
-//     session is keyed by. Validates its `principalId` like every other
-//     access value object; the channel is required, the conversation id is
-//     optional (single-turn channels supply none).
-//   * `SessionTurn` — one recorded inbound turn (text + optional message id
-//     + timestamp + a session-local index). The sliding window is a list of
-//     these.
-//   * `SessionNode` — the rich, sliding-window session node. The shared
-//     `Session` handle (§ 4.4) carries only identity; the window, the turn
-//     count, and the timestamps live on the node. `toSessionHandle()`
-//     projects the node onto the minimal handle the dispatcher reads.
-//   * `SessionManager` — resolves/creates a node per request, keyed by the
-//     triple, sliding the window on reuse. Reuse is *by key, not by
-//     re-creation* (AC-8): the second request on the same key returns the
-//     same node (same `sessionId`), with the new turn appended.
+//   * `AccessChannel` — the channel discriminator (`openai` / `telegram` /
+//     `ollama` / `anthropic`). It is the second component of the global
+//     history key. Identity is the *person* (E.24, channel-blind by design —
+//     same `principalId` on every channel); the channel distinction lives
+//     here, so the same principal's OpenAI history and Telegram history are
+//     different histories (access spec § 7.1 / § 7.2).
+//   * `SessionIdMinter` — mints a fresh, unique session id whenever a request
+//     arrives without one (or echoes an unknown one). The brain owns the id
+//     space (§ 7.2): the client never invents an id, it only echoes one the
+//     brain previously minted.
+//   * `SessionResolution` — the result of [SessionManager.resolve]: the
+//     shared `Session` handle, the `ConversationHistory` the engine answers
+//     from, the resolved id, and the two diagnostic flags (`mintedNewId`,
+//     `unknownSessionId`) that drive the `access.session.*` observability
+//     events (§ 14).
+//   * `SessionHistoriesSnapshot` — an opaque, point-in-time deep copy of both
+//     history stores; the in-process stand-in for the memory-node persistence
+//     the real layer wires at E.27 / E.55 (§ 21.10). `snapshot` / `restore`
+//     round-trip it, so a "restart" preserves both histories.
+//   * `SessionManager` — resolves every request against two history stores:
 //
-// Why an in-process node store (not a memory write) in the prototype:
+//       1. A **global history** per `(principalId, channel)` — "all prompts"
+//          (§ 7.2). *Every* request appends here, sessioned or not. Never
+//          idle-evicted.
+//       2. A **per-session `ConversationHistory`** keyed by the brain-minted
+//          id string. A sessioned request that echoes a known id appends to
+//          its dedicated history (and the global); a sessionless request mints
+//          a fresh id and registers an *empty* dedicated history, with the
+//          originating turn going to the global only.
 //
-//   The proto spec § 7.2 says the session is "persisted as `Session` nodes
-//   in memory (Phase A)". The access layer, however, deliberately does NOT
-//   depend on `tom_brain_memory` (pubspec § "Explicitly NOT here") — every
-//   memory write goes through the dispatcher, never around it. So Phase E's
-//   `SessionManager` owns the *resolution* (key → node, sliding window) and
-//   produces the shared handle; the actual memory-node persistence is the
-//   integration point wired through the dispatcher at E.27 / E.55. Keeping
-//   the node in-process here is the same posture E.24's `IdentityResolver`
-//   took with its binding registry: resolve now, wire the persistence seam
-//   later, never reach past the dispatcher.
+// The two-history split (§ 7.2, point 1):
 //
-// Why a record-tuple map key (not a delimited string):
+//   * Sessionless (`envelope.sessionId == null`) → mint a fresh id, register
+//     an empty dedicated history under it, append the turn to the **global**
+//     history, and answer from the global. The minted id is handed back so
+//     the client can attach to its dedicated history on the next turn.
+//   * Known echoed id (in the per-session store) → append the turn to **both**
+//     the dedicated history and the global, and answer from the dedicated
+//     one.
+//   * Unknown echoed id (not in the per-session store) → graceful recovery,
+//     not an error (§ 14, `access.session.unknown`): treat it like a
+//     sessionless request (mint a fresh id, empty dedicated history, append to
+//     the global, answer from the global) and raise the `unknownSessionId`
+//     flag. The bogus id is never registered.
 //
-//   The key is a (String, AccessChannel, String?) triple. A delimited
-//   string key (`'$principalId|$channel|$conversationId'`) is ambiguous —
-//   `('a|b', …, 'c')` and `('a', …, 'b|c')` would collide. A Dart record
-//   has structural equality, so the triple is the map key directly and the
-//   ambiguity cannot arise.
+// Why an in-process store (not a memory write) in the prototype:
 //
-// Scope discipline (per the strict per-substep log). E.25 is the
-// conversation → session resolver only. It does NOT:
+//   The access layer deliberately does NOT depend on `tom_brain_memory` (every
+//   memory write goes through the dispatcher, never around it). So this
+//   manager owns the *resolution* (id → history) and produces the shared
+//   handle; the durable memory-node persistence is the integration point wired
+//   through the dispatcher at E.27 / E.55. `snapshot` / `restore` model that
+//   persistence in-process so the restart contract is testable now.
 //
-//   * resolve identity (E.24, `IdentityResolver` — it *consumes* the
-//     resolved `principalId`) or personas (E.26, `PersonaResolver`).
-//   * persist the node to `tom_brain_memory` — that seam is wired through
-//     the dispatcher at E.27 / E.55.
-//   * construct an `Access` or wire boot (E.41+).
-//   * evict by TTL — the prototype slides by turn-count capacity only;
-//     time-based expiry is deferred (Q-E.25.2).
+// Scope discipline. This step is the conversation → history resolver only. It
+// does NOT resolve identity (E.24 — it *consumes* the resolved `principalId`),
+// resolve personas (E.26), persist to `tom_brain_memory` (E.27 / E.55),
+// construct an `Access`, or wire boot (E.41+). The brain answer is back-filled
+// downstream by the engine (hub § 21.1); the manager records the prompt with
+// an empty answer.
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
-/// The originating channel of an inbound request — the second component of
-/// a [SessionKey].
+/// The originating channel of an inbound request — the second component of a
+/// global history key.
 ///
 /// Identity (E.24) is channel-blind: the same person maps to one
 /// `principalId` whether they arrive over OpenAI or Telegram. The channel
-/// distinction is the session's job, so a principal's OpenAI conversation
-/// and Telegram conversation resolve to *different* sessions even when they
-/// share a conversation id (proto spec § 7.2).
+/// distinction is the history's job, so a principal's OpenAI conversation and
+/// Telegram conversation resolve to *different* global histories (access spec
+/// § 7.2).
 enum AccessChannel {
   /// The OpenAI HTTP/SSE adapter (E.3).
   openai('openai'),
@@ -90,249 +97,146 @@ enum AccessChannel {
 
   /// The stable, lower-case channel name. Matches the `channel` strings the
   /// sibling `IdentityResolutionException` (E.24) already uses, so logs read
-  /// consistently across the two resolvers.
+  /// consistently across the resolvers.
   final String wireName;
 }
 
-/// The (principal, channel, conversation id) triple a session is keyed by
-/// (proto spec § 7.2, AC-8).
+/// Mints a fresh, unique session id. Called whenever a request arrives without
+/// a session id, or echoes one the brain does not recognise.
 ///
-/// Immutable value object. [principalId] is the resolved identity's
-/// non-secret id (E.24); [channel] distinguishes the same principal's
-/// per-channel conversations; [conversationId] is the channel's conversation
-/// handle, or `null` for a single-turn / conversationless channel (in which
-/// case all of that principal's requests on that channel share one rolling
-/// session).
-final class SessionKey {
-  /// The resolved principal's stable, non-secret id (E.24). Non-empty — an
-  /// empty principal id cannot scope a conversation.
-  final String principalId;
+/// The brain owns the session id space (access spec § 7.2): the client never
+/// invents an id, it only echoes one the brain previously minted. A minter
+/// must return a *distinct* id on every call — two conversations that shared an
+/// id would share a history.
+typedef SessionIdMinter = String Function();
 
-  /// The originating channel.
-  final AccessChannel channel;
-
-  /// The channel's conversation id, or `null` when the channel is
-  /// single-turn. `null` is a first-class key value, not a wildcard: every
-  /// conversationless request on (principal, channel) shares the one
-  /// `null`-conversation session.
-  final String? conversationId;
-
-  /// Builds an immutable session key. [principalId] must be non-empty.
-  SessionKey({
-    required this.principalId,
-    required this.channel,
-    this.conversationId,
-  }) {
-    if (principalId.isEmpty) {
-      throw ArgumentError.value(
-        principalId,
-        'principalId',
-        'must be non-empty',
-      );
-    }
-  }
-
-  /// The record form used as the [SessionManager] map key. A Dart record's
-  /// structural equality keys the store unambiguously — no delimiter, no
-  /// collision between distinct triples.
-  (String, AccessChannel, String?) get record =>
-      (principalId, channel, conversationId);
-
-  @override
-  bool operator ==(Object other) =>
-      other is SessionKey &&
-      other.principalId == principalId &&
-      other.channel == channel &&
-      other.conversationId == conversationId;
-
-  @override
-  int get hashCode => Object.hash(principalId, channel, conversationId);
-
-  @override
-  String toString() => 'SessionKey(principalId: $principalId, '
-      'channel: ${channel.wireName}, conversationId: $conversationId)';
-}
-
-/// One recorded inbound turn in a session's sliding window.
+/// The result of resolving one inbound request to its conversation.
 ///
-/// Immutable value object. The window is a list of these in arrival order;
-/// the dispatcher never reads them — they are the access layer's record of
-/// the conversation, the seam the E.27 / E.55 memory-node persistence reads.
-final class SessionTurn {
-  /// The session-local turn index, 0-based and monotonically increasing for
-  /// the lifetime of the session (it is *not* reset when the window slides,
-  /// so it always reflects the total number of turns seen before this one).
-  final int index;
+/// Carries the shared [session] handle the dispatcher threads onto the
+/// `Access`, the [history] the engine answers from (the dedicated per-session
+/// history for a known echoed id, the global history otherwise), the resolved
+/// [sessionId], and the two diagnostic flags that drive the `access.session.*`
+/// observability events (§ 14). Immutable.
+final class SessionResolution {
+  /// The minimal shared conversation handle (§ 4.4) — `sessionId` plus the
+  /// originating channel's conversation id.
+  final Session session;
 
-  /// The inbound prompt text of this turn.
-  final String text;
+  /// The history the engine answers from: the dedicated per-session history
+  /// when the request echoed a known id, otherwise the per-(principal,
+  /// channel) global history.
+  final ConversationHistory history;
 
-  /// The originating channel's per-message id, when supplied
-  /// (`InboundRequest.messageId`). `null` when the channel gave none.
-  final String? messageId;
+  /// The resolved session id — the freshly minted id for a sessionless or
+  /// unknown-id request, or the echoed id for a known one.
+  final String sessionId;
 
-  /// When the turn was recorded (the manager's clock at resolution time).
-  final DateTime at;
+  /// Whether [sessionId] was freshly minted this turn (true for a sessionless
+  /// or unknown-id request, false for a known echoed id). Drives
+  /// `access.session.created`.
+  final bool mintedNewId;
 
-  /// Builds an immutable turn record.
-  SessionTurn({
-    required this.index,
-    required this.text,
-    required this.at,
-    this.messageId,
+  /// Whether the request echoed an id the manager did not recognise — graceful
+  /// recovery, not an error (§ 14, `access.session.unknown`).
+  final bool unknownSessionId;
+
+  /// Builds an immutable resolution.
+  const SessionResolution({
+    required this.session,
+    required this.history,
+    required this.sessionId,
+    required this.mintedNewId,
+    required this.unknownSessionId,
   });
 
   @override
-  String toString() =>
-      'SessionTurn(index: $index, messageId: $messageId, at: $at)';
+  String toString() => 'SessionResolution(sessionId: $sessionId, '
+      'mintedNewId: $mintedNewId, unknownSessionId: $unknownSessionId)';
 }
 
-/// The rich, sliding-window session node.
-///
-/// The shared [Session] handle (§ 4.4) carries only the identity the
-/// dispatcher reads; this node carries the window, the running turn count,
-/// and the lifecycle timestamps the access layer keeps. The window holds at
-/// most [maxWindowTurns] turns — the oldest is evicted when a new turn
-/// overflows it ("sliding window", AC-8). The node is created once per key
-/// and reused thereafter; only the [SessionManager] mutates it.
-final class SessionNode {
-  /// The stable session id — the value placed on the shared [Session]
-  /// handle and the key under which the memory-owned session node will be
-  /// stored (E.27 / E.55). Generated once at creation; stable across reuse.
-  final String sessionId;
-
-  /// The key this node was created for.
-  final SessionKey key;
-
-  /// When the node was first created.
-  final DateTime createdAt;
-
-  /// The maximum number of turns retained in [window].
-  final int maxWindowTurns;
-
-  final List<SessionTurn> _window = [];
-  DateTime _lastActivityAt;
-  int _totalTurns = 0;
-
-  SessionNode._({
-    required this.sessionId,
-    required this.key,
-    required this.createdAt,
-    required this.maxWindowTurns,
-  }) : _lastActivityAt = createdAt;
-
-  /// The conversation id this session belongs to, mirrored from [key].
-  String? get conversationId => key.conversationId;
-
-  /// The most recent turns, oldest first, capped at [maxWindowTurns].
-  /// Unmodifiable — the window is mutated only through [_recordTurn].
-  List<SessionTurn> get window => List.unmodifiable(_window);
-
-  /// The number of turns currently held in the window
-  /// (≤ [maxWindowTurns]).
-  int get windowLength => _window.length;
-
-  /// The total number of turns ever seen by this session, including those
-  /// already evicted from the window.
-  int get totalTurns => _totalTurns;
-
-  /// When the most recent turn was recorded.
-  DateTime get lastActivityAt => _lastActivityAt;
-
-  /// Appends [turn], slides the window if it overflows [maxWindowTurns], and
-  /// advances the activity clock. Private to the library: only the
-  /// [SessionManager] records turns.
-  void _recordTurn(SessionTurn turn) {
-    _window.add(turn);
-    _totalTurns++;
-    _lastActivityAt = turn.at;
-    while (_window.length > maxWindowTurns) {
-      _window.removeAt(0);
-    }
-  }
-
-  /// Projects this node onto the minimal shared [Session] handle the
-  /// dispatcher threads through the `Access` (§ 4.4).
-  Session toSessionHandle() =>
-      Session(sessionId: sessionId, conversationId: conversationId);
-
-  @override
-  String toString() => 'SessionNode(sessionId: $sessionId, key: $key, '
-      'totalTurns: $_totalTurns, windowLength: ${_window.length})';
+/// One per-session entry: its dedicated history plus the activity clock
+/// [SessionManager.evictIdle] reads. Private to the library — only the manager
+/// mutates it.
+class _SessionEntry {
+  final ConversationHistory history;
+  DateTime lastActivityAt;
+  _SessionEntry({required this.history, required this.lastActivityAt});
 }
 
-/// Builds the [SessionNode.sessionId] for a freshly-created session. The
-/// default ([SessionManager._defaultSessionId]) derives a readable,
-/// deterministic id from the key; a deployment may inject another factory
-/// (e.g. a UUID generator) without affecting reuse, since the id is
-/// generated once and stored on the node.
-typedef SessionIdFactory = String Function(SessionKey key);
-
-/// The default sliding-window capacity: the last 20 turns of a conversation
-/// are retained. Chosen as a sensible prototype default; configurable per
-/// [SessionManager].
-const int defaultMaxWindowTurns = 20;
-
-/// Resolves an inbound request to its [SessionNode], keyed by (principal,
-/// channel, conversation id), creating the node on first contact and reusing
-/// it — sliding the window — thereafter (proto spec § 7.2, AC-8).
+/// An opaque, point-in-time deep copy of a [SessionManager]'s two history
+/// stores — the in-process stand-in for the memory-node persistence the real
+/// layer wires at E.27 / E.55 (access spec § 21.10).
 ///
-/// In-process for the prototype: the manager owns the node store; the
-/// memory-node persistence is wired through the dispatcher at E.27 / E.55
-/// (see the file header). Single-threaded by construction — the access
-/// process resolves sessions on its request path, not concurrently.
+/// Produced by [SessionManager.snapshot] and consumed by
+/// [SessionManager.restore]. Both ends deep-copy, so a snapshot shares no
+/// mutable state with the manager it came from or the one it is restored into:
+/// a turn appended after the snapshot cannot leak into a restored copy.
+final class SessionHistoriesSnapshot {
+  final Map<(String, AccessChannel), ConversationHistory> _globals;
+  final Map<String, _SessionEntry> _sessions;
+
+  SessionHistoriesSnapshot._(this._globals, this._sessions);
+
+  /// The number of global histories captured.
+  int get globalCount => _globals.length;
+
+  /// The number of dedicated per-session histories captured.
+  int get sessionCount => _sessions.length;
+}
+
+/// Resolves an inbound request to its conversation history, minting a session
+/// id when one is absent or unrecognised (access spec § 7.2 / § 21.2).
+///
+/// In-process for the prototype: the manager owns both history stores; the
+/// durable memory-node persistence is wired through the dispatcher at E.27 /
+/// E.55 (see the file header). Single-threaded by construction — the access
+/// process resolves on its request path, not concurrently.
 final class SessionManager {
-  /// The sliding-window capacity applied to every node this manager creates.
-  final int maxWindowTurns;
+  /// The sizing applied to every history this manager creates.
+  final HistorySizing sizing;
 
-  final SessionIdFactory _sessionIdFactory;
+  final SessionIdMinter _mint;
   final DateTime Function() _now;
-  final Map<(String, AccessChannel, String?), SessionNode> _nodes = {};
+
+  /// The "all prompts" history per (principal, channel). Never idle-evicted.
+  final Map<(String, AccessChannel), ConversationHistory> _globals = {};
+
+  /// The dedicated per-session histories, keyed by the brain-minted id.
+  final Map<String, _SessionEntry> _sessions = {};
 
   /// Builds a session manager.
   ///
-  /// [maxWindowTurns] (default [defaultMaxWindowTurns]) caps each session's
-  /// window and must be at least 1. [sessionIdFactory] builds a new node's
-  /// id (default: a readable, deterministic derivation from the key).
-  /// [now] is the clock used for turn timestamps (default: [systemClock]),
-  /// injectable so tests can assert lifecycle timestamps deterministically.
+  /// [sizing] (default [HistorySizing.standard]) shapes each history's window
+  /// and compaction thresholds. [sessionIdMinter] mints fresh ids (default: a
+  /// process-unique counter+timestamp closure); a deployment may inject a UUID
+  /// minter. [now] is the clock used for the per-session activity timestamps
+  /// [evictIdle] reads (default: [systemClock]), injectable so tests can drive
+  /// eviction deterministically.
   SessionManager({
-    this.maxWindowTurns = defaultMaxWindowTurns,
-    SessionIdFactory? sessionIdFactory,
+    this.sizing = const HistorySizing.standard(),
+    SessionIdMinter? sessionIdMinter,
     DateTime Function()? now,
-  })  : _sessionIdFactory = sessionIdFactory ?? _defaultSessionId,
-        _now = now ?? systemClock {
-    if (maxWindowTurns < 1) {
-      throw ArgumentError.value(
-        maxWindowTurns,
-        'maxWindowTurns',
-        'must be at least 1',
-      );
-    }
+  })  : _mint = sessionIdMinter ?? _defaultMinter(),
+        _now = now ?? systemClock;
+
+  /// The number of dedicated per-session histories currently held — *not* the
+  /// global histories (which are bounded by the active (principal, channel)
+  /// set, not the conversation set). Bounded by [clear] / [evictIdle].
+  int get sessionCount => _sessions.length;
+
+  /// Drops every history — global and per-session. The blunt eviction seam (a
+  /// process restart already has this effect; this exposes it without one).
+  void clear() {
+    _globals.clear();
+    _sessions.clear();
   }
 
-  /// The number of distinct sessions currently held.
-  ///
-  /// The node map grows by one entry per distinct (principal, channel,
-  /// conversation) key and never shrinks on its own in the prototype
-  /// (Q-E.2.5). The bound is made explicit here and via [clear] / [evictIdle]
-  /// rather than left as an unwritten assumption (G.3.3); a final-layer
-  /// scheduler drives a periodic [evictIdle] to keep the map bounded by the
-  /// *active* conversation set rather than the all-time one.
-  int get sessionCount => _nodes.length;
-
-  /// Drops all session state; every conversation starts a fresh node on its
-  /// next [resolve]. The blunt eviction seam (a process restart already has
-  /// this effect; this exposes it without one).
-  void clear() => _nodes.clear();
-
-  /// Evicts every session whose most recent turn is older than [idleFor]
-  /// measured against the manager's clock — the conversations that have gone
-  /// quiet long enough that retaining their window earns nothing. A re-arriving
-  /// turn for an evicted key simply mints a fresh node, so eviction loses only
-  /// the prior window (the prototype keeps no cross-restart history anyway,
-  /// Q-E.2.5), never a correctness guarantee. The targeted complement to
-  /// [clear]: the seam a final-layer idle-eviction policy reads.
+  /// Evicts every dedicated per-session history whose most recent activity is
+  /// older than [idleFor] measured against the manager's clock. The global
+  /// histories are never evicted — they are the durable "all prompts" record
+  /// (§ 7.2). A re-arriving turn for an evicted id is treated as an unknown id
+  /// (graceful recovery), so eviction loses only the dedicated window, never a
+  /// correctness guarantee.
   ///
   /// [idleFor] must be non-negative. Returns the number of evicted sessions.
   int evictIdle(Duration idleFor) {
@@ -340,62 +244,143 @@ final class SessionManager {
       throw ArgumentError.value(idleFor, 'idleFor', 'must be non-negative');
     }
     final cutoff = _now().subtract(idleFor);
-    final idle = <(String, AccessChannel, String?)>[
-      for (final entry in _nodes.entries)
+    final idle = <String>[
+      for (final entry in _sessions.entries)
         if (entry.value.lastActivityAt.isBefore(cutoff)) entry.key,
     ];
-    for (final key in idle) {
-      _nodes.remove(key);
+    for (final id in idle) {
+      _sessions.remove(id);
     }
     return idle.length;
   }
 
-  /// Resolves the session for one inbound request and records its turn.
+  /// Resolves the conversation for one inbound request and records its turn.
   ///
-  /// Builds the key from the resolved [identity] (its `principalId`), the
-  /// originating [channel], and the [envelope]'s `conversationId`. Reuses
-  /// the existing node for that key when present (appending the turn and
-  /// sliding the window), else creates one. Returns the node; the caller
-  /// projects [SessionNode.toSessionHandle] onto the `Access`.
-  SessionNode resolve({
+  /// Appends the request's turn to the global history for ([identity]'s
+  /// `principalId`, [channel]), and — when the request echoes a known session
+  /// id — to that id's dedicated history too. Mints a fresh id for a
+  /// sessionless or unknown-id request (§ 7.2). Returns a [SessionResolution];
+  /// the engine answers from its [SessionResolution.history].
+  ///
+  /// The brain answer is unknown at resolution time, so the recorded
+  /// [HistoryTurn] carries an empty `brainAnswer`; the engine back-fills it
+  /// downstream (hub § 21.1 step 4).
+  SessionResolution resolve({
     required ResolvedIdentity identity,
     required AccessChannel channel,
     required InboundRequest envelope,
   }) {
-    final key = SessionKey(
-      principalId: identity.principalId,
-      channel: channel,
-      conversationId: envelope.conversationId,
-    );
     final now = _now();
-    final node = _nodes.putIfAbsent(
-      key.record,
-      () => SessionNode._(
-        sessionId: _sessionIdFactory(key),
-        key: key,
-        createdAt: now,
-        maxWindowTurns: maxWindowTurns,
-      ),
+    final global = _globals.putIfAbsent(
+      (identity.principalId, channel),
+      () => ConversationHistory(sizing: sizing),
     );
-    node._recordTurn(SessionTurn(
-      index: node.totalTurns,
-      text: envelope.text,
-      messageId: envelope.messageId,
-      at: now,
-    ));
-    return node;
+    final turn = HistoryTurn(userPrompt: envelope.text, brainAnswer: '');
+
+    final echoed = envelope.sessionId;
+    if (echoed != null && _sessions.containsKey(echoed)) {
+      // Known echoed id → append to both, answer from the dedicated history.
+      final entry = _sessions[echoed]!;
+      entry.history.append(turn);
+      entry.lastActivityAt = now;
+      global.append(turn);
+      return SessionResolution(
+        session: Session(sessionId: echoed, conversationId: envelope.conversationId),
+        history: entry.history,
+        sessionId: echoed,
+        mintedNewId: false,
+        unknownSessionId: false,
+      );
+    }
+
+    // Sessionless, or an unknown echoed id (graceful recovery): mint a fresh
+    // id, register an empty dedicated history under it, append the turn to the
+    // global history only, and answer from the global.
+    final mintedId = _mint();
+    _sessions[mintedId] = _SessionEntry(
+      history: ConversationHistory(sizing: sizing),
+      lastActivityAt: now,
+    );
+    global.append(turn);
+    return SessionResolution(
+      session: Session(sessionId: mintedId, conversationId: envelope.conversationId),
+      history: global,
+      sessionId: mintedId,
+      mintedNewId: true,
+      unknownSessionId: echoed != null,
+    );
   }
 
-  /// Returns the node for [key] without creating or mutating it, or `null`
-  /// if no session has been resolved for that key yet. A read-only accessor
-  /// for inspection (boot diagnostics, tests).
-  SessionNode? peek(SessionKey key) => _nodes[key.record];
+  /// Returns the dedicated per-session history for [sessionId] without
+  /// creating or mutating it, or `null` if no session has been registered
+  /// under that id. A read-only accessor for inspection (boot diagnostics,
+  /// tests).
+  ConversationHistory? peekSession(String sessionId) =>
+      _sessions[sessionId]?.history;
 
-  /// The default [SessionIdFactory]: a readable id derived from the key.
-  /// Deterministic per key, so the same conversation always yields the same
-  /// id; correctness of reuse is guaranteed by the record-keyed store, not
-  /// by this string.
-  static String _defaultSessionId(SessionKey key) =>
-      'sess:${key.channel.wireName}:'
-      '${key.conversationId ?? 'default'}:${key.principalId}';
+  /// Returns the global "all prompts" history for ([principalId], [channel])
+  /// without creating or mutating it, or `null` if none has been resolved yet.
+  ConversationHistory? peekGlobal({
+    required String principalId,
+    required AccessChannel channel,
+  }) =>
+      _globals[(principalId, channel)];
+
+  /// Captures a point-in-time deep copy of both history stores — the restart
+  /// seam (§ 21.10). The returned snapshot shares no mutable state with this
+  /// manager: later appends here cannot leak into it.
+  SessionHistoriesSnapshot snapshot() => SessionHistoriesSnapshot._(
+        {
+          for (final e in _globals.entries) e.key: _copyHistory(e.value),
+        },
+        {
+          for (final e in _sessions.entries)
+            e.key: _SessionEntry(
+              history: _copyHistory(e.value.history),
+              lastActivityAt: e.value.lastActivityAt,
+            ),
+        },
+      );
+
+  /// Rehydrates this manager from [snapshot], replacing any current state. The
+  /// restored histories are deep copies, so the manager and the snapshot stay
+  /// independent (§ 21.10). A restored per-session id is attachable again — an
+  /// echoing request resolves it as known.
+  void restore(SessionHistoriesSnapshot snapshot) {
+    _globals
+      ..clear()
+      ..addAll({
+        for (final e in snapshot._globals.entries) e.key: _copyHistory(e.value),
+      });
+    _sessions
+      ..clear()
+      ..addAll({
+        for (final e in snapshot._sessions.entries)
+          e.key: _SessionEntry(
+            history: _copyHistory(e.value.history),
+            lastActivityAt: e.value.lastActivityAt,
+          ),
+      });
+  }
+
+  /// Deep-copies a [ConversationHistory] via its restore seam. [HistoryTurn] is
+  /// immutable, so copying the list references is a full deep copy.
+  static ConversationHistory _copyHistory(ConversationHistory h) =>
+      ConversationHistory.restore(
+        sizing: h.sizing,
+        compactedSummary: h.compactedSummary,
+        rawWindow: h.rawWindow,
+        pending: h.pending,
+        durableRecord: h.durableRecord,
+      );
+
+  /// The default [SessionIdMinter]: a process-unique counter behind a
+  /// per-manager timestamp prefix, so every minted id is distinct (within and
+  /// across managers). Correctness of reuse is guaranteed by the id-keyed
+  /// store, not by the string's shape.
+  static SessionIdMinter _defaultMinter() {
+    var counter = 0;
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    return () => 'sess-$stamp-${counter++}';
+  }
 }
