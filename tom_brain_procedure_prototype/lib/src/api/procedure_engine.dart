@@ -69,6 +69,7 @@ import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../budget/budget.dart';
 import '../d4rt_host/d4rt_dcli_host.dart';
+import '../extensions/extensions.dart' show BrainEngineExtensions;
 import '../d4rt_host/procedure_parse_exception.dart';
 import '../preemption/step_deadline.dart';
 import '../primitives_native/emit_primitive.dart';
@@ -137,13 +138,17 @@ final class ProcedureEngine {
   /// [hardDepthCap] bounds the `runProcedure` chain (C.19).
   /// [cancellationTimerFactory] is the injectable timer the external-timeout
   /// path (C.39) arms (tests drive it deterministically). [now] / [newRunId]
-  /// are injectable for deterministic tests.
+  /// are injectable for deterministic tests. [extensions] is the optional
+  /// Extension-F runtime bundle (the tool registry, MCP client, and LLM-config
+  /// stores) a future `call_llm_v1` reads; the prototype's
+  /// `answer_with_memory_v1` runs without it, so it defaults to `null`.
   ProcedureEngine({
     required this.resolver,
     required this.memory,
     required this.memoryBridge,
     required this.substrateBridge,
     this.validator = SandboxValidator.shared,
+    this.extensions,
     PreemptionState? preemptionState,
     Duration stepDeadline = defaultStepDeadline,
     DeadlineTimerFactory? deadlineTimerFactory,
@@ -187,6 +192,14 @@ final class ProcedureEngine {
   /// `_runInternal` (E.3.2); the template instance itself is never
   /// dispatched through.
   final SubstrateBridge substrateBridge;
+
+  /// The optional Extension-F runtime bundle the engine holds as a shared,
+  /// run-independent collaborator (Plan step 15; § 13, § 21.5, § 21.6): the
+  /// `ToolRegistry`, the `McpClient`, and the three LLM-config stores a future
+  /// `call_llm_v1` reads to drive the scripted LLM loop. `null` when the boot
+  /// assembled no `BrainExtensionConfig` — the prototype's
+  /// `answer_with_memory_v1` runs without it.
+  final BrainEngineExtensions? extensions;
 
   /// The shared cooperative-preemption state the engine yields against and
   /// the dispatcher's coordinator drives.

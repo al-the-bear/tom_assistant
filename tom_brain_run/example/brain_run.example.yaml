@@ -83,3 +83,51 @@ access:
 
   quota:
     dailyCap: 1000
+
+# ── Extensions: the Extension-F tool / MCP / LLM-config bundle ────────────────
+#
+# OPTIONAL. When present, boot assembles this block into the engine's
+# `BrainEngineExtensions` bundle (Plan step 15; spec § 13, § 21.5, § 21.6): the
+# tool registry, the MCP client, and the three-layer LLM configuration a future
+# `call_llm_v1` reads. Omit the whole `extensions:` block for the prototype
+# default — `answer_with_memory_v1` runs without it. (Run-launcher threading of
+# this block is plan step 17; this example documents the shape boot consumes.)
+extensions:
+  # `prompt_template/` (§ 21.5) — one `<type>.yaml` per prompt type. Each names
+  # the role, the assembled prompt layers, and the model binding the template
+  # resolves against `llm_configuration/`.
+  promptTemplateDir: ${TOM_BRAIN_PROMPT_TEMPLATE_DIR}   # e.g. ./config/prompt_template
+
+  # `llm_configuration/` (§ 21.6) — the three layers:
+  #   * `providers.yaml`   — layer 1: the substrate providers (REQUIRED; a
+  #                          missing file is a hard ProvidersMissing at boot).
+  #   * `models/<id>.yaml` — layer 2: per-model config, looked up lazily by id.
+  #   * the binding itself — layer 3: lives in each prompt template.
+  llmConfigurationDir: ${TOM_BRAIN_LLM_CONFIG_DIR}      # e.g. ./config/llm_configuration
+
+  # Prompt types validated eagerly at boot: a missing template or an
+  # unresolvable model surfaces a typed error BEFORE any run (hence before any
+  # substrate call). Absent ⇒ nothing is pre-validated.
+  requirePromptTypes:
+    - assistant_to_user
+
+  # `toolPolicy:` (§ 21.8) — the global tool-access default plus the shared
+  # deny / enabled-groups / allow lists. `default` is one of
+  # all | read_only | groups | explicit (absent ⇒ all).
+  toolPolicy:
+    default: all
+    deny:
+      - vscode.todo.*        # honoured under every allow-all prompt type
+
+  # `mcpServers:` (§ 21.6) — a LIST of the MCP servers the `mcp.servers` /
+  # `mcp.list` / `mcp.call` primitives reach out to. Each entry needs an `id` +
+  # `transport` (stdio | http); stdio adds `command` / `args`, http adds `url` /
+  # `headers`. The memory MCP server is the canonical entry; external servers
+  # are added as further list items.
+  mcpServers:
+    - id: memory
+      transport: stdio
+      command: ${TOM_BRAIN_MEMORY_MCP_COMMAND}   # e.g. dart
+      args:
+        - run
+        - tom_brain_memory:memory_mcp_server

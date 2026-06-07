@@ -64,6 +64,9 @@ import '../api/procedure_invocation.dart';
 import '../api/procedure_outcome.dart';
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
+import '../extensions/extensions.dart'
+    show BrainEngineExtensions, BrainExtensionConfig;
+import '../mcp/mcp_client.dart' show McpConnector;
 import '../procedure_store/disk_procedure_store.dart';
 import '../procedure_store/procedure_resolver.dart';
 import 'dispatcher_entry.dart';
@@ -233,7 +236,28 @@ final class BrainProcessConfig {
   /// an injectable fallback; this only threads it through boot.
   final ClassifyFallback? classifyFallback;
 
+  /// The declarative Extension-F config (Plan step 15; § 13, § 21.5, § 21.6),
+  /// or `null` for the prototype default (no tool/MCP/LLM-config bundle).
+  ///
+  /// When non-null, boot assembles it into a [BrainEngineExtensions] during the
+  /// engine phase (loading the provider registry, eagerly validating the
+  /// required prompt types, building the MCP client) and threads the bundle onto
+  /// the [ProcedureEngine] so a future `call_llm_v1` can read it. A
+  /// missing-template / unresolvable-model failure surfaces as a
+  /// `BrainStartupError(phase: BootPhase.engine, …)` — before any run, hence
+  /// before any substrate call. Assembling requires an [mcpConnector].
+  final BrainExtensionConfig? extensions;
+
+  /// The MCP connector [extensions] is assembled over (the transport the MCP
+  /// client opens connections through). Required when [extensions] is non-null;
+  /// ignored otherwise. Production passes a `DartMcpConnector`; tests pass a
+  /// connector double.
+  final McpConnector? mcpConnector;
+
   /// Builds a boot config.
+  ///
+  /// [extensions] + [mcpConnector] must be supplied together: an [extensions]
+  /// without a connector is a configuration error caught at boot.
   BrainProcessConfig({
     required this.substrate,
     required this.memoryProvisioning,
@@ -243,6 +267,8 @@ final class BrainProcessConfig {
     this.foregroundQueueDepth = 4,
     this.installAccessLayer,
     this.classifyFallback,
+    this.extensions,
+    this.mcpConnector,
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
 }
 
@@ -308,10 +334,13 @@ final class BootedBrain {
   ///      subscribers see the done-stream and no controller resource outlives
   ///      the boot (F.3.2). Done after the drain so no transition emits onto a
   ///      closed stream.
-  ///   4. **Dispose memory** — the isolate transport flushes writes +
+  ///   4. **Close the Extension-F bundle** ([BrainEngineExtensions.close]) —
+  ///      tears the MCP client's connection pool down once no run can issue a
+  ///      tool/MCP call. No-op when no extension bundle was assembled.
+  ///   5. **Dispose memory** — the isolate transport flushes writes +
   ///      checkpoints the WAL before closing the worker, persisting the trails
   ///      the drain let close.
-  ///   5. **Close the substrate.**
+  ///   6. **Close the substrate.**
   ///
   /// [drainTimeout] bounds step 2's best-effort wait; it defaults to
   /// [defaultShutdownDrainTimeout]. Pass a `null` timeout
@@ -327,6 +356,7 @@ final class BootedBrain {
     }
     await coordinator.drain(timeout: drainTimeout);
     await coordinator.close();
+    await engine.extensions?.close();
     await memory.dispose();
     await substrate.close();
   }
@@ -446,6 +476,12 @@ abstract final class BrainProcessBoot {
   }) async {
     final resolver = await _resolveProcedures(config);
 
+    // The Extension-F runtime bundle (Plan step 15), assembled inside the
+    // engine phase so a missing template / unresolvable model surfaces as a
+    // `BrainStartupError(phase: BootPhase.engine, …)` before any run — hence
+    // before any substrate call. `null` when no extension config was supplied.
+    final extensions = await _assembleExtensions(config);
+
     // One shared preemption state for the engine (yields against it) and the
     // coordinator (drives it) — see the file header.
     final preemption = PreemptionState();
@@ -455,6 +491,7 @@ abstract final class BrainProcessBoot {
       substrate: substrate,
       resolver: resolver,
       preemption: preemption,
+      extensions: extensions,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
     final dispatcher = _wireDispatcher(
@@ -478,13 +515,37 @@ abstract final class BrainProcessBoot {
         ),
       );
 
-  /// Wires the [ProcedureEngine] over both bridges and the shared [preemption]
-  /// state (the engine yields against it via `yield_if_foreground_waiting`).
+  /// Assembles the optional Extension-F runtime bundle (Plan step 15) from
+  /// [BrainProcessConfig.extensions], or returns `null` when none is configured.
+  ///
+  /// Requires [BrainProcessConfig.mcpConnector] when an extension config is
+  /// present — an `extensions` without a connector is a configuration error
+  /// (`StateError`) that the engine-phase wrapper turns into a
+  /// `BrainStartupError(phase: BootPhase.engine, …)`.
+  static Future<BrainEngineExtensions?> _assembleExtensions(
+    BrainProcessConfig config,
+  ) async {
+    final extensionConfig = config.extensions;
+    if (extensionConfig == null) return null;
+    final connector = config.mcpConnector;
+    if (connector == null) {
+      throw StateError(
+        'BrainProcessConfig.extensions requires a non-null mcpConnector to '
+        'assemble the Extension-F bundle.',
+      );
+    }
+    return BrainEngineExtensions.assemble(extensionConfig, connector: connector);
+  }
+
+  /// Wires the [ProcedureEngine] over both bridges, the shared [preemption]
+  /// state (the engine yields against it via `yield_if_foreground_waiting`), and
+  /// the optional Extension-F [extensions] bundle.
   static ProcedureEngine _wireEngine({
     required ProvisionedMemory memory,
     required TomBrainSubstrateClient substrate,
     required ProcedureResolver resolver,
     required PreemptionState preemption,
+    required BrainEngineExtensions? extensions,
   }) =>
       ProcedureEngine(
         resolver: resolver,
@@ -492,6 +553,7 @@ abstract final class BrainProcessBoot {
         memoryBridge: MemoryBridge(memory.client),
         substrateBridge: SubstrateBridge(substrate),
         preemptionState: preemption,
+        extensions: extensions,
       );
 
   /// Wires the [RunCoordinator] over the shared [preemption] state (it drives
