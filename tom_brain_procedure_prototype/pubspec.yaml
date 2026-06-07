@@ -153,6 +153,13 @@ dependencies:
   # transitively (3.1.3); promoted to a direct dependency because `lib/`
   # source now imports it.
   yaml: ^3.1.2
+  # F.7 basic tool set — the `file.*` / `grep.search` tools enforce the
+  # file-scope sandbox (§ 21.4) by normalising and containment-checking the
+  # caller's path against the configured root. The canonical first-party
+  # `path` package owns `normalize` / `join` / `isWithin` / `relative`;
+  # already present transitively, promoted to a direct dependency because
+  # `lib/src/tools/basic_tools.dart` now imports it.
+  path: ^1.9.0
 
 # Dev-dependency discipline (Plan step C.9 / C.5 authoritative pin record).
 #
