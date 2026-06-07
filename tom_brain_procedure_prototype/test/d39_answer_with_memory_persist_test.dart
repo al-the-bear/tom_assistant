@@ -65,9 +65,7 @@ void main() {
 
   Future<ProcedureOutcome> runWith(String text) async {
     final resolver = await systemResolver();
-    final engine = engineFor(<LoadedProcedure>[
-      resolver.resolve('answer_with_memory_v1'),
-    ]);
+    final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
         .invoke(ProcedureInvocation(
           procedureId: 'answer_with_memory_v1',
@@ -166,11 +164,18 @@ void main() {
       await runWith('how do I automate backups?');
 
       final conclusionId = memory.persistedOfType('Conclusion').single.id;
-      // The authoritative final ProcedureRun node is the one persisted with a
-      // terminal status (the inflight marker carries status 'running').
-      final finalRun = memory
-          .persistedOfType('ProcedureRun')
-          .firstWhere((p) => p.draft.values['status'] != 'running');
+      // The authoritative final ProcedureRun node for the top-level answer run
+      // is the one persisted with a terminal status (the inflight marker
+      // carries status 'running') whose procedureId is the answer procedure —
+      // step-1 recall now fans out through the conductor + four `recall_*`
+      // sub-procedures (Extension-H step #30), each of which records its own
+      // ProcedureRun, so the run must be matched by procedureId, not just by a
+      // terminal status.
+      final finalRun = memory.persistedOfType('ProcedureRun').firstWhere(
+            (p) =>
+                p.draft.values['status'] != 'running' &&
+                p.draft.values['procedureId'] == 'answer_with_memory_v1',
+          );
 
       final producedBy = memory.recordedEdges.where(
         (e) => e.type == EdgeType.producedBy && e.from == conclusionId,
@@ -206,7 +211,7 @@ void main() {
 // and models just enough of the store for the run recorder's trail + stack
 // writes to succeed. Extends the C.18 / D.8 / D.37 / D.38 doubles with persist
 // and edge capture so the D.39 post-conditions can be asserted.
-class _PersistCapturingMemory implements TomBrainMemoryClient {
+class _PersistCapturingMemory implements TomBrainMemory {
   final _InMemoryStacks _stacks = _InMemoryStacks();
   final Map<NodeId, Node> _nodes = <NodeId, Node>{};
   final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
@@ -245,6 +250,9 @@ class _PersistCapturingMemory implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
 
   @override
   Future<ClassificationResult> classify(

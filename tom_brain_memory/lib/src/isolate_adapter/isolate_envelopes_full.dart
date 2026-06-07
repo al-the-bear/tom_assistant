@@ -38,7 +38,7 @@
 //   that carry a non-null `reRank` with `ArgumentError.value` before
 //   constructing the envelope (see `tom_brain_memory_isolate_client.dart`).
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MigrationCursor, MigrationDecl, MigrationStatus, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, RecallQuery, RecallResult, Scope, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackInfo, StackPolicy, StackSummary, StreamQuery, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MigrationCursor, MigrationDecl, MigrationStatus, MultiRecallQuery, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, RecallQuery, RecallResult, Scope, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackInfo, StackPolicy, StackSummary, StreamQuery, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
 
 import 'isolate_cancellation_protocol.dart';
 import 'isolate_messages.dart';
@@ -229,6 +229,19 @@ final class RecallRequest extends IsolateRequest {
 final class RecallResponse extends IsolateResponse {
   final RecallResult result;
   const RecallResponse(this.result);
+}
+
+/// `recallMulti` is fully wire-sendable: `MultiRecallQuery` carries no
+/// closures (unlike `RecallQuery.reRank`), so the whole query crosses
+/// the boundary intact and no caller-side guard is needed.
+final class RecallMultiRequest extends IsolateRequest {
+  final MultiRecallQuery query;
+  const RecallMultiRequest(this.query);
+}
+
+final class RecallMultiResponse extends IsolateResponse {
+  final RecallResult result;
+  const RecallMultiResponse(this.result);
 }
 
 /// Opens a `stream(StreamQuery)` cursor-backed scan. Backpressured —

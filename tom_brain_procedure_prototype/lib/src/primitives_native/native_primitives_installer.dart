@@ -45,6 +45,7 @@ import '../api/procedure_result.dart';
 import 'emit_primitive.dart';
 import 'note_primitive.dart';
 import 'procedure_inputs_bridge.dart';
+import 'procedure_result_bridge.dart';
 import 'run_procedure_primitive.dart';
 import 'scripted_llm_sugar.dart';
 import 'sugar_aliases.dart';
@@ -100,6 +101,12 @@ void Function(D4rt) nativePrimitivesInstaller({
     // `inputs.get('text')` (D.37). Registered alongside the engine-native
     // primitives because the engine always installs both on the same host.
     registerProcedureInputsBridge(interpreter);
+
+    // The read surface of `ProcedureResult`, so a conductor body can inspect
+    // a sub-procedure outcome (`result.isSuccess`, `result.output('seeds')`)
+    // returned by `runProcedure(...)` — first needed by the
+    // `retrieve_for_prompt_v1` conductor (Extension-H step #30, hub § 23.2).
+    registerProcedureResultBridge(interpreter);
 
     interpreter.registertopLevelFunction(
       runProcedureName,

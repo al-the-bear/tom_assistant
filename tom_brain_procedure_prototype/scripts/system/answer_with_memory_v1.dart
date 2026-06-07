@@ -10,14 +10,19 @@
 ///   - { name: text, type: String, required: true }
 /// outputs:
 ///   - { name: answer, type: String }
-/// requires: [ recall, embed, classify, llm, persist, edge, stack.push, note ]
+/// requires: [ runProcedure, embed, classify, llm, persist, edge, stack.push, note ]
 //
 // answer_with_memory_v1 — the prototype's one real system procedure
 // (`prototype_implementation_plan.md` D.10 / D.36–D.42;
 // `tom_brain_procedure_prototype_specification.md` § 4.4, § 11).
 //
-// D.37 (plan): "Step 1 — recall: `recall(text: access.envelope.text,
-// modes: {bm25, vector}, k: 8)`."
+// D.37 (plan): "Step 1 — recall." As of Extension-H step #30 this no longer
+// calls `mem.recall` directly: it dispatches the `retrieve_for_prompt_v1`
+// conductor (spec § 23.2), which runs the cheap non-LLM pass plus the LLM
+// `recall_*` strategies within budget and fuses every seed into one
+// `recall.multi`. The conductor returns the same `{nodes, report, provenance}`
+// shape the old direct recall produced, so steps 2–5 are unchanged. The
+// migration is total (PE-9) — the direct `mem.recall` call is gone, not shimmed.
 // D.38 (plan): "Step 2 — answer: `llm(prompt: assembled-from-recall +
 // access.envelope.text, role: 'assistant_to_user')`. Stream tokens back via
 // the `Access.deliver` callback."
@@ -154,19 +159,22 @@
 //   - `…/src/api/procedure_inputs.dart` names the `ProcedureInputs` type so
 //     `inputs.get('text')` dispatches onto the native bag
 //     (`procedure_inputs_bridge.dart`, D.37);
+//   - `…/src/api/procedure_result.dart` names the `ProcedureResult` type the
+//     conductor dispatch returns so `retrieval.output('recall')` resolves
+//     (`procedure_result_bridge.dart`, step #30);
 //   - `…/src/bridges/memory_bridge.dart` brings the `mem` global into scope
-//     so `mem.recall(...)` resolves (`brain_bridges_registrar.dart`);
+//     so `mem.persist(...)` / `mem.edge(...)` / `mem.classify(...)` /
+//     `mem.stackPush(...)` resolve (`brain_bridges_registrar.dart`);
 //   - `…/src/bridges/substrate_bridge.dart` brings the `sub` global into
-//     scope so `sub.llm(...)` resolves (D.38).
-// `mem.persist(...)` and `mem.edge(...)` (D.39) and `mem.stackPush(...)`
-// (D.40) resolve through the same `memory_bridge.dart` import.
+//     scope so `sub.llm(...)` / `sub.embed(...)` resolve (D.38).
 //   - `…/src/primitives_native/primitives_native.dart` brings the bare
-//     engine-native `note(...)` global into scope so `note('automation_'
-//     'candidate', …)` resolves (D.41). `note` is registered as a top-level
-//     function, not a bridge method, so it is reached by import, not via a
-//     `mem.`/`sub.` receiver (`native_primitives_installer.dart`).
+//     engine-native `runProcedure(...)` global into scope so step 1's conductor
+//     dispatch resolves (step #30), and the `note(...)` global so
+//     `note('automation_candidate', …)` resolves (D.41). Both are registered as
+//     top-level functions, not bridge methods, so they are reached by import,
+//     not via a `mem.`/`sub.` receiver (`native_primitives_installer.dart`).
 // These imports are the only surface this body touches; everything else is
-// denied (PE-1). The static `SandboxValidator` allow-lists exactly these four
+// denied (PE-1). The static `SandboxValidator` allow-lists exactly these
 // host-injected library URIs and rejects every other `import` (plus `export`
 // and the SDK-gateway identifiers); the engine runs that gate on every
 // resolved procedure before the host is built (E.3.5 reconciled the old
@@ -179,27 +187,31 @@
 // The machine-validated header fields track the body, not the summary, so
 // the artifact stays internally coherent (`ContractValidator`, § 7 rows
 // 4–5 — `requires` must match the body's actual calls). As of D.41:
-//   - `text` is `required: true` — step 1 reads it for `recall`, step 2
-//     folds it into the assembled prompt, step 3 persists it as the `Event`,
-//     step 4 embeds it (`sub.embed`) to classify it and records it as the
-//     `InterestItem.topic` on the cold path, step 5 uses it as the
-//     identical-shape repetition key and the note signature;
-//   - `requires` is `[recall, embed, classify, llm, persist, edge,
-//     stack.push, note]` — the bridged primitives the body calls (memory
-//     recall + the cold-path embed/classify pair + substrate completion +
-//     node persist + edge creation + the cold-path `interests` stack push +
-//     the repetition `automation_candidate` trail note). The list is a set;
-//     order is immaterial (the validator compares membership, § 7 row 5);
+//   - `text` is `required: true` — step 1 forwards it (via `inputs`) to the
+//     retrieval conductor, step 2 folds it into the assembled prompt, step 3
+//     persists it as the `Event`, step 4 embeds it (`sub.embed`) to classify it
+//     and records it as the `InterestItem.topic` on the cold path, step 5 uses
+//     it as the identical-shape repetition key and the note signature;
+//   - `requires` is `[runProcedure, embed, classify, llm, persist, edge,
+//     stack.push, note]` — the bridged primitives the body calls (the retrieval
+//     conductor dispatch + the cold-path embed/classify pair + substrate
+//     completion + node persist + edge creation + the cold-path `interests`
+//     stack push + the repetition `automation_candidate` trail note). The list
+//     is a set; order is immaterial (the validator compares membership,
+//     § 7 row 5);
 //   - the only declared output is `answer` (the concatenated LLM answer
 //     text). The body also returns the reserved `producedNodeIds` key, which
 //     the engine consumes (to draw the run's `produced_by` edge) and strips
 //     before surfacing the result — it is a body→engine transport channel,
 //     not a declared output.
 //
-// `ProcedureResult` is not bridged into d4rt (Q-C.38.2), so the entry point
-// returns a plain `Map` the engine coerces into a succeeded result; the
-// strict `Future<ProcedureResult> run(ProcedureInputs inputs) async` shape
-// arrives once ProcedureResult is bridged.
+// `ProcedureResult`'s *read* surface is bridged into d4rt as of step #30
+// (`procedure_result_bridge.dart`) so this body can inspect the conductor
+// dispatch's result (`retrieval.output('recall')`); the result *construction*
+// is still the engine's job, so the entry point returns a plain `Map` the
+// engine coerces into a succeeded result. The strict
+// `Future<ProcedureResult> run(ProcedureInputs inputs) async` entry shape
+// arrives once the engine coerces a returned result wrapper.
 //
 // The anchor invariant (PE-7) holds structurally: `sub.llm` is the only
 // completion path and it names a `role` + supplies `inputs` — it can never
@@ -208,13 +220,25 @@
 // this body builds is the role template's `prompt` *input*, not the wire
 // prompt.
 import 'package:tom_brain_procedure_prototype/src/api/procedure_inputs.dart';
+import 'package:tom_brain_procedure_prototype/src/api/procedure_result.dart';
 import 'package:tom_brain_procedure_prototype/src/bridges/memory_bridge.dart';
 import 'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart';
 import 'package:tom_brain_procedure_prototype/src/primitives_native/primitives_native.dart';
 
 Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final text = inputs.get('text');
-  final recall = await mem.recall(text, modes: ['bm25', 'vector'], k: 8);
+
+  // Step 1 — recall via the retrieval conductor (Extension-H step #30, spec
+  // § 23.2). The conductor runs the cheap non-LLM pass plus the LLM `recall_*`
+  // strategies within budget and fuses every seed into one `recall.multi`,
+  // returning `{nodes, report, provenance}` — the same shape `mem.recall` used
+  // to return, so the downstream prompt assembly / citation / repeat checks are
+  // unchanged. The migration is total (PE-9): the old direct `mem.recall` call
+  // is gone, not shimmed. The conductor is dispatched as its own sub-procedure
+  // (its own ProcedureRun, depth budget, effort budget), and `inputs` is
+  // forwarded straight through (it already carries `text`).
+  final retrieval = await runProcedure('retrieve_for_prompt_v1', inputs);
+  final recall = retrieval.output('recall');
   final prompt = _assemblePrompt(recall, text);
   final completion = await sub.llm(prompt, role: 'assistant_to_user');
   final answer = completion['text'];

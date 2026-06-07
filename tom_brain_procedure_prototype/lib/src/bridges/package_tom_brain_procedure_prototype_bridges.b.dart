@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Sources: 5 files
-// Generated: 2026-06-07T15:43:26.451730
+// Generated: 2026-06-07T22:35:01.898049
 
 // ignore_for_file: unused_import, deprecated_member_use, prefer_function_declarations_over_variables, implementation_imports, sort_child_properties_last, non_constant_identifier_names, avoid_function_literals_in_foreach_calls, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member
 
@@ -19,8 +19,9 @@ import 'package:tom_brain_procedure_prototype/src/budget/budget_ledger.dart' as 
 import 'package:tom_brain_procedure_prototype/src/config/provider_config.dart' as $tom_brain_procedure_prototype_9;
 import 'package:tom_brain_procedure_prototype/src/mcp/mcp_client.dart' as $tom_brain_procedure_prototype_10;
 import 'package:tom_brain_procedure_prototype/src/tools/tool_context.dart' as $tom_brain_procedure_prototype_11;
-import 'package:tom_brain_procedure_prototype/src/tools/tool_policy.dart' as $tom_brain_procedure_prototype_12;
-import 'package:tom_brain_procedure_prototype/src/tools/tool_registry.dart' as $tom_brain_procedure_prototype_13;
+import 'package:tom_brain_procedure_prototype/src/tools/tool_event.dart' as $tom_brain_procedure_prototype_12;
+import 'package:tom_brain_procedure_prototype/src/tools/tool_policy.dart' as $tom_brain_procedure_prototype_13;
+import 'package:tom_brain_procedure_prototype/src/tools/tool_registry.dart' as $tom_brain_procedure_prototype_14;
 import 'package:tom_brain_shared/src/budget/budget.dart' as $tom_brain_shared_1;
 import 'package:tom_brain_shared/src/memory/api/tom_brain_memory_client.dart' as $tom_brain_shared_2;
 import 'package:tom_brain_substrate/src/api/tom_brain_substrate_client.dart' as $tom_brain_substrate_1;
@@ -74,6 +75,7 @@ class PackageTomBrainProcedurePrototypeBridge {
       'SubstrateTokenSink',
       'SubstrateNoteSink',
       'ToolProtocolResolver',
+      'ToolEventSink',
     ];
   }
 
@@ -202,6 +204,16 @@ BridgedClass _createMemoryBridgeBridge() {
           return t.recall(text, k: k, modes: modes);
         }
         throw StateError('Unreachable: all named parameter combinations should be covered');
+      },
+      'recallMulti': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_3.MemoryBridge>(target, 'MemoryBridge');
+        D4.requireMinArgs(positional, 1, 'recallMulti');
+        if (positional.isEmpty) {
+          throw ArgumentError('recallMulti: Missing required argument "seeds" at position 0');
+        }
+        final seeds = D4.coerceList<Object?>(positional[0], 'seeds');
+        final k = D4.getNamedArgWithDefault<int>(named, 'k', 20);
+        return t.recallMulti(seeds, k: k);
       },
       'classify': (visitor, target, positional, named, typeArgs) {
         final t = D4.validateTarget<$tom_brain_procedure_prototype_3.MemoryBridge>(target, 'MemoryBridge');
@@ -337,6 +349,7 @@ BridgedClass _createMemoryBridgeBridge() {
     },
     methodSignatures: {
       'recall': 'Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8})',
+      'recallMulti': 'Future<Map<String, Object?>> recallMulti(List<Object?> seeds, {int k = 20})',
       'classify': 'Future<Map<String, Object?>> classify(List<double> embedding, {String target = \'nodeType\'})',
       'persist': 'Future<String> persist(String typeName, Map<String, Object?> values, {required String producer, String? idempotencyKey, String? causedBy, String? runId, List<double>? embedding})',
       'edge': 'Future<String> edge(String from, String type, String to, {required String producer, double weight = 1.0, String? idempotencyKey, String? causedBy, String? runId, Map<String, Object?>? attrs})',
@@ -399,6 +412,14 @@ BridgedClass _createSubstrateBridgeBridge() {
         }
         throw StateError('Unreachable: all named parameter combinations should be covered');
       },
+      'retrievalRole': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_prototype_4.SubstrateBridge>(target, 'SubstrateBridge');
+        D4.requireMinArgs(positional, 2, 'retrievalRole');
+        final roleId = D4.getRequiredArg<String>(positional, 0, 'roleId', 'retrievalRole');
+        final prompt = D4.getRequiredArg<String>(positional, 1, 'prompt', 'retrievalRole');
+        final budget = D4.coerceMapOrNull<String, Object?>(named['budget'], 'budget');
+        return t.retrievalRole(roleId, prompt, budget: budget);
+      },
       'embed': (visitor, target, positional, named, typeArgs) {
         final t = D4.validateTarget<$tom_brain_procedure_prototype_4.SubstrateBridge>(target, 'SubstrateBridge');
         D4.requireMinArgs(positional, 1, 'embed');
@@ -430,6 +451,7 @@ BridgedClass _createSubstrateBridgeBridge() {
     },
     methodSignatures: {
       'llm': 'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, List<Object?>? tools, Map<String, Object?>? budget})',
+      'retrievalRole': 'Future<Map<String, Object?>> retrievalRole(String roleId, String prompt, {Map<String, Object?>? budget})',
       'embed': 'Future<Map<String, Object?>> embed(String text)',
       'search': 'Future<Map<String, Object?>> search(String query, {String? provider, int k = 10})',
       'fetch': 'Future<Map<String, Object?>> fetch(String url, {int? budgetBytes})',
@@ -502,10 +524,12 @@ BridgedClass _createToolBridgeBridge() {
     constructors: {
       '': (visitor, positional, named) {
         D4.requireMinArgs(positional, 3, 'ToolBridge');
-        final registry = D4.getRequiredArg<$tom_brain_procedure_prototype_13.ToolRegistry>(positional, 0, '_registry', 'ToolBridge');
-        final policy = D4.getRequiredArg<$tom_brain_procedure_prototype_12.ToolPolicy>(positional, 1, '_policy', 'ToolBridge');
+        final registry = D4.getRequiredArg<$tom_brain_procedure_prototype_14.ToolRegistry>(positional, 0, '_registry', 'ToolBridge');
+        final policy = D4.getRequiredArg<$tom_brain_procedure_prototype_13.ToolPolicy>(positional, 1, '_policy', 'ToolBridge');
         final context = D4.getRequiredArg<$tom_brain_procedure_prototype_11.ToolContext>(positional, 2, '_context', 'ToolBridge');
-        return $tom_brain_procedure_prototype_5.ToolBridge(registry, policy, context);
+        final onEventRaw = named['onEvent'];
+        final clockRaw = named['clock'];
+        return $tom_brain_procedure_prototype_5.ToolBridge(registry, policy, context, onEvent: onEventRaw == null ? null : ($tom_brain_procedure_prototype_12.ToolEvent p0) { D4.callInterpreterCallback(visitor!, onEventRaw, [p0]); }, clock: clockRaw == null ? null : (() { return D4.extractBridgedArg<DateTime>(D4.callInterpreterCallback(visitor!, clockRaw, []), 'callback', visitor) as DateTime; }) as DateTime Function());
       },
     },
     methods: {
@@ -526,7 +550,7 @@ BridgedClass _createToolBridgeBridge() {
       },
     },
     constructorSignatures: {
-      '': 'ToolBridge(ToolRegistry _registry, ToolPolicy _policy, ToolContext _context)',
+      '': 'ToolBridge(ToolRegistry _registry, ToolPolicy _policy, ToolContext _context, {ToolEventSink? onEvent, DateTime Function()? clock})',
     },
     methodSignatures: {
       'list': 'Future<List<Map<String, Object?>>> list({String? filter})',

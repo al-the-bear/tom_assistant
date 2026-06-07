@@ -118,11 +118,18 @@ void main() {
     return booted;
   }
 
-  /// The authoritative final `ProcedureRun` node — the one the recorder
-  /// persists with a terminal status (the inflight marker carries 'running').
-  ({NodeId id, NodeDraft draft}) finalRunNode() => memory
-      .persistedOfType('ProcedureRun')
-      .firstWhere((p) => p.draft.values['status'] != 'running');
+  /// The authoritative final `ProcedureRun` node for the top-level answer run —
+  /// the one the recorder persists with a terminal status (the inflight marker
+  /// carries 'running') whose procedureId is the answer procedure. Step-1
+  /// recall now fans out through the conductor + four `recall_*` sub-procedures
+  /// (Extension-H step #30), each recording its own ProcedureRun, so the answer
+  /// run must be matched by procedureId, not just by a terminal status.
+  ({NodeId id, NodeDraft draft}) finalRunNode() =>
+      memory.persistedOfType('ProcedureRun').firstWhere(
+            (p) =>
+                p.draft.values['status'] != 'running' &&
+                p.draft.values['procedureId'] == 'answer_with_memory_v1',
+          );
 
   // The two recalled node ids the warm path should cite in its derived_from
   // edges.
@@ -348,7 +355,7 @@ RecallResult _recallWith(List<Node> nodes) => RecallResult(
 // `accept` resolution exposes the run's complete post-condition set. Mirrors
 // the D.42 consolidated double, plus the explicit `open`/`close` the in-process
 // provisioning seam (D.43) drives.
-class _StubMemory implements TomBrainMemoryClient {
+class _StubMemory implements TomBrainMemory {
   final _InMemoryStacks _stacks = _InMemoryStacks();
   final Map<NodeId, Node> _nodes = <NodeId, Node>{};
   final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
@@ -404,6 +411,9 @@ class _StubMemory implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
 
   @override
   Future<ClassificationResult> classify(

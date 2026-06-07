@@ -297,7 +297,7 @@ SubstrateConfig _minimalSubstrateConfig() => const SubstrateConfig(
 // recorder's trail + stack writes and for asserting the procedure's
 // post-conditions. Mirrors the d42 `_BrainMemory` double, plus open/close
 // recording.
-class _BootMemory implements TomBrainMemoryClient {
+class _BootMemory implements TomBrainMemory {
   final _InMemoryStacks _stacks = _InMemoryStacks();
   final Map<NodeId, Node> _nodes = <NodeId, Node>{};
   final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
@@ -348,6 +348,9 @@ class _BootMemory implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
 
   @override
   Future<ClassificationResult> classify(

@@ -163,6 +163,10 @@ class _FakeMemoryClient implements TomBrainMemoryClient {
       const RecallResult(nodes: <Node>[], report: _emptyReport);
 
   @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      const RecallResult(nodes: <Node>[], report: _emptyReport);
+
+  @override
   Stream<Node> stream(StreamQuery query) => const Stream<Node>.empty();
 
   @override
@@ -214,12 +218,9 @@ class _FakeMemoryClient implements TomBrainMemoryClient {
 /// concretely realised on top of `TomBrainMemoryClient` without
 /// re-declaring abstract members.
 class _FakeInProcessMemory extends _FakeMemoryClient implements TomBrainMemory {
-  // The in-process marker adds the H.28 read surface
-  // (`recallMulti` / `profiles` / `currentProfile`) over the client.
-  @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
-      const RecallResult(nodes: <Node>[], report: _emptyReport);
-
+  // The in-process marker adds only the profile-administration seam
+  // (`profiles` / `currentProfile`) over the client. The wire-capable
+  // `recallMulti` lives on `TomBrainMemoryClient` and is inherited.
   @override
   MemoryProfileRegistry get profiles => _FakeProfileRegistry();
 

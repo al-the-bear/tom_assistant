@@ -47,6 +47,11 @@ export 'procedure_inputs_bridge.dart'
         procedureInputsBridgedClass,
         procedureInputsLibrary,
         registerProcedureInputsBridge;
+export 'procedure_result_bridge.dart'
+    show
+        procedureResultBridgedClass,
+        procedureResultLibrary,
+        registerProcedureResultBridge;
 export 'recursion_limit_exceeded.dart'
     show RecursionLimitExceeded, recursionLimitExceededCode;
 export 'run_procedure_primitive.dart'

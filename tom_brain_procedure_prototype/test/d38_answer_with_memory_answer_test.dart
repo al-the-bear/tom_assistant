@@ -68,9 +68,7 @@ void main() {
 
   Future<ProcedureOutcome> runWith(String text) async {
     final resolver = await systemResolver();
-    final engine = engineFor(<LoadedProcedure>[
-      resolver.resolve('answer_with_memory_v1'),
-    ]);
+    final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
         .invoke(ProcedureInvocation(
           procedureId: 'answer_with_memory_v1',
@@ -209,13 +207,14 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 // for the run recorder's writes to succeed (trails are entry logs, stacks are
 // push/peek containers, persisted nodes are resolvable by id). Mirrors the
 // C.18 / D.8 / D.37 doubles.
-class _RecallCapturingMemory implements TomBrainMemoryClient {
+class _RecallCapturingMemory implements TomBrainMemory {
   final _InMemoryStacks _stacks = _InMemoryStacks();
   final Map<NodeId, Node> _nodes = <NodeId, Node>{};
   final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
   final Set<TrailId> _closedTrails = <TrailId>{};
 
   RecallQuery? lastRecallQuery;
+  MultiRecallQuery? lastMultiRecallQuery;
   RecallResult recallResult = const RecallResult(
     nodes: <Node>[],
     report: RecallReport(
@@ -238,6 +237,12 @@ class _RecallCapturingMemory implements TomBrainMemoryClient {
   @override
   Future<RecallResult> recall(RecallQuery query) async {
     lastRecallQuery = query;
+    return recallResult;
+  }
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async {
+    lastMultiRecallQuery = query;
     return recallResult;
   }
 

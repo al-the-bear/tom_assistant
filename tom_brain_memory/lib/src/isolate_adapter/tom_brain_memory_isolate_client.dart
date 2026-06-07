@@ -47,7 +47,7 @@
 
 import 'dart:async';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MemoryConfig, MemoryEvent, MemoryStats, MigrationApi, MigrationCursor, MigrationDecl, MigrationStatus, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, RecallQuery, RecallResult, Scope, StackApi, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackEvent, StackInfo, StackPolicy, StackSummary, StreamQuery, TomBrainMemoryClient, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MemoryConfig, MemoryEvent, MemoryStats, MigrationApi, MigrationCursor, MigrationDecl, MigrationStatus, MultiRecallQuery, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, RecallQuery, RecallResult, Scope, StackApi, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackEvent, StackInfo, StackPolicy, StackSummary, StreamQuery, TomBrainMemoryClient, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
 
 import 'isolate_cancellation_protocol.dart';
 import 'isolate_envelopes_full.dart';
@@ -259,6 +259,14 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
       );
     }
     final r = await host.send<RecallResponse>(RecallRequest(query));
+    return r.result;
+  }
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async {
+    // Fully wire-sendable: MultiRecallQuery carries no closures, so the
+    // whole query crosses the boundary intact (unlike RecallQuery.reRank).
+    final r = await host.send<RecallMultiResponse>(RecallMultiRequest(query));
     return r.result;
   }
 

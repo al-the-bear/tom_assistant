@@ -21,10 +21,12 @@
 //
 // The method-level docs on this interface describe the
 // *consumer-observable* contract — what every implementation must
-// honour. `TomBrainMemory` extends this interface with no extra
-// abstract members for v1; it exists as the seam where in-process-
-// only fast paths (synchronous introspection, direct DB handles
-// for tests) can land later without crossing the isolate boundary.
+// honour. `TomBrainMemory` extends this interface with the
+// in-process-only seam (`profiles`, a live administration registry,
+// and `currentProfile`, handle-bound state) — surface that cannot
+// cross the isolate boundary. Everything wire-capable (including the
+// multi-seed `recallMulti`, whose query carries no closures) lives
+// here on the substitutable client contract.
 //
 // A.89 ships a black-box conformance suite that drives
 // `TomBrainMemoryClient` only and must pass against both
@@ -41,6 +43,7 @@ import '../edges/edge_type.dart';
 import '../migrations/migration_api.dart';
 import '../nodes/node.dart';
 import '../nodes/node_type_decl.dart';
+import '../retrieval/multi_recall_query.dart';
 import '../retrieval/recall_query.dart';
 import '../retrieval/recall_result.dart';
 import '../retrieval/stream_query.dart';
@@ -220,6 +223,23 @@ abstract class TomBrainMemoryClient {
   /// `query.reRank` hook is the only LLM touchpoint and is
   /// supplied by the caller.
   Future<RecallResult> recall(RecallQuery query);
+
+  /// Multi-seed weighted-RRF recall (memory § 6.5, Extension H).
+  ///
+  /// Runs each [MultiRecallQuery.seeds] entry through the § 6.1 mode
+  /// implementations, fuses the per-seed ranked lists with RRF
+  /// honouring each seed's weight, diversifies with MMR, and returns
+  /// one [RecallResult] whose `provenance` records which seeds
+  /// surfaced each node and its fused score. Instantiates no LLM —
+  /// text seeds are embedded by the storage-stack embedder, exactly as
+  /// single-seed [recall] already does.
+  ///
+  /// This is the wire-capable sibling of [recall]: [MultiRecallQuery]
+  /// carries no closures, so it crosses the isolate boundary intact.
+  /// It therefore lives on the substitutable client contract (not the
+  /// in-process-only [TomBrainMemory] seam) — the retrieval conductor
+  /// calls it transport-blind, satisfying PE-10.
+  Future<RecallResult> recallMulti(MultiRecallQuery query);
 
   /// Cursor-backed bulk iteration (§ 9.2).
   ///

@@ -32,6 +32,7 @@ final class BridgedPrimitiveCatalog {
   /// set re-exposed by `MemoryBridge`.
   static const Set<String> memory = {
     'recall',
+    'recallMulti',
     'classify',
     'persist',
     'edge',
@@ -49,7 +50,13 @@ final class BridgedPrimitiveCatalog {
   };
 
   /// Substrate primitives (C.13), re-exposed by `SubstrateBridge`.
-  static const Set<String> substrate = {'llm', 'embed', 'search', 'fetch'};
+  static const Set<String> substrate = {
+    'llm',
+    'embed',
+    'search',
+    'fetch',
+    'retrievalRole',
+  };
 
   /// Engine-native primitives (C.19–C.21).
   static const Set<String> engineNative = {

@@ -87,14 +87,15 @@ void main() {
       final loaded = resolver.resolve('answer_with_memory_v1');
       expect(loaded.header.id, 'answer_with_memory_v1');
       expect(loaded.header.version, 1);
-      // D.37–D.41 — the body calls `recall`, the cold-path `embed` +
-      // `classify`, `llm`, `persist`/`edge`, the cold-path `stack.push`, then
-      // the repetition `note`, so the header declares exactly those bridged
-      // primitives.
+      // D.37–D.41 / Extension-H step #30 — step-1 recall now runs through the
+      // `retrieve_for_prompt_v1` conductor (`runProcedure`), not a direct
+      // `recall`; the body still calls the cold-path `embed` + `classify`,
+      // `llm`, `persist`/`edge`, the cold-path `stack.push`, then the
+      // repetition `note`, so the header declares exactly those primitives.
       expect(
           loaded.header.requires,
           <String>[
-            'recall',
+            'runProcedure',
             'embed',
             'classify',
             'llm',
@@ -111,9 +112,7 @@ void main() {
   group('D.8-2 invoking the procedure resolves an accepted outcome', () {
     test('answer_with_memory_v1 runs to an accepted outcome', () async {
       final resolver = await systemResolver();
-      final engine = engineFor(<LoadedProcedure>[
-        resolver.resolve('answer_with_memory_v1'),
-      ]);
+      final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
 
       final outcome = await engine
           .invoke(ProcedureInvocation(
@@ -123,14 +122,19 @@ void main() {
           .outcome;
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      // The body called recall (D.37) and fed it into the answer step (D.38),
-      // which surfaces the generated answer as the `answer` output.
-      expect(memory.lastRecallQuery, isNotNull);
+      // The body recalled through the retrieval conductor (Extension-H step
+      // #30) and fed the fused recall into the answer step (D.38), which
+      // surfaces the generated answer as the `answer` output.
+      expect(memory.lastMultiRecallQuery, isNotNull);
       expect(outcome.result!.outputs.containsKey('answer'), isTrue);
 
-      // The recorder wrote the run to `recent_runs` (one run).
+      // The recorder wrote the whole run tree to `recent_runs`: the top-level
+      // answer run plus the conductor and its four `recall_*` sub-procedures
+      // (Extension-H step #30) — each nested run records its own ProcedureRun
+      // (the recorder is the sole writer for every run, top-level and nested,
+      // spec § 8), so the single prompt produces six recorded runs.
       final recent = await memory.stacks.peek(recentRunsStackName);
-      expect(recent, hasLength(1));
+      expect(recent, hasLength(6));
     });
   });
 
@@ -193,7 +197,7 @@ class _InertSubstrate implements TomBrainSubstrateClient {
 // trails are ordered entry logs, stacks are push/peek/remove containers,
 // persisted nodes are resolvable by id. Copied from the C.40 sugar suite;
 // unimplemented members fall through to `noSuchMethod`.
-class _StatefulMemory implements TomBrainMemoryClient {
+class _StatefulMemory implements TomBrainMemory {
   final _InMemoryStacks _stacks = _InMemoryStacks();
   final Map<NodeId, Node> _nodes = <NodeId, Node>{};
   final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
@@ -201,6 +205,10 @@ class _StatefulMemory implements TomBrainMemoryClient {
 
   /// The query the most recent `recall` was called with (D.37).
   RecallQuery? lastRecallQuery;
+
+  /// The query the most recent `recallMulti` was called with — the conductor
+  /// path now reaches the store through `recallMulti`, not `recall`.
+  MultiRecallQuery? lastMultiRecallQuery;
 
   /// The canned result `recall` returns — an empty result by default.
   RecallResult recallResult = const RecallResult(
@@ -225,6 +233,12 @@ class _StatefulMemory implements TomBrainMemoryClient {
   @override
   Future<RecallResult> recall(RecallQuery query) async {
     lastRecallQuery = query;
+    return recallResult;
+  }
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async {
+    lastMultiRecallQuery = query;
     return recallResult;
   }
 

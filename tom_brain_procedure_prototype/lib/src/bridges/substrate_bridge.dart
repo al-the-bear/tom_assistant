@@ -479,6 +479,109 @@ class SubstrateBridge {
     return out;
   }
 
+  // ── retrievalRole ───────────────────────────────────────────────────
+
+  /// Runs one Extension-H retrieval role (substrate § 6.2a) and returns its
+  /// **deterministically parsed** output, degrading gracefully on a malformed
+  /// model result rather than crashing (PE-6, hub § 23.9).
+  ///
+  /// [roleId] names one of the six retrieval roles (`recall_planner`,
+  /// `hypothesis_writer`, `query_term_writer`, `category_selector`,
+  /// `retrieval_reranker`, `profile_selector`); [prompt] is the role input.
+  /// The role is asked to answer with a JSON object matching its schema; this
+  /// method routes through [llm] (so the anchor and budget gate still apply),
+  /// reads the completion text, `jsonDecode`s it, and lifts it into the role's
+  /// typed shape via `parseRetrievalRoleOutput`.
+  ///
+  /// Returns a primitive map the conductor / `recall_*` procedures consume:
+  ///
+  ///   - on success: `{'ok': true, 'role': roleId, 'output': {...}}` — the
+  ///     `output` map is the role-specific projection (see
+  ///     [_retrievalOutputToMap]);
+  ///   - on a malformed result (non-JSON text, or JSON that does not match the
+  ///     role schema, or an unknown [roleId]): `{'ok': false, 'code':
+  ///     'retrieval.role.output.malformed', 'reason': …}`.
+  ///
+  /// A genuine substrate failure (the completion stream fails) is **not**
+  /// degraded here — it propagates as [LlmCompletionFailure] so the calling
+  /// sub-procedure fails and the conductor drops its seeds (the PE-6 path lives
+  /// at the conductor, not here). Only a *well-returned but unusable* result is
+  /// the graceful-degrade case § 6.2a defines.
+  Future<Map<String, Object?>> retrievalRole(
+    String roleId,
+    String prompt, {
+    Map<String, Object?>? budget,
+  }) async {
+    final completion = await llm(prompt, role: roleId, budget: budget);
+    final text = completion['text'];
+    if (text is! String) {
+      return _retrievalDegraded('role "$roleId" produced no text');
+    }
+
+    Object? decoded;
+    try {
+      decoded = jsonDecode(text);
+    } on FormatException catch (e) {
+      return _retrievalDegraded('role "$roleId" output is not JSON: ${e.message}');
+    }
+    if (decoded is! Map) {
+      return _retrievalDegraded('role "$roleId" output is not a JSON object');
+    }
+
+    final json = <String, Object?>{};
+    decoded.forEach((Object? key, Object? value) => json['$key'] = value);
+
+    final parse = parseRetrievalRoleOutput(roleId, json);
+    switch (parse) {
+      case RetrievalRoleParsed(:final output):
+        return <String, Object?>{
+          'ok': true,
+          'role': roleId,
+          'output': _retrievalOutputToMap(output),
+        };
+      case RetrievalRoleDegraded(:final code, :final reason):
+        return <String, Object?>{'ok': false, 'code': code, 'reason': reason};
+    }
+  }
+
+  static Map<String, Object?> _retrievalDegraded(String reason) =>
+      <String, Object?>{
+        'ok': false,
+        'code': retrievalRoleOutputMalformed,
+        'reason': reason,
+      };
+
+  /// Projects a typed [RetrievalRoleOutput] into the primitive map a procedure
+  /// reads. Exhaustive over the six § 6.2a output classes.
+  static Map<String, Object?> _retrievalOutputToMap(RetrievalRoleOutput o) {
+    switch (o) {
+      case RecallPlannerOutput(:final questions):
+        return <String, Object?>{'questions': questions};
+      case HypothesisWriterOutput(:final answers):
+        return <String, Object?>{'answers': answers};
+      case QueryTermWriterOutput(:final query, :final synonyms):
+        return <String, Object?>{'query': query, 'synonyms': synonyms};
+      case CategorySelectorOutput(
+          :final nodeTypes,
+          :final edgeTypes,
+          :final conceptNames,
+        ):
+        return <String, Object?>{
+          'nodeTypes': nodeTypes,
+          'edgeTypes': edgeTypes,
+          'conceptNames': conceptNames,
+        };
+      case RetrievalRerankerOutput(:final ranking):
+        return <String, Object?>{
+          'ranking': ranking
+              .map((c) => <String, Object?>{'id': c.id, 'score': c.score})
+              .toList(),
+        };
+      case ProfileSelectorOutput(:final profile, :final confidence):
+        return <String, Object?>{'profile': profile, 'confidence': confidence};
+    }
+  }
+
   // ── embed ─────────────────────────────────────────────────────────
 
   /// Embeds [text] and returns the vector plus the producing model's

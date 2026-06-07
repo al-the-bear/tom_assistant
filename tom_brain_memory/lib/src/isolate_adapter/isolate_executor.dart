@@ -273,6 +273,10 @@ class MemoryIsolateExecutor extends TomExecutor {
           final r = await _requireOpenMemory().recall(query);
           return RecallResponse(r);
 
+        case RecallMultiRequest(:final query):
+          final r = await _requireOpenMemory().recallMulti(query);
+          return RecallMultiResponse(r);
+
         case OpenStreamQueryRequest(
               :final streamId,
               :final query,

@@ -45,7 +45,7 @@
 // d4rt scripts call.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show MemoryProfileRegistry, MultiRecallQuery, RecallResult, TomBrainMemoryClient;
+    show MemoryProfileRegistry, TomBrainMemoryClient;
 
 /// The in-process Dart base class for the brain's property-graph
 /// memory.
@@ -56,23 +56,16 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 ///
 /// **Implementation rule:** the only concrete implementation that
 /// exists for v1 is `SqliteTomBrainMemory` (lands at A.28). Tests
-/// that need an in-process fake implement this class directly —
-/// there is no second production implementation. Tests that want
-/// to assert behaviour at the client-interface boundary instead
-/// implement [TomBrainMemoryClient] (lighter, isolate-adapter-
-/// compatible).
+/// that need the profile-administration seam implement this class
+/// directly — there is no second production implementation. Tests
+/// that want to assert behaviour at the client-interface boundary
+/// instead implement [TomBrainMemoryClient] (lighter, isolate-
+/// adapter-compatible). The only members this class adds over the
+/// client are the in-process-only seams `profiles` (a live
+/// administration registry) and `currentProfile` (handle-bound
+/// state); everything wire-capable, including `recallMulti`, lives
+/// on [TomBrainMemoryClient].
 abstract class TomBrainMemory implements TomBrainMemoryClient {
-  /// Multi-seed weighted-RRF recall (memory § 6.5, Extension H).
-  ///
-  /// Runs each [MultiRecallQuery.seeds] entry through the § 6.1 mode
-  /// implementations, fuses the per-seed ranked lists with RRF
-  /// honouring each seed's weight, diversifies with MMR, and returns
-  /// one [RecallResult] whose `provenance` records which seeds
-  /// surfaced each node and its fused score. Instantiates no LLM —
-  /// text seeds are embedded by the storage-stack embedder, exactly as
-  /// single-seed `recall` already does.
-  Future<RecallResult> recallMulti(MultiRecallQuery query);
-
   /// The profile-administration surface over the
   /// `<memory-root>/profiles/` tier (memory § 2.5).
   ///

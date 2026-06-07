@@ -1,7 +1,7 @@
 // GENERATED FILE - DO NOT EDIT
 // This file triggers bridge regeneration when deleted before build_runner.
 // Delete this file to force all bridges to be regenerated.
-// Generated: 2026-06-07T15:43:26.477222
+// Generated: 2026-06-07T22:35:01.928197
 
 /// Marker class for bridge regeneration trigger.
 /// 
@@ -12,7 +12,7 @@ class BridgesTrigger {
   BridgesTrigger._();
   
   /// Last bridge build timestamp.
-  static const String lastBuildTime = '2026-06-07T15:43:26.477228';
+  static const String lastBuildTime = '2026-06-07T22:35:01.928203';
   
   /// Number of modules generated.
   static const int moduleCount = 1;

@@ -31,6 +31,8 @@ import '../primitives_native/native_primitives_installer.dart'
     show engineNativeLibrary;
 import '../primitives_native/procedure_inputs_bridge.dart'
     show procedureInputsLibrary;
+import '../primitives_native/procedure_result_bridge.dart'
+    show procedureResultLibrary;
 import '../procedure_store/procedure_loader.dart';
 import 'code_projection.dart';
 import 'procedure_sandbox_violation.dart';
@@ -88,14 +90,15 @@ final class SandboxValidator {
   /// violation, because it pulls in code from outside the bridged surface.
   ///
   /// Sourced from the canonical URI constants (`BrainBridges.memoryLibrary` /
-  /// `…substrateLibrary`, [engineNativeLibrary], [procedureInputsLibrary]) so
-  /// the allow-list cannot drift from the libraries the host actually
-  /// registers.
+  /// `…substrateLibrary`, [engineNativeLibrary], [procedureInputsLibrary],
+  /// [procedureResultLibrary]) so the allow-list cannot drift from the
+  /// libraries the host actually registers.
   static const Set<String> defaultAllowedImportUris = {
     BrainBridges.memoryLibrary,
     BrainBridges.substrateLibrary,
     engineNativeLibrary,
     procedureInputsLibrary,
+    procedureResultLibrary,
   };
 
   /// Top-level identifiers a procedure may never reference. These are the

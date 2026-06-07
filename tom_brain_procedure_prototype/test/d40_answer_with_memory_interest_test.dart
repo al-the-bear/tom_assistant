@@ -72,9 +72,7 @@ void main() {
 
   Future<ProcedureOutcome> runWith(String text) async {
     final resolver = await systemResolver();
-    final engine = engineFor(<LoadedProcedure>[
-      resolver.resolve('answer_with_memory_v1'),
-    ]);
+    final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
         .invoke(ProcedureInvocation(
           procedureId: 'answer_with_memory_v1',
@@ -195,7 +193,7 @@ void main() {
 // and models just enough of the store (trails + stacks) for the run recorder's
 // writes and the cold-path `interests` push to succeed. Mirrors the D.39
 // double, extended so the `interests` stack contents are readable via `peek`.
-class _InterestCapturingMemory implements TomBrainMemoryClient {
+class _InterestCapturingMemory implements TomBrainMemory {
   final _InMemoryStacks _stacks = _InMemoryStacks();
   final Map<NodeId, Node> _nodes = <NodeId, Node>{};
   final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
@@ -233,6 +231,9 @@ class _InterestCapturingMemory implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
 
   @override
   Future<ClassificationResult> classify(

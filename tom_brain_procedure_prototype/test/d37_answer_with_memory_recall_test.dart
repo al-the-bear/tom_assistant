@@ -66,9 +66,7 @@ void main() {
 
   Future<ProcedureOutcome> runWith(String text) async {
     final resolver = await systemResolver();
-    final engine = engineFor(<LoadedProcedure>[
-      resolver.resolve('answer_with_memory_v1'),
-    ]);
+    final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
         .invoke(ProcedureInvocation(
           procedureId: 'answer_with_memory_v1',
@@ -77,25 +75,32 @@ void main() {
         .outcome;
   }
 
-  group('D.37-1 the body reads its input and calls recall with it', () {
-    test('the inbound text reaches recall as the query text', () async {
+  group('D.37-1 the body reads its input and recalls with it', () {
+    test('the inbound text reaches the fused recall as a BM25 seed', () async {
+      // Step-1 recall now runs through the `retrieve_for_prompt_v1` conductor
+      // (Extension-H step #30). The conductor's always-on cheap pass seeds a
+      // pure BM25 recall over the raw prompt text, so the prompt reaches the
+      // store as a BM25 seed inside the fused `recallMulti`, not a direct
+      // `recall`.
       await runWith('how do I automate backups?');
 
-      expect(memory.lastRecallQuery, isNotNull);
-      expect(memory.lastRecallQuery!.text, 'how do I automate backups?');
+      expect(memory.lastRecallQuery, isNull,
+          reason: 'the conductor fuses seeds through recallMulti, '
+              'not single-seed recall');
+      expect(memory.lastMultiRecallQuery, isNotNull);
+      final promptSeeds = memory.lastMultiRecallQuery!.seeds.where(
+        (s) => s.mode == RecallMode.bm25 && s.text == 'how do I automate backups?',
+      );
+      expect(promptSeeds, isNotEmpty,
+          reason: 'the cheap BM25 pass should carry the raw prompt text');
     });
   });
 
-  group('D.37-2 recall is called with the § D.37 parameters', () {
-    test('modes are exactly {bm25, vector} and k is 8', () async {
+  group('D.37-2 the fused recall caps the post-fusion list', () {
+    test('recallMulti is fused with k == 24', () async {
       await runWith('any prompt');
 
-      final query = memory.lastRecallQuery!;
-      expect(
-        query.modes,
-        <RecallMode>{RecallMode.bm25, RecallMode.vector},
-      );
-      expect(query.k, 8);
+      expect(memory.lastMultiRecallQuery!.k, 24);
     });
   });
 
@@ -120,9 +125,9 @@ void main() {
 
       final outcome = await runWith('how do I automate backups?');
 
-      // Recall ran (its result now feeds the D.38 answer step rather than
-      // surfacing directly), and the run closes accepted.
-      expect(memory.lastRecallQuery, isNotNull);
+      // The conductor's fused recall ran (its result now feeds the D.38 answer
+      // step rather than surfacing directly), and the run closes accepted.
+      expect(memory.lastMultiRecallQuery, isNotNull);
       expect(outcome.status, TrailOutcomeStatus.accepted);
     });
   });
@@ -176,13 +181,14 @@ class _InertSubstrate implements TomBrainSubstrateClient {
 // result. Models just enough of the store for the run recorder's writes to
 // succeed (trails are entry logs, stacks are push/peek containers, persisted
 // nodes are resolvable by id). Mirrors the C.18 / D.8 doubles.
-class _RecallCapturingMemory implements TomBrainMemoryClient {
+class _RecallCapturingMemory implements TomBrainMemory {
   final _InMemoryStacks _stacks = _InMemoryStacks();
   final Map<NodeId, Node> _nodes = <NodeId, Node>{};
   final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
   final Set<TrailId> _closedTrails = <TrailId>{};
 
   RecallQuery? lastRecallQuery;
+  MultiRecallQuery? lastMultiRecallQuery;
   RecallResult recallResult = const RecallResult(
     nodes: <Node>[],
     report: RecallReport(
@@ -205,6 +211,12 @@ class _RecallCapturingMemory implements TomBrainMemoryClient {
   @override
   Future<RecallResult> recall(RecallQuery query) async {
     lastRecallQuery = query;
+    return recallResult;
+  }
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async {
+    lastMultiRecallQuery = query;
     return recallResult;
   }
 

@@ -110,6 +110,8 @@ export 'isolate_envelopes_full.dart'
         OpenTrailResponse,
         PersistRequest,
         PersistResponse,
+        RecallMultiRequest,
+        RecallMultiResponse,
         RecallRequest,
         RecallResponse,
         RegisterNodeTypeRequest,

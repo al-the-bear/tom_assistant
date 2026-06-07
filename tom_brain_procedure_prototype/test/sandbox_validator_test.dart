@@ -158,6 +158,7 @@ Future<Object?> run(inputs) async => 1;
           BrainBridges.substrateLibrary,
           engineNativeLibrary,
           procedureInputsLibrary,
+          procedureResultLibrary,
         },
       );
     });

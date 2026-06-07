@@ -310,7 +310,7 @@ class _GatedSubstrate implements TomBrainSubstrateClient {
 // Records open/close, persists nodes/edges, models the run trails and the
 // `interests` stack — enough for the recorder's trail + stack writes and for
 // asserting the procedure's post-conditions and that every trail was closed.
-class _DrainMemory implements TomBrainMemoryClient {
+class _DrainMemory implements TomBrainMemory {
   final _InMemoryStacks _stacks = _InMemoryStacks();
   final Map<NodeId, Node> _nodes = <NodeId, Node>{};
   final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
@@ -350,6 +350,9 @@ class _DrainMemory implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {

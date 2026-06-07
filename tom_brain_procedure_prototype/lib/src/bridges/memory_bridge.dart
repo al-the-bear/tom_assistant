@@ -202,6 +202,49 @@ class MemoryBridge {
         resultOf: (value) => value,
       );
 
+  // ── recallMulti ─────────────────────────────────────────────────
+
+  /// Runs the four-mode retrieval pipeline over a caller-built seed list
+  /// (memory § retrieval; spec § 23.2). This is the surface the
+  /// `retrieve_for_prompt_v1` conductor (Extension-H step #30) drives: it
+  /// fuses seeds from the cheap non-LLM pass and the LLM `recall_*`
+  /// sub-procedures into one multi-recall.
+  ///
+  /// Each entry of [seeds] is a primitive map the script assembled (see
+  /// [_buildSeed] for the shape); [k] caps the post-fusion result list.
+  /// `recallMulti` is a wire-capable operation on [TomBrainMemoryClient]
+  /// itself — its [MultiRecallQuery] carries no closures, so it crosses the
+  /// isolate boundary intact. The bridge therefore calls it transport-blind
+  /// on the injected [client], with no in-process-only cast (PE-10).
+  ///
+  /// Returns `{'nodes': [...], 'report': {...}, 'provenance': [...]}` where
+  /// each node is [_nodeToMap], the report mirrors [RecallReport], and each
+  /// provenance entry is [_provenanceToMap].
+  Future<Map<String, Object?>> recallMulti(
+    List<Object?> seeds, {
+    int k = 20,
+  }) =>
+      _record<Map<String, Object?>>(
+        'recallMulti',
+        <String, Object?>{'seeds': seeds, 'k': k},
+        () async {
+          final query = MultiRecallQuery(
+            seeds: seeds.map(_buildSeed).toList(),
+            k: k,
+          );
+          final result = await client.recallMulti(query);
+          return <String, Object?>{
+            'nodes': result.nodes.map(_nodeToMap).toList(),
+            'report': _reportToMap(result.report),
+            'provenance':
+                (result.provenance ?? const <RecallProvenanceEntry>[])
+                    .map(_provenanceToMap)
+                    .toList(),
+          };
+        },
+        resultOf: (value) => value,
+      );
+
   // ── classify ────────────────────────────────────────────────────
 
   /// Classifies [embedding] against the per-key centroids for [target]
@@ -572,6 +615,126 @@ class MemoryBridge {
         );
     }
   }
+
+  /// Builds a [RecallSeed] from a primitive map a procedure assembled.
+  ///
+  /// Shape (every field but `mode` optional; per-mode relevance documented
+  /// on [RecallSeed]):
+  ///
+  /// ```
+  /// {
+  ///   'mode': 'bm25' | 'vector' | 'graph_walk' | 'symbolic', // required
+  ///   'text': String?,            // bm25 / vector
+  ///   'embedding': List<num>?,    // vector — pre-embedded, skips a callout
+  ///   'terms': List<String>?,     // bm25
+  ///   'startNodes': List<String>?,// graph_walk — node-id strings
+  ///   'filter': { ... },          // graph_walk / symbolic — see _buildSymbolicFilter
+  ///   'weight': num?,             // fusion weight, defaults to 1.0
+  ///   'k': num?,                  // per-seed candidate cap, defaults to 64
+  /// }
+  /// ```
+  static RecallSeed _buildSeed(Object? raw) {
+    final map = _reader.mapValue(raw, 'recallMulti.seed')!;
+    final mode = _parseMode(
+      _reader.stringValue(map['mode'], 'recallMulti.seed.mode')!,
+    );
+    final text = _reader.optionalString(map, 'text', 'recallMulti.seed.text');
+    final embeddingRaw =
+        _reader.optionalList(map, 'embedding', 'recallMulti.seed.embedding');
+    final termsRaw =
+        _reader.optionalList(map, 'terms', 'recallMulti.seed.terms');
+    final startRaw =
+        _reader.optionalList(map, 'startNodes', 'recallMulti.seed.startNodes');
+    final filterRaw =
+        _reader.optionalMap(map, 'filter', 'recallMulti.seed.filter');
+    final weight =
+        _reader.optionalNum(map, 'weight', 'recallMulti.seed.weight');
+    final k = _reader.optionalNum(map, 'k', 'recallMulti.seed.k');
+
+    return RecallSeed(
+      mode: mode,
+      text: text,
+      embedding:
+          embeddingRaw == null ? null : Vec.fromList(_toDoubles(embeddingRaw)),
+      terms: termsRaw
+          ?.map((e) => _reader.stringValue(e, 'recallMulti.seed.terms[]')!)
+          .toList(),
+      startNodes: startRaw
+          ?.map((e) => NodeId.fromString(
+              _reader.stringValue(e, 'recallMulti.seed.startNodes[]')!))
+          .toSet(),
+      filter:
+          filterRaw == null ? null : _buildSymbolicFilter(filterRaw, 'recallMulti.seed.filter'),
+      weight: weight?.toDouble() ?? 1.0,
+      k: k?.toInt() ?? 64,
+    );
+  }
+
+  /// Builds a [SymbolicFilter] from a primitive map.
+  ///
+  /// ```
+  /// {
+  ///   'typeNames': ['Concept'],   // optional
+  ///   'producer': String?,        // optional
+  ///   'attributes': [             // optional
+  ///     {'field': 'name', 'op': 'eq', 'value': 'BackupConcept'},
+  ///   ],
+  /// }
+  /// ```
+  static SymbolicFilter _buildSymbolicFilter(
+    Map<Object?, Object?> raw,
+    String path,
+  ) {
+    final typeNamesRaw =
+        _reader.optionalList(raw, 'typeNames', '$path.typeNames');
+    final producer =
+        _reader.optionalString(raw, 'producer', '$path.producer');
+    final attributesRaw =
+        _reader.optionalList(raw, 'attributes', '$path.attributes');
+    return SymbolicFilter(
+      typeNames: typeNamesRaw == null
+          ? const <String>{}
+          : typeNamesRaw
+              .map((e) => _reader.stringValue(e, '$path.typeNames[]')!)
+              .toSet(),
+      producer: producer,
+      attributes: attributesRaw == null
+          ? const <AttrClause>[]
+          : attributesRaw.map((e) {
+              final clause = _reader.mapValue(e, '$path.attributes[]')!;
+              return AttrClause(
+                _reader.stringValue(
+                    clause['field'], '$path.attributes[].field')!,
+                SymbolicOp.values.byName(_reader.stringValue(
+                    clause['op'], '$path.attributes[].op')!),
+                clause['value'],
+              );
+            }).toList(),
+    );
+  }
+
+  /// Reads a primitive list as a `List<double>`, failing with a located
+  /// [FormatException] on a non-numeric element (PE-1 untrusted boundary).
+  static List<double> _toDoubles(List<Object?> raw) {
+    final out = <double>[];
+    for (final e in raw) {
+      if (e is! num) {
+        throw FormatException(
+          'recallMulti.seed.embedding[] must be numeric '
+          '(got ${e.runtimeType}).',
+        );
+      }
+      out.add(e.toDouble());
+    }
+    return out;
+  }
+
+  static Map<String, Object?> _provenanceToMap(RecallProvenanceEntry e) =>
+      <String, Object?>{
+        'nodeId': e.nodeId.value,
+        'seedIndexes': e.seedIndexes.toList(),
+        'fusedScore': e.fusedScore,
+      };
 
   static Map<String, Object?> _nodeToMap(Node node) => <String, Object?>{
         'id': node.id.value,

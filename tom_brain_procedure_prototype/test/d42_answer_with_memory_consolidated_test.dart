@@ -77,9 +77,7 @@ void main() {
 
   Future<ProcedureOutcome> runWith(String text) async {
     final resolver = await systemResolver();
-    final engine = engineFor(<LoadedProcedure>[
-      resolver.resolve('answer_with_memory_v1'),
-    ]);
+    final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
         .invoke(ProcedureInvocation(
           procedureId: 'answer_with_memory_v1',
@@ -126,11 +124,18 @@ void main() {
     );
   }
 
-  /// The authoritative final `ProcedureRun` node — the one the recorder
-  /// persists with a terminal status (the inflight marker carries 'running').
-  ({NodeId id, NodeDraft draft}) finalRunNode() => memory
-      .persistedOfType('ProcedureRun')
-      .firstWhere((p) => p.draft.values['status'] != 'running');
+  /// The authoritative final `ProcedureRun` node for the top-level answer run —
+  /// the one the recorder persists with a terminal status (the inflight marker
+  /// carries 'running') whose procedureId is the answer procedure. Step-1
+  /// recall now fans out through the conductor + four `recall_*` sub-procedures
+  /// (Extension-H step #30), each recording its own ProcedureRun, so the answer
+  /// run must be matched by procedureId, not just by a terminal status.
+  ({NodeId id, NodeDraft draft}) finalRunNode() =>
+      memory.persistedOfType('ProcedureRun').firstWhere(
+            (p) =>
+                p.draft.values['status'] != 'running' &&
+                p.draft.values['procedureId'] == 'answer_with_memory_v1',
+          );
 
   group('D.42-1 a synthetic inbound prompt produces a streamed answer', () {
     test('the multi-chunk substrate stream is drained into one answer output',
@@ -259,7 +264,7 @@ void main() {
 // of post-conditions (persisted nodes, edges, and the `interests` stack push)
 // can be read off one object. Models just enough of the store for the run
 // recorder's trail + stack writes to succeed.
-class _BrainMemory implements TomBrainMemoryClient {
+class _BrainMemory implements TomBrainMemory {
   final _InMemoryStacks _stacks = _InMemoryStacks();
   final Map<NodeId, Node> _nodes = <NodeId, Node>{};
   final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
@@ -297,6 +302,9 @@ class _BrainMemory implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
 
   @override
   Future<ClassificationResult> classify(

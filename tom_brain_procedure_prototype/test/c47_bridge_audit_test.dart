@@ -70,7 +70,8 @@ import 'package:tom_brain_procedure_prototype/src/bridges/brain_bridges.b.dart';
 
 /// The authoritative § 5.1 memory surface: bridged method name → the
 /// exact d4rt-facing signature string the generated `BridgedClass`
-/// records. Fifteen rows — `recall`, `classify`, `persist`, `edge`,
+/// records. Sixteen rows — `recall`, the Extension-H multi-seed
+/// `recallMulti` (§ 6.5 / § 23.2), `classify`, `persist`, `edge`,
 /// `propose_node_type`, the seven `stack.*` operations (exposed as
 /// `stackList` … `stackRemove` because Dart method names cannot contain a
 /// dot), and the three dreaming-agent lifecycle/classifier maintenance
@@ -78,6 +79,8 @@ import 'package:tom_brain_procedure_prototype/src/bridges/brain_bridges.b.dart';
 const Map<String, String> _expectedMemorySignatures = <String, String>{
   'recall':
       "Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8})",
+  'recallMulti':
+      'Future<Map<String, Object?>> recallMulti(List<Object?> seeds, {int k = 20})',
   'classify':
       "Future<Map<String, Object?>> classify(List<double> embedding, {String target = 'nodeType'})",
   'persist':
@@ -102,11 +105,13 @@ const Map<String, String> _expectedMemorySignatures = <String, String>{
       'Future<List<String>> findUncertain(String forKey, {required double low, required double high, int limit = 200})',
 };
 
-/// The authoritative § 5.1 substrate surface: four rows — `llm`, `embed`,
-/// `search`, `fetch`.
+/// The authoritative substrate surface: five rows — `llm`, the Extension-H
+/// `retrievalRole` (§ 6.2a), `embed`, `search`, `fetch`.
 const Map<String, String> _expectedSubstrateSignatures = <String, String>{
   'llm':
       'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, List<Object?>? tools, Map<String, Object?>? budget})',
+  'retrievalRole':
+      'Future<Map<String, Object?>> retrievalRole(String roleId, String prompt, {Map<String, Object?>? budget})',
   'embed': 'Future<Map<String, Object?>> embed(String text)',
   'search':
       'Future<Map<String, Object?>> search(String query, {String? provider, int k = 10})',
@@ -144,7 +149,7 @@ void main() {
   }
 
   group('C.47 bridge audit — registered method set is the § 5.1 surface', () {
-    test('MemoryBridge registers exactly the 15 audited memory methods', () {
+    test('MemoryBridge registers exactly the 16 audited memory methods', () {
       final registered = bridgeClassNamed('MemoryBridge').methods.keys.toSet();
       expect(
         registered,
@@ -155,7 +160,7 @@ void main() {
       );
     });
 
-    test('SubstrateBridge registers exactly the 4 audited substrate methods',
+    test('SubstrateBridge registers exactly the 5 audited substrate methods',
         () {
       final registered =
           bridgeClassNamed('SubstrateBridge').methods.keys.toSet();
@@ -197,7 +202,7 @@ void main() {
 
   group('C.47 bridge audit — every bridged method roundtrips end-to-end', () {
     test(
-        'each of the 19 methods runs through the interpreter and is recorded',
+        'each of the 21 methods runs through the interpreter and is recorded',
         () async {
       // Seed canned domain results so every outbound flattening leg has
       // something to read. Inbound legs are observed via the doubles'
@@ -248,6 +253,8 @@ void main() {
       // bridged method executed under the interpreter — the roundtrip.
       const memoryBodies = <String, String>{
         'recall': "await mem.recall('q');",
+        'recallMulti':
+            "await mem.recallMulti([{'mode': 'bm25', 'text': 'q'}]);",
         'classify': "await mem.classify([0.1, 0.2], target: 'nodeType');",
         'persist': "await mem.persist('Conclusion', {'text': 'x'}, "
             "producer: 'engine');",
@@ -272,6 +279,7 @@ void main() {
       };
       const substrateBodies = <String, String>{
         'llm': "await sub.llm('q');",
+        'retrievalRole': "await sub.retrievalRole('recall_planner', 'q');",
         'embed': "await sub.embed('t');",
         'search': "await sub.search('q');",
         'fetch': "await sub.fetch('https://example.com');",
@@ -346,7 +354,7 @@ Future<Object?> main(SubstrateBridge sub) async {
 
 /// Recording `TomBrainMemoryClient`. `called` accumulates the names of
 /// the bridge methods that reached it via the interpreter.
-class _AuditMemoryClient implements TomBrainMemoryClient {
+class _AuditMemoryClient implements TomBrainMemory {
   _AuditMemoryClient(this._stacks);
 
   final _AuditStackApi _stacks;
@@ -355,18 +363,26 @@ class _AuditMemoryClient implements TomBrainMemoryClient {
   NodeId persistId = NodeId.fromString('n_00000000000000000000000000');
   EdgeId edgeId = EdgeId.fromString('e_00000000000000000000000000');
 
+  static const RecallResult _emptyResult = RecallResult(
+    nodes: <Node>[],
+    report: RecallReport(
+      candidatesPerMode: <RecallMode, int>{},
+      fusionStrategy: FusionStrategy.rrf,
+      diversityStrategy: DiversityStrategy.mmr,
+      elapsedMs: 0,
+    ),
+  );
+
   @override
   Future<RecallResult> recall(RecallQuery query) async {
     called.add('recall');
-    return const RecallResult(
-      nodes: <Node>[],
-      report: RecallReport(
-        candidatesPerMode: <RecallMode, int>{},
-        fusionStrategy: FusionStrategy.rrf,
-        diversityStrategy: DiversityStrategy.mmr,
-        elapsedMs: 0,
-      ),
-    );
+    return _emptyResult;
+  }
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async {
+    called.add('recallMulti');
+    return _emptyResult;
   }
 
   @override
@@ -505,9 +521,23 @@ class _AuditSubstrateClient implements TomBrainSubstrateClient {
   final Set<String> called = <String>{};
   List<LlmStreamEvent> streamEvents = const <LlmStreamEvent>[];
 
+  /// The six Extension-H retrieval roles (substrate § 6.2a). `retrievalRole`
+  /// is a composite bridge method that routes through `llm` →
+  /// `completeStream`, so the double tells the two apart by the call's
+  /// `roleId`: a retrieval-role completion records the composite method that
+  /// actually ran, a plain completion records `llm`.
+  static const Set<String> _retrievalRoles = <String>{
+    'recall_planner',
+    'hypothesis_writer',
+    'query_term_writer',
+    'category_selector',
+    'retrieval_reranker',
+    'profile_selector',
+  };
+
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    called.add('llm');
+    called.add(_retrievalRoles.contains(call.roleId) ? 'retrievalRole' : 'llm');
     return Stream<LlmStreamEvent>.fromIterable(streamEvents);
   }
 

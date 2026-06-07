@@ -121,8 +121,12 @@ void main() {
       DiskProcedureStore(systemDir: Directory('scripts/system')),
     );
     return ProcedureEngine(
+      // Load the full system set: `answer_with_memory_v1` step-1 recall now
+      // dispatches the `retrieve_for_prompt_v1` conductor and its five
+      // `recall_*` sub-procedures (Extension-H step #30), so they must all be
+      // resolvable.
       resolver: ProcedureResolver(
-        <LoadedProcedure>[system.resolve('answer_with_memory_v1')],
+        system.ids.map(system.resolve).toList(),
       ),
       memory: store,
       memoryBridge: MemoryBridge(store),
