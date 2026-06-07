@@ -78,6 +78,12 @@ export 'src/mcp/mcp.dart';
 // `BrainEngineExtensions`) the boot assembles and threads onto the engine.
 export 'src/extensions/extensions.dart';
 
+// Extension G, step G.21 — conversation-history compaction. The engine-side
+// `HistoryCompactor` folds a session's pending batch into its bounded summary
+// via the `compact_history_v1` substrate call (hub § 22.4); the
+// `ConversationHistory` store it reads/mutates lives in `tom_brain_shared`.
+export 'src/history/history.dart';
+
 // D.6 — dispatcher half. The dispatcher consumes the engine surface
 // above (`ProcedureEngine`) and adds the `accept(Access)` entry point,
 // the foreground/background coordinator, fallback, and the free-time

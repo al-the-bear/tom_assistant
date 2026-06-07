@@ -49,6 +49,7 @@ const _requiredSubfolders = <String>[
   'd4rt_host', // C.16–C.18 — D4rtDcliHost
   'dispatcher', // D.6–D.50 — Dispatcher.accept + coordinator + fallback
   'extensions', // Ext-F step 15 — BrainEngineExtensions + config (§ 13, § 21.5, § 21.6)
+  'history', // Ext-G step G.21 — HistoryCompactor + compaction (§ 22.4)
   'mcp', // Ext-F step 8 — McpClient + connection pool (§ 21.3, § 21.10)
   'preemption', // C.34–C.37 — PreemptionState + deadline
   'primitives_native', // C.19–C.22 — runProcedure / note / yield
@@ -67,9 +68,9 @@ void main() {
       // contract. C.8 seeds 9; D.6 adds `dispatcher/` for 10; Q-C.51.1 adds
       // `budget/` for 11; Ext-F step 1 adds `prompts/` for 12; Ext-F step 4
       // adds `tools/` for 13; Ext-F step 8 adds `mcp/` for 14; Ext-F step 15
-      // adds `extensions/` for 15.
-      expect(_requiredSubfolders, hasLength(15));
-      expect(_requiredSubfolders.toSet(), hasLength(15),
+      // adds `extensions/` for 15; Ext-G step G.21 adds `history/` for 16.
+      expect(_requiredSubfolders, hasLength(16));
+      expect(_requiredSubfolders.toSet(), hasLength(16),
           reason: 'subfolder list must be free of duplicates');
     });
 

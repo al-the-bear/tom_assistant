@@ -213,3 +213,20 @@ export 'src/memory/memory.dart';
 // (`SystemProcedures`) stays with the dispatcher — Phase E never selects a
 // procedure.
 export 'src/access/inbound_kinds.dart' show InboundKinds;
+
+// G.21 — history/ module: the brain's own running record of a conversation
+// — `ConversationHistory` (raw window + pending batch + bounded
+// `compactedSummary` + a durable append-only record), the `HistoryTurn` it
+// holds (user prompt + brain answer + optional tool round), and the
+// `HistorySizing` knobs. Declared in shared because the access layer's
+// `SessionManager` produces and owns the store (hub § 22.3) while the engine
+// reads it and drives compaction (`applyCompaction`, access § 21.10) — two
+// components on one value/store contract, so it lives once in shared. The
+// substrate call that rewrites the summary, and the model-config parse of the
+// sizing knobs, stay with their owners (the engine, the procedure config).
+export 'src/history/history.dart'
+    show
+        ConversationHistory,
+        HistorySizing,
+        HistoryTurn,
+        conversationHistoriesEqual;
