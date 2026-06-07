@@ -25,6 +25,16 @@ export 'todo_store.dart' show TodoEntry, TodoStore;
 export 'tool_context.dart';
 export 'tool_denied.dart' show ToolDenial, toolDeniedCode;
 export 'tool_engine_surface.dart' show ToolEngineSurface;
+// Extension F step 16 — the tool observability stream (§ 13).
+export 'tool_event.dart'
+    show
+        ToolDenied,
+        ToolEvent,
+        ToolEventSink,
+        ToolFailed,
+        ToolInvoked,
+        ToolListed;
+export 'tool_event_bus.dart' show ToolEventBus;
 export 'tool_errors.dart' show ToolAlreadyRegistered, toolAlreadyRegisteredCode;
 export 'tool_failures.dart'
     show

@@ -20,3 +20,5 @@
 
 export 'brain_engine_extensions.dart' show BrainEngineExtensions;
 export 'brain_extension_config.dart' show BrainExtensionConfig;
+// Extension F step 16 — the Extension-F logging categories (§ 13).
+export 'extension_log.dart' show ExtensionLog, ExtensionLogCategory;

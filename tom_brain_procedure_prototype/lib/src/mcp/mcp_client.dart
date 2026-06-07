@@ -22,6 +22,7 @@ library;
 
 import 'dart:async';
 
+import 'mcp_event.dart';
 import 'mcp_server_config.dart';
 
 /// Wire code for a server the client could not reach (connect failed).
@@ -35,8 +36,10 @@ const String mcpCallFailedCode = 'mcp.call.failed';
 ///
 /// Both are *environmental* (PE-6): the bridge turns a call failure into
 /// `{ok: false}` and lets a list failure propagate, but neither triggers a
-/// fallback. The corresponding `McpFailed` observability event is deferred to
-/// step 16 (§ 21.10); this exception is the behavioural carrier until then.
+/// fallback. Step 16 wires the matching `McpFailed` observability event
+/// (§ 21.10): the client emits one on its [McpEventSink] wherever it raises or
+/// rethrows an [McpFailure], so the typed event and this behavioural carrier
+/// surface together.
 final class McpFailure implements Exception {
   /// Builds a failure with a wire [code], the [serverId] it concerns, a
   /// human-readable [message], and the optional underlying [cause].
@@ -105,18 +108,47 @@ final class McpClient {
   /// Builds a client over [servers] (a list or an [McpServersConfig]) and a
   /// [connector], with an optional per-call wall-clock [callTimeout]
   /// (default 30s).
+  ///
+  /// [onEvent], when supplied, receives a typed [McpEvent] on every connect,
+  /// call, and failure (step 16); the composition root wires it to an
+  /// `McpEventBus`. [clock] stamps each event's `occurredAt` (UTC) and is
+  /// injectable for deterministic tests; it defaults to
+  /// `DateTime.now().toUtc()`.
   McpClient(
     Object servers,
     this._connector, {
     Duration callTimeout = const Duration(seconds: 30),
+    McpEventSink? onEvent,
+    DateTime Function()? clock,
   })  : _config = servers is McpServersConfig
             ? servers
             : McpServersConfig(servers as List<McpServerConfig>),
-        _callTimeout = callTimeout;
+        _callTimeout = callTimeout,
+        _onEvent = onEvent,
+        _clock = clock ?? _utcNow;
 
   final McpServersConfig _config;
   final McpConnector _connector;
   final Duration _callTimeout;
+  final McpEventSink? _onEvent;
+  final DateTime Function() _clock;
+
+  /// The wall-clock UTC default for [_clock].
+  static DateTime _utcNow() => DateTime.now().toUtc();
+
+  /// Forwards [event] to the injected sink when observability is wired.
+  void _emit(McpEvent event) {
+    final sink = _onEvent;
+    if (sink != null) sink(event);
+  }
+
+  /// Builds (but does not emit) the `McpFailed` event for [failure].
+  McpFailed _failedEvent(McpFailure failure) => McpFailed(
+        occurredAt: _clock(),
+        serverId: failure.serverId,
+        code: failure.code,
+        message: failure.message,
+      );
 
   /// The live connection pool, keyed by server id. The value is the *future*
   /// of the connection so concurrent callers share one connect; a failed
@@ -155,16 +187,21 @@ final class McpClient {
   ) async {
     final connection = await _connectionFor(id);
     try {
-      return await connection.callTool(tool, args).timeout(_callTimeout);
-    } on McpFailure {
+      final result = await connection.callTool(tool, args).timeout(_callTimeout);
+      _emit(McpToolCalled(occurredAt: _clock(), serverId: id, tool: tool));
+      return result;
+    } on McpFailure catch (failure) {
+      _emit(_failedEvent(failure));
       rethrow;
     } catch (error) {
-      throw McpFailure(
+      final failure = McpFailure(
         mcpCallFailedCode,
         serverId: id,
         message: 'tool call "$tool" failed',
         cause: error,
       );
+      _emit(_failedEvent(failure));
+      throw failure;
     }
   }
 
@@ -192,13 +229,13 @@ final class McpClient {
 
     final config = _config.byId(id);
     if (config == null) {
-      return Future<McpServerConnection>.error(
-        McpFailure(
-          mcpUnreachableCode,
-          serverId: id,
-          message: 'no MCP server configured with id "$id"',
-        ),
+      final failure = McpFailure(
+        mcpUnreachableCode,
+        serverId: id,
+        message: 'no MCP server configured with id "$id"',
       );
+      _emit(_failedEvent(failure));
+      return Future<McpServerConnection>.error(failure);
     }
 
     final future = _connect(config);
@@ -222,16 +259,21 @@ final class McpClient {
   /// `mcp.unreachable` failure.
   Future<McpServerConnection> _connect(McpServerConfig config) async {
     try {
-      return await _connector.connect(config);
-    } on McpFailure {
+      final connection = await _connector.connect(config);
+      _emit(McpConnected(occurredAt: _clock(), serverId: config.id));
+      return connection;
+    } on McpFailure catch (failure) {
+      _emit(_failedEvent(failure));
       rethrow;
     } catch (error) {
-      throw McpFailure(
+      final failure = McpFailure(
         mcpUnreachableCode,
         serverId: config.id,
         message: 'could not connect to MCP server "${config.id}"',
         cause: error,
       );
+      _emit(_failedEvent(failure));
+      throw failure;
     }
   }
 }

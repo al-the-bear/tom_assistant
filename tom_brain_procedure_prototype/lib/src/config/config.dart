@@ -83,6 +83,17 @@ export 'engine_event.dart'
         StepYielded;
 export 'engine_event_bus.dart' show EngineEventBus;
 export 'engine_log.dart' show EngineLog, EngineLogCategory;
+// Extension F step 16 — the scripted-LLM-loop observability stream (§ 13).
+export 'llm_event.dart'
+    show
+        LlmLoopBudgetExceeded,
+        LlmLoopCompleted,
+        LlmLoopEvent,
+        LlmLoopEventSink,
+        LlmLoopStarted,
+        LlmLoopTurn,
+        ToolTurnDispatched;
+export 'llm_event_bus.dart' show LlmLoopEventBus;
 export 'llm_config_errors.dart'
     show
         LlmConfigInvalid,

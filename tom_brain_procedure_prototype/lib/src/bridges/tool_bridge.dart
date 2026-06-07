@@ -43,6 +43,7 @@
 
 import '../tools/brain_tool.dart';
 import '../tools/tool_context.dart';
+import '../tools/tool_event.dart';
 import '../tools/tool_group.dart';
 import '../tools/tool_input_schema.dart' show validateToolArgs;
 import '../tools/tool_policy.dart';
@@ -60,11 +61,35 @@ class ToolBridge {
   final ToolRegistry _registry;
   final ToolPolicy _policy;
   final ToolContext _context;
+  final ToolEventSink? _onEvent;
+  final DateTime Function() _clock;
 
   /// Wraps the run's [registry], [policy], and [context]. The engine
   /// constructs this natively and the host injects the instance as the
   /// `tool` global; a procedure script never calls this constructor.
-  ToolBridge(this._registry, this._policy, this._context);
+  ///
+  /// [onEvent], when supplied, receives a typed [ToolEvent] on every `list`
+  /// and `invoke` outcome (step 16); the composition root wires it to a
+  /// `ToolEventBus`. [clock] stamps each event's `occurredAt` (UTC) and is
+  /// injectable so a test can stamp a deterministic timestamp instead of the
+  /// wall clock; it defaults to `DateTime.now().toUtc()`.
+  ToolBridge(
+    this._registry,
+    this._policy,
+    this._context, {
+    ToolEventSink? onEvent,
+    DateTime Function()? clock,
+  })  : _onEvent = onEvent,
+        _clock = clock ?? _utcNow;
+
+  /// The wall-clock UTC default for [_clock].
+  static DateTime _utcNow() => DateTime.now().toUtc();
+
+  /// Forwards [event] to the injected sink when observability is wired.
+  void _emit(ToolEvent event) {
+    final sink = _onEvent;
+    if (sink != null) sink(event);
+  }
 
   /// The budget primitive name `invoke` charges — recognised by the
   /// `EffortAccountant` as one `toolCalls` unit so the ledger can gate it.
@@ -79,6 +104,15 @@ class ToolBridge {
   /// …) that narrows the catalogue to that group before the policy applies;
   /// a filter that names no known group narrows to nothing.
   Future<List<Map<String, Object?>>> list({String? filter}) async {
+    final result = _listFor(filter);
+    _emit(ToolListed(occurredAt: _clock(), count: result.length, filter: filter));
+    return result;
+  }
+
+  /// The policy-narrowed descriptor list for [filter] (an unknown filter
+  /// narrows to nothing). Split out from [list] so the emission point sees the
+  /// resolved result without duplicating the branch.
+  List<Map<String, Object?>> _listFor(String? filter) {
     if (filter != null) {
       final group = _groupFromWire(filter);
       if (group == null) return const <Map<String, Object?>>[];
@@ -100,20 +134,39 @@ class ToolBridge {
     Map<String, Object?> args,
   ) async {
     final tool = _registry.lookup(name);
-    if (tool == null) return _failure('unknown tool "$name"');
+    if (tool == null) {
+      final error = 'unknown tool "$name"';
+      _emit(ToolFailed(occurredAt: _clock(), name: name, reason: error));
+      return _failure(error);
+    }
 
     final denial = _policy.denialFor(tool);
-    if (denial != null) return _failure(denial.message);
+    if (denial != null) {
+      _emit(ToolDenied(occurredAt: _clock(), name: name, reason: denial.message));
+      return _failure(denial.message);
+    }
 
     final violation = validateToolArgs(tool.inputSchema, args);
-    if (violation != null) return _failure(violation);
+    if (violation != null) {
+      _emit(ToolFailed(occurredAt: _clock(), name: name, reason: violation));
+      return _failure(violation);
+    }
 
     // Pre-charge one toolCall before the side effect (PE-8). `check` throws
     // and propagates when the call is over cap; `charge` counts it.
     _context.budget.check(_invokePrimitive);
     _context.budget.charge(_invokePrimitive);
 
-    final result = await tool.run(args, _context);
+    final Object? result;
+    try {
+      result = await tool.run(args, _context);
+    } catch (error) {
+      // A tool that threw while running is a `ToolFailed` (observability);
+      // rethrow so the failure still propagates to the caller unchanged.
+      _emit(ToolFailed(occurredAt: _clock(), name: name, reason: error.toString()));
+      rethrow;
+    }
+    _emit(ToolInvoked(occurredAt: _clock(), name: name, group: tool.group.name));
     return <String, Object?>{'ok': true, 'result': result};
   }
 

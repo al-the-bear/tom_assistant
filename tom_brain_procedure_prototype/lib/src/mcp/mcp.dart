@@ -32,5 +32,9 @@ export 'mcp_client.dart'
         mcpCallFailedCode,
         mcpUnreachableCode;
 export 'mcp_config_errors.dart' show McpConfigInvalid, mcpConfigInvalidCode;
+// Extension F step 16 — the MCP-client observability stream (§ 13).
+export 'mcp_event.dart'
+    show McpConnected, McpEvent, McpEventSink, McpFailed, McpToolCalled;
+export 'mcp_event_bus.dart' show McpEventBus;
 export 'mcp_server_config.dart'
     show McpServerConfig, McpServersConfig, McpTransport;
