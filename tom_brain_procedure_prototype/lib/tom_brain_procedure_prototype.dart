@@ -66,10 +66,12 @@ export 'src/api/api.dart';
 export 'src/config/config.dart';
 
 // Extension F — the scripted LLM loop (`prototype_tools_mcp_extension_plan.md`,
-// spec § 21). Step 1 lands the prompt-assembly placeholder system; later
-// steps add the tool registry, MCP client, prompt-template loader, and the
+// spec § 21). Step 1 lands the prompt-assembly placeholder system; step 4
+// lands the tool-calling core (`BrainTool` / `ToolRegistry` / `ToolContext`);
+// later steps add the MCP client, prompt-template loader, and the
 // `call_llm_v1` loop through this same surface.
 export 'src/prompts/prompts.dart';
+export 'src/tools/tools.dart';
 
 // D.6 — dispatcher half. The dispatcher consumes the engine surface
 // above (`ProcedureEngine`) and adds the `accept(Access)` entry point,

@@ -3,8 +3,9 @@
 // Locks the `lib/src/<folder>/` subfolder inventory: the nine engine
 // subfolders required by Plan step C.8, the `dispatcher/` subfolder added
 // by Plan step D.6 (the first dispatcher-half addition to this project),
-// the `budget/` subfolder (Q-C.51.1), and the `prompts/` subfolder added
-// by Extension F step 1 (the placeholder system). It also locks the
+// the `budget/` subfolder (Q-C.51.1), the `prompts/` subfolder added by
+// Extension F step 1 (the placeholder system), and the `tools/` subfolder
+// added by Extension F step 4 (the tool-calling core). It also locks the
 // per-folder barrel-file convention used
 // across the Tom Brain projects (siblings: `tom_brain_shared`,
 // `tom_brain_memory`, `tom_brain_substrate`) and the top-level barrel
@@ -12,7 +13,7 @@
 //
 // What this test asserts:
 //
-//   1. Each of the twelve subfolders exists under `lib/src/`.
+//   1. Each of the thirteen subfolders exists under `lib/src/`.
 //   2. Each subfolder contains a `<folder>.dart` barrel file.
 //   3. The top-level barrel `lib/tom_brain_procedure_prototype.dart`
 //      re-exports every one of those subfolder barrels (one `export`
@@ -51,6 +52,7 @@ const _requiredSubfolders = <String>[
   'procedure_store', // C.23–C.26 — store + loader + resolver
   'prompts', // Ext-F step 1 — PlaceholderResolver / Stack (§ 21.5, § 21.7)
   'recorder', // C.31–C.33 — RunRecorder + effort accounting
+  'tools', // Ext-F step 4 — BrainTool / ToolRegistry / ToolContext (§ 21.2)
   'validator', // C.27–C.30 — header / sandbox / contract validators
 ];
 
@@ -60,9 +62,10 @@ void main() {
       // Sanity-check the list itself so that a stray edit to
       // `_requiredSubfolders` cannot silently shrink or duplicate the
       // contract. C.8 seeds 9; D.6 adds `dispatcher/` for 10; Q-C.51.1 adds
-      // `budget/` for 11; Ext-F step 1 adds `prompts/` for 12.
-      expect(_requiredSubfolders, hasLength(12));
-      expect(_requiredSubfolders.toSet(), hasLength(12),
+      // `budget/` for 11; Ext-F step 1 adds `prompts/` for 12; Ext-F step 4
+      // adds `tools/` for 13.
+      expect(_requiredSubfolders, hasLength(13));
+      expect(_requiredSubfolders.toSet(), hasLength(13),
           reason: 'subfolder list must be free of duplicates');
     });
 
