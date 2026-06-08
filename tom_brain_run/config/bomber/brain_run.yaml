@@ -1,0 +1,78 @@
+# Tom Brain — standard whole-process config for the `bomber` fleet host.
+#
+# This file is VERSION-CONTROLLED (config/<host>/brain_run.yaml). It carries no
+# real secrets: the only sensitive values — the Telegram bot token and the
+# owner's Telegram user id — are `${ENV}` tokens resolved at boot from the shell
+# environment (exported in ~/.bashrc on bomber):
+#
+#   TELEGRAM_TOM_BRAIN_TOKEN — the @BotFather token for the tom_brain bot
+#   TELEGRAM_TOM_BRAIN_USER  — the owner's numeric Telegram user id (whitelist)
+#
+# Launch with `run_tom_brain.sh` (which defaults to this host's config) or:
+#   dart run bin/brain_serve.dart config/bomber/brain_run.yaml
+#
+# Substrate: Gemma on oMLX (OpenAI-compatible) over the VPN for the LLM, local
+# Ollama for embeddings. Access: all three API gateways (OpenAI / Ollama /
+# Anthropic) plus the Telegram channel. Trailing: full mode into the shared
+# `_ai` mount, keyed by host.
+substrate:
+  providers:
+    - id: omlx
+      kind: openai
+      baseUrl: http://10.8.0.7:8000/
+      models:
+        - gemma-4-26b-a4b-it-4bit
+    - id: ollama
+      kind: ollama
+      baseUrl: http://127.0.0.1:11434/
+      models:
+        - nomic-embed-text
+  roleRoutes:
+    assistant_to_user:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+  embedding:
+    providerId: ollama
+    model: nomic-embed-text
+    dims: 768
+    normalize: true
+memory:
+  # Runtime data store (the .db files + checkpoints) — machine-local, untracked
+  # (lives under the git-ignored ztmp tree).
+  root: /srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/ztmp/brain_run/memory
+  sqliteVec:
+    binariesRoot: /srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_binaries/sqlite_vec
+access:
+  openai:
+    port: 8080
+    basePath: /v1
+  ollama:
+    port: 8081
+    basePath: /api
+  anthropic:
+    port: 8082
+    basePath: /v1
+  telegram:
+    botToken: ${TELEGRAM_TOM_BRAIN_TOKEN}
+  users:
+    - id: owner
+      displayName: Owner
+      openaiBearerTokens:
+        # Local-only dev bearer for the 127.0.0.1 OpenAI edge — not a real
+        # secret. Override per deployment if the edge is ever exposed.
+        - run-token
+      telegramUserIds:
+        - ${TELEGRAM_TOM_BRAIN_USER}
+  rateLimit:
+    capacity: 1000
+    refillTokens: 1000
+    refillPeriodSeconds: 60
+  quota:
+    dailyCap: 100000
+# Full trailing mode (tom_brain_logging.md §4.1): the whole trail tree is
+# written under the shared `_ai` mount, keyed by fleet host id (bomber). The
+# raw tiers (llm/, incoming/, procedures/, memory/, brain.log, components/) are
+# git-ignored by the TrailJanitor; the summary tier (sessions/, summary/) is
+# versioned. Caps left at their §8 defaults.
+trail:
+  root: /srv/repos/al_the_bear/_ai/tom_brain_trail/bomber

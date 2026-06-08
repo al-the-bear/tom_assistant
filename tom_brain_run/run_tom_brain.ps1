@@ -37,13 +37,14 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
-# The standard per-machine config. Override with -Config. The default points at
-# this host's machine-local config (untracked, under ztmp).
-$DefaultConfig = Join-Path $ScriptDir '..\..\ztmp\brain_run\brain_run.yaml'
+# The standard per-machine config. Override with -Config. The default is this
+# host's tracked config under config/<host>/ (host = short hostname).
+$HostName = [System.Net.Dns]::GetHostName().Split('.')[0]
+$DefaultConfig = Join-Path $ScriptDir "config/$HostName/brain_run.yaml"
 if (-not $Config) { $Config = $DefaultConfig }
 
 if (-not (Test-Path $Config)) {
-  Write-Error "run_tom_brain: config not found: $Config`n  pass an explicit path: ./run_tom_brain.ps1 C:\path\to\config.yaml"
+  Write-Error "run_tom_brain: config not found: $Config`n  this host is '$HostName'; create config/$HostName/brain_run.yaml`n  or pass an explicit path: ./run_tom_brain.ps1 C:\path\to\config.yaml"
   exit 66
 }
 

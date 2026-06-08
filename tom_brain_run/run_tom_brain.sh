@@ -33,13 +33,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # The standard per-machine config. Override by passing a path as $1. The
-# default points at this host's machine-local config (untracked, under ztmp).
-DEFAULT_CONFIG="${SCRIPT_DIR}/../../ztmp/brain_run/brain_run.yaml"
+# default is this host's tracked config under config/<host>/ (host = short
+# hostname, e.g. `bomber`).
+HOST="$(hostname -s 2>/dev/null || hostname)"
+DEFAULT_CONFIG="${SCRIPT_DIR}/config/${HOST}/brain_run.yaml"
 CONFIG="${1:-$DEFAULT_CONFIG}"
 
 if [[ ! -f "$CONFIG" ]]; then
   echo "run_tom_brain: config not found: $CONFIG" >&2
-  echo "  pass an explicit path: ./run_tom_brain.sh /path/to/config.yaml" >&2
+  echo "  this host is '${HOST}'; create config/${HOST}/brain_run.yaml" >&2
+  echo "  or pass an explicit path: ./run_tom_brain.sh /path/to/config.yaml" >&2
   exit 66
 fi
 
