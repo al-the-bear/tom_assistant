@@ -52,6 +52,7 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
         ClassifyFallback,
         LlmTrailRecord,
         LlmTrailSink,
+        MemoryAccessSink,
         MemoryProvisioningConfig,
         TurnSummarySink;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
@@ -61,6 +62,7 @@ import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
 import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
+import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
 import 'summary_fanout.dart' show SummaryFanout;
 import 'trail_config.dart' show TrailConfig;
 
@@ -107,6 +109,12 @@ import 'trail_config.dart' show TrailConfig;
 /// `null` (the default) boots with no per-turn narrative;
 /// [standUpBrainProcessFromConfig] binds a `SummaryFanout.onTurnComplete` in
 /// full-trail mode.
+///
+/// [memoryAccessSink] is the per-profile memory-log sink (`tom_brain_logging.md`
+/// §5.6 / §10 step #8) the engine hands one record per bridged memory access
+/// (recall / persist / edge / stackPush / …). `null` (the default) boots with no
+/// per-profile memory log; [standUpBrainProcessFromConfig] binds a
+/// `MemoryProfileLogWriter.write` in full-trail mode.
 Future<ProvisionedBrain> provisionBrain({
   required TomBrainSubstrateClient substrate,
   required MemoryConfig memoryConfig,
@@ -117,6 +125,7 @@ Future<ProvisionedBrain> provisionBrain({
   String? isolateLogRootPath,
   LlmTrailSink? llmTrailSink,
   TurnSummarySink? turnSummarySink,
+  MemoryAccessSink? memoryAccessSink,
 }) async {
   final Directory scriptsDir =
       systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
@@ -137,6 +146,7 @@ Future<ProvisionedBrain> provisionBrain({
       classifyFallback: classifyFallback,
       llmTrailSink: llmTrailSink,
       turnSummarySink: turnSummarySink,
+      memoryAccessSink: memoryAccessSink,
     ),
   );
 
@@ -233,6 +243,7 @@ Future<BrainProcess> standUpBrainProcess({
   LlmTrailSink? llmTrailSink,
   TurnSummarySink? turnSummarySink,
   IncomingTrailSink? incomingTrailSink,
+  MemoryAccessSink? memoryAccessSink,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -244,6 +255,7 @@ Future<BrainProcess> standUpBrainProcess({
     isolateLogRootPath: isolateLogRootPath,
     llmTrailSink: llmTrailSink,
     turnSummarySink: turnSummarySink,
+    memoryAccessSink: memoryAccessSink,
   );
 
   final BrainAccessProcess process;
@@ -301,6 +313,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     llmTrailSink: sinks.llmTrailSink,
     turnSummarySink: sinks.turnSummarySink,
     incomingTrailSink: sinks.incomingTrailSink,
+    memoryAccessSink: sinks.memoryAccessSink,
   );
 }
 
@@ -314,13 +327,15 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
 /// out to the summary projections by the [SummaryFanout]. The returned
 /// `turnSummarySink` is the same fan-out's `onTurnComplete`, fired per turn by
 /// the route. The `incomingTrailSink` is the §5.3 raw incoming-prompt writer,
-/// fired per admitted request by the access layer. When the document carries no
-/// `trail:` block ([trail] is `null`), every surface is disabled (§4.1
-/// unconfigured mode), so no sink binds.
+/// fired per admitted request by the access layer. The `memoryAccessSink` is the
+/// §5.6 per-profile memory-log writer, fired per bridged memory access by the
+/// engine. When the document carries no `trail:` block ([trail] is `null`),
+/// every surface is disabled (§4.1 unconfigured mode), so no sink binds.
 ({
   LlmTrailSink? llmTrailSink,
   TurnSummarySink? turnSummarySink,
   IncomingTrailSink? incomingTrailSink,
+  MemoryAccessSink? memoryAccessSink,
 }) _trailSinksFor(
   TrailConfig? trail,
 ) {
@@ -329,6 +344,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
       llmTrailSink: null,
       turnSummarySink: null,
       incomingTrailSink: null,
+      memoryAccessSink: null,
     );
   }
   final root = Directory(trail.root);
@@ -351,11 +367,13 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   }
 
   final incomingWriter = IncomingTrailWriter(root: root);
+  final memoryWriter = MemoryProfileLogWriter(root: root);
 
   return (
     llmTrailSink: llmTrailSink,
     turnSummarySink: fanout.onTurnComplete,
     incomingTrailSink: incomingWriter.write,
+    memoryAccessSink: memoryWriter.write,
   );
 }
 

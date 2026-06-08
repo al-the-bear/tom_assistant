@@ -65,6 +65,7 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show PreemptionState, TurnContext, defaultNowUtc;
 
+import '../bridges/bridge_call_recorder.dart';
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../budget/budget.dart';
@@ -81,6 +82,7 @@ import '../primitives_native/yield_primitive.dart';
 import '../procedure_store/procedure_loader.dart';
 import '../procedure_store/procedure_resolver.dart';
 import '../recorder/llm_trail_record.dart';
+import '../recorder/memory_access_record.dart';
 import '../recorder/run_records.dart';
 import '../recorder/run_recorder.dart';
 import '../validator/sandbox_validator.dart';
@@ -158,6 +160,7 @@ final class ProcedureEngine {
     DateTime Function()? now,
     String Function()? newRunId,
     LlmTrailSink? llmTrailSink,
+    MemoryAccessSink? memoryAccessSink,
   })  : preemptionState = preemptionState ?? PreemptionState(),
         _stepDeadlineLimit = stepDeadline,
         _deadlineTimerFactory = deadlineTimerFactory,
@@ -165,7 +168,8 @@ final class ProcedureEngine {
         _hardDepthCap = hardDepthCap,
         _now = now ?? defaultNowUtc,
         _newRunId = newRunId ?? _defaultRunIdGenerator(),
-        _llmTrailSink = llmTrailSink;
+        _llmTrailSink = llmTrailSink,
+        _memoryAccessSink = memoryAccessSink;
 
   /// Resolves a procedure id (and optional version) to a loaded source.
   final ProcedureResolver resolver;
@@ -221,6 +225,14 @@ final class ProcedureEngine {
   /// call, which the engine wraps with run-correlation into an [LlmTrailRecord]
   /// and hands here (the host binds an `LlmTrailWriter`).
   final LlmTrailSink? _llmTrailSink;
+
+  /// The per-profile memory-access sink (`tom_brain_logging.md` §5.6 / §10 step
+  /// #8). `null` leaves the engine emitting no per-profile memory log; when
+  /// bound, each run's memory bridge reports one bridged-memory call which the
+  /// engine wraps with run-correlation + the request's memory profile into a
+  /// [MemoryAccessRecord] and hands here (the host binds a
+  /// `MemoryProfileLogWriter`).
+  final MemoryAccessSink? _memoryAccessSink;
 
   /// Runs the procedure named by [invocation] and returns its handle.
   ///
@@ -282,6 +294,7 @@ final class ProcedureEngine {
             cancellation: cancellation,
             tokenSink: tokenSink,
             turn: turn,
+            profile: invocation.memoryProfile,
           );
           outcome.complete(result);
         } catch (error, stack) {
@@ -334,6 +347,7 @@ final class ProcedureEngine {
     RunCancellation? cancellation,
     OutboundDeltaSink? tokenSink,
     TurnContext? turn,
+    String? profile,
   }) async {
     final LoadedProcedure loaded = resolver.resolve(procedureId, version: version);
 
@@ -367,9 +381,42 @@ final class ProcedureEngine {
     // registered agent and every write this run issues carries it, so the
     // memory store's `AgentRegistry` confines the run to its declared scopes.
     // A user-facing run leaves it `null` and writes unscoped.
+    //
+    // Per-profile memory-log seam (§5.6 / §10 step #8): when a memory-access
+    // sink is bound, compose it over the trail recorder so every bridged
+    // memory call this run issues — recall / persist / edge / stackPush — is
+    // both recorded on the run trail *and* wrapped (with this run's `runId`,
+    // the live `trailId`, the turn it serves, and the request's memory
+    // `profile`) into a [MemoryAccessRecord] for the per-profile writer. The
+    // substrate bridge keeps the plain `recordCall` (below), so `llm` calls
+    // fold into the run trail but never reach the memory sink. The wrapped
+    // call awaits `recordCall` first (its trail/metrics effect is load-bearing)
+    // then fires the sink best-effort: a throwing writer is swallowed so it
+    // cannot break the run.
+    final memoryAccessSink = _memoryAccessSink;
+    final BridgeCallRecorder recordMemoryCall = memoryAccessSink == null
+        ? recordCall
+        : (primitive, input, result, {int? elapsedMs}) async {
+            await recordCall(primitive, input, result, elapsedMs: elapsedMs);
+            try {
+              memoryAccessSink(MemoryAccessRecord(
+                primitive: primitive,
+                input: input,
+                result: result,
+                elapsedMs: elapsedMs,
+                profile: profile,
+                runId: runId,
+                trailId: recorder.isOpen ? recorder.trailId.value : null,
+                turnId: turn?.turnId.value,
+                at: _now(),
+              ));
+            } catch (_) {
+              // Trail writing is non-essential; never let it break the run.
+            }
+          };
     final runMemoryBridge = MemoryBridge(
       memoryBridge.client,
-      onCall: recordCall,
+      onCall: recordMemoryCall,
       budget: runBudget,
       agentName: memoryBridge.agentName,
     );
@@ -407,7 +454,8 @@ final class ProcedureEngine {
     );
 
     final runPrimitive = RunProcedurePrimitive(
-      executor: (call) => _executeNested(call, parentRunId: runId, turn: turn),
+      executor: (call) =>
+          _executeNested(call, parentRunId: runId, turn: turn, profile: profile),
       hardDepthCap: _hardDepthCap,
       startDepth: depth,
     );
@@ -655,6 +703,7 @@ final class ProcedureEngine {
     ProcedureCall call, {
     required String parentRunId,
     TurnContext? turn,
+    String? profile,
   }) async {
     final outcome = await _runInternal(
       runId: _newRunId(),
@@ -665,6 +714,7 @@ final class ProcedureEngine {
       parentRunId: parentRunId,
       depth: call.depth,
       turn: turn,
+      profile: profile,
     );
     return outcome.result ?? ProcedureResult.failed();
   }

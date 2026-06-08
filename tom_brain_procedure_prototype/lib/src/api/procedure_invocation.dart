@@ -39,7 +39,10 @@ final class ProcedureInvocation {
   /// the engine builds one [TurnContext] per turn from it and threads the
   /// `turnId` + per-turn `callSeq` onto every substrate call of the turn,
   /// including nested runs. `null` for an internal / free-time / dream
-  /// invocation that runs outside a user turn.
+  /// invocation that runs outside a user turn. [memoryProfile] is the memory
+  /// profile the request runs under (logging-spec §5.6); the engine threads it
+  /// onto every memory access this turn issues so the per-profile memory log
+  /// buckets correctly. `null` for a turn-less / process-default invocation.
   ProcedureInvocation({
     required this.procedureId,
     Map<String, Object?> arguments = const <String, Object?>{},
@@ -47,6 +50,7 @@ final class ProcedureInvocation {
     this.parentRunId,
     this.runId,
     this.turnId,
+    this.memoryProfile,
   }) : arguments = Map<String, Object?>.unmodifiable(
           Map<String, Object?>.of(arguments),
         ) {
@@ -79,6 +83,11 @@ final class ProcedureInvocation {
   /// Minted at the access edge and threaded onto every substrate call of the
   /// turn via the engine's per-turn [TurnContext].
   final TurnId? turnId;
+
+  /// The memory profile the request runs under (logging-spec §5.6), or `null`
+  /// for a turn-less / process-default invocation. Threaded onto every memory
+  /// access of the turn so the per-profile memory log buckets correctly.
+  final String? memoryProfile;
 
   /// The typed input bag the procedure's `run` entry point receives.
   ///

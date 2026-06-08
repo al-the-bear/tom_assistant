@@ -69,6 +69,7 @@ import '../extensions/extensions.dart'
 import '../mcp/mcp_client.dart' show McpConnector;
 import '../procedure_store/disk_procedure_store.dart';
 import '../recorder/llm_trail_record.dart' show LlmTrailSink;
+import '../recorder/memory_access_record.dart' show MemoryAccessSink;
 import '../recorder/turn_summary.dart' show TurnSummary, TurnSummarySink;
 import '../procedure_store/procedure_resolver.dart';
 import 'dispatcher_entry.dart';
@@ -264,6 +265,15 @@ final class BrainProcessConfig {
   /// closure.
   final LlmTrailSink? llmTrailSink;
 
+  /// The per-profile memory-access sink (`tom_brain_logging.md` §5.6 / §10 step
+  /// #8), or `null` for the prototype default (no per-profile memory log). When
+  /// non-null, boot threads it onto the [ProcedureEngine] so every run's memory
+  /// bridge reports one record per completed memory access (recall / persist /
+  /// edge / stackPush) into it, stamped with the request's memory profile.
+  /// Production binds a `MemoryProfileLogWriter.write` built from the `trail:`
+  /// config; tests pass a capture closure.
+  final MemoryAccessSink? memoryAccessSink;
+
   /// The per-turn summary sink (`tom_brain_logging.md` §5.4 / §5.5 / §10 step
   /// #5), or `null` for the prototype default (no per-turn narrative). When
   /// non-null, the dispatch route fires one [TurnSummary] per completed user
@@ -289,6 +299,7 @@ final class BrainProcessConfig {
     this.extensions,
     this.mcpConnector,
     this.llmTrailSink,
+    this.memoryAccessSink,
     this.turnSummarySink,
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
 }
@@ -514,6 +525,7 @@ abstract final class BrainProcessBoot {
       preemption: preemption,
       extensions: extensions,
       llmTrailSink: config.llmTrailSink,
+      memoryAccessSink: config.memoryAccessSink,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
     final dispatcher = _wireDispatcher(
@@ -561,8 +573,10 @@ abstract final class BrainProcessBoot {
 
   /// Wires the [ProcedureEngine] over both bridges, the shared [preemption]
   /// state (the engine yields against it via `yield_if_foreground_waiting`), the
-  /// optional Extension-F [extensions] bundle, and the optional [llmTrailSink]
-  /// the engine forwards each run's raw-LLM-call observations to (§10 step #4).
+  /// optional Extension-F [extensions] bundle, the optional [llmTrailSink]
+  /// the engine forwards each run's raw-LLM-call observations to (§10 step #4),
+  /// and the optional [memoryAccessSink] it forwards each run's bridged-memory
+  /// calls to for the per-profile memory log (§10 step #8).
   static ProcedureEngine _wireEngine({
     required ProvisionedMemory memory,
     required TomBrainSubstrateClient substrate,
@@ -570,6 +584,7 @@ abstract final class BrainProcessBoot {
     required PreemptionState preemption,
     required BrainEngineExtensions? extensions,
     required LlmTrailSink? llmTrailSink,
+    required MemoryAccessSink? memoryAccessSink,
   }) =>
       ProcedureEngine(
         resolver: resolver,
@@ -579,6 +594,7 @@ abstract final class BrainProcessBoot {
         preemptionState: preemption,
         extensions: extensions,
         llmTrailSink: llmTrailSink,
+        memoryAccessSink: memoryAccessSink,
       );
 
   /// Wires the [RunCoordinator] over the shared [preemption] state (it drives
@@ -682,6 +698,10 @@ abstract final class BrainProcessBoot {
                   // the invocation so the engine threads it — plus a per-turn
                   // `callSeq` — onto every substrate call this turn issues.
                   turnId: access.turnId,
+                  // Carry the request's memory profile (logging-spec §5.6) so
+                  // the engine stamps it onto every memory access this turn
+                  // issues, bucketing the per-profile memory log correctly.
+                  memoryProfile: access.session.memoryProfile,
                 ),
                 tokenSink: streamDelta,
               )
