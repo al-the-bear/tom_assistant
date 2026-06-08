@@ -56,12 +56,14 @@ export 'src/trail_config_loader.dart' show TrailConfigLoader;
 export 'src/llm_trail_writer.dart'
     show LlmTrailHeadlineSink, LlmTrailWriter;
 
-// ── Summary fan-out: the §5.4 / §5.5 / §5.8 versioned narratives derived
-//    from the same call records the raw writer dumps (§10 step #5) ───────
+// ── Summary fan-out: the §5.4 / §5.5 / §5.8 versioned narratives + the §5.9
+//    per-session live-trail, derived from the same call records the raw writer
+//    dumps (§10 steps #5 / #6) ───────────────────────────────────────────
 export 'src/summary_fanout.dart'
     show
         CallProjectionWriter,
         GlobalSummaryWriter,
+        SessionLiveTrailWriter,
         SessionSummaryWriter,
         SummaryFanout;
 

@@ -1,63 +1,67 @@
-ID,Groups,Description,Baseline [06-05 16:47],[06-05 16:47],[06-05 17:14],[06-05 17:23],[06-05 17:51],[06-05 17:52],[06-05 17:57],[06-05 18:21],[06-05 18:34],[06-08 01:15],[06-08 02:02],[06-08 16:35],[06-08 18:39],[06-08 18:42]
-,#31 buildSubstrate — SubstrateConfig → live facade,refuses an embedding that points at a non-Ollama provider with a located error,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#34 LIVE end-to-end — a cognitive agent (Extractor dream pass),an out-of-scope Extractor write is refused with AgentScopeViolation and mutates no Claim,--/OK,--/OK,--/OK,--/OK,X/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#30 provisionBrain — real on-disk memory + stub LLM,"boots a ProvisionedBrain whose queue snapshot reads idle, then tears down cleanly",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#30 standUpBrainProcess — access process over real cognition,binds a real local port,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#30 standUpBrainProcess — access process over real cognition,GET /healthz answers 200 with the liveness body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#30 standUpBrainProcess — access process over real cognition,GET /v1/models answers 200 with the models-list body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#30 standUpBrainProcess — access process over real cognition,stop() tears the cognition down — the substrate closes once and a second stop is a no-op,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#31 BrainRunConfigLoader.parse — whole-process config,loads a fully-populated config to a BrainRunConfig (all three sub-configs populated),--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#31 BrainRunConfigLoader.parse — whole-process config,a substrate section that routes to an unknown provider fails with a located SubstrateConfigException,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#31 BrainRunConfigLoader.parse — whole-process config,an unknown top-level section fails with a located AccessConfigException,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#31 BrainRunConfigLoader.parse — whole-process config,a missing memory section fails with a located MemoryConfigException,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#31 BrainRunConfigLoader.parse — whole-process config,loadFromFile rejects a missing path with a BrainRunConfigException,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#31 buildSubstrate — SubstrateConfig → live facade,manufactures a facade whose routed roles validate against the bootstrap registry,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#31 buildSubstrate — SubstrateConfig → live facade,refuses a stub-kind provider with a located error,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#31 buildSubstrate — SubstrateConfig → live facade,refuses a provider whose auth uses a secretRef with a located error,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#34 LIVE end-to-end — a cognitive agent (Extractor dream pass),a real dream pass extracts a Claim from the item-32 trail within scope/budget and the Claim is inspectable via MCP,--/OK,--/OK,--/OK,--/OK,X/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#31 standUpBrainProcessFromConfig — starts from the config file,"binds a port, answers /healthz + /v1/models, and leaves the config file bytes unmodified",--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-non-stream,#32 LIVE end-to-end — OpenAI channel,"prompt → answer_with_memory_v1 → recall+persist on real on-disk memory, answer from live oMLX, inspected via MCP",--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-stream,#32 LIVE end-to-end — OpenAI channel,"SSE chunk ordering + [DONE] from live oMLX, and the streamed exchange is persisted to real on-disk memory",--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,,#36 renderer records p50/p95 and the E.58 comparison,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,#36 LIVE process bench — inbound-prompt → first-answer-chunk,measures p50/p95 against the real oMLX + on-disk-memory stack and records the report to doc/,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,R.33 — retrieval eval harness logic (double environment),the five-phase pipeline runs end-to-end on a fixture corpus,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,R.33 — retrieval eval harness logic (double environment),naive / hyde / semantic / full produce distinct nDCG scores,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,R.33 — retrieval eval harness logic (double environment),a deliberately weakened weight set shows a measurable metric drop,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,R.33 — retrieval eval harness logic (double environment),re-running on a fresh profile is deterministic,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,R.33 — retrieval eval harness logic (double environment),the harness drops the profile even when a query phase throws,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,R.33 — evalIdsFromRecall recovers seeded ids from the recall map,"reads the ordered string evalIds out of recall[""nodes""]",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,R.33 — evalIdsFromRecall recovers seeded ids from the recall map,"skips nodes without a string evalId, tolerates malformed shapes",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,R.33 — evalDocToDraft maps a corpus doc to a seedable NodeDraft,carries evalId in values and capitalises the kind to a typeName,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,C · TrailBanner.forStartup (pure),"unconfigured banner names the CWD, disabled surfaces, and the hint",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,#35 LIVE end-to-end — the retrieval conductor (HyDE + semantic),"HyDE + semantic seeds surface the targets naive recall misses, the fused context carries provenance, and the profile is dropped",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,A · TrailConfigLoader.parse (pure),absent trail: block → null (unconfigured mode),--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,A · TrailConfigLoader.parse (pure),full trail: block → fully-populated TrailConfig,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,A · TrailConfigLoader.parse (pure),§8 defaults apply when caps / capture omitted,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,A · TrailConfigLoader.parse (pure),${ENV} in root is expanded from envVars,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,A · TrailConfigLoader.parse (pure),present block missing root → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,A · TrailConfigLoader.parse (pure),non-positive cap → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,A · TrailConfigLoader.parse (pure),unknown key under trail: → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,A · TrailConfigLoader.parse (pure),unknown key under trail.capture → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,A · TrailConfigLoader.parse (pure),undefined env var in root → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,A · TrailConfigLoader.parse (pure),non-map trail: → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,A · TrailConfigLoader.parse (pure),wrong-typed cap → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,B · mode resolution,BrainRunConfig.trailMode is unconfigured when trail is null,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,B · mode resolution,BrainRunConfigLoader threads a trail: section → full mode,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,C · TrailBanner.forStartup (pure),enabled banner names the root and the six full-tree surfaces,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
-,R.33 — ProcedureEngineEvalEnvironment store-facing lifecycle,"provision creates, seed persists drafts, drop deletes the profile",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
-,SummaryFanout — §5.4 session narrative,"a completed turn writes a session block with user, answer, bullets",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,SummaryFanout — §5.4 session narrative,a turn with no answer renders the em dash answer placeholder,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,SummaryFanout — §5.4 session narrative,a second turn appends below the first (same file),--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,SummaryFanout — §5.5 global narrative,"every session interleaves into one file, sess id on each header",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,SummaryFanout — §5.8 per-role / per-LLM projections,every call lands in by-role/<role> and by-llm/<prov>-<model>,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,SummaryFanout — §5.8 per-role / per-LLM projections,projections are newest-first,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,SummaryFanout — §5.8 per-role / per-LLM projections,a turn-less (dream) call still projects but writes no turn block,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,SummaryFanout — §8 caps,"session turn blocks cap, dropping the oldest from the head",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,SummaryFanout — §8 caps,"projection entries cap, dropping the oldest from the tail",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,SummaryFanout — §11.1 internal-role gate,captureInternalRoles=false skips internal calls everywhere,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,LlmTrailWriter — raw §5.2 file,writes llm/<role>/<turn>__<seq>.raw.json with the wire body,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,LlmTrailWriter — raw §5.2 file,emits a brain.log headline ending in the ↳ link to the raw file,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,LlmTrailWriter — raw §5.2 file,a turn-less call falls back to <runId>__<callId> for the stem,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,LlmTrailWriter — capture gates (§11),captureWireBody=false omits the wire block but still writes,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,LlmTrailWriter — capture gates (§11),captureInternalRoles=false skips a non-user-facing role entirely,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
-,LlmTrailWriter — capture gates (§11),captureInternalRoles=false still trails the user-facing role,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK
+ID,Groups,Description,Baseline [06-05 16:47],[06-05 16:47],[06-05 17:14],[06-05 17:23],[06-05 17:51],[06-05 17:52],[06-05 17:57],[06-05 18:21],[06-05 18:34],[06-08 01:15],[06-08 02:02],[06-08 16:35],[06-08 18:39],[06-08 18:42],[06-08 18:48]
+,R.33 — retrieval eval harness logic (double environment),the five-phase pipeline runs end-to-end on a fixture corpus,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#34 LIVE end-to-end — a cognitive agent (Extractor dream pass),an out-of-scope Extractor write is refused with AgentScopeViolation and mutates no Claim,--/OK,--/OK,--/OK,--/OK,X/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#30 provisionBrain — real on-disk memory + stub LLM,"boots a ProvisionedBrain whose queue snapshot reads idle, then tears down cleanly",OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#30 standUpBrainProcess — access process over real cognition,binds a real local port,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#30 standUpBrainProcess — access process over real cognition,GET /healthz answers 200 with the liveness body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#30 standUpBrainProcess — access process over real cognition,GET /v1/models answers 200 with the models-list body,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#30 standUpBrainProcess — access process over real cognition,stop() tears the cognition down — the substrate closes once and a second stop is a no-op,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#31 BrainRunConfigLoader.parse — whole-process config,loads a fully-populated config to a BrainRunConfig (all three sub-configs populated),--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#31 BrainRunConfigLoader.parse — whole-process config,a substrate section that routes to an unknown provider fails with a located SubstrateConfigException,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#31 BrainRunConfigLoader.parse — whole-process config,an unknown top-level section fails with a located AccessConfigException,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#31 BrainRunConfigLoader.parse — whole-process config,a missing memory section fails with a located MemoryConfigException,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#31 BrainRunConfigLoader.parse — whole-process config,loadFromFile rejects a missing path with a BrainRunConfigException,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#31 buildSubstrate — SubstrateConfig → live facade,manufactures a facade whose routed roles validate against the bootstrap registry,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#31 buildSubstrate — SubstrateConfig → live facade,refuses a stub-kind provider with a located error,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#31 buildSubstrate — SubstrateConfig → live facade,refuses a provider whose auth uses a secretRef with a located error,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#34 LIVE end-to-end — a cognitive agent (Extractor dream pass),a real dream pass extracts a Claim from the item-32 trail within scope/budget and the Claim is inspectable via MCP,--/OK,--/OK,--/OK,--/OK,X/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#31 standUpBrainProcessFromConfig — starts from the config file,"binds a port, answers /healthz + /v1/models, and leaves the config file bytes unmodified",--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+non-stream,#32 LIVE end-to-end — OpenAI channel,"prompt → answer_with_memory_v1 → recall+persist on real on-disk memory, answer from live oMLX, inspected via MCP",--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+stream,#32 LIVE end-to-end — OpenAI channel,"SSE chunk ordering + [DONE] from live oMLX, and the streamed exchange is persisted to real on-disk memory",--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,,#36 renderer records p50/p95 and the E.58 comparison,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#36 LIVE process bench — inbound-prompt → first-answer-chunk,measures p50/p95 against the real oMLX + on-disk-memory stack and records the report to doc/,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#31 buildSubstrate — SubstrateConfig → live facade,refuses an embedding that points at a non-Ollama provider with a located error,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,R.33 — retrieval eval harness logic (double environment),naive / hyde / semantic / full produce distinct nDCG scores,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,R.33 — retrieval eval harness logic (double environment),a deliberately weakened weight set shows a measurable metric drop,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,R.33 — retrieval eval harness logic (double environment),re-running on a fresh profile is deterministic,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,R.33 — retrieval eval harness logic (double environment),the harness drops the profile even when a query phase throws,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,R.33 — evalIdsFromRecall recovers seeded ids from the recall map,"reads the ordered string evalIds out of recall[""nodes""]",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,R.33 — evalIdsFromRecall recovers seeded ids from the recall map,"skips nodes without a string evalId, tolerates malformed shapes",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,R.33 — evalDocToDraft maps a corpus doc to a seedable NodeDraft,carries evalId in values and capitalises the kind to a typeName,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,C · TrailBanner.forStartup (pure),"unconfigured banner names the CWD, disabled surfaces, and the hint",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,#35 LIVE end-to-end — the retrieval conductor (HyDE + semantic),"HyDE + semantic seeds surface the targets naive recall misses, the fused context carries provenance, and the profile is dropped",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,A · TrailConfigLoader.parse (pure),absent trail: block → null (unconfigured mode),--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,A · TrailConfigLoader.parse (pure),full trail: block → fully-populated TrailConfig,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,A · TrailConfigLoader.parse (pure),§8 defaults apply when caps / capture omitted,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,A · TrailConfigLoader.parse (pure),${ENV} in root is expanded from envVars,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,A · TrailConfigLoader.parse (pure),present block missing root → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,A · TrailConfigLoader.parse (pure),non-positive cap → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,A · TrailConfigLoader.parse (pure),unknown key under trail: → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,A · TrailConfigLoader.parse (pure),unknown key under trail.capture → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,A · TrailConfigLoader.parse (pure),undefined env var in root → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,A · TrailConfigLoader.parse (pure),non-map trail: → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,A · TrailConfigLoader.parse (pure),wrong-typed cap → located error,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,B · mode resolution,BrainRunConfig.trailMode is unconfigured when trail is null,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §5.9 session live-trail,a turn-less (dream) call writes no live-trail,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
+,C · TrailBanner.forStartup (pure),enabled banner names the root and the six full-tree surfaces,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,R.33 — ProcedureEngineEvalEnvironment store-facing lifecycle,"provision creates, seed persists drafts, drop deletes the profile",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §5.4 session narrative,"a completed turn writes a session block with user, answer, bullets",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §5.4 session narrative,a turn with no answer renders the em dash answer placeholder,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §5.4 session narrative,a second turn appends below the first (same file),--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §5.5 global narrative,"every session interleaves into one file, sess id on each header",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §5.8 per-role / per-LLM projections,every call lands in by-role/<role> and by-llm/<prov>-<model>,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §5.8 per-role / per-LLM projections,projections are newest-first,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §5.8 per-role / per-LLM projections,a turn-less (dream) call still projects but writes no turn block,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §8 caps,"session turn blocks cap, dropping the oldest from the head",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §8 caps,"projection entries cap, dropping the oldest from the tail",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §11.1 internal-role gate,captureInternalRoles=false skips internal calls everywhere,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,LlmTrailWriter — raw §5.2 file,writes llm/<role>/<turn>__<seq>.raw.json with the wire body,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,LlmTrailWriter — raw §5.2 file,emits a brain.log headline ending in the ↳ link to the raw file,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,LlmTrailWriter — raw §5.2 file,a turn-less call falls back to <runId>__<callId> for the stem,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,LlmTrailWriter — capture gates (§11),captureWireBody=false omits the wire block but still writes,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,LlmTrailWriter — capture gates (§11),captureInternalRoles=false skips a non-user-facing role entirely,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,LlmTrailWriter — capture gates (§11),captureInternalRoles=false still trails the user-facing role,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK
+,SummaryFanout — §5.9 session live-trail,a completed turn writes a live-trail block in the §5.4 format,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
+,SummaryFanout — §5.9 session live-trail,"the live-trail caps at liveTrailTurns, dropping oldest from the head",--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
+,SummaryFanout — §5.9 session live-trail,the live-trail window is independent of the summary cap,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK
+,B · mode resolution,BrainRunConfigLoader threads a trail: section → full mode,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,--/OK,OK/OK,OK/OK,OK/OK,OK/OK

@@ -51,11 +51,41 @@ final class SessionSummaryWriter {
   /// session file. The session file sits one hop under the root, so call links
   /// use the `../` prefix (§5.4 example).
   void writeTurn(TurnSummary summary, List<LlmTrailRecord> calls) {
-    final header = '$_sessionFileMarker\n'
-        '# session ${summary.sessionId}  ·  principal: ${summary.principalId}'
-        '${summary.channel == null ? '' : '  ·  channel: ${summary.channel}'}';
+    final header = '$_sessionFileMarker\n${_sessionHeaderBody(summary)}';
     final file = File(
       '${root.path}/sessions/${_sanitizeFileToken(summary.sessionId)}.summary.md',
+    );
+    _TurnBlockFile(file: file, header: header, cap: cap).append(
+      _renderTurnBlock(summary, calls, includeSession: false, linkPrefix: '../'),
+    );
+  }
+}
+
+/// The §5.9 session live-trail writer — the per-session "where were we" view:
+/// the same §5.4 turn blocks as [SessionSummaryWriter], in a sibling file
+/// `sessions/<sessionId>.live-trail.md`, but kept to a narrow rolling window
+/// (`trail.liveTrailTurns`, §8) with older turns dropped from the head. The
+/// per-session analogue of the quest `live-trail.md`.
+final class SessionLiveTrailWriter {
+  /// Builds a writer rooted at the trail [root], keeping the last [cap] turns.
+  SessionLiveTrailWriter({required this.root, required this.cap});
+
+  /// The trail tree root; live-trail files land under `<root>/sessions/`.
+  final Directory root;
+
+  /// The rolling window — turns kept before the oldest drop
+  /// (`trail.liveTrailTurns`, §8).
+  final int cap;
+
+  /// Appends [summary]'s turn block — built from the turn's [calls] — to the
+  /// session live-trail, head-dropping past the window. The file sits one hop
+  /// under the root, so call links use the `../` prefix (as in §5.4).
+  void writeTurn(TurnSummary summary, List<LlmTrailRecord> calls) {
+    final header = '$_sessionLiveTrailMarker\n'
+        '${_sessionHeaderBody(summary)}  ·  live (last $cap)';
+    final file = File(
+      '${root.path}/sessions/'
+      '${_sanitizeFileToken(summary.sessionId)}.live-trail.md',
     );
     _TurnBlockFile(file: file, header: header, cap: cap).append(
       _renderTurnBlock(summary, calls, includeSession: false, linkPrefix: '../'),
@@ -141,28 +171,33 @@ final class SummaryFanout {
   /// [SummaryFanout.rootedAt] for the standard root-relative layout.
   SummaryFanout({
     required SessionSummaryWriter session,
+    required SessionLiveTrailWriter liveTrail,
     required GlobalSummaryWriter global,
     required CallProjectionWriter byRole,
     required CallProjectionWriter byLlm,
     bool captureInternalRoles = true,
   })  : _session = session,
+        _liveTrail = liveTrail,
         _global = global,
         _byRole = byRole,
         _byLlm = byLlm,
         _captureInternalRoles = captureInternalRoles;
 
   /// Builds the standard fan-out for trail [root]: session files under
-  /// `sessions/`, the global file + the two projections under `summary/`. All
-  /// four cap at [cap] (`trail.compactLogCap`, §8). [captureInternalRoles]
-  /// mirrors the raw writer's §11.1 gate: when `false`, only the user-facing
-  /// `assistant_to_user` call feeds any surface.
+  /// `sessions/`, the global file + the two projections under `summary/`. The
+  /// summary surfaces cap at [cap] (`trail.compactLogCap`, §8); the per-session
+  /// live-trail keeps the last [liveTrailTurns] turns (`trail.liveTrailTurns`,
+  /// §8). [captureInternalRoles] mirrors the raw writer's §11.1 gate: when
+  /// `false`, only the user-facing `assistant_to_user` call feeds any surface.
   factory SummaryFanout.rootedAt(
     Directory root, {
     int cap = 1000,
+    int liveTrailTurns = 20,
     bool captureInternalRoles = true,
   }) =>
       SummaryFanout(
         session: SessionSummaryWriter(root: root, cap: cap),
+        liveTrail: SessionLiveTrailWriter(root: root, cap: liveTrailTurns),
         global: GlobalSummaryWriter(root: root, cap: cap),
         byRole: CallProjectionWriter(
           root: root,
@@ -185,6 +220,7 @@ final class SummaryFanout {
       );
 
   final SessionSummaryWriter _session;
+  final SessionLiveTrailWriter _liveTrail;
   final GlobalSummaryWriter _global;
   final CallProjectionWriter _byRole;
   final CallProjectionWriter _byLlm;
@@ -212,14 +248,17 @@ final class SummaryFanout {
     }
   }
 
-  /// Flushes the §5.4 session block and the §5.5 global block for one completed
-  /// turn, built from the turn's buffered calls plus [summary]'s prompt/answer.
-  /// The buffer entry is always removed — even when both writes throw — so a
-  /// turn never leaks. Best-effort (§9).
+  /// Flushes the §5.4 session block, the §5.9 per-session live-trail block, and
+  /// the §5.5 global block for one completed turn, built from the turn's
+  /// buffered calls plus [summary]'s prompt/answer. The buffer entry is always
+  /// removed — even when a write throws — so a turn never leaks. Best-effort
+  /// (§9): each surface is written independently, so one failing does not starve
+  /// the others.
   void onTurnComplete(TurnSummary summary) {
     final calls =
         _pending.remove(summary.turnId) ?? const <LlmTrailRecord>[];
     _safe(() => _session.writeTurn(summary, calls));
+    _safe(() => _liveTrail.writeTurn(summary, calls));
     _safe(() => _global.writeTurn(summary, calls));
   }
 
@@ -235,7 +274,15 @@ final class SummaryFanout {
 // ─── Markdown rendering ──────────────────────────────────────────────
 
 const String _sessionFileMarker = '<!-- tom-brain session summary -->';
+const String _sessionLiveTrailMarker = '<!-- tom-brain session live-trail -->';
 const String _globalFileMarker = '<!-- tom-brain global summary -->';
+
+/// The `# session <sid>  ·  principal: <pid>[  ·  channel: <ch>]` header body
+/// shared by the two per-session files (§5.4 summary and §5.9 live-trail). Each
+/// writer prepends its own marker comment, so the file stays self-identifying.
+String _sessionHeaderBody(TurnSummary summary) =>
+    '# session ${summary.sessionId}  ·  principal: ${summary.principalId}'
+    '${summary.channel == null ? '' : '  ·  channel: ${summary.channel}'}';
 
 /// The §5.4 / §5.5 turn block: a header line (with the session id when
 /// [includeSession]), the user prompt, the final answer, then one bullet per

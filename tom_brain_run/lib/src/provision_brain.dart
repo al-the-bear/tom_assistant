@@ -325,6 +325,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   final fanout = SummaryFanout.rootedAt(
     root,
     cap: trail.compactLogCap,
+    liveTrailTurns: trail.liveTrailTurns,
     captureInternalRoles: trail.captureInternalRoles,
   );
   // Single source (§5.8): one record both lands as the raw §5.2 dump and fans

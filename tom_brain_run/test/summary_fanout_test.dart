@@ -245,6 +245,102 @@ void main() {
       expect(md, isNot(contains('recaller')),
           reason: 'the turn block shows only the user-facing call');
       expect(md, contains('🧠 main'));
+      // The §5.9 live-trail shares the buffered calls, so the gate holds there
+      // too: only the user-facing call survives.
+      final live = read('sessions/sess-1.live-trail.md');
+      expect(live, isNot(contains('recaller')),
+          reason: 'the live-trail block also shows only the user-facing call');
+      expect(live, contains('🧠 main'));
+    });
+  });
+
+  group('SummaryFanout — §5.9 session live-trail', () {
+    test('a completed turn writes a live-trail block in the §5.4 format', () {
+      final fanout = SummaryFanout.rootedAt(root);
+      fanout.onCall(_record(
+        callType: 'recaller',
+        turnId: 'turn_01JZ',
+        callSeq: 1,
+        answer: 'memory query',
+      ));
+      fanout.onCall(_record(
+        callType: 'assistant_to_user',
+        turnId: 'turn_01JZ',
+        callSeq: 3,
+        answer: 'the full answer',
+      ));
+      fanout.onTurnComplete(_turn(
+        turnId: 'turn_01JZ',
+        sessionId: 'sess-1',
+        userPrompt: 'what were the three prompts before?',
+        finalAnswer: 'there are no previous prompts',
+      ));
+
+      expect(exists('sessions/sess-1.live-trail.md'), isTrue,
+          reason: 'the §5.9 file is the per-session analogue, keyed by sid');
+      final md = read('sessions/sess-1.live-trail.md');
+      expect(md, contains('<!-- tom-brain session live-trail -->'),
+          reason: 'a distinct marker tells it apart from the §5.4 summary');
+      expect(md, contains('# session sess-1  ·  principal: owner'));
+      expect(md, contains('## turn_01JZ'));
+      expect(md, contains('> **User:** what were the three prompts before?'));
+      expect(md, contains('**Answer:** there are no previous prompts'));
+      // The very same §5.4 bullets, links root-relative with `../`.
+      expect(
+          md,
+          contains('🧠 main · assistant_to_user · omlx/gemma-4 · 1→1 tok · 5ms '
+              '— [raw](../llm/assistant_to_user/turn_01JZ__03.raw.json)'));
+      expect(
+          md,
+          contains('🔎 recaller · omlx/gemma-4 · 1→1 tok · 5ms '
+              '— [raw](../llm/recaller/turn_01JZ__01.raw.json)'));
+    });
+
+    test('the live-trail caps at liveTrailTurns, dropping oldest from the head',
+        () {
+      final fanout = SummaryFanout.rootedAt(root, liveTrailTurns: 2);
+      for (final id in <String>['turn_1', 'turn_2', 'turn_3']) {
+        fanout.onTurnComplete(
+            _turn(turnId: id, sessionId: 'sess-1', userPrompt: id));
+      }
+      final md = read('sessions/sess-1.live-trail.md');
+      expect(md, isNot(contains('turn_1')),
+          reason: 'the oldest turn dropped at liveTrailTurns=2');
+      expect(md, contains('turn_2'));
+      expect(md, contains('turn_3'));
+    });
+
+    test('the live-trail window is independent of the summary cap', () {
+      // A wide summary cap but a narrow live window: the same turns land in
+      // both files, trimmed to each file's own limit.
+      final fanout = SummaryFanout.rootedAt(root, cap: 1000, liveTrailTurns: 2);
+      for (final id in <String>['turn_1', 'turn_2', 'turn_3']) {
+        fanout.onTurnComplete(
+            _turn(turnId: id, sessionId: 'sess-1', userPrompt: id));
+      }
+      final summary = read('sessions/sess-1.summary.md');
+      expect(summary, contains('turn_1'),
+          reason: 'the summary keeps all three at cap=1000');
+      expect(summary, contains('turn_2'));
+      expect(summary, contains('turn_3'));
+      final live = read('sessions/sess-1.live-trail.md');
+      expect(live, isNot(contains('turn_1')),
+          reason: 'the live window keeps only the last two');
+      expect(live, contains('turn_2'));
+      expect(live, contains('turn_3'));
+    });
+
+    test('a turn-less (dream) call writes no live-trail', () {
+      SummaryFanout.rootedAt(root).onCall(_record(
+        callType: 'connector',
+        turnId: null,
+        callSeq: null,
+        callId: 'c-dream',
+        runId: 'dream-run-3',
+        answer: 'a dream connection',
+      ));
+      expect(exists('sessions/sess-1.live-trail.md'), isFalse,
+          reason: 'a dream call has no turn → no per-session live-trail');
     });
   });
 }
