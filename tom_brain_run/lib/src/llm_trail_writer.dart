@@ -32,6 +32,8 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show CapturedWirePrompt, SubstrateLog;
 
+import 'llm_raw_path.dart' show llmRawPathFromRoot;
+
 /// Sink for the one compact `brain.log` headline the writer emits per call.
 /// Defaults to `SubstrateLog.llm.status`; injectable so tests can capture the
 /// line without standing up a `FanoutLogOutput`.
@@ -79,7 +81,7 @@ final class LlmTrailWriter {
         return;
       }
 
-      final relativePath = 'llm/${obs.callType}/${_stem(record)}.raw.json';
+      final relativePath = llmRawPathFromRoot(record);
       final file = File('${root.path}/$relativePath');
       file.parent.createSync(recursive: true);
       file.writeAsStringSync(
@@ -90,19 +92,6 @@ final class LlmTrailWriter {
     } catch (_) {
       // Trail writing is non-essential; never let it surface into the turn.
     }
-  }
-
-  /// The file stem: `<turnId>__<callSeq>` for a turn-bound call (`callSeq`
-  /// zero-padded to two digits, matching the §5.1 `__01` form), falling back to
-  /// `<runId>__<callId>` for a turn-less internal / dream call.
-  String _stem(LlmTrailRecord record) {
-    final obs = record.observation;
-    final turnId = obs.turnId;
-    final callSeq = obs.callSeq;
-    if (turnId != null && callSeq != null) {
-      return '${turnId}__${callSeq.toString().padLeft(2, '0')}';
-    }
-    return '${record.runId ?? 'run'}__${obs.callId}';
   }
 
   /// Builds the §5.2 JSON map in the spec's field order.

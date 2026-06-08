@@ -37,6 +37,9 @@ export 'effort_accountant.dart' show EffortAccountant;
 // §10 step #4 — the engine-layer raw-LLM-trail record (bridge observation +
 // run-correlation) and its sink type.
 export 'llm_trail_record.dart' show LlmTrailRecord, LlmTrailSink;
+// §10 step #5 — the turn-complete seam the §5.4 / §5.5 summary fan-out keys its
+// per-turn narrative blocks on (user prompt + final answer + correlation).
+export 'turn_summary.dart' show TurnSummary, TurnSummarySink;
 export 'run_records.dart'
     show
         ProcedureRunRecord,

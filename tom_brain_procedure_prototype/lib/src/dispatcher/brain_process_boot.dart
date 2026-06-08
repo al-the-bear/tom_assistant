@@ -69,6 +69,7 @@ import '../extensions/extensions.dart'
 import '../mcp/mcp_client.dart' show McpConnector;
 import '../procedure_store/disk_procedure_store.dart';
 import '../recorder/llm_trail_record.dart' show LlmTrailSink;
+import '../recorder/turn_summary.dart' show TurnSummary, TurnSummarySink;
 import '../procedure_store/procedure_resolver.dart';
 import 'dispatcher_entry.dart';
 import 'inbound_classifier.dart';
@@ -263,6 +264,15 @@ final class BrainProcessConfig {
   /// closure.
   final LlmTrailSink? llmTrailSink;
 
+  /// The per-turn summary sink (`tom_brain_logging.md` §5.4 / §5.5 / §10 step
+  /// #5), or `null` for the prototype default (no per-turn narrative). When
+  /// non-null, the dispatch route fires one [TurnSummary] per completed user
+  /// turn — carrying the inbound prompt and the final answer — so the host's
+  /// summary fan-out can flush the turn's session + global narrative block.
+  /// Production binds the `SummaryFanout.onTurnComplete`; tests pass a capture
+  /// closure. Best-effort and non-blocking (§9).
+  final TurnSummarySink? turnSummarySink;
+
   /// Builds a boot config.
   ///
   /// [extensions] + [mcpConnector] must be supplied together: an [extensions]
@@ -279,6 +289,7 @@ final class BrainProcessConfig {
     this.extensions,
     this.mcpConnector,
     this.llmTrailSink,
+    this.turnSummarySink,
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
 }
 
@@ -599,6 +610,7 @@ abstract final class BrainProcessBoot {
           selector: ProcedureSelector(),
           coordinator: coordinator,
           engine: engine,
+          turnSummarySink: config.turnSummarySink,
         ),
       );
 
@@ -632,6 +644,7 @@ abstract final class BrainProcessBoot {
     required ProcedureSelector selector,
     required RunCoordinator coordinator,
     required ProcedureEngine engine,
+    required TurnSummarySink? turnSummarySink,
   }) {
     return (Access access) async {
       // A confident centroid hint routes directly to its procedure; a no-hint
@@ -651,33 +664,77 @@ abstract final class BrainProcessBoot {
           .deliver(OutboundChunk(textDelta: textDelta, isFinal: false))
           .drain<void>();
 
-      final ProcedureOutcome outcome = await coordinator.submitForeground(
-        () => engine
-            .invoke(
-              ProcedureInvocation(
-                procedureId: procedureId,
-                arguments: <String, Object?>{
-                  inboundTextArgumentKey: access.envelope.text,
-                },
-                // Carry the access-edge-minted turn id (logging-spec §3) onto
-                // the invocation so the engine threads it — plus a per-turn
-                // `callSeq` — onto every substrate call this turn issues.
-                turnId: access.turnId,
-              ),
-              tokenSink: streamDelta,
-            )
-            .outcome,
-        procedureId: procedureId,
-      );
+      // When the turn began serving — the §5.4 turn-header timestamp. Captured
+      // before the run so it brackets the whole turn.
+      final startedAt = DateTime.now().toUtc();
 
-      // The run completed: terminate the stream. The deltas already carried the
-      // answer text, so the terminator is an empty final marker. A run that
-      // produced no usable result (truncated / crashed) sends nothing.
-      if (outcome.result?.output<String>('answer') != null) {
-        await access
-            .deliver(OutboundChunk(textDelta: '', isFinal: true))
-            .drain<void>();
+      ProcedureOutcome? outcome;
+      try {
+        final ProcedureOutcome result = await coordinator.submitForeground(
+          () => engine
+              .invoke(
+                ProcedureInvocation(
+                  procedureId: procedureId,
+                  arguments: <String, Object?>{
+                    inboundTextArgumentKey: access.envelope.text,
+                  },
+                  // Carry the access-edge-minted turn id (logging-spec §3) onto
+                  // the invocation so the engine threads it — plus a per-turn
+                  // `callSeq` — onto every substrate call this turn issues.
+                  turnId: access.turnId,
+                ),
+                tokenSink: streamDelta,
+              )
+              .outcome,
+          procedureId: procedureId,
+        );
+        outcome = result;
+
+        // The run completed: terminate the stream. The deltas already carried
+        // the answer text, so the terminator is an empty final marker. A run
+        // that produced no usable result (truncated / crashed) sends nothing.
+        if (result.result?.output<String>('answer') != null) {
+          await access
+              .deliver(OutboundChunk(textDelta: '', isFinal: true))
+              .drain<void>();
+        }
+      } finally {
+        // Emit the per-turn summary (§5.4 / §5.5 / §10 step #5) whether the run
+        // succeeded or threw, so the fan-out always flushes (and never leaks)
+        // the turn's buffered LLM calls. A crashed turn carries a `null`
+        // answer. Best-effort and non-blocking (§9).
+        _emitTurnSummary(turnSummarySink, access, startedAt, outcome);
       }
     };
+  }
+
+  /// Fires the per-turn [TurnSummary] for a completed turn (§5.4 / §5.5 / §10
+  /// step #5). A no-op when no sink is bound or the [access] carries no turn id
+  /// (a synthetic conformance `Access`, D.53). Guarded so a throwing sink never
+  /// surfaces into the turn (§9).
+  static void _emitTurnSummary(
+    TurnSummarySink? sink,
+    Access access,
+    DateTime startedAt,
+    ProcedureOutcome? outcome,
+  ) {
+    if (sink == null) return;
+    final turnId = access.turnId;
+    if (turnId == null) return;
+    try {
+      sink(TurnSummary(
+        turnId: turnId.value,
+        sessionId: access.session.sessionId,
+        principalId: access.identity.principalId,
+        profile: access.session.memoryProfile,
+        persona: access.persona.personaId,
+        channel: null,
+        startedAt: startedAt,
+        userPrompt: access.envelope.text,
+        finalAnswer: outcome?.result?.output<String>('answer'),
+      ));
+    } catch (_) {
+      // Per-turn narrative is non-essential; never let it break the turn.
+    }
   }
 }

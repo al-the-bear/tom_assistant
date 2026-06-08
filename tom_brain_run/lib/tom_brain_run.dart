@@ -56,6 +56,15 @@ export 'src/trail_config_loader.dart' show TrailConfigLoader;
 export 'src/llm_trail_writer.dart'
     show LlmTrailHeadlineSink, LlmTrailWriter;
 
+// ── Summary fan-out: the §5.4 / §5.5 / §5.8 versioned narratives derived
+//    from the same call records the raw writer dumps (§10 step #5) ───────
+export 'src/summary_fanout.dart'
+    show
+        CallProjectionWriter,
+        GlobalSummaryWriter,
+        SessionSummaryWriter,
+        SummaryFanout;
+
 // ── Retrieval eval harness (Plan-2 ext step #33; spec § 23.8) ─────────
 export 'src/eval/procedure_engine_eval_environment.dart'
     show

@@ -49,14 +49,17 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
         BrainProcessBoot,
         BrainProcessConfig,
         ClassifyFallback,
+        LlmTrailRecord,
         LlmTrailSink,
-        MemoryProvisioningConfig;
+        MemoryProvisioningConfig,
+        TurnSummarySink;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, TomBrainSubstrateClient;
 
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
+import 'summary_fanout.dart' show SummaryFanout;
 import 'trail_config.dart' show TrailConfig;
 
 /// Boots the real cognition (the injected [substrate] + the real on-disk
@@ -96,6 +99,12 @@ import 'trail_config.dart' show TrailConfig;
 /// `null` (the default) boots the engine with no raw LLM trail;
 /// [standUpBrainProcessFromConfig] builds an `LlmTrailWriter.write` from the
 /// `trail:` config and threads it here in full-trail mode.
+///
+/// [turnSummarySink] is the per-turn summary sink (`tom_brain_logging.md` §5.4 /
+/// §5.5 / §10 step #5) the dispatch route fires once per completed user turn.
+/// `null` (the default) boots with no per-turn narrative;
+/// [standUpBrainProcessFromConfig] binds a `SummaryFanout.onTurnComplete` in
+/// full-trail mode.
 Future<ProvisionedBrain> provisionBrain({
   required TomBrainSubstrateClient substrate,
   required MemoryConfig memoryConfig,
@@ -105,6 +114,7 @@ Future<ProvisionedBrain> provisionBrain({
   int foregroundQueueDepth = 4,
   String? isolateLogRootPath,
   LlmTrailSink? llmTrailSink,
+  TurnSummarySink? turnSummarySink,
 }) async {
   final Directory scriptsDir =
       systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
@@ -124,6 +134,7 @@ Future<ProvisionedBrain> provisionBrain({
       foregroundQueueDepth: foregroundQueueDepth,
       classifyFallback: classifyFallback,
       llmTrailSink: llmTrailSink,
+      turnSummarySink: turnSummarySink,
     ),
   );
 
@@ -218,6 +229,7 @@ Future<BrainProcess> standUpBrainProcess({
   int foregroundQueueDepth = 4,
   String? isolateLogRootPath,
   LlmTrailSink? llmTrailSink,
+  TurnSummarySink? turnSummarySink,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -228,6 +240,7 @@ Future<BrainProcess> standUpBrainProcess({
     foregroundQueueDepth: foregroundQueueDepth,
     isolateLogRootPath: isolateLogRootPath,
     llmTrailSink: llmTrailSink,
+    turnSummarySink: turnSummarySink,
   );
 
   final BrainAccessProcess process;
@@ -270,6 +283,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   String? isolateLogRootPath,
 }) {
   final TomBrainSubstrateClient substrate = buildSubstrate(runConfig.substrate);
+  final sinks = _trailSinksFor(runConfig.trail);
   return standUpBrainProcess(
     config: runConfig.access,
     substrate: substrate,
@@ -280,26 +294,47 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     classifyFallback: classifyFallback,
     foregroundQueueDepth: foregroundQueueDepth,
     isolateLogRootPath: isolateLogRootPath,
-    llmTrailSink: _llmTrailSinkFor(runConfig.trail),
+    llmTrailSink: sinks.llmTrailSink,
+    turnSummarySink: sinks.turnSummarySink,
   );
 }
 
-/// Builds the raw-LLM-call trail sink from the `trail:` config
-/// (`tom_brain_logging.md` §5.2 / §10 step #4), or `null` in unconfigured mode.
+/// Builds the trail sinks the engine + route are wired to from the `trail:`
+/// config, or `(null, null)` in unconfigured mode.
 ///
-/// In full-trail mode (a non-null [trail]) the raw `llm/<role>/…` surface is
-/// active (§4.1), so an [LlmTrailWriter] is rooted at `trail.root` and its
-/// `write` is the sink the engine forwards each completed `llm` call to. When
-/// the document carries no `trail:` block ([trail] is `null`), the `llm/`
-/// surface is disabled (§4.1 unconfigured mode), so no sink is bound.
-LlmTrailSink? _llmTrailSinkFor(TrailConfig? trail) {
-  if (trail == null) return null;
+/// In full-trail mode (a non-null [trail]) both the raw `llm/<role>/…` surface
+/// (§4.1) and the §5.4 / §5.5 / §5.8 summary surfaces are active. A single
+/// composed `LlmTrailSink` is the single source the spec's §5.8 calls for: each
+/// completed call is **both** dumped raw by the [LlmTrailWriter] *and* fanned
+/// out to the summary projections by the [SummaryFanout]. The returned
+/// `turnSummarySink` is the same fan-out's `onTurnComplete`, fired per turn by
+/// the route. When the document carries no `trail:` block ([trail] is `null`),
+/// every summary surface is disabled (§4.1 unconfigured mode), so no sink binds.
+({LlmTrailSink? llmTrailSink, TurnSummarySink? turnSummarySink}) _trailSinksFor(
+  TrailConfig? trail,
+) {
+  if (trail == null) {
+    return (llmTrailSink: null, turnSummarySink: null);
+  }
+  final root = Directory(trail.root);
   final writer = LlmTrailWriter(
-    root: Directory(trail.root),
+    root: root,
     captureWireBody: trail.captureWireBody,
     captureInternalRoles: trail.captureInternalRoles,
   );
-  return writer.write;
+  final fanout = SummaryFanout.rootedAt(
+    root,
+    cap: trail.compactLogCap,
+    captureInternalRoles: trail.captureInternalRoles,
+  );
+  // Single source (§5.8): one record both lands as the raw §5.2 dump and fans
+  // out to the four summary projections.
+  void llmTrailSink(LlmTrailRecord record) {
+    writer.write(record);
+    fanout.onCall(record);
+  }
+
+  return (llmTrailSink: llmTrailSink, turnSummarySink: fanout.onTurnComplete);
 }
 
 /// Resolves the procedure prototype's shipped `scripts/system` directory.
