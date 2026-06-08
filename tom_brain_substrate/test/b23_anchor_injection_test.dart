@@ -226,6 +226,37 @@ void main() {
       expect(p.body, contains('OUTPUT SCHEMA:'));
     });
 
+    test('OUTPUT SCHEMA: section embeds the actual schema JSON so the model '
+        'uses the declared key names (not a dangling meta-reference)', () {
+      // A role whose schema names a specific key (`questions`). A live model
+      // can only emit that exact key if the schema itself is in the prompt —
+      // the old "matching the schema declared on this role's outputSchema"
+      // meta-reference left the model to guess (it returned `clarifying_
+      // questions`, which then failed parsing).
+      final r = makeRole(
+        outputSchema: const <String, Object?>{
+          'type': 'object',
+          'required': <String>['questions'],
+          'properties': <String, Object?>{
+            'questions': <String, Object?>{
+              'type': 'array',
+              'items': <String, Object?>{'type': 'string'},
+            },
+          },
+        },
+      );
+      final p = r.assemble();
+      // The real schema is embedded verbatim (JSON-encoded), so the declared
+      // key names reach the model.
+      expect(p.body, contains('"questions"'));
+      expect(p.body, contains('"required"'));
+      // The old dangling meta-reference is gone.
+      expect(
+        p.body,
+        isNot(contains("matching the schema declared on this role")),
+      );
+    });
+
     test('empty inputs renders the literal "(none)" placeholder', () {
       final r = makeRole();
       final p = r.assemble();

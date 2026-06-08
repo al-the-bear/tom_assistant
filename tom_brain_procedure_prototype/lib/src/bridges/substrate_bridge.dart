@@ -518,9 +518,15 @@ class SubstrateBridge {
       return _retrievalDegraded('role "$roleId" produced no text');
     }
 
+    // Strip a markdown ```json … ``` fence before decoding — a live medium
+    // model wraps structured output in one, and a fenced-but-well-formed JSON
+    // answer is usable, not malformed. The tool-call path
+    // (`_parseJsonTextToolCalls`) already de-fences with the same helper; both
+    // structured-output readers in this bridge use one fence convention.
+    final stripped = _stripJsonFence(text.trim());
     Object? decoded;
     try {
-      decoded = jsonDecode(text);
+      decoded = jsonDecode(stripped);
     } on FormatException catch (e) {
       return _retrievalDegraded('role "$roleId" output is not JSON: ${e.message}');
     }

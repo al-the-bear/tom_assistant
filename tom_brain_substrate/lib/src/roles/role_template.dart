@@ -102,6 +102,8 @@
 //   * Per-call options resolution against [budgetDefaults] (router
 //     concern at B.18+). [assemble] does not touch `LlmOptions`.
 
+import 'dart:convert' show jsonEncode;
+
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show AssistantDedicationAnchor;
 import 'package:tom_core_agentic/tom_core_agentic.dart' show textPreview;
@@ -341,8 +343,9 @@ final class RoleTemplate {
   /// <objective>
   ///
   /// [OUTPUT SCHEMA (only when outputSchema != null):
-  /// The model MUST respond with a JSON object matching the
-  /// schema declared on this role's outputSchema.]
+  /// Respond with a single JSON object … that conforms to this
+  /// JSON schema:
+  /// <jsonEncode(outputSchema)>]
   ///
   /// INPUTS:
   /// <key>: <value (toString)>
@@ -412,11 +415,21 @@ final class RoleTemplate {
       ..writeln('OBJECTIVE:')
       ..writeln(objective);
     if (outputSchema != null) {
+      // Embed the *actual* schema, not a meta-reference to it. A model can
+      // only emit the declared key names (e.g. `questions`) when the schema
+      // body is in the prompt; a dangling "match this role's outputSchema"
+      // sentence left the model to guess the shape and it answered with the
+      // wrong keys (and inside markdown fences). This mirrors the
+      // `StrictFormatAdapter` re-emit block, which already `jsonEncode`s the
+      // schema — one structured-output convention, used on both the first
+      // emit and the format retry.
       buf
         ..writeln()
         ..writeln('OUTPUT SCHEMA:')
-        ..writeln('The model MUST respond with a JSON object matching the '
-            'schema declared on this role\'s outputSchema.');
+        ..writeln('Respond with a single JSON object — and nothing else: no '
+            'prose, no markdown code fences, no commentary — that conforms '
+            'to this JSON schema:')
+        ..writeln(jsonEncode(outputSchema));
     }
     buf
       ..writeln()

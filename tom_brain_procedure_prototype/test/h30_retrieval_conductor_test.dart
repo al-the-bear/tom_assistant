@@ -164,6 +164,38 @@ void main() {
       expect(memory.procedureRunPersists, greaterThanOrEqualTo(5));
     });
   });
+
+  group('H.30-5 retrievalRole tolerates markdown-fenced JSON', () {
+    // A live medium model (gemma-4) wraps structured output in a ```json …
+    // ``` fence. `retrievalRole` must strip the fence before `jsonDecode` —
+    // exactly as the tool-call path (`_parseJsonTextToolCalls`) already does.
+    // Without this, every fenced retrieval-role completion degrades to empty
+    // seeds and HyDE / semantic recall silently produces nothing on a live
+    // substrate.
+    test('a fenced recall_planner completion parses to ok:true', () async {
+      substrate.fence = true;
+      final out = await substrateBridge.retrievalRole(
+        'recall_planner',
+        'how do I automate backups?',
+      );
+      expect(out['ok'], isTrue,
+          reason: 'a fenced but well-formed JSON answer must parse, not '
+              'degrade');
+      final output = out['output'] as Map<String, Object?>;
+      expect(output['questions'], equals(<String>['q1', 'q2']));
+    });
+
+    test('a fenced category_selector completion parses to ok:true', () async {
+      substrate.fence = true;
+      final out = await substrateBridge.retrievalRole(
+        'category_selector',
+        'how do I automate backups?',
+      );
+      expect(out['ok'], isTrue);
+      final output = out['output'] as Map<String, Object?>;
+      expect(output['conceptNames'], equals(<String>['BackupConcept']));
+    });
+  });
 }
 
 // ── A retrieval-capturing `TomBrainMemory` ──────────────────────────
@@ -312,6 +344,12 @@ class _RoleSubstrate implements TomBrainSubstrateClient {
   final List<String> embeddedTexts = <String>[];
   bool failAll = false;
 
+  /// When true, every completion is wrapped in a ```json … ``` markdown
+  /// fence — the shape a live medium model (gemma) emits for structured
+  /// output. `SubstrateBridge.retrievalRole` must tolerate it (the tool-call
+  /// path already does).
+  bool fence = false;
+
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
     if (failAll) {
@@ -332,8 +370,10 @@ class _RoleSubstrate implements TomBrainSubstrateClient {
         ),
       ]);
     }
+    final payload = _jsonFor(call.roleId);
+    final text = fence ? '```json\n$payload\n```' : payload;
     return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: _jsonFor(call.roleId)),
+      LlmStreamChunk(callId: 'c', text: text),
       const LlmStreamCompleted(
         callId: 'c',
         report: LlmCallReport(
