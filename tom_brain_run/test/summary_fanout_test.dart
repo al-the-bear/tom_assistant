@@ -264,8 +264,12 @@ void main() {
     });
   });
 
-  group('SummaryFanout — §5.9 session live-trail', () {
-    test('a completed turn writes a live-trail transcript block', () {
+  group('SummaryFanout — §5.9 live-trail is no longer its concern', () {
+    test('a completed turn writes no live-trail from the fan-out', () {
+      // The §5.9 streaming live-trail is now the standalone
+      // StreamingLiveTrailWriter, driven by the four per-step sinks — not by the
+      // turn-complete summary fan-out. The fan-out writes the §5.4 / §5.5
+      // surfaces only.
       final fanout = SummaryFanout.rootedAt(root);
       fanout.onTurnComplete(_turn(
         turnId: '260608-120831.402355',
@@ -274,64 +278,9 @@ void main() {
         finalAnswer: 'there are no previous prompts',
       ));
 
-      expect(exists('sessions/sess-1.live-trail.md'), isTrue,
-          reason: 'the §5.9 file is the per-session analogue, keyed by sid');
-      final md = read('sessions/sess-1.live-trail.md');
-      expect(md, contains('<!-- tom-brain session live-trail -->'),
-          reason: 'a distinct marker tells it apart from the §5.4 summary');
-      expect(md, contains('# session sess-1  ·  principal: owner'));
-      expect(md, contains('## turn 260608-120831.402355'));
-      expect(md, contains('### Prompt'));
-      expect(md, contains('what were the three prompts before?'));
-      expect(md, contains('### Answer'));
-      expect(md, contains('there are no previous prompts'));
-    });
-
-    test('the live-trail caps at liveTrailTurns, dropping oldest from the head',
-        () {
-      final fanout = SummaryFanout.rootedAt(root, liveTrailTurns: 2);
-      for (final id in <String>['turn_1', 'turn_2', 'turn_3']) {
-        fanout.onTurnComplete(
-            _turn(turnId: id, sessionId: 'sess-1', userPrompt: id));
-      }
-      final md = read('sessions/sess-1.live-trail.md');
-      expect(md, isNot(contains('turn_1')),
-          reason: 'the oldest turn dropped at liveTrailTurns=2');
-      expect(md, contains('turn_2'));
-      expect(md, contains('turn_3'));
-    });
-
-    test('the live-trail window is independent of the summary cap', () {
-      // A wide summary cap but a narrow live window: the same turns land in
-      // both files, trimmed to each file's own limit.
-      final fanout = SummaryFanout.rootedAt(root, cap: 1000, liveTrailTurns: 2);
-      for (final id in <String>['turn_1', 'turn_2', 'turn_3']) {
-        fanout.onTurnComplete(
-            _turn(turnId: id, sessionId: 'sess-1', userPrompt: id));
-      }
-      final summary = read('sessions/sess-1.summary.md');
-      expect(summary, contains('turn_1'),
-          reason: 'the summary keeps all three at cap=1000');
-      expect(summary, contains('turn_2'));
-      expect(summary, contains('turn_3'));
-      final live = read('sessions/sess-1.live-trail.md');
-      expect(live, isNot(contains('turn_1')),
-          reason: 'the live window keeps only the last two');
-      expect(live, contains('turn_2'));
-      expect(live, contains('turn_3'));
-    });
-
-    test('a turn-less (dream) call writes no live-trail', () {
-      SummaryFanout.rootedAt(root).onCall(_record(
-        callType: 'connector',
-        turnId: null,
-        callSeq: null,
-        callId: 'c-dream',
-        runId: 'dream-run-3',
-        answer: 'a dream connection',
-      ));
+      expect(exists('sessions/sess-1.summary.md'), isTrue);
       expect(exists('sessions/sess-1.live-trail.md'), isFalse,
-          reason: 'a dream call has no turn → no per-session live-trail');
+          reason: 'the live-trail is owned by StreamingLiveTrailWriter now');
     });
   });
 }

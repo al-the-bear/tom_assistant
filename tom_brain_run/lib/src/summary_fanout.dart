@@ -60,36 +60,6 @@ final class SessionSummaryWriter {
   }
 }
 
-/// The §5.9 session live-trail writer — the per-session "where were we" view:
-/// the same §5.4 turn blocks as [SessionSummaryWriter], in a sibling file
-/// `sessions/<sessionId>.live-trail.md`, but kept to a narrow rolling window
-/// (`trail.liveTrailTurns`, §8) with older turns dropped from the head. The
-/// per-session analogue of the quest `live-trail.md`.
-final class SessionLiveTrailWriter {
-  /// Builds a writer rooted at the trail [root], keeping the last [cap] turns.
-  SessionLiveTrailWriter({required this.root, required this.cap});
-
-  /// The trail tree root; live-trail files land under `<root>/sessions/`.
-  final Directory root;
-
-  /// The rolling window — turns kept before the oldest drop
-  /// (`trail.liveTrailTurns`, §8).
-  final int cap;
-
-  /// Appends [summary]'s transcript block to the session live-trail,
-  /// head-dropping past the window.
-  void writeTurn(TurnSummary summary) {
-    final header = '$_sessionLiveTrailMarker\n'
-        '${_sessionHeaderBody(summary)}  ·  live (last $cap)';
-    final file = File(
-      '${root.path}/sessions/'
-      '${_sanitizeFileToken(summary.sessionId)}.live-trail.md',
-    );
-    _TurnBlockFile(file: file, header: header, cap: cap)
-        .append(_renderTurnBlock(summary, includeSession: false));
-  }
-}
-
 /// The §5.5 global-narrative writer — `summary/all-sessions.summary.md`, every
 /// session interleaved in arrival order with the `sess-…` id on each turn
 /// header. Same per-turn format as §5.4; capped at the compact-log limit (§8).
@@ -166,13 +136,11 @@ final class SummaryFanout {
   /// [SummaryFanout.rootedAt] for the standard root-relative layout.
   SummaryFanout({
     required SessionSummaryWriter session,
-    required SessionLiveTrailWriter liveTrail,
     required GlobalSummaryWriter global,
     required CallProjectionWriter byRole,
     required CallProjectionWriter byLlm,
     bool captureInternalRoles = true,
   })  : _session = session,
-        _liveTrail = liveTrail,
         _global = global,
         _byRole = byRole,
         _byLlm = byLlm,
@@ -180,19 +148,20 @@ final class SummaryFanout {
 
   /// Builds the standard fan-out for trail [root]: session files under
   /// `sessions/`, the global file + the two projections under `summary/`. The
-  /// summary surfaces cap at [cap] (`trail.compactLogCap`, §8); the per-session
-  /// live-trail keeps the last [liveTrailTurns] turns (`trail.liveTrailTurns`,
-  /// §8). [captureInternalRoles] mirrors the raw writer's §11.1 gate: when
-  /// `false`, only the user-facing `assistant_to_user` call feeds any surface.
+  /// summary surfaces cap at [cap] (`trail.compactLogCap`, §8).
+  /// [captureInternalRoles] mirrors the raw writer's §11.1 gate: when `false`,
+  /// only the user-facing `assistant_to_user` call feeds any surface.
+  ///
+  /// The §5.9 per-session `live-trail.md` is **not** built here — it is the
+  /// standalone streaming `StreamingLiveTrailWriter`, composed alongside this
+  /// fan-out on the same per-step sinks (`provision_brain.dart`).
   factory SummaryFanout.rootedAt(
     Directory root, {
     int cap = 1000,
-    int liveTrailTurns = 20,
     bool captureInternalRoles = true,
   }) =>
       SummaryFanout(
         session: SessionSummaryWriter(root: root, cap: cap),
-        liveTrail: SessionLiveTrailWriter(root: root, cap: liveTrailTurns),
         global: GlobalSummaryWriter(root: root, cap: cap),
         byRole: CallProjectionWriter(
           root: root,
@@ -215,17 +184,16 @@ final class SummaryFanout {
       );
 
   final SessionSummaryWriter _session;
-  final SessionLiveTrailWriter _liveTrail;
   final GlobalSummaryWriter _global;
   final CallProjectionWriter _byRole;
   final CallProjectionWriter _byLlm;
   final bool _captureInternalRoles;
 
   /// Fans one completed LLM call out to the two §5.8 per-call projections
-  /// (`by-role`, `by-llm`). The session / global / live-trail transcripts no
-  /// longer draw on per-call records — they render the turn's prompt + answer
-  /// directly (§5.4) — so nothing is buffered here. Best-effort (§9): a
-  /// projection write that throws never escapes.
+  /// (`by-role`, `by-llm`). The session / global transcripts no longer draw on
+  /// per-call records — they render the turn's prompt + answer directly (§5.4) —
+  /// so nothing is buffered here. Best-effort (§9): a projection write that
+  /// throws never escapes.
   void onCall(LlmTrailRecord record) {
     final obs = record.observation;
     // §11.1 internal-role gate: when off, only the user-facing role is trailed.
@@ -236,14 +204,13 @@ final class SummaryFanout {
     _safe(() => _byLlm.writeCall(record));
   }
 
-  /// Flushes the §5.4 session block, the §5.9 per-session live-trail block, and
-  /// the §5.5 global block for one completed turn — each a readable transcript
-  /// built from [summary]'s complete prompt and answer. Best-effort (§9): each
-  /// surface is written independently, so one failing does not starve the
-  /// others.
+  /// Flushes the §5.4 session block and the §5.5 global block for one completed
+  /// turn — each a readable transcript built from [summary]'s complete prompt
+  /// and answer. Best-effort (§9): each surface is written independently, so one
+  /// failing does not starve the other. (The §5.9 live-trail is written
+  /// step-by-step by the standalone `StreamingLiveTrailWriter`, not here.)
   void onTurnComplete(TurnSummary summary) {
     _safe(() => _session.writeTurn(summary));
-    _safe(() => _liveTrail.writeTurn(summary));
     _safe(() => _global.writeTurn(summary));
   }
 
@@ -259,12 +226,11 @@ final class SummaryFanout {
 // ─── Markdown rendering ──────────────────────────────────────────────
 
 const String _sessionFileMarker = '<!-- tom-brain session summary -->';
-const String _sessionLiveTrailMarker = '<!-- tom-brain session live-trail -->';
 const String _globalFileMarker = '<!-- tom-brain global summary -->';
 
 /// The `# session <sid>  ·  principal: <pid>[  ·  channel: <ch>]` header body
-/// shared by the two per-session files (§5.4 summary and §5.9 live-trail). Each
-/// writer prepends its own marker comment, so the file stays self-identifying.
+/// for the §5.4 session file. The writer prepends its marker comment, so the
+/// file stays self-identifying.
 String _sessionHeaderBody(TurnSummary summary) =>
     '# session ${summary.sessionId}  ·  principal: ${summary.principalId}'
     '${summary.channel == null ? '' : '  ·  channel: ${summary.channel}'}';

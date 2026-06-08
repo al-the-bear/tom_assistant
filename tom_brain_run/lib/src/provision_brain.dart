@@ -38,6 +38,7 @@ import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
         AccessServeSeam,
         BrainAccessProcess,
         BrainProvisioner,
+        IncomingTrailRecord,
         IncomingTrailSink,
         ProvisionedBrain,
         QueueSnapshot,
@@ -52,9 +53,11 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
         ClassifyFallback,
         LlmTrailRecord,
         LlmTrailSink,
+        MemoryAccessRecord,
         MemoryAccessSink,
         MemoryProvisioningConfig,
         ProcedureTreeSink,
+        TurnSummary,
         TurnSummarySink;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, TomBrainSubstrateClient;
@@ -65,6 +68,7 @@ import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
 import 'procedure_tree_writer.dart' show ProcedureTreeWriter;
+import 'streaming_live_trail.dart' show StreamingLiveTrailWriter;
 import 'summary_fanout.dart' show SummaryFanout;
 import 'trail_config.dart' show TrailConfig;
 import 'trail_janitor.dart' show TrailJanitor;
@@ -340,13 +344,15 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
 /// Builds the trail sinks the engine + route are wired to from the `trail:`
 /// config, or `(null, null)` in unconfigured mode.
 ///
-/// In full-trail mode (a non-null [trail]) both the raw `llm/<role>/…` surface
-/// (§4.1) and the §5.4 / §5.5 / §5.8 summary surfaces are active. A single
-/// composed `LlmTrailSink` is the single source the spec's §5.8 calls for: each
-/// completed call is **both** dumped raw by the [LlmTrailWriter] *and* fanned
-/// out to the summary projections by the [SummaryFanout]. The returned
-/// `turnSummarySink` is the same fan-out's `onTurnComplete`, fired per turn by
-/// the route. The `incomingTrailSink` is the §5.3 raw incoming-prompt writer,
+/// In full-trail mode (a non-null [trail]) the raw `llm/<role>/…` surface
+/// (§4.1), the §5.4 / §5.5 / §5.8 summary surfaces, and the §5.9 streaming
+/// per-session live-trail are all active. A single composed `LlmTrailSink` is
+/// the single source the spec's §5.8 calls for: each completed call is dumped
+/// raw by the [LlmTrailWriter], fanned out to the summary projections by the
+/// [SummaryFanout], *and* streamed into the [StreamingLiveTrailWriter]. The
+/// other three per-step sinks (incoming, memory, turn-summary) likewise fan out
+/// to both their writer and the live-trail, so the §5.9 surface streams the
+/// turn's thinking + tool calls step by step. The `incomingTrailSink` is the §5.3 raw incoming-prompt writer,
 /// fired per admitted request by the access layer. The `memoryAccessSink` is the
 /// §5.6 per-profile memory-log writer, fired per bridged memory access by the
 /// engine. The `procedureTreeSink` is the §5.7 per-procedure combined run-tree
@@ -380,25 +386,48 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   final fanout = SummaryFanout.rootedAt(
     root,
     cap: trail.compactLogCap,
-    liveTrailTurns: trail.liveTrailTurns,
     captureInternalRoles: trail.captureInternalRoles,
   );
-  // Single source (§5.8): one record both lands as the raw §5.2 dump and fans
-  // out to the four summary projections.
-  void llmTrailSink(LlmTrailRecord record) {
-    writer.write(record);
-    fanout.onCall(record);
-  }
+  // The §5.9 streaming live-trail rides the same per-step sinks as the summary
+  // surfaces — one append per completed cognitive step, keyed by turnId.
+  final liveTrail = StreamingLiveTrailWriter(
+    root: root,
+    turnsKept: trail.liveTrailTurns,
+    captureInternalRoles: trail.captureInternalRoles,
+  );
 
   final incomingWriter = IncomingTrailWriter(root: root);
   final memoryWriter = MemoryProfileLogWriter(root: root);
   final treeWriter = ProcedureTreeWriter(root: root);
 
+  // Single source (§5.8): one record both lands as the raw §5.2 dump and fans
+  // out to the summary projections — and now also streams into the live-trail.
+  void llmTrailSink(LlmTrailRecord record) {
+    writer.write(record);
+    fanout.onCall(record);
+    liveTrail.onLlmCall(record);
+  }
+
+  void incomingTrailSink(IncomingTrailRecord record) {
+    incomingWriter.write(record);
+    liveTrail.beginPrompt(record);
+  }
+
+  void memoryAccessSink(MemoryAccessRecord record) {
+    memoryWriter.write(record);
+    liveTrail.onMemoryCall(record);
+  }
+
+  void turnSummarySink(TurnSummary summary) {
+    fanout.onTurnComplete(summary);
+    liveTrail.endPrompt(summary);
+  }
+
   return (
     llmTrailSink: llmTrailSink,
-    turnSummarySink: fanout.onTurnComplete,
-    incomingTrailSink: incomingWriter.write,
-    memoryAccessSink: memoryWriter.write,
+    turnSummarySink: turnSummarySink,
+    incomingTrailSink: incomingTrailSink,
+    memoryAccessSink: memoryAccessSink,
     procedureTreeSink: treeWriter.write,
   );
 }

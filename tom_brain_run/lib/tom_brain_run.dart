@@ -69,16 +69,18 @@ export 'src/procedure_tree_writer.dart' show ProcedureTreeWriter;
 //    §8; §10 step #10) ──────────────────────────────────────────────────
 export 'src/trail_janitor.dart' show TrailJanitor;
 
-// ── Summary fan-out: the §5.4 / §5.5 / §5.8 versioned narratives + the §5.9
-//    per-session live-trail, derived from the same call records the raw writer
-//    dumps (§10 steps #5 / #6) ───────────────────────────────────────────
+// ── Summary fan-out: the §5.4 / §5.5 / §5.8 versioned narratives, derived from
+//    the same call records the raw writer dumps (§10 step #5) ──────────────
 export 'src/summary_fanout.dart'
     show
         CallProjectionWriter,
         GlobalSummaryWriter,
-        SessionLiveTrailWriter,
         SessionSummaryWriter,
         SummaryFanout;
+
+// ── Streaming per-session live-trail: the §5.9 quest-live-trail-format surface,
+//    written step-by-step from the four per-step sinks (§10 step #6) ─────────
+export 'src/streaming_live_trail.dart' show StreamingLiveTrailWriter;
 
 // ── Retrieval eval harness (Plan-2 ext step #33; spec § 23.8) ─────────
 export 'src/eval/procedure_engine_eval_environment.dart'
