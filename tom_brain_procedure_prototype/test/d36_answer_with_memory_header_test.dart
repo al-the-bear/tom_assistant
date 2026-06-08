@@ -74,19 +74,26 @@ void main() {
     });
   });
 
-  group('D.36 the budget caps are the real per-run ceilings', () {
-    test('all four enforced dimensions carry the § 4.4 caps', () async {
+  group('D.36 the budget is a wall-clock deadline only (§ 5.4)', () {
+    test('the user-facing answer budget caps wall-clock and nothing else',
+        () async {
       final resolver = await systemResolver();
       final budget = resolver.resolve('answer_with_memory_v1').header.budget;
-      expect(budget.wallClockMs, 60000);
-      expect(budget.tokenSpend, 8000);
-      expect(budget.toolCalls, 12);
-      // 16 covers the procedure's worst-case writes: Event + Conclusion + one
-      // derived_from edge per cited recall node (up to k=8) + the cold-path
-      // InterestItem + its stack push (2 + 8 + 2 = 12) with headroom. A cap
-      // below that refused a write the successCriterion requires and closed the
-      // run `budgetExceeded` with no answer (silent on buffered Telegram).
-      expect(budget.memoryWrites, 16);
+      // The only declared cap is the wall-clock deadline: the user-facing
+      // answer budget is "virtually unlimited" on every count dimension.
+      // 14400000 ms (240 min) is the spec's documented external default
+      // (§ 5.4) — a runaway-stop for a genuinely hung run, not a throttle.
+      expect(budget.wallClockMs, 14400000);
+      // The count dimensions are intentionally unlimited (null). A fatal
+      // `memoryWrites` cap (formerly 16) closed the "who are you" run
+      // `budgetExceeded` with no answer once the `derived_from` edge loop
+      // outran it — silent on buffered Telegram. The non-fatal per-run
+      // `MemoryWriteGuard` (§ 5.4) now backstops a runaway write loop: it
+      // skips+notes the offending write and lets the already-produced answer
+      // through, so the count caps no longer belong on this procedure.
+      expect(budget.tokenSpend, isNull);
+      expect(budget.toolCalls, isNull);
+      expect(budget.memoryWrites, isNull);
     });
   });
 }

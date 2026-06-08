@@ -560,6 +560,99 @@ void main() {
       );
     });
   });
+
+  // § 5.4 — the per-run NON-FATAL write guard. A wired guard admits each
+  // store-mutating call before its side effect; a write that would exceed a cap
+  // or repeats an edge within the run is skipped (the side effect never runs),
+  // reported via the skip sink, and the call returns a sentinel — the run
+  // continues, never failing. Reads are never gated.
+  group('§5.4 MemoryBridge write guard — skip is non-fatal', () {
+    late List<MemoryWriteSkip> skips;
+
+    MemoryBridge guarded(MemoryWriteLimits limits) {
+      skips = <MemoryWriteSkip>[];
+      return MemoryBridge(
+        client,
+        writeGuard: MemoryWriteGuard(limits),
+        onWriteSkipped: skips.add,
+      );
+    }
+
+    test('a duplicate edge within the run is skipped, returns "", side effect '
+        'never runs', () async {
+      client.edgeId = EdgeId.fromString('e_00000000000000000000000005');
+      final bridge = guarded(
+        const MemoryWriteLimits(maxEdgesPerRun: 1000, dedupEdgesWithinRun: true),
+      );
+
+      final first = await bridge.edge(
+        'n_00000000000000000000000001',
+        'derived_from',
+        'n_00000000000000000000000002',
+        producer: 'p',
+      );
+      expect(first, 'e_00000000000000000000000005');
+      expect(client.edgeCalls, 1);
+
+      // The same triple again is the loop signal: skipped, sentinel id, no call.
+      final second = await bridge.edge(
+        'n_00000000000000000000000001',
+        'derived_from',
+        'n_00000000000000000000000002',
+        producer: 'p',
+      );
+      expect(second, '');
+      expect(client.edgeCalls, 1, reason: 'the skipped edge never reached the client');
+      expect(skips, hasLength(1));
+      expect(skips.single.primitive, 'edge');
+      expect(skips.single.outcome, MemoryWriteOutcome.skipDuplicateEdge);
+    });
+
+    test('a persist past the write cap is skipped, returns "", side effect '
+        'never runs', () async {
+      client.persistId = NodeId.fromString('n_00000000000000000000000009');
+      final bridge = guarded(const MemoryWriteLimits(maxWritesPerRun: 1));
+
+      final first = await bridge.persist(
+        'Event', const <String, Object?>{'summary': 'a'}, producer: 'p');
+      expect(first, 'n_00000000000000000000000009');
+      expect(client.persistCalls, 1);
+
+      // The second write trips the cap: skipped, empty-id sentinel, no call.
+      final second = await bridge.persist(
+        'Conclusion', const <String, Object?>{'statement': 'b'}, producer: 'p');
+      expect(second, '');
+      expect(client.persistCalls, 1);
+      expect(skips.single.outcome, MemoryWriteOutcome.skipWriteCap);
+    });
+
+    test('a skipped stackPush returns "" and never reaches the client',
+        () async {
+      final bridge = guarded(const MemoryWriteLimits(maxWritesPerRun: 0));
+      final id = await bridge.stackPush(
+        'interests', 'n_00000000000000000000000003', producer: 'p');
+      expect(id, '');
+      expect(stacks.pushCalls, 0);
+      expect(skips.single.primitive, 'stackPush');
+    });
+
+    test('reads are never gated, even with a zero write cap', () async {
+      final bridge = guarded(const MemoryWriteLimits(maxWritesPerRun: 0));
+      await bridge.recall('q');
+      expect(client.recallCalls, 1);
+      expect(skips, isEmpty);
+    });
+
+    test('with no guard wired, every write proceeds', () async {
+      client.edgeId = EdgeId.fromString('e_00000000000000000000000005');
+      // The default bridge (setUp) has no guard.
+      await bridge.edge('n_00000000000000000000000001', 'derived_from',
+          'n_00000000000000000000000002', producer: 'p');
+      await bridge.edge('n_00000000000000000000000001', 'derived_from',
+          'n_00000000000000000000000002', producer: 'p');
+      expect(client.edgeCalls, 2, reason: 'no guard means no dedup or cap');
+    });
+  });
 }
 
 /// Fake `TomBrainMemoryClient` capturing the subset of calls
@@ -584,6 +677,12 @@ class _FakeMemoryClient implements TomBrainMemoryClient {
   Scope? lastScope;
   NodeId persistId = NodeId.fromString('n_00000000000000000000000000');
 
+  /// How many times the side effect actually ran (a skipped write must not
+  /// reach the client — these count proves the skip suppressed the effect).
+  int persistCalls = 0;
+  int edgeCalls = 0;
+  int recallCalls = 0;
+
   NodeId? lastEdgeFrom;
   NodeId? lastEdgeTo;
   EdgeType? lastEdgeType;
@@ -599,6 +698,7 @@ class _FakeMemoryClient implements TomBrainMemoryClient {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async {
+    recallCalls++;
     lastRecallQuery = query;
     return recallResult;
   }
@@ -615,6 +715,7 @@ class _FakeMemoryClient implements TomBrainMemoryClient {
 
   @override
   Future<NodeId> persist(NodeDraft draft, {required Scope scope}) async {
+    persistCalls++;
     lastDraft = draft;
     lastScope = scope;
     return persistId;
@@ -629,6 +730,7 @@ class _FakeMemoryClient implements TomBrainMemoryClient {
     double weight = 1.0,
     Map<String, Object?>? attrs,
   }) async {
+    edgeCalls++;
     lastEdgeFrom = from;
     lastEdgeTo = to;
     lastEdgeType = type;
@@ -658,6 +760,7 @@ class _FakeStackApi implements StackApi {
 
   StackEntryId pushId =
       StackEntryId.fromString('se_00000000000000000000000000');
+  int pushCalls = 0;
   String? lastPushName;
   NodeId? lastPushNode;
   double? lastPushPriority;
@@ -692,6 +795,7 @@ class _FakeStackApi implements StackApi {
     Map<String, Object?>? attrs,
     Scope? scope,
   }) async {
+    pushCalls++;
     lastPushName = name;
     lastPushNode = entry;
     lastPushPriority = priority;

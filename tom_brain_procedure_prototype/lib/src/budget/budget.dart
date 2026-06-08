@@ -15,5 +15,12 @@
 //     stepping the version chain.
 
 export 'budget_ledger.dart' show BudgetLedger;
+export 'memory_write_guard.dart'
+    show
+        MemoryWriteGuard,
+        MemoryWriteLimits,
+        MemoryWriteOutcome,
+        MemoryWriteSkip,
+        MemoryWriteSkipSink;
 export 'procedure_budget_exceeded.dart'
     show BudgetDimension, ProcedureBudgetExceeded;

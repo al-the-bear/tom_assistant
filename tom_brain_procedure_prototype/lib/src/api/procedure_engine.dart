@@ -147,6 +147,11 @@ final class ProcedureEngine {
   /// Extension-F runtime bundle (the tool registry, MCP client, and LLM-config
   /// stores) a future `call_llm_v1` reads; the prototype's
   /// `answer_with_memory_v1` runs without it, so it defaults to `null`.
+  /// [memoryWriteLimits] is the process-wide, NON-FATAL per-run write backstop
+  /// (spec § 5.4): a fresh `MemoryWriteGuard` over these caps is built per run
+  /// and threaded into that run's memory bridge, so a runaway write loop is
+  /// skipped-and-reported rather than allowed to bloat the store or fail the
+  /// run. Defaults to [MemoryWriteLimits.standard].
   ProcedureEngine({
     required this.resolver,
     required this.memory,
@@ -164,6 +169,7 @@ final class ProcedureEngine {
     LlmTrailSink? llmTrailSink,
     MemoryAccessSink? memoryAccessSink,
     ProcedureTreeSink? procedureTreeSink,
+    this.memoryWriteLimits = MemoryWriteLimits.standard,
   })  : preemptionState = preemptionState ?? PreemptionState(),
         _stepDeadlineLimit = stepDeadline,
         _deadlineTimerFactory = deadlineTimerFactory,
@@ -215,6 +221,14 @@ final class ProcedureEngine {
   /// The shared cooperative-preemption state the engine yields against and
   /// the dispatcher's coordinator drives.
   final PreemptionState preemptionState;
+
+  /// The process-wide NON-FATAL per-run memory-write caps (spec § 5.4). A fresh
+  /// [MemoryWriteGuard] over these is built per run in `_runInternal` and
+  /// threaded into the run's memory bridge: a write that would exceed a cap, or
+  /// a duplicate edge within the run, is skipped (the side effect never runs),
+  /// reported on the run trail as a `memory_write_skipped` note, and the run
+  /// continues — an answer already produced is never silenced by a later write.
+  final MemoryWriteLimits memoryWriteLimits;
 
   final Duration _stepDeadlineLimit;
   final DeadlineTimerFactory? _deadlineTimerFactory;
@@ -448,11 +462,31 @@ final class ProcedureEngine {
               // Trail writing is non-essential; never let it break the run.
             }
           };
+    // Per-run non-fatal write backstop (spec § 5.4). A fresh guard over the
+    // process's caps bounds this run's writes and dedups its edges; a skipped
+    // write fires a `memory_write_skipped` note on the run trail (the recorder
+    // is open by the time any body runs) and the run continues. This is the
+    // backstop for user-facing procedures, whose virtually-unlimited header
+    // budget leaves the fatal `BudgetLedger` enforcing nothing.
+    final writeGuard = MemoryWriteGuard(memoryWriteLimits);
     final runMemoryBridge = MemoryBridge(
       memoryBridge.client,
       onCall: recordMemoryCall,
       budget: runBudget,
       agentName: memoryBridge.agentName,
+      writeGuard: writeGuard,
+      onWriteSkipped: (skip) {
+        if (!recorder.isOpen) return;
+        recorder.noteSink(TrailNote(
+          category: 'memory_write_skipped',
+          recordedAt: _now(),
+          payload: <String, Object?>{
+            'primitive': skip.primitive,
+            'outcome': skip.outcome.name,
+            'detail': skip.detail,
+          },
+        ));
+      },
     );
     // Bind the run's outbound channel (P1.3 #8) to both halves of the
     // streaming seam: the substrate bridge forwards each `sub.llm(...)` chunk

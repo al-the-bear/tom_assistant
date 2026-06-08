@@ -5,7 +5,12 @@
 /// successCriterion: A streamed answer is delivered and an Event + Conclusion
 ///   + edges are persisted (the recall → answer → persist loop; the body is
 ///   built across D.37–D.42).
-/// budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 12, memoryWrites: 16 }
+/// budget: { wallClockMs: 14400000 }
+/// # Only a wall-clock deadline (§ 5.4): a user request is virtually unlimited
+/// # on every count dimension. 14400000 ms (240 min) is the spec's external
+/// # default (§ 5.4) — a runaway-stop for a genuinely hung run, not a throttle.
+/// # A runaway *memory-write* loop is handled non-fatally by the per-run
+/// # MemoryWriteGuard (§ 5.4.1), never by a fatal count cap.
 /// inputs:
 ///   - { name: text, type: String, required: true }
 /// outputs:
@@ -278,17 +283,21 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   );
 
   // derived_from: the Conclusion was derived from each recalled node it cited.
-  // Why the memoryWrites budget is 16: a single answer legitimately writes the
-  // Event + the Conclusion + one `derived_from` edge per cited recall node (up
-  // to the recall k of 8) + the cold-path InterestItem + its stack push — a
-  // worst case of 2 + 8 + 2 = 12. A cap below that refuses a write the
-  // successCriterion *requires* ("an Event + Conclusion + edges are
-  // persisted"), closing the run `budgetExceeded` with no `answer` output — and
-  // on the buffered Telegram channel (flushed only on the final chunk) that is
-  // total silence. 16 covers the worst case with headroom.
-  final cited = _citedNodeIds(recall);
-  for (final nodeId in cited) {
-    await mem.edge(conclusionId, 'derived_from', nodeId, producer: producer);
+  // This procedure declares no count caps in its header budget (spec § 5.4): a
+  // user request runs virtually unlimited, so the successCriterion ("an Event +
+  // Conclusion + edges are persisted") is never refused by the fatal
+  // `BudgetLedger`. The non-fatal `MemoryWriteGuard` is the only backstop — it
+  // dedups a repeated edge and caps a runaway loop, skipping (never failing) the
+  // excess. The answer was already produced and streamed above (Q-D.39), so a
+  // partial write never silences it.
+  //
+  // A skipped Conclusion persist returns the empty-id sentinel; drawing edges
+  // from it would be meaningless, so the loop is gated on a real id.
+  if (conclusionId.isNotEmpty) {
+    final cited = _citedNodeIds(recall);
+    for (final nodeId in cited) {
+      await mem.edge(conclusionId, 'derived_from', nodeId, producer: producer);
+    }
   }
 
   // D.40 — cold-classification interest push. Embed the prompt and classify

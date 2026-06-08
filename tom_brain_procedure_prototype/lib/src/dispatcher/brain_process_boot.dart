@@ -64,6 +64,7 @@ import '../api/procedure_invocation.dart';
 import '../api/procedure_outcome.dart';
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
+import '../budget/budget.dart' show MemoryWriteLimits;
 import '../extensions/extensions.dart'
     show BrainEngineExtensions, BrainExtensionConfig;
 import '../mcp/mcp_client.dart' show McpConnector;
@@ -224,6 +225,14 @@ final class BrainProcessConfig {
   /// foreground slot (D.19). Defaults to the coordinator's own default (4).
   final int foregroundQueueDepth;
 
+  /// The process-wide NON-FATAL per-run memory-write caps (spec § 5.4) boot
+  /// threads onto the [ProcedureEngine]. Every run gets a fresh
+  /// `MemoryWriteGuard` over these, so a runaway write loop is skipped (the
+  /// side effect never runs), reported on the run trail, and the run continues.
+  /// Defaults to [MemoryWriteLimits.standard] — virtually unlimited for any
+  /// real request, bounded enough to catch a loop.
+  final MemoryWriteLimits memoryWriteLimits;
+
   /// Installs the inbound access layer over the booted dispatcher, or `null`
   /// for the prototype default (no channel). See [AccessLayerInstaller].
   final AccessLayerInstaller? installAccessLayer;
@@ -304,6 +313,7 @@ final class BrainProcessConfig {
     Directory? systemScriptsDir,
     this.userScriptsDir,
     this.foregroundQueueDepth = 4,
+    this.memoryWriteLimits = MemoryWriteLimits.standard,
     this.installAccessLayer,
     this.classifyFallback,
     this.extensions,
@@ -538,6 +548,7 @@ abstract final class BrainProcessBoot {
       llmTrailSink: config.llmTrailSink,
       memoryAccessSink: config.memoryAccessSink,
       procedureTreeSink: config.procedureTreeSink,
+      memoryWriteLimits: config.memoryWriteLimits,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
     final dispatcher = _wireDispatcher(
@@ -600,6 +611,7 @@ abstract final class BrainProcessBoot {
     required LlmTrailSink? llmTrailSink,
     required MemoryAccessSink? memoryAccessSink,
     required ProcedureTreeSink? procedureTreeSink,
+    required MemoryWriteLimits memoryWriteLimits,
   }) =>
       ProcedureEngine(
         resolver: resolver,
@@ -611,6 +623,7 @@ abstract final class BrainProcessBoot {
         llmTrailSink: llmTrailSink,
         memoryAccessSink: memoryAccessSink,
         procedureTreeSink: procedureTreeSink,
+        memoryWriteLimits: memoryWriteLimits,
       );
 
   /// Wires the [RunCoordinator] over the shared [preemption] state (it drives

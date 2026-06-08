@@ -104,8 +104,12 @@ void main() {
             'stack.push',
             'note',
           ]);
-      // The intended budget caps are declared up front (D.36).
-      expect(loaded.header.budget.wallClockMs, 60000);
+      // The only declared cap is the wall-clock deadline (§ 5.4): the
+      // user-facing answer budget is "virtually unlimited" on every count
+      // dimension — the per-run `MemoryWriteGuard` is the non-fatal backstop
+      // against a runaway write loop, so reaching it skips+notes rather than
+      // failing the run and silencing an already-produced answer.
+      expect(loaded.header.budget.wallClockMs, 14400000);
     });
   });
 

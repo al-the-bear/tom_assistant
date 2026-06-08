@@ -50,6 +50,9 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
 
 import '../budget/budget_ledger.dart' show BudgetLedger;
+import '../budget/memory_write_guard.dart'
+    show MemoryWriteGuard, MemoryWriteOutcome, MemoryWriteSkip, MemoryWriteSkipSink;
+import '../recorder/effort_accountant.dart' show EffortAccountant;
 import 'bridge_call_recorder.dart';
 
 /// Re-exposes the memory primitive set to d4rt procedure scripts.
@@ -92,19 +95,41 @@ class MemoryBridge {
   /// agent id, an ordinary run binds `null`.
   final String? agentName;
 
+  /// Per-run non-fatal write backstop (spec § 5.4). `null` on the shared
+  /// template bridge; the engine binds a fresh guard per run over the
+  /// process's `MemoryWriteLimits`. When wired, every store-mutating call is
+  /// admitted through it *before* the side effect: a call that would exceed a
+  /// cap, or a duplicate edge within the run, is skipped — the side effect
+  /// never runs, the skip is reported via [_onWriteSkipped], and the call
+  /// returns a sentinel (an empty id / `null` / nothing). Reaching a cap is not
+  /// an error: the run continues, so an answer already produced is never
+  /// silenced by a later write.
+  final MemoryWriteGuard? _writeGuard;
+
+  /// Receives every write the guard skipped, so the run can surface "the
+  /// memory budget was reached" on its trail without failing. `null` when no
+  /// guard is wired.
+  final MemoryWriteSkipSink? _onWriteSkipped;
+
   /// Wraps [client]. The host constructs this natively and registers the
   /// instance with the d4rt runtime. [onCall], when supplied, records each
   /// completed primitive call against the issuing run (E.3.2). [budget], when
   /// supplied, enforces the run's procedure-header budget (PE-8). [agentName],
   /// when supplied, scopes every write this bridge issues to that registered
-  /// cognitive agent (memory § 9).
+  /// cognitive agent (memory § 9). [writeGuard], when supplied, is the per-run
+  /// non-fatal loop backstop (spec § 5.4); [onWriteSkipped] receives every
+  /// write it skips.
   MemoryBridge(
     this.client, {
     BridgeCallRecorder? onCall,
     BudgetLedger? budget,
     this.agentName,
+    MemoryWriteGuard? writeGuard,
+    MemoryWriteSkipSink? onWriteSkipped,
   })  : _onCall = onCall,
-        _budget = budget;
+        _budget = budget,
+        _writeGuard = writeGuard,
+        _onWriteSkipped = onWriteSkipped;
 
   /// Delegates to [body], gating it through the budget ledger and recording
   /// it on the run trail when those hooks are wired.
@@ -123,7 +148,12 @@ class MemoryBridge {
     Map<String, Object?> input,
     Future<T> Function() body, {
     required Map<String, Object?> Function(T value) resultOf,
+    T Function()? skipValue,
   }) async {
+    // Non-fatal write backstop first (spec § 5.4): a skipped write returns its
+    // sentinel without touching the budget ledger or running the side effect.
+    // `skipValue` is supplied for every write primitive; reads never skip.
+    if (_admitWrite(primitive, input).isSkip) return skipValue!();
     final onCall = _onCall;
     final budget = _budget;
     if (onCall == null && budget == null) return body();
@@ -140,6 +170,35 @@ class MemoryBridge {
     return value;
   }
 
+  /// Admits a call through the per-run write guard.
+  ///
+  /// Returns [MemoryWriteOutcome.allow] for a read, for any call when no guard
+  /// is wired, or for a write that fits the caps (the guard counts it). Returns
+  /// a skip outcome — and fires [_onWriteSkipped] — for a write that would
+  /// exceed a cap or repeats an edge within the run. Non-fatal by construction:
+  /// it never throws.
+  MemoryWriteOutcome _admitWrite(String primitive, Map<String, Object?> input) {
+    final guard = _writeGuard;
+    if (guard == null || !EffortAccountant.isMemoryWrite(primitive)) {
+      return MemoryWriteOutcome.allow;
+    }
+    final MemoryWriteOutcome outcome = primitive == 'edge'
+        ? guard.admitEdge(
+            input['from'] as String? ?? '',
+            input['type'] as String? ?? '',
+            input['to'] as String? ?? '',
+          )
+        : guard.admitWrite();
+    if (outcome.isSkip) {
+      _onWriteSkipped?.call(MemoryWriteSkip(
+        primitive: primitive,
+        outcome: outcome,
+        detail: input,
+      ));
+    }
+    return outcome;
+  }
+
   /// Void counterpart of [_record] for primitives that return nothing:
   /// they record an empty result map (only the fact and the cost of the
   /// call), never a return payload. Same budget gate as [_record].
@@ -148,6 +207,9 @@ class MemoryBridge {
     Map<String, Object?> input,
     Future<void> Function() body,
   ) async {
+    // Non-fatal write backstop (spec § 5.4): a skipped void write simply does
+    // not run its side effect and returns.
+    if (_admitWrite(primitive, input).isSkip) return;
     final onCall = _onCall;
     final budget = _budget;
     if (onCall == null && budget == null) return body();
@@ -348,6 +410,9 @@ class MemoryBridge {
           return id.value;
         },
         resultOf: (id) => <String, Object?>{'id': id},
+        // A skipped persist returns an empty id; the caller treats '' as "not
+        // written" (the answer is already produced — see Q-D.39).
+        skipValue: () => '',
       );
 
   // ── edge ────────────────────────────────────────────────────────
@@ -391,6 +456,10 @@ class MemoryBridge {
           return id.value;
         },
         resultOf: (id) => <String, Object?>{'id': id},
+        // A skipped edge returns an empty id — the within-run loop detector or
+        // a cap was hit. The answer is already produced; the missing edge is a
+        // partial-write the run reports but does not fail on (spec § 5.4).
+        skipValue: () => '',
       );
 
   // ── propose_node_type ───────────────────────────────────────────
@@ -474,6 +543,9 @@ class MemoryBridge {
           return id.value;
         },
         resultOf: (id) => <String, Object?>{'id': id},
+        // A skipped push returns an empty entry id (the write cap was hit);
+        // the run continues without the membership (spec § 5.4).
+        skipValue: () => '',
       );
 
   /// `stack.peek` — top-[k] read honouring the stack's priority policy.
@@ -501,6 +573,10 @@ class MemoryBridge {
           return entry == null ? null : _entryToMap(entry);
         },
         resultOf: (entry) => entry ?? _noResult,
+        // A skipped pop returns `null` (the write cap was hit) — identical to
+        // popping an empty stack, so the caller's null-handling already covers
+        // it; the run continues (spec § 5.4).
+        skipValue: () => null,
       );
 
   /// `stack.update` — updates priority / status / attrs of an entry.

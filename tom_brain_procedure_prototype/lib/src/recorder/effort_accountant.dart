@@ -120,6 +120,14 @@ final class EffortAccountant {
     'vscodeCall',
   };
 
+  /// Whether [primitive] is a store-mutating call (one `memoryWrites` unit).
+  ///
+  /// The single source of truth for "is this a write" — the `MemoryWriteGuard`
+  /// reuses it so the guard's backstop and the recorder's effort tally classify
+  /// the same set, never two rules that can drift.
+  static bool isMemoryWrite(String primitive) =>
+      _writePrimitives.contains(primitive);
+
   /// The metric delta the [primitive] call contributed.
   ///
   /// [result] is the call's JSON-encodable return map (the same map the
