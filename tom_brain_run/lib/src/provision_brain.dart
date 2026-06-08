@@ -38,6 +38,7 @@ import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
         AccessServeSeam,
         BrainAccessProcess,
         BrainProvisioner,
+        IncomingTrailSink,
         ProvisionedBrain,
         QueueSnapshot,
         serveWithShelfIo,
@@ -58,6 +59,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
 
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
+import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'summary_fanout.dart' show SummaryFanout;
 import 'trail_config.dart' show TrailConfig;
@@ -230,6 +232,7 @@ Future<BrainProcess> standUpBrainProcess({
   String? isolateLogRootPath,
   LlmTrailSink? llmTrailSink,
   TurnSummarySink? turnSummarySink,
+  IncomingTrailSink? incomingTrailSink,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -249,6 +252,7 @@ Future<BrainProcess> standUpBrainProcess({
       config: config,
       brain: provisioned,
       serve: serve,
+      incomingTrailSink: incomingTrailSink,
     );
   } on Object {
     // The cognition is booted but never reached a running access process —
@@ -296,6 +300,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     isolateLogRootPath: isolateLogRootPath,
     llmTrailSink: sinks.llmTrailSink,
     turnSummarySink: sinks.turnSummarySink,
+    incomingTrailSink: sinks.incomingTrailSink,
   );
 }
 
@@ -308,13 +313,23 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
 /// completed call is **both** dumped raw by the [LlmTrailWriter] *and* fanned
 /// out to the summary projections by the [SummaryFanout]. The returned
 /// `turnSummarySink` is the same fan-out's `onTurnComplete`, fired per turn by
-/// the route. When the document carries no `trail:` block ([trail] is `null`),
-/// every summary surface is disabled (§4.1 unconfigured mode), so no sink binds.
-({LlmTrailSink? llmTrailSink, TurnSummarySink? turnSummarySink}) _trailSinksFor(
+/// the route. The `incomingTrailSink` is the §5.3 raw incoming-prompt writer,
+/// fired per admitted request by the access layer. When the document carries no
+/// `trail:` block ([trail] is `null`), every surface is disabled (§4.1
+/// unconfigured mode), so no sink binds.
+({
+  LlmTrailSink? llmTrailSink,
+  TurnSummarySink? turnSummarySink,
+  IncomingTrailSink? incomingTrailSink,
+}) _trailSinksFor(
   TrailConfig? trail,
 ) {
   if (trail == null) {
-    return (llmTrailSink: null, turnSummarySink: null);
+    return (
+      llmTrailSink: null,
+      turnSummarySink: null,
+      incomingTrailSink: null,
+    );
   }
   final root = Directory(trail.root);
   final writer = LlmTrailWriter(
@@ -335,7 +350,13 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     fanout.onCall(record);
   }
 
-  return (llmTrailSink: llmTrailSink, turnSummarySink: fanout.onTurnComplete);
+  final incomingWriter = IncomingTrailWriter(root: root);
+
+  return (
+    llmTrailSink: llmTrailSink,
+    turnSummarySink: fanout.onTurnComplete,
+    incomingTrailSink: incomingWriter.write,
+  );
 }
 
 /// Resolves the procedure prototype's shipped `scripts/system` directory.

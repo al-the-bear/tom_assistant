@@ -74,6 +74,7 @@ import 'brain_access_boot.dart';
 import 'brain_provisioner.dart';
 import 'graceful_shutdown.dart';
 import 'health_check.dart';
+import 'incoming_trail_record.dart' show IncomingTrailSink;
 import 'ollama_access_edge.dart';
 import 'openai_access_edge.dart';
 import 'telegram_access_edge.dart';
@@ -216,6 +217,13 @@ final class BrainAccessProcess {
 /// embedding service lives in substrate). [shutdownSignals] and [terminate]
 /// default to the real `SIGINT` / `SIGTERM` + `exit`; a test injects
 /// controllers and a recorder.
+///
+/// [incomingTrailSink] is the optional §5.3 incoming-prompt trail sink
+/// (`tom_brain_logging.md` §10 step #7) the admission core hands one
+/// `IncomingTrailRecord` per admitted request, before dispatch. `null` (the
+/// default) leaves the `incoming/` surface unwritten; a higher assembly
+/// (`tom_brain_run`) binds an `IncomingTrailWriter.write` here in full-trail
+/// mode.
 Future<BrainAccessProcess> startBrainAccessProcess({
   required AccessConfig config,
   required ProvisionedBrain brain,
@@ -229,6 +237,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
   ProcessTerminator? terminate,
   Duration shutdownDeadline = defaultShutdownDeadline,
   DateTime Function()? clock,
+  IncomingTrailSink? incomingTrailSink,
 }) async {
   // The proto spec § 12 phase 5 sequence, one extracted step each:
   final BootedAccessLayer booted = _composeAccessLayer(
@@ -238,6 +247,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
     kindHintEmbedder: kindHintEmbedder,
     kindHintClassifier: kindHintClassifier,
     clock: clock,
+    incomingTrailSink: incomingTrailSink,
   );
   final AccessServer server = await _serveOpenAiAndHealth(
     booted: booted,
@@ -337,6 +347,7 @@ BootedAccessLayer _composeAccessLayer({
   required KindHintEmbedder? kindHintEmbedder,
   required KindHintClassifier? kindHintClassifier,
   required DateTime Function()? clock,
+  required IncomingTrailSink? incomingTrailSink,
 }) =>
     BrainAccessBoot.install(
       dispatcher: brain.dispatcher,
@@ -346,6 +357,7 @@ BootedAccessLayer _composeAccessLayer({
         kindHintEmbedder: kindHintEmbedder,
         kindHintClassifier: kindHintClassifier,
         clock: clock,
+        incomingTrailSink: incomingTrailSink,
       ),
     );
 
@@ -496,6 +508,7 @@ BrainAccessConfig _toBrainAccessConfig(
   required KindHintEmbedder? kindHintEmbedder,
   required KindHintClassifier? kindHintClassifier,
   required DateTime Function()? clock,
+  required IncomingTrailSink? incomingTrailSink,
 }) {
   final EdgeStateStore? rateLimitStore;
   final EdgeStateStore? quotaStore;
@@ -522,6 +535,7 @@ BrainAccessConfig _toBrainAccessConfig(
     clock: clock,
     rateLimitStore: rateLimitStore,
     quotaStore: quotaStore,
+    incomingTrailSink: incomingTrailSink,
   );
 }
 

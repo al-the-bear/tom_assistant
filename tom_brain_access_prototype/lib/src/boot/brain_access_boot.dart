@@ -69,6 +69,7 @@ import '../identity/persona_resolver.dart';
 import '../identity/session_manager.dart';
 import 'access_assembler.dart';
 import 'access_event_bus.dart';
+import 'incoming_trail_record.dart';
 
 /// The composition inputs for the access layer (proto spec § 11.4).
 ///
@@ -136,6 +137,13 @@ final class BrainAccessConfig {
   /// [rateLimitStore] so each limiter owns its own file / row format.
   final EdgeStateStore? quotaStore;
 
+  /// The optional §5.3 incoming-prompt trail sink (`tom_brain_logging.md`
+  /// §10 step #7). A higher assembly (`tom_brain_run`) binds the
+  /// `IncomingTrailWriter.write` here in full-trail mode; `null` (the default)
+  /// leaves the `incoming/` surface unwritten (unconfigured mode, §4.1). The
+  /// access layer depends on no trail package — it only carries the function.
+  final IncomingTrailSink? incomingTrailSink;
+
   /// Builds an access-layer composition config.
   BrainAccessConfig({
     required this.rateLimitPolicy,
@@ -151,6 +159,7 @@ final class BrainAccessConfig {
     DateTime Function()? clock,
     this.rateLimitStore,
     this.quotaStore,
+    this.incomingTrailSink,
   }) : clock = clock ?? systemClock;
 }
 
@@ -239,6 +248,7 @@ abstract final class BrainAccessBoot {
       eventBus: eventBus,
       bearerAuthenticator: config.bearerAuthenticator,
       classifier: _buildClassifier(config),
+      incomingTrailSink: config.incomingTrailSink,
       clock: config.clock,
     );
 

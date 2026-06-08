@@ -79,6 +79,7 @@ import '../identity/memory_profile_selector.dart';
 import '../identity/persona_resolver.dart';
 import '../identity/session_manager.dart';
 import 'access_event_bus.dart';
+import 'incoming_trail_record.dart';
 
 /// Builds the channel-specific [DeliveryBinding] for one admitted request.
 ///
@@ -152,6 +153,14 @@ final class AccessAssembler {
   /// registry emits `AccessDelivered`.
   final AccessEventBus eventBus;
 
+  /// The optional §5.3 incoming-prompt trail sink (`tom_brain_logging.md`
+  /// §10 step #7). When non-null, [_admit] hands it one [IncomingTrailRecord]
+  /// per admitted request at the dispatch boundary — the content-bearing
+  /// counterpart to the privacy-bounded `AccessCreated` event. `null` (the
+  /// unconfigured / no-trail default) leaves the `incoming/` surface unwritten.
+  /// The call is guarded so a sink failure never fails the turn (§9).
+  final IncomingTrailSink? incomingTrailSink;
+
   final DateTime Function() _clock;
 
   /// Builds the assembler over its already-constructed collaborators.
@@ -170,6 +179,7 @@ final class AccessAssembler {
     required this.eventBus,
     this.bearerAuthenticator,
     this.classifier,
+    this.incomingTrailSink,
     DateTime Function()? clock,
   }) : _clock = clock ?? systemClock;
 
@@ -481,6 +491,20 @@ final class AccessAssembler {
       AccessCreated.fromAccess(access, occurredAt: _clock().toUtc()),
     );
 
+    // §5.3 incoming-prompt trail (§10 step #7): capture the content-bearing
+    // record at the dispatch boundary. This is the one place channel + turnId +
+    // the full envelope + the resolved identity / session / persona are all in
+    // scope, and it runs *before* dispatch (the §5.3 seam). Best-effort (§9): a
+    // trail-write failure must never fail an otherwise-admitted turn.
+    _trailIncoming(
+      channel: channel,
+      turnId: turnId,
+      identity: identity,
+      session: stampedSession,
+      persona: persona,
+      envelope: effectiveEnvelope,
+    );
+
     // The request is fully admitted and about to be dispatched: fire the
     // post-admission hook (the Telegram edge's immediate "Processing" ack)
     // before the run streams, so a gate-rejected request never reaches here and
@@ -490,6 +514,41 @@ final class AccessAssembler {
     }
 
     await dispatcher.accept(access);
+  }
+
+  /// Hands the configured [incomingTrailSink] one [IncomingTrailRecord] for the
+  /// admitted request (the §5.3 incoming-prompt trail, §10 step #7).
+  ///
+  /// No-op when no sink is wired (unconfigured mode). Best-effort (§9): any
+  /// failure building or writing the record is swallowed so the admitted turn
+  /// dispatches regardless — a trail miss is never an access failure.
+  void _trailIncoming({
+    required AccessChannel channel,
+    required TurnId turnId,
+    required ResolvedIdentity identity,
+    required Session session,
+    required Persona persona,
+    required InboundRequest envelope,
+  }) {
+    final IncomingTrailSink? sink = incomingTrailSink;
+    if (sink == null) {
+      return;
+    }
+    try {
+      sink(
+        IncomingTrailRecord.fromAdmission(
+          channel: channel,
+          turnId: turnId,
+          receivedAt: _clock().toUtc(),
+          identity: identity,
+          session: session,
+          persona: persona,
+          envelope: envelope,
+        ),
+      );
+    } catch (_) {
+      // §9: the incoming trail is non-essential; never surface its failure.
+    }
   }
 
   /// Runs the cheap kind-hint classifier over [envelope], returning the

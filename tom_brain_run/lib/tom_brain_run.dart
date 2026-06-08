@@ -56,6 +56,9 @@ export 'src/trail_config_loader.dart' show TrailConfigLoader;
 export 'src/llm_trail_writer.dart'
     show LlmTrailHeadlineSink, LlmTrailWriter;
 
+// ── Raw incoming-prompt trail writer (logging-spec §5.3; §10 step #7) ──
+export 'src/incoming_trail_writer.dart' show IncomingTrailWriter;
+
 // ── Summary fan-out: the §5.4 / §5.5 / §5.8 versioned narratives + the §5.9
 //    per-session live-trail, derived from the same call records the raw writer
 //    dumps (§10 steps #5 / #6) ───────────────────────────────────────────
