@@ -450,4 +450,48 @@ void main() {
       expect(res.history.sizing, sizing);
     });
   });
+
+  group('adoption seam — hasSession / ensureSession (§ 6.5 / § 7.2)', () {
+    test('an un-minted id is unknown until ensureSession adopts it', () {
+      final manager = SessionManager(sessionIdMinter: _counterMinter());
+      expect(manager.hasSession('outside-id'), isFalse);
+
+      manager.ensureSession('outside-id');
+      expect(manager.hasSession('outside-id'), isTrue);
+      // The adopted id now has an empty dedicated history.
+      expect(manager.peekSession('outside-id'), isNotNull);
+      expect(_prompts(manager.peekSession('outside-id')), isEmpty);
+    });
+
+    test('resolve answers an adopted id from its own dedicated history', () {
+      final manager = SessionManager(sessionIdMinter: _counterMinter());
+      manager.ensureSession('outside-id');
+
+      final res = manager.resolve(
+        identity: _identity('p1'),
+        channel: AccessChannel.telegram,
+        envelope: _inbound(text: 'hi', sessionId: 'outside-id'),
+      );
+
+      // Known, not re-minted: the dedicated history answers and accumulates.
+      expect(res.sessionId, 'outside-id');
+      expect(res.mintedNewId, isFalse);
+      expect(res.unknownSessionId, isFalse);
+      expect(_prompts(res.history), ['hi']);
+    });
+
+    test('ensureSession is a no-op for an already-known id (keeps history)', () {
+      final manager = SessionManager(sessionIdMinter: _counterMinter());
+      manager.ensureSession('outside-id');
+      manager.resolve(
+        identity: _identity('p1'),
+        channel: AccessChannel.telegram,
+        envelope: _inbound(text: 'first', sessionId: 'outside-id'),
+      );
+
+      // A second adoption of the same id must not clear the accumulated turn.
+      manager.ensureSession('outside-id');
+      expect(_prompts(manager.peekSession('outside-id')), ['first']);
+    });
+  });
 }

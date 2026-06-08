@@ -42,6 +42,10 @@ import 'package:tom_core_agentic/tom_core_agentic.dart'
 
 import 'request_fidelity.dart';
 
+/// Sentinel for [InboundRequest.copyWith] — distinguishes "argument omitted"
+/// (keep the current value) from an explicit `null` (clear the field).
+const Object _unset = Object();
+
 /// The normalised inbound request — one user prompt, decoded from its
 /// originating channel into the channel-agnostic shape the dispatcher's
 /// single entry point `accept(Access)` consumes.
@@ -143,6 +147,44 @@ final class InboundRequest {
         'inbound request text must be non-empty (and not whitespace-only)',
       );
     }
+  }
+
+  /// Returns a copy of this request with the given fields replaced.
+  ///
+  /// Nullable fields ([kindHint], [conversationId], [messageId],
+  /// [sessionId]) use a sentinel so that passing `null` *clears* the field
+  /// while omitting the argument *keeps* the current value. This is what
+  /// lets the Telegram edge stamp `sessionId: null` (the global session,
+  /// § 6.5) as distinct from "leave the session id alone".
+  InboundRequest copyWith({
+    String? text,
+    Object? kindHint = _unset,
+    Object? conversationId = _unset,
+    Object? messageId = _unset,
+    bool? streaming,
+    Map<String, Object?>? metadata,
+    List<PriorTurn>? priorTurns,
+    List<RemoteToolResult>? toolResults,
+    List<RemoteToolDef>? remoteTools,
+    Object? sessionId = _unset,
+  }) {
+    return InboundRequest(
+      text: text ?? this.text,
+      kindHint:
+          identical(kindHint, _unset) ? this.kindHint : kindHint as String?,
+      conversationId: identical(conversationId, _unset)
+          ? this.conversationId
+          : conversationId as String?,
+      messageId:
+          identical(messageId, _unset) ? this.messageId : messageId as String?,
+      streaming: streaming ?? this.streaming,
+      metadata: metadata ?? this.metadata,
+      priorTurns: priorTurns ?? this.priorTurns,
+      toolResults: toolResults ?? this.toolResults,
+      remoteTools: remoteTools ?? this.remoteTools,
+      sessionId:
+          identical(sessionId, _unset) ? this.sessionId : sessionId as String?,
+    );
   }
 
   @override

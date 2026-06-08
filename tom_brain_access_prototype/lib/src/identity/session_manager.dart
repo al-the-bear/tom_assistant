@@ -502,6 +502,34 @@ final class SessionManager {
   ConversationHistory? peekSession(String sessionId) =>
       _sessions[sessionId]?.history;
 
+  /// Whether [sessionId] is a known dedicated session — i.e. one [resolve]
+  /// would answer from its own history rather than re-mint as unknown.
+  ///
+  /// The adoption seam for an *id minted outside the manager but inside the
+  /// brain* (the Telegram session registry, access spec § 6.5 / § 7.2). The
+  /// brain owns the session-id space; the registry mints ids on the user's
+  /// behalf and registers them with [ensureSession] so [resolve] treats them
+  /// as known.
+  bool hasSession(String sessionId) => _sessions.containsKey(sessionId);
+
+  /// Registers an empty dedicated session under [sessionId] if none exists,
+  /// so a subsequent [resolve] of that id answers from (and accumulates) its
+  /// own history rather than re-minting it as unknown. A no-op when the id is
+  /// already known — it never clears an accumulated history.
+  ///
+  /// The companion to [hasSession]: the Telegram session registry calls this
+  /// for every non-null id it hands out (including ids remembered across a
+  /// restart) so the brain adopts its own minted ids (access spec § 6.5).
+  void ensureSession(String sessionId) {
+    _sessions.putIfAbsent(
+      sessionId,
+      () => _SessionEntry(
+        history: ConversationHistory(sizing: sizing),
+        lastActivityAt: _now(),
+      ),
+    );
+  }
+
   /// Returns the global "all prompts" history for ([principalId], [channel])
   /// without creating or mutating it, or `null` if none has been resolved yet.
   ConversationHistory? peekGlobal({

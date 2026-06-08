@@ -171,6 +171,10 @@ _Harness _harness({List<String> signatures = _signatures}) {
     assembler: booted.assembler,
     chatApi: chatApi,
     authorizedInbound: telegramInbound.stream,
+    sessionRegistry: TelegramSessionRegistry(
+      store: MapEdgeStateStore(),
+      adoptSession: booted.assembler.sessionManager.ensureSession,
+    ),
   );
 
   return _Harness(

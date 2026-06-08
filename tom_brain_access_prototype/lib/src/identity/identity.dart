@@ -24,3 +24,4 @@ export 'identity_resolver.dart';
 export 'memory_profile_selector.dart';
 export 'persona_resolver.dart';
 export 'session_manager.dart';
+export 'telegram_session_registry.dart';

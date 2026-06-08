@@ -49,6 +49,7 @@ import '../adapters/telegram/telegram_whitelist.dart'
     show telegramNotAuthorisedMessage;
 import '../delivery/telegram_delivery.dart' show ChatApiTelegramSink;
 import '../edge_security/edge_security.dart';
+import '../identity/telegram_session_registry.dart';
 import 'access_assembler.dart';
 
 /// Builds the startup announcement the Telegram channel sends to each
@@ -93,19 +94,24 @@ class TelegramAccessEdge {
   final AccessAssembler _assembler;
   final ChatApi _chatApi;
   final Stream<InboundRequest> _authorizedInbound;
+  final TelegramSessionRegistry _sessionRegistry;
 
   StreamSubscription<InboundRequest>? _subscription;
 
   /// Builds the edge over the booted [assembler], the [chatApi] used to send
-  /// the graceful decline and back the per-request sink, and the adapter's
-  /// whitelist-gated [authorizedInbound] stream (E.22).
+  /// the graceful decline and back the per-request sink, the adapter's
+  /// whitelist-gated [authorizedInbound] stream (E.22), and the
+  /// [sessionRegistry] that maps each Telegram user to its active session and
+  /// handles the four session commands (§ 6.5).
   TelegramAccessEdge({
     required AccessAssembler assembler,
     required ChatApi chatApi,
     required Stream<InboundRequest> authorizedInbound,
+    required TelegramSessionRegistry sessionRegistry,
   })  : _assembler = assembler,
         _chatApi = chatApi,
-        _authorizedInbound = authorizedInbound;
+        _authorizedInbound = authorizedInbound,
+        _sessionRegistry = sessionRegistry;
 
   /// Whether [start] has run and [stop] has not yet been called.
   bool get isRunning => _subscription != null;
@@ -154,8 +160,9 @@ class TelegramAccessEdge {
     await subscription?.cancel();
   }
 
-  /// Admits one inbound [request]: recovers the sender, builds the bound sink,
-  /// and drives the assembler, declining gracefully on a gate failure.
+  /// Admits one inbound [request]: recovers the sender, intercepts any session
+  /// command, stamps the active session id, builds the bound sink, and drives
+  /// the assembler — declining gracefully on a gate failure.
   Future<void> _admit(InboundRequest request) async {
     final String? userId =
         request.metadata[telegramSenderIdMetadataKey]?.toString();
@@ -166,15 +173,68 @@ class TelegramAccessEdge {
     }
 
     final ChatReceiver receiver = ChatReceiver.id(userId);
+
+    // A session command is handled by the registry and acknowledged here — it
+    // never reaches the brain (§ 6.5). An ordinary prompt falls through.
+    final TelegramSessionCommand? command = parseSessionCommand(request.text);
+    if (command != null) {
+      await _handleCommand(receiver, userId, command);
+      return;
+    }
+
+    // Ordinary prompt: resolve the user's active session, send any "invalid →
+    // recreated" notice, and stamp the active session id onto the envelope
+    // (null id ⇒ the global session). The minted id was already adopted into
+    // the SessionManager by the registry, so the dispatcher resolves it as a
+    // known dedicated session.
+    final TelegramActiveSession active = _sessionRegistry.resolveActive(userId);
+    if (active.notice != null) {
+      await _send(receiver, active.notice!);
+    }
+    final InboundRequest stamped =
+        request.copyWith(sessionId: active.sessionId);
+
     try {
       await _assembler.admitTelegram(
         userId: userId,
-        envelope: request,
+        envelope: stamped,
         sink: ChatApiTelegramSink(chatApi: _chatApi, receiver: receiver),
-        onAdmitted: () => _acknowledge(receiver, request.text),
+        onAdmitted: () => _acknowledge(receiver, stamped.text),
       );
     } catch (error) {
       await _decline(receiver, error);
+    }
+  }
+
+  /// Runs a parsed session [command] for [userId] against the registry and
+  /// sends the resulting acknowledgement to [receiver] (§ 6.5). The brain is
+  /// never involved — a command is an access-layer concern.
+  Future<void> _handleCommand(
+    ChatReceiver receiver,
+    String userId,
+    TelegramSessionCommand command,
+  ) async {
+    final String reply = switch (command.kind) {
+      TelegramSessionCommandKind.createSession =>
+        _sessionRegistry.createSession(userId, command.argument),
+      TelegramSessionCommandKind.listSessions =>
+        _sessionRegistry.listSessions(userId),
+      TelegramSessionCommandKind.pickSession =>
+        _sessionRegistry.pickSession(userId, command.argument),
+      TelegramSessionCommandKind.renameSession =>
+        _sessionRegistry.renameSession(userId, command.argument),
+    };
+    await _send(receiver, reply);
+  }
+
+  /// Sends a best-effort plain-text [message] to [receiver] (a session-command
+  /// acknowledgement or an invalid-session notice). A send failure is swallowed
+  /// — the same posture as the acknowledgement and the graceful decline.
+  Future<void> _send(ChatReceiver receiver, String message) async {
+    try {
+      await _chatApi.sendMessage(receiver, message);
+    } catch (_) {
+      // Best-effort: nothing more to do if the reply fails to send.
     }
   }
 

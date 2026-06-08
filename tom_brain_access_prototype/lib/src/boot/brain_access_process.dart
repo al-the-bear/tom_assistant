@@ -66,7 +66,13 @@ import '../adapters/telegram/telegram_adapter.dart';
 import '../adapters/telegram/telegram_whitelist.dart';
 import '../config/access_config.dart';
 import '../edge_security/edge_security.dart'
-    show BearerTokenAuthenticator, EdgeStateStore, JsonFileEdgeStateStore;
+    show
+        BearerTokenAuthenticator,
+        EdgeStateStore,
+        JsonFileEdgeStateStore,
+        MapEdgeStateStore;
+import '../identity/telegram_session_registry.dart'
+    show TelegramSessionRegistry;
 import '../heuristic_classifier/heuristic_kind_hint_classifier.dart'
     show KindHintClassifier, KindHintEmbedder;
 import 'anthropic_access_edge.dart';
@@ -409,10 +415,24 @@ Future<_TelegramEdge> _startTelegram({
     whitelist: TelegramWhitelist(config.telegramWhitelist),
   );
   await adapter.start();
+  // Per-user session continuity (§ 6.5): persisted alongside the edge limiter
+  // state when a state directory is configured, in memory otherwise. The
+  // registry adopts every minted id into the SessionManager so the dispatcher
+  // resolves it as a known dedicated session.
+  final EdgeStateStore sessionStore = config.edgeStateDirectory == null
+      ? MapEdgeStateStore()
+      : JsonFileEdgeStateStore(
+          _edgeStatePath(config.edgeStateDirectory!, _telegramSessionsFile),
+        );
+  final TelegramSessionRegistry sessionRegistry = TelegramSessionRegistry(
+    store: sessionStore,
+    adoptSession: booted.assembler.sessionManager.ensureSession,
+  );
   final TelegramAccessEdge edge = TelegramAccessEdge(
     assembler: booted.assembler,
     chatApi: chatApi,
     authorizedInbound: adapter.authorizedInboundRequests,
+    sessionRegistry: sessionRegistry,
   );
   edge.start();
   // Ping each whitelisted owner that the link is live, naming the host this
@@ -542,6 +562,10 @@ BrainAccessConfig _toBrainAccessConfig(
 /// The per-limiter state file names under [AccessConfig.edgeStateDirectory].
 const String _rateLimitStateFile = 'rate_limit_state.json';
 const String _quotaStateFile = 'quota_state.json';
+
+/// The Telegram per-user session registry file under
+/// [AccessConfig.edgeStateDirectory] (§ 6.5).
+const String _telegramSessionsFile = 'telegram_sessions.json';
 
 /// Joins an edge-state [directory] and [fileName], tolerating a trailing
 /// separator on the directory. Forward slashes work across the prototype's
