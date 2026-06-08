@@ -18,7 +18,7 @@ import 'package:test/test.dart';
 
 IncomingTrailRecord _record({
   AccessChannel channel = AccessChannel.telegram,
-  String turnId = 'turn_01JZ0000000000000000000000',
+  String turnId = '260608-120831.402355',
   String principalId = 'owner',
   String sessionId = 'sess-1',
   String? conversationId = 'conv-1',
@@ -58,13 +58,13 @@ void main() {
 
       final file = File(
         '${root.path}/incoming/telegram/'
-        'turn_01JZ0000000000000000000000.raw.json',
+        '260608-120831.402355.raw.json',
       );
       expect(file.existsSync(), isTrue,
           reason: 'the §5.3 path is incoming/<channel>/<turnId>.raw.json');
 
       final json = jsonDecode(file.readAsStringSync()) as Map<String, Object?>;
-      expect(json['turnId'], 'turn_01JZ0000000000000000000000');
+      expect(json['turnId'], '260608-120831.402355');
       expect(json['channel'], 'telegram');
       expect(json['receivedAt'], '2026-06-08T12:08:31.000Z');
       expect(json['principalId'], 'owner');
@@ -84,13 +84,13 @@ void main() {
 
       expect(
         File('${root.path}/incoming/openai/'
-                'turn_01JZ0000000000000000000000.raw.json')
+                '260608-120831.402355.raw.json')
             .existsSync(),
         isTrue,
       );
       expect(
         File('${root.path}/incoming/anthropic/'
-                'turn_01JZ0000000000000000000000.raw.json')
+                '260608-120831.402355.raw.json')
             .existsSync(),
         isTrue,
       );
@@ -102,7 +102,7 @@ void main() {
 
       final file = File(
         '${root.path}/incoming/telegram/'
-        'turn_01JZ0000000000000000000000.raw.json',
+        '260608-120831.402355.raw.json',
       );
       final json = jsonDecode(file.readAsStringSync()) as Map<String, Object?>;
       expect(json.containsKey('conversationId'), isFalse);
@@ -125,7 +125,7 @@ void main() {
 
       final file = File(
         '${root.path}/incoming/telegram/'
-        'turn_01JZ0000000000000000000000.raw.json',
+        '260608-120831.402355.raw.json',
       );
       final raw = file.readAsStringSync();
       expect(raw.contains('sk-live-123'), isFalse);

@@ -10,14 +10,15 @@
 // `TurnSummarySink`:
 //
 //   * every completed LLM call → [onCall]: appended to the two §5.8 projections
-//     (`by-role`, `by-llm`, newest-first) and, when it belongs to a user turn,
-//     buffered under its turn id;
+//     (`by-role`, `by-llm`, newest-first);
 //   * every completed user turn  → [onTurnComplete]: flushes one §5.4 session
-//     block and one §5.5 global block, built from the turn's buffered calls plus
-//     the prompt/answer the `TurnSummary` carries.
+//     block and one §5.5 global block — each a readable transcript of the
+//     complete user prompt and the complete final answer the `TurnSummary`
+//     carries (no per-call metadata; that drill-down lives in the raw `llm/…`
+//     dumps and the by-role / by-llm projections).
 //
 // Turn-less (dream) calls never produce a `TurnSummary`; they feed only the
-// projections, so nothing is left buffered.
+// projections.
 //
 // Scope boundary (§10): this owns the four **summary** projections. The raw
 // `llm/<role>/…raw.json` dump + the `↳` headline are the `LlmTrailWriter`'s
@@ -47,17 +48,15 @@ final class SessionSummaryWriter {
   /// Max turn blocks kept before the oldest drop (`trail.compactLogCap`, §8).
   final int cap;
 
-  /// Appends [summary]'s turn block — built from the turn's [calls] — to the
-  /// session file. The session file sits one hop under the root, so call links
-  /// use the `../` prefix (§5.4 example).
-  void writeTurn(TurnSummary summary, List<LlmTrailRecord> calls) {
+  /// Appends [summary]'s transcript block (complete prompt + complete answer)
+  /// to the session file.
+  void writeTurn(TurnSummary summary) {
     final header = '$_sessionFileMarker\n${_sessionHeaderBody(summary)}';
     final file = File(
       '${root.path}/sessions/${_sanitizeFileToken(summary.sessionId)}.summary.md',
     );
-    _TurnBlockFile(file: file, header: header, cap: cap).append(
-      _renderTurnBlock(summary, calls, includeSession: false, linkPrefix: '../'),
-    );
+    _TurnBlockFile(file: file, header: header, cap: cap)
+        .append(_renderTurnBlock(summary, includeSession: false));
   }
 }
 
@@ -77,19 +76,17 @@ final class SessionLiveTrailWriter {
   /// (`trail.liveTrailTurns`, §8).
   final int cap;
 
-  /// Appends [summary]'s turn block — built from the turn's [calls] — to the
-  /// session live-trail, head-dropping past the window. The file sits one hop
-  /// under the root, so call links use the `../` prefix (as in §5.4).
-  void writeTurn(TurnSummary summary, List<LlmTrailRecord> calls) {
+  /// Appends [summary]'s transcript block to the session live-trail,
+  /// head-dropping past the window.
+  void writeTurn(TurnSummary summary) {
     final header = '$_sessionLiveTrailMarker\n'
         '${_sessionHeaderBody(summary)}  ·  live (last $cap)';
     final file = File(
       '${root.path}/sessions/'
       '${_sanitizeFileToken(summary.sessionId)}.live-trail.md',
     );
-    _TurnBlockFile(file: file, header: header, cap: cap).append(
-      _renderTurnBlock(summary, calls, includeSession: false, linkPrefix: '../'),
-    );
+    _TurnBlockFile(file: file, header: header, cap: cap)
+        .append(_renderTurnBlock(summary, includeSession: false));
   }
 }
 
@@ -106,15 +103,13 @@ final class GlobalSummaryWriter {
   /// Max turn blocks kept before the oldest drop (`trail.compactLogCap`, §8).
   final int cap;
 
-  /// Appends [summary]'s turn block — with the session id on the header — to
-  /// the global file. The file sits one hop under the root, so call links use
-  /// the `../` prefix.
-  void writeTurn(TurnSummary summary, List<LlmTrailRecord> calls) {
+  /// Appends [summary]'s transcript block — with the session id on the header —
+  /// to the global file.
+  void writeTurn(TurnSummary summary) {
     const header = '$_globalFileMarker\n# all sessions';
     final file = File('${root.path}/summary/all-sessions.summary.md');
-    _TurnBlockFile(file: file, header: header, cap: cap).append(
-      _renderTurnBlock(summary, calls, includeSession: true, linkPrefix: '../'),
-    );
+    _TurnBlockFile(file: file, header: header, cap: cap)
+        .append(_renderTurnBlock(summary, includeSession: true));
   }
 }
 
@@ -226,14 +221,11 @@ final class SummaryFanout {
   final CallProjectionWriter _byLlm;
   final bool _captureInternalRoles;
 
-  /// Turn-bound calls buffered by turn id until the turn completes. A turn-less
-  /// (dream) call is never buffered — it has no turn to flush under.
-  final Map<String, List<LlmTrailRecord>> _pending =
-      <String, List<LlmTrailRecord>>{};
-
-  /// Fans one completed LLM call out to the two §5.8 projections and, for a
-  /// turn-bound call, buffers it under its turn id for the §5.4 / §5.5 block.
-  /// Best-effort (§9): a projection write that throws never escapes.
+  /// Fans one completed LLM call out to the two §5.8 per-call projections
+  /// (`by-role`, `by-llm`). The session / global / live-trail transcripts no
+  /// longer draw on per-call records — they render the turn's prompt + answer
+  /// directly (§5.4) — so nothing is buffered here. Best-effort (§9): a
+  /// projection write that throws never escapes.
   void onCall(LlmTrailRecord record) {
     final obs = record.observation;
     // §11.1 internal-role gate: when off, only the user-facing role is trailed.
@@ -242,24 +234,17 @@ final class SummaryFanout {
     }
     _safe(() => _byRole.writeCall(record));
     _safe(() => _byLlm.writeCall(record));
-    final turnId = obs.turnId;
-    if (turnId != null) {
-      (_pending[turnId] ??= <LlmTrailRecord>[]).add(record);
-    }
   }
 
   /// Flushes the §5.4 session block, the §5.9 per-session live-trail block, and
-  /// the §5.5 global block for one completed turn, built from the turn's
-  /// buffered calls plus [summary]'s prompt/answer. The buffer entry is always
-  /// removed — even when a write throws — so a turn never leaks. Best-effort
-  /// (§9): each surface is written independently, so one failing does not starve
-  /// the others.
+  /// the §5.5 global block for one completed turn — each a readable transcript
+  /// built from [summary]'s complete prompt and answer. Best-effort (§9): each
+  /// surface is written independently, so one failing does not starve the
+  /// others.
   void onTurnComplete(TurnSummary summary) {
-    final calls =
-        _pending.remove(summary.turnId) ?? const <LlmTrailRecord>[];
-    _safe(() => _session.writeTurn(summary, calls));
-    _safe(() => _liveTrail.writeTurn(summary, calls));
-    _safe(() => _global.writeTurn(summary, calls));
+    _safe(() => _session.writeTurn(summary));
+    _safe(() => _liveTrail.writeTurn(summary));
+    _safe(() => _global.writeTurn(summary));
   }
 
   static void _safe(void Function() effect) {
@@ -284,46 +269,32 @@ String _sessionHeaderBody(TurnSummary summary) =>
     '# session ${summary.sessionId}  ·  principal: ${summary.principalId}'
     '${summary.channel == null ? '' : '  ·  channel: ${summary.channel}'}';
 
-/// The §5.4 / §5.5 turn block: a header line (with the session id when
-/// [includeSession]), the user prompt, the final answer, then one bullet per
-/// LLM call linking to its raw dump under [linkPrefix].
+/// The §5.4 / §5.5 transcript block: a header line (with the session id when
+/// [includeSession]), then the **complete** user prompt under `### Prompt` and
+/// the **complete** final answer under `### Answer`, both verbatim. No per-call
+/// metadata — that drill-down lives in the raw `llm/…` dumps (§5.2) and the
+/// by-role / by-llm projections (§5.8).
 String _renderTurnBlock(
-  TurnSummary summary,
-  List<LlmTrailRecord> calls, {
+  TurnSummary summary, {
   required bool includeSession,
-  required String linkPrefix,
 }) {
   final sessionSegment =
       includeSession ? 'session: ${summary.sessionId}  ·  ' : '';
+  final answer = summary.finalAnswer;
   final buffer = StringBuffer()
-    ..writeln('## ${summary.turnId}  ${_timestamp(summary.startedAt)}  ·  '
-        '${sessionSegment}profile: ${summary.profile ?? 'default'}')
-    ..writeln('> **User:** ${_oneLine(summary.userPrompt)}')
+    ..writeln('## turn ${summary.turnId}  ·  ${_timestamp(summary.startedAt)}'
+        '  ·  ${sessionSegment}profile: ${summary.profile ?? 'default'}')
     ..writeln()
-    ..writeln('**Answer:** ${summary.finalAnswer == null ? '—' : _oneLine(summary.finalAnswer!)}');
-  if (calls.isNotEmpty) {
-    buffer.writeln();
-    for (final call in calls) {
-      buffer.writeln(_renderTurnBullet(call, linkPrefix));
-    }
-  }
+    ..writeln('### Prompt')
+    ..writeln()
+    ..writeln(summary.userPrompt.trim())
+    ..writeln()
+    ..writeln('### Answer')
+    ..writeln()
+    ..writeln(answer == null
+        ? '_(no answer — the turn did not complete)_'
+        : answer.trim());
   return buffer.toString().trimRight();
-}
-
-/// One §5.4 call bullet: emoji + label + provider/model + token counts +
-/// wall-clock + the raw link. The user-facing call is flagged `main ·` before
-/// its role (§5.4 example: `🧠 main · assistant_to_user · …`); a secondary call
-/// leads with its role.
-String _renderTurnBullet(LlmTrailRecord record, String linkPrefix) {
-  final obs = record.observation;
-  final report = obs.report;
-  final isMain = obs.callType == SubstrateBridge.defaultRole;
-  final label = isMain ? 'main · ${obs.callType}' : obs.callType;
-  final link = '$linkPrefix${llmRawPathFromRoot(record)}';
-  return '- ${_roleEmoji(obs.callType)} $label · '
-      '${report.providerId}/${report.modelId} · '
-      '${report.tokensIn}→${report.tokensOut} tok · ${report.wallClockMs}ms '
-      '— [raw]($link)';
 }
 
 /// One §5.8 projection entry: turn ref · compact prompt · compact answer · raw
@@ -351,21 +322,6 @@ String _timestamp(DateTime instant) {
       '${two(utc.hour)}:${two(utc.minute)}:${two(utc.second)}';
 }
 
-String _roleEmoji(String role) {
-  switch (role) {
-    case 'assistant_to_user':
-      return '🧠';
-    case 'recaller':
-      return '🔎';
-    case 'evaluator':
-      return '🧪';
-    case 'analyser':
-      return '🔬';
-    default:
-      return '🔹';
-  }
-}
-
 /// Makes a bucket key (session id, role, `provider-model`) safe as a file stem
 /// by collapsing path separators / whitespace to `_`.
 String _sanitizeFileToken(String token) =>
@@ -374,9 +330,15 @@ String _sanitizeFileToken(String token) =>
 // ─── File primitives ─────────────────────────────────────────────────
 
 /// A versioned turn-block file (§5.4 / §5.5): a fixed header followed by turn
-/// blocks separated by a `---` rule. Append is read-modify-rewrite so the cap
-/// holds across process restarts; blocks beyond [cap] drop from the head
-/// (oldest first).
+/// transcript blocks. Append is read-modify-rewrite so the cap holds across
+/// process restarts; blocks beyond [cap] drop from the head (oldest first).
+///
+/// Blocks are joined by an **invisible HTML-comment sentinel**, not a visible
+/// `---` rule, precisely because the blocks now carry verbatim prompt/answer
+/// text — an answer legitimately containing a `---` markdown rule (common) would
+/// corrupt a `---`-delimited parse. The sentinel renders to nothing and is not
+/// realistically producible by an LLM answer, so block parsing stays sound while
+/// the file still reads as plain markdown.
 class _TurnBlockFile {
   _TurnBlockFile({required this.file, required this.header, required this.cap});
 
@@ -384,7 +346,9 @@ class _TurnBlockFile {
   final String header;
   final int cap;
 
-  static const String _separator = '\n\n---\n\n';
+  /// Invisible block boundary. Begins with a blank-line gap for readability;
+  /// the comment itself is the machine-robust split key.
+  static const String _separator = '\n\n<!-- @turn-block -->\n\n';
 
   void append(String block) {
     final blocks = _readBlocks()..add(block);

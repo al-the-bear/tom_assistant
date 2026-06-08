@@ -1,45 +1,53 @@
 // Tests for TurnId (logging-spec §3 — the turn-correlation id).
 //
-// TurnId shares the `<prefix>_<26-char-ULID>` shape of NodeId/EdgeId/TrailId/
-// StackEntryId, but with the prefix `turn` so a trail filename / log line reads
-// `turn_<ULID>` (§3 / §4.2). It is minted once at the access edge the instant an
-// inbound request is admitted, and threaded through the whole turn.
+// TurnId is a bare UTC timestamp `YYMMDD-HHMMSS.ssssss` (microsecond precision),
+// backed by `TimestampId`. It is minted once at the access edge the instant an
+// inbound request is admitted, and threaded through the whole turn so a trail
+// filename / log line *starts with the turn's timestamp* (§3 / §4.2).
 //
-// The rules tested here mirror the sibling `PrefixedUlidId` types:
+// The rules tested here:
 //
-//   * generate builds the canonical `turn_<ULID>` form
-//   * fromString round-trips a generated value
-//   * fromString rejects a wrong prefix and a non-ULID payload
+//   * generate builds the bare `YYMMDD-HHMMSS.ssssss` form (no prefix)
+//   * generate is monotonic — successive values never collide and sort
+//     chronologically by string comparison
+//   * generate(at:) encodes the supplied instant
+//   * fromString round-trips a generated value and rejects a malformed one
 //   * equality is value-based and type-aware
-//   * generated values are unique across many calls
 
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'package:test/test.dart';
 
 void main() {
   group('TurnId.generate', () {
-    test('builds the canonical turn_<ULID> form', () {
+    test('builds a bare YYMMDD-HHMMSS.ssssss form with no prefix', () {
       final id = TurnId.generate();
-      expect(id.value, startsWith('turn_'));
-      expect(id.prefix, equals('turn'));
-      // 'turn_' (5) + 26-char ULID.
-      expect(id.value.length, equals('turn_'.length + Ulid.totalLength));
-      expect(id.ulid.length, equals(Ulid.totalLength));
+      expect(id.value, isNot(startsWith('turn_')));
+      expect(id.value, matches(RegExp(r'^\d{6}-\d{6}\.\d{6}$')));
       expect(id.toString(), equals(id.value));
     });
 
-    test('produces unique values across many calls', () {
+    test('produces unique, strictly increasing values across many calls', () {
       const n = 4000;
       final seen = <String>{};
+      String? previous;
       for (var i = 0; i < n; i++) {
-        seen.add(TurnId.generate().value);
+        final value = TurnId.generate().value;
+        seen.add(value);
+        if (previous != null) {
+          expect(value.compareTo(previous), greaterThan(0));
+        }
+        previous = value;
       }
       expect(seen.length, equals(n));
     });
 
     test('encodes the supplied instant in its timestamp portion', () {
-      final at = DateTime.utc(2026, 6, 8, 12, 30);
+      final at = DateTime.fromMicrosecondsSinceEpoch(
+        DateTime.utc(2026, 6, 8, 12, 30, 15).microsecondsSinceEpoch + 402355,
+        isUtc: true,
+      );
       final id = TurnId.generate(at: at);
+      expect(id.value, equals('260608-123015.402355'));
       expect(id.instant, equals(at));
     });
   });
@@ -52,17 +60,13 @@ void main() {
       expect(parsed.value, equals(id.value));
     });
 
-    test('rejects a wrong prefix', () {
-      final ulid = Ulid.generate();
-      expect(
-        () => TurnId.fromString('t_$ulid'),
-        throwsA(isA<FormatException>()),
-      );
-    });
-
-    test('rejects a non-ULID payload', () {
+    test('rejects a malformed timestamp', () {
       expect(
         () => TurnId.fromString('turn_not-a-ulid'),
+        throwsA(isA<FormatException>()),
+      );
+      expect(
+        () => TurnId.fromString('260608-123015'),
         throwsA(isA<FormatException>()),
       );
     });
@@ -74,13 +78,6 @@ void main() {
       final b = TurnId.fromString(a.value);
       expect(a, equals(b));
       expect(a.hashCode, equals(b.hashCode));
-    });
-
-    test('a TurnId never equals a TrailId with the same ULID payload', () {
-      final ulid = Ulid.generate();
-      final turn = TurnId.fromString('turn_$ulid');
-      final trail = TrailId.fromString('t_$ulid');
-      expect(turn, isNot(equals(trail)));
     });
   });
 }

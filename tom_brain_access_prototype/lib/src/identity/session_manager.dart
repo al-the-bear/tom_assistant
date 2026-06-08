@@ -562,13 +562,11 @@ final class SessionManager {
         durableRecord: h.durableRecord,
       );
 
-  /// The default [SessionIdMinter]: a process-unique counter behind a
-  /// per-manager timestamp prefix, so every minted id is distinct (within and
-  /// across managers). Correctness of reuse is guaranteed by the id-keyed
-  /// store, not by the string's shape.
-  static SessionIdMinter _defaultMinter() {
-    var counter = 0;
-    final stamp = DateTime.now().microsecondsSinceEpoch;
-    return () => 'sess-$stamp-${counter++}';
-  }
+  /// The default [SessionIdMinter]: a bare UTC timestamp
+  /// (`YYMMDD-HHMMSS.ssssss`, monotonic-unique — logging-spec §3), so every
+  /// session id is distinct and every session-keyed trail file starts with its
+  /// timestamp. Correctness of reuse is guaranteed by the id-keyed store, not by
+  /// the string's shape.
+  static SessionIdMinter _defaultMinter() =>
+      () => TimestampId.generate().value;
 }

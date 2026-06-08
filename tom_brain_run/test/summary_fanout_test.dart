@@ -2,12 +2,13 @@
 // same call records the raw `LlmTrailWriter` dumps (`tom_brain_logging.md` §10
 // step #5).
 //
-// One hub fans every completed LLM call out to the two §5.8 projections
-// (`by-role`, `by-llm`) and buffers the turn's calls; on each completed turn it
-// flushes one §5.4 session block and one §5.5 global block from the buffered
-// calls plus the prompt/answer the `TurnSummary` carries. This suite proves the
-// four projections' content, their cross-links to the raw dumps, the §8 caps,
-// and the §11.1 internal-role gate.
+// One hub fans every completed LLM call out to the two §5.8 per-call projections
+// (`by-role`, `by-llm`); on each completed turn it flushes one §5.4 session
+// block and one §5.5 global block. Those blocks are now **readable transcripts**
+// — the complete user prompt under `### Prompt` and the complete final answer
+// under `### Answer`, verbatim — not a list of per-call metadata bullets. This
+// suite proves the transcript blocks, the per-call projections, their
+// cross-links to the raw dumps, the §8 caps, and the §11.1 internal-role gate.
 
 import 'dart:convert';
 import 'dart:io';
@@ -35,28 +36,15 @@ void main() {
 
   bool exists(String relative) => File('${root.path}/$relative').existsSync();
 
-  group('SummaryFanout — §5.4 session narrative', () {
-    test('a completed turn writes a session block with user, answer, bullets',
-        () {
+  group('SummaryFanout — §5.4 session transcript', () {
+    test('a completed turn writes the complete prompt and answer verbatim', () {
       final fanout = SummaryFanout.rootedAt(root);
-      // Two calls of the turn: a recaller (seq 1) then the main answer (seq 3).
-      fanout.onCall(_record(
-        callType: 'recaller',
-        turnId: 'turn_01JZ',
-        callSeq: 1,
-        answer: 'memory query',
-      ));
-      fanout.onCall(_record(
-        callType: 'assistant_to_user',
-        turnId: 'turn_01JZ',
-        callSeq: 3,
-        answer: 'the full answer',
-      ));
       fanout.onTurnComplete(_turn(
-        turnId: 'turn_01JZ',
+        turnId: '260608-120831.402355',
         sessionId: 'sess-1',
         userPrompt: 'what were the three prompts before?',
-        finalAnswer: 'there are no previous prompts',
+        finalAnswer: 'There are no previous prompts.\n\nThis is the first thing '
+            'you asked.',
       ));
 
       expect(exists('sessions/sess-1.summary.md'), isTrue,
@@ -64,25 +52,23 @@ void main() {
       final md = read('sessions/sess-1.summary.md');
       expect(md, contains('<!-- tom-brain session summary -->'));
       expect(md, contains('# session sess-1  ·  principal: owner'));
-      expect(md, contains('## turn_01JZ'));
+      expect(md, contains('## turn 260608-120831.402355'));
       expect(md, contains('·  profile: default'),
           reason: 'a null profile annotates as the process default');
-      expect(md, contains('> **User:** what were the three prompts before?'));
-      expect(md, contains('**Answer:** there are no previous prompts'));
-      // The main call is flagged `main ·` before its role (§5.4 example); the
-      // link is root-relative with `../`.
+      expect(md, contains('### Prompt'));
+      expect(md, contains('what were the three prompts before?'));
+      expect(md, contains('### Answer'));
+      // The answer is verbatim, including its internal paragraph break.
       expect(
           md,
-          contains('🧠 main · assistant_to_user · omlx/gemma-4 · 1→1 tok · 5ms '
-              '— [raw](../llm/assistant_to_user/turn_01JZ__03.raw.json)'));
-      expect(
-          md,
-          contains(
-              '🔎 recaller · omlx/gemma-4 · 1→1 tok · 5ms '
-              '— [raw](../llm/recaller/turn_01JZ__01.raw.json)'));
+          contains('There are no previous prompts.\n\nThis is the first thing '
+              'you asked.'));
+      // No per-call metadata bullets in the transcript.
+      expect(md, isNot(contains('🧠 main')));
+      expect(md, isNot(contains('[raw](')));
     });
 
-    test('a turn with no answer renders the em dash answer placeholder', () {
+    test('a turn with no answer renders the no-answer placeholder', () {
       final fanout = SummaryFanout.rootedAt(root);
       fanout.onTurnComplete(_turn(
         turnId: 'turn_X',
@@ -90,7 +76,31 @@ void main() {
         userPrompt: 'hi',
         finalAnswer: null,
       ));
-      expect(read('sessions/sess-1.summary.md'), contains('**Answer:** —'));
+      expect(read('sessions/sess-1.summary.md'),
+          contains('_(no answer — the turn did not complete)_'));
+    });
+
+    test('a block whose answer contains a --- rule round-trips intact', () {
+      // Regression: the block delimiter must not be a visible `---`, since a
+      // verbatim answer legitimately containing one would corrupt the parse.
+      final fanout = SummaryFanout.rootedAt(root);
+      fanout.onTurnComplete(_turn(
+          turnId: 'turn_A',
+          sessionId: 'sess-1',
+          userPrompt: 'one',
+          finalAnswer: 'before\n\n---\n\nafter'));
+      fanout.onTurnComplete(_turn(
+          turnId: 'turn_B',
+          sessionId: 'sess-1',
+          userPrompt: 'two',
+          finalAnswer: 'second answer'));
+      final md = read('sessions/sess-1.summary.md');
+      // Both turns survive — the `---` inside turn_A's answer did not split it.
+      expect(md, contains('## turn turn_A'));
+      expect(md, contains('## turn turn_B'));
+      expect(md, contains('before\n\n---\n\nafter'));
+      expect('## turn '.allMatches(md), hasLength(2),
+          reason: 'exactly two turn blocks despite the embedded rule');
     });
 
     test('a second turn appends below the first (same file)', () {
@@ -102,12 +112,12 @@ void main() {
       final md = read('sessions/sess-1.summary.md');
       expect(md.indexOf('turn_A'), lessThan(md.indexOf('turn_B')),
           reason: 'turns append in arrival order, oldest at the top');
-      expect('---'.allMatches(md), hasLength(2),
-          reason: 'one rule per turn block');
+      expect('## turn '.allMatches(md), hasLength(2),
+          reason: 'one transcript block per turn');
     });
   });
 
-  group('SummaryFanout — §5.5 global narrative', () {
+  group('SummaryFanout — §5.5 global transcript', () {
     test('every session interleaves into one file, sess id on each header', () {
       final fanout = SummaryFanout.rootedAt(root);
       fanout.onTurnComplete(
@@ -118,7 +128,7 @@ void main() {
       expect(exists('summary/all-sessions.summary.md'), isTrue);
       final md = read('summary/all-sessions.summary.md');
       expect(md, contains('<!-- tom-brain global summary -->'));
-      expect(md, contains('## turn_A  '));
+      expect(md, contains('## turn turn_A  '));
       expect(md, contains('session: sess-1  ·  profile: default'),
           reason: 'the §5.5 header carries the sess id, unlike §5.4');
       expect(md, contains('session: sess-2  ·  profile: default'));
@@ -167,7 +177,7 @@ void main() {
           reason: 'the most recent call is at the top (§5.8 newest-first)');
     });
 
-    test('a turn-less (dream) call still projects but writes no turn block', () {
+    test('a turn-less (dream) call still projects but writes no transcript', () {
       SummaryFanout.rootedAt(root).onCall(_record(
         callType: 'connector',
         turnId: null,
@@ -222,7 +232,8 @@ void main() {
   });
 
   group('SummaryFanout — §11.1 internal-role gate', () {
-    test('captureInternalRoles=false skips internal calls everywhere', () {
+    test('captureInternalRoles=false skips internal calls in the projections',
+        () {
       final fanout =
           SummaryFanout.rootedAt(root, captureInternalRoles: false);
       fanout.onCall(_record(
@@ -236,41 +247,28 @@ void main() {
           callSeq: 2,
           answer: 'main'));
       fanout.onTurnComplete(_turn(
-          turnId: 'turn_01JZ', sessionId: 'sess-1', userPrompt: 'q'));
+          turnId: 'turn_01JZ',
+          sessionId: 'sess-1',
+          userPrompt: 'q',
+          finalAnswer: 'a'));
 
       expect(exists('summary/by-role/recaller.summary.md'), isFalse,
           reason: 'an internal role is not projected when the gate is off');
       expect(exists('summary/by-role/assistant_to_user.summary.md'), isTrue);
+      // The transcript is unaffected by the gate — it renders the turn's
+      // prompt + answer regardless of which internal calls ran.
       final md = read('sessions/sess-1.summary.md');
-      expect(md, isNot(contains('recaller')),
-          reason: 'the turn block shows only the user-facing call');
-      expect(md, contains('🧠 main'));
-      // The §5.9 live-trail shares the buffered calls, so the gate holds there
-      // too: only the user-facing call survives.
-      final live = read('sessions/sess-1.live-trail.md');
-      expect(live, isNot(contains('recaller')),
-          reason: 'the live-trail block also shows only the user-facing call');
-      expect(live, contains('🧠 main'));
+      expect(md, contains('### Prompt'));
+      expect(md, contains('### Answer'));
+      expect(md, contains('a'));
     });
   });
 
   group('SummaryFanout — §5.9 session live-trail', () {
-    test('a completed turn writes a live-trail block in the §5.4 format', () {
+    test('a completed turn writes a live-trail transcript block', () {
       final fanout = SummaryFanout.rootedAt(root);
-      fanout.onCall(_record(
-        callType: 'recaller',
-        turnId: 'turn_01JZ',
-        callSeq: 1,
-        answer: 'memory query',
-      ));
-      fanout.onCall(_record(
-        callType: 'assistant_to_user',
-        turnId: 'turn_01JZ',
-        callSeq: 3,
-        answer: 'the full answer',
-      ));
       fanout.onTurnComplete(_turn(
-        turnId: 'turn_01JZ',
+        turnId: '260608-120831.402355',
         sessionId: 'sess-1',
         userPrompt: 'what were the three prompts before?',
         finalAnswer: 'there are no previous prompts',
@@ -282,18 +280,11 @@ void main() {
       expect(md, contains('<!-- tom-brain session live-trail -->'),
           reason: 'a distinct marker tells it apart from the §5.4 summary');
       expect(md, contains('# session sess-1  ·  principal: owner'));
-      expect(md, contains('## turn_01JZ'));
-      expect(md, contains('> **User:** what were the three prompts before?'));
-      expect(md, contains('**Answer:** there are no previous prompts'));
-      // The very same §5.4 bullets, links root-relative with `../`.
-      expect(
-          md,
-          contains('🧠 main · assistant_to_user · omlx/gemma-4 · 1→1 tok · 5ms '
-              '— [raw](../llm/assistant_to_user/turn_01JZ__03.raw.json)'));
-      expect(
-          md,
-          contains('🔎 recaller · omlx/gemma-4 · 1→1 tok · 5ms '
-              '— [raw](../llm/recaller/turn_01JZ__01.raw.json)'));
+      expect(md, contains('## turn 260608-120831.402355'));
+      expect(md, contains('### Prompt'));
+      expect(md, contains('what were the three prompts before?'));
+      expect(md, contains('### Answer'));
+      expect(md, contains('there are no previous prompts'));
     });
 
     test('the live-trail caps at liveTrailTurns, dropping oldest from the head',

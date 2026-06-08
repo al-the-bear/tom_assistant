@@ -15,7 +15,7 @@ library;
 // Exports land here, one per module, as A.10 – A.17 ship.
 
 // A.10 — ids/ module: ULID + NodeId/EdgeId/TrailId/StackEntryId/ProcedureId/
-// TurnId.
+// TurnId + TimestampId.
 export 'src/ids/ids.dart';
 
 // §10.2 — correlation/ module: `TurnContext` pairs the access-edge-minted
