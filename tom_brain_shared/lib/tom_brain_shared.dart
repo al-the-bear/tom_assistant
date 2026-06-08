@@ -14,8 +14,15 @@ library;
 
 // Exports land here, one per module, as A.10 – A.17 ship.
 
-// A.10 — ids/ module: ULID + NodeId/EdgeId/TrailId/StackEntryId/ProcedureId.
+// A.10 — ids/ module: ULID + NodeId/EdgeId/TrailId/StackEntryId/ProcedureId/
+// TurnId.
 export 'src/ids/ids.dart';
+
+// §10.2 — correlation/ module: `TurnContext` pairs the access-edge-minted
+// `TurnId` with the per-turn `callSeq` counter (logging-spec §3). One context
+// is created per turn at `ProcedureEngine.invoke` and shared across every
+// nested run, so `turnId` + `callSeq` uniquely name any LLM call of the turn.
+export 'src/correlation/correlation.dart' show TurnContext;
 
 // A.11 — embedding/ module: Vec (Float32List wrapper) + cosine / dot / l2.
 export 'src/embedding/embedding.dart';

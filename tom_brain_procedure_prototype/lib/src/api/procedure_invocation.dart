@@ -19,6 +19,8 @@
 // one declaration — there is no way for the recorded arguments and the
 // arguments the procedure actually receives to drift apart.
 
+import 'package:tom_brain_shared/tom_brain_shared.dart' show TurnId;
+
 import 'procedure_inputs.dart';
 
 /// A request to run one procedure, addressed by id (and optional version).
@@ -33,12 +35,18 @@ final class ProcedureInvocation {
   /// latest. [parentRunId] links this run to the run that dispatched it
   /// (a nested `runProcedure`); `null` for a top-level invocation. [runId]
   /// pins the engine-assigned run id; when `null` the engine generates one.
+  /// [turnId] is the access-edge-minted turn correlation id (logging-spec §3);
+  /// the engine builds one [TurnContext] per turn from it and threads the
+  /// `turnId` + per-turn `callSeq` onto every substrate call of the turn,
+  /// including nested runs. `null` for an internal / free-time / dream
+  /// invocation that runs outside a user turn.
   ProcedureInvocation({
     required this.procedureId,
     Map<String, Object?> arguments = const <String, Object?>{},
     this.version,
     this.parentRunId,
     this.runId,
+    this.turnId,
   }) : arguments = Map<String, Object?>.unmodifiable(
           Map<String, Object?>.of(arguments),
         ) {
@@ -65,6 +73,12 @@ final class ProcedureInvocation {
 
   /// The pinned run id, or `null` to let the engine generate one.
   final String? runId;
+
+  /// The turn this invocation serves (logging-spec §3), or `null` for an
+  /// internal / free-time / dream invocation that runs outside a user turn.
+  /// Minted at the access edge and threaded onto every substrate call of the
+  /// turn via the engine's per-turn [TurnContext].
+  final TurnId? turnId;
 
   /// The typed input bag the procedure's `run` entry point receives.
   ///

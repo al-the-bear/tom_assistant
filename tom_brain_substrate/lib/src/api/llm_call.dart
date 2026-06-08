@@ -65,7 +65,7 @@
 //     key. Replacing `String` with a stronger `RoleId` type later is
 //     a single-line aliasing change that does not propagate.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget, TurnId;
 
 import 'cancellation.dart';
 
@@ -121,12 +121,26 @@ final class LlmCall {
   /// [CancellationToken.none] — i.e., uncancellable.
   final CancellationToken cancellationToken;
 
+  /// The turn this call belongs to (logging-spec §3). Stamped by the
+  /// procedure engine's per-run `SubstrateBridge` as the call is built — the
+  /// "→ substrate" end of the `turnId` thread-through (§9). `null` for the
+  /// internal / free-time / dream paths that do not run inside a user turn.
+  final TurnId? turnId;
+
+  /// This call's ordinal within its turn (logging-spec §3). Together with
+  /// [turnId] it uniquely names any LLM call across the whole system. Starts
+  /// at 1 and increments per LLM call of the turn (embeddings do not consume a
+  /// seq). `null` whenever [turnId] is `null`.
+  final int? callSeq;
+
   const LlmCall({
     required this.roleId,
     required this.inputs,
     this.options = LlmOptions.empty,
     required this.budget,
     this.cancellationToken = CancellationToken.none,
+    this.turnId,
+    this.callSeq,
   });
 }
 

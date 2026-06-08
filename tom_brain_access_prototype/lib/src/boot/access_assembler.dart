@@ -431,6 +431,13 @@ final class AccessAssembler {
     quotaLimiter.check(principalId);
     anchorPreCheck.check(envelope.text);
 
+    // ── Turn id: the request has now cleared every edge gate, so it is
+    //    admitted. Mint the turn correlation id here — the single instant
+    //    §3 names — and ride it onto the `Access`. It threads from here through
+    //    the dispatcher and engine onto every substrate call this turn issues,
+    //    so `turnId` + `callSeq` uniquely name any LLM call of the turn. ──
+    final TurnId turnId = TurnId.generate();
+
     // ── Session: resolve the conversation and record this turn against its
     //    histories (the request is now fully admitted, so it legitimately gets
     //    a turn). The resolution carries the history the engine answers from. ──
@@ -468,6 +475,7 @@ final class AccessAssembler {
       persona: persona,
       deliver: deliver,
       history: session.history,
+      turnId: turnId,
     );
     eventBus.emit(
       AccessCreated.fromAccess(access, occurredAt: _clock().toUtc()),

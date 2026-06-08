@@ -645,6 +645,10 @@ abstract final class BrainProcessBoot {
                 arguments: <String, Object?>{
                   inboundTextArgumentKey: access.envelope.text,
                 },
+                // Carry the access-edge-minted turn id (logging-spec §3) onto
+                // the invocation so the engine threads it — plus a per-turn
+                // `callSeq` — onto every substrate call this turn issues.
+                turnId: access.turnId,
               ),
               tokenSink: streamDelta,
             )

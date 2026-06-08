@@ -41,6 +41,7 @@
 import 'dart:async';
 
 import '../history/history.dart';
+import '../ids/turn_id.dart';
 import 'inbound_request.dart';
 import 'outbound_chunk.dart';
 import 'persona.dart';
@@ -117,9 +118,19 @@ final class Access {
   /// history is `null`, not an error. The assembler (E.41+) always sets it.
   final ConversationHistory? history;
 
+  /// The correlation id minted at the access edge the instant this request was
+  /// admitted (logging-spec §3). It rides the whole turn — Access → dispatcher
+  /// → engine → substrate call — so every record the turn produces shares it.
+  ///
+  /// Optional for the same reason [history] is: the dispatcher's own conformance
+  /// tests (D.53) build synthetic `Access` objects that exercise routing without
+  /// a turn, so a missing `turnId` is `null`, not an error. The assembler
+  /// (E.41+) always mints and sets it.
+  final TurnId? turnId;
+
   /// Builds an immutable `Access`. The five core fields are required — an
   /// `Access` with a missing one could not be routed, scoped, answered, or
-  /// delivered. [history] is optional (see its doc).
+  /// delivered. [history] and [turnId] are optional (see their docs).
   ///
   /// Construction of [envelope] already rejects an empty / whitespace-only
   /// prompt (see `InboundRequest`), so an "empty inbound request" can
@@ -131,6 +142,7 @@ final class Access {
     required this.persona,
     required this.deliver,
     this.history,
+    this.turnId,
   });
 
   /// Value equality over the four value fields plus reference identity of
@@ -145,7 +157,8 @@ final class Access {
       other.session == session &&
       other.persona == persona &&
       identical(other.deliver, deliver) &&
-      identical(other.history, history);
+      identical(other.history, history) &&
+      other.turnId == turnId;
 
   @override
   int get hashCode => Object.hash(
@@ -155,6 +168,7 @@ final class Access {
         persona,
         identityHashCode(deliver),
         identityHashCode(history),
+        turnId,
       );
 
   @override
@@ -164,5 +178,6 @@ final class Access {
       'session: $session, '
       'persona: $persona, '
       'deliver: <callback>'
-      '${history == null ? '' : ', history: <history>'})';
+      '${history == null ? '' : ', history: <history>'}'
+      '${turnId == null ? '' : ', turnId: $turnId'})';
 }

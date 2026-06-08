@@ -63,7 +63,7 @@ import 'dart:async';
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show TomBrainMemoryClient, TrailEntry, TrailOutcomeStatus;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show PreemptionState, defaultNowUtc;
+    show PreemptionState, TurnContext, defaultNowUtc;
 
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
@@ -248,6 +248,15 @@ final class ProcedureEngine {
       timerFactory: _cancellationTimerFactory,
     );
 
+    // One TurnContext per turn (logging-spec §3 / §9), built from the
+    // access-edge-minted turnId and shared across every nested run of the turn
+    // so the per-turn `callSeq` counter spans sub-procedures. A turn-less
+    // invocation (internal / free-time / dream) leaves it `null`, so its
+    // substrate calls stay unstamped.
+    final turn = invocation.turnId == null
+        ? null
+        : TurnContext(invocation.turnId!);
+
     unawaited(
       Future<void>(() async {
         try {
@@ -262,6 +271,7 @@ final class ProcedureEngine {
             onEntry: trail.add,
             cancellation: cancellation,
             tokenSink: tokenSink,
+            turn: turn,
           );
           outcome.complete(result);
         } catch (error, stack) {
@@ -313,6 +323,7 @@ final class ProcedureEngine {
     void Function(TrailEntry entry)? onEntry,
     RunCancellation? cancellation,
     OutboundDeltaSink? tokenSink,
+    TurnContext? turn,
   }) async {
     final LoadedProcedure loaded = resolver.resolve(procedureId, version: version);
 
@@ -362,10 +373,11 @@ final class ProcedureEngine {
       onCall: recordCall,
       onToken: tokenSink,
       budget: runBudget,
+      turn: turn,
     );
 
     final runPrimitive = RunProcedurePrimitive(
-      executor: (call) => _executeNested(call, parentRunId: runId),
+      executor: (call) => _executeNested(call, parentRunId: runId, turn: turn),
       hardDepthCap: _hardDepthCap,
       startDepth: depth,
     );
@@ -604,9 +616,15 @@ final class ProcedureEngine {
   /// before this runs. A nested run that fails or crashes surfaces here as a
   /// [ProcedureResult.failed]; richer error propagation up the chain is a
   /// later concern (the fallback executor, Phase D).
+  ///
+  /// [turn] is the enclosing turn's [TurnContext] (logging-spec §3 / §9),
+  /// threaded down so the nested run's substrate calls share the turn's id and
+  /// advance the *same* per-turn `callSeq` counter — the counter spans the
+  /// run boundary. `null` for a turn-less (internal / dream) parent run.
   Future<ProcedureResult> _executeNested(
     ProcedureCall call, {
     required String parentRunId,
+    TurnContext? turn,
   }) async {
     final outcome = await _runInternal(
       runId: _newRunId(),
@@ -616,6 +634,7 @@ final class ProcedureEngine {
       arguments: call.inputs.toMap(),
       parentRunId: parentRunId,
       depth: call.depth,
+      turn: turn,
     );
     return outcome.result ?? ProcedureResult.failed();
   }

@@ -12,4 +12,5 @@ export 'prefixed_ulid_id.dart' show PrefixedUlidId;
 export 'procedure_id.dart' show ProcedureId;
 export 'stack_entry_id.dart' show StackEntryId;
 export 'trail_id.dart' show TrailId;
+export 'turn_id.dart' show TurnId;
 export 'ulid.dart' show Ulid;

@@ -72,7 +72,7 @@
 
 import 'dart:convert' show jsonDecode;
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget, TurnContext;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
 
@@ -144,6 +144,20 @@ class SubstrateBridge {
   /// script never selects a protocol; the substrate hides it (Q-F.4).
   final ToolProtocolResolver? _toolProtocolOf;
 
+  /// Per-run turn-correlation context (logging-spec §3 / §9 — the "→ substrate"
+  /// end of the `turnId` thread-through). `null` on the shared template bridge
+  /// and on every internal / free-time / dream run — those issue completions
+  /// outside a user turn, so their [LlmCall]s carry no `turnId` / `callSeq`. The
+  /// engine binds a per-run context built from the turn's id when the
+  /// invocation supplies one; each [llm] completion then stamps the turn's
+  /// `turnId` and the next per-turn `callSeq` onto the outbound [LlmCall]. Like
+  /// [_onCall] / [_onToken], the binding is per-run so concurrent runs that
+  /// share the client each carry their own turn; but unlike them the *counter*
+  /// is shared across a turn's nested runs (one [TurnContext] per turn, threaded
+  /// down), so `callSeq` spans sub-procedures. Not part of the d4rt-facing
+  /// surface — a procedure script never sees it.
+  final TurnContext? _turn;
+
   /// Wraps [client]. The host constructs this natively and registers the
   /// instance with the d4rt runtime. [onCall], when supplied, records each
   /// completed primitive call against the issuing run (E.3.2). [onToken], when
@@ -153,7 +167,9 @@ class SubstrateBridge {
   /// supplied, receives the low-level tool-protocol diagnostics
   /// (`llm.toolcall.parse.failed`); [toolProtocolOf], when supplied, selects a
   /// provider's wire tool protocol (defaulting to [ToolProtocol.openai]) —
-  /// both Extension F step 10.
+  /// both Extension F step 10. [turn], when supplied, stamps the turn's
+  /// `turnId` and an incrementing `callSeq` onto every [llm] call (logging-spec
+  /// §3 / §9).
   SubstrateBridge(
     this.client, {
     BridgeCallRecorder? onCall,
@@ -161,11 +177,13 @@ class SubstrateBridge {
     BudgetLedger? budget,
     SubstrateNoteSink? onNote,
     ToolProtocolResolver? toolProtocolOf,
+    TurnContext? turn,
   })  : _onCall = onCall,
         _onToken = onToken,
         _budget = budget,
         _onNote = onNote,
-        _toolProtocolOf = toolProtocolOf;
+        _toolProtocolOf = toolProtocolOf,
+        _turn = turn;
 
   /// Delegates to [body], gating it through the budget ledger and recording
   /// it on the run trail when those hooks are wired.
@@ -274,11 +292,19 @@ class SubstrateBridge {
         <String, Object?>{'prompt': prompt, 'role': role},
         () async {
           final catalogue = _buildToolCatalogue(tools);
+          // Turn-correlation stamp (logging-spec §3 / §9): when a turn is bound,
+          // name this completion with the turn's id and the next per-turn
+          // `callSeq`. The counter advances once per llm call (embeddings do not
+          // consume it) and spans the turn's nested runs because the one
+          // [TurnContext] is shared down. Unbound (internal / dream) ⇒ both null.
+          final turn = _turn;
           final call = LlmCall(
             roleId: role,
             inputs: <String, Object?>{'prompt': prompt},
             options: LlmOptions(toolCatalogue: catalogue),
             budget: _buildBudget(budget),
+            turnId: turn?.turnId,
+            callSeq: turn?.nextCallSeq(),
           );
 
           final buffer = StringBuffer();
