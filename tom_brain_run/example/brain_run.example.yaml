@@ -26,6 +26,28 @@ substrate:
     assistant_to_user:
       - providerId: omlx
         model: ${TOM_BRAIN_OMLX_MODEL}
+    # Extension-H retrieval roles — routed to the same substrate as the
+    # assistant. The retrieval conductor's `recall_*` legs call these via
+    # `sub.retrievalRole(...)`; an unrouted role makes that leg degrade to no
+    # seeds (PE-6), so leaving these out silently weakens recall.
+    recall_planner:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    hypothesis_writer:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    query_term_writer:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    category_selector:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    retrieval_reranker:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    profile_selector:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
   embedding:
     providerId: ollama
     model: ${TOM_BRAIN_OLLAMA_EMBED_MODEL}

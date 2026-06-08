@@ -92,7 +92,18 @@ InProcessTomBrainSubstrate buildSubstrate(
       _buildEmbeddingService(config, providers);
 
   return InProcessTomBrainSubstrate(
-    roleRegistry: roleRegistry ?? bootstrapRoleRegistry(),
+    // The retrieval-enabled roster (the five prototype roles plus the six
+    // Extension-H retrieval roles). The run shape's procedures dispatch the
+    // four-strategy retrieval conductor, whose `recall_*` legs call
+    // `sub.retrievalRole('recall_planner' | 'hypothesis_writer' |
+    // 'query_term_writer' | 'category_selector', …)`; the access layer calls
+    // `profile_selector`. Registering only the five prototype roles
+    // (`bootstrapRoleRegistry()`) left every LLM recall leg unroutable, so the
+    // conductor silently degraded to the two non-LLM seeds (PE-6) — recall ran
+    // far weaker than designed. The retrieval roster registers their templates;
+    // the config's `roleRoutes` supplies their routes (both halves are required
+    // for a role to dispatch).
+    roleRegistry: roleRegistry ?? bootstrapRoleRegistryWithRetrieval(),
     providers: providers,
     router: router,
     embeddingService: embeddingService,

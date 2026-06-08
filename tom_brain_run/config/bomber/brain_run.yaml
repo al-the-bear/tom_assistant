@@ -31,6 +31,29 @@ substrate:
     assistant_to_user:
       - providerId: omlx
         model: gemma-4-26b-a4b-it-4bit
+    # Extension-H retrieval roles. The four-strategy retrieval conductor's
+    # `recall_*` legs call these via `sub.retrievalRole(...)`; without a route
+    # each leg is unroutable and the conductor degrades to the two non-LLM
+    # seeds (PE-6), so recall runs far weaker than designed. All route to the
+    # same Gemma substrate as the assistant.
+    recall_planner:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    hypothesis_writer:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    query_term_writer:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    category_selector:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    retrieval_reranker:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    profile_selector:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
   embedding:
     providerId: ollama
     model: nomic-embed-text

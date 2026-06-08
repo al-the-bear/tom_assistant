@@ -312,6 +312,66 @@ substrate:
       await substrate.close();
     });
 
+    test('a config routing the Extension-H retrieval roles validates — the run '
+        'builder registers them by default', () async {
+      // Regression for the recall-degradation bug (PE-6): the run builder used
+      // to default to `bootstrapRoleRegistry()` (the five prototype roles only),
+      // so any config that routed a retrieval role — `recall_planner`,
+      // `hypothesis_writer`, … — failed `open()`'s cross-validation because the
+      // routed role was not registered. The conductor then silently degraded its
+      // LLM recall legs to the two non-LLM seeds. The builder now defaults to
+      // `bootstrapRoleRegistryWithRetrieval()`, so the six retrieval roles are
+      // registered live and a config routing them validates.
+      const String retrievalSubstrate = '''
+substrate:
+  providers:
+    - id: omlx
+      kind: openai
+      baseUrl: http://10.8.0.7:8000/v1/
+      models:
+        - gemma-4-26b-a4b-it-4bit
+    - id: ollama
+      kind: ollama
+      baseUrl: http://10.8.0.9:11434
+      models:
+        - nomic-embed-text
+  roleRoutes:
+    assistant_to_user:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    recall_planner:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    hypothesis_writer:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    query_term_writer:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    category_selector:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    retrieval_reranker:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    profile_selector:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+  embedding:
+    providerId: ollama
+    model: nomic-embed-text
+    dims: 768
+    normalize: true''';
+      final SubstrateConfig cfg =
+          SubstrateConfigLoader.parse('$retrievalSubstrate\n');
+      final substrate = buildSubstrate(cfg);
+
+      // Under the old five-role default this open() would throw a
+      // SubstrateConfigException naming the first unregistered retrieval role.
+      await substrate.open(cfg);
+      await substrate.close();
+    });
+
     test('refuses a stub-kind provider with a located error', () {
       const String stubSubstrate = '''
 substrate:
