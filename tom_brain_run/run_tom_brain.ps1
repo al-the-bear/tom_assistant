@@ -53,5 +53,26 @@ if (-not $env:TELEGRAM_TOM_BRAIN_TOKEN) {
 }
 
 Write-Host "run_tom_brain: launching with config: $Config"
-& dart run bin/brain_serve.dart $Config
-exit $LASTEXITCODE
+
+# Run the server as a child process so Ctrl-C can tear it down cleanly. On a
+# console Ctrl-C, Windows delivers CTRL_C_EVENT to the child too, which
+# brain_serve handles (SIGINT) for a graceful stop; the finally block then
+# guarantees the process is gone (force-killing if it overran its grace window).
+$proc = Start-Process -FilePath 'dart' `
+  -ArgumentList @('run', 'bin/brain_serve.dart', $Config) `
+  -NoNewWindow -PassThru
+try {
+  while (-not $proc.HasExited) { Start-Sleep -Milliseconds 200 }
+} finally {
+  if (-not $proc.HasExited) {
+    Write-Host "`nrun_tom_brain: stopping server (pid $($proc.Id))…"
+    for ($i = 0; $i -lt 25 -and -not $proc.HasExited; $i++) {
+      Start-Sleep -Milliseconds 200       # up to ~5s for the graceful stop
+    }
+    if (-not $proc.HasExited) {
+      Write-Warning 'run_tom_brain: graceful stop timed out — forcing.'
+      Stop-Process -Id $proc.Id -Force
+    }
+  }
+}
+exit $proc.ExitCode
