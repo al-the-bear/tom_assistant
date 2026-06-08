@@ -67,6 +67,7 @@ import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
 import 'procedure_tree_writer.dart' show ProcedureTreeWriter;
 import 'summary_fanout.dart' show SummaryFanout;
 import 'trail_config.dart' show TrailConfig;
+import 'trail_janitor.dart' show TrailJanitor;
 
 /// Boots the real cognition (the injected [substrate] + the real on-disk
 /// isolate-hosted `SqliteTomBrainMemory`) and projects it into a
@@ -311,7 +312,13 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   String? isolateLogRootPath,
 }) {
   final TomBrainSubstrateClient substrate = buildSubstrate(runConfig.substrate);
-  final sinks = _trailSinksFor(runConfig.trail);
+  // Boot-time trail sweep (§8 / §10 step #10): write the §7 `.gitignore` and
+  // enforce the raw-tier count / aggregate-size caps before any writer appends
+  // a new file this run. Full-trail mode only — unconfigured mode writes no raw
+  // tree to police (§4.1). Best-effort: the janitor swallows its own failures.
+  final TrailConfig? trail = runConfig.trail;
+  if (trail != null) TrailJanitor.fromConfig(trail).sweep();
+  final sinks = _trailSinksFor(trail);
   return standUpBrainProcess(
     config: runConfig.access,
     substrate: substrate,

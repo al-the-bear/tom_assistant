@@ -65,6 +65,10 @@ export 'src/memory_profile_log_writer.dart' show MemoryProfileLogWriter;
 // ── Per-procedure combined run-tree writer (logging-spec §5.7; §10 step #9) ─
 export 'src/procedure_tree_writer.dart' show ProcedureTreeWriter;
 
+// ── Trail janitor: raw-tier count/size caps + .gitignore (logging-spec §7 /
+//    §8; §10 step #10) ──────────────────────────────────────────────────
+export 'src/trail_janitor.dart' show TrailJanitor;
+
 // ── Summary fan-out: the §5.4 / §5.5 / §5.8 versioned narratives + the §5.9
 //    per-session live-trail, derived from the same call records the raw writer
 //    dumps (§10 steps #5 / #6) ───────────────────────────────────────────
