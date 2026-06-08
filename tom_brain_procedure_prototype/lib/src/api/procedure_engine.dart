@@ -61,11 +61,12 @@
 import 'dart:async';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart'
-    show TomBrainMemoryClient, TrailEntry, TrailOutcomeStatus;
+    show TomBrainMemoryClient, TrailEntry, TrailEntryKind, TrailOutcomeStatus;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show PreemptionState, TurnContext, defaultNowUtc;
 
 import '../bridges/bridge_call_recorder.dart';
+import '../bridges/llm_call_observation.dart' show LlmCallObservation;
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../budget/budget.dart';
@@ -83,6 +84,7 @@ import '../procedure_store/procedure_loader.dart';
 import '../procedure_store/procedure_resolver.dart';
 import '../recorder/llm_trail_record.dart';
 import '../recorder/memory_access_record.dart';
+import '../recorder/procedure_tree_record.dart';
 import '../recorder/run_records.dart';
 import '../recorder/run_recorder.dart';
 import '../validator/sandbox_validator.dart';
@@ -161,6 +163,7 @@ final class ProcedureEngine {
     String Function()? newRunId,
     LlmTrailSink? llmTrailSink,
     MemoryAccessSink? memoryAccessSink,
+    ProcedureTreeSink? procedureTreeSink,
   })  : preemptionState = preemptionState ?? PreemptionState(),
         _stepDeadlineLimit = stepDeadline,
         _deadlineTimerFactory = deadlineTimerFactory,
@@ -169,7 +172,8 @@ final class ProcedureEngine {
         _now = now ?? defaultNowUtc,
         _newRunId = newRunId ?? _defaultRunIdGenerator(),
         _llmTrailSink = llmTrailSink,
-        _memoryAccessSink = memoryAccessSink;
+        _memoryAccessSink = memoryAccessSink,
+        _procedureTreeSink = procedureTreeSink;
 
   /// Resolves a procedure id (and optional version) to a loaded source.
   final ProcedureResolver resolver;
@@ -233,6 +237,15 @@ final class ProcedureEngine {
   /// [MemoryAccessRecord] and hands here (the host binds a
   /// `MemoryProfileLogWriter`).
   final MemoryAccessSink? _memoryAccessSink;
+
+  /// The combined per-procedure tree sink (`tom_brain_logging.md` §5.7 / §10
+  /// step #9). `null` leaves the engine emitting no per-procedure tree; when
+  /// bound, each *top-level* (or turn-less dream) run assembles one
+  /// [ProcedureTreeRecord] — the run's own trail entries as nodes, with each
+  /// nested `runProcedure`'s sub-record spliced in at its call position — and
+  /// hands it here (the host binds a `ProcedureTreeWriter`). A nested run
+  /// bubbles its sub-record up to its parent instead of firing this sink.
+  final ProcedureTreeSink? _procedureTreeSink;
 
   /// Runs the procedure named by [invocation] and returns its handle.
   ///
@@ -335,6 +348,12 @@ final class ProcedureEngine {
   /// substrate bridge's `onToken` and the `emit` primitive's sink for the
   /// top-level external run, `null` for a nested run (the top-level body owns
   /// the answer stream; a nested `runProcedure` does not re-stream).
+  ///
+  /// [onTree] is the combined-tree bubble seam (§5.7 / §10 step #9): `null` for
+  /// the top-level run (which emits its assembled [ProcedureTreeRecord] to the
+  /// engine's `_procedureTreeSink`), and the parent's "splice my sub-record in
+  /// at this call position" callback for a nested run. Only set when a tree
+  /// sink is bound; otherwise no tree is assembled at all.
   Future<ProcedureOutcome> _runInternal({
     required String runId,
     required String procedureId,
@@ -348,6 +367,7 @@ final class ProcedureEngine {
     OutboundDeltaSink? tokenSink,
     TurnContext? turn,
     String? profile,
+    void Function(ProcedureTreeRecord tree)? onTree,
   }) async {
     final LoadedProcedure loaded = resolver.resolve(procedureId, version: version);
 
@@ -358,6 +378,20 @@ final class ProcedureEngine {
     validator.validate(loaded);
 
     final recorder = RunRecorder(memory, now: _now, onEntry: onEntry);
+
+    // Combined per-procedure tree seam (§5.7 / §10 step #9). The tree is built
+    // only when a sink is bound — every run (top-level or nested) under a bound
+    // sink assembles its own [ProcedureTreeRecord]; a top-level run emits it to
+    // `_procedureTreeSink`, a nested run bubbles it up to its parent via
+    // [onTree]. Two per-run captures feed the assembly: the run's `llm`
+    // observations (zipped against its `llm` primitive-call entries for the
+    // link facts) and the positioned sub-records of its nested `runProcedure`
+    // calls (spliced in at the call position). Left empty (and unread) when no
+    // tree is built.
+    final treeSink = _procedureTreeSink;
+    final buildTree = treeSink != null;
+    final llmObservations = <LlmCallObservation>[];
+    final childTrees = <_PositionedChildTree>[];
 
     // Bind the bridges to *this* run's recorder so every effect call lands on
     // the run's trail and folds into its effort tally (E.3.2). The engine's
@@ -431,6 +465,9 @@ final class ProcedureEngine {
     // `trailId` is read lazily inside the closure because it fires during
     // `llm()`, after `recorder.start()` opened the trail. Best-effort: a
     // throwing sink is swallowed so it cannot break the completion.
+    // The combined tree (§5.7) needs the same observation in lockstep with the
+    // run's `llm` primitive-call entries, so the observer also captures it when
+    // a tree is built — even if no raw-trail writer is bound.
     final llmTrailSink = _llmTrailSink;
     final runSubstrateBridge = SubstrateBridge(
       substrateBridge.client,
@@ -438,24 +475,43 @@ final class ProcedureEngine {
       onToken: tokenSink,
       budget: runBudget,
       turn: turn,
-      onLlmTrail: llmTrailSink == null
+      onLlmTrail: (llmTrailSink == null && !buildTree)
           ? null
           : (observation) {
-              try {
-                llmTrailSink(LlmTrailRecord(
-                  observation: observation,
-                  runId: runId,
-                  trailId: recorder.isOpen ? recorder.trailId.value : null,
-                ));
-              } catch (_) {
-                // Trail writing is non-essential; never let it break the run.
+              if (buildTree) llmObservations.add(observation);
+              if (llmTrailSink != null) {
+                try {
+                  llmTrailSink(LlmTrailRecord(
+                    observation: observation,
+                    runId: runId,
+                    trailId: recorder.isOpen ? recorder.trailId.value : null,
+                  ));
+                } catch (_) {
+                  // Trail writing is non-essential; never break the run.
+                }
               }
             },
     );
 
     final runPrimitive = RunProcedurePrimitive(
-      executor: (call) =>
-          _executeNested(call, parentRunId: runId, turn: turn, profile: profile),
+      // Capture the parent's trail length *synchronously* at the call site so
+      // the nested run's sub-record can later be spliced in at exactly this
+      // position (§5.7): the assembly flushes any child whose `position`
+      // equals the parent entry index it is about to process. `onTree` is the
+      // nested run's "splice me here" bubble — wired only when a tree is built.
+      executor: (call) {
+        final position = recorder.entries.length;
+        return _executeNested(
+          call,
+          parentRunId: runId,
+          turn: turn,
+          profile: profile,
+          onTree: buildTree
+              ? (childTree) =>
+                  childTrees.add(_PositionedChildTree(position, childTree))
+              : null,
+        );
+      },
       hardDepthCap: _hardDepthCap,
       startDepth: depth,
     );
@@ -479,6 +535,53 @@ final class ProcedureEngine {
         arguments: arguments,
       ),
     );
+
+    // Terminal seam (§5.7 / §10 step #9): every one of the run's five exit
+    // paths funnels through here so the combined tree is assembled and emitted
+    // exactly once, in lockstep with the outcome. When a tree is built, the
+    // run's own trail entries become nodes (with the `llm` ones zipped against
+    // the run's captured observations for their link facts) and each nested
+    // run's sub-record is spliced in at its recorded call position. A top-level
+    // run fires the engine's sink; a nested run bubbles the record up to its
+    // parent through [onTree]. Best-effort (§9): a throwing top-level sink is
+    // swallowed so it can never break the run.
+    ProcedureOutcome finish({
+      required ProcedureRunRecord record,
+      ProcedureResult? result,
+      Object? error,
+    }) {
+      final entries = recorder.entries;
+      if (buildTree) {
+        final tree = _assembleProcedureTree(
+          loaded: loaded,
+          runId: runId,
+          parentRunId: parentRunId,
+          turn: turn,
+          depth: depth,
+          record: record,
+          entries: entries,
+          llmObservations: llmObservations,
+          children: childTrees,
+        );
+        if (onTree != null) {
+          onTree(tree);
+        } else {
+          try {
+            treeSink(tree);
+          } catch (_) {
+            // Trail writing is non-essential; never break the run.
+          }
+        }
+      }
+      return _outcomeOf(
+        runId: runId,
+        procedureId: loaded.header.id,
+        record: record,
+        entries: entries,
+        result: result,
+        error: error,
+      );
+    }
 
     final deadline = StepDeadline(
       limit: _stepDeadlineLimit,
@@ -512,14 +615,7 @@ final class ProcedureEngine {
               '${error.dimension.name} budget',
         ),
       );
-      return _outcomeOf(
-        runId: runId,
-        procedureId: loaded.header.id,
-        record: aborted,
-        entries: recorder.entries,
-        result: null,
-        error: error,
-      );
+      return finish(record: aborted, result: null, error: error);
     } catch (error) {
       // The step threw before the deadline. Classify it: a source-parse
       // failure (the procedure never ran — the host raises
@@ -543,14 +639,7 @@ final class ProcedureEngine {
               : 'procedure ${loaded.header.id} crashed',
         ),
       );
-      return _outcomeOf(
-        runId: runId,
-        procedureId: loaded.header.id,
-        record: crashed,
-        entries: recorder.entries,
-        result: null,
-        error: error,
-      );
+      return finish(record: crashed, result: null, error: error);
     }
 
     if (race is _RaceCancelled) {
@@ -564,13 +653,7 @@ final class ProcedureEngine {
         timeout: cancellation?.timeout,
         procedureId: loaded.header.id,
       );
-      return _outcomeOf(
-        runId: runId,
-        procedureId: loaded.header.id,
-        record: record,
-        entries: recorder.entries,
-        result: null,
-      );
+      return finish(record: record, result: null);
     }
 
     final StepOutcome<Object?> step = (race as _RaceStep).step;
@@ -589,13 +672,7 @@ final class ProcedureEngine {
             producedNodeIds: producedNodeIds,
           ),
         );
-        return _outcomeOf(
-          runId: runId,
-          procedureId: loaded.header.id,
-          record: record,
-          entries: recorder.entries,
-          result: result,
-        );
+        return finish(record: record, result: result);
 
       case StepTruncated<Object?>(:final limit):
         recorder.note(
@@ -611,13 +688,7 @@ final class ProcedureEngine {
             summary: 'step exceeded ${limit.inSeconds}s deadline',
           ),
         );
-        return _outcomeOf(
-          runId: runId,
-          procedureId: loaded.header.id,
-          record: record,
-          entries: recorder.entries,
-          result: null,
-        );
+        return finish(record: record, result: null);
     }
   }
 
@@ -704,6 +775,7 @@ final class ProcedureEngine {
     required String parentRunId,
     TurnContext? turn,
     String? profile,
+    void Function(ProcedureTreeRecord tree)? onTree,
   }) async {
     final outcome = await _runInternal(
       runId: _newRunId(),
@@ -715,6 +787,7 @@ final class ProcedureEngine {
       depth: call.depth,
       turn: turn,
       profile: profile,
+      onTree: onTree,
     );
     return outcome.result ?? ProcedureResult.failed();
   }
@@ -791,6 +864,118 @@ final class ProcedureEngine {
         error: error,
       );
 
+  /// Assembles one run's combined structural tree (§5.7 / §10 step #9).
+  ///
+  /// Walks the run's trail [entries] in order, mapping each node-bearing entry
+  /// to a [ProcedureTreeNode]: a `primitiveCall` becomes a
+  /// [ProcedurePrimitiveNode] (an `llm` call additionally carries a
+  /// [ProcedureTreeLlmRef] zipped positionally off [llmObservations] — the run
+  /// fires one observation per completed `llm`, in the same order as the `llm`
+  /// primitive entries); a `note` becomes a [ProcedureNoteNode]; an `error`
+  /// becomes a [ProcedureErrorNode]. Each nested run's sub-record is spliced in
+  /// at the parent entry index it was issued at (the captured `position`),
+  /// *before* that entry is processed, so the subtree sits exactly where
+  /// `runProcedure` was called. The structural-only entries — the `invocation`
+  /// header, the synthetic `outcome` (the writer renders that from [record]),
+  /// the bubbled `subProcedure` marker (the spliced sub-record carries the real
+  /// shape), and the factory `persist` / `edge` / `stackPush` / `yield_` lines
+  /// the prototype path never emits — carry no node.
+  ProcedureTreeRecord _assembleProcedureTree({
+    required LoadedProcedure loaded,
+    required String runId,
+    required String? parentRunId,
+    required TurnContext? turn,
+    required int depth,
+    required ProcedureRunRecord record,
+    required List<TrailEntry> entries,
+    required List<LlmCallObservation> llmObservations,
+    required List<_PositionedChildTree> children,
+  }) {
+    final nodes = <ProcedureTreeNode>[];
+    var llmIndex = 0;
+
+    void flushChildrenAt(int position) {
+      for (final child in children) {
+        if (child.position == position) {
+          nodes.add(ProcedureSubtreeNode(tree: child.tree));
+        }
+      }
+    }
+
+    for (var i = 0; i < entries.length; i++) {
+      flushChildrenAt(i);
+      final entry = entries[i];
+      switch (entry.kind) {
+        case TrailEntryKind.primitiveCall:
+          final payload = entry.payload;
+          final primitive = '${payload['primitive']}';
+          ProcedureTreeLlmRef? llm;
+          if (primitive == 'llm' && llmIndex < llmObservations.length) {
+            final obs = llmObservations[llmIndex++];
+            llm = ProcedureTreeLlmRef(
+              callType: obs.callType,
+              turnId: obs.turnId,
+              callSeq: obs.callSeq,
+              callId: obs.callId,
+              runId: runId,
+              tokensIn: obs.report.tokensIn,
+              tokensOut: obs.report.tokensOut,
+            );
+          }
+          nodes.add(ProcedurePrimitiveNode(
+            primitive: primitive,
+            input: _asStringMap(payload['input']),
+            result: _asStringMap(payload['result']),
+            llm: llm,
+          ));
+        case TrailEntryKind.note:
+          nodes.add(ProcedureNoteNode(category: '${entry.payload['category']}'));
+        case TrailEntryKind.error:
+          nodes.add(ProcedureErrorNode(
+            errorKind: '${entry.payload['errorKind']}',
+            message: '${entry.payload['message']}',
+          ));
+        case TrailEntryKind.invocation:
+        case TrailEntryKind.persist:
+        case TrailEntryKind.edge:
+        case TrailEntryKind.stackPush:
+        case TrailEntryKind.subProcedure:
+        case TrailEntryKind.yield_:
+        case TrailEntryKind.outcome:
+          break;
+      }
+    }
+    // A nested call issued as the run's very last act lands at `entries.length`
+    // (nothing was recorded after it but the synthetic outcome): flush it too.
+    flushChildrenAt(entries.length);
+
+    return ProcedureTreeRecord(
+      procedureId: loaded.header.id,
+      version: loaded.header.version,
+      runId: runId,
+      parentRunId: parentRunId,
+      turnId: turn?.turnId.value,
+      depth: depth,
+      status: record.status,
+      elapsedMs: record.effort.wallClockMs,
+      entryCount: entries.length,
+      nodes: nodes,
+    );
+  }
+
+  /// Coerces a trail payload's `input` / `result` slot — a `Map` with possibly
+  /// dynamic keys — into the `Map<String, Object?>` the tree nodes carry.
+  /// A non-map (or absent) slot yields an empty map.
+  static Map<String, Object?> _asStringMap(Object? value) {
+    if (value is Map<String, Object?>) return value;
+    if (value is Map) {
+      return value.map<String, Object?>(
+        (Object? key, Object? v) => MapEntry<String, Object?>('$key', v),
+      );
+    }
+    return const <String, Object?>{};
+  }
+
   /// A monotonic, process-unique run-id generator: `run_<micros>_<seq>`.
   static String Function() _defaultRunIdGenerator() {
     var sequence = 0;
@@ -824,4 +1009,18 @@ final class _RaceCancelled extends _RunRace {
 
   /// Why the run was abandoned (explicit cancel vs. elapsed timeout).
   final RunCancelCause cause;
+}
+
+/// A nested run's sub-record paired with the parent-trail index it was issued
+/// at (§5.7 / §10 step #9). The parent captures `position` synchronously when
+/// `runProcedure` fires (the parent's `recorder.entries.length` at that moment)
+/// so the assembly can splice the subtree in at exactly that point.
+final class _PositionedChildTree {
+  const _PositionedChildTree(this.position, this.tree);
+
+  /// The parent-trail entry index the nested call was issued before.
+  final int position;
+
+  /// The nested run's combined tree.
+  final ProcedureTreeRecord tree;
 }

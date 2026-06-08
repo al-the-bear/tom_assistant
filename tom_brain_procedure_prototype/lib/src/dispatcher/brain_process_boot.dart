@@ -70,6 +70,7 @@ import '../mcp/mcp_client.dart' show McpConnector;
 import '../procedure_store/disk_procedure_store.dart';
 import '../recorder/llm_trail_record.dart' show LlmTrailSink;
 import '../recorder/memory_access_record.dart' show MemoryAccessSink;
+import '../recorder/procedure_tree_record.dart' show ProcedureTreeSink;
 import '../recorder/turn_summary.dart' show TurnSummary, TurnSummarySink;
 import '../procedure_store/procedure_resolver.dart';
 import 'dispatcher_entry.dart';
@@ -274,6 +275,15 @@ final class BrainProcessConfig {
   /// config; tests pass a capture closure.
   final MemoryAccessSink? memoryAccessSink;
 
+  /// The per-procedure combined run-tree sink (`tom_brain_logging.md` §5.7 / §10
+  /// step #9), or `null` for the prototype default (no per-procedure tree). When
+  /// non-null, boot threads it onto the [ProcedureEngine] so every top-level (or
+  /// turn-less dream) run assembles one combined tree — its own trail entries
+  /// plus each nested run's sub-record spliced in — and fires it here.
+  /// Production binds a `ProcedureTreeWriter.write` built from the `trail:`
+  /// config; tests pass a capture closure.
+  final ProcedureTreeSink? procedureTreeSink;
+
   /// The per-turn summary sink (`tom_brain_logging.md` §5.4 / §5.5 / §10 step
   /// #5), or `null` for the prototype default (no per-turn narrative). When
   /// non-null, the dispatch route fires one [TurnSummary] per completed user
@@ -300,6 +310,7 @@ final class BrainProcessConfig {
     this.mcpConnector,
     this.llmTrailSink,
     this.memoryAccessSink,
+    this.procedureTreeSink,
     this.turnSummarySink,
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
 }
@@ -526,6 +537,7 @@ abstract final class BrainProcessBoot {
       extensions: extensions,
       llmTrailSink: config.llmTrailSink,
       memoryAccessSink: config.memoryAccessSink,
+      procedureTreeSink: config.procedureTreeSink,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
     final dispatcher = _wireDispatcher(
@@ -575,8 +587,10 @@ abstract final class BrainProcessBoot {
   /// state (the engine yields against it via `yield_if_foreground_waiting`), the
   /// optional Extension-F [extensions] bundle, the optional [llmTrailSink]
   /// the engine forwards each run's raw-LLM-call observations to (§10 step #4),
-  /// and the optional [memoryAccessSink] it forwards each run's bridged-memory
-  /// calls to for the per-profile memory log (§10 step #8).
+  /// the optional [memoryAccessSink] it forwards each run's bridged-memory
+  /// calls to for the per-profile memory log (§10 step #8), and the optional
+  /// [procedureTreeSink] it fires one combined run-tree to per top-level run
+  /// (§10 step #9).
   static ProcedureEngine _wireEngine({
     required ProvisionedMemory memory,
     required TomBrainSubstrateClient substrate,
@@ -585,6 +599,7 @@ abstract final class BrainProcessBoot {
     required BrainEngineExtensions? extensions,
     required LlmTrailSink? llmTrailSink,
     required MemoryAccessSink? memoryAccessSink,
+    required ProcedureTreeSink? procedureTreeSink,
   }) =>
       ProcedureEngine(
         resolver: resolver,
@@ -595,6 +610,7 @@ abstract final class BrainProcessBoot {
         extensions: extensions,
         llmTrailSink: llmTrailSink,
         memoryAccessSink: memoryAccessSink,
+        procedureTreeSink: procedureTreeSink,
       );
 
   /// Wires the [RunCoordinator] over the shared [preemption] state (it drives

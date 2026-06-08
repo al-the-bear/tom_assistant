@@ -9,18 +9,51 @@
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
     show LlmTrailRecord;
 
+/// The file stem identifying one call's raw dump from its bare correlation
+/// facts: `<turnId>__<callSeq>` for a turn-bound call (`callSeq` zero-padded to
+/// two digits, matching the §5.1 `__01` form), falling back to
+/// `<runId>__<callId>` for a turn-less internal / dream call.
+///
+/// This is the single source of the stem rule. Both the raw writer (through
+/// [llmRawStem]) and the §5.7 per-procedure tree writer (which holds a
+/// `ProcedureTreeLlmRef`, not an `LlmTrailRecord`) call it, so a tree's link
+/// and the raw file it points at agree byte-for-byte.
+String llmRawStemOf({
+  required String? turnId,
+  required int? callSeq,
+  required String? runId,
+  required String callId,
+}) {
+  if (turnId != null && callSeq != null) {
+    return '${turnId}__${callSeq.toString().padLeft(2, '0')}';
+  }
+  return '${runId ?? 'run'}__$callId';
+}
+
+/// The raw dump's path **relative to the trail root** from bare correlation
+/// facts — `llm/<callType>/<stem>.raw.json` (§5.2). Consumers prefix it with
+/// the `../` / `../../` hop from their own directory to build the link.
+String llmRawPathOf({
+  required String callType,
+  required String? turnId,
+  required int? callSeq,
+  required String? runId,
+  required String callId,
+}) =>
+    'llm/$callType/${llmRawStemOf(turnId: turnId, callSeq: callSeq, runId: runId, callId: callId)}.raw.json';
+
 /// The file stem identifying one call's raw dump: `<turnId>__<callSeq>` for a
 /// turn-bound call (`callSeq` zero-padded to two digits, matching the §5.1
 /// `__01` form), falling back to `<runId>__<callId>` for a turn-less internal /
 /// dream call.
 String llmRawStem(LlmTrailRecord record) {
   final obs = record.observation;
-  final turnId = obs.turnId;
-  final callSeq = obs.callSeq;
-  if (turnId != null && callSeq != null) {
-    return '${turnId}__${callSeq.toString().padLeft(2, '0')}';
-  }
-  return '${record.runId ?? 'run'}__${obs.callId}';
+  return llmRawStemOf(
+    turnId: obs.turnId,
+    callSeq: obs.callSeq,
+    runId: record.runId,
+    callId: obs.callId,
+  );
 }
 
 /// The raw dump's path **relative to the trail root** —
