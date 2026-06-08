@@ -18,7 +18,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:tom_basics/tom_basics.dart' show TomPlatformUtils;
+import 'package:tom_basics/tom_basics.dart' show TomPlatformUtils, tomLog;
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_core_server/tom_core_server.dart' show standalonePlatformUtils;
 
@@ -45,6 +45,13 @@ Future<void> main(List<String> args) async {
   final BrainRunConfig config = BrainRunConfigLoader.parse(
     configFile.readAsStringSync(),
     envVars: Platform.environment,
+  );
+
+  // Announce the active trail mode before anything writes a trail surface
+  // (logging-spec §4.1). `tomLog.status` renders the `STATUS ` level the §4.1
+  // example shows; the banner body carries the `[tom_brain.trail]` category.
+  tomLog.status(
+    TrailBanner.forStartup(config.trail, cwd: Directory.current.path),
   );
 
   final BrainProcess process = await standUpBrainProcessFromConfig(config);

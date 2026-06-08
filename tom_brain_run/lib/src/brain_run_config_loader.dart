@@ -1,9 +1,10 @@
 // BrainRunConfigLoader — the whole-process config loader for the run assembly
 // (Plan-2 step #31).
 //
-// The single YAML config file has five sibling sections: `substrate:`,
-// `memory:`, `engine:`, `dispatcher:`, `access:`. The access package's
-// sub-barrel documents the design this loader realises:
+// The single YAML config file has sibling sections: `substrate:`, `memory:`,
+// `engine:`, `dispatcher:`, `access:`, and the optional `trail:` block
+// (`tom_brain_logging.md` §8). The access package's sub-barrel documents the
+// design this loader realises:
 //
 //   "The other four sections are parsed by their own already-defined loaders
 //    (SubstrateConfigLoader, MemoryConfigLoader, EngineConfig, DispatcherConfig)
@@ -18,8 +19,10 @@
 //   * `memory:`    → `MemoryConfigLoader.parse` (reads `doc['memory']`,
 //     tolerates siblings).
 //   * `access:`    → `AccessConfigLoader.parse` (reads `doc['access']`;
-//     additionally rejects any top-level key outside the five-section set —
+//     additionally rejects any top-level key outside the allowed section set —
 //     so a typo'd section name is caught here with a located error).
+//   * `trail:`     → `TrailConfigLoader.parse` (reads `doc['trail']`; returns
+//     `null` when the block is absent — unconfigured trail mode, §4.1).
 //
 // Each section loader produces a *located* error (dotted key path) on its own
 // malformed or missing section, so the whole-process loader needs no error
@@ -48,6 +51,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, SubstrateConfigLoader;
 
 import 'brain_run_config.dart';
+import 'trail_config.dart';
+import 'trail_config_loader.dart';
 
 /// Parses the whole-process YAML config into a [BrainRunConfig] by delegating
 /// each section to its owning loader (Plan-2 step #31).
@@ -79,10 +84,13 @@ abstract final class BrainRunConfigLoader {
         MemoryConfigLoader.parse(content, envVars: envVars);
     final AccessConfig access =
         AccessConfigLoader.parse(content, envVars: envVars);
+    final TrailConfig? trail =
+        TrailConfigLoader.parse(content, envVars: envVars);
     return BrainRunConfig(
       substrate: substrate,
       memory: memory,
       access: access,
+      trail: trail,
     );
   }
 

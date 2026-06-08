@@ -61,15 +61,17 @@ abstract final class AccessConfigLoader {
   AccessConfigLoader._();
 
   /// The top-level sections the whole-process document may carry. This
-  /// loader owns [_accessKey]; the other four are owned by their own
-  /// loaders (substrate / memory / engine / dispatcher) and are tolerated
-  /// here so the single file feeds all five. Any other root key is
-  /// rejected (AC-12).
+  /// loader owns [_accessKey]; the others are owned by their own loaders
+  /// (substrate / memory / engine / dispatcher, and the run package's
+  /// `TrailConfigLoader` for `trail:` — `tom_brain_logging.md` §8) and are
+  /// tolerated here so the single file feeds every section loader. Any other
+  /// root key is rejected (AC-12).
   static const Set<String> _allowedTopLevelKeys = <String>{
     'substrate',
     'memory',
     'engine',
     'dispatcher',
+    'trail',
     _accessKey,
   };
 

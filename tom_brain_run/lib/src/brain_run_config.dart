@@ -28,6 +28,8 @@ import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryConfig;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig;
 
+import 'trail_config.dart';
+
 /// The assembled whole-process configuration: the three sections the run
 /// assembly boots a cognition from (Plan-2 step #31).
 ///
@@ -51,10 +53,26 @@ final class BrainRunConfig {
   /// `startBrainAccessProcess`.
   final AccessConfig access;
 
-  /// Assembles the three parsed sections into the run configuration.
+  /// The optional `trail:` section (`tom_brain_logging.md` §4.1 / §8). `null`
+  /// when the document carries no `trail:` block — which selects
+  /// [TrailMode.unconfigured] (CWD `brain.log` + `components/*.log` only). A
+  /// value selects [TrailMode.full] (the whole tree under `trail.root`).
+  final TrailConfig? trail;
+
+  /// Assembles the parsed sections into the run configuration.
+  ///
+  /// [trail] is optional: an absent `trail:` block leaves it `null`
+  /// (unconfigured mode).
   const BrainRunConfig({
     required this.substrate,
     required this.memory,
     required this.access,
+    this.trail,
   });
+
+  /// The active trail mode, derived from whether a `trail:` block was
+  /// configured (`tom_brain_logging.md` §4.1): [TrailMode.unconfigured] when
+  /// [trail] is `null`, [TrailMode.full] otherwise.
+  TrailMode get trailMode =>
+      trail == null ? TrailMode.unconfigured : TrailMode.full;
 }

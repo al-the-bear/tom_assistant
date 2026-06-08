@@ -736,6 +736,22 @@ mystery:
       );
     });
 
+    // The whole-process document now also carries a `trail:` section (owned by
+    // the run package's `TrailConfigLoader`; logging-spec §8). The access loader
+    // tolerates it as a sibling — exactly as it tolerates substrate / memory /
+    // engine / dispatcher — so the single file feeds every section loader.
+    test('tolerates a sibling trail: section', () {
+      const doc = '''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+trail:
+  root: /srv/brain/trail
+''';
+      expect(() => AccessConfigLoader.parse(doc), returnsNormally);
+    });
+
     test('rejects an unknown key within access:', () {
       const doc = '''
 access:
