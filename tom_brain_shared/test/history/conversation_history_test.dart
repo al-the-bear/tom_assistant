@@ -166,6 +166,71 @@ void main() {
     });
   });
 
+  group('G.21-8 amendLastTurnAnswer — answer back-fill (access § 7.2 #4)', () {
+    test('writes the answer into the last appended (answer-less) turn', () {
+      final h = ConversationHistory();
+      h.append(HistoryTurn(userPrompt: 'My name is Alexis', brainAnswer: ''));
+
+      h.amendLastTurnAnswer('Nice to meet you, Alexis.');
+
+      final last = h.durableRecord.last;
+      expect(last.userPrompt, 'My name is Alexis');
+      expect(last.brainAnswer, 'Nice to meet you, Alexis.');
+      // The amendment is visible in the working window too.
+      expect(h.rawWindow.last.brainAnswer, 'Nice to meet you, Alexis.');
+    });
+
+    test('is a no-op on an empty history', () {
+      final h = ConversationHistory();
+      h.amendLastTurnAnswer('nothing to amend');
+      expect(h.durableRecord, isEmpty);
+      expect(h.rawWindow, isEmpty);
+    });
+
+    test('is idempotent — never overwrites an already-answered turn', () {
+      final h = ConversationHistory();
+      h.append(HistoryTurn(userPrompt: 'q', brainAnswer: 'first answer'));
+
+      h.amendLastTurnAnswer('second answer');
+
+      expect(h.durableRecord.last.brainAnswer, 'first answer');
+    });
+
+    test('amends the turn even after it has spilled into pending', () {
+      final h = ConversationHistory(
+        sizing: const HistorySizing(rawCount: 1, compactionThreshold: 10),
+      );
+      h.append(HistoryTurn(userPrompt: 'q0', brainAnswer: ''));
+      // A second append evicts the first (still answer-less) turn into pending;
+      // amend must still find and replace it there, not only in the window.
+      h.amendLastTurnAnswer('answer for q0');
+      expect(h.rawWindow.single.brainAnswer, 'answer for q0');
+
+      h.append(HistoryTurn(userPrompt: 'q1', brainAnswer: ''));
+      expect(h.pending.single.userPrompt, 'q0');
+      expect(h.pending.single.brainAnswer, 'answer for q0');
+      // Amending now targets the new last turn (q1), leaving q0 untouched.
+      h.amendLastTurnAnswer('answer for q1');
+      expect(h.rawWindow.single.brainAnswer, 'answer for q1');
+      expect(h.pending.single.brainAnswer, 'answer for q0');
+    });
+
+    test('preserves the tool round when back-filling the answer', () {
+      final h = ConversationHistory();
+      h.append(HistoryTurn(
+        userPrompt: 'weather?',
+        brainAnswer: '',
+        toolRound: 'get_weather() -> sunny',
+      ));
+
+      h.amendLastTurnAnswer('It is sunny.');
+
+      final last = h.durableRecord.last;
+      expect(last.brainAnswer, 'It is sunny.');
+      expect(last.toolRound, 'get_weather() -> sunny');
+    });
+  });
+
   group('G.21-7 restore — the restart rehydration seam (step #22)', () {
     test('restore round-trips the four working views', () {
       const sizing = HistorySizing(rawCount: 2, compactionThreshold: 3);

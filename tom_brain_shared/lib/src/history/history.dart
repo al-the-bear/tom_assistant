@@ -232,6 +232,52 @@ final class ConversationHistory {
     }
   }
 
+  /// Back-fills the brain's [answer] into the most-recently-appended turn.
+  ///
+  /// A turn is appended the moment a prompt is admitted, before the answer
+  /// exists, so its `brainAnswer` is initially empty (access spec § 7.2 — the
+  /// "doesn't remember its own reply" defect this guards against: a turn left
+  /// answer-less would render into the *next* prompt's history as a question
+  /// with a blank reply). Once the run yields its answer the dispatcher calls
+  /// this to replace that turn with an immutable copy carrying [answer], in
+  /// every working view that still holds it — the durable record, the raw
+  /// window, or [pending] if it has since spilled there.
+  ///
+  /// No-op when the history is empty or the last turn already carries a
+  /// (non-empty) answer, so a re-delivered run never double-writes
+  /// (idempotent). [HistoryTurn] is immutable, so this swaps the reference
+  /// rather than mutating in place.
+  void amendLastTurnAnswer(String answer) {
+    if (_record.isEmpty) return;
+    final last = _record.last;
+    if (last.brainAnswer.isNotEmpty) return;
+    final amended = HistoryTurn(
+      userPrompt: last.userPrompt,
+      brainAnswer: answer,
+      toolRound: last.toolRound,
+    );
+    _record[_record.length - 1] = amended;
+    _replaceLastIdentical(_rawWindow, last, amended);
+    _replaceLastIdentical(_pending, last, amended);
+  }
+
+  /// Replaces the last reference-identical occurrence of [target] in [list]
+  /// with [replacement]. The appended turn lives in exactly one of the working
+  /// views (raw window, or pending once evicted); scanning from the end finds
+  /// it without disturbing an earlier equal-valued turn.
+  static void _replaceLastIdentical(
+    List<HistoryTurn> list,
+    HistoryTurn target,
+    HistoryTurn replacement,
+  ) {
+    for (var i = list.length - 1; i >= 0; i--) {
+      if (identical(list[i], target)) {
+        list[i] = replacement;
+        return;
+      }
+    }
+  }
+
   /// Replaces [compactedSummary] with [summary] and clears [pending] — the
   /// success path of compaction.
   ///

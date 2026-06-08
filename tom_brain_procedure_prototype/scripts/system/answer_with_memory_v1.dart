@@ -13,6 +13,7 @@
 /// # MemoryWriteGuard (§ 5.4.1), never by a fatal count cap.
 /// inputs:
 ///   - { name: text, type: String, required: true }
+///   - { name: priorTurns, type: List, required: false }
 /// outputs:
 ///   - { name: answer, type: String }
 /// requires: [ runProcedure, embed, classify, llm, persist, edge, stack.push, note ]
@@ -244,7 +245,15 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // forwarded straight through (it already carries `text`).
   final retrieval = await runProcedure('retrieve_for_prompt_v1', inputs);
   final recall = retrieval.output('recall');
-  final prompt = _assemblePrompt(recall, text);
+
+  // Step 2 (local-history slice) — the dispatcher route threads the answering
+  // session's earlier turns in under `priorTurns` (access spec § 7.2 / § 21.5),
+  // each a `{user, assistant}` map. Absent on a cold first turn, so default to
+  // empty — the prompt is then exactly what it was before (PE-9). This is the
+  // minimal local-history assembly the prototype owns until `call_llm_v1`
+  // (§ 21.5) takes over the full assembler.
+  final priorTurns = inputs.has('priorTurns') ? inputs.get('priorTurns') : null;
+  final prompt = _assemblePrompt(recall, text, priorTurns);
   final completion = await sub.llm(prompt, role: 'assistant_to_user');
   final answer = completion['text'];
 
@@ -389,11 +398,16 @@ List<String> _citedNodeIds(Map recall) {
   return ids;
 }
 
-/// Builds the role-template `prompt` input from the recalled memory and the
-/// inbound prompt: each recalled node's `text` value becomes a context line,
-/// followed by the user's prompt. When recall returned nothing, the context
-/// block is omitted and only the user prompt is sent.
-String _assemblePrompt(Map recall, Object? text) {
+/// Builds the role-template `prompt` input from the prior conversation turns,
+/// the recalled memory, and the inbound prompt. The earlier turns of this
+/// conversation (`priorTurns`, access spec § 7.2 / § 21.5) are rendered first
+/// as `User:` / `Assistant:` lines so the substrate sees what was already said;
+/// then each recalled node's `text` value becomes a context line; then the
+/// user's live prompt. An empty / absent history and an empty recall each drop
+/// their block, so a cold first turn sends only the user prompt (PE-9).
+String _assemblePrompt(Map recall, Object? text, Object? priorTurns) {
+  final history = _renderPriorTurns(priorTurns);
+
   var context = '';
   final nodes = recall['nodes'];
   if (nodes is List) {
@@ -407,5 +421,26 @@ String _assemblePrompt(Map recall, Object? text) {
     }
   }
   final preamble = context.isEmpty ? '' : 'Relevant recalled memory:\n$context\n';
-  return '${preamble}User prompt:\n$text';
+  return '$history${preamble}User prompt:\n$text';
+}
+
+/// Renders the prior conversation turns as `User:` / `Assistant:` lines (the
+/// § 22.4 history-compactor convention), or `''` when there are none. Each
+/// turn is a `{user, assistant}` map; a turn with no answer yet (the live turn,
+/// should it ever be included) renders user-only.
+String _renderPriorTurns(Object? priorTurns) {
+  if (priorTurns is! List || priorTurns.isEmpty) return '';
+  var rendered = '';
+  for (final turn in priorTurns) {
+    if (turn is! Map) continue;
+    final user = turn['user'];
+    final assistant = turn['assistant'];
+    if (user != null && '$user'.isNotEmpty) {
+      rendered += 'User: $user\n';
+    }
+    if (assistant != null && '$assistant'.isNotEmpty) {
+      rendered += 'Assistant: $assistant\n';
+    }
+  }
+  return rendered.isEmpty ? '' : 'Conversation so far:\n$rendered\n';
 }

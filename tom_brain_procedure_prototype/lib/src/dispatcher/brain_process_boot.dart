@@ -57,7 +57,7 @@ import 'dart:io';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, TomBrainSubstrateClient;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show Access, OutboundChunk, PreemptionState;
+    show Access, ConversationHistory, HistoryTurn, OutboundChunk, PreemptionState;
 
 import '../api/procedure_engine.dart';
 import '../api/procedure_invocation.dart';
@@ -108,6 +108,17 @@ typedef AccessLayerInstaller =
 /// it back. Named once here so the route and the procedure header share one
 /// spelling.
 const String inboundTextArgumentKey = 'text';
+
+/// The conversation-history argument key the routed procedure
+/// (`answer_with_memory_v1`, § 11) reads as `priorTurns` (access spec § 7.2 /
+/// § 21.5).
+///
+/// Boot's route binds the answering session's earlier turns under this key —
+/// each a `{user, assistant}` map drawn from `access.history` — so the
+/// procedure can render the conversation so far into the answer prompt. Absent
+/// on a cold first turn (no history, or only the just-admitted turn), so the
+/// procedure treats a missing key as "no history" (PE-9).
+const String priorTurnsArgumentKey = 'priorTurns';
 
 /// The default best-effort bound [BootedBrain.shutdown] gives the coordinator
 /// drain (D.45).
@@ -713,6 +724,12 @@ abstract final class BrainProcessBoot {
       // before the run so it brackets the whole turn.
       final startedAt = DateTime.now().toUtc();
 
+      // The answering session's earlier turns, threaded in so the procedure can
+      // render the conversation so far into the answer prompt (access § 7.2 /
+      // § 21.5). Drawn off `access.history` here, before the run; back-filled
+      // with this turn's answer afterwards (below) so the next turn sees it.
+      final priorTurns = _priorTurnsFrom(access.history);
+
       ProcedureOutcome? outcome;
       try {
         final ProcedureOutcome result = await coordinator.submitForeground(
@@ -722,6 +739,8 @@ abstract final class BrainProcessBoot {
                   procedureId: procedureId,
                   arguments: <String, Object?>{
                     inboundTextArgumentKey: access.envelope.text,
+                    if (priorTurns.isNotEmpty)
+                      priorTurnsArgumentKey: priorTurns,
                   },
                   // Carry the access-edge-minted turn id (logging-spec §3) onto
                   // the invocation so the engine threads it — plus a per-turn
@@ -742,7 +761,14 @@ abstract final class BrainProcessBoot {
         // The run completed: terminate the stream. The deltas already carried
         // the answer text, so the terminator is an empty final marker. A run
         // that produced no usable result (truncated / crashed) sends nothing.
-        if (result.result?.output<String>('answer') != null) {
+        final answer = result.result?.output<String>('answer');
+        if (answer != null) {
+          // Back-fill the answer into the turn this prompt created (access
+          // § 7.2 #4). The SessionManager appended an answer-less turn when it
+          // admitted the prompt; recording the answer now means the *next*
+          // turn's `priorTurns` includes this exchange — closing the loop that
+          // made the brain forget what it had just said.
+          access.history?.amendLastTurnAnswer(answer);
           await access
               .deliver(OutboundChunk(textDelta: '', isFinal: true))
               .drain<void>();
@@ -755,6 +781,29 @@ abstract final class BrainProcessBoot {
         _emitTurnSummary(turnSummarySink, access, startedAt, outcome);
       }
     };
+  }
+
+  /// The answering session's earlier turns as ordered `{user, assistant}`
+  /// maps, for threading into the routed procedure (access § 7.2 / § 21.5).
+  ///
+  /// Draws on the bounded raw window (the newest verbatim turns) and **drops
+  /// the last entry** — the turn the `SessionManager` just appended for *this*
+  /// prompt, which has no answer yet and is the live prompt the procedure
+  /// receives separately as `text`. A `null` history (a conformance `Access`)
+  /// or a window holding only the current turn yields an empty list, so a cold
+  /// first turn carries no history.
+  static List<Map<String, Object?>> _priorTurnsFrom(ConversationHistory? history) {
+    if (history == null) return const <Map<String, Object?>>[];
+    final window = history.rawWindow;
+    if (window.length <= 1) return const <Map<String, Object?>>[];
+    final earlier = window.sublist(0, window.length - 1);
+    return <Map<String, Object?>>[
+      for (final HistoryTurn turn in earlier)
+        <String, Object?>{
+          'user': turn.userPrompt,
+          'assistant': turn.brainAnswer,
+        },
+    ];
   }
 
   /// Fires the per-turn [TurnSummary] for a completed turn (§5.4 / §5.5 / §10
