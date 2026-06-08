@@ -22,6 +22,7 @@
 //     + a message — so the api/ surface can compile without yet
 //     pulling in the router-layer taxonomy.
 
+import 'captured_wire.dart';
 import 'llm_call.dart';
 
 /// Events emitted on a `Stream<LlmStreamEvent>` from
@@ -117,7 +118,23 @@ final class LlmStreamCompleted extends LlmStreamEvent {
   final String callId;
   final LlmCallReport report;
 
-  const LlmStreamCompleted({required this.callId, required this.report});
+  /// The wire body the provider actually saw, captured by the facade
+  /// as it drains the provider stream (`tom_brain_logging.md` §5.2 /
+  /// §10 step #4).
+  ///
+  /// `null` when the event originates below the facade (a raw provider
+  /// stream has no role-assembled wire to attach); the facade enriches
+  /// its terminal `LlmStreamCompleted` with the [CapturedWirePrompt]
+  /// built from the very `WirePrompt` it handed the provider, so a
+  /// downstream `LlmTrailWriter` can serialise the §5.2 `wire` block
+  /// from one source of truth without re-rendering the anchor scaffold.
+  final CapturedWirePrompt? wire;
+
+  const LlmStreamCompleted({
+    required this.callId,
+    required this.report,
+    this.wire,
+  });
 }
 
 /// Terminal failure. Carries both the typed failure (so the router

@@ -80,6 +80,7 @@ import '../primitives_native/trail_note.dart';
 import '../primitives_native/yield_primitive.dart';
 import '../procedure_store/procedure_loader.dart';
 import '../procedure_store/procedure_resolver.dart';
+import '../recorder/llm_trail_record.dart';
 import '../recorder/run_records.dart';
 import '../recorder/run_recorder.dart';
 import '../validator/sandbox_validator.dart';
@@ -156,13 +157,15 @@ final class ProcedureEngine {
     int hardDepthCap = RunProcedurePrimitive.defaultHardDepthCap,
     DateTime Function()? now,
     String Function()? newRunId,
+    LlmTrailSink? llmTrailSink,
   })  : preemptionState = preemptionState ?? PreemptionState(),
         _stepDeadlineLimit = stepDeadline,
         _deadlineTimerFactory = deadlineTimerFactory,
         _cancellationTimerFactory = cancellationTimerFactory,
         _hardDepthCap = hardDepthCap,
         _now = now ?? defaultNowUtc,
-        _newRunId = newRunId ?? _defaultRunIdGenerator();
+        _newRunId = newRunId ?? _defaultRunIdGenerator(),
+        _llmTrailSink = llmTrailSink;
 
   /// Resolves a procedure id (and optional version) to a loaded source.
   final ProcedureResolver resolver;
@@ -211,6 +214,13 @@ final class ProcedureEngine {
   final int _hardDepthCap;
   final DateTime Function() _now;
   final String Function() _newRunId;
+
+  /// The raw-LLM-trail sink (`tom_brain_logging.md` §5.2 / §10 step #4).
+  /// `null` leaves the engine emitting no raw LLM trail; when bound, each
+  /// run's substrate bridge fires one [LlmCallObservation] per completed `llm`
+  /// call, which the engine wraps with run-correlation into an [LlmTrailRecord]
+  /// and hands here (the host binds an `LlmTrailWriter`).
+  final LlmTrailSink? _llmTrailSink;
 
   /// Runs the procedure named by [invocation] and returns its handle.
   ///
@@ -368,12 +378,32 @@ final class ProcedureEngine {
     // through `onToken`, and the `emit` primitive forwards text the body
     // authors itself — the same closure on both so they share one ordered
     // wire. `null` on a nested or internal run leaves both buffer-only.
+    // Raw-LLM-trail seam (§5.2 / §10 step #4): when a sink is bound, wrap each
+    // bridge observation with this run's correlation (`runId`, and the live
+    // `trailId` once the recorder's trail is open) and hand it to the writer.
+    // `trailId` is read lazily inside the closure because it fires during
+    // `llm()`, after `recorder.start()` opened the trail. Best-effort: a
+    // throwing sink is swallowed so it cannot break the completion.
+    final llmTrailSink = _llmTrailSink;
     final runSubstrateBridge = SubstrateBridge(
       substrateBridge.client,
       onCall: recordCall,
       onToken: tokenSink,
       budget: runBudget,
       turn: turn,
+      onLlmTrail: llmTrailSink == null
+          ? null
+          : (observation) {
+              try {
+                llmTrailSink(LlmTrailRecord(
+                  observation: observation,
+                  runId: runId,
+                  trailId: recorder.isOpen ? recorder.trailId.value : null,
+                ));
+              } catch (_) {
+                // Trail writing is non-essential; never let it break the run.
+              }
+            },
     );
 
     final runPrimitive = RunProcedurePrimitive(

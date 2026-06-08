@@ -52,6 +52,10 @@ export 'src/trail_banner.dart' show TrailBanner;
 export 'src/trail_config.dart' show TrailConfig, TrailConfigException, TrailMode;
 export 'src/trail_config_loader.dart' show TrailConfigLoader;
 
+// ── Raw LLM-call trail writer (logging-spec §5.2 / §5.1; §10 step #4) ──
+export 'src/llm_trail_writer.dart'
+    show LlmTrailHeadlineSink, LlmTrailWriter;
+
 // ── Retrieval eval harness (Plan-2 ext step #33; spec § 23.8) ─────────
 export 'src/eval/procedure_engine_eval_environment.dart'
     show

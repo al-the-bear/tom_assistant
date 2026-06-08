@@ -117,6 +117,7 @@ import 'dart:async';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
+import '../api/captured_wire.dart';
 import '../api/embedding_result.dart';
 import '../api/llm_call.dart';
 import '../api/llm_stream_event.dart';
@@ -438,6 +439,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
       budget: call.budget,
       cancellationToken: call.cancellationToken,
     )) {
+      var toYield = event;
       if (event is LlmStreamCompleted) {
         _enforceAnchorOrThrow(
           report: event.report,
@@ -454,6 +456,22 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
             report: event.report,
           ),
         );
+        // Attach the wire body the provider actually saw, so a
+        // downstream `LlmTrailWriter` can serialise the §5.2 raw trail
+        // from one source of truth (`tom_brain_logging.md` §10 step #4).
+        // `prompt` is the very `WirePrompt` handed to the provider, so
+        // its anchorHash / templateSha match `event.report` by
+        // construction (anchor invariant).
+        toYield = LlmStreamCompleted(
+          callId: event.callId,
+          report: event.report,
+          wire: CapturedWirePrompt(
+            body: prompt.body,
+            anchorHash: prompt.anchorHash,
+            roleId: prompt.roleId,
+            templateSha: prompt.templateSha,
+          ),
+        );
       } else if (event is LlmStreamFailed) {
         _safeEmit(
           LlmCallFailed(
@@ -466,7 +484,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
           ),
         );
       }
-      yield event;
+      yield toYield;
     }
   }
 

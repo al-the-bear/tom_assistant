@@ -49,12 +49,15 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
         BrainProcessBoot,
         BrainProcessConfig,
         ClassifyFallback,
+        LlmTrailSink,
         MemoryProvisioningConfig;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, TomBrainSubstrateClient;
 
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
+import 'llm_trail_writer.dart' show LlmTrailWriter;
+import 'trail_config.dart' show TrailConfig;
 
 /// Boots the real cognition (the injected [substrate] + the real on-disk
 /// isolate-hosted `SqliteTomBrainMemory`) and projects it into a
@@ -87,6 +90,12 @@ import 'brain_substrate_builder.dart' show buildSubstrate;
 /// (§5.1 / §10 step #3). `null` (the default) leaves the isolate's logging at
 /// its console default — the path every test that does not exercise the file
 /// sink takes.
+///
+/// [llmTrailSink] is the raw-LLM-call trail sink (`tom_brain_logging.md` §5.2 /
+/// §10 step #4) the engine forwards each completed `llm` call's observation to.
+/// `null` (the default) boots the engine with no raw LLM trail;
+/// [standUpBrainProcessFromConfig] builds an `LlmTrailWriter.write` from the
+/// `trail:` config and threads it here in full-trail mode.
 Future<ProvisionedBrain> provisionBrain({
   required TomBrainSubstrateClient substrate,
   required MemoryConfig memoryConfig,
@@ -95,6 +104,7 @@ Future<ProvisionedBrain> provisionBrain({
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
   String? isolateLogRootPath,
+  LlmTrailSink? llmTrailSink,
 }) async {
   final Directory scriptsDir =
       systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
@@ -113,6 +123,7 @@ Future<ProvisionedBrain> provisionBrain({
       systemScriptsDir: scriptsDir,
       foregroundQueueDepth: foregroundQueueDepth,
       classifyFallback: classifyFallback,
+      llmTrailSink: llmTrailSink,
     ),
   );
 
@@ -206,6 +217,7 @@ Future<BrainProcess> standUpBrainProcess({
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
   String? isolateLogRootPath,
+  LlmTrailSink? llmTrailSink,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -215,6 +227,7 @@ Future<BrainProcess> standUpBrainProcess({
     classifyFallback: classifyFallback,
     foregroundQueueDepth: foregroundQueueDepth,
     isolateLogRootPath: isolateLogRootPath,
+    llmTrailSink: llmTrailSink,
   );
 
   final BrainAccessProcess process;
@@ -267,7 +280,26 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     classifyFallback: classifyFallback,
     foregroundQueueDepth: foregroundQueueDepth,
     isolateLogRootPath: isolateLogRootPath,
+    llmTrailSink: _llmTrailSinkFor(runConfig.trail),
   );
+}
+
+/// Builds the raw-LLM-call trail sink from the `trail:` config
+/// (`tom_brain_logging.md` §5.2 / §10 step #4), or `null` in unconfigured mode.
+///
+/// In full-trail mode (a non-null [trail]) the raw `llm/<role>/…` surface is
+/// active (§4.1), so an [LlmTrailWriter] is rooted at `trail.root` and its
+/// `write` is the sink the engine forwards each completed `llm` call to. When
+/// the document carries no `trail:` block ([trail] is `null`), the `llm/`
+/// surface is disabled (§4.1 unconfigured mode), so no sink is bound.
+LlmTrailSink? _llmTrailSinkFor(TrailConfig? trail) {
+  if (trail == null) return null;
+  final writer = LlmTrailWriter(
+    root: Directory(trail.root),
+    captureWireBody: trail.captureWireBody,
+    captureInternalRoles: trail.captureInternalRoles,
+  );
+  return writer.write;
 }
 
 /// Resolves the procedure prototype's shipped `scripts/system` directory.

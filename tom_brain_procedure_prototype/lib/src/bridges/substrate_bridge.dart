@@ -79,6 +79,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
 import '../budget/budget_ledger.dart' show BudgetLedger;
 import '../config/provider_config.dart' show ToolProtocol;
 import 'bridge_call_recorder.dart';
+import 'llm_call_observation.dart';
 
 /// Re-exposes the substrate primitive set to d4rt procedure scripts.
 ///
@@ -158,6 +159,18 @@ class SubstrateBridge {
   /// surface — a procedure script never sees it.
   final TurnContext? _turn;
 
+  /// Per-run raw-LLM-trail observer (`tom_brain_logging.md` §5.2 / §10 step
+  /// #4). `null` on the shared template bridge and on every run that does not
+  /// bind a trail writer; the engine binds a per-run observer that wraps each
+  /// [LlmCallObservation] with run-correlation and hands it to the run's
+  /// `LlmTrailSink`. Fired once per completed `llm` call, *after* the answer is
+  /// assembled, with the captured wire body the provider saw — the only seam
+  /// where wire + answer + report coexist. Kept distinct from [_onCall] so the
+  /// wire scaffold never lands in the d4rt-facing result map (PE-1). Best-effort
+  /// and non-blocking (logging-spec §9): a throwing observer is swallowed so it
+  /// cannot break the completion. Not part of the d4rt-facing surface.
+  final LlmTrailObserver? _onLlmTrail;
+
   /// Wraps [client]. The host constructs this natively and registers the
   /// instance with the d4rt runtime. [onCall], when supplied, records each
   /// completed primitive call against the issuing run (E.3.2). [onToken], when
@@ -169,7 +182,10 @@ class SubstrateBridge {
   /// provider's wire tool protocol (defaulting to [ToolProtocol.openai]) —
   /// both Extension F step 10. [turn], when supplied, stamps the turn's
   /// `turnId` and an incrementing `callSeq` onto every [llm] call (logging-spec
-  /// §3 / §9).
+  /// §3 / §9). [onLlmTrail], when supplied, receives one [LlmCallObservation]
+  /// per completed [llm] call (wire body + answer + report) so a downstream
+  /// raw-LLM-trail writer can serialise the §5.2 `llm/<role>/…raw.json` file
+  /// (logging-spec §10 step #4).
   SubstrateBridge(
     this.client, {
     BridgeCallRecorder? onCall,
@@ -178,12 +194,14 @@ class SubstrateBridge {
     SubstrateNoteSink? onNote,
     ToolProtocolResolver? toolProtocolOf,
     TurnContext? turn,
+    LlmTrailObserver? onLlmTrail,
   })  : _onCall = onCall,
         _onToken = onToken,
         _budget = budget,
         _onNote = onNote,
         _toolProtocolOf = toolProtocolOf,
-        _turn = turn;
+        _turn = turn,
+        _onLlmTrail = onLlmTrail;
 
   /// Delegates to [body], gating it through the budget ledger and recording
   /// it on the run trail when those hooks are wired.
@@ -298,14 +316,23 @@ class SubstrateBridge {
           // consume it) and spans the turn's nested runs because the one
           // [TurnContext] is shared down. Unbound (internal / dream) ⇒ both null.
           final turn = _turn;
+          // Hoisted so the same ordinal stamps both the outbound call and the
+          // raw-trail observation; calling `nextCallSeq()` twice would burn two
+          // ordinals for one completion (§5.2 `callSeq` must match §3's stamp).
+          final callSeq = turn?.nextCallSeq();
           final call = LlmCall(
             roleId: role,
             inputs: <String, Object?>{'prompt': prompt},
             options: LlmOptions(toolCatalogue: catalogue),
             budget: _buildBudget(budget),
             turnId: turn?.turnId,
-            callSeq: turn?.nextCallSeq(),
+            callSeq: callSeq,
           );
+
+          // Raw-trail provenance (§5.2): when the engine bound a trail observer,
+          // record when this completion began so the writer can emit `startedAt`.
+          final onLlmTrail = _onLlmTrail;
+          final startedAt = DateTime.now().toUtc();
 
           final buffer = StringBuffer();
           final nativeToolCalls = <Object?>[];
@@ -339,18 +366,44 @@ class SubstrateBridge {
                 });
               case LlmStreamStarted(providerId: final id):
                 providerId = id;
-              case LlmStreamCompleted(:final report):
+              case LlmStreamCompleted(
+                  :final report,
+                  callId: final completedCallId,
+                  :final wire,
+                ):
                 final protocol = _toolProtocolOf
                         ?.call(providerId ?? report.providerId) ??
                     ToolProtocol.openai;
+                final answer = buffer.toString();
                 final toolCalls = await _resolveToolCalls(
                   protocol,
                   nativeToolCalls,
-                  buffer.toString(),
+                  answer,
                   catalogue,
                 );
+                // Raw-trail observation (§5.2 / §10 step #4): fire the wire +
+                // answer + report to the run's writer. Separate from the
+                // result map (PE-1) and best-effort (logging-spec §9) — a
+                // throwing observer must not break the completion.
+                if (onLlmTrail != null) {
+                  try {
+                    onLlmTrail(LlmCallObservation(
+                      callType: role,
+                      turnId: turn?.turnId.value,
+                      callSeq: callSeq,
+                      callId: completedCallId,
+                      startedAt: startedAt,
+                      wire: wire,
+                      answer: answer,
+                      report: report,
+                    ));
+                  } catch (_) {
+                    // Trail writing is non-essential; swallow to protect the
+                    // completion path.
+                  }
+                }
                 return <String, Object?>{
-                  'text': buffer.toString(),
+                  'text': answer,
                   'toolCalls': toolCalls,
                   'report': _reportToMap(report),
                 };

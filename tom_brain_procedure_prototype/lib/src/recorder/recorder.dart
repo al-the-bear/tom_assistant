@@ -34,6 +34,9 @@
 //     `inflight` then `recent_runs`).
 
 export 'effort_accountant.dart' show EffortAccountant;
+// §10 step #4 — the engine-layer raw-LLM-trail record (bridge observation +
+// run-correlation) and its sink type.
+export 'llm_trail_record.dart' show LlmTrailRecord, LlmTrailSink;
 export 'run_records.dart'
     show
         ProcedureRunRecord,

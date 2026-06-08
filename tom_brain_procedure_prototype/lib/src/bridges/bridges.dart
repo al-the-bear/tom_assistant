@@ -39,6 +39,8 @@
 
 export 'brain_bridges_registrar.dart';
 export 'bridge_call_recorder.dart' show BridgeCallRecorder;
+// §10 step #4 — the bridge-layer raw-LLM-trail observation and its sink type.
+export 'llm_call_observation.dart' show LlmCallObservation, LlmTrailObserver;
 export 'memory_bridge.dart';
 export 'substrate_bridge.dart';
 // Extension F step 6 — the `tool.list` / `tool.invoke` bridged primitive

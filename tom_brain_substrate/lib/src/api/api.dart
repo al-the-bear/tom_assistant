@@ -57,6 +57,7 @@
 //             `lib/src/facade/`.
 
 export 'cancellation.dart';
+export 'captured_wire.dart';
 export 'embedding_result.dart';
 export 'llm_call.dart';
 export 'llm_stream_event.dart';

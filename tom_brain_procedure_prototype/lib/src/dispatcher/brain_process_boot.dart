@@ -68,6 +68,7 @@ import '../extensions/extensions.dart'
     show BrainEngineExtensions, BrainExtensionConfig;
 import '../mcp/mcp_client.dart' show McpConnector;
 import '../procedure_store/disk_procedure_store.dart';
+import '../recorder/llm_trail_record.dart' show LlmTrailSink;
 import '../procedure_store/procedure_resolver.dart';
 import 'dispatcher_entry.dart';
 import 'inbound_classifier.dart';
@@ -254,6 +255,14 @@ final class BrainProcessConfig {
   /// connector double.
   final McpConnector? mcpConnector;
 
+  /// The raw-LLM-trail sink (`tom_brain_logging.md` §5.2 / §10 step #4), or
+  /// `null` for the prototype default (no raw LLM trail). When non-null, boot
+  /// threads it onto the [ProcedureEngine] so every run's substrate bridge fires
+  /// one record per completed `llm` call into it. Production binds an
+  /// `LlmTrailWriter.write` built from the `trail:` config; tests pass a capture
+  /// closure.
+  final LlmTrailSink? llmTrailSink;
+
   /// Builds a boot config.
   ///
   /// [extensions] + [mcpConnector] must be supplied together: an [extensions]
@@ -269,6 +278,7 @@ final class BrainProcessConfig {
     this.classifyFallback,
     this.extensions,
     this.mcpConnector,
+    this.llmTrailSink,
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
 }
 
@@ -492,6 +502,7 @@ abstract final class BrainProcessBoot {
       resolver: resolver,
       preemption: preemption,
       extensions: extensions,
+      llmTrailSink: config.llmTrailSink,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
     final dispatcher = _wireDispatcher(
@@ -538,14 +549,16 @@ abstract final class BrainProcessBoot {
   }
 
   /// Wires the [ProcedureEngine] over both bridges, the shared [preemption]
-  /// state (the engine yields against it via `yield_if_foreground_waiting`), and
-  /// the optional Extension-F [extensions] bundle.
+  /// state (the engine yields against it via `yield_if_foreground_waiting`), the
+  /// optional Extension-F [extensions] bundle, and the optional [llmTrailSink]
+  /// the engine forwards each run's raw-LLM-call observations to (§10 step #4).
   static ProcedureEngine _wireEngine({
     required ProvisionedMemory memory,
     required TomBrainSubstrateClient substrate,
     required ProcedureResolver resolver,
     required PreemptionState preemption,
     required BrainEngineExtensions? extensions,
+    required LlmTrailSink? llmTrailSink,
   }) =>
       ProcedureEngine(
         resolver: resolver,
@@ -554,6 +567,7 @@ abstract final class BrainProcessBoot {
         substrateBridge: SubstrateBridge(substrate),
         preemptionState: preemption,
         extensions: extensions,
+        llmTrailSink: llmTrailSink,
       );
 
   /// Wires the [RunCoordinator] over the shared [preemption] state (it drives
