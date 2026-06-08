@@ -91,6 +91,16 @@ final class MemoryProvisioningConfig {
   /// `TomWorker`-level isolate naming.
   final String isolateNamePrefix;
 
+  /// Isolate transport only: the trail log root forwarded to the host so the
+  /// spawned isolate installs a `FanoutLogOutput` on its own `tomLog`
+  /// (`tom_brain_logging.md` §5.1 / §10 step #3). The memory isolate runs a
+  /// *separate* `tomLog` instance, so the host's file sink does not reach it;
+  /// threading the root here is what lets the isolate's `tom_brain.memory.*`
+  /// lines land in the same `brain.log` + `components/memory.log`. `null` (the
+  /// default) leaves the isolate at its console default — the path tests that
+  /// do not exercise the file sink take.
+  final String? isolateLogRootPath;
+
   /// In-process transport only: the client the dispatcher uses
   /// directly. Non-null iff [transport] is
   /// [MemoryTransport.inProcess]. Injected by the caller (tests
@@ -103,6 +113,7 @@ final class MemoryProvisioningConfig {
     required MemoryFactory factory,
     required this.memoryConfig,
     this.isolateNamePrefix = 'TomBrainMemory',
+    this.isolateLogRootPath,
   })  : transport = MemoryTransport.isolate,
         isolateFactory = factory,
         inProcessClient = null;
@@ -115,7 +126,8 @@ final class MemoryProvisioningConfig {
   })  : transport = MemoryTransport.inProcess,
         inProcessClient = client,
         isolateFactory = null,
-        isolateNamePrefix = 'TomBrainMemory';
+        isolateNamePrefix = 'TomBrainMemory',
+        isolateLogRootPath = null;
 }
 
 /// A provisioned, opened memory client plus its teardown.
@@ -192,6 +204,7 @@ final class MemoryProvisioner {
         final host = TomBrainMemoryIsolateHost(
           factory: config.isolateFactory!,
           namePrefix: config.isolateNamePrefix,
+          logRootPath: config.isolateLogRootPath,
         );
         await host.spawn();
         // Open inside the spawned isolate. If the factory crashes (or the open

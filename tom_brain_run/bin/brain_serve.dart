@@ -19,6 +19,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:tom_basics/tom_basics.dart' show TomPlatformUtils, tomLog;
+import 'package:tom_brain_memory/tom_brain_memory.dart' show FanoutLogOutput;
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_core_server/tom_core_server.dart' show standalonePlatformUtils;
 
@@ -47,6 +48,16 @@ Future<void> main(List<String> args) async {
     envVars: Platform.environment,
   );
 
+  // Install the component file sink before anything logs (logging-spec §5.1 /
+  // §10 step #3) so the trail banner itself lands in `brain.log`. The root is
+  // `trail.root` in full mode and the current working directory when no
+  // `trail:` block is configured (§4.1). `FanoutLogOutput` tees to the console,
+  // so the existing stdout/stderr behaviour is preserved.
+  final Directory logRoot = config.trail == null
+      ? Directory.current
+      : Directory(config.trail!.root);
+  tomLog.logOutput = FanoutLogOutput(logRoot: logRoot);
+
   // Announce the active trail mode before anything writes a trail surface
   // (logging-spec §4.1). `tomLog.status` renders the `STATUS ` level the §4.1
   // example shows; the banner body carries the `[tom_brain.trail]` category.
@@ -54,7 +65,12 @@ Future<void> main(List<String> args) async {
     TrailBanner.forStartup(config.trail, cwd: Directory.current.path),
   );
 
-  final BrainProcess process = await standUpBrainProcessFromConfig(config);
+  // The memory isolate runs its own `tomLog`; thread the same root so its
+  // component lines (`tom_brain.memory.*`) reach the same files (§5.1, §2.1).
+  final BrainProcess process = await standUpBrainProcessFromConfig(
+    config,
+    isolateLogRootPath: logRoot.path,
+  );
 
   stdout.writeln(
     'tom_brain process serving — OpenAI edge on '

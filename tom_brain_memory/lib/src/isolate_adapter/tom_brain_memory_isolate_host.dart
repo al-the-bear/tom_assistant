@@ -65,6 +65,12 @@ class TomBrainMemoryIsolateHost {
   final String namePrefix;
   final List<String> args;
 
+  /// The trail log root forwarded into [MemoryWorkerContext] so the spawned
+  /// isolate installs a `FanoutLogOutput` on its own `tomLog`
+  /// (`tom_brain_logging.md` §5.1 / §10 step #3). `null` (the default) leaves
+  /// the isolate's logging at its console default.
+  final String? logRootPath;
+
   /// A.81 — host-side allocators. Public-getter accessible so the
   /// client can mint tokens/ids without re-implementing the
   /// counter.
@@ -95,6 +101,7 @@ class TomBrainMemoryIsolateHost {
     TomPlatform? platform,
     this.namePrefix = 'TomBrainMemory',
     this.args = const <String>[],
+    this.logRootPath,
   }) : platform = platform ?? _detectPlatform();
 
   /// `true` once the spawned isolate has signalled ready and the
@@ -147,6 +154,7 @@ class TomBrainMemoryIsolateHost {
         tomPlatform: platform,
         args: args,
         namePrefix: namePrefix,
+        logRootPath: logRootPath,
       );
       _worker = await TomWorker.spawn(TomWorker.startRemoteIsolate, ctx);
       // A.81: install the creator-side router so the isolate can push

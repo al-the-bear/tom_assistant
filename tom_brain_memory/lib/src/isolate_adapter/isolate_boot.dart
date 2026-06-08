@@ -31,10 +31,14 @@
 //   * Eager construction would force every test that just wants
 //     to ping the isolate to also wire a real memory factory.
 
-import 'package:tom_basics/tom_basics.dart' show TomEnvironment, TomPlatform;
+import 'dart:io';
+
+import 'package:tom_basics/tom_basics.dart'
+    show TomEnvironment, TomPlatform, tomLog;
 import 'package:tom_core_kernel/tom_core_kernel.dart'
     show TomWorker, TomWorkerContext;
 
+import '../observability/fanout_log_output.dart';
 import 'isolate_executor.dart';
 import 'memory_factory.dart';
 
@@ -54,16 +58,38 @@ final class MemoryWorkerContext extends TomWorkerContext {
   /// boundary.
   final MemoryFactory factory;
 
+  /// Trail-log root for this isolate's own `tomLog`
+  /// (`tom_brain_logging.md` §5.1 / §10 step #3).
+  ///
+  /// The memory isolate runs a *separate* `tomLog` instance from the
+  /// host, so the host's [FanoutLogOutput] file sink does not reach
+  /// it. When non-null, [initializeIsolate] installs a
+  /// [FanoutLogOutput] rooted here so the isolate's
+  /// `tom_brain.memory.*` lines land in the same `brain.log` +
+  /// `components/memory.log`. `null` leaves the isolate at its
+  /// console default — the path tests that do not exercise the file
+  /// sink take.
+  final String? logRootPath;
+
   MemoryWorkerContext({
     required this.factory,
     required TomEnvironment tomEnvironment,
     required TomPlatform tomPlatform,
     List<String> args = const <String>[],
     String namePrefix = 'TomBrainMemory',
+    this.logRootPath,
   }) : super(tomEnvironment, tomPlatform, args, namePrefix);
 
   @override
   Future<bool> initializeIsolate() async {
+    // Install the component file sink before the executor registers, so
+    // anything this isolate logs from boot onward reaches the same trail
+    // surface as the host (§5.1 / §10 step #3). `FanoutLogOutput` tees to a
+    // fresh console sink, so the existing isolate-stdout routing is preserved
+    // — installing it only *adds* files, it never removes the console path.
+    if (logRootPath != null) {
+      tomLog.logOutput = FanoutLogOutput(logRoot: Directory(logRootPath!));
+    }
     // Register the executor on the per-isolate static list. The
     // executor holds the factory; the factory is invoked lazily
     // when the first `OpenMemoryRequest` arrives. Construction

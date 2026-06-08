@@ -80,6 +80,13 @@ import 'brain_substrate_builder.dart' show buildSubstrate;
 /// caller's working directory. [classifyFallback] replaces the dispatcher's
 /// no-hint classifier fallback; [foregroundQueueDepth] caps the foreground
 /// admission queue.
+///
+/// [isolateLogRootPath] threads the trail log root (CWD when unconfigured,
+/// `trail.root` in full mode — `tom_brain_logging.md` §4.1) into the memory
+/// isolate so its own `tomLog` installs a `FanoutLogOutput` at the same root
+/// (§5.1 / §10 step #3). `null` (the default) leaves the isolate's logging at
+/// its console default — the path every test that does not exercise the file
+/// sink takes.
 Future<ProvisionedBrain> provisionBrain({
   required TomBrainSubstrateClient substrate,
   required MemoryConfig memoryConfig,
@@ -87,6 +94,7 @@ Future<ProvisionedBrain> provisionBrain({
   Directory? systemScriptsDir,
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
+  String? isolateLogRootPath,
 }) async {
   final Directory scriptsDir =
       systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
@@ -100,6 +108,7 @@ Future<ProvisionedBrain> provisionBrain({
       memoryProvisioning: MemoryProvisioningConfig.isolate(
         factory: createSqliteTomBrainMemory,
         memoryConfig: memoryConfig,
+        isolateLogRootPath: isolateLogRootPath,
       ),
       systemScriptsDir: scriptsDir,
       foregroundQueueDepth: foregroundQueueDepth,
@@ -196,6 +205,7 @@ Future<BrainProcess> standUpBrainProcess({
   AccessServeSeam serve = serveWithShelfIo,
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
+  String? isolateLogRootPath,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -204,6 +214,7 @@ Future<BrainProcess> standUpBrainProcess({
     systemScriptsDir: systemScriptsDir,
     classifyFallback: classifyFallback,
     foregroundQueueDepth: foregroundQueueDepth,
+    isolateLogRootPath: isolateLogRootPath,
   );
 
   final BrainAccessProcess process;
@@ -243,6 +254,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   AccessServeSeam serve = serveWithShelfIo,
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
+  String? isolateLogRootPath,
 }) {
   final TomBrainSubstrateClient substrate = buildSubstrate(runConfig.substrate);
   return standUpBrainProcess(
@@ -254,6 +266,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     serve: serve,
     classifyFallback: classifyFallback,
     foregroundQueueDepth: foregroundQueueDepth,
+    isolateLogRootPath: isolateLogRootPath,
   );
 }
 

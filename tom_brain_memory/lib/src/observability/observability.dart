@@ -38,6 +38,7 @@
 
 export 'classification_confidence_tracker.dart'
     show ClassificationConfidenceTracker;
+export 'fanout_log_output.dart' show FanoutLogOutput;
 export 'memory_event_bus.dart' show MemoryEventBus;
 export 'memory_log.dart' show MemoryLog, MemoryLogCategory;
 export 'memory_stats_collector.dart'
