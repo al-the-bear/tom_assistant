@@ -233,18 +233,7 @@ final class TelegramSessionRegistry {
   /// and reported via the returned notice. Every non-null id handed out is
   /// adopted into the `SessionManager`.
   TelegramActiveSession resolveActive(String userId) {
-    final _UserSessions user = _users.putIfAbsent(userId, () {
-      // First contact: global + a freshly minted default, active = default.
-      final created = _UserSessions(
-        active: defaultSessionName,
-        sessions: [
-          _SessionRef(globalSessionName, null),
-          _SessionRef(defaultSessionName, _mint()),
-        ],
-      );
-      _save();
-      return created;
-    });
+    final _UserSessions user = _ensureUser(userId);
 
     final _SessionRef ref = _activeRef(user);
     if (ref.name == globalSessionName) {
@@ -361,18 +350,26 @@ final class TelegramSessionRegistry {
 
   /// Returns [userId]'s state, creating the first-contact default set if absent
   /// (so a command before any prompt still has `global` + `default`).
+  ///
+  /// First contact mints a `default` session and **persists immediately** so the
+  /// id survives a restart. The insert-then-`_save` order is load-bearing:
+  /// `_save` serialises `_users`, so the new entry must be in the map before the
+  /// save runs. (A `putIfAbsent` closure that saved inline persisted an empty set
+  /// — the closure's value is only inserted *after* it returns — which silently
+  /// dropped the minted id and re-minted it every restart.)
   _UserSessions _ensureUser(String userId) {
-    return _users.putIfAbsent(userId, () {
-      final created = _UserSessions(
-        active: defaultSessionName,
-        sessions: [
-          _SessionRef(globalSessionName, null),
-          _SessionRef(defaultSessionName, _mint()),
-        ],
-      );
-      _save();
-      return created;
-    });
+    final _UserSessions? existing = _users[userId];
+    if (existing != null) return existing;
+    final created = _UserSessions(
+      active: defaultSessionName,
+      sessions: [
+        _SessionRef(globalSessionName, null),
+        _SessionRef(defaultSessionName, _mint()),
+      ],
+    );
+    _users[userId] = created;
+    _save();
+    return created;
   }
 
   /// Loads every user's state from [_store] into [_users]. A malformed row is

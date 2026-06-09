@@ -516,12 +516,23 @@ final class AccessAssembler {
     await dispatcher.accept(access);
 
     // The run has streamed and the engine has back-filled its answer into the
-    // session's live history (the same ConversationHistory the SessionManager
-    // holds). Persist both history stores now so the exchange survives a
-    // process restart — the "nothing is ever lost" contract (umbrella Hard
-    // principle 6; access spec § 21.10). Best-effort: a persistence failure
-    // must never fail an otherwise-completed turn (it is a no-op when no
-    // durable HistoryStore is wired).
+    // session's *answered-from* history (the same ConversationHistory the
+    // SessionManager holds). For a known dedicated session that is the
+    // per-session history; the per-(principal, channel) global history recorded
+    // the same turn with an empty answer, so mirror the answer across before
+    // persisting — otherwise the durable "all prompts" record loses every reply
+    // (umbrella Hard principle 6; access spec § 7.2).
+    sessionManager.backfillGlobalAnswer(
+      identity: identity,
+      channel: channel,
+      resolution: session,
+    );
+
+    // Persist both history stores now so the exchange survives a process
+    // restart — the "nothing is ever lost" contract (umbrella Hard principle 6;
+    // access spec § 21.10). Best-effort: a persistence failure must never fail
+    // an otherwise-completed turn (it is a no-op when no durable HistoryStore is
+    // wired).
     _persistHistories();
   }
 

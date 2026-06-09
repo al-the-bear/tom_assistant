@@ -173,6 +173,72 @@ void main() {
     });
   });
 
+  group('backfillGlobalAnswer — the global record keeps the answers too', () {
+    test(
+        'a known-session turn back-filled on the dedicated history also lands '
+        'in the global record', () {
+      final manager = SessionManager(sessionIdMinter: _counterMinter());
+      final minted = manager.resolve(
+        identity: _identity('p1'),
+        channel: AccessChannel.telegram,
+        envelope: _inbound(text: 'My name is Alexis'),
+      );
+      // The engine answered the sessionless first turn off the global; mirror
+      // that answer back (sessionless answered-from IS the global → no-op, but
+      // the dispatcher already amended it).
+      minted.history.amendLastTurnAnswer('Nice to meet you, Alexis.');
+
+      // Second turn echoes the minted id → answered from the dedicated history.
+      final res = manager.resolve(
+        identity: _identity('p1'),
+        channel: AccessChannel.telegram,
+        envelope: _inbound(text: 'What is my name?', sessionId: minted.sessionId),
+      );
+      // The engine back-fills the answer into the answered-from (dedicated)
+      // history only — exactly what the dispatcher does today.
+      res.history.amendLastTurnAnswer('Your name is Alexis.');
+
+      // Access mirrors that answer into the global "all prompts" record.
+      manager.backfillGlobalAnswer(
+        identity: _identity('p1'),
+        channel: AccessChannel.telegram,
+        resolution: res,
+      );
+
+      final global = manager.peekGlobal(
+          principalId: 'p1', channel: AccessChannel.telegram);
+      final answers = [for (final t in global!.durableRecord) t.brainAnswer];
+      // BUG #1 regression: before the fix the second answer was '' in the
+      // global record — the brain "forgot" its own reply in the durable record.
+      expect(answers, [
+        'Nice to meet you, Alexis.',
+        'Your name is Alexis.',
+      ]);
+    });
+
+    test('mirroring a sessionless turn is a harmless no-op (already amended)',
+        () {
+      final manager = SessionManager(sessionIdMinter: _counterMinter());
+      final res = manager.resolve(
+        identity: _identity('p1'),
+        channel: AccessChannel.openai,
+        envelope: _inbound(text: 'hello'),
+      );
+      // Sessionless → answered-from IS the global; the dispatcher amended it.
+      res.history.amendLastTurnAnswer('hi there');
+
+      manager.backfillGlobalAnswer(
+        identity: _identity('p1'),
+        channel: AccessChannel.openai,
+        resolution: res,
+      );
+
+      final global =
+          manager.peekGlobal(principalId: 'p1', channel: AccessChannel.openai);
+      expect(global!.durableRecord.single.brainAnswer, 'hi there');
+    });
+  });
+
   group('snapshot / restore — both histories persist across a restart', () {
     test('a fresh manager restored from a snapshot carries both histories', () {
       final original = SessionManager(sessionIdMinter: _counterMinter());

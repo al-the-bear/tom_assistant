@@ -469,6 +469,42 @@ final class SessionManager {
     );
   }
 
+  /// Mirrors a just-answered turn's answer into the per-(principal, channel)
+  /// global "all prompts" history (§ 7.2; umbrella Hard principle 6 — "no event
+  /// is ever truly lost").
+  ///
+  /// The engine back-fills its answer into the *answered-from* history only
+  /// ([SessionResolution.history], via `amendLastTurnAnswer`, hub § 21.1 step 4).
+  /// For a **known dedicated session** that answered-from history is the
+  /// per-session one, while the global history recorded the same turn with an
+  /// empty answer ([resolve] appends the turn to both). Without this mirror the
+  /// global record accumulates every prompt with a blank reply — the durable
+  /// "all prompts" archive silently loses the answers. This copies the
+  /// dedicated history's last answer onto the global's matching turn.
+  ///
+  /// A no-op when the resolution answered from the global directly (a
+  /// sessionless / unknown-id / global-session turn): the two histories are the
+  /// same object, so the dispatcher already amended it. Idempotent — relies on
+  /// [ConversationHistory.amendLastTurnAnswer]'s "skip a turn that already
+  /// carries a non-empty answer" guard. The brain answer is unknown at
+  /// [resolve] time, so this is the access layer's post-dispatch reconciliation.
+  void backfillGlobalAnswer({
+    required ResolvedIdentity identity,
+    required AccessChannel channel,
+    required SessionResolution resolution,
+  }) {
+    final global = _globals[(identity.principalId, channel)];
+    if (global == null || identical(global, resolution.history)) {
+      // No global yet, or it *is* the answered-from history (already amended).
+      return;
+    }
+    final answered = resolution.history.durableRecord;
+    if (answered.isEmpty) return;
+    final answer = answered.last.brainAnswer;
+    if (answer.isEmpty) return;
+    global.amendLastTurnAnswer(answer);
+  }
+
   /// Runs the Extension-H memory-profile selection pass for a just-resolved
   /// request (access spec § 7.4; hub § 23.6). Access owns the session, so access
   /// owns which memory profile a conversation recalls against; the dispatcher

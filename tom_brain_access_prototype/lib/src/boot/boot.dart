@@ -62,7 +62,8 @@ export 'brain_access_process.dart'
         TelegramChatApiFactory,
         defaultTelegramChatApiFactory,
         serveWithShelfIo,
-        startBrainAccessProcess;
+        startBrainAccessProcess,
+        telegramSessionStoreDirectory;
 export 'brain_provisioner.dart'
     show
         BrainProvisioner,

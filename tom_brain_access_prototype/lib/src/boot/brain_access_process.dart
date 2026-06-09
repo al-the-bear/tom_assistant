@@ -417,14 +417,21 @@ Future<_TelegramEdge> _startTelegram({
     whitelist: TelegramWhitelist(config.telegramWhitelist),
   );
   await adapter.start();
-  // Per-user session continuity (§ 6.5): persisted alongside the edge limiter
-  // state when a state directory is configured, in memory otherwise. The
-  // registry adopts every minted id into the SessionManager so the dispatcher
-  // resolves it as a known dedicated session.
-  final EdgeStateStore sessionStore = config.edgeStateDirectory == null
+  // Per-user session continuity (§ 6.5): persisted beside the edge-limiter
+  // state when an edge-state directory is configured, otherwise beside the
+  // conversation histories (so enabling history persistence alone keeps a
+  // Telegram user attached across a restart — see [telegramSessionStoreDirectory]).
+  // In memory only when neither directory is set. The registry adopts every
+  // minted id into the SessionManager so the dispatcher resolves it as a known
+  // dedicated session.
+  final String? sessionStoreDirectory = telegramSessionStoreDirectory(
+    edgeStateDirectory: config.edgeStateDirectory,
+    historyDirectory: config.historyDirectory,
+  );
+  final EdgeStateStore sessionStore = sessionStoreDirectory == null
       ? MapEdgeStateStore()
       : JsonFileEdgeStateStore(
-          _edgeStatePath(config.edgeStateDirectory!, _telegramSessionsFile),
+          _edgeStatePath(sessionStoreDirectory, _telegramSessionsFile),
         );
   final TelegramSessionRegistry sessionRegistry = TelegramSessionRegistry(
     store: sessionStore,
@@ -579,9 +586,33 @@ const String _quotaStateFile = 'quota_state.json';
 /// [AccessConfig.historyDirectory] (§ 21.10).
 const String _historiesFile = 'histories.json';
 
-/// The Telegram per-user session registry file under
-/// [AccessConfig.edgeStateDirectory] (§ 6.5).
+/// The Telegram per-user session registry file (§ 6.5). Lives under
+/// [telegramSessionStoreDirectory] — beside the edge limiters when an
+/// edge-state directory is configured, otherwise beside the conversation
+/// histories.
 const String _telegramSessionsFile = 'telegram_sessions.json';
+
+/// The directory the Telegram per-user session registry persists under, given a
+/// configured [edgeStateDirectory] and [historyDirectory] (§ 6.5 / § 21.10).
+///
+/// Session continuity is what makes a persisted conversation *reachable* after a
+/// restart: `histories.json` keeps each session's turns, but a Telegram user
+/// only re-resolves to their session through the registry's user→session-id
+/// mapping. If that mapping is lost, every restart re-mints the user's `default`
+/// session and orphans the persisted histories — they survive on disk but are
+/// no longer reachable (the "didn't remember my name after a restart" defect).
+///
+/// So the registry must persist whenever histories do. It prefers an explicit
+/// [edgeStateDirectory] (sitting beside the edge limiters); when none is set it
+/// falls back to [historyDirectory], so enabling history persistence *alone* is
+/// enough to keep remembering a Telegram user across a restart — there is no
+/// second, easy-to-miss knob. `null` only when neither is configured (a fully
+/// in-process deployment).
+String? telegramSessionStoreDirectory({
+  required String? edgeStateDirectory,
+  required String? historyDirectory,
+}) =>
+    edgeStateDirectory ?? historyDirectory;
 
 /// Joins an edge-state [directory] and [fileName], tolerating a trailing
 /// separator on the directory. Forward slashes work across the prototype's
