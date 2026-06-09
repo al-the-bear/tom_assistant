@@ -12,7 +12,7 @@
 //                       (default: ../tom_brain_observatory_web/build/web)
 //   --scripts=<dir>     the running brain's procedure scripts served read-only
 //                       by GET /api/procedures/<id> (§ 4.6; default:
-//                       ../tom_brain_procedure_prototype/scripts/system)
+//                       ../tom_brain_procedure/scripts/system)
 //   --port=N            loopback port (default 8787)
 //   --host=ADDR         bind address (default 127.0.0.1; loopback-only by design)
 //
@@ -127,7 +127,7 @@ String _defaultScriptRoot() => p.normalize(p.join(
       p.dirname(Platform.script.toFilePath()),
       '..',
       '..',
-      'tom_brain_procedure_prototype',
+      'tom_brain_procedure',
       'scripts',
       'system',
     ));

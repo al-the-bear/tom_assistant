@@ -1,6 +1,6 @@
 // RetrievalEvalConfig — the parsed `retrieval_eval.yaml` that drives the
 // retrieval eval harness (Plan-2 extension step #33;
-// `tom_brain_procedure_prototype_specification.md` § 23.8).
+// `tom_brain_procedure_specification.md` § 23.8).
 //
 // § 23.8 defines a single document with five sections:
 //

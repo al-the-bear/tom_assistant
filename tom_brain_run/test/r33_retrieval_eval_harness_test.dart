@@ -24,7 +24,7 @@
 import 'package:test/test.dart';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart';
+import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show NodeDraft, NodeId, Scope;

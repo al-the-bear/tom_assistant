@@ -13,7 +13,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show LlmCallObservation, LlmTrailRecord, TurnSummary;
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'

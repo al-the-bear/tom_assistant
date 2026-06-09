@@ -1,6 +1,6 @@
 // The Memory MCP read seam (`prompt_tracing.md` § 8.4) — the transport-neutral
 // contract the [MemoryReadClient] (PT-5.1) talks to. It mirrors the brain's own
-// `McpServerConnection` (`tom_brain_procedure_prototype/lib/src/mcp/`): a
+// `McpServerConnection` (`tom_brain_procedure/lib/src/mcp/`): a
 // `listTools` / `callTool` / `close` surface stripped of every `dart_mcp` type,
 // so the observatory's read client holds no wire library and no `dart:io` handle
 // and a test can substitute a fake.

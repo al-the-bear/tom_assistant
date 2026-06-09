@@ -60,7 +60,7 @@ import 'package:dart_mcp/server.dart' as mcp_server;
 import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
 import 'package:tom_basics/tom_basics.dart' show TomPlatformUtils;
-import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
+import 'package:tom_brain_access/tom_brain_access.dart'
     show serveWithShelfIo;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show

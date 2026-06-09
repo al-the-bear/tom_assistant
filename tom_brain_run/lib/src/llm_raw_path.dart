@@ -6,7 +6,7 @@
 // stem and the relative path, so the rule lives once in this file and both
 // consumers call it — never re-derive it.
 
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show LlmTrailRecord;
 
 /// The file stem identifying one call's raw dump from its bare correlation

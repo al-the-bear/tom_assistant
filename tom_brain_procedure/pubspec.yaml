@@ -1,0 +1,227 @@
+name: tom_brain_procedure
+description: Procedure prototype for Tom Brain — a thin d4rt-hosted engine (Phase C) plus a thin dispatcher (Phase D) combined into one project. Runs the single hand-written sequence answer_with_memory_v1 over a sandboxed bridged primitive API that re-exposes tom_brain_memory + tom_brain_substrate.
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.8
+
+# Project structure manifest (Plan step D.9 — wire the new sub-folders
+# into the project manifest).
+#
+# For a Dart package the *project manifest* is this `pubspec.yaml`. D.6–D.8
+# added three sub-folders to the project; D.9 records them here so the
+# project's declared structure is explicit at the manifest level. A
+# pure-Dart package has no `flutter: assets:` section, so the new folders
+# need no structural pubspec field — `lib/` auto-ships, and the root-level
+# `scripts/` tree ships because it is git-tracked and not excluded. This
+# block is the manifest record; it is locked by
+# `test/d9_manifest_wiring_test.dart` (manifest ⇄ on-disk consistency).
+#
+#   - lib/src/dispatcher/   (D.6) — the dispatcher half's module folder.
+#                           Auto-included in the package surface (every
+#                           path under `lib/` ships) and re-exported from
+#                           the top-level barrel
+#                           (`lib/tom_brain_procedure.dart`).
+#   - scripts/system/       (D.7) — well-known shipped procedures
+#                           (`think_v1`, `answer_with_memory_v1`). Runtime
+#                           data the engine reads via
+#                           `EngineConfig.defaultSystemScriptsPath`
+#                           (`scripts/system`). Ships with the package
+#                           (not gitignored).
+#   - scripts/user/         (D.7) — optional user-authored procedures
+#                           (empty in the prototype). Runtime data read
+#                           via `EngineConfig.defaultUserScriptsPath`
+#                           (`scripts/user`).
+#   - scripts/system/answer_with_memory_v1.dart (D.8) — the stub every
+#                           inbound `user_prompt` resolves to (D.16); the
+#                           recall→answer→persist body lands at D.10.
+#
+# The `.tom_metadata/tom_master.yaml` reading of "the project manifest" is
+# a NO-OP per policy override 5 ("tom_master.yaml is out of scope for Tom
+# Brain"). The pubspec is the only manifest D.9 touches.
+
+# Dependency discipline (Plan step C.7 / `tom_brain_procedure_specification.md`).
+#
+# The procedure prototype is the *glue* layer: it hosts d4rt scripts
+# that call a bridged primitive API which re-exposes memory + substrate,
+# records every run as a memory trail, and (Phase D) dispatches inbound
+# work. Its dependency set is shaped by that role. C.7 lands exactly the
+# eight runtime dependencies the plan names — no more.
+#
+#   - tom_brain_shared    — cross-component vocabulary (NodeId, Vec,
+#                           Budget, Result, BrainEvent, BrainTime,
+#                           BrainVersion, AssistantDedicationAnchor,
+#                           ProcedureId). The only Tom-Brain library the
+#                           engine imports for shared types. Path dep —
+#                           `publish_to: none`.
+#   - tom_brain_memory    — INTERFACE BOUNDARY ONLY (PE-10). The engine
+#                           consumes `TomBrainMemoryClient` (A.78) — the
+#                           consumer-facing shape — never the concrete
+#                           store and never `lib/src/` internals. The
+#                           MemoryBridge (C.12) wraps this client.
+#   - tom_brain_substrate — INTERFACE BOUNDARY ONLY (PE-10). The engine
+#                           consumes `TomBrainSubstrateClient` (B.40) —
+#                           never `InProcessTomBrainSubstrate` and never
+#                           `lib/src/` internals. The SubstrateBridge
+#                           (C.13) wraps this client.
+#   - tom_basics          — workspace baseline (`TomLogger`/`tomLog`,
+#                           UUID, exception types). Hosted to keep the
+#                           resolver consistent with `tom_core_kernel`
+#                           (which depends on `tom_basics: any` from
+#                           pub.dev) — same convention memory (A.22) and
+#                           substrate (B.7) adopted.
+#   - tom_core_kernel     — `TomBean` (bean-locator surface), `TomLogger`
+#                           categories, isolate utilities. Path dep.
+#   - tom_core_d4rt       — the Tom-Framework D4rt bridge-registration
+#                           layer the generated bridges register against
+#                           (C.14). Path dep — `publish_to: none`.
+#                           NOTE: the workspace copy's generated bridge
+#                           barrel (`dartscript.b.dart`) currently ships
+#                           Windows-backslash imports that do not compile
+#                           on POSIX — see Q-C.7.3. The dependency is
+#                           declared here per the plan; the actual import
+#                           of its bridge barrel is deferred to C.14/C.16
+#                           and is gated on the upstream regeneration
+#                           fix. `dart analyze` on this package is
+#                           unaffected because no prototype source imports
+#                           that barrel yet.
+#   - tom_d4rt            — the sandboxed D4rt interpreter (`D4rt`) the
+#                           host (C.16) runs procedure scripts on. Hosted
+#                           `^1.8.20` — the version published to pub.dev
+#                           and matching the workspace project, keeping
+#                           the d4rt runtime uniform with the hosted
+#                           `tom_d4rt_dcli` below (which pulls `tom_d4rt`
+#                           with an `any` constraint). See Q-C.7.2.
+#   - tom_d4rt_dcli       — `^1.1.3`, the C.4 workspace pin. Provides
+#                           `D4rtCliApi` (`lib/src/api/cli_api.dart`),
+#                           the REPL/CLI base `D4rtDcliHost` (C.16)
+#                           composes. Hosted; the published 1.1.3 bridge
+#                           barrel is correctly generated (forward-slash
+#                           imports), unlike the workspace `tom_core_d4rt`
+#                           copy.
+#
+# Explicitly NOT here (scope discipline):
+#
+#   - tom_core_server     — the engine does no inbound HTTP and no MCP
+#                           server. Memory owns the MCP server (A.75);
+#                           access (Phase E) owns the inbound edge.
+#   - http / dio          — the engine makes no network calls directly;
+#                           all outbound I/O goes through the substrate
+#                           client behind the bridge.
+#   - logger / logging    — `tomLog` from tom_basics is the only log
+#                           surface permitted at this layer.
+#
+# Promoted at Extension F step 8 (the MCP client):
+#
+#   - dart_mcp            — `^0.5.1`, the workspace MCP library (also
+#                           memory's server dependency). Step 8 adds an MCP
+#                           *client* (`lib/src/mcp/`) so procedures can call
+#                           *out* to MCP servers (the memory one and any
+#                           configured external one) via `mcp.servers` /
+#                           `mcp.list` / `mcp.call` (§ 21.3). This is the
+#                           consumer edge — the engine still owns no MCP
+#                           *server* (that stays memory's concern, A.75).
+#                           The earlier note that "the engine talks to memory
+#                           through the in-process `TomBrainMemoryClient`,
+#                           not over MCP" still holds for the hot path;
+#                           `mcp.*` is the *outbound* tool surface, a
+#                           separate concern.
+#   - stream_channel      — `^2.1.4`, the transport `dart_mcp` connects over
+#                           (`StreamChannel<String>`). Direct dep because
+#                           `lib/src/mcp/dart_mcp_connection.dart` names it
+#                           in the `McpChannelFactory` typedef.
+#
+# The dependency-discipline test (`test/dependency_surface_test.dart`)
+# enforces this contract at build time.
+#
+# Forward steps:
+#   - C.8  — `lib/src/` folder layout. ✅
+#   - C.9  — `dev_dependencies` gain `tom_d4rt_generator: ^1.9.0`
+#            and `build_runner: ^2.10.4` (the C.5 pins). ✅ (see the
+#            dev-dependency-discipline block below).
+#   - C.10 — `.tom_metadata/tom_master.yaml` wiring is a no-op going
+#            forward (policy override 5).
+dependencies:
+  tom_brain_shared:
+    path: ../tom_brain_shared
+  tom_brain_memory:
+    path: ../tom_brain_memory
+  tom_brain_substrate:
+    path: ../tom_brain_substrate
+  tom_basics: ^1.0.0
+  # tom_core_agentic — generic, domain-free agentic building blocks
+  #   (the `CategoryLog` logging facade, `CloseGuard`, `formatException`,
+  #   `YamlConfigReader`, cancellation, …). Extracted at the Phase-C/D
+  #   review reuse-extraction pass; the engine + dispatcher logs subclass
+  #   `CategoryLog` rather than re-deriving the tag/forward shape. Path dep.
+  tom_core_agentic:
+    path: ../../tom_ai/core/tom_core_agentic
+  tom_core_kernel:
+    path: ../../tom_ai/core/tom_core_kernel
+  tom_core_d4rt:
+    path: ../../tom_ai/core/tom_core_d4rt
+  tom_d4rt: ^1.8.20
+  tom_d4rt_dcli: ^1.1.3
+  # C.24 procedure loader — the structured header (§ 4.4) is a YAML
+  # doc-comment block; the loader parses it with the canonical `yaml`
+  # package rather than a hand-rolled flow-map parser. Already present
+  # transitively (3.1.3); promoted to a direct dependency because `lib/`
+  # source now imports it.
+  yaml: ^3.1.2
+  # F.7 basic tool set — the `file.*` / `grep.search` tools enforce the
+  # file-scope sandbox (§ 21.4) by normalising and containment-checking the
+  # caller's path against the configured root. The canonical first-party
+  # `path` package owns `normalize` / `join` / `isWithin` / `relative`;
+  # already present transitively, promoted to a direct dependency because
+  # `lib/src/tools/basic_tools.dart` now imports it.
+  path: ^1.9.0
+  # file.search tool — the `file.search` basic tool (§ 21.4, `ToolGroup.file`)
+  # finds files by *name* under the file-scope root using a glob pattern
+  # (`*`, `?`, `[abc]`, `[a-z]`), complementing `grep.search` (which scans
+  # file *contents*). The glob matching is delegated to dcli's `find()`
+  # rather than re-implementing a globber. Already present transitively
+  # (via `tom_d4rt_dcli`); promoted to a direct dependency because
+  # `lib/src/tools/basic_tools.dart` now imports `package:dcli/dcli.dart`
+  # directly (never import a symbol from a transitive dep).
+  dcli: ^8.4.2
+  # F.8 MCP client — `mcp.servers` / `mcp.list` / `mcp.call` (§ 21.3) call
+  # out to MCP servers over the workspace MCP library. `lib/src/mcp/`
+  # imports `dart_mcp` (the client) and `stream_channel` (the transport
+  # `StreamChannel<String>` it connects over). See the dependency-discipline
+  # block above for the scope rationale (consumer edge only — no server).
+  dart_mcp: ^0.5.1
+  stream_channel: ^2.1.4
+
+# Dev-dependency discipline (Plan step C.9 / C.5 authoritative pin record).
+#
+# C.9 adds the D4rt bridge-generation toolchain, consumed only at build
+# time (C.11–C.15) to turn the `MemoryBridge` / `SubstrateBridge` source
+# classes into registered d4rt bridges. Neither pin is a runtime
+# dependency: no `lib/` source imports them, so they cannot leak into the
+# engine's shipped surface.
+#
+#   - tom_d4rt_generator — `^1.9.0`, the latest *published* version (so
+#                          the constraint resolves from pub.dev) and the
+#                          version matching the workspace project. The
+#                          caret admits any `1.x` uptake while a `2.0.0` major
+#                          bump trips a re-verify of the C.11 `build.yaml`
+#                          option schema and the C.12–C.13 bridge-source
+#                          authoring conventions. Drives the
+#                          `d4rt_bridge_builder` builder (factory
+#                          `d4rtBridgeBuilder`) C.14 runs via
+#                          `dart run build_runner build`. See Q-C.5.2/3.
+#   - build_runner       — `^2.10.4`, the dominant modern workspace
+#                          constraint. Compatible with the older
+#                          `^2.4.15` D4rt consumers (a single 2.x
+#                          satisfies both), so the prototype introduces no
+#                          resolution skew. The generator's own `^2.4.0`
+#                          floor sits comfortably below.
+#
+# Both pins are adopted verbatim from the C.5 record (the single source of
+# truth) and locked by `test/dev_dependency_surface_test.dart`.
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
+  tom_d4rt_generator: ^1.9.0
+  build_runner: ^2.10.4

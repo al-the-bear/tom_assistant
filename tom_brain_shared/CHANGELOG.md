@@ -3,7 +3,7 @@
 ## 0.3.0 — 2026-06-02 (Phase C.48 — reuse extraction)
 
 Phase-C reuse-extraction pass promotes two types out of
-`tom_brain_procedure_prototype` into the shared cross-component
+`tom_brain_procedure` into the shared cross-component
 vocabulary, each because two distinct components reference the identical
 shape:
 

@@ -9,7 +9,7 @@ environment:
 # Why this project exists (Plan step E.46 / `prototype_implementation_plan.md`
 # § E.10 — End-to-end smoke).
 #
-# The access prototype (`tom_brain_access_prototype`) is forbidden to import
+# The access prototype (`tom_brain_access`) is forbidden to import
 # `tom_brain_substrate` / `tom_brain_memory` (its pubspec scope discipline +
 # `dependency_surface_test.dart`). It therefore receives an *already-booted*
 # cognition through the `BrainProvisioner` seam, whose CLI default refuses —
@@ -27,10 +27,10 @@ environment:
 # stay free of the forbidden imports while the smoke still exercises the real
 # boot path.
 #
-#   - tom_brain_access_prototype — the running process: `startBrainAccessProcess`,
+#   - tom_brain_access — the running process: `startBrainAccessProcess`,
 #                                   `ProvisionedBrain`, `QueueSnapshot`,
 #                                   `AccessConfig`, the edge-security policies.
-#   - tom_brain_procedure_prototype — `BrainProcessBoot` / `BrainProcessConfig`
+#   - tom_brain_procedure — `BrainProcessBoot` / `BrainProcessConfig`
 #                                   (boots substrate → memory → engine →
 #                                   dispatcher), `MemoryProvisioningConfig`,
 #                                   `Dispatcher`, `RunCoordinator`.
@@ -44,10 +44,10 @@ environment:
 #                                   keep the resolver consistent with the rest
 #                                   of the closure.
 dependencies:
-  tom_brain_access_prototype:
-    path: ../tom_brain_access_prototype
-  tom_brain_procedure_prototype:
-    path: ../tom_brain_procedure_prototype
+  tom_brain_access:
+    path: ../tom_brain_access
+  tom_brain_procedure:
+    path: ../tom_brain_procedure
   tom_brain_substrate:
     path: ../tom_brain_substrate
   tom_brain_memory:

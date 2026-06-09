@@ -118,7 +118,7 @@ export 'src/json_shape/json_shape.dart' show JsonShape, JsonShapeException;
 
 // C.48 — effort/ module: `EffortMetrics`, the closed seven-field effort
 // record stamped onto every `ProcedureRun`. Extracted from
-// `tom_brain_procedure_prototype` (Plan step C.31) at the Phase C review
+// `tom_brain_procedure` (Plan step C.31) at the Phase C review
 // reuse-extraction pass: the run recorder produces it and the Phase D
 // dispatcher's harvester reads the same shape off the `recent_runs`
 // stack. Pure value type — fits the A.9 dependency-discipline contract.
@@ -126,7 +126,7 @@ export 'src/effort/effort.dart' show EffortMetrics;
 
 // C.48 — preemption/ module: `PreemptionState`, the cooperative
 // single-foreground / single-background preemption state. Extracted from
-// `tom_brain_procedure_prototype` (Plan step C.34) at the same pass: the
+// `tom_brain_procedure` (Plan step C.34) at the same pass: the
 // engine reads it (`yield_if_foreground_waiting()`) and the Phase D
 // dispatcher's coordinator drives it — two distinct components on one
 // state contract. Pure state object (only `dart:async`).
@@ -213,7 +213,7 @@ export 'src/memory/memory.dart';
 // well-known inbound kind strings the Phase-E heuristic classifier (E.33)
 // writes into `InboundRequest.kindHint` and the Phase-D dispatcher
 // classifier (D.15) reads back. Promoted from
-// `tom_brain_procedure_prototype` at the Phase-D review reuse-extraction
+// `tom_brain_procedure` at the Phase-D review reuse-extraction
 // pass (D.51 surfaced it; D.52 moves it) so the edge producer and the
 // dispatcher consumer share one spelling without Phase E depending on the
 // dispatcher package for a single constant. The procedure-id holder

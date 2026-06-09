@@ -15,7 +15,7 @@ fulfils.
 
 - **This is the only package that may import all four brain packages at once.**
   Keep the substrate/memory imports here; never push them back down into
-  `tom_brain_access_prototype`.
+  `tom_brain_access`.
 - **The doubles are top-level.** `SmokeMemory` and `spawnSmokeMemory` cross the
   isolate boundary (memory is provisioned isolate-transport), so the factory and
   the class it returns must stay top-level — mirroring the procedure prototype's
@@ -28,8 +28,8 @@ fulfils.
 
 ## Reference patterns
 
-- Stub substrate: `tom_brain_procedure_prototype/test/d44_brain_process_boot_test.dart`
+- Stub substrate: `tom_brain_procedure/test/d44_brain_process_boot_test.dart`
   (`_AnsweringSubstrate`).
 - In-isolate memory double + factory:
-  `tom_brain_procedure_prototype/test/d43_memory_provisioning_test.dart`
+  `tom_brain_procedure/test/d43_memory_provisioning_test.dart`
   (`RecordingFakeMemory` + `spawnRichFakeMemory`).

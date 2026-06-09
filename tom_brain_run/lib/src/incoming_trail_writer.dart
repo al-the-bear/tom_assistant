@@ -26,7 +26,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
+import 'package:tom_brain_access/tom_brain_access.dart'
     show IncomingTrailRecord;
 
 /// Substrings (matched case-insensitively) that mark a `rawEnvelope` key as

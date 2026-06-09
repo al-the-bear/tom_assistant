@@ -8,7 +8,7 @@
 //     reads it (`yield_if_foreground_waiting()`); the dispatcher's
 //     coordinator drives it. Pure state object — only `dart:async`.
 //
-// Origin: extracted from `tom_brain_procedure_prototype` (Plan step
+// Origin: extracted from `tom_brain_procedure` (Plan step
 // C.34) at the Phase C review (C.48) because the engine (reader) and the
 // dispatcher (writer) reference the identical state contract — a real
 // two-component call site, not speculative reuse.

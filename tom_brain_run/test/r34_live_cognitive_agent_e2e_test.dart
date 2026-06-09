@@ -64,7 +64,7 @@ import 'package:dart_mcp/server.dart' as mcp_server;
 import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
 import 'package:tom_basics/tom_basics.dart' show TomPlatformUtils;
-import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
+import 'package:tom_brain_access/tom_brain_access.dart'
     show serveWithShelfIo;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show
@@ -73,7 +73,7 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
         SqliteVecBinaryResolver,
         TomBrainMemory,
         TomBrainMemoryMcpServer;
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show
         DiskProcedureStore,
         FreeTimeScheduler,
@@ -622,12 +622,12 @@ void main() {
 Future<Directory> _resolveProcedurePrototypeScripts() async {
   final Uri? libUri = await Isolate.resolvePackageUri(
     Uri.parse(
-      'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart',
+      'package:tom_brain_procedure/tom_brain_procedure.dart',
     ),
   );
   if (libUri == null) {
     throw StateError(
-      'cannot resolve the tom_brain_procedure_prototype package URI — '
+      'cannot resolve the tom_brain_procedure package URI — '
       'is it on the package config?',
     );
   }

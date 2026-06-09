@@ -36,7 +36,7 @@
 // Both are black-box against the already-booted running process; neither
 // reaches into the cognition.
 
-import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
+import 'package:tom_brain_access/tom_brain_access.dart'
     show telegramMaxMessageLength, telegramNotAuthorisedMessage;
 import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryStats;
 import 'package:tom_brain_smoke_prototype/tom_brain_smoke_prototype.dart';

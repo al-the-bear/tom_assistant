@@ -1,11 +1,11 @@
 // EffortMetrics — the closed effort-metric set a `ProcedureRun` carries
 // and the dispatcher's harvester later reads
-// (`tom_brain_procedure_prototype_specification.md` § 8;
+// (`tom_brain_procedure_specification.md` § 8;
 // `tom_brain_definition.md` § 7.4).
 //
 // ── Origin: the C.48 reuse-extraction pass ──────────────────────────
 //
-// First cut in `tom_brain_procedure_prototype` (Plan step C.31), where
+// First cut in `tom_brain_procedure` (Plan step C.31), where
 // the run recorder owns the *shape* and C.32's accountant owns the
 // *accumulation*. Moved here at the Phase C review (C.48): the recorder
 // produces this shape, and the Phase D dispatcher's harvester reads the

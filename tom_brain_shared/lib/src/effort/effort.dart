@@ -9,7 +9,7 @@
 //     `plus` / `withWallClockMs` combinators fold per-call deltas into a
 //     run total. Pure value type — no I/O.
 //
-// Origin: extracted from `tom_brain_procedure_prototype` (Plan step C.31)
+// Origin: extracted from `tom_brain_procedure` (Plan step C.31)
 // at the Phase C review (C.48). The run recorder produces this shape and
 // the Phase D dispatcher's harvester reads the same shape off the
 // `recent_runs` stack — a real two-component vocabulary, the criterion

@@ -22,7 +22,7 @@
 //     of the run surface (the prototype boots with the boot's default queue
 //     depth and classifier fallback).
 
-import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
+import 'package:tom_brain_access/tom_brain_access.dart'
     show AccessConfig;
 import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryConfig;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'

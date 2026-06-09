@@ -30,7 +30,7 @@ dart run bin/observatory.dart <trail-host-root> \
 |---|---|---|
 | `<trail-host-root>` | The trail tree to read, e.g. `_ai/tom_brain_trail/<host>` | required |
 | `--web=<dir>` | The `flutter build web` output served at `/` | `../tom_brain_observatory_web/build/web` |
-| `--scripts=<dir>` | The brain's `scripts/system` dir, served read-only by `GET /api/procedures/<id>` | `../tom_brain_procedure_prototype/scripts/system` |
+| `--scripts=<dir>` | The brain's `scripts/system` dir, served read-only by `GET /api/procedures/<id>` | `../tom_brain_procedure/scripts/system` |
 | `--port=N` | Loopback port | `8787` |
 | `--host=ADDR` | Bind address (loopback-only by design) | `127.0.0.1` |
 

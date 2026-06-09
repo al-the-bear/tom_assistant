@@ -1,11 +1,11 @@
 // PreemptionState — the cooperative single-foreground / single-background
 // preemption state shared across the procedure engine and the dispatcher
-// (`tom_brain_procedure_prototype_specification.md` § 9, PE-5, § 10.3;
+// (`tom_brain_procedure_specification.md` § 9, PE-5, § 10.3;
 // `tom_brain_definition.md` § 7.1, § 14.10).
 //
 // ── Origin: the C.48 reuse-extraction pass ──────────────────────────
 //
-// First cut in `tom_brain_procedure_prototype` (Plan step C.34) as the
+// First cut in `tom_brain_procedure` (Plan step C.34) as the
 // shared object the engine-native `yield_if_foreground_waiting()`
 // primitive reads against. The Phase D dispatcher's coordinator drives
 // the *write* side of the same object (sets / clears the flag, signals

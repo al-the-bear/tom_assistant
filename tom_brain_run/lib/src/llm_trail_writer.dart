@@ -27,7 +27,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show LlmTrailRecord, SubstrateBridge;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show CapturedWirePrompt, SubstrateLog;

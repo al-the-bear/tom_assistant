@@ -8,7 +8,7 @@
 // dispatcher classifier (D.15) *reads* it. The two phases must agree on
 // the spelling of the well-known kind strings, yet the holder for those
 // strings (`InboundKinds`) was authored inside
-// `tom_brain_procedure_prototype` at D.15. That left Phase E with no way
+// `tom_brain_procedure` at D.15. That left Phase E with no way
 // to write a confident `kindHint` without either hard-coding the magic
 // string or taking a dependency on the dispatcher package purely to reach
 // one constant.

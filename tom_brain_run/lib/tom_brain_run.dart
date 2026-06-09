@@ -9,8 +9,8 @@
 /// `QueueSnapshot`, and stands the access process up on a port.
 ///
 /// It is the one production place that may legally wire `tom_brain_substrate`,
-/// `tom_brain_memory`, `tom_brain_procedure_prototype`, and
-/// `tom_brain_access_prototype` together — fulfilling the access package's
+/// `tom_brain_memory`, `tom_brain_procedure`, and
+/// `tom_brain_access` together — fulfilling the access package's
 /// `BrainProvisioner` seam, whose default refuses because the access package
 /// cannot boot a brain on its own (it must not import substrate / memory). See
 /// Plan-2 steps #30 / #31 of `prototype_implementation_plan_2.md`.

@@ -68,7 +68,7 @@ import 'package:test/test.dart';
 import 'package:tom_basics/tom_basics.dart' show TomPlatformUtils;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show SqliteTomBrainMemory, SqliteVecBinaryResolver;
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show
         DiskProcedureStore,
         MemoryBridge,
@@ -563,12 +563,12 @@ Future<_ConductorResult> _runConductor(
 Future<Directory> _resolveProcedurePrototypeScripts() async {
   final Uri? libUri = await Isolate.resolvePackageUri(
     Uri.parse(
-      'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart',
+      'package:tom_brain_procedure/tom_brain_procedure.dart',
     ),
   );
   if (libUri == null) {
     throw StateError(
-      'cannot resolve the tom_brain_procedure_prototype package URI — '
+      'cannot resolve the tom_brain_procedure package URI — '
       'is it on the package config?',
     );
   }

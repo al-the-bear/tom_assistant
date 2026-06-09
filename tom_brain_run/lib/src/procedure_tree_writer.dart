@@ -42,7 +42,7 @@
 
 import 'dart:io';
 
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show
         ProcedureErrorNode,
         ProcedureNoteNode,

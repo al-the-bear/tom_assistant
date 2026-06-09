@@ -17,7 +17,7 @@
 //                         pending **without** touching the durable record
 //                         (Hard principle 6 — derivation, not deletion).
 //
-// The substrate-call half of compaction lives in `tom_brain_procedure_prototype`
+// The substrate-call half of compaction lives in `tom_brain_procedure`
 // (engine, access spec § 21.10); this suite is the pure-store half only.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart';

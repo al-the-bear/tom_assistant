@@ -6,9 +6,9 @@
 //
 //   * `tom_brain_substrate`            — `SubstrateEventBus` (B.38)
 //   * `tom_brain_memory`               — `MemoryEventBus` (A.85)
-//   * `tom_brain_procedure_prototype`  — `EngineEventBus` (C.44) and
+//   * `tom_brain_procedure`  — `EngineEventBus` (C.44) and
 //                                        `DispatcherEventBus`
-//   * `tom_brain_access_prototype`     — `AccessEventBus`
+//   * `tom_brain_access`     — `AccessEventBus`
 //
 // Each was a `StreamController<E>.broadcast(sync: false)` plus an
 // `emit` / `events` / `close` / `isClosed` surface and a closed-after-

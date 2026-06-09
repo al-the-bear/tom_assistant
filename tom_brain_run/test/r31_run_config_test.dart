@@ -58,7 +58,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:tom_basics/tom_basics.dart' show TomPlatformUtils;
-import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
+import 'package:tom_brain_access/tom_brain_access.dart'
     show AccessConfigException, serveWithShelfIo;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show MemoryConfigException, SqliteVecBinaryResolver;

@@ -50,7 +50,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart';
+import 'package:tom_brain_access/tom_brain_access.dart';
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show MemoryConfig, SqliteVecBinaryResolver;
 import 'package:tom_brain_run/tom_brain_run.dart';

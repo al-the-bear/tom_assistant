@@ -25,7 +25,7 @@
 // `values['evalId']` so `query` can recover it from a recalled node's values.
 
 import 'package:tom_brain_memory/tom_brain_memory.dart' show TomBrainMemory;
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show MemoryRetrievalConfig, ProcedureEngine, ProcedureInvocation;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show NodeDraft, Scope;
 

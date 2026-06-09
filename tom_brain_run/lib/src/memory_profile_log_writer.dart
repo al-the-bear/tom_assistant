@@ -32,7 +32,7 @@
 
 import 'dart:io';
 
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show MemoryAccessRecord;
 
 /// The profile name a `null`-profile (process-default) access logs under.

@@ -10,7 +10,7 @@
 import 'dart:io';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart' show TrailOutcomeStatus;
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart';
+import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:test/test.dart';
 

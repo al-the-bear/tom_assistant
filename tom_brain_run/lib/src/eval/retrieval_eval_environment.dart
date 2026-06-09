@@ -15,7 +15,7 @@
 // depends on store-assigned identities and an eval re-runs identically on a
 // fresh profile.
 
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show MemoryRetrievalConfig;
 
 /// One fixture document the harness asks the environment to seed.

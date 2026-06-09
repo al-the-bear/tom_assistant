@@ -21,7 +21,7 @@
 //      the graceful decline is sent back and nothing else (no `Access` is built,
 //      so no `Event` / `Conclusion` is written).
 
-import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
+import 'package:tom_brain_access/tom_brain_access.dart'
     show telegramNotAuthorisedMessage;
 import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryStats;
 import 'package:tom_brain_smoke_prototype/tom_brain_smoke_prototype.dart';

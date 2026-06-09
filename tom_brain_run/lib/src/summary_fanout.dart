@@ -28,7 +28,7 @@
 
 import 'dart:io';
 
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show LlmTrailRecord, SubstrateBridge, TurnSummary;
 
 import 'llm_raw_path.dart' show llmRawPathFromRoot, llmRawStem;

@@ -23,7 +23,7 @@
 // then `weights` (when present) retunes named fusion weights via
 // `withWeights` — the "deliberately weakened weight set" lever.
 
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show MemoryRetrievalConfig;
 
 import 'retrieval_eval_config.dart';

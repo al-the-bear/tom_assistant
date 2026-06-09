@@ -1,5 +1,5 @@
 // PreemptionState unit tests (moved here at the C.48 reuse-extraction
-// pass from `tom_brain_procedure_prototype`).
+// pass from `tom_brain_procedure`).
 //
 // Dart-level unit tests for the state object in isolation: the
 // foreground-waiting flag, the resume-signal (`Completer`) lifecycle, and

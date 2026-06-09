@@ -32,7 +32,7 @@
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
+import 'package:tom_brain_access/tom_brain_access.dart'
     show
         AccessConfig,
         AccessServeSeam,
@@ -46,7 +46,7 @@ import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
         startBrainAccessProcess;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show MemoryConfig, createSqliteTomBrainMemory;
-import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show
         BrainProcessBoot,
         BrainProcessConfig,
@@ -464,23 +464,23 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
 
 /// Resolves the procedure prototype's shipped `scripts/system` directory.
 ///
-/// The run assembly depends on `tom_brain_procedure_prototype`, whose
+/// The run assembly depends on `tom_brain_procedure`, whose
 /// `scripts/system` folder ships `answer_with_memory_v1`. Resolving the package
 /// URI (rather than a working-directory-relative path) lets the assembly find
 /// those scripts no matter where the process was launched from.
 Future<Directory> _resolveProcedurePrototypeScripts() async {
   final Uri? libUri = await Isolate.resolvePackageUri(
     Uri.parse(
-      'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart',
+      'package:tom_brain_procedure/tom_brain_procedure.dart',
     ),
   );
   if (libUri == null) {
     throw StateError(
-      'cannot resolve the tom_brain_procedure_prototype package URI — '
+      'cannot resolve the tom_brain_procedure package URI — '
       'is it on the package config?',
     );
   }
-  // libUri → <package-root>/lib/tom_brain_procedure_prototype.dart; the scripts
+  // libUri → <package-root>/lib/tom_brain_procedure.dart; the scripts
   // live a sibling of lib/, at <package-root>/scripts/system.
   return Directory.fromUri(libUri.resolve('../scripts/system'));
 }

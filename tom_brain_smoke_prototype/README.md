@@ -6,7 +6,7 @@ it on a local port.
 
 ## Why it exists
 
-`tom_brain_access_prototype` (the running process) must not import
+`tom_brain_access` (the running process) must not import
 `tom_brain_substrate` / `tom_brain_memory`; it receives an already-booted
 cognition through the `BrainProvisioner` seam, whose default *refuses* because
 the access package cannot legally boot a brain on its own. This package is the

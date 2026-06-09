@@ -28,7 +28,7 @@
 //
 //   * No substrate call. Compaction is itself an LLM call expressed as a
 //     prompt template (hub § 22.4); that orchestration lives in the engine
-//     (`tom_brain_procedure_prototype`), which reads this store, runs the
+//     (`tom_brain_procedure`), which reads this store, runs the
 //     call, and hands the rewritten summary back via [applyCompaction]. The
 //     shared layer carries no I/O (A.9 dependency discipline).
 //   * No file I/O. This module stays pure (A.9 dependency discipline): it

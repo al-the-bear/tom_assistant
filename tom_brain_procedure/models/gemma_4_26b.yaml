@@ -1,0 +1,28 @@
+# gemma_4_26b — model config (layer 2 of the three-layer model configuration;
+# tom_brain_procedure_specification.md § 21.6, § 22.6b).
+#
+# A model config is pure identity + sampling: it names no provider and holds no
+# endpoint or key. The `providerNames` map carries the name this logical model
+# is known by on each provider (the same model is named differently per
+# provider). The `history:` block is the per-model conversation-history sizing
+# (§ 22.6b) — the window scales with the model's context budget.
+
+id: gemma_4_26b
+
+# The provider-specific names this logical model resolves to.
+providerNames:
+  omlx: gemma3:27b
+  ollama: gemma2:27b
+
+# Sampling — optional; a provider applies its own default for any absent knob.
+temperature: 0.7
+
+# Conversation-history sizing (§ 22.6b). A missing `history:` block falls back
+# to exactly these documented defaults (raw 10 / threshold 40 / 1024 tokens /
+# 6000 chars), so this block is illustrative — present here to document the
+# knobs, not because they differ from the defaults.
+history:
+  rawCount: 10              # verbatim turns always kept
+  compactionThreshold: 40   # pending turns that trigger the next compaction
+  maxCompactedTokens: 1024  # advisory token bound on the compacted summary
+  maxCompactedChars: 6000   # hard char bound the summary is truncated to

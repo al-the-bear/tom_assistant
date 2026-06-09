@@ -9,7 +9,7 @@ environment:
 # Why this project exists (Plan-2 step #30 / `prototype_implementation_plan_2.md`
 # § "Build the real BrainProvisioner higher assembly").
 #
-# `tom_brain_access_prototype` is forbidden to import `tom_brain_substrate` /
+# `tom_brain_access` is forbidden to import `tom_brain_substrate` /
 # `tom_brain_memory` (its pubspec scope discipline + `dependency_surface_test`).
 # It therefore receives an *already-booted* cognition through the
 # `BrainProvisioner` seam, whose CLI default refuses — only "a higher assembly
@@ -24,10 +24,10 @@ environment:
 # real cognition. It sits above all four brain packages and is the only
 # production place that wires them together.
 #
-#   - tom_brain_access_prototype   — the running process: `startBrainAccessProcess`,
+#   - tom_brain_access   — the running process: `startBrainAccessProcess`,
 #                                     `ProvisionedBrain`, `QueueSnapshot`,
 #                                     `AccessConfig`, the edge-security policies.
-#   - tom_brain_procedure_prototype — `BrainProcessBoot` / `BrainProcessConfig`
+#   - tom_brain_procedure — `BrainProcessBoot` / `BrainProcessConfig`
 #                                     (boots substrate → memory → engine →
 #                                     dispatcher), `MemoryProvisioningConfig`,
 #                                     `Dispatcher`, `RunCoordinator`.
@@ -42,10 +42,10 @@ environment:
 #                                     resolver consistent with the rest of the
 #                                     closure.
 dependencies:
-  tom_brain_access_prototype:
-    path: ../tom_brain_access_prototype
-  tom_brain_procedure_prototype:
-    path: ../tom_brain_procedure_prototype
+  tom_brain_access:
+    path: ../tom_brain_access
+  tom_brain_procedure:
+    path: ../tom_brain_procedure
   tom_brain_substrate:
     path: ../tom_brain_substrate
   tom_brain_memory:
