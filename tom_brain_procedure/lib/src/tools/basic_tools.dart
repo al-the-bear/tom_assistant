@@ -90,7 +90,16 @@ List<BrainTool> _basicTools() => <BrainTool>[
       _ScriptRunD4rtTool(),
       _ProcedureListTool(),
       _ProcedureRunTool(),
+      // The four prominent verbs exposed as their own tools (Todo 4 / § 11):
+      // fixed-id aliases of procedure.run so a model can call `procedure.plan`
+      // directly instead of recalling the `<verb>_v1` id.
+      for (final verb in _verbToolNames) _ProcedureVerbTool(verb),
     ];
+
+/// The four prominent verbs given their own explicit tool (Todo 4 / § 11).
+/// `think` is intentionally absent: `think_v1` is a no-op machinery stub, not a
+/// prominent loop a caller reaches for by name.
+const List<String> _verbToolNames = <String>['plan', 'create', 'critique', 'decide'];
 
 /// The wire descriptors for the shipped basic tool set (§ 21.4).
 ///
@@ -664,6 +673,51 @@ final class _ProcedureRunTool extends BrainTool {
         const <String, Object?>{};
     final version = (args['version'] as num?)?.toInt();
     return engine.runProcedure(args['id'] as String, inputs, version: version);
+  }
+}
+
+/// An explicit tool for one prominent verb (`plan` / `create` / `critique` /
+/// `decide`) — a thin, fixed-id alias of `procedure.run` (Todo 4 / § 11).
+///
+/// Where `procedure.run` takes an arbitrary `id` and an `inputs` sub-map, a
+/// verb tool fixes the id to `<verb>_v1` and forwards the caller's whole
+/// argument map straight through as the procedure inputs. Until the real loop
+/// ships (Todo 8/9) the target is the clear-error stub, so invoking the tool
+/// surfaces a failed result (the stub's `ProcedureNotImplemented` is swallowed
+/// into a failed result on the tool path; the typed signal lives on the nested
+/// run's trail).
+final class _ProcedureVerbTool extends BrainTool {
+  _ProcedureVerbTool(this.verb);
+
+  /// The bare verb this tool runs (`plan` / `create` / `critique` / `decide`).
+  final String verb;
+
+  /// The fixed procedure id the verb resolves to.
+  String get _procedureId => '${verb}_v1';
+
+  @override
+  String get name => 'procedure.$verb';
+  @override
+  ToolGroup get group => ToolGroup.procedure;
+  @override
+  bool get readOnly => false;
+  @override
+  String get description =>
+      'Runs the $verb loop ($_procedureId) — a fixed-id alias of '
+      'procedure.run; the caller inputs are forwarded straight through.';
+  @override
+  Map<String, Object?> get inputSchema => const <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{},
+      };
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final engine = ctx.engine;
+    if (engine == null) {
+      throw ToolSurfaceUnavailable(surface: 'engine', tool: name);
+    }
+    return engine.runProcedure(_procedureId, args);
   }
 }
 

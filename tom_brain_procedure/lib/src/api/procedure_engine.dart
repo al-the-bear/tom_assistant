@@ -96,6 +96,7 @@ import '../recorder/tool_access_record.dart';
 import '../recorder/run_records.dart';
 import '../recorder/run_recorder.dart';
 import '../validator/sandbox_validator.dart';
+import 'engine_tool_surface.dart';
 import 'procedure_inputs.dart';
 import 'procedure_invocation.dart';
 import 'procedure_outcome.dart';
@@ -615,10 +616,12 @@ final class ProcedureEngine {
     // deployment's directories (and nothing outside them); and a web surface
     // over the substrate **client** (never the budget-charging bridge — the one
     // `toolCalls` unit `tool.invoke` pre-charges *is* the web call) so
-    // `web.search` / `web.fetch` work. The `engine` surface is still left
-    // unbound — a `script.run_d4rt` / `procedure.*` tool raises
-    // `ToolSurfaceUnavailable`, which the loop turns into an `{ok: false}`
-    // result rather than aborting the answer.
+    // `web.search` / `web.fetch` work. The `engine` surface (Todo 4 / G-PR7)
+    // is bound to *this* run's depth-capped `runPrimitive` and the engine's
+    // resolver, so `procedure.list` / `procedure.run` and the four
+    // `procedure.<verb>` aliases work; `script.run_d4rt` stays deferred (its
+    // nested host is built after this context) and the surface raises
+    // `ToolSurfaceUnavailable` for it, which the loop turns into `{ok: false}`.
     final exts = extensions;
     final ToolRegistry toolRegistry;
     if (exts != null) {
@@ -653,6 +656,10 @@ final class ProcedureEngine {
         memory: runMemoryBridge.client,
         fileScopeRoots: toolFileScopeRoots,
         web: SubstrateToolWebSurface(substrateBridge.client),
+        engine: EngineToolSurface(
+          resolver: resolver,
+          runPrimitive: runPrimitive,
+        ),
       ),
       clock: _now,
       onEvent: (toolAccessSink == null && noticeSink == null)

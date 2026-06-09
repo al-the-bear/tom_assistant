@@ -3,9 +3,10 @@
 //
 // Plan step C.40 (verbatim): "Implement the sugar `think(…)`, `plan(…)`,
 // `create(…)`, `critique(…)`, `decide(…)` as bridged aliases over
-// `runProcedure('<name>_v1', …)`. For the prototype only `think_v1` exists
-// as a no-op stub procedure script; the others throw `ProcedureNotFound`
-// informatively until Phase D loads the system library."
+// `runProcedure('<name>_v1', …)`." As of Todo 4 (§ 5.2.1) all five `<verb>_v1`
+// targets now ship: `think_v1` is a no-op stub; `plan_v1` / `create_v1` /
+// `critique_v1` / `decide_v1` are clear-error stubs that throw the typed
+// `ProcedureNotImplemented` until their real loops land (plan Todos 8–9).
 //
 // These tests pin the four facts that make the sugar correct:
 //
@@ -14,10 +15,14 @@
 //   2. THINK     — `think(inputs)` from a script resolves to `think_v1`
 //                  and runs the no-op stub; the stub's result threads back
 //                  to the caller unchanged, and both runs are recorded.
-//   3. MISSING   — `plan` / `create` / `critique` / `decide` resolve to a
-//                  missing `<name>_v1` and surface `ProcedureNotFound`
-//                  informatively (the run closes `errored`, the captured
-//                  error names the absent id).
+//   3. STUB-FAIL — `plan` / `create` / `critique` / `decide` resolve to their
+//                  shipped clear-error stub (no longer `ProcedureNotFound`)
+//                  and the nested stub fails loudly: the caller's run closes
+//                  `errored`, both runs are recorded (the stub *ran*), and the
+//                  typed signal lives on the nested run's trail (the throw is
+//                  swallowed into a failed result on the sugar/nested path —
+//                  top-level invoke is where it reaches `outcome.error`, see
+//                  `g_pr_stub_verbs_and_tool_surface_test.dart`).
 //   4. STUB      — the shipped `scripts/system/think_v1.dart` loads with a
 //                  valid header and runs to an accepted outcome both when
 //                  invoked directly and via the `think` alias.
@@ -150,9 +155,16 @@ Future<Object?> run(inputs) async {
     });
   });
 
-  group('C.40-3 the unimplemented verbs surface ProcedureNotFound', () {
+  group('C.40-3 the not-yet-real verbs resolve to a stub and fail loudly', () {
+    /// Loads one shipped `scripts/system/<id>.dart` clear-error stub.
+    Future<LoadedProcedure> loadStub(String id) async {
+      final store = DiskProcedureStore(systemDir: Directory('scripts/system'));
+      final resolver = await ProcedureResolver.fromStore(store);
+      return resolver.resolve(id);
+    }
+
     for (final verb in const <String>['plan', 'create', 'critique', 'decide']) {
-      test('$verb resolves to a missing ${verb}_v1 and closes errored',
+      test('$verb resolves to the shipped ${verb}_v1 stub and closes errored',
           () async {
         final engine = engineFor(<LoadedProcedure>[
           _procedure(
@@ -165,26 +177,29 @@ Future<Object?> run(inputs) async {
 }
 ''',
           ),
-          // Note: no `${verb}_v1` is loaded — the resolver does not know it.
+          // The clear-error stub ships now (Todo 4) — the sugar resolves it.
+          await loadStub('${verb}_v1'),
         ]);
 
         final outcome = await engine
             .invoke(ProcedureInvocation(procedureId: 'caller_v1'))
             .outcome;
 
-        // The missing target crashes the caller; the run closes errored and
-        // the captured error informatively names the absent procedure id.
+        // The stub resolved and ran (both runs recorded), then failed loudly.
+        // The caller did not crash: the nested stub's `ProcedureNotImplemented`
+        // is swallowed into a failed result on the sugar/nested path, so the
+        // caller closes `errored` with a null outcome error — never the bare
+        // `ProcedureNotFound` (the target was found). The typed signal is
+        // reachable via top-level invoke (g_pr_stub_verbs_and_tool_surface).
         expect(outcome.status, TrailOutcomeStatus.errored);
-        expect(outcome.error, isA<ProcedureNotFound>());
-        final notFound = outcome.error! as ProcedureNotFound;
-        expect(notFound.id, '${verb}_v1');
-        expect(notFound.code, procedureNotFoundCode);
+        expect(outcome.error, isNot(isA<ProcedureNotFound>()));
+        expect(outcome.result, isNotNull);
+        expect(outcome.result!.isSuccess, isFalse);
 
-        // The crash reached the trail as a runtime-crash error entry.
-        final errors = outcome.entries
-            .where((e) => e.kind == TrailEntryKind.error)
-            .toList();
-        expect(errors, hasLength(1));
+        // Two runs recorded — the caller and the nested ${verb}_v1 stub. A
+        // missing target would have thrown before the nested run was recorded.
+        final recent = await memory.stacks.peek(recentRunsStackName);
+        expect(recent, hasLength(2));
       });
     }
   });

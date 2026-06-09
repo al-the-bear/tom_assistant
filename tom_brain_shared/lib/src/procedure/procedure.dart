@@ -1,0 +1,18 @@
+// Barrel for the `procedure/` module — the cross-component procedure error
+// vocabulary. At Todo 4 it carries exactly one type: `ProcedureNotImplemented`,
+// the clear error a stub verb (`plan_v1` / `create_v1` / `critique_v1` /
+// `decide_v1`) throws when invoked before its real loop ships
+// (`tom_brain_procedure_prototype_specification.md` § 5.2.1).
+//
+// Why this lives in shared rather than in `tom_brain_procedure`: the typed
+// error must be referenceable by every layer that observes a run outcome —
+// the engine maps it onto `outcome.error`, the access edge and a Forge
+// inspector read it back, and the substrate-side trail render names it — none
+// of which should take a runtime dependency on the procedure package to do so.
+// `ProcedureNotFound` stays in `tom_brain_procedure` because only the resolver
+// raises it; `ProcedureNotImplemented` is raised from inside a running
+// procedure (via the `notImplemented` engine-native primitive) and surfaces
+// across component boundaries, so it belongs to the shared vocabulary.
+
+export 'procedure_not_implemented.dart'
+    show ProcedureNotImplemented, procedureNotImplementedCode;

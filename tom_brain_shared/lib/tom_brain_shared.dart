@@ -85,6 +85,17 @@ export 'src/time/time.dart'
 // `Maybe<BrainVersion>`; the integer range itself is always ≥ 1.
 export 'src/version/version.dart' show BrainVersion;
 
+// Todo 4 — procedure/ module: `ProcedureNotImplemented` is the clear error a
+// stub verb (`plan_v1` / `create_v1` / `critique_v1` / `decide_v1`) throws when
+// invoked before its real loop ships (proto spec § 5.2.1). It is raised mid-run
+// from the `notImplemented` engine-native primitive and surfaces onto a run's
+// `outcome.error`, so every observer (engine, access edge, Forge inspector,
+// substrate trail render) references it without depending on the procedure
+// package. `ProcedureNotFound` (resolver miss, pre-run) stays in
+// `tom_brain_procedure`.
+export 'src/procedure/procedure.dart'
+    show ProcedureNotImplemented, procedureNotImplementedCode;
+
 // A.17 — anchor/ module: `AssistantDedicationAnchor` is the framing
 // every internal Tom Brain prompt opens with (overview's Postulate 3).
 // Static-only surface: `text`, `version`, `wrap(prompt)`,

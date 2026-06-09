@@ -58,17 +58,23 @@ final class BridgedPrimitiveCatalog {
     'retrievalRole',
   };
 
-  /// Engine-native primitives (C.19–C.21).
+  /// Engine-native primitives (C.19–C.21, plus `notImplemented` at Todo 4).
+  /// `notImplemented` is the single build site for the clear-error stub
+  /// message — the four stub verbs (`plan_v1` / `create_v1` / `critique_v1` /
+  /// `decide_v1`) declare it in `requires` and call it once each (§ 5.2.1).
   static const Set<String> engineNative = {
     'runProcedure',
     'note',
     'yield_if_foreground_waiting',
+    'notImplemented',
   };
 
-  /// Sugar aliases over `runProcedure` (C.40). For the prototype only
-  /// `think` is backed by a stub; the others throw `ProcedureNotFound` at
-  /// runtime, but they are still part of the *callable* bridged surface, so
-  /// a procedure that calls one of them must declare it in `requires`.
+  /// Sugar aliases over `runProcedure` (C.40). All five verbs now resolve to a
+  /// shipped `<verb>_v1` target: `think` is a no-op stub, while `plan` /
+  /// `create` / `critique` / `decide` resolve to clear-error stubs that throw
+  /// `ProcedureNotImplemented` until their real loops land (Todo 4, § 5.2.1).
+  /// They are part of the *callable* bridged surface, so a procedure that calls
+  /// one must declare it in `requires`.
   static const Set<String> sugar = {
     'think',
     'plan',

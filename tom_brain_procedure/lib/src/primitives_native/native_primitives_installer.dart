@@ -38,6 +38,7 @@
 // The installer coerces that `Map` into a `Map<String, Object?>` at the
 // boundary, validating that every key is a String.
 
+import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'package:tom_d4rt/d4rt.dart';
 
 import '../api/procedure_inputs.dart';
@@ -75,6 +76,15 @@ const String noteName = 'note';
 /// importing [engineNativeLibrary]; it streams one increment of the answer
 /// back to the originating channel (P1.3 #8, § 11 step 2).
 const String emitName = 'emit';
+
+/// The d4rt global name the clear-error stub primitive is bound to.
+///
+/// A clear-error stub verb (`plan_v1` / `create_v1` / `critique_v1` /
+/// `decide_v1`) reaches it as a bare `notImplemented('<verb>')` call after
+/// importing [engineNativeLibrary]; it always throws
+/// [ProcedureNotImplemented] (Todo 4, § 5.2.1). It is the single place the
+/// stub message is built, so the four stub bodies stay one-liners.
+const String notImplementedName = 'notImplemented';
 
 /// The d4rt global name the cooperative-preemption checkpoint is bound to.
 ///
@@ -147,6 +157,19 @@ void Function(D4rt) nativePrimitivesInstaller({
           yieldPrimitive.yieldIfForegroundWaiting(),
       engineNativeLibrary,
       signature: 'Future<void> yield_if_foreground_waiting()',
+    );
+
+    interpreter.registertopLevelFunction(
+      notImplementedName,
+      (
+        InterpreterVisitor visitor,
+        List<Object?> arguments,
+        Map<String, Object?> namedArguments,
+        List<RuntimeType>? typeArguments,
+      ) =>
+          _invokeNotImplemented(arguments),
+      engineNativeLibrary,
+      signature: 'Object? notImplemented(String verb)',
     );
 
     interpreter.registertopLevelFunction(
@@ -307,6 +330,32 @@ Object? _invokeNote(
 
   primitive.note(category, payload);
   return null;
+}
+
+/// Marshals a d4rt `notImplemented(...)` call.
+///
+/// Positional args: `[0]` the bare verb (String). Always throws
+/// [ProcedureNotImplemented] — it is the single build site for the fixed
+/// § 5.2.1 stub message, so the four stub bodies stay one `=> notImplemented`
+/// expression each (Todo 4 / 4.6 dedupe). Never returns; the declared
+/// `Object?` return type only satisfies d4rt's signature parser.
+Never _invokeNotImplemented(List<Object?> arguments) {
+  if (arguments.isEmpty) {
+    throw ArgumentError(
+      'notImplemented expects (String verb); got 0 positional arguments',
+    );
+  }
+
+  final verb = arguments[0];
+  if (verb is! String) {
+    throw ArgumentError.value(
+      verb,
+      'verb',
+      'notImplemented verb must be a String',
+    );
+  }
+
+  throw ProcedureNotImplemented(verb);
 }
 
 /// Marshals a d4rt `emit(...)` call onto [primitive].

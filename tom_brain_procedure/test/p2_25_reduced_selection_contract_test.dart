@@ -29,11 +29,15 @@
 //     `UnsupportedProcedureKind`). This door needs no memory — it is pure
 //     resolution.
 //   - **Sugar-library door** (the `runProcedure` resolver). The sugar verbs map
-//     `<verb>` → `<verb>_v1`; the shipped disk library contains exactly one of
-//     those five targets — `think_v1`, the no-op stub (`requires: []`). The
-//     other four (`plan_v1` / `create_v1` / `critique_v1` / `decide_v1`) are
-//     absent, so the verbs surface `ProcedureNotFound` — the library-shape root
-//     cause C.40 proves end-to-end through the engine.
+//     `<verb>` → `<verb>_v1`; the shipped disk library contains all five of
+//     those targets. `think_v1` is the no-op stub (`requires: []`); the other
+//     four (`plan_v1` / `create_v1` / `critique_v1` / `decide_v1`) are
+//     clear-error stubs (Todo 4 / G-PR6) that resolve and validate — declaring
+//     `requires: [notImplemented]` — but throw `ProcedureNotImplemented` when
+//     *run*, until Todos 8/9 land the real loops. The throw-at-run behaviour is
+//     proven end-to-end in `g_pr_stub_verbs_and_tool_surface_test.dart`; this
+//     door is a *library-shape* confirmation, so it asserts only that all five
+//     targets resolve.
 //
 // No store, no substrate, no engine run: this is a *selection / library-shape*
 // confirmation, so it drives the two production resolution surfaces directly.
@@ -48,14 +52,12 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         ClassifyFallback,
         DiskProcedureStore,
         InboundClassifier,
-        ProcedureNotFound,
         ProcedureResolver,
         ProcedureSelector,
         SystemProcedures,
         UnknownProcedureHint,
         UnsupportedProcedureKind,
         classifyInboundV1,
-        procedureNotFoundCode,
         resolveProcedureId,
         sugarAliasProcedureIds;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
@@ -182,7 +184,7 @@ void main() {
     });
   });
 
-  group('P2.25 sugar-library door — only think_v1 is a reachable target', () {
+  group('P2.25 sugar-library door — all five sugar targets are shipped', () {
     // The shipped system library, resolved through the real disk store +
     // resolver path — the same surface the engine's `runProcedure` resolves
     // against. Built once: resolution is a pure function of a fixed index.
@@ -223,21 +225,23 @@ void main() {
     });
 
     // The library-shape table: the four request-handling sugar verbs map to
-    // `<verb>_v1` targets the reduced library does not ship, so resolving them
-    // raises an informative ProcedureNotFound — the root cause C.40 proves the
-    // verbs surface end-to-end through the engine.
+    // `<verb>_v1` clear-error stubs (Todo 4 / G-PR6) the reduced library now
+    // ships. Each resolves cleanly to a version-1 procedure declaring exactly
+    // `requires: [notImplemented]`; the throw-at-run (`ProcedureNotImplemented`,
+    // never `ProcedureNotFound`) is proven through the engine in
+    // `g_pr_stub_verbs_and_tool_surface_test.dart`. This door confirms only the
+    // library shape: the target is present and validatable.
     for (final verb in const <String>['plan', 'create', 'critique', 'decide']) {
-      test('$verb resolves to a missing ${verb}_v1 → ProcedureNotFound', () {
+      test('$verb resolves to a shipped ${verb}_v1 clear-error stub', () {
         final targetId = sugarAliasProcedureIds[verb]!;
         expect(targetId, '${verb}_v1');
-        expect(library.knows(targetId), isFalse,
-            reason: 'the reduced library does not ship $targetId');
-        expect(
-          () => library.resolve(targetId),
-          throwsA(isA<ProcedureNotFound>()
-              .having((e) => e.id, 'id', targetId)
-              .having((e) => e.code, 'code', procedureNotFoundCode)),
-        );
+        expect(library.knows(targetId), isTrue,
+            reason: 'the reduced library ships $targetId as a clear-error stub');
+        final stub = library.resolve(targetId);
+        expect(stub.header.version, 1);
+        expect(stub.header.requires, <String>['notImplemented'],
+            reason: 'a clear-error stub touches exactly the notImplemented '
+                'primitive that builds the § 5.2.1 message');
       });
     }
   });

@@ -29,8 +29,11 @@
 //     reusable-across-cycles contract pinned.
 //   - C.40 ✅ — the sugar aliases (`think` / `plan` / `create` /
 //     `critique` / `decide`) as fixed-id projections of `runProcedure`
-//     (`sugar_aliases.dart`, § 5.2). Only `think_v1` exists in the
-//     prototype (a no-op stub); the rest surface `ProcedureNotFound`.
+//     (`sugar_aliases.dart`, § 5.2). All five `<verb>_v1` targets now ship:
+//     `think_v1` is a no-op stub, the other four are clear-error stubs.
+//   - Todo 4 ✅ — `notImplemented(verb)` — the single build site for the
+//     clear-error stub message; the four stub verbs call it to throw
+//     `ProcedureNotImplemented` (§ 5.2.1).
 
 export 'emit_primitive.dart' show EmitPrimitive, OutboundDeltaSink;
 export 'native_primitives_installer.dart'
@@ -39,6 +42,7 @@ export 'native_primitives_installer.dart'
         engineNativeLibrary,
         nativePrimitivesInstaller,
         noteName,
+        notImplementedName,
         runProcedureName,
         yieldIfForegroundWaitingName;
 export 'note_primitive.dart' show NotePrimitive;

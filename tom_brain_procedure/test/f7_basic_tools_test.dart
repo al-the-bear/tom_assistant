@@ -4,8 +4,10 @@
 //
 // What this suite locks:
 //
-//   F.7-1 — `registerBasicTools` registers the sixteen shipped tools under
-//           their § 21.4 names, groups, and `readOnly` flags.
+//   F.7-1 — `registerBasicTools` registers the twenty shipped tools under
+//           their § 21.4 names, groups, and `readOnly` flags (the sixteen base
+//           tools plus the four explicit verb tools `procedure.plan` /
+//           `create` / `critique` / `decide`, Todo 4 / § 11).
 //   F.7-2 — each tool's happy path against stubs routes through the existing
 //           surface (memory client, web surface, engine surface, the
 //           in-process `TodoStore`, the file-scope root) — no new effect path.
@@ -30,12 +32,13 @@ import 'package:test/test.dart';
 
 void main() {
   group('F.7-1 registerBasicTools catalogue', () {
-    test('registers the sixteen § 21.4 tools with their groups + readOnly',
+    test('registers the twenty § 21.4 tools with their groups + readOnly',
         () {
       final registry = ToolRegistry();
       registerBasicTools(registry);
 
-      // Name → (group, readOnly) per the § 21.4 table.
+      // Name → (group, readOnly) per the § 21.4 table, plus the four explicit
+      // verb tools (Todo 4 / § 11) that alias procedure.run with a fixed id.
       final expected = <String, ({ToolGroup group, bool readOnly})>{
         'memory.read': (group: ToolGroup.memory, readOnly: true),
         'memory.write': (group: ToolGroup.memory, readOnly: false),
@@ -53,6 +56,10 @@ void main() {
         'script.run_d4rt': (group: ToolGroup.script, readOnly: false),
         'procedure.list': (group: ToolGroup.procedure, readOnly: true),
         'procedure.run': (group: ToolGroup.procedure, readOnly: false),
+        'procedure.plan': (group: ToolGroup.procedure, readOnly: false),
+        'procedure.create': (group: ToolGroup.procedure, readOnly: false),
+        'procedure.critique': (group: ToolGroup.procedure, readOnly: false),
+        'procedure.decide': (group: ToolGroup.procedure, readOnly: false),
       };
 
       for (final entry in expected.entries) {
@@ -73,9 +80,9 @@ void main() {
   });
 
   group('F.7-1b defaultToolCatalogue wire descriptors', () {
-    test('describes the sixteen basic tools with name/group/description', () {
+    test('describes the twenty basic tools with name/group/description', () {
       final catalogue = defaultToolCatalogue();
-      expect(catalogue, hasLength(16));
+      expect(catalogue, hasLength(20));
 
       // Each descriptor carries the four wire fields the substrate's
       // tool-catalogue render reads (`{name, group, description, input_schema}`,
@@ -110,6 +117,10 @@ void main() {
           'script.run_d4rt',
           'procedure.list',
           'procedure.run',
+          'procedure.plan',
+          'procedure.create',
+          'procedure.critique',
+          'procedure.decide',
         ]),
       );
 
@@ -490,6 +501,28 @@ void main() {
       );
     });
   });
+
+  group('F.7-9 explicit verb tools alias procedure.run with a fixed id', () {
+    // The four prominent verbs (Todo 4 / § 11) are exposed as their own tools
+    // so a model can call `procedure.plan` directly instead of remembering the
+    // `<verb>_v1` id. Each fixes the id and forwards the caller's inputs.
+    for (final verb in const ['plan', 'create', 'critique', 'decide']) {
+      test('procedure.$verb routes to ${verb}_v1 with the caller inputs',
+          () async {
+        final engine = _StubEngine();
+        final ctx = _ctx(engine: engine);
+        final ran = await _run('procedure.$verb', {'goal': 'x'}, ctx);
+
+        expect(engine.runIds, <String>['${verb}_v1'],
+            reason: 'verb tool must fix the procedure id');
+        // The stub engine echoes inputs as outputs — the caller's payload
+        // reaches the target unchanged.
+        final result = ran! as Map;
+        expect(result['status'], 'succeeded');
+        expect((result['outputs'] as Map)['goal'], 'x');
+      });
+    }
+  });
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -626,6 +659,10 @@ class _StubEngine implements ToolEngineSurface {
   final Object? scriptThrows;
   final RunProcedurePrimitive? primitive;
 
+  /// The procedure ids handed to [runProcedure], in call order — lets a test
+  /// assert an explicit verb tool fixed the id to `<verb>_v1`.
+  final List<String> runIds = <String>[];
+
   @override
   Future<List<Map<String, Object?>>> listProcedures() async => proceduresList;
 
@@ -635,6 +672,7 @@ class _StubEngine implements ToolEngineSurface {
     Map<String, Object?> inputs, {
     int? version,
   }) async {
+    runIds.add(id);
     final prim = primitive;
     if (prim != null) {
       final result =
