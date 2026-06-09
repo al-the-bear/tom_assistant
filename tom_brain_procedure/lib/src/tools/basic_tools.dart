@@ -34,6 +34,8 @@ import 'dart:io';
 
 import 'package:dcli/dcli.dart' show find;
 import 'package:path/path.dart' as p;
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show PathScope, ScopedPath;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
         DemotionReason,
@@ -1122,35 +1124,27 @@ List<String> _unifiedDiffBody(List<String> a, List<String> b) {
   return out;
 }
 
-/// The absolute, normalised form of [root].
-String _normalizedRoot(String root) => p.normalize(p.absolute(root));
-
-/// A root that admits a resolved path, paired with that resolved path.
-///
-/// [root] is the normalised root (so callers can rebase matches back onto it);
-/// [path] is the resolved, containment-checked absolute path under that root.
-typedef _ScopeHit = ({String root, String path});
+/// A root that admits a resolved path, paired with that resolved path — the
+/// [ScopedPath] shape from `tom_core_agentic`'s [PathScope], aliased locally so
+/// the tool helpers keep their established name.
+typedef _ScopeHit = ScopedPath;
 
 /// Resolves [relative] against every configured root, returning one hit per
 /// root whose bounds the resolved path stays within (PE-1).
 ///
-/// The file-scope sandbox is a *union* of roots: a `..` segment, an absolute
-/// path, or any other escape produces a path outside a given root, which is
-/// dropped for that root. [FileScopeViolation] is raised only when the path
-/// escapes *every* root — before the caller touches the filesystem. Hits keep
-/// the roots' configured order, so the first hit is the earliest-priority root
-/// that admits the path (the write target, the first read candidate).
+/// The normalisation-and-containment rule is the domain-free [PathScope]: a
+/// *union* of roots where a `..` segment, an absolute path, or any other escape
+/// drops out of the roots it leaves. The brain's breach policy stays here —
+/// [FileScopeViolation] is raised, before the caller touches the filesystem,
+/// when the path escapes *every* root, or when no roots are configured (a scope
+/// that admits nothing). Hits keep the roots' configured order, so the first hit
+/// is the earliest-priority root that admits the path (the write target, the
+/// first read candidate).
 List<_ScopeHit> _resolveWithinRoots(List<String> roots, String relative) {
-  final hits = <_ScopeHit>[];
-  for (final root in roots) {
-    final normalizedRoot = _normalizedRoot(root);
-    final candidate = p.normalize(p.join(normalizedRoot, relative));
-    final within =
-        candidate == normalizedRoot || p.isWithin(normalizedRoot, candidate);
-    if (within) {
-      hits.add((root: normalizedRoot, path: candidate));
-    }
+  if (roots.isEmpty) {
+    throw FileScopeViolation(roots: roots, requested: relative);
   }
+  final hits = PathScope(roots).resolve(relative);
   if (hits.isEmpty) {
     throw FileScopeViolation(roots: roots, requested: relative);
   }
