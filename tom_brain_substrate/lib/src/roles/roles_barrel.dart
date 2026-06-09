@@ -117,6 +117,15 @@ export 'procedure/procedure_barrel.dart';
 // `bootstrapRoleRegistryWithRetrievalProcedureAndCreation()` composes the full
 // eighteen-role live roster (core + retrieval + procedure + creation).
 export 'creation/creation_barrel.dart';
+// Todo 8 (G-P3) — the five planning-subsystem roles
+// (`planning_specification.md` § 8): `planner`, `decomposer`, `estimator`,
+// `plan_evaluator`, `re_planner`. A separate, optional roster (like the
+// retrieval / procedure / creation rosters): `bootstrapRoleRegistry()` still
+// returns exactly the six core roles;
+// `bootstrapRoleRegistryWithRetrievalProcedureCreationAndPlanning()` composes
+// the full twenty-three-role live roster (core + retrieval + procedure +
+// creation + planning).
+export 'planning/planning_barrel.dart';
 export 'role_budget_defaults.dart';
 export 'role_registry.dart';
 export 'role_template.dart';

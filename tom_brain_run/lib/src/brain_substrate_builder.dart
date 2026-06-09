@@ -109,12 +109,15 @@ InProcessTomBrainSubstrate buildSubstrate(
     // every LLM recall leg unroutable, so the conductor silently degraded to
     // the two non-LLM seeds (PE-6) — recall ran far weaker than designed;
     // registering only the retrieval-enabled roster left the authoring branch
-    // unroutable; and registering only the procedure roster left the creation
-    // loop's `creator` / `tester` / `reviewer` calls unroutable. This roster
-    // registers all their templates; the config's `roleRoutes` supplies their
-    // routes (both halves are required for a role to dispatch).
+    // unroutable; registering only the procedure roster left the creation
+    // loop's `creator` / `tester` / `reviewer` calls unroutable; and
+    // registering only the creation roster left the planning loop's `planner` /
+    // `decomposer` / `estimator` / `plan_evaluator` / `re_planner` calls
+    // unroutable. This roster registers all their templates; the config's
+    // `roleRoutes` supplies their routes (both halves are required for a role
+    // to dispatch).
     roleRegistry: roleRegistry ??
-        bootstrapRoleRegistryWithRetrievalProcedureAndCreation(),
+        bootstrapRoleRegistryWithRetrievalProcedureCreationAndPlanning(),
     providers: providers,
     router: router,
     embeddingService: embeddingService,

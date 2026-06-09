@@ -252,6 +252,40 @@ export 'src/memory/memory.dart';
 // procedure.
 export 'src/access/inbound_kinds.dart' show InboundKinds;
 
+// Todo 8 — planning/ module: the cross-component planning vocabulary
+// (`planning_specification.md` § 5, § 10.1, § 11 / G-P1…G-P6). `PlanKind` /
+// `PlanStatus` / `StepKind` / `StepStatus` are the closed token alphabets a
+// `Plan` / `PlanStep` node carries; `PlanView` / `PlanStepView` decode a stored
+// node once at the boundary (the typed queries in `tom_brain_memory`, a Forge
+// plan inspector, and the `plan_v1` loop all read the same shape);
+// `PlanningEvent` (sealed, nine leaves) is the loop's observability surface, and
+// its `kind` discriminators ([planningEventKinds]) are the categories the
+// `plan_v1` d4rt body emits via `note(...)`. All cross-component, so they live
+// in shared (spec § 11 topology — "PlanningEvent value types → tom_brain_shared",
+// "shared kind identifiers in tom_brain_shared").
+export 'src/planning/planning.dart'
+    show
+        GoalClassified,
+        GraphEstimated,
+        PlanAccepted,
+        PlanCritiqueProduced,
+        PlanKind,
+        PlanRejected,
+        PlanRequested,
+        PlanRevised,
+        PlanStatus,
+        PlanStepView,
+        PlanView,
+        PlanningEvent,
+        StepKind,
+        StepStatus,
+        StepStatusChanged,
+        StepsDecomposed,
+        dependsOnEdgeKind,
+        planNodeTypeName,
+        planStepNodeTypeName,
+        planningEventKinds;
+
 // G.21 — history/ module: the brain's own running record of a conversation
 // — `ConversationHistory` (raw window + pending batch + bounded
 // `compactedSummary` + a durable append-only record), the `HistoryTurn` it

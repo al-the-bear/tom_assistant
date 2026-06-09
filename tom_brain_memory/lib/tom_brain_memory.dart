@@ -31,11 +31,17 @@ export 'src/classification/classification.dart';
 export 'src/cognitive_agents/cognitive_agents.dart';
 export 'src/config/config.dart';
 export 'src/edges/edges.dart';
+// Todo 8 (G-P5) — domain-free `superseded_by` chain walk shared by the
+// procedure and planning revision-history queries (hard principle 6).
+export 'src/graph/graph.dart';
 export 'src/isolate_adapter/isolate_adapter.dart';
 export 'src/mcp_server/mcp_server.dart';
 export 'src/migrations/migrations.dart';
 export 'src/nodes/nodes.dart';
 export 'src/observability/observability.dart';
+// Todo 8 (G-P5) — typed planning queries composing the client read primitives
+// (planning spec § 7.4, § 10).
+export 'src/planning/planning.dart';
 // Todo 7 (G-PR4) — typed procedure queries composing the client read
 // primitives (procedure spec § 7.3, § 9.2, § 10.3).
 export 'src/procedures/procedures.dart';

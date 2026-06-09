@@ -238,6 +238,22 @@ types:
     schema:
       goal: { type: string, fts: true }
       summary: { type: string, fts: true }
+      # Lifecycle + classification metadata (Todo 8 / planning_specification.md
+      # § 5.1). All nullable: the `plan_v1` loop stamps `kind` / `status` /
+      # `confidence` / `created_by` at persist time; a node read back before the
+      # loop stamps them (or persisted by an earlier skeleton) carries nulls,
+      # which `PlanView.fromNode` tolerates. `kind` is the closed `PlanKind`
+      # alphabet (creation | research | decision | composite, shared); `status`
+      # is the closed `PlanStatus` alphabet (draft | active | completed |
+      # superseded | abandoned, shared). `confidence` is a JSON double in [0,1]
+      # (the manifest has no `double` field type; `json` round-trips a num),
+      # the same machinery as Procedure.successRate. Mirrors the Procedure
+      # precedent: nullable additions, no version bump (the node store is
+      # JSON-valued, so no column migration).
+      kind: { type: string, nullable: true }
+      status: { type: string, nullable: true }
+      confidence: { type: json, nullable: true }
+      created_by: { type: string, nullable: true }
     embedding:
       source_fields: [goal, summary]
     index:
@@ -262,6 +278,24 @@ types:
     schema:
       description: { type: string, fts: true }
       step_index: { type: integer }
+      # Step shape (Todo 8 / planning_specification.md § 5.2). All nullable: the
+      # `plan_v1` loop stamps them at persist time; a bare step read back before
+      # stamping carries nulls, which `PlanStepView.fromNode` tolerates.
+      # `plan_id` is the containing Plan's node id — the logical handle the typed
+      # queries (`OpenPlansFor` / `PlanStepsInOrder`) filter on. `kind` is the
+      # closed `StepKind` alphabet (think | plan | create | recall | research |
+      # decide | external_action, shared); `status` is the closed `StepStatus`
+      # alphabet (pending | in_progress | succeeded | failed | superseded |
+      # skipped, shared). `success_criterion` is the observable done-condition
+      # (§ 5.2, P5). Mirrors the Procedure precedent: nullable additions, no
+      # version bump (the node store is JSON-valued, so no column migration).
+      plan_id: { type: string, nullable: true }
+      title: { type: string, nullable: true }
+      intent: { type: string, nullable: true }
+      kind: { type: string, nullable: true }
+      owner: { type: string, nullable: true }
+      success_criterion: { type: string, nullable: true }
+      status: { type: string, nullable: true }
     embedding:
       source_fields: [description]
     index:

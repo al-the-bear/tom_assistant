@@ -27,6 +27,8 @@ import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show ProcedureRerankWeights, recencyDecay, scoreProcedureCandidate;
 
+import '../graph/revision_chain.dart' show walkSupersededByChain;
+
 /// A procedure candidate paired with the re-rank [score] that ordered it and
 /// the four factors that produced the score (carried for trail observability —
 /// a run inspector shows *why* a candidate ranked where it did).
@@ -246,77 +248,11 @@ final class ProcedureRevisionChain {
   const ProcedureRevisionChain(this.anchor);
 
   /// Runs the query against [client]. Returns the chain oldest → newest, or an
-  /// empty list when [anchor] does not resolve to a live node.
+  /// empty list when [anchor] does not resolve to a live node. Delegates the
+  /// graph walk to the shared [walkSupersededByChain] and projects each node
+  /// into a `ProcedureView`.
   Future<List<ProcedureView>> execute(TomBrainMemoryClient client) async {
-    final anchorNode = await client.get(anchor);
-    if (anchorNode == null) return const <ProcedureView>[];
-
-    // Walk backward to the root: follow incoming `superseded_by` edges
-    // (predecessor → this).
-    final older = <NodeId>[];
-    var cursor = anchor;
-    final seen = <NodeId>{anchor};
-    while (true) {
-      final predecessor = await _step(
-        client,
-        cursor,
-        EdgeDirection.incoming,
-        pick: (edge) => edge.from,
-      );
-      if (predecessor == null || !seen.add(predecessor)) break;
-      older.add(predecessor);
-      cursor = predecessor;
-    }
-
-    // Walk forward to the tip: follow outgoing `superseded_by` edges
-    // (this → successor).
-    final newer = <NodeId>[];
-    cursor = anchor;
-    while (true) {
-      final successor = await _step(
-        client,
-        cursor,
-        EdgeDirection.outgoing,
-        pick: (edge) => edge.to,
-      );
-      if (successor == null || !seen.add(successor)) break;
-      newer.add(successor);
-      cursor = successor;
-    }
-
-    // Oldest → newest: reversed predecessors, the anchor, then successors.
-    final ordered = <NodeId>[
-      ...older.reversed,
-      anchor,
-      ...newer,
-    ];
-    final nodes = await client.getMany(ordered);
-    // `getMany` elides missing ids and is not order-guaranteed against an
-    // arbitrary id list across all implementations; re-project in chain order.
-    final byId = <NodeId, Node>{for (final n in nodes) n.id: n};
-    return <ProcedureView>[
-      for (final id in ordered)
-        if (byId[id] != null) ProcedureView.fromNode(byId[id]!),
-    ];
-  }
-
-  /// Returns the single chain neighbour of [from] in [direction], or `null`
-  /// when there is none. A procedure has at most one predecessor and one
-  /// successor in a linear revision chain; if storage somehow holds more, the
-  /// first is taken (the chain is linear by construction — a fork is a bug
-  /// upstream, not something this read should mask).
-  Future<NodeId?> _step(
-    TomBrainMemoryClient client,
-    NodeId from,
-    EdgeDirection direction, {
-    required NodeId Function(Edge edge) pick,
-  }) async {
-    final edges = await client.edgesOf(
-      from,
-      direction: direction,
-      types: const <EdgeType>{EdgeType.supersededBy},
-    );
-    if (edges.isEmpty) return null;
-    return pick(edges.first);
+    final nodes = await walkSupersededByChain(client, anchor);
+    return <ProcedureView>[for (final n in nodes) ProcedureView.fromNode(n)];
   }
 }
