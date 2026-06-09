@@ -23,7 +23,7 @@
 //  2. **Bridge-surface signature guard.** The generated `BridgedClass`
 //     carries a `methodSignatures` string per bridged method — the exact
 //     d4rt-facing contract a procedure script binds to. This audit pins
-//     all 19 of them (15 memory + 4 substrate, the § 5.1 surface) to
+//     all 22 of them (17 memory + 5 substrate, the § 5.1 surface) to
 //     literal expected strings. Any edit to a bridge method's d4rt-facing
 //     signature (a param added, removed, retyped, or re-defaulted, then
 //     re-reflected into the `*.b.dart`) drifts the generated string away
@@ -59,9 +59,14 @@ import 'package:tom_d4rt/d4rt.dart';
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, StackEntryId, Vec;
+    show EdgeId, NodeId, ProcedureStatus, StackEntryId, Vec;
 
-import 'package:tom_brain_procedure/tom_brain_procedure.dart';
+// `ProcedureStatus` is hidden here: the procedure layer's run-result enum
+// (succeeded/failed) collides by name with the shared lifecycle enum
+// (authored/draft/active/preferred/demoted) the memory-client contract — and
+// so this audit's `updateProcedureMetrics` recording double — binds to.
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
+    hide ProcedureStatus;
 // The generated delegating barrel that exposes the `BridgedClass`
 // definitions. Same-package `src/` import (the `implementation_imports`
 // lint only fires across package boundaries); used so the audit reads the
@@ -70,12 +75,13 @@ import 'package:tom_brain_procedure/src/bridges/brain_bridges.b.dart';
 
 /// The authoritative § 5.1 memory surface: bridged method name → the
 /// exact d4rt-facing signature string the generated `BridgedClass`
-/// records. Sixteen rows — `recall`, the Extension-H multi-seed
+/// records. Seventeen rows — `recall`, the Extension-H multi-seed
 /// `recallMulti` (§ 6.5 / § 23.2), `classify`, `persist`, `edge`,
 /// `propose_node_type`, the seven `stack.*` operations (exposed as
 /// `stackList` … `stackRemove` because Dart method names cannot contain a
-/// dot), and the three dreaming-agent lifecycle/classifier maintenance
-/// methods `demote`, `updateCentroid`, and `findUncertain`.
+/// dot), the three dreaming-agent lifecycle/classifier maintenance methods
+/// `demote`, `updateCentroid`, and `findUncertain`, and the procedure
+/// metrics-pass cache write `updateProcedureMetrics` (Todo 7 / G-PR5).
 const Map<String, String> _expectedMemorySignatures = <String, String>{
   'recall':
       "Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8})",
@@ -99,6 +105,8 @@ const Map<String, String> _expectedMemorySignatures = <String, String>{
       'Future<void> stackUpdate(String name, String nodeId, {double? priority, String? status, Map<String, Object?>? attrs})',
   'stackRemove': 'Future<void> stackRemove(String name, String nodeId)',
   'demote': 'Future<void> demote(String nodeId, String reason)',
+  'updateProcedureMetrics':
+      'Future<void> updateProcedureMetrics(String nodeId, {String? status, num? successRate, int? runCount, String? lastRunAt})',
   'updateCentroid':
       'Future<void> updateCentroid(String forKey, List<double> centroid)',
   'findUncertain':
@@ -149,7 +157,7 @@ void main() {
   }
 
   group('C.47 bridge audit — registered method set is the § 5.1 surface', () {
-    test('MemoryBridge registers exactly the 16 audited memory methods', () {
+    test('MemoryBridge registers exactly the 17 audited memory methods', () {
       final registered = bridgeClassNamed('MemoryBridge').methods.keys.toSet();
       expect(
         registered,
@@ -202,7 +210,7 @@ void main() {
 
   group('C.47 bridge audit — every bridged method roundtrips end-to-end', () {
     test(
-        'each of the 21 methods runs through the interpreter and is recorded',
+        'each of the 22 methods runs through the interpreter and is recorded',
         () async {
       // Seed canned domain results so every outbound flattening leg has
       // something to read. Inbound legs are observed via the doubles'
@@ -273,6 +281,9 @@ void main() {
             "'n_00000000000000000000000007');",
         'demote': "await mem.demote('n_00000000000000000000000008', "
             "'prunerDecision');",
+        'updateProcedureMetrics':
+            "await mem.updateProcedureMetrics('n_00000000000000000000000009', "
+                "status: 'preferred', successRate: 0.9, runCount: 5);",
         'updateCentroid': "await mem.updateCentroid('Claim', [0.1, 0.2]);",
         'findUncertain':
             "await mem.findUncertain('Claim', low: 0.0, high: 1.0);",
@@ -421,6 +432,17 @@ class _AuditMemoryClient implements TomBrainMemory {
   @override
   Future<void> demote(NodeId id, DemotionReason reason) async {
     called.add('demote');
+  }
+
+  @override
+  Future<void> updateProcedureMetrics(
+    NodeId id, {
+    ProcedureStatus? status,
+    double? successRate,
+    int? runCount,
+    DateTime? lastRunAt,
+  }) async {
+    called.add('updateProcedureMetrics');
   }
 
   @override

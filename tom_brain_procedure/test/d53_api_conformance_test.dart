@@ -67,6 +67,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         NodeId,
         OutboundChunk,
         Persona,
+        ProcedureStatus,
         ResolvedIdentity,
         Session,
         StackEntryId,
@@ -75,7 +76,12 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         WriteBudget;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
-import 'package:tom_brain_procedure/tom_brain_procedure.dart';
+// `ProcedureStatus` is hidden here: the procedure layer's run-result enum
+// (succeeded/failed) collides by name with the shared lifecycle enum
+// (authored/draft/active/preferred/demoted) that the memory-client contract —
+// and so this conformance fake's `updateProcedureMetrics` override — uses.
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
+    hide ProcedureStatus;
 
 // ─── Top-level probe memory + factory (top-level so it is sendable across
 //     the isolate boundary; see d43_memory_provisioning_test.dart) ────────
@@ -199,6 +205,15 @@ final class ProbeMemory implements TomBrainMemory {
 
   @override
   Future<void> demote(NodeId id, DemotionReason reason) async {}
+
+  @override
+  Future<void> updateProcedureMetrics(
+    NodeId id, {
+    ProcedureStatus? status,
+    double? successRate,
+    int? runCount,
+    DateTime? lastRunAt,
+  }) async {}
 
   @override
   Future<void> forget(NodeId id, ForgetReason reason) async {}
