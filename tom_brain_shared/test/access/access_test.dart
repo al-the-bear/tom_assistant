@@ -262,6 +262,29 @@ void main() {
       expect(a.hashCode, equals(b.hashCode));
       expect(a, isNot(equals(c)));
     });
+
+    test('notice defaults to null', () {
+      final c = OutboundChunk(textDelta: 'tok');
+      expect(c.notice, isNull);
+    });
+
+    test('carries a notice alongside an empty delta', () {
+      final c = OutboundChunk(textDelta: '', notice: '🔧 tool memory.read');
+      expect(c.textDelta, isEmpty);
+      expect(c.isFinal, isFalse);
+      expect(c.notice, '🔧 tool memory.read');
+    });
+
+    test('value equality distinguishes the notice field', () {
+      final a = OutboundChunk(textDelta: '', notice: 'n1');
+      final b = OutboundChunk(textDelta: '', notice: 'n1');
+      final c = OutboundChunk(textDelta: '', notice: 'n2');
+      final d = OutboundChunk(textDelta: '');
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+      expect(a, isNot(equals(c)));
+      expect(a, isNot(equals(d)));
+    });
   });
 
   group('ResolvedIdentity', () {

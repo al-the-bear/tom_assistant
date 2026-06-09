@@ -47,12 +47,25 @@ final class OutboundChunk {
   /// producer does not track an index.
   final int? index;
 
+  /// Optional out-of-band notice — a short, human-readable status line
+  /// (e.g. `🔧 tool memory.read`) describing something the brain is doing
+  /// mid-answer, surfaced separately from the answer text.
+  ///
+  /// A notice travels *beside* the streamed answer, never folded into it:
+  /// [textDelta] is typically empty on a notice chunk. Channels decide how
+  /// to render it — a buffered channel (Telegram) sends the notice as its
+  /// own immediate message rather than waiting for the final flush, while a
+  /// per-chunk channel (SSE) may ignore it. `null` when the chunk carries
+  /// no notice.
+  final String? notice;
+
   /// Builds an immutable outbound chunk. [index], when supplied, must be
   /// non-negative — a negative chunk index is meaningless.
   OutboundChunk({
     required this.textDelta,
     this.isFinal = false,
     this.index,
+    this.notice,
   }) {
     if (index != null && index! < 0) {
       throw ArgumentError.value(index, 'index', 'must be >= 0 when supplied');
@@ -64,14 +77,16 @@ final class OutboundChunk {
       other is OutboundChunk &&
       other.textDelta == textDelta &&
       other.isFinal == isFinal &&
-      other.index == index;
+      other.index == index &&
+      other.notice == notice;
 
   @override
-  int get hashCode => Object.hash(textDelta, isFinal, index);
+  int get hashCode => Object.hash(textDelta, isFinal, index, notice);
 
   @override
   String toString() => 'OutboundChunk('
       'textDelta: ${textPreview(textDelta, limit: 40)}, '
       'isFinal: $isFinal, '
-      'index: $index)';
+      'index: $index, '
+      'notice: $notice)';
 }
