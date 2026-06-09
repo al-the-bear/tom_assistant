@@ -80,6 +80,11 @@ import '../primitives_native/note_primitive.dart';
 import '../primitives_native/run_procedure_primitive.dart';
 import '../primitives_native/trail_note.dart';
 import '../primitives_native/yield_primitive.dart';
+import '../bridges/tool_bridge.dart' show ToolBridge;
+import '../tools/basic_tools.dart' show registerBasicTools;
+import '../tools/tool_context.dart' show ToolContext;
+import '../tools/tool_policy_config.dart' show ToolPolicyConfig;
+import '../tools/tool_registry.dart' show ToolRegistry;
 import '../procedure_store/procedure_loader.dart';
 import '../procedure_store/procedure_resolver.dart';
 import '../recorder/llm_trail_record.dart';
@@ -94,6 +99,14 @@ import 'procedure_outcome.dart';
 import 'procedure_result.dart';
 import 'procedure_run.dart';
 import 'run_cancellation.dart';
+
+/// The neutral file-scope root the per-run [ToolContext] is built over when
+/// the engine binds the tool surface. The prototype's tool-calling path never
+/// exercises the `file.*` tools (they raise no error until a model proposes
+/// one), so this is a placeholder root — matching `D4rtDcliHost`'s neutral data
+/// directory — not a configured workspace. A deployment that enables file tools
+/// supplies a real root through the (future) extension wiring.
+const String _defaultToolFileScopeRoot = '/tom-brain-engine';
 
 /// The typed failure class a crashed run is recorded under (§ 10.4).
 const String _runtimeCrashKind = 'procedure.runtime.crash';
@@ -549,9 +562,44 @@ final class ProcedureEngine {
       hardDepthCap: _hardDepthCap,
       startDepth: depth,
     );
+    // Per-run tool surface (Extension F step 6; § 21.2): the `tool` global a
+    // procedure reaches for the tool-calling loop (`answer_with_memory_v1`'s
+    // `tool.list` / `tool.invoke`). Bound on *every* run so a script that
+    // imports the tool library always finds the global — d4rt globals are
+    // keyed by import, so a script that never imports it (a dream agent) never
+    // sees it. The registry + policy come from the shared Extension-F bundle
+    // when one was assembled at boot; otherwise the run falls back to a fresh
+    // basic-tool registry under the all-allow default policy, so the prototype
+    // (which boots no `BrainExtensionConfig`) still gets the shipped 15 tools.
+    // The context carries *this* run's ledger so a tool's effecting calls
+    // charge the same header budget a scripted `persist` does (PE-8) and the
+    // run's memory client so memory tools route through the same surface the
+    // `mem` bridge does. `web` / `engine` surfaces are left unbound for now —
+    // a tool that needs one raises `ToolSurfaceUnavailable`, which the loop
+    // turns into an `{ok: false}` result rather than aborting the answer.
+    final exts = extensions;
+    final ToolRegistry toolRegistry;
+    if (exts != null) {
+      toolRegistry = exts.tools;
+    } else {
+      toolRegistry = ToolRegistry();
+      registerBasicTools(toolRegistry);
+    }
+    final toolPolicy =
+        (exts?.toolPolicy ?? const ToolPolicyConfig()).policyFor(null);
+    final runToolBridge = ToolBridge(
+      toolRegistry,
+      toolPolicy,
+      ToolContext(
+        budget: ledger,
+        memory: runMemoryBridge.client,
+        fileScopeRoot: _defaultToolFileScopeRoot,
+      ),
+    );
     final host = D4rtDcliHost(
       memoryBridge: runMemoryBridge,
       substrateBridge: runSubstrateBridge,
+      toolBridge: runToolBridge,
       installNativePrimitives: nativePrimitivesInstaller(
         runProcedurePrimitive: runPrimitive,
         notePrimitive: NotePrimitive(sink: recorder.noteSink, now: _now),

@@ -16,7 +16,7 @@
 ///   - { name: priorTurns, type: List, required: false }
 /// outputs:
 ///   - { name: answer, type: String }
-/// requires: [ runProcedure, embed, classify, llm, persist, edge, stack.push, note ]
+/// requires: [ runProcedure, embed, classify, llm, persist, edge, stack.push, note, tool.list, tool.invoke ]
 //
 // answer_with_memory_v1 — the prototype's one real system procedure
 // (`prototype_implementation_plan.md` D.10 / D.36–D.42;
@@ -229,6 +229,7 @@ import 'package:tom_brain_procedure_prototype/src/api/procedure_inputs.dart';
 import 'package:tom_brain_procedure_prototype/src/api/procedure_result.dart';
 import 'package:tom_brain_procedure_prototype/src/bridges/memory_bridge.dart';
 import 'package:tom_brain_procedure_prototype/src/bridges/substrate_bridge.dart';
+import 'package:tom_brain_procedure_prototype/src/bridges/tool_bridge.dart';
 import 'package:tom_brain_procedure_prototype/src/primitives_native/primitives_native.dart';
 
 Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
@@ -255,14 +256,48 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final priorTurns = inputs.has('priorTurns') ? inputs.get('priorTurns') : null;
   // The dispatcher route threads the default tool catalogue in under
   // `toolCatalogue` (procedure spec § 21.4) so a memoryless substrate can name
-  // the tools it has. This path is *awareness only* — `answer_with_memory_v1`
-  // runs the `assistant_to_user` role and does not invoke tools; callable
-  // end-to-end invocation is the deferred `call_llm_v1` path. Absent on hosts
-  // that pass no catalogue, so default to empty (PE-9: the prompt is unchanged).
+  // the tools it has in the *awareness* block of the assembled prompt. The
+  // block is prose only — what the model may actually *call* comes from the
+  // live `tool.list()` surface below (the engine binds the `tool` global on
+  // every run). Absent on hosts that pass no catalogue, so default to empty
+  // (PE-9: the awareness block is then unchanged from before).
   final toolCatalogue =
       inputs.has('toolCatalogue') ? inputs.get('toolCatalogue') : null;
-  final prompt = _assemblePrompt(recall, text, priorTurns, toolCatalogue);
-  final completion = await sub.llm(prompt, role: 'assistant_to_user');
+
+  // Step 2 — answer the user, running the complete tool-calling loop
+  // (procedure spec § 21.2 / § 11 step 2). The live `tool.list()` surface is
+  // the source of truth for what the model may call: it is policy-narrowed to
+  // exactly the tools this run exposes, so a tool offered to the substrate is a
+  // tool `tool.invoke` will accept. Each turn offers that catalogue; when the
+  // model proposes tool calls we run them through `tool.invoke`, fold the
+  // results back into the running transcript, and re-enter — until the model
+  // answers with no tool call (or the turn cap is hit). The final answer
+  // streams to the live caller through the engine's per-run token sink: under
+  // the OpenAI protocol a tool-deciding turn emits no answer text, so only the
+  // terminal answer reaches the user; the intermediate turns stream nothing.
+  const maxToolTurns = 6;
+  final liveTools = await tool.list();
+  var transcript = _assemblePrompt(recall, text, priorTurns, toolCatalogue);
+  Map completion = const <String, Object?>{'text': ''};
+  for (var turn = 0; turn < maxToolTurns; turn++) {
+    // On the last allowed turn, withhold the catalogue so the model must
+    // answer — no further round-trip is possible — which also keeps the
+    // streamed terminal answer clean.
+    final offerTools = turn < maxToolTurns - 1;
+    completion = await sub.llm(
+      transcript,
+      role: 'assistant_to_user',
+      tools: offerTools ? liveTools : null,
+    );
+    final toolCalls = completion['toolCalls'];
+    if (toolCalls is! List || toolCalls.isEmpty) break;
+    // The awaited value is hoisted into its own local before the assignment:
+    // d4rt mis-scopes the assignment target of `x = f(x, await g())` (an
+    // `await` inside the argument list of a call whose result feeds back into
+    // `x`), so the awaited call must settle into a local first.
+    final toolResults = await _runToolCalls(toolCalls);
+    transcript = _appendToolResults(transcript, toolResults);
+  }
   final answer = completion['text'];
 
   // D.39 — persist the exchange. The body has no run id, so its writes carry
@@ -386,6 +421,63 @@ bool _isRepeatPrompt(Map recall, Object? text) {
     }
   }
   return false;
+}
+
+/// Executes each proposed tool call through the live `tool.invoke` surface
+/// and returns one record per call for folding back into the transcript.
+///
+/// `tool.invoke` already returns its own `{ok: false, error}` for the three
+/// pre-flight failures (unknown tool, policy-denied, args fail the input
+/// schema), so those never throw here. A tool that *throws while running*
+/// (e.g. an unavailable downstream surface) is caught and turned into the same
+/// `{ok: false, error}` shape so one failing tool never aborts the whole
+/// answer — the model sees the error and can recover on the next turn. The
+/// broad catch is safe: this procedure declares no count caps (§ 5.4), so
+/// `tool.invoke`'s pre-charge can never raise `ProcedureBudgetExceeded`; the
+/// only thing reaching the catch is a genuine tool-run failure.
+///
+/// Each `toolCalls` entry is `{id, name, arguments}` (substrate bridge wire
+/// shape); a non-map entry or one with a non-String `name` is skipped (PE-1:
+/// the proposal came across an untrusted boundary).
+Future<List> _runToolCalls(List toolCalls) async {
+  final results = [];
+  for (final call in toolCalls) {
+    if (call is! Map) continue;
+    final name = call['name'];
+    if (name is! String) continue;
+    final args = <String, Object?>{};
+    final rawArgs = call['arguments'];
+    if (rawArgs is Map) {
+      rawArgs.forEach((key, value) => args['$key'] = value);
+    }
+    Object? outcome;
+    try {
+      outcome = await tool.invoke(name, args);
+    } catch (e) {
+      outcome = <String, Object?>{'ok': false, 'error': '$e'};
+    }
+    results.add(<String, Object?>{
+      'name': name,
+      'args': args,
+      'outcome': outcome,
+    });
+  }
+  return results;
+}
+
+/// Folds a turn's tool results back into the running transcript as a "Tool
+/// results" block so the next completion can answer (or call again). An empty
+/// result list leaves the transcript unchanged (the loop would not have called
+/// this without at least one proposed call, but the guard keeps the function
+/// total).
+String _appendToolResults(String transcript, List results) {
+  if (results.isEmpty) return transcript;
+  var block = 'Tool results:\n';
+  for (final record in results) {
+    if (record is! Map) continue;
+    block += '- ${record['name']}(${record['args']}) → ${record['outcome']}\n';
+  }
+  return '$transcript\n$block';
 }
 
 /// Collects the ids of the recalled nodes that fed the answer prompt — the

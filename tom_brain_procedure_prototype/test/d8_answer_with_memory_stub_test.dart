@@ -91,7 +91,9 @@ void main() {
       // `retrieve_for_prompt_v1` conductor (`runProcedure`), not a direct
       // `recall`; the body still calls the cold-path `embed` + `classify`,
       // `llm`, `persist`/`edge`, the cold-path `stack.push`, then the
-      // repetition `note`, so the header declares exactly those primitives.
+      // repetition `note`. D.43 added the tool-calling loop, so the answer step
+      // now also enumerates (`tool.list`) and runs (`tool.invoke`) tools — the
+      // header declares exactly those primitives.
       expect(
           loaded.header.requires,
           <String>[
@@ -103,6 +105,8 @@ void main() {
             'edge',
             'stack.push',
             'note',
+            'tool.list',
+            'tool.invoke',
           ]);
       // The only declared cap is the wall-clock deadline (§ 5.4): the
       // user-facing answer budget is "virtually unlimited" on every count

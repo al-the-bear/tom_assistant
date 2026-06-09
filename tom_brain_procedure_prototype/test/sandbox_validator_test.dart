@@ -156,6 +156,11 @@ Future<Object?> run(inputs) async => 1;
         <String>{
           BrainBridges.memoryLibrary,
           BrainBridges.substrateLibrary,
+          // D.43 — the tool library brings the `tool` global into scope for the
+          // tool-calling loop; the engine binds a per-run `ToolBridge` on every
+          // run, so the import always resolves. `BrainBridges.mcpLibrary` stays
+          // off the list until the engine wires the `mcp` global.
+          BrainBridges.toolLibrary,
           engineNativeLibrary,
           procedureInputsLibrary,
           procedureResultLibrary,

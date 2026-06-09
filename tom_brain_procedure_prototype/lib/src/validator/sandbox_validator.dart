@@ -90,12 +90,20 @@ final class SandboxValidator {
   /// violation, because it pulls in code from outside the bridged surface.
   ///
   /// Sourced from the canonical URI constants (`BrainBridges.memoryLibrary` /
-  /// `…substrateLibrary`, [engineNativeLibrary], [procedureInputsLibrary],
-  /// [procedureResultLibrary]) so the allow-list cannot drift from the
-  /// libraries the host actually registers.
+  /// `…substrateLibrary` / `…toolLibrary`, [engineNativeLibrary],
+  /// [procedureInputsLibrary], [procedureResultLibrary]) so the allow-list
+  /// cannot drift from the libraries the host actually registers.
+  /// `…toolLibrary` brings the `tool` global into scope so a procedure that
+  /// runs the tool-calling loop (e.g. `answer_with_memory_v1`'s `tool.list` /
+  /// `tool.invoke`) clears the gate; the engine binds a per-run `ToolBridge`
+  /// on every run, so the global is always present. `BrainBridges.mcpLibrary`
+  /// is deliberately *not* listed: the engine does not yet bind the `mcp`
+  /// global, so allow-listing its import would pass the static gate only to
+  /// fail at runtime — it is added here the day the engine wires `McpBridge`.
   static const Set<String> defaultAllowedImportUris = {
     BrainBridges.memoryLibrary,
     BrainBridges.substrateLibrary,
+    BrainBridges.toolLibrary,
     engineNativeLibrary,
     procedureInputsLibrary,
     procedureResultLibrary,
