@@ -242,5 +242,37 @@ void main() {
         lessThan(0),
       );
     });
+
+    test('DC-11: HP6 — the driver owns no write path; a tick\'s entire effect is '
+        'the scheduled fire() calls, nothing else', () async {
+      // The no-overwrite invariant (hard principle 6) is the *agents\'* property:
+      // each writes derived records under its registry scope (memory § 9.5) and
+      // never overwrites an episodic original. The cadence driver must not be
+      // able to weaken that — and structurally it can\'t, because it holds no
+      // store and no write path: its only collaborators are a Clock, a fire
+      // seam, and a schedule. This test pins that observably: across a full
+      // monthly sweep, every id the driver caused to run arrived through the
+      // fire seam and is *exactly* the schedule\'s timed agents — the driver
+      // conjures no extra (e.g. Event-writing) pass of its own, so scheduled
+      // dreaming is observably identical to on-demand firing.
+      final clock = MutableTestClock(BrainTime.fromMs(0));
+      final schedule = CadenceSchedule.defaults();
+      final driver = driverAt(clock, schedule: schedule);
+
+      clock.advance(schedule.intervals[DreamLane.monthly]!);
+      final ran = await driver.tick();
+
+      final timedAgents = <String>[
+        for (final lane in DreamLane.values) ...schedule.agents[lane]!,
+      ];
+      // Every fired id is a scheduled agent, and the recording seam saw exactly
+      // those — no side channel, no phantom write.
+      expect(ran, timedAgents);
+      expect(fired, timedAgents);
+      // The one agent that reprocesses episodic memory (the Reconsolidator) is
+      // never on a timed lane — it is reachable only through the event-driven
+      // shaking path, and even there only through the same scoped fire seam.
+      expect(fired, isNot(contains(schedule.shakingAgent)));
+    });
   });
 }

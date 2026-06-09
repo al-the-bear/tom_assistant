@@ -83,10 +83,20 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         ProcedureOutcome,
         ProcedureResolver,
         RunCoordinator,
+        RunSlotBusy,
         SubstrateBridge;
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show AgentRegistration, TrailOutcomeStatus, WriteBudget;
+    show
+        AgentRegistration,
+        BrainTime,
+        MutableTestClock,
+        Node,
+        NodeId,
+        RecallMode,
+        RecallQuery,
+        TrailOutcomeStatus,
+        WriteBudget;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show
         AllowedAction,
@@ -327,6 +337,47 @@ AgentRegistration _extractorAgent(Set<String> scopes) => AgentRegistration(
       writeScopes: scopes,
     );
 
+/// Builds a fast-lane-only Extractor cadence driver over [scheduler]: the fast
+/// lane carries just `dream_extract_v1`, while the slower lanes are present (a
+/// [CadenceSchedule] must map every [DreamLane]) but never elapse in a single
+/// tick. This is the real production [DreamCadenceDriver] — the only test-local
+/// concession is the fire seam threading the [source] argument the prototype
+/// script requires (the production no-arg `fireThroughScheduler` adapter, where
+/// the agents recall on their own, is a separate prototype concern).
+DreamCadenceDriver _extractorCadenceDriver(
+  MutableTestClock clock,
+  FreeTimeScheduler scheduler,
+  String source,
+) =>
+    DreamCadenceDriver(
+      clock: clock,
+      schedule: const CadenceSchedule(
+        intervals: <DreamLane, Duration>{
+          DreamLane.fast: Duration(minutes: 5),
+          DreamLane.slow: Duration(hours: 1),
+          DreamLane.deep: Duration(days: 1),
+          DreamLane.monthly: Duration(days: 30),
+        },
+        agents: <DreamLane, List<String>>{
+          DreamLane.fast: <String>[_extractorId],
+          DreamLane.slow: <String>[],
+          DreamLane.deep: <String>[],
+          DreamLane.monthly: <String>[],
+        },
+      ),
+      fire: (String procedureId) async {
+        try {
+          await scheduler.triggerMaintenance(
+            procedureId,
+            arguments: <String, Object?>{'source': source},
+          );
+          return FireOutcome.fired;
+        } on RunSlotBusy {
+          return FireOutcome.deferred;
+        }
+      },
+    );
+
 /// A `chat/completions` request body for [prompt].
 Map<String, Object?> _chatBody(String prompt) => <String, Object?>{
       'model': 'tom-assistant',
@@ -439,22 +490,24 @@ void main() {
       return config;
     }
 
-    /// Phase 2: re-opens the on-disk store [config] in-host, registers the
-    /// Extractor agent with [writeScopes], builds the real oMLX substrate (with
-    /// the `extractor` role spliced in and routed to oMLX), and triggers
-    /// `dream_extract_v1` through the item-23 path
-    /// (`FreeTimeScheduler.triggerMaintenance`) over [source]. Hands the open
-    /// store and the run outcome to [body], then tears the substrate + store
-    /// down.
-    Future<void> dreamOverTrail({
+    /// Phase 2 assembly: re-opens the on-disk store [config] in-host, registers
+    /// the Extractor agent with [writeScopes], builds the real oMLX substrate
+    /// (with the `extractor` role spliced in and routed to oMLX), assembles a
+    /// `ProcedureEngine` + `FreeTimeScheduler` over the real store + live
+    /// substrate, and hands the open [store] and the assembled [scheduler] to
+    /// [body]. Tears the substrate + store down afterwards.
+    ///
+    /// Both the direct-trigger path ([dreamOverTrail]) and the scheduled-cadence
+    /// path (the DC-live test) share this assembly — they differ only in *how*
+    /// they reach `scheduler.triggerMaintenance`.
+    Future<void> withDreamScheduler({
       required BrainRunConfig config,
       required _LiveEndpoint omlx,
       required _LiveEndpoint ollama,
-      required String source,
       required Set<String> writeScopes,
       required Future<void> Function(
         SqliteTomBrainMemory store,
-        ProcedureOutcome outcome,
+        FreeTimeScheduler scheduler,
       ) body,
     }) async {
       final SqliteTomBrainMemory store = SqliteTomBrainMemory();
@@ -496,18 +549,43 @@ void main() {
           workFactory: (_) => null,
           engine: engine,
         );
-
-        // The faithful item-23 trigger: one engine-backed `dream_extract_v1`
-        // run on the background slot, against the real store + live oMLX.
-        final ProcedureOutcome outcome = await scheduler.triggerMaintenance(
-          _extractorId,
-          arguments: <String, Object?>{'source': source},
-        );
-        await body(store, outcome);
+        await body(store, scheduler);
       } finally {
         await substrate.close();
         await store.close();
       }
+    }
+
+    /// Phase 2 (direct trigger): assembles the dream scheduler over [config] and
+    /// triggers `dream_extract_v1` through the item-23 path
+    /// (`FreeTimeScheduler.triggerMaintenance`) over [source], handing the open
+    /// store and the run outcome to [body].
+    Future<void> dreamOverTrail({
+      required BrainRunConfig config,
+      required _LiveEndpoint omlx,
+      required _LiveEndpoint ollama,
+      required String source,
+      required Set<String> writeScopes,
+      required Future<void> Function(
+        SqliteTomBrainMemory store,
+        ProcedureOutcome outcome,
+      ) body,
+    }) async {
+      await withDreamScheduler(
+        config: config,
+        omlx: omlx,
+        ollama: ollama,
+        writeScopes: writeScopes,
+        body: (store, scheduler) async {
+          // The faithful item-23 trigger: one engine-backed `dream_extract_v1`
+          // run on the background slot, against the real store + live oMLX.
+          final ProcedureOutcome outcome = await scheduler.triggerMaintenance(
+            _extractorId,
+            arguments: <String, Object?>{'source': source},
+          );
+          await body(store, outcome);
+        },
+      );
     }
 
     test(
@@ -610,6 +688,142 @@ void main() {
           final stats = await store.stats();
           expect(stats.nodeCountByType['Claim'] ?? 0, equals(0),
               reason: 'the Claim write was refused, so no Claim row exists');
+        },
+      );
+    }, timeout: const Timeout(Duration(minutes: 5)));
+
+    test(
+        'a scheduled cadence tick fires the Extractor on the fast lane and '
+        'mutates the real store (Todo 10, G-M3)', () async {
+      final omlx = _omlx();
+      final ollama = _ollama();
+      final omlxSkip = await omlx.unreachableReason();
+      if (omlxSkip != null) return markTestSkipped(omlxSkip);
+      final ollamaSkip = await ollama.unreachableReason();
+      if (ollamaSkip != null) return markTestSkipped(ollamaSkip);
+
+      const String prompt = 'In one short sentence, what is the largest planet '
+          'in the solar system?';
+
+      final BrainRunConfig config = await layDownItem32Trail(
+        omlx: omlx,
+        ollama: ollama,
+        prompt: prompt,
+      );
+
+      await withDreamScheduler(
+        config: config,
+        omlx: omlx,
+        ollama: ollama,
+        writeScopes: <String>{AgentRegistration.nodeScope('Claim')},
+        body: (store, scheduler) async {
+          // The proof of Todo 10: the *scheduled driver* — not a manual
+          // `triggerMaintenance` — drives a real cognitive agent against the
+          // real store.
+          final clock = MutableTestClock(BrainTime.fromMs(0));
+          final driver = _extractorCadenceDriver(clock, scheduler, prompt);
+
+          // Before the fast interval elapses, no lane is due: the tick fires
+          // nothing and the store carries no Claim yet.
+          expect(await driver.tick(), isEmpty);
+          final before = await store.stats();
+          expect(before.nodeCountByType['Claim'] ?? 0, equals(0),
+              reason: 'no scheduled pass has run yet');
+
+          // Advance past the fast interval: the very next scheduled tick fires
+          // the Extractor — a real oMLX extraction + Ollama embed + persist.
+          clock.advance(const Duration(minutes: 5));
+          final ran = await driver.tick();
+          expect(ran, <String>[_extractorId],
+              reason: 'the fast lane fired exactly the Extractor on schedule');
+
+          // The Verify: a scheduled dream pass mutated the real store.
+          final after = await store.stats();
+          expect(after.nodeCountByType['Claim'] ?? 0, greaterThan(0),
+              reason: 'the scheduled Extractor pass persisted at least one '
+                  'Claim into the real store');
+        },
+      );
+    }, timeout: const Timeout(Duration(minutes: 5)));
+
+    test(
+        'a scheduled dream pass adds only derived records — the episodic '
+        'originals it reads stay immutable (Todo 10, HP6)', () async {
+      final omlx = _omlx();
+      final ollama = _ollama();
+      final omlxSkip = await omlx.unreachableReason();
+      if (omlxSkip != null) return markTestSkipped(omlxSkip);
+      final ollamaSkip = await ollama.unreachableReason();
+      if (ollamaSkip != null) return markTestSkipped(ollamaSkip);
+
+      const String prompt = 'In one short sentence, what is the chemical '
+          'symbol for gold?';
+
+      final BrainRunConfig config = await layDownItem32Trail(
+        omlx: omlx,
+        ollama: ollama,
+        prompt: prompt,
+      );
+
+      await withDreamScheduler(
+        config: config,
+        omlx: omlx,
+        ollama: ollama,
+        writeScopes: <String>{AgentRegistration.nodeScope('Claim')},
+        body: (store, scheduler) async {
+          // Discover the episodic originals (the `Event` nodes phase 1 laid
+          // down) by recall, then snapshot each through the *same* `get` read
+          // path used for the after-check — so the equality reflects a real
+          // mutation, not a recall-vs-get hydration difference (recall projects
+          // a ranking view; `get` returns the canonical node).
+          final recalled = await store.recall(RecallQuery(
+            modes: const <RecallMode>{RecallMode.bm25, RecallMode.vector},
+            text: prompt,
+            k: 16,
+          ));
+          final eventIds = <NodeId>[
+            for (final n in recalled.nodes)
+              if (n.typeName == 'Event') n.id,
+          ];
+          expect(eventIds, isNotEmpty,
+              reason: 'phase 1 laid down at least one episodic Event');
+          final before = <NodeId, Node?>{
+            for (final id in eventIds) id: await store.get(id),
+          };
+
+          final statsBefore = await store.stats();
+          expect(statsBefore.nodeCountByType['Claim'] ?? 0, equals(0),
+              reason: 'no derived Claim exists before the dream pass');
+          final eventCountBefore =
+              statsBefore.nodeCountByType['Event'] ?? 0;
+
+          // Drive one scheduled fast-lane tick: the real Extractor pass runs.
+          final clock = MutableTestClock(BrainTime.fromMs(0));
+          final driver = _extractorCadenceDriver(clock, scheduler, prompt);
+          clock.advance(const Duration(minutes: 5));
+          final ran = await driver.tick();
+          expect(ran, <String>[_extractorId]);
+
+          // HP6 — every episodic Event the pass read is byte-identical
+          // afterward: consolidation produced *derived* Claim nodes, it never
+          // overwrote an original. `Node`'s value equality compares id,
+          // typeName, values, embedding, createdAt and status — so an in-place
+          // mutation of any field would fail this assertion.
+          for (final id in eventIds) {
+            final after = await store.get(id);
+            expect(after, isNotNull,
+                reason: 'the episodic original $id still exists');
+            expect(after, equals(before[id]),
+                reason: 'the Event $id was not mutated by the scheduled dream '
+                    'pass (HP6: originals are immutable)');
+          }
+
+          final statsAfter = await store.stats();
+          expect(statsAfter.nodeCountByType['Event'] ?? 0,
+              equals(eventCountBefore),
+              reason: 'no episodic original was deleted or retyped');
+          expect(statsAfter.nodeCountByType['Claim'] ?? 0, greaterThan(0),
+              reason: 'the dream pass added derived Claim records only');
         },
       );
     }, timeout: const Timeout(Duration(minutes: 5)));

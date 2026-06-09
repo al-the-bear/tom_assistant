@@ -92,8 +92,12 @@ InProcessTomBrainSubstrate buildSubstrate(
     policy: config.buildRouterPolicy(),
   );
 
-  // ── Embeddings: reuse the manufactured Ollama provider the config names. ──
-  final OllamaEmbeddingService embeddingService =
+  // ── Embeddings: reuse the manufactured Ollama provider the config names.
+  //    The seam type is the `EmbeddingService` *interface* (G-S2): the only
+  //    concrete `OllamaEmbeddingService` mention is the manufacture inside
+  //    `_buildEmbeddingService`. Callers downstream (the substrate, the agents)
+  //    see only the interface, so no Ollama assumption leaks past this builder. ──
+  final EmbeddingService embeddingService =
       _buildEmbeddingService(config, providers);
 
   return InProcessTomBrainSubstrate(
@@ -226,7 +230,12 @@ LlmProvider _buildProvider(ProviderProfile profile) {
 /// The loader cross-validates that `embedding.providerId` references a known
 /// provider, so the lookup miss here only fires if a hand-built config skipped
 /// that invariant — it is still reported with a located message.
-OllamaEmbeddingService _buildEmbeddingService(
+/// Returns the [EmbeddingService] interface, not the concrete Ollama type: the
+/// only place this run package names a concrete embedding implementation is the
+/// manufacture below. Tightening the return type to the interface (G-S2) keeps
+/// the one Ollama-specific decision (the `is! OllamaLlmProvider` guard) bounded
+/// to this factory; everything the builder hands out is interface-typed.
+EmbeddingService _buildEmbeddingService(
   SubstrateConfig config,
   Map<String, LlmProvider> providers,
 ) {
