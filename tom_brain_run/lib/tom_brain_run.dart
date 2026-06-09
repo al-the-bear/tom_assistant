@@ -52,6 +52,20 @@ export 'src/provision_brain.dart'
         standUpBrainProcess,
         standUpBrainProcessFromConfig;
 
+// ── Scheduled dream cadence driver (memory-spec § 9.7; G-M3) ──────────
+export 'src/dream_cadence_driver.dart'
+    show
+        CadenceSchedule,
+        DreamCadenceDriver,
+        DreamLane,
+        FireOutcome,
+        MaintenanceFire;
+export 'src/dream_cadence_wiring.dart'
+    show
+        DreamCadenceLoop,
+        dreamCadenceDriverOverScheduler,
+        fireThroughScheduler;
+
 // ── Trail config + mode + banner (logging-spec §4.1 / §8; §10 step #1) ─
 export 'src/trail_banner.dart' show TrailBanner;
 export 'src/tools_config.dart' show ToolsConfig, ToolsConfigException;
