@@ -146,6 +146,60 @@ Future<Object?> run(inputs) async {
       }
     });
   });
+
+  group('ProcedureEngine tool notice forwarding (P2)', () {
+    test('a per-run noticeSink fires once per tool event, in call order',
+        () async {
+      final notices = <ToolEvent>[];
+      final engine = engineFor(<LoadedProcedure>[toolUsingProcedure()]);
+
+      final outcome = await engine
+          .invoke(
+            ProcedureInvocation(procedureId: 'tool_using_v1'),
+            noticeSink: notices.add,
+          )
+          .outcome;
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(notices.map((e) => e.kind).toList(),
+          <String>['tool.listed', 'tool.invoked', 'tool.failed']);
+      // The notice line is the human-readable surface the route delivers.
+      expect((notices[1] as ToolInvoked).noticeLine(), '🔧 tool memory.read');
+      expect((notices[2] as ToolFailed).noticeLine(),
+          startsWith('⚠️ tool does.not.exist failed:'));
+    });
+
+    test('both the trail sink and the notice sink see every event', () async {
+      final records = <ToolAccessRecord>[];
+      final notices = <ToolEvent>[];
+      final engine = engineFor(
+        <LoadedProcedure>[toolUsingProcedure()],
+        toolAccessSink: records.add,
+      );
+
+      await engine
+          .invoke(
+            ProcedureInvocation(procedureId: 'tool_using_v1'),
+            noticeSink: notices.add,
+          )
+          .outcome;
+
+      expect(records.map((r) => r.event.kind).toList(), notices.map((e) => e.kind).toList());
+    });
+
+    test('a throwing notice sink never breaks the run (best-effort)', () async {
+      final engine = engineFor(<LoadedProcedure>[toolUsingProcedure()]);
+
+      final outcome = await engine
+          .invoke(
+            ProcedureInvocation(procedureId: 'tool_using_v1'),
+            noticeSink: (_) => throw StateError('notify failed'),
+          )
+          .outcome;
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+    });
+  });
 }
 
 LoadedProcedure _procedure(String id, String body, {int version = 1}) {

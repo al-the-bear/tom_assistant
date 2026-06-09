@@ -33,6 +33,19 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 /// bridge built without observability is a pure tool router.
 typedef ToolEventSink = void Function(ToolEvent event);
 
+/// Per-run sink the engine fires for each tool [ToolEvent] of an
+/// external/user run, so the dispatch route can surface the call to the
+/// originating channel as an out-of-band notice (`OutboundChunk.notice`,
+/// rendered from [ToolEvent.noticeLine]).
+///
+/// Structurally identical to [ToolEventSink] but bound *per run* by
+/// `engine.invoke` (the route knows the request's `Access`), where
+/// [ToolEventSink] is the bridge-level observability seam. Best-effort and
+/// fire-and-forget: the engine never awaits it and swallows its errors, since
+/// a dropped notification must not affect the answer. `null` for an internal /
+/// free-time run with no live caller.
+typedef ToolNoticeSink = void Function(ToolEvent event);
+
 /// Marker / base for every typed tool observability event.
 ///
 /// A consumer subscribed to `ToolEventBus.events()` sees only subtypes of
@@ -46,6 +59,23 @@ sealed class ToolEvent extends BrainEvent {
     super.runId,
     super.causedBy,
   });
+
+  /// A short, human-readable status line for surfacing this event as an
+  /// out-of-band notice — the text an `OutboundChunk.notice` carries when the
+  /// dispatch route forwards a tool call to the originating channel (e.g. a
+  /// Telegram tool-call notification). Presentation only; the typed fields
+  /// above remain the source of truth for machine consumers ([payloadJson]).
+  /// Kept here so the wording lives once, with the taxonomy it describes.
+  String noticeLine() => switch (this) {
+        ToolListed(:final count, :final filter) => filter == null
+            ? '🔧 listed $count tools'
+            : '🔧 listed $count $filter tool(s)',
+        ToolInvoked(:final name) => '🔧 tool $name',
+        ToolFailed(:final name, :final reason) =>
+          '⚠️ tool $name failed: $reason',
+        ToolDenied(:final name, :final reason) =>
+          '🚫 tool $name denied: $reason',
+      };
 }
 
 /// A `tool.list` enumeration resolved (§ 21.2) — emitted once per `list`,

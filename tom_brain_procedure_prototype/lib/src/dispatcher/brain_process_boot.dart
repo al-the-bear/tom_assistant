@@ -52,6 +52,7 @@
 // threads it into both, so a foreground submission admitted mid-background
 // actually reaches the running background's next checkpoint.
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
@@ -76,6 +77,7 @@ import '../recorder/procedure_tree_record.dart' show ProcedureTreeSink;
 import '../recorder/turn_summary.dart' show TurnSummary, TurnSummarySink;
 import '../procedure_store/procedure_resolver.dart';
 import '../tools/basic_tools.dart' show defaultToolCatalogue;
+import '../tools/tool_event.dart' show ToolEvent;
 import 'dispatcher_entry.dart';
 import 'inbound_classifier.dart';
 import 'memory_provisioning.dart';
@@ -752,6 +754,23 @@ abstract final class BrainProcessBoot {
           .deliver(OutboundChunk(textDelta: textDelta, isFinal: false))
           .drain<void>();
 
+      // The per-run notice channel (P2): each tool call the run makes is
+      // surfaced to the originating channel as an out-of-band notice — a
+      // buffered channel (Telegram) sends it immediately as its own message;
+      // a per-chunk channel (SSE) ignores it. Fire-and-forget: a notice
+      // carries no answer text, so it neither blocks nor paces the body, and
+      // a delivery failure must not affect the answer (the engine already
+      // swallows a throwing sink). The delivered stream is drained off the
+      // hot path.
+      void noticeSink(ToolEvent event) {
+        unawaited(
+          access
+              .deliver(OutboundChunk(textDelta: '', notice: event.noticeLine()))
+              .drain<void>()
+              .catchError((_) {}),
+        );
+      }
+
       // When the turn began serving — the §5.4 turn-header timestamp. Captured
       // before the run so it brackets the whole turn.
       final startedAt = DateTime.now().toUtc();
@@ -785,6 +804,7 @@ abstract final class BrainProcessBoot {
                   memoryProfile: access.session.memoryProfile,
                 ),
                 tokenSink: streamDelta,
+                noticeSink: noticeSink,
               )
               .outcome,
           procedureId: procedureId,

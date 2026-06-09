@@ -83,6 +83,7 @@ import '../primitives_native/yield_primitive.dart';
 import '../bridges/tool_bridge.dart' show ToolBridge;
 import '../tools/basic_tools.dart' show registerBasicTools;
 import '../tools/tool_context.dart' show ToolContext;
+import '../tools/tool_event.dart' show ToolNoticeSink;
 import '../tools/tool_policy_config.dart' show ToolPolicyConfig;
 import '../tools/tool_registry.dart' show ToolRegistry;
 import '../procedure_store/procedure_loader.dart';
@@ -309,10 +310,18 @@ final class ProcedureEngine {
   /// substrate forwarding and `emit` both fall back to buffer-only no-ops.
   /// A [tokenSink] is bound only to the top-level run; nested `runProcedure`
   /// calls do not inherit it (the answer is streamed by the top-level body).
+  ///
+  /// When [noticeSink] is supplied (the external/user request path) the engine
+  /// fires it for each tool [ToolEvent] this run's tool bridge emits, so the
+  /// dispatch route can surface the call to the originating channel as an
+  /// out-of-band notice (`OutboundChunk.notice`). Like [tokenSink], it is bound
+  /// only to the top-level run; nested runs do not inherit it. Best-effort —
+  /// the engine never awaits it and swallows its errors.
   ProcedureRun invoke(
     ProcedureInvocation invocation, {
     Duration? timeout,
     OutboundDeltaSink? tokenSink,
+    ToolNoticeSink? noticeSink,
   }) {
     final runId = invocation.runId ?? _newRunId();
     final trail = StreamController<TrailEntry>.broadcast();
@@ -345,6 +354,7 @@ final class ProcedureEngine {
             onEntry: trail.add,
             cancellation: cancellation,
             tokenSink: tokenSink,
+            noticeSink: noticeSink,
             turn: turn,
             profile: invocation.memoryProfile,
           );
@@ -404,6 +414,7 @@ final class ProcedureEngine {
     void Function(TrailEntry entry)? onEntry,
     RunCancellation? cancellation,
     OutboundDeltaSink? tokenSink,
+    ToolNoticeSink? noticeSink,
     TurnContext? turn,
     String? profile,
     void Function(ProcedureTreeRecord tree)? onTree,
@@ -607,6 +618,13 @@ final class ProcedureEngine {
     // each event's `occurredAt` with the engine clock so trails are
     // deterministic. Best-effort: a throwing sink is swallowed so it cannot
     // break the run. `null` leaves the bridge a pure tool router.
+    // Two best-effort consumers share the one tool-event seam: the process
+    // [toolAccessSink] (records every call into the trails / live-trail with
+    // run correlation) and the per-run [noticeSink] (surfaces the call to the
+    // originating channel as an out-of-band notice, P2). The bridge emits each
+    // event once; this closure fans it out to whichever sinks are bound.
+    // Either failing is swallowed — neither trail writing nor a notification
+    // may break the run. With both unbound the bridge stays a pure router.
     final toolAccessSink = _toolAccessSink;
     final runToolBridge = ToolBridge(
       toolRegistry,
@@ -617,18 +635,27 @@ final class ProcedureEngine {
         fileScopeRoot: _defaultToolFileScopeRoot,
       ),
       clock: _now,
-      onEvent: toolAccessSink == null
+      onEvent: (toolAccessSink == null && noticeSink == null)
           ? null
           : (event) {
-              try {
-                toolAccessSink(ToolAccessRecord(
-                  event: event,
-                  runId: runId,
-                  trailId: recorder.isOpen ? recorder.trailId.value : null,
-                  turnId: turn?.turnId.value,
-                ));
-              } catch (_) {
-                // Trail writing is non-essential; never break the run.
+              if (toolAccessSink != null) {
+                try {
+                  toolAccessSink(ToolAccessRecord(
+                    event: event,
+                    runId: runId,
+                    trailId: recorder.isOpen ? recorder.trailId.value : null,
+                    turnId: turn?.turnId.value,
+                  ));
+                } catch (_) {
+                  // Trail writing is non-essential; never break the run.
+                }
+              }
+              if (noticeSink != null) {
+                try {
+                  noticeSink(event);
+                } catch (_) {
+                  // A dropped notification must not break the run.
+                }
               }
             },
     );

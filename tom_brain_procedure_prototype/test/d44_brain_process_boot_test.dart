@@ -176,10 +176,23 @@ void main() {
 
       await booted.dispatcher.accept(access);
 
-      // The substrate deltas arrived as non-final chunks, in order.
-      final nonFinal = delivered.where((c) => !c.isFinal).toList();
-      expect(nonFinal.map((c) => c.textDelta).toList(),
+      // The substrate answer deltas arrived as non-final chunks, in order.
+      // Tool-call notices ride the same stream as separate non-final chunks
+      // (`OutboundChunk.notice`, P2) — `answer_with_memory_v1` opens with a
+      // `tool.list()` — so the answer deltas are the non-final chunks that
+      // carry no notice.
+      final answerDeltas =
+          delivered.where((c) => !c.isFinal && c.notice == null).toList();
+      expect(answerDeltas.map((c) => c.textDelta).toList(),
           <String>['Hello, ', 'world.']);
+
+      // The `tool.list()` the procedure opens with surfaced as an out-of-band
+      // notice chunk (no answer text), proving the route → engine → tool-event
+      // notice wiring is live end-to-end.
+      final notices = delivered.where((c) => c.notice != null).toList();
+      expect(notices, isNotEmpty);
+      expect(notices.first.textDelta, isEmpty);
+      expect(notices.first.notice, startsWith('🔧 listed'));
 
       // The stream was terminated by exactly one empty final marker — the
       // deltas already carried the text, so the terminator re-sends nothing.

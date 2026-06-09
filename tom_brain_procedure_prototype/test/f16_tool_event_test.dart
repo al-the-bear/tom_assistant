@@ -142,6 +142,43 @@ void main() {
     });
   });
 
+  group('F.16-tool-7: noticeLine (out-of-band notice text)', () {
+    test('ToolInvoked names the tool', () {
+      expect(
+        ToolInvoked(occurredAt: _at, name: 'memory.read', group: 'memory')
+            .noticeLine(),
+        '🔧 tool memory.read',
+      );
+    });
+
+    test('ToolFailed marks the failure and carries the reason', () {
+      expect(
+        ToolFailed(occurredAt: _at, name: 'does.not.exist', reason: 'unknown')
+            .noticeLine(),
+        '⚠️ tool does.not.exist failed: unknown',
+      );
+    });
+
+    test('ToolDenied marks the policy refusal and carries the reason', () {
+      expect(
+        ToolDenied(occurredAt: _at, name: 'fs.write', reason: 'read-only')
+            .noticeLine(),
+        '🚫 tool fs.write denied: read-only',
+      );
+    });
+
+    test('ToolListed reports the count, with and without a filter', () {
+      expect(
+        ToolListed(occurredAt: _at, count: 3).noticeLine(),
+        '🔧 listed 3 tools',
+      );
+      expect(
+        ToolListed(occurredAt: _at, count: 1, filter: 'memory').noticeLine(),
+        '🔧 listed 1 memory tool(s)',
+      );
+    });
+  });
+
   group('F.16-tool-5: ToolEventBus', () {
     test('events() delivers emissions in order to a subscriber', () async {
       final bus = ToolEventBus();
