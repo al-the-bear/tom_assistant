@@ -12,11 +12,12 @@
 // What the loader does:
 //
 //   * Validates the document's top-level shape. The whole-process file
-//     carries up to five sibling sections — `substrate:`, `memory:`,
-//     `engine:`, `dispatcher:`, `access:`. This loader owns `access:` and
-//     leaves the other four for their own loaders (each reads only its own
-//     key). Any *other* top-level key is rejected (AC-12 forward-only) so a
-//     typo'd section name never silently no-ops.
+//     carries sibling sections — `substrate:`, `memory:`, `engine:`,
+//     `dispatcher:`, `trail:`, `tools:`, `access:`. This loader owns `access:`
+//     and leaves the others for their own loaders (each reads only its own
+//     key — the run package's `TrailConfigLoader` owns `trail:`, its
+//     `ToolsConfigLoader` owns `tools:`). Any *other* top-level key is rejected
+//     (AC-12 forward-only) so a typo'd section name never silently no-ops.
 //   * Requires the `access:` block and parses every documented field.
 //     Within `access:`, unknown keys are rejected at every level (AC-12).
 //   * Builds the concrete edge-security policies (`RateLimitPolicy`,
@@ -62,8 +63,9 @@ abstract final class AccessConfigLoader {
 
   /// The top-level sections the whole-process document may carry. This
   /// loader owns [_accessKey]; the others are owned by their own loaders
-  /// (substrate / memory / engine / dispatcher, and the run package's
-  /// `TrailConfigLoader` for `trail:` — `tom_brain_logging.md` §8) and are
+  /// (substrate / memory / engine / dispatcher, the run package's
+  /// `TrailConfigLoader` for `trail:` — `tom_brain_logging.md` §8 — and its
+  /// `ToolsConfigLoader` for `tools:` — the file-scope roots) and are
   /// tolerated here so the single file feeds every section loader. Any other
   /// root key is rejected (AC-12).
   static const Set<String> _allowedTopLevelKeys = <String>{
@@ -72,6 +74,7 @@ abstract final class AccessConfigLoader {
     'engine',
     'dispatcher',
     'trail',
+    'tools',
     _accessKey,
   };
 
