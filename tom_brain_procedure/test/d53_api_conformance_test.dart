@@ -460,8 +460,10 @@ final class _ContractViolation implements Exception, ClassifiedFailure {
 
 Access _accessWith({
   String text = 'what is a quasar?',
-  // A confident centroid hint names the procedure id to run (Q-E.50.1).
-  String? kindHint = SystemProcedures.answerWithMemoryV1,
+  // A confident centroid hint names the procedure id to run (Q-E.50.1); after
+  // the Todo-6 route-flip (§ 4.0.1) the only routable procedure is the entry
+  // router, which the two-phase route runs before the answer branch it selects.
+  String? kindHint = SystemProcedures.promptAnalyzerV1,
   DeliverCallback? deliver,
 }) =>
     Access(
@@ -536,7 +538,7 @@ void main() {
               .having(
                   (e) => e.procedureId, 'procedureId', 'background_research')
               .having((e) => e.knownProcedureIds, 'knownProcedureIds',
-                  <String>[SystemProcedures.answerWithMemoryV1]),
+                  <String>[SystemProcedures.promptAnalyzerV1]),
         ),
         reason: 'the hint names no shipped procedure and the error propagates '
             'unchanged through accept (the D.14 failure-propagation contract)',

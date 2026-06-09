@@ -59,6 +59,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, TomBrainSubstrateClient;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show Access, ConversationHistory, HistoryTurn, OutboundChunk, PreemptionState;
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show DeliberationVerdict, classifyDeliberationCue;
 
 import '../api/procedure_engine.dart';
 import '../api/procedure_invocation.dart';
@@ -795,30 +797,72 @@ abstract final class BrainProcessBoot {
 
       ProcedureOutcome? outcome;
       try {
+        // The route is two-phase within ONE foreground admission (§ 4.0.1, b):
+        // the user's turn occupies the slot once for both the router decision
+        // and the answer it gates. `procedureId` (the resolved entry router,
+        // `prompt_analyzer_v1`) is the tracking id for the admission.
         final ProcedureOutcome result = await coordinator.submitForeground(
-          () => engine
-              .invoke(
-                ProcedureInvocation(
-                  procedureId: procedureId,
-                  arguments: <String, Object?>{
-                    inboundTextArgumentKey: access.envelope.text,
-                    if (priorTurns.isNotEmpty)
-                      priorTurnsArgumentKey: priorTurns,
-                    toolCatalogueArgumentKey: toolCatalogue,
-                  },
-                  // Carry the access-edge-minted turn id (logging-spec §3) onto
-                  // the invocation so the engine threads it — plus a per-turn
-                  // `callSeq` — onto every substrate call this turn issues.
-                  turnId: access.turnId,
-                  // Carry the request's memory profile (logging-spec §5.6) so
-                  // the engine stamps it onto every memory access this turn
-                  // issues, bucketing the per-profile memory log correctly.
-                  memoryProfile: access.session.memoryProfile,
-                ),
-                tokenSink: streamDelta,
-                noticeSink: noticeSink,
-              )
-              .outcome,
+          () async {
+            // ── Phase 1: classify (no sink) ──
+            // Run the entry router with NO token/notice sink — a router
+            // classification must never stream to the live caller (§ 4.0.1, b:
+            // a branch invoked under the router would stream nothing, because
+            // the engine binds the per-run token sink only to the top-level
+            // run). Read the router's chosen `target` answer branch.
+            final ProcedureOutcome routerOutcome = await engine
+                .invoke(
+                  ProcedureInvocation(
+                    procedureId: procedureId,
+                    arguments: <String, Object?>{
+                      inboundTextArgumentKey: access.envelope.text,
+                    },
+                    turnId: access.turnId,
+                    memoryProfile: access.session.memoryProfile,
+                  ),
+                )
+                .outcome;
+
+            // The deterministic thinking floor (§ 4.0): the model verdict is
+            // augmented by the domain-free deliberation-cue scan
+            // (`classifyDeliberationCue`, tom_core_agentic) so a cued prompt
+            // ("think about …") always reaches the recursive loop, even when
+            // the model classified it `normal`. The router cannot run this
+            // itself — a d4rt body cannot import tom_core_agentic.
+            final target = _resolveAnswerBranch(
+              routerTarget: routerOutcome.result?.output<String>('target'),
+              promptText: access.envelope.text,
+            );
+
+            // ── Phase 2: answer (streaming, top-level) ──
+            // Run the chosen answer branch as the TOP-LEVEL streaming run,
+            // binding the per-run token + notice sinks so its `sub.llm(...)`
+            // chunks reach the caller live, and threading the full argument
+            // set (`text` + `priorTurns` + `toolCatalogue`).
+            return engine
+                .invoke(
+                  ProcedureInvocation(
+                    procedureId: target,
+                    arguments: <String, Object?>{
+                      inboundTextArgumentKey: access.envelope.text,
+                      if (priorTurns.isNotEmpty)
+                        priorTurnsArgumentKey: priorTurns,
+                      toolCatalogueArgumentKey: toolCatalogue,
+                    },
+                    // Carry the access-edge-minted turn id (logging-spec §3)
+                    // onto the invocation so the engine threads it — plus a
+                    // per-turn `callSeq` — onto every substrate call this turn
+                    // issues.
+                    turnId: access.turnId,
+                    // Carry the request's memory profile (logging-spec §5.6) so
+                    // the engine stamps it onto every memory access this turn
+                    // issues, bucketing the per-profile memory log correctly.
+                    memoryProfile: access.session.memoryProfile,
+                  ),
+                  tokenSink: streamDelta,
+                  noticeSink: noticeSink,
+                )
+                .outcome;
+          },
           procedureId: procedureId,
         );
         outcome = result;
@@ -846,6 +890,29 @@ abstract final class BrainProcessBoot {
         _emitTurnSummary(turnSummarySink, access, startedAt, outcome);
       }
     };
+  }
+
+  /// Picks the answer branch the route runs after the entry router's
+  /// classification (§ 4.0.1, b).
+  ///
+  /// Returns [SystemProcedures.answerWithThinkingV1] when the router chose the
+  /// thinking branch ([routerTarget] names it) **or** [promptText] carries a
+  /// deliberation cue (`classifyDeliberationCue`, tom_core_agentic) — the
+  /// deterministic floor (§ 4.0) that guarantees a cued prompt deliberates even
+  /// when the model verdict reads `normal`, and that an unparseable/missing
+  /// router target never silently downgrades a cued prompt. Otherwise the
+  /// normal branch [SystemProcedures.answerWithMemoryV1].
+  static String _resolveAnswerBranch({
+    required String? routerTarget,
+    required String promptText,
+  }) {
+    final routerThinking =
+        routerTarget == SystemProcedures.answerWithThinkingV1;
+    final cueThinking =
+        classifyDeliberationCue(promptText) == DeliberationVerdict.thinking;
+    return routerThinking || cueThinking
+        ? SystemProcedures.answerWithThinkingV1
+        : SystemProcedures.answerWithMemoryV1;
   }
 
   /// The answering session's earlier turns as ordered `{user, assistant}`

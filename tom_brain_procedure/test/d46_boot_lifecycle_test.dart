@@ -80,8 +80,10 @@ void main() {
       );
 
   Access userPrompt(String text) => Access(
+        // The entry router is the only routable procedure after the route-flip
+        // (§ 4.0.1); the two-phase route runs the answer branch it selects.
         envelope:
-            InboundRequest(text: text, kindHint: SystemProcedures.answerWithMemoryV1),
+            InboundRequest(text: text, kindHint: SystemProcedures.promptAnalyzerV1),
         identity: ResolvedIdentity(principalId: 'p1'),
         session: Session(sessionId: 's1'),
         persona: Persona.assistant(),

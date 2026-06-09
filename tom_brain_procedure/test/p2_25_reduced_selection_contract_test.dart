@@ -18,16 +18,19 @@
 // d51 (closed-set attestation): it asserts those branches compose into the one
 // reduced contract the prototype actually ships, as a single table.
 //
-// The contract has exactly two reachable procedures, reached through two doors:
+// The contract is reached through two doors:
 //
 //   - **Selection door** (the dispatcher route). Every inbound resolves to a
-//     procedure id through the production `resolveProcedureId`. The only id it
-//     ever yields is `answer_with_memory_v1`: a `user_prompt` kind, an absent /
-//     blank hint (→ `classify_inbound_v1` → `user_prompt`), and a confident
-//     `answer_with_memory_v1` procedure-id hint all land there. Every other
-//     signal is rejected loudly (`UnknownProcedureHint` /
-//     `UnsupportedProcedureKind`). This door needs no memory — it is pure
-//     resolution.
+//     procedure id through the production `resolveProcedureId`. After the
+//     § 4.0.1 route-flip the only id it ever yields is `prompt_analyzer_v1`
+//     (the entry router): a `user_prompt` kind, an absent / blank hint (→
+//     `classify_inbound_v1` → `user_prompt`), and a confident
+//     `prompt_analyzer_v1` procedure-id hint all land there. The answer
+//     branches (`answer_with_memory_v1` / `answer_with_thinking_v1`) are no
+//     longer reachable through this door — the two-phase route runs whichever
+//     one the router selects. Every other signal is rejected loudly
+//     (`UnknownProcedureHint` / `UnsupportedProcedureKind`). This door needs no
+//     memory — it is pure resolution.
 //   - **Sugar-library door** (the `runProcedure` resolver). The sugar verbs map
 //     `<verb>` → `<verb>_v1`; the shipped disk library contains all five of
 //     those targets. `think_v1` is the no-op stub (`requires: []`); the other
@@ -97,32 +100,34 @@ String _resolve(String? kindHint, {ClassifyFallback? fallback}) =>
     );
 
 void main() {
-  group('P2.25 selection door — every inbound resolves answer_with_memory_v1',
+  group('P2.25 selection door — every inbound resolves prompt_analyzer_v1',
       () {
     // The selection table: each signal → the one routed procedure id. Null /
     // empty / blank hints are "no hint" (the route trims before testing), so
-    // they fall to the classify_inbound_v1 stub → user_prompt → the procedure;
-    // a confident (and a padded) procedure-id hint routes directly.
+    // they fall to the classify_inbound_v1 stub → user_prompt → the entry
+    // router; a confident (and a padded) procedure-id hint routes directly.
     const cases = <(String label, String? hint)>[
       ('no hint (null)', null),
       ('empty hint', ''),
       ('blank hint', '   '),
-      ('confident procedure-id hint', SystemProcedures.answerWithMemoryV1),
-      ('padded procedure-id hint', '  answer_with_memory_v1  '),
+      ('confident procedure-id hint', SystemProcedures.promptAnalyzerV1),
+      ('padded procedure-id hint', '  prompt_analyzer_v1  '),
     ];
 
     for (final (label, hint) in cases) {
-      test('$label → answer_with_memory_v1', () {
-        expect(_resolve(hint), SystemProcedures.answerWithMemoryV1);
+      test('$label → prompt_analyzer_v1', () {
+        expect(_resolve(hint), SystemProcedures.promptAnalyzerV1);
       });
     }
 
     // The plan's explicit Verify, called out as its own headline assertion.
-    test('VERIFY: a prompt with no hint still resolves answer_with_memory_v1',
+    // After the § 4.0.1 route-flip the entry router is what an un-hinted
+    // prompt resolves to; the router then selects the answer branch.
+    test('VERIFY: a prompt with no hint still resolves the entry router',
         () {
-      expect(_resolve(null), 'answer_with_memory_v1',
+      expect(_resolve(null), 'prompt_analyzer_v1',
           reason: 'an un-hinted prompt falls to classify_inbound_v1 → '
-              'user_prompt → answer_with_memory_v1');
+              'user_prompt → prompt_analyzer_v1');
     });
   });
 
@@ -143,12 +148,12 @@ void main() {
 
       expect(calls, 1,
           reason: 'no hint ⇒ the route falls through to the classifier stub');
-      expect(id, SystemProcedures.answerWithMemoryV1);
+      expect(id, SystemProcedures.promptAnalyzerV1);
     });
 
     test('a confident hint bypasses the classifier entirely', () {
       var calls = 0;
-      final id = _resolve(SystemProcedures.answerWithMemoryV1,
+      final id = _resolve(SystemProcedures.promptAnalyzerV1,
           fallback: (access) {
         calls++;
         return classifyInboundV1(access);
@@ -157,7 +162,7 @@ void main() {
       expect(calls, 0,
           reason: 'a procedure-id hint routes directly; the no-hint '
               'classifier is never consulted (Q-E.50.1)');
-      expect(id, SystemProcedures.answerWithMemoryV1);
+      expect(id, SystemProcedures.promptAnalyzerV1);
     });
   });
 
@@ -168,7 +173,7 @@ void main() {
         throwsA(isA<UnknownProcedureHint>()
             .having((e) => e.procedureId, 'procedureId', 'background_research')
             .having((e) => e.knownProcedureIds, 'knownProcedureIds',
-                <String>[SystemProcedures.answerWithMemoryV1])),
+                <String>[SystemProcedures.promptAnalyzerV1])),
       );
     });
 
@@ -218,10 +223,17 @@ void main() {
           reason: 'a no-op stub touches no primitive');
     });
 
-    test('the routed procedure answer_with_memory_v1 is shipped', () {
-      expect(library.knows(SystemProcedures.answerWithMemoryV1), isTrue,
+    test('the routed entry router prompt_analyzer_v1 is shipped', () {
+      expect(library.knows(SystemProcedures.promptAnalyzerV1), isTrue,
           reason: 'the one procedure the selection door ever yields must be '
               'present in the reduced library');
+    });
+
+    test('both answer branches the router selects are shipped', () {
+      expect(library.knows(SystemProcedures.answerWithMemoryV1), isTrue,
+          reason: 'the normal branch the router can select must be present');
+      expect(library.knows(SystemProcedures.answerWithThinkingV1), isTrue,
+          reason: 'the thinking branch the router can select must be present');
     });
 
     // The library-shape table: the four request-handling sugar verbs map to

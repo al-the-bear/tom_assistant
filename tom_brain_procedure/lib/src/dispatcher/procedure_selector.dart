@@ -6,20 +6,22 @@
 // produced, it resolves the *procedure id* the run coordinator (D.18) will
 // schedule.
 //
-// Policy (spec § 10.2, Plan D.16): for the prototype, every inbound
-// classified as `user_prompt` routes to `answer_with_memory_v1`; anything
-// else surfaces `UnsupportedProcedureKind`. This is the single point where
-// the open kind strings the classifier emits are narrowed to the closed set
-// of procedures the prototype actually ships — the boundary at which an
-// unanticipated kind fails loudly (Q-D.15.1) instead of being silently
-// dropped or guessed.
+// Policy (spec § 10.2, Plan D.16; route-flip § 4.0.1): for the prototype,
+// every inbound classified as `user_prompt` routes to the entry router
+// `prompt_analyzer_v1`; anything else surfaces `UnsupportedProcedureKind`.
+// This is the single point where the open kind strings the classifier emits
+// are narrowed to the closed set of procedures the prototype actually ships
+// — the boundary at which an unanticipated kind fails loudly (Q-D.15.1)
+// instead of being silently dropped or guessed. The answer branches are
+// *not* selectable: they are reached only through the router's two-phase
+// dispatch (§ 4.0.1).
 //
 // The selector owns *two* doors into the same closed procedure set
 // (Q-E.50.1):
 //
 //   - [ProcedureSelector.select] — the **no-hint** door. The fallback
 //     classifier (D.15) emits an inbound *kind*; this maps kind → procedure
-//     id (`user_prompt` → `answer_with_memory_v1`), rejecting an unknown kind
+//     id (`user_prompt` → `prompt_analyzer_v1`), rejecting an unknown kind
 //     with `UnsupportedProcedureKind`.
 //   - [ProcedureSelector.resolveHintedProcedure] — the **confident-hint**
 //     door. The Phase-E heuristic classifier (E.33) already chose a procedure
@@ -34,24 +36,39 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show InboundKinds;
 import 'unknown_procedure_hint.dart';
 import 'unsupported_procedure_kind.dart';
 
-/// Well-known system-procedure ids the dispatcher selects.
+/// Well-known system-procedure ids the dispatcher works with.
 ///
-/// The prototype ships exactly one *real* routed procedure,
-/// [answerWithMemoryV1]; this holder names its id so selection and the
-/// engine-side script loader share one spelling instead of duplicating a
-/// magic string (mirroring [InboundKinds] on the classifier side).
+/// After the Todo-6 route-flip (§ 4.0.1) the dispatcher routes every
+/// `user_prompt` to the **entry router** [promptAnalyzerV1]; the router then
+/// chooses between the two answer branches ([answerWithMemoryV1] /
+/// [answerWithThinkingV1]) and the dispatcher runs the chosen one as a
+/// second, top-level streaming run. These holders name the ids so selection,
+/// the dispatcher's two-phase route, and the engine-side script loader share
+/// one spelling instead of duplicating magic strings (mirroring
+/// [InboundKinds] on the classifier side).
 abstract final class SystemProcedures {
-  /// The one real system procedure: `recall → answer → persist`
-  /// (spec § 11). Every `user_prompt` routes here.
+  /// The entry router: one `analyser` classification call that picks the
+  /// answer branch (§ 4.0). Every `user_prompt` routes here first.
+  static const String promptAnalyzerV1 = 'prompt_analyzer_v1';
+
+  /// The normal answer branch: `recall → answer → persist` (spec § 4.4).
+  /// Reached only via the router's `normal` verdict.
   static const String answerWithMemoryV1 = 'answer_with_memory_v1';
+
+  /// The thinking answer branch: the recursive deliberation loop
+  /// (§ 4.1–4.7). Reached only via the router's `thinking` verdict.
+  static const String answerWithThinkingV1 = 'answer_with_thinking_v1';
 }
 
 /// The default kind → procedure-id routing table for the prototype.
 ///
-/// One entry: `user_prompt` → `answer_with_memory_v1`. Any kind absent from
-/// this map is unsupported and rejected by [ProcedureSelector.select].
+/// One entry: `user_prompt` → `prompt_analyzer_v1` (the entry router, after
+/// the Todo-6 route-flip § 4.0.1). The answer branches are *not* routing
+/// targets — they are reachable only through the router's two-phase dispatch.
+/// Any kind absent from this map is unsupported and rejected by
+/// [ProcedureSelector.select].
 const Map<String, String> defaultProcedureRouting = <String, String>{
-  InboundKinds.userPrompt: SystemProcedures.answerWithMemoryV1,
+  InboundKinds.userPrompt: SystemProcedures.promptAnalyzerV1,
 };
 
 /// The dispatcher's procedure selector (Plan D.16; spec § 10.2).
@@ -92,8 +109,9 @@ final class ProcedureSelector {
 
   /// Resolves [kind] to the procedure id to run.
   ///
-  /// For the prototype `user_prompt` → `answer_with_memory_v1`. Any other
-  /// kind has no mapping and is rejected with [UnsupportedProcedureKind] —
+  /// For the prototype `user_prompt` → `prompt_analyzer_v1` (the entry
+  /// router, § 4.0.1). Any other kind has no mapping and is rejected with
+  /// [UnsupportedProcedureKind] —
   /// loudly, never silently. The thrown error names the offending kind and
   /// the supported set, and (per the D.14 contract) propagates unchanged
   /// through `Dispatcher.accept`.

@@ -8,8 +8,11 @@
 // run's id and the wire the substrate saw. A boot with no sink stays silent.
 //
 // Doubles mirror `d44_brain_process_boot_test.dart` (in-process memory +
-// answering substrate), trimmed to the one cold-path run
-// `answer_with_memory_v1` performs (one `sub.llm` answer call).
+// answering substrate). After the Todo-6 route-flip (§ 4.0.1) the turn fires
+// two runs — the entry router's `analyser` classification, then the
+// `answer_with_memory_v1` answer — so more than one raw-trail record is
+// produced; the suite asserts on the presence and shape of records, not an
+// exact count.
 
 import 'dart:typed_data';
 
@@ -54,7 +57,7 @@ void main() {
 
   Access userPrompt(String text) => Access(
         envelope: InboundRequest(
-            text: text, kindHint: SystemProcedures.answerWithMemoryV1),
+            text: text, kindHint: SystemProcedures.promptAnalyzerV1),
         identity: ResolvedIdentity(principalId: 'p1'),
         session: Session(sessionId: 's1'),
         persona: Persona.assistant(),

@@ -324,8 +324,12 @@ void main() {
 
 Access _accessWith({
   String text = 'what is a quasar?',
-  // A confident centroid hint names the procedure id to run (Q-E.50.1).
-  String? kindHint = SystemProcedures.answerWithMemoryV1,
+  // The entry router is the only routable procedure after the § 4.0.1
+  // route-flip; the two-phase route then runs the answer branch it selects
+  // (here `answer_with_memory_v1`, since none of these prompts carry a
+  // deliberation cue). `finalRunNode()` keys on the answer run's procedureId,
+  // so it still resolves the phase-2 run rather than the phase-1 router.
+  String? kindHint = SystemProcedures.promptAnalyzerV1,
   DeliverCallback? deliver,
 }) =>
     Access(

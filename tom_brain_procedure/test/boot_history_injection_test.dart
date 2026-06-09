@@ -62,8 +62,11 @@ void main() {
   /// An `Access` carrying [history], shaped as the assembler builds it: the
   /// live prompt is the last (answer-less) turn already appended to [history].
   Access promptWithHistory(String text, ConversationHistory history) => Access(
+        // The entry router is the only routable procedure after the Todo-6
+        // route-flip (§ 4.0.1); the two-phase route then runs the answer branch
+        // it selects, whose answer prompt is the last one the substrate sees.
         envelope: InboundRequest(
-            text: text, kindHint: SystemProcedures.answerWithMemoryV1),
+            text: text, kindHint: SystemProcedures.promptAnalyzerV1),
         identity: ResolvedIdentity(principalId: 'p1'),
         session: Session(sessionId: 's1'),
         persona: Persona.assistant(),

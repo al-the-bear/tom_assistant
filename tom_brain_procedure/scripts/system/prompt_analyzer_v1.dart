@@ -4,9 +4,9 @@
 /// summary: Entry router — classify a user prompt as normal vs thinking and
 ///   select the branch procedure, without running it.
 /// successCriterion: returns a branch decision (`branch` + `target`) for every
-///   prompt — `normal` → answer_with_memory_v1, `thinking` → the thinking
-///   branch — picking deterministically even when the classification verdict
-///   is unparseable (defaults to `normal`).
+///   prompt — `normal` → answer_with_memory_v1, `thinking` →
+///   answer_with_thinking_v1 — picking deterministically even when the
+///   classification verdict is unparseable (defaults to `normal`).
 /// budget: { wallClockMs: 60000 }
 /// # One small classification LLM call (§ 4.0): a router decision is cheap and
 /// # must not stall the request it gates. 60000 ms (60s) is a generous
@@ -29,26 +29,27 @@
 // branches" — normal (answer_with_memory_v1, the fast linear retrieve → answer
 // → persist path) and thinking (answer_with_thinking_v1, the recursive loop).
 //
-// ── What this procedure does (Todo 5) and does NOT do yet (Todo 6) ──
+// ── What this procedure does (and does NOT do) ──
 //
 // This body is the **classifier-and-branch-selector**: it reads the prompt,
 // makes one `analyser`-role classification call, parses the verdict, and
 // **returns** the chosen branch + target. It deliberately does **not**
-// `runProcedure(...)` the chosen branch. That route-flip is deferred to Todo 6
-// (§ 4.0 "Route-flip + streaming deferral" blockquote): a delegating router
-// that invoked its branch via a nested `runProcedure` would break answer
-// streaming, because the engine binds the per-run token sink **only to the
-// top-level run** — a branch invoked under the router would stream nothing to
-// the live caller. Until Todo 6 wires the production route (and the streaming
-// fix), the dispatcher keeps routing `user_prompt → answer_with_memory_v1`
-// directly; this procedure is exercised as a pure decision unit.
+// `runProcedure(...)` the chosen branch. Per the resolved route-flip
+// (§ 4.0.1, option b): the native dispatcher consults this procedure for the
+// decision (no token sink), reads its `target`, and itself launches that
+// target **as the top-level streaming run** — within one foreground
+// admission. A delegating router that invoked its branch via a nested
+// `runProcedure` would break answer streaming, because the engine binds the
+// per-run token sink **only to the top-level run** — a branch invoked under
+// the router would stream nothing to the live caller. So this procedure stays
+// a pure decision unit; the dispatcher owns the two-phase route.
 //
-// ── The thinking-branch target is a placeholder until Todo 6 ──
+// ── The two branch targets (§ 4.0.1) ──
 //
-// § 4.0: "Until Todo 6 lands answer_with_thinking_v1, the thinking-branch
-// target is the think_v1 no-op placeholder." So the `thinking` verdict maps to
-// `think_v1` here; Todo 6 supersedes it with the real recursive loop. The
-// `normal` verdict maps to `answer_with_memory_v1`, the shipped fast path.
+// The `thinking` verdict maps to `answer_with_thinking_v1`, the real
+// recursive loop (§ 4.1–4.7, Todo 6); it supersedes the `think_v1` no-op
+// stub. The `normal` verdict maps to `answer_with_memory_v1`, the shipped
+// fast path. Both branches are reachable only through this router's decision.
 //
 // ── How the verdict is decided (§ 4.0) ──
 //
@@ -97,10 +98,9 @@ const String _branchThinking = 'thinking';
 /// path.
 const String _targetNormal = 'answer_with_memory_v1';
 
-/// The thinking-branch target. A placeholder until Todo 6 lands
-/// `answer_with_thinking_v1` (§ 4.0); `think_v1` is the no-op stub that gives
-/// the branch a real, callable target meanwhile.
-const String _targetThinking = 'think_v1';
+/// The thinking-branch target — the recursive deliberation loop
+/// (§ 4.1–4.7, Todo 6). Supersedes the `think_v1` no-op stub.
+const String _targetThinking = 'answer_with_thinking_v1';
 
 Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final text = inputs.get('text');
@@ -113,7 +113,8 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final branch = _branchFromCompletion(verdictText is String ? verdictText : '');
   final target = branch == _branchThinking ? _targetThinking : _targetNormal;
 
-  // Route-flip deferred to Todo 6: the chosen branch is returned, not run here.
+  // The chosen branch is returned, not run here: the native dispatcher reads
+  // `target` and launches it as the top-level streaming run (§ 4.0.1, b).
   return <String, Object?>{
     'branch': branch,
     'target': target,

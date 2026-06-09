@@ -180,9 +180,12 @@ void main() {
         );
 
     Access userPrompt(String text) => Access(
-          // A confident centroid hint names the procedure id (Q-E.50.1).
+          // The entry router is the only routable procedure (§ 4.0.1); the gate
+          // parks the router's `analyser` call first, then — once released —
+          // the answer branch's `llm` call passes through (the gate is a
+          // permanent open).
           envelope: InboundRequest(
-              text: text, kindHint: SystemProcedures.answerWithMemoryV1),
+              text: text, kindHint: SystemProcedures.promptAnalyzerV1),
           identity: ResolvedIdentity(principalId: 'p1'),
           session: Session(sessionId: 's1'),
           persona: Persona.assistant(),

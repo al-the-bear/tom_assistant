@@ -53,12 +53,14 @@ void main() {
       expect(classifier.classify(_unhintedAccess()), InboundKinds.userPrompt);
     });
 
-    test('the selector routes the shared kind to answer_with_memory_v1', () {
+    test('the selector routes the shared kind to prompt_analyzer_v1', () {
       final selector = ProcedureSelector();
 
+      // After the § 4.0.1 route-flip the user_prompt kind routes to the entry
+      // router; the router then selects the answer branch in its two-phase run.
       expect(
         selector.select(InboundKinds.userPrompt),
-        SystemProcedures.answerWithMemoryV1,
+        SystemProcedures.promptAnalyzerV1,
       );
     });
 
@@ -69,7 +71,7 @@ void main() {
       final procedureId = ProcedureSelector().select(kind);
 
       expect(kind, InboundKinds.userPrompt);
-      expect(procedureId, SystemProcedures.answerWithMemoryV1);
+      expect(procedureId, SystemProcedures.promptAnalyzerV1);
     });
   });
 }

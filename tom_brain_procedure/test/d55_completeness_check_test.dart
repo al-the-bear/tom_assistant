@@ -71,10 +71,12 @@ void main() {
   group('def §14.3 — the process owns the result (procedure, not passthrough)',
       () {
     test('routing targets a procedure id, never a model', () {
+      // After the § 4.0.1 route-flip the kind maps to the entry router
+      // procedure id — still a procedure, never a raw model call.
       expect(defaultProcedureRouting,
-          <String, String>{'user_prompt': 'answer_with_memory_v1'});
+          <String, String>{'user_prompt': 'prompt_analyzer_v1'});
       expect(ProcedureSelector().select(InboundKinds.userPrompt),
-          SystemProcedures.answerWithMemoryV1);
+          SystemProcedures.promptAnalyzerV1);
     });
 
     test('an unrouted kind is rejected loudly (no silent model passthrough)',
@@ -117,23 +119,25 @@ void main() {
         () {
       final target = ProcedureSelector().select(InboundKinds.userPrompt);
       expect(target, isA<String>());
-      expect(target, SystemProcedures.answerWithMemoryV1);
+      expect(target, SystemProcedures.promptAnalyzerV1);
     });
   });
 
   // ── def § 14.8 — System procedure v1 is permanent ────────────────────
   //
-  // `answer_with_memory_v1` is the well-known floor every `user_prompt`
-  // routes to, and the fallback chain can never step below it: a
-  // fallback-class failure on v1 *surfaces* (toVersion == null), it does
-  // not demote v1. The behavioural proof is D.29/D.32 (v1-only chain
-  // surfaces); this pins that the floor's fallback event surfaces rather
-  // than stepping down.
+  // `answer_with_memory_v1` is the well-known floor branch the entry router
+  // selects for a normal prompt, and the fallback chain can never step below
+  // it: a fallback-class failure on v1 *surfaces* (toVersion == null), it does
+  // not demote v1. After the § 4.0.1 route-flip a `user_prompt` routes to the
+  // entry router `prompt_analyzer_v1`, whose two-phase run selects this floor
+  // branch. The behavioural proof is D.29/D.32 (v1-only chain surfaces); this
+  // pins that the floor's fallback event surfaces rather than stepping down.
   group('def §14.8 — system procedure v1 is permanent', () {
-    test('every user_prompt routes to the v1 system procedure', () {
+    test('every user_prompt routes to the entry router, which selects the v1 '
+        'floor branch', () {
       expect(SystemProcedures.answerWithMemoryV1, 'answer_with_memory_v1');
       expect(ProcedureSelector().select(InboundKinds.userPrompt),
-          SystemProcedures.answerWithMemoryV1);
+          SystemProcedures.promptAnalyzerV1);
     });
 
     test('a fallback on v1 surfaces — it is never stepped below', () {

@@ -76,10 +76,12 @@ void main() {
       );
 
   Access userPrompt(String text) => Access(
-        // A confident centroid hint names the *procedure id* to run, not a
-        // kind (Q-E.50.1); the route resolves it directly.
+        // After the Todo-6 route-flip (§ 4.0.1) the only routable procedure is
+        // the entry router; a confident hint names it, and the two-phase route
+        // then runs the answer branch it selects (here `answer_with_memory_v1`,
+        // since the prompts carry no deliberation cue).
         envelope: InboundRequest(
-            text: text, kindHint: SystemProcedures.answerWithMemoryV1),
+            text: text, kindHint: SystemProcedures.promptAnalyzerV1),
         identity: ResolvedIdentity(principalId: 'p1'),
         session: Session(sessionId: 's1'),
         persona: Persona.assistant(),
@@ -189,7 +191,7 @@ void main() {
       final delivered = <OutboundChunk>[];
       final access = Access(
         envelope: InboundRequest(
-            text: 'greet me', kindHint: SystemProcedures.answerWithMemoryV1),
+            text: 'greet me', kindHint: SystemProcedures.promptAnalyzerV1),
         identity: ResolvedIdentity(principalId: 'p1'),
         session: Session(sessionId: 's1'),
         persona: Persona.assistant(),

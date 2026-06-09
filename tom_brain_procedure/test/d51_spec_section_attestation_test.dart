@@ -14,7 +14,8 @@
 // from the code?" attestation for the Phase-D surface. If a future change
 // renames a dispatcher event, reorders the log categories, alters a
 // fallback wire code, moves the sustained threshold off 3, re-routes
-// `user_prompt`, or changes the queue-depth default, this suite fails with
+// `user_prompt` away from the entry router, or changes the queue-depth
+// default, this suite fails with
 // a message that names the spec section.
 //
 // Drives the package's public barrel + the shared barrel only (no
@@ -43,7 +44,7 @@ List<DispatcherEvent> _oneOfEachEvent() => <DispatcherEvent>[
       ProcedureSelected(
           occurredAt: _at,
           inboundKind: 'user_prompt',
-          procedureId: 'answer_with_memory_v1'),
+          procedureId: 'prompt_analyzer_v1'),
       ForegroundQueued(occurredAt: _at, queueDepth: 1),
       Preempted(occurredAt: _at, runId: 'bg_1'),
       Resumed(occurredAt: _at, runId: 'bg_1'),
@@ -181,23 +182,26 @@ void main() {
     });
   });
 
-  // §10.2 — classification + selection routing.
+  // §10.2 / §4.0.1 — classification + selection routing (route-flip).
   group('D.51-5: §10.2 routing table', () {
-    // Spec § 10.2: "every inbound classified as user_prompt routes to
-    // answer_with_memory_v1; anything else surfaces UnsupportedProcedureKind".
+    // Spec § 10.2 / § 4.0.1: after the route-flip every inbound classified as
+    // user_prompt routes to the entry router prompt_analyzer_v1; the router's
+    // two-phase run then selects the answer branch. Anything else surfaces
+    // UnsupportedProcedureKind.
     test('the default routing is the single user_prompt entry', () {
       expect(defaultProcedureRouting,
-          <String, String>{'user_prompt': 'answer_with_memory_v1'});
+          <String, String>{'user_prompt': 'prompt_analyzer_v1'});
     });
 
     test('the well-known ids carry their spec spellings', () {
       expect(InboundKinds.userPrompt, 'user_prompt');
+      expect(SystemProcedures.promptAnalyzerV1, 'prompt_analyzer_v1');
       expect(SystemProcedures.answerWithMemoryV1, 'answer_with_memory_v1');
     });
 
-    test('user_prompt selects answer_with_memory_v1', () {
+    test('user_prompt selects prompt_analyzer_v1', () {
       expect(ProcedureSelector().select(InboundKinds.userPrompt),
-          SystemProcedures.answerWithMemoryV1);
+          SystemProcedures.promptAnalyzerV1);
     });
 
     test('any non-user_prompt kind is rejected loudly', () {
@@ -207,18 +211,19 @@ void main() {
 
     // Spec § 10.2 (Q-E.50.1): a confident centroid hint names a *procedure id*
     // and routes directly through resolveHintedProcedure, bypassing the
-    // kind → procedure map; an unknown id surfaces UnknownProcedureHint.
+    // kind → procedure map; an unknown id surfaces UnknownProcedureHint. After
+    // the route-flip the only routable id is the entry router.
     test('a confident procedure-id hint routes directly to that procedure',
         () {
       expect(
           ProcedureSelector()
-              .resolveHintedProcedure(SystemProcedures.answerWithMemoryV1),
-          SystemProcedures.answerWithMemoryV1);
+              .resolveHintedProcedure(SystemProcedures.promptAnalyzerV1),
+          SystemProcedures.promptAnalyzerV1);
     });
 
     test('the known-procedure set is the single shipped procedure', () {
       expect(ProcedureSelector().knownProcedureIds,
-          <String>[SystemProcedures.answerWithMemoryV1]);
+          <String>[SystemProcedures.promptAnalyzerV1]);
     });
 
     test('an unknown procedure-id hint is rejected loudly', () {

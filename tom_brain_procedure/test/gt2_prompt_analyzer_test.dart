@@ -97,16 +97,19 @@ void main() {
     });
 
     test('a THINKING verdict routes to the thinking branch '
-        '(think_v1 placeholder)', () async {
+        '(answer_with_thinking_v1)', () async {
       substrate.verdict = 'THINKING';
 
       final outcome = await routeWith('think about the ethics of AI memory');
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       expect(outcome.result!.output<String>('branch'), 'thinking');
-      // § 4.0: the thinking-branch target is the think_v1 no-op placeholder
-      // until Todo 6 lands answer_with_thinking_v1.
-      expect(outcome.result!.output<String>('target'), 'think_v1');
+      // § 4.0: the thinking-branch target is answer_with_thinking_v1, the
+      // recursive thinking loop (Todo 6); think_v1 is superseded.
+      expect(
+        outcome.result!.output<String>('target'),
+        'answer_with_thinking_v1',
+      );
     });
   });
 

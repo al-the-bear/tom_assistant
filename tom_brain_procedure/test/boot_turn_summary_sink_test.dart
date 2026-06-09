@@ -11,7 +11,9 @@
 // with no sink stays silent.
 //
 // Doubles mirror `boot_llm_trail_sink_test.dart` (in-process memory + answering
-// substrate), trimmed to the one cold-path run `answer_with_memory_v1` performs.
+// substrate). The turn summary is emitted once per dispatch route (the route's
+// `finally`), so the two-phase route-flip (router classification + answer
+// branch, § 4.0.1) still fires exactly one [TurnSummary] per accepted turn.
 
 import 'dart:typed_data';
 
@@ -57,7 +59,7 @@ void main() {
 
   Access userPrompt(String text, {TurnId? turnId}) => Access(
         envelope: InboundRequest(
-            text: text, kindHint: SystemProcedures.answerWithMemoryV1),
+            text: text, kindHint: SystemProcedures.promptAnalyzerV1),
         identity: ResolvedIdentity(principalId: 'p1'),
         session: Session(sessionId: 's1'),
         persona: Persona.assistant(),

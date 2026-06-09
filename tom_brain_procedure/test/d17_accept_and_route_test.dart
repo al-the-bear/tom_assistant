@@ -21,9 +21,11 @@
 // The two contracts D.17 pins:
 //
 //   1. "accept-and-route succeeds" — an inbound carrying a confident
-//      `answer_with_memory_v1` procedure-id hint (routed directly) and an
-//      un-hinted inbound (fallback → `user_prompt` → `answer_with_memory_v1`)
-//      both reach the schedule stage with `answer_with_memory_v1`.
+//      `prompt_analyzer_v1` procedure-id hint (routed directly) and an
+//      un-hinted inbound (fallback → `user_prompt` → `prompt_analyzer_v1`)
+//      both reach the schedule stage with `prompt_analyzer_v1`. After the
+//      § 4.0.1 route-flip the entry router is the only routable procedure;
+//      the answer branches are reachable only through it.
 //   2. "unknown routes rejected loudly" — an inbound carrying an unknown
 //      procedure-id hint raises `UnknownProcedureHint`; a no-hint inbound the
 //      fallback classifies as an unknown kind raises
@@ -125,10 +127,10 @@ void main() {
       final dispatcher = _wiredDispatcher(schedule: schedule);
 
       await dispatcher.accept(
-          _accessWith(kindHint: SystemProcedures.answerWithMemoryV1));
+          _accessWith(kindHint: SystemProcedures.promptAnalyzerV1));
 
       expect(schedule.scheduled,
-          <String>[SystemProcedures.answerWithMemoryV1],
+          <String>[SystemProcedures.promptAnalyzerV1],
           reason: 'a centroid procedure-id hint routes directly through '
               'resolveHintedProcedure, end to end through accept');
     });
@@ -139,11 +141,12 @@ void main() {
       final dispatcher = _wiredDispatcher(schedule: schedule);
 
       // No kindHint: the classifier's classify_inbound_v1 fallback yields
-      // user_prompt, which selection routes to answer_with_memory_v1.
+      // user_prompt, which selection routes to prompt_analyzer_v1 (the entry
+      // router) after the § 4.0.1 route-flip.
       await dispatcher.accept(_accessWith());
 
       expect(schedule.scheduled,
-          <String>[SystemProcedures.answerWithMemoryV1]);
+          <String>[SystemProcedures.promptAnalyzerV1]);
     });
 
     test('a whitespace-only hint is treated as absent and falls back',
@@ -154,19 +157,19 @@ void main() {
       await dispatcher.accept(_accessWith(kindHint: '   '));
 
       expect(schedule.scheduled,
-          <String>[SystemProcedures.answerWithMemoryV1],
+          <String>[SystemProcedures.promptAnalyzerV1],
           reason: 'a blank hint is no hint; fallback → user_prompt → '
-              'answer_with_memory_v1');
+              'prompt_analyzer_v1');
     });
 
     test('a padded procedure-id hint is trimmed before routing', () async {
       final schedule = _RecordingSchedule();
       final dispatcher = _wiredDispatcher(schedule: schedule);
 
-      await dispatcher.accept(_accessWith(kindHint: '  answer_with_memory_v1  '));
+      await dispatcher.accept(_accessWith(kindHint: '  prompt_analyzer_v1  '));
 
       expect(schedule.scheduled,
-          <String>[SystemProcedures.answerWithMemoryV1],
+          <String>[SystemProcedures.promptAnalyzerV1],
           reason: 'the route trims the hint before matching the procedure id');
     });
 
@@ -186,12 +189,12 @@ void main() {
       );
 
       await dispatcher.accept(
-          _accessWith(kindHint: SystemProcedures.answerWithMemoryV1));
+          _accessWith(kindHint: SystemProcedures.promptAnalyzerV1));
 
       expect(order, <String>['observed', 'routed'],
           reason: 'the entry observation fires before any pipeline work');
       expect(schedule.scheduled,
-          <String>[SystemProcedures.answerWithMemoryV1]);
+          <String>[SystemProcedures.promptAnalyzerV1]);
     });
 
     test('successive prompts route independently in order', () async {
@@ -200,11 +203,11 @@ void main() {
 
       await dispatcher.accept(_accessWith(text: 'first'));
       await dispatcher.accept(_accessWith(
-          text: 'second', kindHint: SystemProcedures.answerWithMemoryV1));
+          text: 'second', kindHint: SystemProcedures.promptAnalyzerV1));
 
       expect(schedule.scheduled, <String>[
-        SystemProcedures.answerWithMemoryV1,
-        SystemProcedures.answerWithMemoryV1,
+        SystemProcedures.promptAnalyzerV1,
+        SystemProcedures.promptAnalyzerV1,
       ]);
     });
   });
@@ -233,7 +236,7 @@ void main() {
           isA<UnknownProcedureHint>()
               .having((e) => e.procedureId, 'procedureId', 'mystery_procedure')
               .having((e) => e.knownProcedureIds, 'knownProcedureIds',
-                  <String>[SystemProcedures.answerWithMemoryV1])
+                  <String>[SystemProcedures.promptAnalyzerV1])
               .having((e) => e.toString(), 'toString',
                   contains('mystery_procedure')),
         ),
