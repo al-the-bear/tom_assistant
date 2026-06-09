@@ -62,7 +62,8 @@ final class TrailReadApi {
 
   Router get _apiRouter => Router()
     ..get('/api/traces', _listTraces)
-    ..get('/api/traces/<turnId>', _singleTrace);
+    ..get('/api/traces/<turnId>', _singleTrace)
+    ..get('/api/llm', _llmRaw);
 
   /// `GET /api/traces` — the prompt list as a JSON array (§ 4.1). An optional
   /// `?limit=` overrides the default window.
@@ -82,6 +83,46 @@ final class TrailReadApi {
           status: HttpStatus.notFound);
     }
     return _json(trace.toJson());
+  }
+
+  /// `GET /api/llm?turn=<turnId>&path=<rawPath>` — the verbatim raw LLM dump
+  /// (§ 3.7) behind a run-tree `LlmCall`'s `rawPath` link. The run-tree JSON
+  /// only carries the link (§ 3.9); this endpoint serves the full §4.5 detail
+  /// (hashes, wire body, answer) the front-end needs (PT-2.4).
+  ///
+  /// `rawPath` is the `../../llm/…raw.json` link from the run-tree `.log`,
+  /// resolved against that turn's procedure-log folder. A containment guard
+  /// refuses anything that does not resolve under `<root>/llm/` or that is not a
+  /// `.raw.json` — the link can only address an LLM dump, never an arbitrary
+  /// file (read-only, OBS-1). The body is passed through verbatim: it is already
+  /// the JSON the brain wrote, so the endpoint re-parses nothing.
+  Response _llmRaw(Request request) {
+    final turnId = request.url.queryParameters['turn'];
+    final rawPath = request.url.queryParameters['path'];
+    if (turnId == null || rawPath == null) {
+      return _json(<String, Object?>{'error': 'requires ?turn= and ?path='},
+          status: HttpStatus.badRequest);
+    }
+    final procedureLog = host.procedureLogFor(turnId);
+    if (procedureLog == null) {
+      return _json(<String, Object?>{'error': 'no run for turn $turnId'},
+          status: HttpStatus.notFound);
+    }
+    final file = host.llmRawFromLink(procedureLog, rawPath);
+    final llmRoot = p.normalize(p.join(host.root.absolute.path, 'llm'));
+    final resolved = p.normalize(file.absolute.path);
+    if (!p.isWithin(llmRoot, resolved) || !resolved.endsWith('.raw.json')) {
+      return _json(<String, Object?>{'error': 'path is not an llm dump'},
+          status: HttpStatus.forbidden);
+    }
+    if (!file.existsSync()) {
+      return _json(<String, Object?>{'error': 'no llm dump at $rawPath'},
+          status: HttpStatus.notFound);
+    }
+    return Response.ok(
+      file.readAsStringSync(),
+      headers: <String, String>{'content-type': 'application/json; charset=utf-8'},
+    );
   }
 
   /// The static root (PT-1.5): the web build served read-only, with an
