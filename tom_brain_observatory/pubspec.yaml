@@ -1,0 +1,33 @@
+name: tom_brain_observatory
+description: Read-only observability web app for the Tom Brain prototype — a Dart-shelf Trail Read API backend that also serves an embedded Flutter-web front-end (one process, one origin, loopback only). Module 1 (Prompt Tracing) reads the trail tree under _ai/tom_brain_trail/<host>/; Module 2 (Memory Monitoring) reads the memory MCP read API. Never writes the trail, the memory store, or any brain control surface (prompt_tracing.md OBS-1..OBS-5).
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.8
+
+# Why this project exists (`prompt_tracing.md` § 2.2, build-order step 2;
+# `prompt_tracing_plan.md` PT-0.2). The observatory is the "one-way mirror" over a
+# running brain: a Dart-shelf server that serves a read-only JSON+SSE API under
+# `/api` and the embedded Flutter-web build under `/`. Per the workspace base-first
+# rule it is built on the two shared infrastructure libraries rather than
+# re-implementing server/CLI plumbing:
+#
+#   - tom_core_server — shelf + router + the endpoint pipeline + the static-file
+#                       handler that serves the embedded web build (§ 8.3, § 8.5).
+#   - tom_build_base  — the CLI baseline (config load, `--version` / `--help`)
+#                       every workspace tool shares.
+#
+# In-tree path deps mirror the rest of the prototype tree (`tom_brain_run`'s
+# pubspec): the brain packages co-develop against the live tom_ai libraries.
+# The Flutter-web sub-app and the read-API code land in later phases (PT-1.*,
+# PT-2.0); this scaffold is the analyze-clean skeleton they attach to.
+dependencies:
+  tom_core_server:
+    path: ../../tom_ai/core/tom_core_server
+  tom_build_base:
+    path: ../../tom_ai/basics/tom_build_base
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6

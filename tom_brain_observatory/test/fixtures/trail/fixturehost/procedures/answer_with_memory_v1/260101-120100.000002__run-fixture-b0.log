@@ -1,0 +1,6 @@
+procedure answer_with_memory_v1  run run-fixture-b0  turn 260101-120100.000002
+├─ subprocedure retrieve_for_prompt_v1  run run-fixture-b1  (accepted)
+│  ├─ llm recall_planner → 60→20 tok  → ../../llm/recall_planner/260101-120100.000002__01.raw.json
+│  └─ recallMulti
+├─ error substrateTimeout: assistant_to_user call timed out after 8000ms
+└─ outcome errored (entries=2, 8.3s)

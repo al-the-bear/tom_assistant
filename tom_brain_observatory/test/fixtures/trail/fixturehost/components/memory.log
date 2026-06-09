@@ -1,0 +1,2 @@
+2026-01-01 12:00:02.100000  STATUS  [tom_brain.memory.trail] closed trail t_fixture0000000000000000A0 for run run-fixture-a0 (outcome=accepted, entries=6) [MemoryLog.status]
+2026-01-01 12:01:08.300000  STATUS  [tom_brain.memory.trail] closed trail t_fixture0000000000000000B0 for run run-fixture-b0 (outcome=errored, entries=2) [MemoryLog.status]

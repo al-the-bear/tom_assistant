@@ -1,0 +1,29 @@
+{
+  "turnId": "260101-120000.000001",
+  "callSeq": 2,
+  "callType": "assistant_to_user",
+  "sessionId": null,
+  "profile": null,
+  "principalId": null,
+  "runId": "run-fixture-a0",
+  "trailId": "t_fixture0000000000000000A0",
+  "provider": "local",
+  "model": "fixture-model",
+  "startedAt": "2026-01-01T12:00:01.800000Z",
+  "wallClockMs": 410,
+  "tokensIn": 88,
+  "tokensOut": 40,
+  "retries": 0,
+  "anchorHash": "sha256:0000000000000000000000000000000000000000000000000000000000000a03",
+  "promptHash": "sha256:0000000000000000000000000000000000000000000000000000000000000a04",
+  "wire": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "I exist to help this user. (fixture anchor)\nPERSONA: the assistant.\nOBJECTIVE: compose the final answer from the recalled context.\nINPUTS:\nprompt: Fixture: what did we decide about the backup topology?\n"
+      }
+    ]
+  },
+  "answer": "We settled on the tiered backup topology: a canonical authority node, a cognitive worker mirror, and offsite snapshots — chosen so no event is ever lost.",
+  "memoryProfile": null
+}

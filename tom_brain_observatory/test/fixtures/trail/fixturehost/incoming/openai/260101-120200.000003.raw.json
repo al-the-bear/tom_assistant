@@ -1,0 +1,14 @@
+{
+  "turnId": "260101-120200.000003",
+  "channel": "openai",
+  "receivedAt": "2026-01-01T12:02:00.003000Z",
+  "principalId": "fixture-user",
+  "sessionId": "sess-fixture-0001",
+  "conversationId": null,
+  "persona": "tom-assistant",
+  "text": "Fixture: draft a short note about today",
+  "attachments": [],
+  "rawEnvelope": {
+    "openai_model": "tom-brain"
+  }
+}

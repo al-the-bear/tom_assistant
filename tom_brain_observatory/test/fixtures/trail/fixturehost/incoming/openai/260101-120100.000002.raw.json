@@ -1,0 +1,14 @@
+{
+  "turnId": "260101-120100.000002",
+  "channel": "openai",
+  "receivedAt": "2026-01-01T12:01:00.002000Z",
+  "principalId": "fixture-user",
+  "sessionId": "sess-fixture-0001",
+  "conversationId": null,
+  "persona": "tom-assistant",
+  "text": "Fixture: summarize the latest project status",
+  "attachments": [],
+  "rawEnvelope": {
+    "openai_model": "tom-brain"
+  }
+}

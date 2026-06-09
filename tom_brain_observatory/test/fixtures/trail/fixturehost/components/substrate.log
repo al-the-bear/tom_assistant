@@ -1,0 +1,3 @@
+2026-01-01 12:00:00.520000 main STATUS  [tom_brain.substrate.llm] llm recall_planner local/fixture-model 64→24 tok 320ms  ↳ llm/recall_planner/260101-120000.000001__01.raw.json [SubstrateLog.status]
+2026-01-01 12:00:02.210000 main STATUS  [tom_brain.substrate.llm] llm assistant_to_user local/fixture-model 88→40 tok 410ms  ↳ llm/assistant_to_user/260101-120000.000001__02.raw.json [SubstrateLog.status]
+2026-01-01 12:01:00.500000 main STATUS  [tom_brain.substrate.llm] llm recall_planner local/fixture-model 60→20 tok 300ms  ↳ llm/recall_planner/260101-120100.000002__01.raw.json [SubstrateLog.status]

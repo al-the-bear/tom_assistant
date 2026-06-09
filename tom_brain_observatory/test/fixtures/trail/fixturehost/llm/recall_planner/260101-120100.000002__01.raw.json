@@ -1,0 +1,29 @@
+{
+  "turnId": "260101-120100.000002",
+  "callSeq": 1,
+  "callType": "recall_planner",
+  "sessionId": null,
+  "profile": null,
+  "principalId": null,
+  "runId": "run-fixture-b1",
+  "trailId": "t_fixture0000000000000000B1",
+  "provider": "local",
+  "model": "fixture-model",
+  "startedAt": "2026-01-01T12:01:00.200000Z",
+  "wallClockMs": 300,
+  "tokensIn": 60,
+  "tokensOut": 20,
+  "retries": 0,
+  "anchorHash": "sha256:0000000000000000000000000000000000000000000000000000000000000b01",
+  "promptHash": "sha256:0000000000000000000000000000000000000000000000000000000000000b02",
+  "wire": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "I exist to help this user. (fixture anchor)\nPERSONA: recall planner.\nOBJECTIVE: decompose the prompt into recall sub-questions.\nINPUTS:\nprompt: Fixture: summarize the latest project status\n"
+      }
+    ]
+  },
+  "answer": "{\"questions\":[\"What are the open project milestones?\",\"What changed since the last status update?\"]}",
+  "memoryProfile": null
+}

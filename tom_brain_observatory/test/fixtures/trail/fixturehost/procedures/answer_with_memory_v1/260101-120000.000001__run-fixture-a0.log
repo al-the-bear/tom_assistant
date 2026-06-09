@@ -1,0 +1,11 @@
+procedure answer_with_memory_v1  run run-fixture-a0  turn 260101-120000.000001
+├─ subprocedure retrieve_for_prompt_v1  run run-fixture-a1  (accepted)
+│  ├─ subprocedure recall_semantic_v1  run run-fixture-a2  (accepted)
+│  │  ├─ embed
+│  │  └─ llm recall_planner → 64→24 tok  → ../../llm/recall_planner/260101-120000.000001__01.raw.json
+│  └─ recallMulti
+├─ llm assistant_to_user → 88→40 tok  → ../../llm/assistant_to_user/260101-120000.000001__02.raw.json
+├─ embed
+├─ persist → n_fixture0000000000000000A1
+├─ edge → e_fixture0000000000000000A1
+└─ outcome accepted (entries=6, 2.1s)
