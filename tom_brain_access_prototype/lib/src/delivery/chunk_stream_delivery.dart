@@ -262,6 +262,15 @@ final class ChunkStreamChannelDelivery implements ChannelDelivery {
         );
       }
 
+      // Out-of-band notices (`OutboundChunk.notice`) are a Telegram-surface
+      // concern. The adapter-renders channels stream the answer chunk-by-chunk,
+      // so a chunk that carries *only* a notice (no answer text, not the
+      // terminator) is not forwarded — folding it into the wire would render an
+      // empty-content frame in the Ollama / Anthropic dialect.
+      if (chunk.notice != null && chunk.textDelta.isEmpty && !chunk.isFinal) {
+        return Backpressure.clear;
+      }
+
       sink.add(chunk);
       if (chunk.isFinal) {
         lifecycle.terminate();

@@ -213,11 +213,30 @@ final class TelegramChannelDelivery implements ChannelDelivery {
     final StringBuffer answer = StringBuffer();
     final DeliveryLifecycle lifecycle = DeliveryLifecycle();
 
+    // Notices ([OutboundChunk.notice]) are out-of-band status lines (e.g.
+    // `🔧 tool memory.read`) the brain emits mid-answer. Unlike the answer
+    // text — which Telegram buffers and flushes only on the final chunk —
+    // each notice is sent *immediately* as its own message, so the user sees
+    // tool activity in real time. Sends are serialized through `noticeChain`
+    // (one Telegram message at a time, in arrival order) and are best-effort:
+    // a failed notice must not abort the answer, so its error is swallowed.
+    Future<void> noticeChain = Future<void>.value();
+
     return (OutboundChunk chunk) {
       lifecycle.guardNotTerminated(
         'the Telegram delivery path has already consolidated and flushed the '
         'answer',
       );
+
+      final String? notice = chunk.notice;
+      if (notice != null && notice.isNotEmpty) {
+        // Kick the send off now (not on the final chunk) so the notice is
+        // delivered in real time; chain it so notices arrive in order and the
+        // flush can await them before the answer parts.
+        noticeChain = noticeChain
+            .then((_) => binding.sink.send(notice))
+            .catchError((_) {});
+      }
 
       answer.write(chunk.textDelta);
       if (chunk.isFinal) {
@@ -227,8 +246,9 @@ final class TelegramChannelDelivery implements ChannelDelivery {
         // the actual delivery is observable through `binding.delivered`. We
         // chain the flush future into the binding's completer so a consumer
         // (boot / E.39 / the test suite) can await real delivery and observe
-        // a send error.
-        binding.completeDelivery(_flush(binding.sink, parts));
+        // a send error. The flush awaits `noticeChain` first so any pending
+        // notices land before the answer.
+        binding.completeDelivery(_flush(noticeChain, binding.sink, parts));
       }
 
       // A buffered channel cannot stall during streaming — the chunk was
@@ -239,14 +259,23 @@ final class TelegramChannelDelivery implements ChannelDelivery {
     };
   }
 
-  /// Sends each consolidated [parts] message through [sink], in order.
+  /// Awaits any pending notices, then sends each consolidated [parts] message
+  /// through [sink], in order.
   ///
-  /// Awaits each send before the next so the parts arrive in order (an empty
-  /// list — an empty answer — sends nothing, Q-E.21.1). A send that throws —
-  /// a transient [DeliveryStalled] on a rate limit (E.39), or any other
-  /// delivery error — breaks the loop, so the remaining parts are not sent,
-  /// and propagates to the binding's `delivered` future.
-  static Future<void> _flush(TelegramSink sink, List<String> parts) async {
+  /// [noticeChain] is the serialized best-effort chain of out-of-band notice
+  /// sends; awaiting it first guarantees notices land before the answer (and
+  /// it never throws — notice errors are swallowed at the source). Awaits each
+  /// answer part before the next so the parts arrive in order (an empty list —
+  /// an empty answer — sends nothing, Q-E.21.1). A part that throws — a
+  /// transient [DeliveryStalled] on a rate limit (E.39), or any other delivery
+  /// error — breaks the loop, so the remaining parts are not sent, and
+  /// propagates to the binding's `delivered` future.
+  static Future<void> _flush(
+    Future<void> noticeChain,
+    TelegramSink sink,
+    List<String> parts,
+  ) async {
+    await noticeChain;
     for (final String part in parts) {
       await sink.send(part);
     }

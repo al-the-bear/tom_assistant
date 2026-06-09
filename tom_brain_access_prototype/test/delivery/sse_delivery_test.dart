@@ -135,6 +135,32 @@ void main() {
       expect(first['model'], second['model']);
     });
 
+    test('a notice-only chunk renders no frame (SSE ignores notices)', () {
+      final _CollectingSseSink sink = _CollectingSseSink();
+      final DeliverCallback deliver =
+          const SseChannelDelivery().bindDeliver(_binding(sink: sink));
+
+      final back =
+          deliver(OutboundChunk(textDelta: '', notice: '🔧 tool memory.read'));
+
+      expect(sink.frames, isEmpty);
+      expect(sink.isClosed, isFalse);
+      // The chunk was accepted — no stall.
+      expect(back, isA<Stream<OutboundChunk>>());
+    });
+
+    test('a notice riding a content chunk still renders the content', () {
+      final _CollectingSseSink sink = _CollectingSseSink();
+      final DeliverCallback deliver =
+          const SseChannelDelivery().bindDeliver(_binding(sink: sink));
+
+      deliver(OutboundChunk(textDelta: 'Hello', notice: 'ignored', index: 0));
+
+      expect(sink.frames, hasLength(1));
+      final Map<String, Object?> choice = _choice(_payloadOf(sink.frames.single));
+      expect((choice['delta'] as Map<String, Object?>)['content'], 'Hello');
+    });
+
     test('the final chunk writes its frame, then [DONE], then closes', () {
       final _CollectingSseSink sink = _CollectingSseSink();
       final DeliverCallback deliver =

@@ -270,6 +270,16 @@ final class SseChannelDelivery implements ChannelDelivery {
         );
       }
 
+      // Out-of-band notices (`OutboundChunk.notice`) are a Telegram-surface
+      // concern — the buffered channel sends them as their own immediate
+      // messages. SSE streams the answer chunk-by-chunk, so a chunk that
+      // carries *only* a notice (no answer text, not the terminator) renders
+      // no frame here; folding it into a `chat.completion.chunk` would inject
+      // empty-content frames into the OpenAI stream.
+      if (chunk.notice != null && chunk.textDelta.isEmpty && !chunk.isFinal) {
+        return Backpressure.clear;
+      }
+
       sink.write(renderer.frameFor(chunk, firstChunk: firstFrame));
       firstFrame = false;
       if (chunk.isFinal) {

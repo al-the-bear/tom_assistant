@@ -38,6 +38,24 @@ final class _ThrowingTelegramSink implements TelegramSink {
   }
 }
 
+/// A [TelegramSink] that records every sent message but throws when asked to
+/// send one specific message — to prove a failed out-of-band notice does not
+/// abort the buffered answer (notice sends are best-effort).
+final class _NoticeFailingTelegramSink implements TelegramSink {
+  _NoticeFailingTelegramSink(this.failOn);
+
+  final String failOn;
+  final List<String> sent = <String>[];
+
+  @override
+  Future<void> send(String message) async {
+    if (message == failOn) {
+      throw StateError('notice send failed');
+    }
+    sent.add(message);
+  }
+}
+
 TelegramDeliveryBinding _binding({
   required TelegramSink sink,
   String principalId = 'principal-1',
@@ -118,6 +136,81 @@ void main() {
 
       await binding.delivered;
       expect(sink.sent, isEmpty);
+    });
+  });
+
+  group('E.38 TelegramChannelDelivery — out-of-band notices', () {
+    test('a notice chunk sends its own message immediately (before the answer)',
+        () async {
+      final _CollectingTelegramSink sink = _CollectingTelegramSink();
+      final DeliverCallback deliver =
+          const TelegramChannelDelivery().bindDeliver(_binding(sink: sink));
+
+      deliver(OutboundChunk(textDelta: '', notice: '🔧 tool memory.read'));
+      // The notice is sent out-of-band, not buffered — it lands without
+      // waiting for any final chunk.
+      await Future<void>.delayed(Duration.zero);
+      expect(sink.sent, <String>['🔧 tool memory.read']);
+    });
+
+    test('a notice-only chunk does not append to the buffered answer',
+        () async {
+      final _CollectingTelegramSink sink = _CollectingTelegramSink();
+      final TelegramDeliveryBinding binding = _binding(sink: sink);
+      final DeliverCallback deliver =
+          const TelegramChannelDelivery().bindDeliver(binding);
+
+      deliver(OutboundChunk(textDelta: 'Hello, ', index: 0));
+      deliver(OutboundChunk(textDelta: '', notice: '🔧 tool memory.read'));
+      deliver(OutboundChunk(textDelta: 'world!', isFinal: true, index: 1));
+
+      await binding.delivered;
+      // The notice arrives first as its own message; the answer consolidates
+      // separately, with no notice text folded in.
+      expect(sink.sent, <String>['🔧 tool memory.read', 'Hello, world!']);
+    });
+
+    test('notices arrive in order, all before the answer', () async {
+      final _CollectingTelegramSink sink = _CollectingTelegramSink();
+      final TelegramDeliveryBinding binding = _binding(sink: sink);
+      final DeliverCallback deliver =
+          const TelegramChannelDelivery().bindDeliver(binding);
+
+      deliver(OutboundChunk(textDelta: '', notice: 'n1'));
+      deliver(OutboundChunk(textDelta: '', notice: 'n2'));
+      deliver(OutboundChunk(textDelta: 'answer', isFinal: true));
+
+      await binding.delivered;
+      expect(sink.sent, <String>['n1', 'n2', 'answer']);
+    });
+
+    test('a failed notice send does not abort the answer (best-effort)',
+        () async {
+      final _NoticeFailingTelegramSink sink =
+          _NoticeFailingTelegramSink('bad notice');
+      final TelegramDeliveryBinding binding = _binding(sink: sink);
+      final DeliverCallback deliver =
+          const TelegramChannelDelivery().bindDeliver(binding);
+
+      deliver(OutboundChunk(textDelta: '', notice: 'bad notice'));
+      deliver(OutboundChunk(textDelta: 'the answer', isFinal: true));
+
+      // The failed notice is swallowed; delivered completes normally and the
+      // answer still lands.
+      await binding.delivered;
+      expect(sink.sent, <String>['the answer']);
+    });
+
+    test('an empty notice string is ignored (no message sent)', () async {
+      final _CollectingTelegramSink sink = _CollectingTelegramSink();
+      final TelegramDeliveryBinding binding = _binding(sink: sink);
+      final DeliverCallback deliver =
+          const TelegramChannelDelivery().bindDeliver(binding);
+
+      deliver(OutboundChunk(textDelta: 'answer', notice: '', isFinal: true));
+
+      await binding.delivered;
+      expect(sink.sent, <String>['answer']);
     });
   });
 
