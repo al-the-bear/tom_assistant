@@ -36,6 +36,9 @@ export 'src/mcp_server/mcp_server.dart';
 export 'src/migrations/migrations.dart';
 export 'src/nodes/nodes.dart';
 export 'src/observability/observability.dart';
+// Todo 7 (G-PR4) — typed procedure queries composing the client read
+// primitives (procedure spec § 7.3, § 9.2, § 10.3).
+export 'src/procedures/procedures.dart';
 export 'src/profiles/profiles.dart';
 export 'src/retrieval/retrieval.dart';
 export 'src/stacks/stacks.dart';

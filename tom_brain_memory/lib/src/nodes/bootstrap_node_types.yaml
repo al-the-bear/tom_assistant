@@ -304,6 +304,28 @@ types:
       name: { type: string, fts: true }
       summary: { type: string, fts: true }
       code: { type: string }
+      # Lifecycle + re-rank metadata (Todo 7 / procedure_specification.md § 7.1).
+      # All nullable: the authoring loop stamps `status` / `revision` /
+      # `requires` / `authoredAt` at write time, while `successRate` /
+      # `runCount` / `lastRunAt` are cached rolling metrics the Synthesizer
+      # sleep pass (G-PR5) computes from the ProcedureRun history. A node
+      # persisted before its first metrics pass simply carries nulls there,
+      # which the re-rank treats as "no track record yet".
+      #
+      # `status` is the closed `ProcedureStatus` alphabet
+      # (authored | draft | active | preferred | demoted, shared). `requires`
+      # is the JSON list of bridged-API capability names the header declares
+      # — the `CapabilitySet` the selector's re-rank scores overlap against.
+      # `successRate` is a JSON double in [0,1] (the manifest has no `double`
+      # field type; `json` round-trips a num). Timestamps are ISO-8601 strings,
+      # matching ProcedureRun's `startedAt` / `finishedAt`.
+      status: { type: string, nullable: true }
+      revision: { type: integer, nullable: true }
+      requires: { type: json, nullable: true }
+      successRate: { type: json, nullable: true }
+      runCount: { type: integer, nullable: true }
+      lastRunAt: { type: string, nullable: true }
+      authoredAt: { type: string, nullable: true }
     embedding:
       source_fields: [name, summary]
     index:
