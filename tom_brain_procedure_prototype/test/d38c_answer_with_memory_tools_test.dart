@@ -108,6 +108,23 @@ void main() {
       expect(prompt.indexOf('Tools available to you'),
           lessThan(prompt.indexOf('which tools do you have?')));
     });
+
+    test('the block explains how to invoke a tool with a call: example',
+        () async {
+      await runWith(
+        'which tools do you have?',
+        toolCatalogue: defaultToolCatalogue(),
+      );
+
+      final prompt = substrate.lastCall!.inputs['prompt']! as String;
+      // The model must be told the exact, parseable call format — without it
+      // (the live bug) it guesses its provider's native chat-template dialect.
+      expect(prompt, contains('To use a tool'));
+      expect(prompt, contains('call:'));
+      // The how-to-call guidance follows the catalogue listing.
+      expect(prompt.indexOf('Tools available to you'),
+          lessThan(prompt.indexOf('To use a tool')));
+    });
   });
 
   group('D.38c-2 a run with no catalogue carries no tool block (PE-9 guard)',

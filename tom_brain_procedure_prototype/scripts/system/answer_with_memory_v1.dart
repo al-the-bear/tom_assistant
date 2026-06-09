@@ -528,9 +528,17 @@ String _assemblePrompt(
 
 /// Renders the default tool catalogue as a "Tools available to you" block, or
 /// `''` when there is none. Each descriptor is a `{name, group, description}`
-/// map (procedure spec § 21.4); the block lets the substrate name its tools
-/// from the prompt alone. This is awareness, not invocation — the
-/// `assistant_to_user` role does not call tools.
+/// map (procedure spec § 21.4); the block names the tools and tells the model
+/// the exact, parseable call format to use.
+///
+/// The format instruction is load-bearing: without it a substrate guesses its
+/// own provider's chat-template dialect (the live Gemma-on-oMLX bug emitted
+/// `<|tool_call>call:web.search{…}<tool_call|>`), and even though the bridge's
+/// multi-dialect recovery now reads many of those, a single canonical example
+/// makes the model emit a *clean* call far more reliably. The instructed shape
+/// — `call:NAME{arg: value}` on its own — is exactly what
+/// `parseToolCallsFromText` lowers; emitting only the call line (no
+/// surrounding prose) keeps the streamed tool-deciding turn clean.
 String _renderToolCatalogue(Object? toolCatalogue) {
   if (toolCatalogue is! List || toolCatalogue.isEmpty) return '';
   var rendered = '';
@@ -546,7 +554,14 @@ String _renderToolCatalogue(Object? toolCatalogue) {
         (description != null && '$description'.isNotEmpty) ? ': $description' : '';
     rendered += '- $name$groupSuffix$descSuffix\n';
   }
-  return rendered.isEmpty ? '' : 'Tools available to you:\n$rendered\n';
+  if (rendered.isEmpty) return '';
+  final howToCall = 'To use a tool, reply with ONLY a single call line and no '
+      'other text, using the exact tool name from the list above:\n'
+      '  call:TOOL_NAME{arg1: "value", arg2: 123}\n'
+      'For a tool with no arguments use empty braces: call:TOOL_NAME{}\n'
+      'Example: call:memory.read{query: "project history"}\n'
+      'If you do not need a tool, just answer the user in plain prose.\n';
+  return 'Tools available to you:\n$rendered\n$howToCall\n';
 }
 
 /// Renders the prior conversation turns as `User:` / `Assistant:` lines (the

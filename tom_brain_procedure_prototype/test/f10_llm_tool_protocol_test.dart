@@ -227,6 +227,86 @@ void main() {
     });
   });
 
+  group('F.10 SubstrateBridge.llm — multi-format text recovery', () {
+    // The live failure that motivated this: Gemma-on-oMLX runs under the
+    // `openai` protocol but writes the tool call into the completion text in
+    // its own chat-template dialect instead of emitting a native `tool_calls`
+    // array. The bridge must recover the call from text under *any* protocol,
+    // across the usual dialects, keeping only calls to a tool on offer.
+
+    test('recovers a Gemma <|tool_call>call:NAME{…} dialect under openai',
+        () async {
+      client.streamEvents = _completed(
+        '<|tool_call>call:memory.read{id: "n1"}<tool_call|>',
+        providerId: 'omlx',
+      );
+      // Default bridge ⇒ openai protocol (no native tool_calls emitted).
+      final bridge = SubstrateBridge(client);
+
+      final out = await bridge.llm('q', tools: _oneTool());
+
+      final calls = out['toolCalls']! as List<Object?>;
+      expect(calls, hasLength(1));
+      final call = calls.single! as Map<String, Object?>;
+      expect(call.keys.toSet(), <String>{'id', 'name', 'arguments'});
+      expect(call['name'], 'memory.read');
+      expect(call['arguments'], <String, Object?>{'id': 'n1'});
+    });
+
+    test('recovers a Hermes <tool_call>{…}</tool_call> block under json_text',
+        () async {
+      client.streamEvents = _completed(
+        'Sure.\n<tool_call>{"name": "memory.read", "arguments": {"id": "n1"}}'
+        '</tool_call>',
+        providerId: 'ollama',
+      );
+      final bridge = SubstrateBridge(
+        client,
+        toolProtocolOf: (_) => ToolProtocol.jsonText,
+      );
+
+      final out = await bridge.llm('q', tools: _oneTool());
+
+      final calls = out['toolCalls']! as List<Object?>;
+      expect(calls, hasLength(1));
+      expect((calls.single! as Map<String, Object?>)['name'], 'memory.read');
+    });
+
+    test('recovers a bare functional call:NAME{…} under json_text', () async {
+      client.streamEvents = _completed(
+        'call:memory.read{id: "n1"}',
+        providerId: 'ollama',
+      );
+      final bridge = SubstrateBridge(
+        client,
+        toolProtocolOf: (_) => ToolProtocol.jsonText,
+      );
+
+      final out = await bridge.llm('q', tools: _oneTool());
+
+      final calls = out['toolCalls']! as List<Object?>;
+      expect(calls, hasLength(1));
+      expect((calls.single! as Map<String, Object?>)['name'], 'memory.read');
+    });
+
+    test('a text call to an unknown tool ⇒ empty toolCalls + the typed note',
+        () async {
+      final notes = <_CapturedNote>[];
+      client.streamEvents = _completed(
+        '<|tool_call>call:rm_rf{path: "/"}<tool_call|>',
+        providerId: 'omlx',
+      );
+      // Catalogue offers only memory.read; rm_rf is not on offer.
+      final bridge = SubstrateBridge(client, onNote: _capture(notes));
+
+      final out = await bridge.llm('q', tools: _oneTool());
+
+      expect(out['toolCalls'], isEmpty);
+      expect(notes, hasLength(1));
+      expect(notes.single.category, 'llm.toolcall.parse.failed');
+    });
+  });
+
   group('F.10 SubstrateBridge.llm — protocol uniformity (Q-F.4)', () {
     test('openai native and json_text text yield the same toolCalls shape',
         () async {

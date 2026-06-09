@@ -74,7 +74,8 @@ import 'dart:convert' show jsonDecode;
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget, TurnContext;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
-import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show MapFieldReader, looksLikeToolCallAttempt, parseToolCallsFromText;
 
 import '../budget/budget_ledger.dart' show BudgetLedger;
 import '../config/provider_config.dart' show ToolProtocol;
@@ -427,76 +428,51 @@ class SubstrateBridge {
         resultOf: (value) => value,
       );
 
-  /// Resolves the uniform `toolCalls` list from whichever wire protocol the
-  /// resolved provider speaks (Q-F.4).
+  /// Resolves the uniform `toolCalls` list from a completion, recovering a
+  /// text-format tool call whatever dialect the model wrote it in (Q-F.4).
   ///
-  /// Under [ToolProtocol.openai] the substrate already surfaced native tool
-  /// calls as [LlmStreamToolCallProposed] events, collected verbatim into
-  /// [native]; this returns them unchanged. Under [ToolProtocol.jsonText] a
-  /// non-tool-calling model embeds the tool call in [text]; it is parsed into
-  /// the same `{id, name, arguments}` shape — but only when [catalogue] is
-  /// non-empty (a completion with no tools on offer is never a tool call).
+  /// Native structured calls always win: under [ToolProtocol.openai] the
+  /// substrate surfaces them as [LlmStreamToolCallProposed] events collected
+  /// into [native], and those are returned unchanged. When [native] is empty,
+  /// the call may still be hiding in the completion [text] — the live failure
+  /// mode is Gemma-on-oMLX, an `openai`-protocol provider that writes
+  /// `<|tool_call>call:web.search{…}<tool_call|>` into text instead of
+  /// emitting a native array. So for *either* protocol we parse [text] across
+  /// every known dialect (Gemma sentinel, functional `call:NAME{…}`, JSON
+  /// object/array, Hermes `<tool_call>`, Mistral `[TOOL_CALLS]`, fenced JSON)
+  /// and keep only calls to a tool actually on offer. [protocol] is retained
+  /// as the declared wire contract; recovery is intentionally protocol-
+  /// agnostic because any provider can degrade to a text call.
+  ///
+  /// A completion with no tools on offer ([catalogue] empty) is never a tool
+  /// call. Text that looked like a tool-call attempt but did not parse — or
+  /// named a tool not on offer — yields an empty list plus the typed
+  /// `llm.toolcall.parse.failed` note (the text still falls through as the
+  /// no-tool answer); plain prose is silent.
   Future<List<Object?>> _resolveToolCalls(
     ToolProtocol protocol,
     List<Object?> native,
     String text,
     ToolCatalogue catalogue,
   ) async {
-    switch (protocol) {
-      case ToolProtocol.openai:
-        return native;
-      case ToolProtocol.jsonText:
-        if (catalogue.isEmpty) return const <Object?>[];
-        return _parseJsonTextToolCalls(text);
-    }
-  }
+    if (native.isNotEmpty) return native;
+    if (catalogue.isEmpty) return const <Object?>[];
 
-  /// Parses a `json_text`-protocol completion into the uniform `toolCalls`
-  /// shape, or surfaces the typed parse-failure note.
-  ///
-  /// The model is asked to answer with a bare `{"tool": …, "arguments": {…}}`
-  /// object (optionally wrapped in a ```json fence) when it wants a tool;
-  /// anything else is a plain prose answer. The heuristic: after de-fencing
-  /// and trimming, text that does not start with `{` is prose ⇒ empty list, no
-  /// note. Text that does start with `{` is *meant* to be a tool call, so a
-  /// failure to read it as one (`jsonDecode` throws, the value is not a map,
-  /// or it has no String `tool` key) is a malformed tool call ⇒ empty list
-  /// plus an `llm.toolcall.parse.failed` note (the text still falls through as
-  /// the no-tool answer).
-  Future<List<Object?>> _parseJsonTextToolCalls(String text) async {
-    final stripped = _stripJsonFence(text.trim());
-    if (!stripped.startsWith('{')) {
-      // Plain prose answer — not a tool call, not a malformation.
+    final knownNames = <String>{for (final tool in catalogue.tools) tool.name};
+    final parsed = parseToolCallsFromText(text, knownToolNames: knownNames);
+    if (parsed.isEmpty) {
+      if (looksLikeToolCallAttempt(text)) {
+        await _noteToolCallParseFailed(text);
+      }
       return const <Object?>[];
-    }
-
-    Object? decoded;
-    try {
-      decoded = jsonDecode(stripped);
-    } on FormatException {
-      await _noteToolCallParseFailed(text);
-      return const <Object?>[];
-    }
-
-    if (decoded is! Map) {
-      await _noteToolCallParseFailed(text);
-      return const <Object?>[];
-    }
-    final tool = decoded['tool'];
-    if (tool is! String) {
-      await _noteToolCallParseFailed(text);
-      return const <Object?>[];
-    }
-
-    final rawArgs = decoded['arguments'];
-    final arguments = <String, Object?>{};
-    if (rawArgs is Map) {
-      rawArgs.forEach((Object? key, Object? value) {
-        arguments['$key'] = value;
-      });
     }
     return <Object?>[
-      <String, Object?>{'id': null, 'name': tool, 'arguments': arguments},
+      for (final call in parsed)
+        <String, Object?>{
+          'id': null,
+          'name': call.name,
+          'arguments': call.arguments,
+        },
     ];
   }
 
