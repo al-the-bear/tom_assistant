@@ -46,7 +46,7 @@
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show BrainTime, BrainVersion, DemotionReason, NodeId, Vec;
+    show BrainTime, BrainVersion, DemotionReason, NodeId, ProcedureStatus, Vec;
 import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
 
 import '../budget/budget_ledger.dart' show BudgetLedger;
@@ -630,6 +630,43 @@ class MemoryBridge {
         () => client.demote(
           NodeId.fromString(nodeId),
           DemotionReason.values.byName(reason),
+        ),
+      );
+
+  // ── update_procedure_metrics ────────────────────────────────────
+
+  /// Rewrites a `Procedure` node's derived metric/status cache (memory § 6.4 /
+  /// § 7.1, G-PR5) — the single in-place write the metrics-pass agent
+  /// (`dream_procedure_metrics_v1`) uses to refresh the rolling `successRate` /
+  /// `runCount` / `lastRunAt` it recomputed from the immutable `ProcedureRun`
+  /// history, and to move the stage between `active` and `preferred`.
+  ///
+  /// Only the non-null arguments are merged. [nodeId] is the Procedure node id
+  /// string; [status] is a [ProcedureStatus] token (`active` / `preferred` —
+  /// demotion goes through [demote], not here); [successRate] is a [0,1] num;
+  /// [lastRunAt] is an ISO-8601 timestamp string. A missing id is a no-op and a
+  /// non-`Procedure` node is refused (the memory write's own type guard) — the
+  /// cache write can never reach an immutable Claim/Event node.
+  Future<void> updateProcedureMetrics(
+    String nodeId, {
+    String? status,
+    num? successRate,
+    int? runCount,
+    String? lastRunAt,
+  }) =>
+      _recordVoid(
+        'updateProcedureMetrics',
+        <String, Object?>{
+          'nodeId': nodeId,
+          'status': status,
+          'runCount': runCount,
+        },
+        () => client.updateProcedureMetrics(
+          NodeId.fromString(nodeId),
+          status: status == null ? null : ProcedureStatus.fromToken(status),
+          successRate: successRate?.toDouble(),
+          runCount: runCount,
+          lastRunAt: lastRunAt == null ? null : DateTime.parse(lastRunAt).toUtc(),
         ),
       );
 

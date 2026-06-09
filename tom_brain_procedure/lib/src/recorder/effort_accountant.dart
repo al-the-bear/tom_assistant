@@ -99,6 +99,10 @@ final class EffortAccountant {
     // one memoryWrite.
     'demote',
     'updateCentroid',
+    // `updateProcedureMetrics` rewrites a Procedure node's derived metric/status
+    // cache (§ 6.4 / § 7.1, G-PR5). It changes the store, so it charges one
+    // memoryWrite — the metrics-pass agent's writes are budgeted like any other.
+    'updateProcedureMetrics',
   };
 
   /// Tool callouts — each contributes one `toolCalls`. The substrate tool

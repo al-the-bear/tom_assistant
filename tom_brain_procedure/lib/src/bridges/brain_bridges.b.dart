@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Delegating barrel for all
-// Generated: 2026-06-08T00:02:37.241880
+// Generated: 2026-06-09T21:11:01.863650
 
 // ignore_for_file: unused_import, deprecated_member_use, sort_child_properties_last, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member
 
@@ -14,7 +14,7 @@ class AllBridge {
   /// Returns all bridge class definitions.
   static List<BridgedClass> bridgeClasses() {
     return [
-      ...pkg_tom_brain_procedure.PackageTomBrainProcedurePrototypeBridge.bridgeClasses(),
+      ...pkg_tom_brain_procedure.PackageTomBrainProcedureBridge.bridgeClasses(),
     ];
   }
 
@@ -24,27 +24,27 @@ class AllBridge {
   /// multiple barrels (e.g., tom_core_kernel and tom_core_server).
   static Map<String, String> classSourceUris() {
     return {
-      ...pkg_tom_brain_procedure.PackageTomBrainProcedurePrototypeBridge.classSourceUris(),
+      ...pkg_tom_brain_procedure.PackageTomBrainProcedureBridge.classSourceUris(),
     };
   }
 
   /// Returns all bridged enum definitions.
   static List<BridgedEnumDefinition> bridgedEnums() {
     return [
-      ...pkg_tom_brain_procedure.PackageTomBrainProcedurePrototypeBridge.bridgedEnums(),
+      ...pkg_tom_brain_procedure.PackageTomBrainProcedureBridge.bridgedEnums(),
     ];
   }
 
   /// Returns all global functions.
   static Map<String, NativeFunctionImpl> globalFunctions() {
     return {
-      ...pkg_tom_brain_procedure.PackageTomBrainProcedurePrototypeBridge.globalFunctions(),
+      ...pkg_tom_brain_procedure.PackageTomBrainProcedureBridge.globalFunctions(),
     };
   }
 
   /// Register all bridges with the interpreter.
   static void registerBridges(D4rt interpreter, String importPath) {
-    pkg_tom_brain_procedure.PackageTomBrainProcedurePrototypeBridge.registerBridges(interpreter, importPath);
+    pkg_tom_brain_procedure.PackageTomBrainProcedureBridge.registerBridges(interpreter, importPath);
   }
 
   /// Returns the import block for scripts.

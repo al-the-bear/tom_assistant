@@ -15,7 +15,7 @@
 // This is **host wiring, not a reimplementation of generator behaviour**:
 // every bridge *definition* — constructors, methods, signatures,
 // primitive⇄domain coercion — is still produced by the generator
-// (`AllBridge` / `PackageTomBrainProcedurePrototypeBridge`). This class
+// (`AllBridge` / `PackageTomBrainProcedureBridge`). This class
 // only composes the cleanly-generated `AllBridge.registerBridges` under
 // the two source-file library paths d4rt scripts import the bridges from,
 // exactly as the (broken) generated dartscript intended. The

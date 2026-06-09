@@ -47,6 +47,7 @@ final class BridgedPrimitiveCatalog {
     'demote',
     'updateCentroid',
     'findUncertain',
+    'updateProcedureMetrics',
   };
 
   /// Substrate primitives (C.13), re-exposed by `SubstrateBridge`.
