@@ -49,6 +49,44 @@ final class ProcedureValidationFinding {
       };
 }
 
+/// The parsed-header facts a clean validation surfaces back to the authoring
+/// loop.
+///
+/// The chain already parses the candidate's structured header (to run the
+/// header-dependent checks); rather than make the authoring script re-parse the
+/// YAML doc-comment in d4rt, the validation hands those facts back directly.
+/// This keeps the validator the single source of truth for what the header
+/// says, so `author_new_procedure_v1` can build its `Procedure` node's
+/// `name` / `summary` / `requires` values without a second, divergent parser.
+final class ProcedureValidationHeader {
+  /// The procedure id (the header's `id` field) — used as the node `name`.
+  final String id;
+
+  /// The header's `version` field.
+  final int version;
+
+  /// The header's one-line `summary`.
+  final String summary;
+
+  /// The bridged primitives the header declares in `requires`, in order.
+  final List<String> requires;
+
+  const ProcedureValidationHeader({
+    required this.id,
+    required this.version,
+    required this.summary,
+    required this.requires,
+  });
+
+  /// Projects the header facts into a plain map for the d4rt boundary.
+  Map<String, Object?> toMap() => <String, Object?>{
+        'id': id,
+        'version': version,
+        'summary': summary,
+        'requires': List<String>.of(requires),
+      };
+}
+
 /// The outcome of validating a candidate procedure source: [ok] when no layer
 /// found a fault, plus the ordered [findings].
 ///
@@ -63,18 +101,29 @@ final class ProcedureValidation {
   /// The faults found, ordered by validator layer. Empty when [ok].
   final List<ProcedureValidationFinding> findings;
 
-  const ProcedureValidation({required this.ok, required this.findings});
+  /// The parsed-header facts, present whenever the header parsed (even if a
+  /// later layer faulted). `null` only when the header itself was malformed.
+  final ProcedureValidationHeader? header;
+
+  const ProcedureValidation({
+    required this.ok,
+    required this.findings,
+    this.header,
+  });
 
   /// A clean validation with no findings.
   static const ProcedureValidation clean =
       ProcedureValidation(ok: true, findings: <ProcedureValidationFinding>[]);
 
   /// Projects the validation into the plain map the d4rt boundary hands back
-  /// to the authoring loop (`validation['ok']` / `validation['findings']`).
+  /// to the authoring loop (`validation['ok']` / `validation['findings']` /
+  /// `validation['header']`). The `header` key is omitted when the header could
+  /// not be parsed, so a script sees it only when the facts are real.
   Map<String, Object?> toMap() => <String, Object?>{
         'ok': ok,
         'findings': <Map<String, Object?>>[
           for (final finding in findings) finding.toMap(),
         ],
+        if (header != null) 'header': header!.toMap(),
       };
 }

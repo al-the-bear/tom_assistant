@@ -127,22 +127,50 @@ final class BridgedPrimitiveCatalog {
   /// Whether [name] is a recognised bridged primitive.
   static bool isKnown(String name) => all.contains(name);
 
+  /// The d4rt global the memory bridge is bound to: memory primitives are
+  /// invoked as `mem.recall(...)` (`d4rt_dcli_host.dart` —
+  /// `D4rtDcliHost.memoryGlobal`).
+  static const String memoryReceiver = 'mem';
+
+  /// The d4rt global the substrate bridge is bound to: substrate primitives
+  /// are invoked as `sub.llm(...)` (`D4rtDcliHost.substrateGlobal`).
+  static const String substrateReceiver = 'sub';
+
   /// The call-site spellings a procedure body may use to invoke the
   /// primitive whose canonical `requires` name is [name].
   ///
-  /// The canonical name is always accepted. In addition:
+  /// The spelling tracks how the host actually binds each family
+  /// (`d4rt_dcli_host.dart` / `native_primitives_installer.dart`):
   ///
-  ///   - a dotted name (`stack.push`) also matches its camelCase flat form
-  ///     (`stackPush`), because whether the host wires the stack ops under a
-  ///     `stack.` namespace object or as flat methods is undecided
-  ///     (Q-C.12.2);
-  ///   - a snake_case name (`propose_node_type`,
-  ///     `yield_if_foreground_waiting`) also matches its camelCase form
-  ///     (`proposeNodeType`, `yieldIfForegroundWaiting`).
-  ///
-  /// A plain lowerCamel name (`recall`, `llm`, `runProcedure`) has exactly
-  /// one spelling: itself.
+  ///   - **memory** primitives are methods on the bound `mem` global, so the
+  ///     accepted call is `mem.<flatMethod>` (`recall` → `mem.recall`,
+  ///     `stack.push` → `mem.stackPush`, `propose_node_type` →
+  ///     `mem.proposeNodeType`). The stack surface is flat on `mem`
+  ///     (Q-C.12.2), so there is no dotted `stack.` spelling at the call site.
+  ///   - **substrate** primitives are methods on the bound `sub` global, so
+  ///     the accepted call is `sub.<flatMethod>` (`llm` → `sub.llm`,
+  ///     `retrievalRole` → `sub.retrievalRole`).
+  ///   - the **scripted-LLM sugar** `sub.llm` is the bare top-level `subLlm`
+  ///     (§ 21.1): `sub.llm(...)` itself is the *raw substrate `llm` method*,
+  ///     so the sugar claims only its camelCase form and never collides with
+  ///     it.
+  ///   - **engine-native** primitives and **sugar** verbs are bare top-level
+  ///     functions (`note`, `runProcedure`, `validate`, `think`), so the
+  ///     canonical name is itself the spelling.
+  ///   - **tool / mcp / vscode** primitives are dotted calls on their own
+  ///     bound namespace global (`tool.list(...)`), so the canonical dotted
+  ///     name is the spelling (its camelCase form is also accepted in case the
+  ///     host wires them flat).
   static Set<String> callTokensFor(String name) {
+    if (memory.contains(name)) {
+      return {'$memoryReceiver.${_flatMethod(name)}'};
+    }
+    if (substrate.contains(name)) {
+      return {'$substrateReceiver.${_flatMethod(name)}'};
+    }
+    if (scriptedLlm.contains(name)) {
+      return {_dottedToCamel(name)};
+    }
     final tokens = <String>{name};
     if (name.contains('.')) {
       tokens.add(_dottedToCamel(name));
@@ -150,6 +178,15 @@ final class BridgedPrimitiveCatalog {
       tokens.add(_snakeToCamel(name));
     }
     return tokens;
+  }
+
+  /// The camelCase method spelled on a `mem`/`sub` receiver for the canonical
+  /// memory/substrate name [name]: `recall` → `recall`, `stack.push` →
+  /// `stackPush`, `propose_node_type` → `proposeNodeType`.
+  static String _flatMethod(String name) {
+    if (name.contains('.')) return _dottedToCamel(name);
+    if (name.contains('_')) return _snakeToCamel(name);
+    return name;
   }
 
   /// `stack.push` → `stackPush`. Lower-cases nothing, just drops the dots

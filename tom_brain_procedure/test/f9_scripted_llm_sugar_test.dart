@@ -96,9 +96,12 @@ void main() {
       expect(BridgedPrimitiveCatalog.all, contains('sub.llm'));
     });
 
-    test('the dotted call token carries its camelCase spelling', () {
+    test('the sugar call token is the bare camelCase spelling', () {
+      // `sub.llm(...)` itself is the raw substrate `llm` method; the sugar is
+      // only ever spelled `subLlm`, so the catalog claims that token alone and
+      // never collides with the low-level call.
       expect(BridgedPrimitiveCatalog.callTokensFor('sub.llm'),
-          <String>{'sub.llm', 'subLlm'});
+          <String>{'subLlm'});
     });
 
     test('the sugar is bound to the subLlm global / call_llm_v1 default', () {

@@ -121,6 +121,20 @@ final class ProcedureValidationChain {
       }
     }
 
-    return ProcedureValidation(ok: findings.isEmpty, findings: findings);
+    return ProcedureValidation(
+      ok: findings.isEmpty,
+      findings: findings,
+      // Surface the parsed-header facts whenever the header parsed, so the
+      // authoring loop can build its Procedure node's name/summary/requires
+      // without a second parser (§ 8.3).
+      header: header == null
+          ? null
+          : ProcedureValidationHeader(
+              id: header.id,
+              version: header.version,
+              summary: header.summary,
+              requires: header.requires,
+            ),
+    );
   }
 }

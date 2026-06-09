@@ -40,9 +40,9 @@ const String _legitSource = '''
 /// budget: { wallClockMs: 60000 }
 /// requires: [ recall, llm, persist ]
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
-  final hits = await recall(inputs.text, k: 8);
-  final answer = await llm('Answer using: \${hits.summary}', role: 'assistant');
-  await persist(answer);
+  final hits = await mem.recall(inputs.text, k: 8);
+  final answer = await sub.llm('Answer using: \${hits.summary}', role: 'assistant');
+  await mem.persist(answer);
   return ProcedureResult.ok(answer);
 }
 ''';
@@ -233,10 +233,12 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
       );
     });
 
-    test('dotted stack call matches a `stack.push` requirement', () {
+    test('flat `mem.stackPush` call matches a `stack.push` requirement', () {
+      // The stack surface is flat on the `mem` global (Q-C.12.2): the dotted
+      // canonical `stack.push` is spelled `mem.stackPush` at the call site.
       const src = '''
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
-  await stack.push('inflight', inputs.text);
+  await mem.stackPush('inflight', inputs.text);
   return ProcedureResult.ok('x');
 }
 ''';
@@ -249,16 +251,17 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
       );
     });
 
-    test('camelCase stackPush call also matches `stack.push`', () {
+    test('a snake_case requirement matches its `mem.` camelCase call', () {
+      // `propose_node_type` → `mem.proposeNodeType` at the call site.
       const src = '''
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
-  await stackPush('inflight', inputs.text);
+  await mem.proposeNodeType(inputs.text);
   return ProcedureResult.ok('x');
 }
 ''';
       expect(
         () => validator.validateRequires(
-          _header(requires: const ['stack.push']),
+          _header(requires: const ['propose_node_type']),
           src,
         ),
         returnsNormally,
@@ -307,7 +310,7 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
       // so declaring it is an unused requirement.
       const src = '''
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
-  final answer = await llm('do not persist this', role: 'assistant');
+  final answer = await sub.llm('do not persist this', role: 'assistant');
   return ProcedureResult.ok(answer);
 }
 ''';
@@ -322,11 +325,11 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
     });
 
     test('a call inside a string interpolation is counted', () {
-      // `recall(...)` appears only inside an interpolation — interpolated
+      // `mem.recall(...)` appears only inside an interpolation — interpolated
       // code is real code, so it must be declared.
       const src = r'''
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
-  final answer = await llm('hits: ${await recall(inputs.text)}', role: 'a');
+  final answer = await sub.llm('hits: ${await mem.recall(inputs.text)}', role: 'a');
   return ProcedureResult.ok(answer);
 }
 ''';
@@ -340,14 +343,14 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
       );
     });
 
-    test('a member access (`obj.recall(`) is not a top-level primitive call',
-        () {
-      // `inputs.recall(...)` is a member call, not the bridged primitive, so
-      // declaring `recall` would be unused (only `llm` is actually called).
+    test('a member access on another receiver is not a primitive call', () {
+      // `inputs.recall(...)` is a member call on `inputs`, not the `mem.recall`
+      // bridged primitive, so declaring `recall` would be unused (only `llm`
+      // is actually called).
       const src = '''
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
   final extra = inputs.recall();
-  final answer = await llm(extra, role: 'assistant');
+  final answer = await sub.llm(extra, role: 'assistant');
   return ProcedureResult.ok(answer);
 }
 ''';
@@ -363,12 +366,19 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
   });
 
   group('catalog', () {
-    test('callTokensFor derives camel forms for dotted/snake names', () {
+    test('callTokensFor maps each family to its real call spelling', () {
+      // Memory primitives are methods on the `mem` global, substrate on `sub`;
+      // the stack surface is flat on `mem` and snake names camelCase.
+      expect(BridgedPrimitiveCatalog.callTokensFor('recall'), {'mem.recall'});
       expect(BridgedPrimitiveCatalog.callTokensFor('stack.push'),
-          {'stack.push', 'stackPush'});
+          {'mem.stackPush'});
       expect(BridgedPrimitiveCatalog.callTokensFor('propose_node_type'),
-          {'propose_node_type', 'proposeNodeType'});
-      expect(BridgedPrimitiveCatalog.callTokensFor('recall'), {'recall'});
+          {'mem.proposeNodeType'});
+      expect(BridgedPrimitiveCatalog.callTokensFor('llm'), {'sub.llm'});
+      // The scripted-LLM sugar is the bare `subLlm`, never the raw `sub.llm`.
+      expect(BridgedPrimitiveCatalog.callTokensFor('sub.llm'), {'subLlm'});
+      // Engine-native primitives stay bare top-level calls.
+      expect(BridgedPrimitiveCatalog.callTokensFor('note'), {'note'});
     });
 
     test('isKnown covers memory, substrate, native and sugar', () {

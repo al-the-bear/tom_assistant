@@ -78,9 +78,9 @@ const String _cleanSource = '''
 /// budget: { wallClockMs: 60000 }
 /// requires: [ recall, llm, persist ]
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
-  final hits = await recall(inputs.text, k: 8);
-  final answer = await llm('Answer using: \${hits.summary}', role: 'assistant');
-  await persist(answer);
+  final hits = await mem.recall(inputs.text, k: 8);
+  final answer = await sub.llm('Answer using: \${hits.summary}', role: 'assistant');
+  await mem.persist(answer);
   return ProcedureResult.ok(answer);
 }
 ''';
@@ -88,7 +88,7 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
 /// The canonical entry point + body, used when only the header is varied.
 const String _cleanBody = '''
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
-  final hits = await recall(inputs.text, k: 8);
+  final hits = await mem.recall(inputs.text, k: 8);
   return ProcedureResult.ok(hits.summary);
 }
 ''';
@@ -387,8 +387,8 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
     // Body that calls exactly recall + persist.
     const callsRecallPersist = '''
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
-  final hits = await recall(inputs.text, k: 8);
-  await persist(hits.summary);
+  final hits = await mem.recall(inputs.text, k: 8);
+  await mem.persist(hits.summary);
   return ProcedureResult.ok(hits.summary);
 }
 ''';
