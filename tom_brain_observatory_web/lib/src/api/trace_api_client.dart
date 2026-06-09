@@ -29,6 +29,11 @@ abstract interface class TraceApiClient {
   /// `LlmCall`'s [rawPath] link, or `null` when the host has no such dump
   /// (§ 4.5 / PT-2.4).
   Future<LlmCallDetail?> llmCallDetail(String turnId, String rawPath);
+
+  /// `GET /api/procedures/{procedureId}` — the verbatim d4rt source of a
+  /// procedure script (§ 4.6 / PT-3.1), or `null` when the host exposes no such
+  /// script (no script root, or the id is unknown — absence is not an error).
+  Future<String?> procedureScript(String procedureId);
 }
 
 /// Talks to the same-origin `/api` via [http]. URLs resolve against [origin]
@@ -79,6 +84,17 @@ class HttpTraceApiClient implements TraceApiClient {
       throw http.ClientException('GET $uri → ${res.statusCode}', uri);
     }
     return LlmCallDetail.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  @override
+  Future<String?> procedureScript(String procedureId) async {
+    final uri = _resolve('api/procedures/$procedureId', const <String, String>{});
+    final res = await _http.get(uri);
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return res.body;
   }
 
   /// Resolve [path] (and optional [query]) against the document origin. Relative

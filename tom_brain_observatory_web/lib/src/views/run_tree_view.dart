@@ -7,7 +7,9 @@
 // not build its child widgets — [_RunTile] only constructs them while expanded.
 //
 // An `LlmCall` is a collapsed one-liner (§ 4.4); tapping it invokes
-// [onOpenLlmCall] to open the full LLM-call detail (§ 4.5 / PT-2.4).
+// [onOpenLlmCall] to open the full LLM-call detail (§ 4.5 / PT-2.4). Every run
+// row (the root and each sub-run) carries an "inspect script" action that
+// invokes [onInspectScript] to open that run's procedure source (§ 4.6 / PT-3.2).
 
 import 'package:flutter/material.dart';
 
@@ -15,16 +17,27 @@ import '../model/prompt_trace.dart';
 import 'collapsed_row.dart';
 
 /// Renders [run] as the recursive run tree. [onOpenLlmCall] opens the detail of
-/// a tapped LLM-call row; `null` makes LLM rows inert.
+/// a tapped LLM-call row; [onInspectScript] opens the procedure source behind a
+/// run row. A `null` callback makes the corresponding affordance inert/absent.
 class RunTreeView extends StatelessWidget {
   final ProcedureRun run;
   final ValueChanged<LlmCallNode>? onOpenLlmCall;
+  final ValueChanged<ProcedureRun>? onInspectScript;
 
-  const RunTreeView({super.key, required this.run, this.onOpenLlmCall});
+  const RunTreeView({
+    super.key,
+    required this.run,
+    this.onOpenLlmCall,
+    this.onInspectScript,
+  });
 
   @override
-  Widget build(BuildContext context) =>
-      _RunTile(run: run, depth: 0, onOpenLlmCall: onOpenLlmCall);
+  Widget build(BuildContext context) => _RunTile(
+        run: run,
+        depth: 0,
+        onOpenLlmCall: onOpenLlmCall,
+        onInspectScript: onInspectScript,
+      );
 }
 
 /// A lazily-expanding run row. Collapsed, it shows only its summary; while
@@ -34,8 +47,14 @@ class _RunTile extends StatefulWidget {
   final ProcedureRun run;
   final int depth;
   final ValueChanged<LlmCallNode>? onOpenLlmCall;
+  final ValueChanged<ProcedureRun>? onInspectScript;
 
-  const _RunTile({required this.run, required this.depth, required this.onOpenLlmCall});
+  const _RunTile({
+    required this.run,
+    required this.depth,
+    required this.onOpenLlmCall,
+    required this.onInspectScript,
+  });
 
   @override
   State<_RunTile> createState() => _RunTileState();
@@ -68,6 +87,14 @@ class _RunTileState extends State<_RunTile> {
             onTap: widget.run.nodes.isEmpty
                 ? null
                 : () => setState(() => _expanded = !_expanded),
+            trailing: widget.onInspectScript == null
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.code, size: 18),
+                    tooltip: 'inspect script',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => widget.onInspectScript!(widget.run),
+                  ),
           ),
           // Lazy: child rows are built only while expanded.
           if (_expanded)
@@ -81,6 +108,7 @@ class _RunTileState extends State<_RunTile> {
                       node: node,
                       depth: widget.depth + 1,
                       onOpenLlmCall: widget.onOpenLlmCall,
+                      onInspectScript: widget.onInspectScript,
                     ),
                 ],
               ),
@@ -95,17 +123,23 @@ class _RunNodeRow extends StatelessWidget {
   final RunNode node;
   final int depth;
   final ValueChanged<LlmCallNode>? onOpenLlmCall;
+  final ValueChanged<ProcedureRun>? onInspectScript;
 
   const _RunNodeRow({
     required this.node,
     required this.depth,
     required this.onOpenLlmCall,
+    required this.onInspectScript,
   });
 
   @override
   Widget build(BuildContext context) => switch (node) {
-        SubRunNode(:final run) =>
-          _RunTile(run: run, depth: depth, onOpenLlmCall: onOpenLlmCall),
+        SubRunNode(:final run) => _RunTile(
+            run: run,
+            depth: depth,
+            onOpenLlmCall: onOpenLlmCall,
+            onInspectScript: onInspectScript,
+          ),
         LlmCallNode() => CollapsedRow(
             icon: Icons.smart_toy,
             label: _llmSummary(node as LlmCallNode),

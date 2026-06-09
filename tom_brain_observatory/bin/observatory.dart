@@ -5,11 +5,14 @@
 // 127.0.0.1 by default so the observatory is never exposed off-host.
 //
 // Usage:
-//   dart run bin/observatory.dart <trail-host-root> [--web=<dir>] [--port=N] [--host=ADDR]
+//   dart run bin/observatory.dart <trail-host-root> [--web=<dir>] [--scripts=<dir>] [--port=N] [--host=ADDR]
 //
 //   <trail-host-root>   the trail tree to read, e.g. _ai/tom_brain_trail/<host>
 //   --web=<dir>         the `flutter build web` output to serve at `/`
 //                       (default: ../tom_brain_observatory_web/build/web)
+//   --scripts=<dir>     the running brain's procedure scripts served read-only
+//                       by GET /api/procedures/<id> (§ 4.6; default:
+//                       ../tom_brain_procedure_prototype/scripts/system)
 //   --port=N            loopback port (default 8787)
 //   --host=ADDR         bind address (default 127.0.0.1; loopback-only by design)
 //
@@ -30,7 +33,7 @@ Future<void> main(List<String> args) async {
   if (positional.length != 1) {
     stderr.writeln(
       'usage: dart run bin/observatory.dart <trail-host-root> '
-      '[--web=<dir>] [--port=N] [--host=ADDR]',
+      '[--web=<dir>] [--scripts=<dir>] [--port=N] [--host=ADDR]',
     );
     exitCode = 64; // EX_USAGE
     return;
@@ -45,6 +48,7 @@ Future<void> main(List<String> args) async {
 
   final flags = _flags(args);
   final webDir = flags['web'] ?? _defaultWebRoot();
+  final scriptsDir = flags['scripts'] ?? _defaultScriptRoot();
   final port = int.tryParse(flags['port'] ?? '') ?? _defaultPort;
   final bindHost = flags['host'] ?? _defaultHost;
 
@@ -57,9 +61,19 @@ Future<void> main(List<String> args) async {
     );
   }
 
+  final scriptRoot = Directory(scriptsDir);
+  if (!scriptRoot.existsSync()) {
+    stderr.writeln(
+      'observatory: procedure scripts not found at $scriptsDir — '
+      'GET /api/procedures/<id> will 404 until --scripts points at the '
+      "brain's scripts/system directory.",
+    );
+  }
+
   final api = TrailReadApi(
     host: TrailHost.at(trailRoot),
     webRoot: webRoot.existsSync() ? webRoot : null,
+    scriptRoot: scriptRoot.existsSync() ? scriptRoot : null,
   );
   final server = await shelf_io.serve(api.handler, bindHost, port);
 
@@ -97,4 +111,15 @@ String _defaultWebRoot() => p.normalize(p.join(
       'tom_brain_observatory_web',
       'build',
       'web',
+    ));
+
+/// The sibling procedure package's script directory (`scripts/system`),
+/// relative to this script's package root (§ 4.6).
+String _defaultScriptRoot() => p.normalize(p.join(
+      p.dirname(Platform.script.toFilePath()),
+      '..',
+      '..',
+      'tom_brain_procedure_prototype',
+      'scripts',
+      'system',
     ));

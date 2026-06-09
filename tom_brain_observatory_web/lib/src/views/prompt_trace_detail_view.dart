@@ -17,6 +17,7 @@ import 'format.dart';
 import 'llm_call_detail_view.dart';
 import 'monospace_block.dart';
 import 'outcome_chip.dart';
+import 'procedure_script_view.dart';
 import 'run_tree_view.dart';
 
 /// The detail page for [turnId], over [client].
@@ -63,6 +64,7 @@ class _PromptTraceDetailViewState extends State<PromptTraceDetailView> {
               children: buildTraceSections(
                 trace,
                 onOpenLlmCall: (node) => _openLlmCall(context, node),
+                onInspectScript: (run) => _openScript(context, run),
               ),
             );
           },
@@ -78,15 +80,23 @@ class _PromptTraceDetailViewState extends State<PromptTraceDetailView> {
       ),
     ));
   }
+
+  void _openScript(BuildContext context, ProcedureRun run) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ProcedureScriptView(client: widget.client, run: run),
+    ));
+  }
 }
 
 /// The four §4.2 sections for [trace], each an independently-expandable tile.
 /// Pure (no Navigator/Future) so widget tests exercise it directly.
 /// [onOpenLlmCall] is invoked when an LLM-call row in the run tree is opened
-/// (§ 4.5 / PT-2.4); `null` makes those rows inert (used by section tests).
+/// (§ 4.5 / PT-2.4); [onInspectScript] when a run row's inspect-script action is
+/// triggered (§ 4.6 / PT-3.2). A `null` callback makes the affordance inert.
 List<Widget> buildTraceSections(
   PromptTrace trace, {
   ValueChanged<LlmCallNode>? onOpenLlmCall,
+  ValueChanged<ProcedureRun>? onInspectScript,
 }) =>
     <Widget>[
       TraceSection(
@@ -110,7 +120,11 @@ List<Widget> buildTraceSections(
         initiallyExpanded: true,
         child: trace.runTree == null
             ? const Text('(no run tree)')
-            : RunTreeView(run: trace.runTree!, onOpenLlmCall: onOpenLlmCall),
+            : RunTreeView(
+                run: trace.runTree!,
+                onOpenLlmCall: onOpenLlmCall,
+                onInspectScript: onInspectScript,
+              ),
       ),
     ];
 

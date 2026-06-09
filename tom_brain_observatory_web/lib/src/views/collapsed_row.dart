@@ -1,8 +1,9 @@
 // The collapsed one-line row shared by the run-tree's run rows and LLM-call
 // rows (§ 4.4) — extracted so both render identically: a leading kind icon, a
-// single-line label, and (when [expandable]) a trailing chevron whose direction
-// reflects [expanded]. Tapping invokes [onTap] (open detail / toggle children);
-// a `null` [onTap] makes the row inert (a leaf primitive/note/error).
+// single-line label, an optional [trailing] action, and (when [expandable]) a
+// trailing chevron whose direction reflects [expanded]. Tapping invokes [onTap]
+// (open detail / toggle children); a `null` [onTap] makes the row inert (a leaf
+// primitive/note/error).
 
 import 'package:flutter/material.dart';
 
@@ -18,6 +19,10 @@ class CollapsedRow extends StatelessWidget {
   final VoidCallback? onTap;
   final CollapsedRowEmphasis emphasis;
 
+  /// An optional action shown before the expand chevron (e.g. the run row's
+  /// "inspect script" button, PT-3.2). `null` for rows with no action.
+  final Widget? trailing;
+
   const CollapsedRow({
     super.key,
     required this.icon,
@@ -26,6 +31,7 @@ class CollapsedRow extends StatelessWidget {
     required this.expanded,
     required this.onTap,
     this.emphasis = CollapsedRowEmphasis.normal,
+    this.trailing,
   });
 
   @override
@@ -53,6 +59,7 @@ class CollapsedRow extends StatelessWidget {
                 ),
               ),
             ),
+            ?trailing,
             if (expandable)
               Icon(expanded ? Icons.expand_less : Icons.chevron_right,
                   size: 18, color: scheme.onSurfaceVariant),

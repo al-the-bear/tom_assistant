@@ -14,10 +14,14 @@ class StubApiClient implements TraceApiClient {
   /// Keyed by the run-tree `LlmCall`'s `rawPath` link (PT-2.4).
   final Map<String, LlmCallDetail> llmCalls;
 
+  /// Keyed by procedureId — the verbatim d4rt source (PT-3.2).
+  final Map<String, String> scripts;
+
   const StubApiClient({
     this.rows = const <PromptListRow>[],
     this.traces = const <String, PromptTrace>{},
     this.llmCalls = const <String, LlmCallDetail>{},
+    this.scripts = const <String, String>{},
   });
 
   @override
@@ -30,6 +34,10 @@ class StubApiClient implements TraceApiClient {
   @override
   Future<LlmCallDetail?> llmCallDetail(String turnId, String rawPath) async =>
       llmCalls[rawPath];
+
+  @override
+  Future<String?> procedureScript(String procedureId) async =>
+      scripts[procedureId];
 }
 
 /// A §4.1 row with sensible defaults; override per test.

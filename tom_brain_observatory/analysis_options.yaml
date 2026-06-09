@@ -1,1 +1,10 @@
 include: package:lints/recommended.yaml
+
+analyzer:
+  exclude:
+    # Fixture procedure *sources* for the PT-3.1 script-endpoint test. They are
+    # served verbatim as text by `GET /api/procedures/<id>`, never compiled, and
+    # call the bridged `mem` / `llm` / `persist` globals the d4rt host injects —
+    # which the static analyzer cannot see (it would flag every bridged call).
+    # Mirrors the exclusion `tom_brain_procedure_prototype` uses for `scripts/`.
+    - test/fixtures/scripts/**

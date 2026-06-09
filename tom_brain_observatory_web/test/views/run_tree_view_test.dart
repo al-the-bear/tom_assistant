@@ -132,6 +132,28 @@ void main() {
     expect(opened!.callType, 'analyze');
   });
 
+  testWidgets('inspect-script affordance invokes onInspectScript for the run',
+      (tester) async {
+    ProcedureRun? inspected;
+    await _pump(
+      tester,
+      RunTreeView(run: _deepRun(), onInspectScript: (run) => inspected = run),
+    );
+
+    // The root run row exposes an inspect-script action (an Icons.code button).
+    await tester.tap(find.byIcon(Icons.code).first);
+    await tester.pumpAndSettle();
+
+    expect(inspected, isNotNull);
+    expect(inspected!.procedureId, 'answer_with_memory_v1');
+  });
+
+  testWidgets('no inspect affordance when onInspectScript is null',
+      (tester) async {
+    await _pump(tester, RunTreeView(run: _deepRun()));
+    expect(find.byIcon(Icons.code), findsNothing);
+  });
+
   testWidgets('renders an error node with error emphasis', (tester) async {
     await _pump(
       tester,

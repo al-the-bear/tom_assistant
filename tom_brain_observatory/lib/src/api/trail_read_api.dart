@@ -39,10 +39,17 @@ final class TrailReadApi {
   /// serve only the `/api` surface (the web build lands in PT-2.0).
   final Directory? webRoot;
 
+  /// The directory the running brain's procedure scripts live in
+  /// (`scripts/system/`, § 4.6), served read-only by `GET /api/procedures/<id>`
+  /// (PT-3.1), or `null` when the observatory has no script root to expose (the
+  /// endpoint then 404s — absence is never an error, § 4.1).
+  final Directory? scriptRoot;
+
   TrailReadApi({
     required this.host,
     this.listLimit = 10,
     this.webRoot,
+    this.scriptRoot,
   });
 
   /// The composed handler: `/api/*` routed to the JSON API, everything else to
@@ -63,7 +70,8 @@ final class TrailReadApi {
   Router get _apiRouter => Router()
     ..get('/api/traces', _listTraces)
     ..get('/api/traces/<turnId>', _singleTrace)
-    ..get('/api/llm', _llmRaw);
+    ..get('/api/llm', _llmRaw)
+    ..get('/api/procedures/<procedureId>', _procedureScript);
 
   /// `GET /api/traces` — the prompt list as a JSON array (§ 4.1). An optional
   /// `?limit=` overrides the default window.
@@ -122,6 +130,41 @@ final class TrailReadApi {
     return Response.ok(
       file.readAsStringSync(),
       headers: <String, String>{'content-type': 'application/json; charset=utf-8'},
+    );
+  }
+
+  /// `GET /api/procedures/{procedureId}` — the verbatim d4rt source of the
+  /// running brain's procedure script `scripts/system/<procedureId>.dart`
+  /// (§ 4.6, § 8.3(5)), so the Module-1 inspector can show what actually ran
+  /// (PT-3.1). Served as `text/plain`; the front-end renders it read-only.
+  ///
+  /// A containment guard refuses any `procedureId` that resolves outside the
+  /// [scriptRoot] (path-traversal via `../`) or that is not a `.dart` file —
+  /// only a script *inside the script directory* is ever reachable (read-only,
+  /// OBS-1). The body is passed through verbatim. When [scriptRoot] is `null`
+  /// (no script root configured) or the script is absent, the result is `404` —
+  /// absence is never an error (§ 4.1).
+  Response _procedureScript(Request request, String procedureId) {
+    final root = scriptRoot;
+    if (root == null) {
+      return _json(<String, Object?>{'error': 'no script root configured'},
+          status: HttpStatus.notFound);
+    }
+    final scriptsRoot = p.normalize(root.absolute.path);
+    final resolved =
+        p.normalize(p.join(scriptsRoot, '$procedureId.dart'));
+    if (!p.isWithin(scriptsRoot, resolved) || !resolved.endsWith('.dart')) {
+      return _json(<String, Object?>{'error': 'not a procedure script'},
+          status: HttpStatus.forbidden);
+    }
+    final file = File(resolved);
+    if (!file.existsSync()) {
+      return _json(<String, Object?>{'error': 'no script $procedureId'},
+          status: HttpStatus.notFound);
+    }
+    return Response.ok(
+      file.readAsStringSync(),
+      headers: <String, String>{'content-type': 'text/plain; charset=utf-8'},
     );
   }
 
