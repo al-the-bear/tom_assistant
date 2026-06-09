@@ -9,39 +9,21 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:shelf/shelf.dart';
 import 'package:tom_brain_observatory/tom_brain_observatory.dart';
 import 'package:test/test.dart';
 
-const _fixtureHost = 'test/fixtures/trail/fixturehost';
-
-/// The finished fixture turn (its live-trail block ends with `✅ DONE`, so the
-/// stream emits all its steps then closes — making the SSE endpoint testable
-/// without a live append).
-const _finishedTurn = '260101-120000.000001';
-
-Future<Response> _get(TrailReadApi api, String path) async =>
-    await api.handler(Request('GET', Uri.parse('http://localhost/$path')));
-
-/// Reads an SSE body to completion and returns the decoded `data:` payloads.
-Future<List<Object?>> _drainSse(Response res) async {
-  final body = await res.readAsString();
-  return <Object?>[
-    for (final line in const LineSplitter().convert(body))
-      if (line.startsWith('data: ')) jsonDecode(line.substring('data: '.length)),
-  ];
-}
+import 'support/obs_harness.dart';
 
 void main() {
-  final api = TrailReadApi(host: TrailHost.at(_fixtureHost));
+  final api = TrailReadApi(host: TrailHost.at(fixtureHostPath));
 
   group('GET /api/traces/<turnId>/stream', () {
     test('streams one event per cognitive step, terminating on DONE', () async {
-      final res = await _get(api, 'api/traces/$_finishedTurn/stream');
+      final res = await obsGet(api, 'api/traces/$fixtureFinishedTurn/stream');
       expect(res.statusCode, 200);
       expect(res.headers['content-type'], contains('text/event-stream'));
 
-      final events = (await _drainSse(res)).cast<Map<String, Object?>>();
+      final events = (await drainSse(res)).cast<Map<String, Object?>>();
       // The fixture turn: thinking, recallMulti, tool web.search, assistant, DONE.
       expect(events.length, 5);
       expect(events.first['heading'], '🧠 thinking (recall_planner)');
@@ -50,20 +32,17 @@ void main() {
     });
 
     test('404 when no session live-trail carries the turn', () async {
-      final res = await _get(api, 'api/traces/999999-000000.000000/stream');
+      final res = await obsGet(api, 'api/traces/999999-000000.000000/stream');
       expect(res.statusCode, HttpStatus.notFound);
     });
 
-    test('OBS-5: streaming mutates no trail file', () async {
-      final before = _mtimes(_fixtureHost);
-      await _drainSse(await _get(api, 'api/traces/$_finishedTurn/stream'));
-      expect(_mtimes(_fixtureHost), before);
-    });
+    // OBS-5 (streaming mutates no trail file; the live-tail is an OS file-watch,
+    // not an in-process hook) is proven in `obs_conformance_test.dart` (Phase 8).
   });
 
   group('GET /api/stream', () {
     test('emits an initial list-changed tick on connect', () async {
-      final res = await _get(api, 'api/stream');
+      final res = await obsGet(api, 'api/stream');
       expect(res.statusCode, 200);
       expect(res.headers['content-type'], contains('text/event-stream'));
 
@@ -76,8 +55,3 @@ void main() {
     });
   });
 }
-
-Map<String, DateTime> _mtimes(String root) => <String, DateTime>{
-      for (final entity in Directory(root).listSync(recursive: true))
-        if (entity is File) entity.path: entity.statSync().modified,
-    };

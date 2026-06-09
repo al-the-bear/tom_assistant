@@ -8,29 +8,24 @@
 
 import 'dart:io';
 
-import 'package:shelf/shelf.dart';
 import 'package:tom_brain_observatory/tom_brain_observatory.dart';
 import 'package:test/test.dart';
 
-const _fixtureHost = 'test/fixtures/trail/fixturehost';
-const _fixtureScripts = 'test/fixtures/scripts';
-
-Future<Response> _get(TrailReadApi api, String path) async =>
-    await api.handler(Request('GET', Uri.parse('http://localhost/$path')));
+import 'support/obs_harness.dart';
 
 void main() {
   final api = TrailReadApi(
-    host: TrailHost.at(_fixtureHost),
-    scriptRoot: Directory(_fixtureScripts),
+    host: TrailHost.at(fixtureHostPath),
+    scriptRoot: Directory(fixtureScriptRootPath),
   );
 
   test('serves the verbatim d4rt source as text/plain', () async {
-    final res = await _get(api, 'api/procedures/answer_with_memory_v1');
+    final res = await obsGet(api, 'api/procedures/answer_with_memory_v1');
     expect(res.statusCode, 200);
     expect(res.headers['content-type'], contains('text/plain'));
     final body = await res.readAsString();
-    final onDisk =
-        File('$_fixtureScripts/answer_with_memory_v1.dart').readAsStringSync();
+    final onDisk = File('$fixtureScriptRootPath/answer_with_memory_v1.dart')
+        .readAsStringSync();
     expect(body, onDisk);
     expect(body, contains('@procedure'));
   });
@@ -38,7 +33,7 @@ void main() {
   test('refuses a procedureId that escapes the script root', () async {
     // `..%2f..%2fpubspec` would resolve outside the script dir; the guard must
     // refuse it before any read.
-    final res = await _get(
+    final res = await obsGet(
       api,
       'api/procedures/${Uri.encodeComponent('../../pubspec')}',
     );
@@ -46,24 +41,17 @@ void main() {
   });
 
   test('404 when the named script does not exist', () async {
-    final res = await _get(api, 'api/procedures/does_not_exist_v9');
+    final res = await obsGet(api, 'api/procedures/does_not_exist_v9');
     expect(res.statusCode, HttpStatus.notFound);
   });
 
   test('404 when the script root is unconfigured', () async {
-    final unconfigured = TrailReadApi(host: TrailHost.at(_fixtureHost));
-    final res = await _get(unconfigured, 'api/procedures/answer_with_memory_v1');
+    final unconfigured = TrailReadApi(host: TrailHost.at(fixtureHostPath));
+    final res = await obsGet(unconfigured, 'api/procedures/answer_with_memory_v1');
     expect(res.statusCode, HttpStatus.notFound);
   });
 
-  test('OBS-1: the endpoint mutates no script file', () async {
-    final before = _mtimes(_fixtureScripts);
-    await _get(api, 'api/procedures/answer_with_memory_v1');
-    expect(_mtimes(_fixtureScripts), before);
-  });
+  // OBS-1 (no mutation of the script tree) is proven in the comprehensive
+  // read-only walk in `obs_conformance_test.dart` (Phase 8), which snapshots the
+  // script root alongside the trail and web roots.
 }
-
-Map<String, DateTime> _mtimes(String root) => <String, DateTime>{
-      for (final entity in Directory(root).listSync(recursive: true))
-        if (entity is File) entity.path: entity.statSync().modified,
-    };

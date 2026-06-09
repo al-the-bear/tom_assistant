@@ -9,24 +9,20 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:shelf/shelf.dart';
 import 'package:tom_brain_observatory/tom_brain_observatory.dart';
 import 'package:test/test.dart';
 
-const _fixtureHost = 'test/fixtures/trail/fixturehost';
-
-Future<Response> _get(TrailReadApi api, String path) async =>
-    await api.handler(Request('GET', Uri.parse('http://localhost/$path')));
+import 'support/obs_harness.dart';
 
 void main() {
-  final api = TrailReadApi(host: TrailHost.at(_fixtureHost));
+  final api = TrailReadApi(host: TrailHost.at(fixtureHostPath));
 
   // The link a run-tree LlmCall carries (relative to procedures/<proc>/).
   const turnId = '260101-120000.000001';
   const goodLink = '../../llm/assistant_to_user/260101-120000.000001__02.raw.json';
 
   test('serves the verbatim §3.7 raw dump for a valid link', () async {
-    final res = await _get(api, 'api/llm?turn=$turnId&path=${Uri.encodeQueryComponent(goodLink)}');
+    final res = await obsGet(api, 'api/llm?turn=$turnId&path=${Uri.encodeQueryComponent(goodLink)}');
     expect(res.statusCode, 200);
     expect(res.headers['content-type'], contains('application/json'));
     final dump = jsonDecode(await res.readAsString()) as Map<String, dynamic>;
@@ -41,35 +37,27 @@ void main() {
 
   test('refuses a link that escapes the llm root (containment guard)', () async {
     const escape = '../../llm/../../../secret_outside_webroot.txt';
-    final res = await _get(api, 'api/llm?turn=$turnId&path=${Uri.encodeQueryComponent(escape)}');
+    final res = await obsGet(api, 'api/llm?turn=$turnId&path=${Uri.encodeQueryComponent(escape)}');
     expect(res.statusCode, HttpStatus.forbidden);
   });
 
   test('refuses a non-.raw.json link under llm/', () async {
     const notDump = '../../llm/assistant_to_user/notes.txt';
-    final res = await _get(api, 'api/llm?turn=$turnId&path=${Uri.encodeQueryComponent(notDump)}');
+    final res = await obsGet(api, 'api/llm?turn=$turnId&path=${Uri.encodeQueryComponent(notDump)}');
     expect(res.statusCode, HttpStatus.forbidden);
   });
 
   test('404 when the dump does not exist', () async {
     const missing = '../../llm/assistant_to_user/does_not_exist.raw.json';
-    final res = await _get(api, 'api/llm?turn=$turnId&path=${Uri.encodeQueryComponent(missing)}');
+    final res = await obsGet(api, 'api/llm?turn=$turnId&path=${Uri.encodeQueryComponent(missing)}');
     expect(res.statusCode, HttpStatus.notFound);
   });
 
   test('400 when turn or path is missing', () async {
-    expect((await _get(api, 'api/llm?turn=$turnId')).statusCode, HttpStatus.badRequest);
-    expect((await _get(api, 'api/llm')).statusCode, HttpStatus.badRequest);
+    expect((await obsGet(api, 'api/llm?turn=$turnId')).statusCode, HttpStatus.badRequest);
+    expect((await obsGet(api, 'api/llm')).statusCode, HttpStatus.badRequest);
   });
 
-  test('OBS-1: the endpoint mutates no trail file', () async {
-    final before = _mtimes(_fixtureHost);
-    await _get(api, 'api/llm?turn=$turnId&path=${Uri.encodeQueryComponent(goodLink)}');
-    expect(_mtimes(_fixtureHost), before);
-  });
+  // OBS-1 (no mutation) for this endpoint is proven in the comprehensive
+  // read-only walk in `obs_conformance_test.dart` (Phase 8).
 }
-
-Map<String, DateTime> _mtimes(String root) => <String, DateTime>{
-      for (final entity in Directory(root).listSync(recursive: true))
-        if (entity is File) entity.path: entity.statSync().modified,
-    };

@@ -1,0 +1,99 @@
+ID,Groups,Description,Baseline [06-09 15:39],[06-09 15:42]
+,,serves the verbatim d4rt source as text/plain,OK/OK,OK/OK
+,,refuses a procedureId that escapes the script root,OK/OK,OK/OK
+,,404 when the named script does not exist,OK/OK,OK/OK
+,,404 when the script root is unconfigured,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),inbound projects the incoming record,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),configuration is what actually ran (distinct tuples),OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),reply joins the summary answer with the run outcome,OK/OK,OK/OK
+,PT-2.0 — the real Flutter build is served by the static root,GET / serves the built Flutter index.html,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),run tree is present and recursive,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),toJson is the locked §3 shape,OK/OK,OK/OK
+,promptTraceFor — errored turn (b0),reply carries the verbatim no-answer placeholder + errored outcome,OK/OK,OK/OK
+,PT-2.0 — the real Flutter build is served by the static root,an unknown app route falls back to the build index (SPA),OK/OK,OK/OK
+,"promptTraceFor — in-flight turn (c, incoming only)",inbound present but run-tree / reply absent,OK/OK,OK/OK
+,parseTurnSteps,returns the ordered steps of a finished turn,OK/OK,OK/OK
+,promptTraceFor — unknown turn,returns null (turn unknown to host),OK/OK,OK/OK
+,parseTurnSteps,flags only the DONE banner as terminal,OK/OK,OK/OK
+,parseTurnSteps,captures the verbatim body under a step heading,OK/OK,OK/OK
+,parseTurnSteps,an in-flight turn has no DONE step,OK/OK,OK/OK
+,parseTurnSteps,a turn that is not present yields no steps,OK/OK,OK/OK
+,parseTurnSteps,"a turnId is matched whole, not as a prefix",OK/OK,OK/OK
+,,emits one event per appended step and closes after DONE,OK/OK,OK/OK
+OBS-5,,tailing never writes the trail file,OK/OK,OK/OK
+,PT-2.0 — the real Flutter build is served by the static root,"/api still routes to the JSON API, not the web build",OK/OK,OK/OK
+,,serves the verbatim §3.7 raw dump for a valid link,OK/OK,OK/OK
+,,refuses a link that escapes the llm root (containment guard),OK/OK,OK/OK
+,,refuses a non-.raw.json link under llm/,OK/OK,OK/OK
+,,404 when the dump does not exist,OK/OK,OK/OK
+,,browse seeds recall by type and filters to the requested type,OK/OK,OK/OK
+,,known ids surfaced in traces are fetched via get and merged,OK/OK,OK/OK
+,,400 when turn or path is missing,OK/OK,OK/OK
+,,edge traversal discovers a neighbour not in the recall seed,OK/OK,OK/OK
+,,a neighbour already in the seed is not re-fetched,OK/OK,OK/OK
+,,every gathered node is deduped by id across sources,OK/OK,OK/OK
+,,the composition never calls a write tool (OBS-2 transitively),OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),top-level run header + outcome,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),"top-level nodes in trail order, by kind",OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),top-level llm call decoded,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),id-returning primitives carry their result id,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),recurses to full depth: a0 → a1 → a2,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),walk helpers count across the whole tree,OK/OK,OK/OK
+,parseRunTree — error fixture (b0),errored outcome with elapsed in seconds,OK/OK,OK/OK
+,parseRunTree — error fixture (b0),typed error node decoded,OK/OK,OK/OK
+,"parseRunTree — malformed input degrades, never throws",empty content → null,OK/OK,OK/OK
+,"parseRunTree — malformed input degrades, never throws",no header → null,OK/OK,OK/OK
+,OBS-2 — only the nine read tools,"the static registry is exactly the nine reads, never the write",OK/OK,OK/OK
+,OBS-2 — only the nine read tools,exercising the whole client surface calls exactly the nine reads,OK/OK,OK/OK
+,read-tool decoding,recall decodes nodes + the per-mode cost report,OK/OK,OK/OK
+,read-tool decoding,recallMulti decodes per-node seed provenance,OK/OK,OK/OK
+,read-tool decoding,get decodes nodes with embedding dimension + norm,OK/OK,OK/OK
+,read-tool decoding,get decodes a node with a null embedding,OK/OK,OK/OK
+,read-tool decoding,edgesOf decodes edges and marshals direction + types,OK/OK,OK/OK
+,read-tool decoding,stackList decodes the inventory,OK/OK,OK/OK
+,read-tool decoding,stackPeek decodes entries and marshals k,OK/OK,OK/OK
+,read-tool decoding,classify decodes the decision band,OK/OK,OK/OK
+,read-tool decoding,profilesList + profileCurrent decode,OK/OK,OK/OK
+,read-tool decoding,profileCurrent on the unprofiled root decodes null,OK/OK,OK/OK
+,,a tool error surfaces as McpReadException,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes?type=Question browses and filters by type,OK/OK,OK/OK
+,promptList — configured host,"one row per incoming record, newest-first",OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes without ?type= is a 400,OK/OK,OK/OK
+,promptList — configured host,accepted turn row carries outcome + counts,OK/OK,OK/OK
+,promptList — configured host,errored turn row reflects the errored outcome,OK/OK,OK/OK
+,promptList — configured host,in-flight turn row has no outcome and zero counts,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes/<id> returns one node with its embedding,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes/<unknown> is a 404,OK/OK,OK/OK
+,promptList — configured host,"limit caps the window, keeping the newest",OK/OK,OK/OK
+,promptList — unconfigured host (§ 8.1),"degrades to an empty list, never an error",OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/edges?id= returns the incident edges,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,POST /api/memory/recall returns the fused list and cost report,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,POST /api/memory/recall/multi carries per-node provenance,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/stacks lists the stack inventory,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/stacks/<name>?k= peeks the top-K,OK/OK,OK/OK
+,GET /api/traces/<turnId>/stream,"streams one event per cognitive step, terminating on DONE",OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,POST /api/memory/classify probes the centroid classifier,OK/OK,OK/OK
+,GET /api/traces/<turnId>/stream,404 when no session live-trail carries the turn,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/profiles lists profiles and the current binding,OK/OK,OK/OK
+,GET /api/stream,emits an initial list-changed tick on connect,OK/OK,OK/OK
+OBS-2,PT-6 — /api/memory/* with a wired client,exercising every route never calls the write tool,OK/OK,OK/OK
+,PT-6 — deferred connector (no client wired),every /api/memory route answers 503 memory unavailable,OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,GET /api/traces → newest-first prompt list,OK/OK,OK/OK
+,PT-6 — deferred connector (no client wired),the Module-1 trail surface still works without memory,OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,GET /api/traces?limit=1 caps the window,OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,GET /api/traces/{turnId} → the PromptTrace,OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,"GET /api/traces/{unknown} → 404, not an SPA fallthrough",OK/OK,OK/OK
+,PT-1.5 — static root at /,GET / serves the build index,OK/OK,OK/OK
+,PT-1.5 — static root at /,GET /assets/main.dart.js serves the static asset,OK/OK,OK/OK
+,PT-1.5 — static root at /,unknown app route falls back to index.html (SPA),OK/OK,OK/OK
+,PT-1.5 — static root at /,"/api still routes to the JSON API, not the static root",OK/OK,OK/OK
+,PT-1.5 — static root at /,path-traversal never serves a file outside the web root,OK/OK,OK/OK
+,PT-8.1 — OBS-1: the app never writes the trail tree,exercising every endpoint mutates no file the brain owns,OK/OK,OK/OK
+,PT-8.2 — OBS-2: the app never writes memory,the read client registry excludes the write tool,OK/OK,OK/OK
+,PT-8.2 — OBS-2: the app never writes memory,no /api/memory route maps to the write tool,OK/OK,OK/OK
+,PT-8.2 — OBS-3: the app never touches the memory DB files,the only memory door (lib/src/memory/) imports no dart:io,OK/OK,OK/OK
+,PT-8.2 — OBS-3: the app never touches the memory DB files,no lib/ source references a memory DB / storage-stack file,OK/OK,OK/OK
+,PT-8.2 — OBS-3: the app never touches the memory DB files,exercising every endpoint never opens/mutates a DB-file sentinel,OK/OK,OK/OK
+,PT-8.3 — OBS-4: no control path into the brain,no lib/ source carries write or control IO vocabulary,OK/OK,OK/OK
+,"PT-8.3 — OBS-5: live-tail is a file watch, not a hook",the live-tail change source is an OS Directory.watch only,OK/OK,OK/OK
+,"PT-8.3 — OBS-5: live-tail is a file watch, not a hook","the list-level stream also watches a directory, never hooks",OK/OK,OK/OK
