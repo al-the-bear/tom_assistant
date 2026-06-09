@@ -34,10 +34,15 @@
 //     (Ollama's `/api/embeddings` rides the same transport as its chat LLM).
 //     The embedding dims / model / normalize come straight from
 //     `config.embedding`.
-//   * Web tools — the no-web posture by default (see [NoWebSearch] /
-//     [NoWebFetch]). The prototype's procedures do not search or fetch; this is
-//     an honest "no web configured" stance, not a cognition double. A caller
-//     that wires real web tools passes them in.
+//   * Web tools — real, config-driven by default. `config.webSearch` always
+//     resolves to at least the DuckDuckGo HTML provider (the loader defaults the
+//     whole block when the YAML omits it), so [buildWebSearch] manufactures a
+//     live `DefaultWebSearch` over the configured providers and [buildWebFetch]
+//     a `DefaultWebFetch` over the configured budget / user-agent. The web.*
+//     tools and the scripted `sub.search` / `sub.fetch` therefore reach a real
+//     search engine. A caller that wants a different posture (an offline test,
+//     a custom provider) passes its own [WebSearch] / [WebFetch] in;
+//     [NoWebSearch] / [NoWebFetch] remain as the explicit no-web doubles.
 //
 // ── What it deliberately does NOT do ─────────────────────────────────
 //
@@ -107,10 +112,72 @@ InProcessTomBrainSubstrate buildSubstrate(
     providers: providers,
     router: router,
     embeddingService: embeddingService,
-    webSearch: webSearch ?? const NoWebSearch(),
-    webFetch: webFetch ?? const NoWebFetch(),
+    webSearch: webSearch ?? buildWebSearch(config.webSearch),
+    webFetch: webFetch ?? buildWebFetch(config.webFetch),
   );
 }
+
+/// Builds a config-driven [WebSearch] from the substrate's `webSearch:` block.
+///
+/// Each `webSearch.providers` row is manufactured to its concrete
+/// [WebSearchProvider]. The only kind the run builder manufactures is
+/// `ddg_html` — the no-key DuckDuckGo HTML provider; any other kind (including
+/// `brave`, which needs an auth resolver the run builder lacks) is a located
+/// [SubstrateConfigException].
+///
+/// `config.defaultProvider` names a *config key*, not a provider id; the
+/// returned [DefaultWebSearch]'s `defaultProviderId` is the built provider's
+/// stable `.id` for that key. The loader cross-validates that
+/// `defaultProvider` is a known key, so the lookup miss here only fires for a
+/// hand-built config — it is still reported with a located message.
+WebSearch buildWebSearch(WebSearchConfig config) {
+  final List<WebSearchProvider> providers = <WebSearchProvider>[];
+  String? defaultProviderId;
+  config.providers.forEach((String key, WebSearchProviderConfig profile) {
+    final WebSearchProvider provider = _buildWebSearchProvider(key, profile);
+    providers.add(provider);
+    if (key == config.defaultProvider) defaultProviderId = provider.id;
+  });
+  final String? resolvedDefault = defaultProviderId;
+  if (resolvedDefault == null) {
+    throw SubstrateConfigException(
+      'substrate.webSearch.defaultProvider "${config.defaultProvider}" does '
+      'not match any key in substrate.webSearch.providers.',
+    );
+  }
+  return DefaultWebSearch(
+    defaultProviderId: resolvedDefault,
+    providers: providers,
+  );
+}
+
+/// Manufactures one concrete [WebSearchProvider] for a config [profile] under
+/// the catalogue [key]; an unmanufacturable kind is a located error.
+WebSearchProvider _buildWebSearchProvider(
+  String key,
+  WebSearchProviderConfig profile,
+) {
+  switch (profile.kind) {
+    case 'ddg_html':
+      return DuckDuckGoHtmlSearchProvider();
+    default:
+      throw SubstrateConfigException(
+        'substrate.webSearch.providers["$key"].kind = "${profile.kind}": the '
+        'run substrate builder manufactures only the `ddg_html` web-search '
+        'provider (DuckDuckGo HTML). A keyed provider such as `brave` needs an '
+        'auth resolver the run builder does not carry.',
+      );
+  }
+}
+
+/// Builds a config-driven [WebFetch] from the substrate's `webFetch:` block.
+///
+/// The budget and forced `User-Agent` come straight from `config`; the run
+/// builder adds no defaults of its own (the loader already defaults the block).
+WebFetch buildWebFetch(WebFetchConfig config) => DefaultWebFetch(
+      defaultBudgetBytes: config.defaultBudgetBytes,
+      userAgent: config.userAgent,
+    );
 
 /// Manufactures one concrete [LlmProvider] for a config [profile].
 ///

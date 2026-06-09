@@ -65,11 +65,16 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show
+        DefaultWebFetch,
+        DefaultWebSearch,
         OllamaLlmProvider,
         OpenAiPassthroughProvider,
         SubstrateConfig,
         SubstrateConfigException,
-        SubstrateConfigLoader;
+        SubstrateConfigLoader,
+        WebFetchConfig,
+        WebSearchConfig,
+        WebSearchProviderConfig;
 import 'package:tom_core_server/tom_core_server.dart'
     show standalonePlatformUtils;
 import 'package:test/test.dart';
@@ -451,6 +456,88 @@ substrate:
         throwsA(isA<SubstrateConfigException>()
             .having((e) => e.message, 'message', contains('Ollama'))),
       );
+    });
+  });
+
+  group('#31 buildWebSearch / buildWebFetch — config-driven web tools', () {
+    test('the default web-search config manufactures a live DuckDuckGo search',
+        () {
+      // The loader always defaults `webSearch:` to a single DuckDuckGo HTML
+      // provider, so a substrate config that omits the block still resolves to
+      // a real search engine — the run builder no longer falls back to a no-web
+      // double.
+      final SubstrateConfig cfg =
+          SubstrateConfigLoader.parse('$_substrateSection\n');
+
+      final search = buildWebSearch(cfg.webSearch);
+
+      expect(search, isA<DefaultWebSearch>());
+      final ddg = search as DefaultWebSearch;
+      expect(ddg.registeredProviderIds, contains('duckduckgo'));
+      expect(ddg.defaultProviderId, 'duckduckgo');
+      search.close();
+    });
+
+    test('an explicit ddg_html provider config is manufactured', () {
+      const config = WebSearchConfig(
+        defaultProvider: 'duckduckgo',
+        providers: <String, WebSearchProviderConfig>{
+          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
+        },
+      );
+
+      final search = buildWebSearch(config) as DefaultWebSearch;
+      expect(search.registeredProviderIds, <String>['duckduckgo']);
+      expect(search.defaultProviderId, 'duckduckgo');
+      search.close();
+    });
+
+    test('an unknown web-search kind is refused with a located error', () {
+      const config = WebSearchConfig(
+        defaultProvider: 'mystery',
+        providers: <String, WebSearchProviderConfig>{
+          'mystery': WebSearchProviderConfig(kind: 'brave'),
+        },
+      );
+
+      expect(
+        () => buildWebSearch(config),
+        throwsA(isA<SubstrateConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('webSearch.providers'), contains('mystery'),
+                contains('brave'), contains('ddg_html')))),
+      );
+    });
+
+    test('a defaultProvider naming no provider key is refused with a located '
+        'error', () {
+      const config = WebSearchConfig(
+        defaultProvider: 'absent',
+        providers: <String, WebSearchProviderConfig>{
+          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
+        },
+      );
+
+      expect(
+        () => buildWebSearch(config),
+        throwsA(isA<SubstrateConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('defaultProvider'), contains('absent')))),
+      );
+    });
+
+    test('buildWebFetch carries the config budget and user agent', () {
+      const config = WebFetchConfig(
+        defaultBudgetBytes: 4096,
+        userAgent: 'TomBrainTest/9.9',
+      );
+
+      final fetch = buildWebFetch(config) as DefaultWebFetch;
+      expect(fetch.defaultBudgetBytes, 4096);
+      expect(fetch.userAgent, 'TomBrainTest/9.9');
+      fetch.close();
     });
   });
 

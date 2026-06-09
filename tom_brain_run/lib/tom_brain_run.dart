@@ -38,7 +38,12 @@ export 'src/brain_run_config.dart' show BrainRunConfig;
 export 'src/brain_run_config_loader.dart'
     show BrainRunConfigException, BrainRunConfigLoader;
 export 'src/brain_substrate_builder.dart'
-    show NoWebFetch, NoWebSearch, buildSubstrate;
+    show
+        NoWebFetch,
+        NoWebSearch,
+        buildSubstrate,
+        buildWebFetch,
+        buildWebSearch;
 export 'src/provision_brain.dart'
     show
         BrainProcess,
