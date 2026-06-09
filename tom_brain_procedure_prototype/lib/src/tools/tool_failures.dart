@@ -18,30 +18,33 @@
 /// Wire-stable discriminator for a file-scope sandbox escape.
 const String fileScopeViolationCode = 'tool.file_scope_violation';
 
-/// Raised when a file-group tool is handed a path that resolves outside the
-/// configured file-scope root (`ToolContext.fileScopeRoot`, § 21.4).
+/// Raised when a file-group tool is handed a path that resolves outside every
+/// configured file-scope root (`ToolContext.fileScopeRoots`, § 21.4).
 ///
 /// The file sandbox is a value, not a capability: the tool re-derives a
-/// `dart:io` handle from the root string and the caller's relative path, then
-/// refuses any resolved path that is not within the root (PE-1). A `..`
-/// segment, an absolute path, or a symlink-style escape all surface here
-/// *before* any byte is read or written.
+/// `dart:io` handle from the root strings and the caller's relative path, then
+/// refuses any resolved path that is not within at least one root (PE-1). A
+/// `..` segment, an absolute path, or a symlink-style escape all surface here
+/// *before* any byte is read or written. With more than one root the path is
+/// in scope when it lands inside the *union* of the roots; the violation fires
+/// only when it escapes them all.
 final class FileScopeViolation implements Exception {
-  /// The configured file-scope root the path tried to escape.
-  final String root;
+  /// The configured file-scope roots the path escaped.
+  final List<String> roots;
 
-  /// The caller-supplied path that resolved outside [root].
+  /// The caller-supplied path that resolved outside every root.
   final String requested;
 
-  /// Builds the failure for [requested] against [root].
-  const FileScopeViolation({required this.root, required this.requested});
+  /// Builds the failure for [requested] against [roots].
+  FileScopeViolation({required List<String> roots, required this.requested})
+      : roots = List<String>.unmodifiable(roots);
 
   /// The wire-stable failure class (`tool.file_scope_violation`).
   String get code => fileScopeViolationCode;
 
   /// Human-readable detail.
   String get message =>
-      'path "$requested" escapes the file-scope root "$root"';
+      'path "$requested" escapes the file-scope roots ${roots.join(', ')}';
 
   @override
   String toString() => '$code: $message';

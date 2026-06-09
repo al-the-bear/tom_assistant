@@ -82,6 +82,7 @@ import '../primitives_native/trail_note.dart';
 import '../primitives_native/yield_primitive.dart';
 import '../bridges/tool_bridge.dart' show ToolBridge;
 import '../tools/basic_tools.dart' show registerBasicTools;
+import '../tools/substrate_tool_web_surface.dart' show SubstrateToolWebSurface;
 import '../tools/tool_context.dart' show ToolContext;
 import '../tools/tool_event.dart' show ToolNoticeSink;
 import '../tools/tool_policy_config.dart' show ToolPolicyConfig;
@@ -102,13 +103,13 @@ import 'procedure_result.dart';
 import 'procedure_run.dart';
 import 'run_cancellation.dart';
 
-/// The neutral file-scope root the per-run [ToolContext] is built over when
-/// the engine binds the tool surface. The prototype's tool-calling path never
-/// exercises the `file.*` tools (they raise no error until a model proposes
-/// one), so this is a placeholder root — matching `D4rtDcliHost`'s neutral data
-/// directory — not a configured workspace. A deployment that enables file tools
-/// supplies a real root through the (future) extension wiring.
-const String _defaultToolFileScopeRoot = '/tom-brain-engine';
+/// The neutral file-scope roots the per-run [ToolContext] is built over when a
+/// deployment configures none. A run that enables the `file.*` tools supplies a
+/// real, configured list through [ProcedureEngine.toolFileScopeRoots] (threaded
+/// from `tools.fileScope` in the run config); this single placeholder keeps the
+/// tool-calling path well-formed for the many tests that never touch a real
+/// filesystem.
+const List<String> _defaultToolFileScopeRoots = <String>['/tom-brain-engine'];
 
 /// The typed failure class a crashed run is recorded under (§ 10.4).
 const String _runtimeCrashKind = 'procedure.runtime.crash';
@@ -174,6 +175,7 @@ final class ProcedureEngine {
     required this.substrateBridge,
     this.validator = SandboxValidator.shared,
     this.extensions,
+    List<String> toolFileScopeRoots = _defaultToolFileScopeRoots,
     PreemptionState? preemptionState,
     Duration stepDeadline = defaultStepDeadline,
     DeadlineTimerFactory? deadlineTimerFactory,
@@ -186,7 +188,10 @@ final class ProcedureEngine {
     ToolAccessSink? toolAccessSink,
     ProcedureTreeSink? procedureTreeSink,
     this.memoryWriteLimits = MemoryWriteLimits.standard,
-  })  : preemptionState = preemptionState ?? PreemptionState(),
+  })  : assert(toolFileScopeRoots.isNotEmpty,
+            'toolFileScopeRoots must carry at least one root'),
+        toolFileScopeRoots = List<String>.unmodifiable(toolFileScopeRoots),
+        preemptionState = preemptionState ?? PreemptionState(),
         _stepDeadlineLimit = stepDeadline,
         _deadlineTimerFactory = deadlineTimerFactory,
         _cancellationTimerFactory = cancellationTimerFactory,
@@ -246,6 +251,14 @@ final class ProcedureEngine {
   /// reported on the run trail as a `memory_write_skipped` note, and the run
   /// continues — an answer already produced is never silenced by a later write.
   final MemoryWriteLimits memoryWriteLimits;
+
+  /// The configured file-scope roots every per-run [ToolContext] is built over
+  /// (§ 21.4). Non-empty and unmodifiable: the file tools resolve and
+  /// path-escape-check against the *union* of these roots, so a `file.*` call
+  /// may reach any configured directory but nothing outside them all. The first
+  /// root is the primary (the `file.write` target). A deployment threads its
+  /// real list here from `tools.fileScope`; tests fall back to a placeholder.
+  final List<String> toolFileScopeRoots;
 
   final Duration _stepDeadlineLimit;
   final DeadlineTimerFactory? _deadlineTimerFactory;
@@ -595,11 +608,16 @@ final class ProcedureEngine {
     // basic-tool registry under the all-allow default policy, so the prototype
     // (which boots no `BrainExtensionConfig`) still gets the shipped 15 tools.
     // The context carries *this* run's ledger so a tool's effecting calls
-    // charge the same header budget a scripted `persist` does (PE-8) and the
-    // run's memory client so memory tools route through the same surface the
-    // `mem` bridge does. `web` / `engine` surfaces are left unbound for now —
-    // a tool that needs one raises `ToolSurfaceUnavailable`, which the loop
-    // turns into an `{ok: false}` result rather than aborting the answer.
+    // charge the same header budget a scripted `persist` does (PE-8); the run's
+    // memory client so memory tools route through the same surface the `mem`
+    // bridge does; the configured file-scope roots so `file.*` reach the
+    // deployment's directories (and nothing outside them); and a web surface
+    // over the substrate **client** (never the budget-charging bridge — the one
+    // `toolCalls` unit `tool.invoke` pre-charges *is* the web call) so
+    // `web.search` / `web.fetch` work. The `engine` surface is still left
+    // unbound — a `script.run_d4rt` / `procedure.*` tool raises
+    // `ToolSurfaceUnavailable`, which the loop turns into an `{ok: false}`
+    // result rather than aborting the answer.
     final exts = extensions;
     final ToolRegistry toolRegistry;
     if (exts != null) {
@@ -632,7 +650,8 @@ final class ProcedureEngine {
       ToolContext(
         budget: ledger,
         memory: runMemoryBridge.client,
-        fileScopeRoot: _defaultToolFileScopeRoot,
+        fileScopeRoots: toolFileScopeRoots,
+        web: SubstrateToolWebSurface(substrateBridge.client),
       ),
       clock: _now,
       onEvent: (toolAccessSink == null && noticeSink == null)

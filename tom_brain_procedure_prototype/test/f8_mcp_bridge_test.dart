@@ -419,7 +419,7 @@ McpBridge _bridge({
   final context = ToolContext(
     budget: budget ?? _ledger(),
     memory: _StubMemoryClient(),
-    fileScopeRoot: '/tom-brain-engine',
+    fileScopeRoots: const <String>['/tom-brain-engine'],
   );
   return McpBridge(client, context);
 }

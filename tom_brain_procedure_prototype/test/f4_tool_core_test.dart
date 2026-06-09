@@ -97,27 +97,33 @@ void main() {
 
   group('F.4-2 ToolContext is the whole effect surface (PE-1)', () {
     test('exposes exactly the three bridges and nothing more', () {
-      final ctx = _context(fileScopeRoot: '/tmp/scope');
+      final ctx = _context(fileScopeRoots: const <String>['/tmp/scope']);
 
       expect(ctx.budget, isA<BudgetLedger>());
       expect(ctx.memory, isA<TomBrainMemoryClient>());
-      expect(ctx.fileScopeRoot, '/tmp/scope');
+      expect(ctx.fileScopeRoots, <String>['/tmp/scope']);
     });
 
-    test('fileScopeRoot is a plain String path, never a dart:io handle', () {
-      final ctx = _context(fileScopeRoot: '/tmp/scope');
+    test('fileScopeRoots is a plain list of String paths, never dart:io handles',
+        () {
+      final ctx =
+          _context(fileScopeRoots: const <String>['/tmp/scope', '/tmp/docs']);
 
       // The Verify clause: no raw dart:io / network handle leaks through the
-      // context. A String path keeps the file sandbox a value, not an open
-      // capability — full path-escape enforcement lands with the file tools
-      // (step 7), but the *handle* must never be reachable from here.
-      expect(ctx.fileScopeRoot, isA<String>());
-      expect(ctx.fileScopeRoot, isNot(isA<Directory>()));
-      expect(ctx.fileScopeRoot, isNot(isA<File>()));
+      // context. A list of String paths keeps the file sandbox a value, not an
+      // open capability — full path-escape enforcement lands with the file
+      // tools (step 7), but the *handle* must never be reachable from here.
+      expect(ctx.fileScopeRoots, isA<List<String>>());
+      expect(ctx.fileScopeRoots, <String>['/tmp/scope', '/tmp/docs']);
+      for (final root in ctx.fileScopeRoots) {
+        expect(root, isA<String>());
+        expect(root, isNot(isA<Directory>()));
+        expect(root, isNot(isA<File>()));
+      }
     });
 
     test('a tool runs using only what its context hands it', () async {
-      final ctx = _context(fileScopeRoot: '/tmp/scope');
+      final ctx = _context(fileScopeRoots: const <String>['/tmp/scope']);
       final result = await _EchoTool().run(<String, Object?>{'value': 'hi'}, ctx);
 
       expect(result, <String, Object?>{'echoed': 'hi', 'root': '/tmp/scope'});
@@ -183,14 +189,14 @@ void main() {
   });
 }
 
-ToolContext _context({required String fileScopeRoot}) => ToolContext(
+ToolContext _context({required List<String> fileScopeRoots}) => ToolContext(
       budget: BudgetLedger(ProcedureBudget(const <String, int>{'toolCalls': 12})),
       memory: _StubMemory(),
-      fileScopeRoot: fileScopeRoot,
+      fileScopeRoots: fileScopeRoots,
     );
 
 /// A trivial tool that reaches nothing past its [ToolContext]: it reads its
-/// argument and the context's file-scope root, and returns a plain map.
+/// argument and the context's primary file-scope root, and returns a plain map.
 final class _EchoTool extends BrainTool {
   @override
   String get name => 'echo';
@@ -215,7 +221,7 @@ final class _EchoTool extends BrainTool {
 
   @override
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async =>
-      <String, Object?>{'echoed': args['value'], 'root': ctx.fileScopeRoot};
+      <String, Object?>{'echoed': args['value'], 'root': ctx.fileScopeRoots.first};
 }
 
 final class _MemoryReadTool extends BrainTool {

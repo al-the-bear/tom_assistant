@@ -15,18 +15,25 @@
 //                `script.run_d4rt` tools route through (likewise optional).
 //
 // Each new surface is a *value or method-only contract*, never a raw `dart:io`
-// or network handle: the file scope is a plain `String` path, the web/engine
-// surfaces expose only their declared methods, and the todo store is in-memory
-// scratch. Holding the context still grants a tool no open capability (PE-1) —
-// it re-derives a constrained one (a path-checked file handle, a budget-gated
-// memory write) when it runs.
+// or network handle: the file scope is a plain list of `String` paths, the
+// web/engine surfaces expose only their declared methods, and the todo store
+// is in-memory scratch. Holding the context still grants a tool no open
+// capability (PE-1) — it re-derives a constrained one (a path-checked file
+// handle, a budget-gated memory write) when it runs.
+//
+// The file scope is a *list* of roots, not one path: a deployment configures
+// which directories the file tools may reach, and may add more as needed
+// (e.g. a workspace folder plus a shared docs tree). A path is in scope when
+// it resolves inside the *union* of the roots; reads search the roots in
+// order, writes target the primary (first) root, and discovery tools
+// (`grep.search` / `file.search`) span every root.
 //
 // `web` / `engine` / `vscode` are nullable because the surfaces they wrap
 // genuinely do not exist on every run (the `vscode` surface only when the
 // prototype is colocated with a VS Code extension and the merge profile is on,
 // § 21.8); a tool handed a context without the surface it needs raises
 // `ToolSurfaceUnavailable` rather than silently degrading. `budget`,
-// `memory`, and `fileScopeRoot` stay required.
+// `memory`, and `fileScopeRoots` stay required.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show TomBrainMemoryClient;
 
@@ -50,10 +57,15 @@ final class ToolContext {
   /// contract (`recall` / `persist` / `demote`), never the concrete store.
   final TomBrainMemoryClient memory;
 
-  /// The file-scope root as a path string. Not a `dart:io` handle: the file
-  /// tools resolve and path-escape-check against it; the context itself
-  /// exposes no open filesystem capability.
-  final String fileScopeRoot;
+  /// The file-scope roots as a non-empty list of path strings. Not `dart:io`
+  /// handles: the file tools resolve and path-escape-check against the *union*
+  /// of these roots; the context itself exposes no open filesystem capability.
+  ///
+  /// A path is in scope when it resolves inside at least one root. Reads search
+  /// the roots in order; writes target the primary (first) root; discovery
+  /// tools (`grep.search` / `file.search`) span every root. The first root is
+  /// the deployment's primary directory.
+  final List<String> fileScopeRoots;
 
   /// The in-process, run-scoped todo list the `todo.*` tools manage. Ephemeral
   /// and never persisted to memory; defaults to a fresh store per context.
@@ -72,16 +84,20 @@ final class ToolContext {
   /// extension (or with the merge profile off).
   final VsCodeToolSource? vscode;
 
-  /// Builds the surface. [budget], [memory], and [fileScopeRoot] are required;
+  /// Builds the surface. [budget], [memory], and [fileScopeRoots] are required;
+  /// [fileScopeRoots] must be non-empty (its first entry is the primary root).
   /// [todos] defaults to a fresh run-scoped store; [web], [engine], and
   /// [vscode] are supplied only when the run exposes tools that need them.
   ToolContext({
     required this.budget,
     required this.memory,
-    required this.fileScopeRoot,
+    required List<String> fileScopeRoots,
     TodoStore? todos,
     this.web,
     this.engine,
     this.vscode,
-  }) : todos = todos ?? TodoStore();
+  })  : assert(fileScopeRoots.isNotEmpty,
+            'fileScopeRoots must carry at least one root'),
+        fileScopeRoots = List<String>.unmodifiable(fileScopeRoots),
+        todos = todos ?? TodoStore();
 }

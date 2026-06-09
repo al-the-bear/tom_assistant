@@ -253,13 +253,13 @@ void main() {
 
     test('file.read reads a file inside the root', () async {
       File(p.join(root.path, 'note.txt')).writeAsStringSync('hello');
-      final ctx = _ctx(fileScopeRoot: root.path);
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       final read = await _run('file.read', {'path': 'note.txt'}, ctx);
       expect((read! as Map)['content'], 'hello');
     });
 
     test('file.write writes a file inside the root', () async {
-      final ctx = _ctx(fileScopeRoot: root.path);
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       await _run('file.write', {'path': 'out.txt', 'content': 'x'}, ctx);
       expect(File(p.join(root.path, 'out.txt')).readAsStringSync(), 'x');
     });
@@ -267,7 +267,7 @@ void main() {
     test('grep.search matches inside the root only', () async {
       File(p.join(root.path, 'a.txt')).writeAsStringSync('needle here');
       File(p.join(root.path, 'b.txt')).writeAsStringSync('nothing');
-      final ctx = _ctx(fileScopeRoot: root.path);
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       final found = await _run('grep.search', {'pattern': 'needle'}, ctx);
       final matches = (found! as Map)['matches'] as List;
       expect(matches, hasLength(1));
@@ -275,7 +275,7 @@ void main() {
     });
 
     test('file.read rejects a path that escapes the root', () async {
-      final ctx = _ctx(fileScopeRoot: root.path);
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       await expectLater(
         _run('file.read', {'path': '../escape.txt'}, ctx),
         throwsA(isA<FileScopeViolation>()),
@@ -283,7 +283,7 @@ void main() {
     });
 
     test('file.write rejects an absolute path outside the root', () async {
-      final ctx = _ctx(fileScopeRoot: root.path);
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       await expectLater(
         _run('file.write', {'path': '/etc/passwd', 'content': 'x'}, ctx),
         throwsA(isA<FileScopeViolation>()),
@@ -291,7 +291,7 @@ void main() {
     });
 
     test('grep.search rejects a sub-path that escapes the root', () async {
-      final ctx = _ctx(fileScopeRoot: root.path);
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       await expectLater(
         _run('grep.search', {'pattern': 'x', 'path': '../..'}, ctx),
         throwsA(isA<FileScopeViolation>()),
@@ -312,7 +312,7 @@ void main() {
       final sub = Directory(p.join(root.path, 'nested'))..createSync();
       File(p.join(sub.path, 'gamma.txt')).writeAsStringSync('g');
 
-      final ctx = _ctx(fileScopeRoot: root.path);
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       final found = await _run('file.search', {'pattern': '*.txt'}, ctx);
       final matches = ((found! as Map)['matches'] as List).cast<String>();
 
@@ -325,7 +325,7 @@ void main() {
       final sub = Directory(p.join(root.path, 'nested'))..createSync();
       File(p.join(sub.path, 'deep.txt')).writeAsStringSync('d');
 
-      final ctx = _ctx(fileScopeRoot: root.path);
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       final found = await _run(
         'file.search',
         {'pattern': '*.txt', 'recursive': false},
@@ -341,7 +341,7 @@ void main() {
       File(p.join(sub.path, 'note.txt')).writeAsStringSync('n');
       File(p.join(root.path, 'outside.txt')).writeAsStringSync('o');
 
-      final ctx = _ctx(fileScopeRoot: root.path);
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       final found = await _run(
         'file.search',
         {'pattern': '*.txt', 'path': 'docs'},
@@ -353,7 +353,7 @@ void main() {
     });
 
     test('a search in a missing sub-directory returns no matches', () async {
-      final ctx = _ctx(fileScopeRoot: root.path);
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       final found = await _run(
         'file.search',
         {'pattern': '*.txt', 'path': 'absent'},
@@ -363,9 +363,84 @@ void main() {
     });
 
     test('a sub-path that escapes the root is rejected', () async {
-      final ctx = _ctx(fileScopeRoot: root.path);
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       await expectLater(
         _run('file.search', {'pattern': '*', 'path': '../..'}, ctx),
+        throwsA(isA<FileScopeViolation>()),
+      );
+    });
+  });
+
+  group('F.7-8 file tools span a union of configured roots', () {
+    late Directory primary;
+    late Directory secondary;
+
+    setUp(() {
+      primary = Directory.systemTemp.createTempSync('f7_root_a_');
+      secondary = Directory.systemTemp.createTempSync('f7_root_b_');
+    });
+    tearDown(() {
+      primary.deleteSync(recursive: true);
+      secondary.deleteSync(recursive: true);
+    });
+
+    test('file.read finds a file that lives only in a secondary root', () async {
+      File(p.join(secondary.path, 'only_here.txt')).writeAsStringSync('found');
+      final ctx = _ctx(fileScopeRoots: <String>[primary.path, secondary.path]);
+
+      final read = await _run('file.read', {'path': 'only_here.txt'}, ctx);
+
+      expect((read! as Map)['content'], 'found');
+    });
+
+    test('file.read prefers the first root that holds the file', () async {
+      File(p.join(primary.path, 'dup.txt')).writeAsStringSync('from primary');
+      File(p.join(secondary.path, 'dup.txt')).writeAsStringSync('from secondary');
+      final ctx = _ctx(fileScopeRoots: <String>[primary.path, secondary.path]);
+
+      final read = await _run('file.read', {'path': 'dup.txt'}, ctx);
+
+      expect((read! as Map)['content'], 'from primary');
+    });
+
+    test('file.write targets the primary (first) root', () async {
+      final ctx = _ctx(fileScopeRoots: <String>[primary.path, secondary.path]);
+
+      await _run('file.write', {'path': 'out.txt', 'content': 'x'}, ctx);
+
+      expect(File(p.join(primary.path, 'out.txt')).existsSync(), isTrue);
+      expect(File(p.join(secondary.path, 'out.txt')).existsSync(), isFalse);
+    });
+
+    test('grep.search spans every root', () async {
+      File(p.join(primary.path, 'a.txt')).writeAsStringSync('needle one');
+      File(p.join(secondary.path, 'b.txt')).writeAsStringSync('needle two');
+      final ctx = _ctx(fileScopeRoots: <String>[primary.path, secondary.path]);
+
+      final found = await _run('grep.search', {'pattern': 'needle'}, ctx);
+      final files = ((found! as Map)['matches'] as List)
+          .map((m) => (m as Map)['file'])
+          .toList();
+
+      expect(files, containsAll(<String>['a.txt', 'b.txt']));
+    });
+
+    test('file.search spans every root', () async {
+      File(p.join(primary.path, 'alpha.txt')).writeAsStringSync('a');
+      File(p.join(secondary.path, 'beta.txt')).writeAsStringSync('b');
+      final ctx = _ctx(fileScopeRoots: <String>[primary.path, secondary.path]);
+
+      final found = await _run('file.search', {'pattern': '*.txt'}, ctx);
+      final matches = ((found! as Map)['matches'] as List).cast<String>();
+
+      expect(matches, containsAll(<String>['alpha.txt', 'beta.txt']));
+    });
+
+    test('a path escaping every root is still rejected', () async {
+      final ctx = _ctx(fileScopeRoots: <String>[primary.path, secondary.path]);
+
+      await expectLater(
+        _run('file.read', {'path': '../escape.txt'}, ctx),
         throwsA(isA<FileScopeViolation>()),
       );
     });
@@ -434,7 +509,7 @@ Future<Object?> _run(
 ToolContext _ctx({
   _StubMemory? memory,
   BudgetLedger? budget,
-  String? fileScopeRoot,
+  List<String>? fileScopeRoots,
   TodoStore? todos,
   ToolWebSurface? web,
   ToolEngineSurface? engine,
@@ -442,7 +517,7 @@ ToolContext _ctx({
     ToolContext(
       budget: budget ?? _uncappedLedger(),
       memory: memory ?? _StubMemory(),
-      fileScopeRoot: fileScopeRoot ?? '/tom-brain-engine',
+      fileScopeRoots: fileScopeRoots ?? const <String>['/tom-brain-engine'],
       todos: todos,
       web: web,
       engine: engine,

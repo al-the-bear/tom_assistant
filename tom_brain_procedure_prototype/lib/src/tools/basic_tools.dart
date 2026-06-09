@@ -13,9 +13,10 @@
 //     store (ephemeral, run-scoped; never persisted to memory).
 //   - file.read / write, grep.search, file.search → a `dart:io` handle (and,
 //     for `file.search`, dcli's `find` globber) re-derived from the
-//     `ToolContext.fileScopeRoot` string and path-escape-checked on every call
-//     (PE-1): a resolved path outside the root raises `FileScopeViolation`
-//     before any byte moves.
+//     `ToolContext.fileScopeRoots` list and path-escape-checked on every call
+//     (PE-1): a resolved path outside *every* root raises `FileScopeViolation`
+//     before any byte moves. Reads search the roots in order, writes target the
+//     primary (first) root, and discovery spans all roots.
 //   - web.search / fetch → the optional `ToolContext.web` surface (the
 //     substrate web client); the one `toolCalls` unit `tool.invoke`
 //     pre-charges *is* the web call, so these do not re-charge.
@@ -351,8 +352,15 @@ final class _FileReadTool extends BrainTool {
   @override
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String;
-    final resolved = _resolveWithin(ctx.fileScopeRoot, relative);
-    final content = await File(resolved).readAsString();
+    final hits = _resolveWithinRoots(ctx.fileScopeRoots, relative);
+    // Reads search the roots in order: the first root holding the file wins;
+    // if none holds it yet, fall through to the primary so the caller sees a
+    // normal "file not found" rather than a scope error.
+    final hit = hits.firstWhere(
+      (h) => File(h.path).existsSync(),
+      orElse: () => hits.first,
+    );
+    final content = await File(hit.path).readAsString();
     return <String, Object?>{'path': relative, 'content': content};
   }
 }
@@ -380,7 +388,8 @@ final class _FileWriteTool extends BrainTool {
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String;
     final content = args['content'] as String;
-    final resolved = _resolveWithin(ctx.fileScopeRoot, relative);
+    // Writes target the primary (first admitting) root — the earliest hit.
+    final resolved = _resolveWithinRoots(ctx.fileScopeRoots, relative).first.path;
     final file = await File(resolved).create(recursive: true);
     await file.writeAsString(content);
     return <String, Object?>{'path': relative, 'bytesWritten': content.length};
@@ -411,24 +420,28 @@ final class _GrepSearchTool extends BrainTool {
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final pattern = args['pattern'] as String;
     final sub = args['path'] as String? ?? '.';
-    final root = _normalizedRoot(ctx.fileScopeRoot);
-    final dir = _resolveWithin(ctx.fileScopeRoot, sub);
+    // Discovery spans every root: scan each that admits the sub-path and
+    // exists, rebasing matches onto that root. A missing dir is skipped, not an
+    // error (a not-yet-created sub-path is a legitimate query).
+    final hits = _resolveWithinRoots(ctx.fileScopeRoots, sub);
     final matches = <Map<String, Object?>>[];
-    final directory = Directory(dir);
-    if (!directory.existsSync()) {
-      return <String, Object?>{'matches': matches};
-    }
-    final entries = directory.listSync(recursive: true).whereType<File>();
-    for (final file in entries) {
-      final lines = await file.readAsLines();
-      final relative = p.relative(file.path, from: root);
-      for (var i = 0; i < lines.length; i++) {
-        if (lines[i].contains(pattern)) {
-          matches.add(<String, Object?>{
-            'file': relative,
-            'line': i + 1,
-            'text': lines[i],
-          });
+    for (final hit in hits) {
+      final directory = Directory(hit.path);
+      if (!directory.existsSync()) {
+        continue;
+      }
+      final entries = directory.listSync(recursive: true).whereType<File>();
+      for (final file in entries) {
+        final lines = await file.readAsLines();
+        final relative = p.relative(file.path, from: hit.root);
+        for (var i = 0; i < lines.length; i++) {
+          if (lines[i].contains(pattern)) {
+            matches.add(<String, Object?>{
+              'file': relative,
+              'line': i + 1,
+              'text': lines[i],
+            });
+          }
         }
       }
     }
@@ -465,21 +478,25 @@ final class _FileSearchTool extends BrainTool {
     final sub = args['path'] as String? ?? '.';
     final recursive = args['recursive'] as bool? ?? true;
     final caseSensitive = args['caseSensitive'] as bool? ?? false;
-    final root = _normalizedRoot(ctx.fileScopeRoot);
-    final dir = _resolveWithin(ctx.fileScopeRoot, sub);
-    // A missing search directory is an empty result, mirroring grep.search —
-    // not an error: a not-yet-created sub-path is a legitimate query.
-    if (!Directory(dir).existsSync()) {
-      return <String, Object?>{'matches': const <String>[]};
+    // Discovery spans every root that admits the sub-path. A missing search
+    // directory is skipped (empty result), mirroring grep.search — not an
+    // error: a not-yet-created sub-path is a legitimate query.
+    final hits = _resolveWithinRoots(ctx.fileScopeRoots, sub);
+    final matches = <String>[];
+    for (final hit in hits) {
+      if (!Directory(hit.path).existsSync()) {
+        continue;
+      }
+      // dcli `find` returns absolute paths; re-base each onto its root so the
+      // caller only ever sees containment-checked relative paths.
+      matches.addAll(find(
+        pattern,
+        workingDirectory: hit.path,
+        recursive: recursive,
+        caseSensitive: caseSensitive,
+      ).toList().map((abs) => p.relative(abs, from: hit.root)));
     }
-    // dcli `find` returns absolute paths; re-base each onto the scope root so
-    // the caller only ever sees containment-checked relative paths.
-    final matches = find(
-      pattern,
-      workingDirectory: dir,
-      recursive: recursive,
-      caseSensitive: caseSensitive,
-    ).toList().map((abs) => p.relative(abs, from: root)).toList()..sort();
+    matches.sort();
     return <String, Object?>{'matches': matches};
   }
 }
@@ -663,20 +680,36 @@ Map<String, Object?> _nodeToMap(Node node) => <String, Object?>{
 /// The absolute, normalised form of [root].
 String _normalizedRoot(String root) => p.normalize(p.absolute(root));
 
-/// Resolves [relative] against [root] and refuses any path that escapes it.
+/// A root that admits a resolved path, paired with that resolved path.
 ///
-/// The file-scope sandbox is enforced here: a `..` segment, an absolute path,
-/// or any other escape produces a resolved path outside the root, which raises
-/// [FileScopeViolation] before the caller touches the filesystem (PE-1).
-String _resolveWithin(String root, String relative) {
-  final normalizedRoot = _normalizedRoot(root);
-  final candidate = p.normalize(p.join(normalizedRoot, relative));
-  final escapes =
-      candidate != normalizedRoot && !p.isWithin(normalizedRoot, candidate);
-  if (escapes) {
-    throw FileScopeViolation(root: root, requested: relative);
+/// [root] is the normalised root (so callers can rebase matches back onto it);
+/// [path] is the resolved, containment-checked absolute path under that root.
+typedef _ScopeHit = ({String root, String path});
+
+/// Resolves [relative] against every configured root, returning one hit per
+/// root whose bounds the resolved path stays within (PE-1).
+///
+/// The file-scope sandbox is a *union* of roots: a `..` segment, an absolute
+/// path, or any other escape produces a path outside a given root, which is
+/// dropped for that root. [FileScopeViolation] is raised only when the path
+/// escapes *every* root — before the caller touches the filesystem. Hits keep
+/// the roots' configured order, so the first hit is the earliest-priority root
+/// that admits the path (the write target, the first read candidate).
+List<_ScopeHit> _resolveWithinRoots(List<String> roots, String relative) {
+  final hits = <_ScopeHit>[];
+  for (final root in roots) {
+    final normalizedRoot = _normalizedRoot(root);
+    final candidate = p.normalize(p.join(normalizedRoot, relative));
+    final within =
+        candidate == normalizedRoot || p.isWithin(normalizedRoot, candidate);
+    if (within) {
+      hits.add((root: normalizedRoot, path: candidate));
+    }
   }
-  return candidate;
+  if (hits.isEmpty) {
+    throw FileScopeViolation(roots: roots, requested: relative);
+  }
+  return hits;
 }
 
 /// Whether [value] is JSON-serialisable (the `script.run_d4rt` result rule).
