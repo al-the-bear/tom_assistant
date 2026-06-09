@@ -236,14 +236,18 @@ void main() {
           reason: 'the thinking branch the router can select must be present');
     });
 
-    // The library-shape table: the four request-handling sugar verbs map to
-    // `<verb>_v1` clear-error stubs (Todo 4 / G-PR6) the reduced library now
-    // ships. Each resolves cleanly to a version-1 procedure declaring exactly
-    // `requires: [notImplemented]`; the throw-at-run (`ProcedureNotImplemented`,
-    // never `ProcedureNotFound`) is proven through the engine in
-    // `g_pr_stub_verbs_and_tool_surface_test.dart`. This door confirms only the
-    // library shape: the target is present and validatable.
-    for (final verb in const <String>['plan', 'create', 'critique', 'decide']) {
+    // The library-shape table: the two not-yet-real request-handling sugar
+    // verbs map to `<verb>_v1` clear-error stubs (Todo 4 / G-PR6) the reduced
+    // library ships. Each resolves cleanly to a version-1 procedure declaring
+    // exactly `requires: [notImplemented]`; the throw-at-run
+    // (`ProcedureNotImplemented`, never `ProcedureNotFound`) is proven through
+    // the engine in `g_pr_stub_verbs_and_tool_surface_test.dart`. This door
+    // confirms only the library shape: the target is present and validatable.
+    // `create` is no longer here — `create_v1` ships as a real creation loop
+    // (Todo 9). `plan` is no longer here either — `plan_v1` ships as the real
+    // planning loop (Todo 8); both are covered separately below and by
+    // `f_create_loop_test.dart` / `plan_v1_test.dart`.
+    for (final verb in const <String>['critique', 'decide']) {
       test('$verb resolves to a shipped ${verb}_v1 clear-error stub', () {
         final targetId = sugarAliasProcedureIds[verb]!;
         expect(targetId, '${verb}_v1');
@@ -256,5 +260,32 @@ void main() {
                 'primitive that builds the § 5.2.1 message');
       });
     }
+
+    test('create_v1 resolves to a shipped real creation loop, not a stub', () {
+      final targetId = sugarAliasProcedureIds['create']!;
+      expect(targetId, 'create_v1');
+      expect(library.knows(targetId), isTrue);
+      final create = library.resolve(targetId);
+      expect(create.header.version, 1);
+      // The real loop touches the creation primitive set — never the
+      // `notImplemented` clear-error primitive (Todo 9).
+      expect(create.header.requires, isNot(contains('notImplemented')),
+          reason: 'create_v1 is the real creation loop, not a clear-error stub');
+    });
+
+    test('plan_v1 resolves to a shipped real planning loop, not a stub', () {
+      final targetId = sugarAliasProcedureIds['plan']!;
+      expect(targetId, 'plan_v1');
+      expect(library.knows(targetId), isTrue);
+      final plan = library.resolve(targetId);
+      expect(plan.header.version, 1);
+      // The real loop touches the planning primitive set (recall / llm / embed
+      // / persist / edge / note) — never the `notImplemented` clear-error
+      // primitive (Todo 8).
+      expect(plan.header.requires, isNot(contains('notImplemented')),
+          reason: 'plan_v1 is the real planning loop, not a clear-error stub');
+      expect(plan.header.requires.toSet(),
+          <String>{'recall', 'llm', 'embed', 'persist', 'edge', 'note'});
+    });
   });
 }

@@ -4,8 +4,8 @@
 //
 // What this suite locks (the Todo-4 "done when"):
 //
-//   G-PR6 — each clear-error stub (`plan_v1` / `create_v1` / `critique_v1` /
-//           `decide_v1`):
+//   G-PR6 — each clear-error stub (`critique_v1` / `decide_v1` — `create_v1`
+//           and `plan_v1` are excluded: they ship as real loops, Todo 9 / 8):
 //             • RESOLVES from `scripts/system/` with its `<verb>_v1` v1 header
 //               and a `requires: [notImplemented]` declaration;
 //             • VALIDATES — passes the strict `ContractValidator` (entry-point
@@ -26,12 +26,14 @@
 //               nested stub's throw is swallowed into a failed result on the
 //               sugar/tool path — the typed signal lives on the nested run's
 //               trail, top-level invoke is where it reaches `outcome.error`);
-//             • the four explicit verb tools (`procedure.plan` / `create` /
-//               `critique` / `decide`) are registered and route to `<verb>_v1`.
+//             • the explicit verb tools (`procedure.plan` / `critique` /
+//               `decide`) are registered and route to `<verb>_v1`.
 //
 // The verbs reachable from both an answering script and a free-time/dreaming
-// procedure are the same five sugar verbs; this suite proves the four
-// not-yet-real ones fail loudly and identically wherever they are reached.
+// procedure are the same five sugar verbs; this suite proves the two
+// not-yet-real ones (`critique` / `decide`) fail loudly and identically
+// wherever they are reached (`create` and `plan` now resolve to real loops —
+// see `f_create_loop_test.dart` and `plan_v1_test.dart`).
 
 import 'dart:async';
 import 'dart:io';
@@ -53,12 +55,13 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 const String _toolLibrary =
     'package:tom_brain_procedure/src/bridges/tool_bridge.dart';
 
-/// The four clear-error stub verbs, each paired with the loop word its message
+/// The clear-error stub verbs, each paired with the loop word its message
 /// names (§ 5.2.1: `{verb}_v1 is a stub — implement the {kind} loop before
-/// calling {verb}()`).
+/// calling {verb}()`). `create` is excluded: `create_v1` ships as a real
+/// creation loop (Todo 9), proven in `f_create_loop_test.dart`. `plan` is
+/// excluded: `plan_v1` ships as the real planning loop (Todo 8), proven in
+/// `plan_v1_test.dart`.
 const Map<String, String> _stubVerbKinds = <String, String>{
-  'plan': 'planning',
-  'create': 'creation',
   'critique': 'critique',
   'decide': 'decision',
 };
@@ -190,11 +193,11 @@ Future<Object?> run(inputs) async {
 import '$_toolLibrary';
 
 Future<Object?> run(inputs) async {
-  return await tool.invoke('procedure.run', {'id': 'plan_v1'});
+  return await tool.invoke('procedure.run', {'id': 'decide_v1'});
 }
 ''',
         ),
-        await loadSystem('plan_v1'),
+        await loadSystem('decide_v1'),
       ]);
 
       final outcome = await engine
@@ -209,8 +212,9 @@ Future<Object?> run(inputs) async {
     });
   });
 
-  group('G-PR7-2 procedure.list (bound surface) lists the shipped stubs', () {
-    test('the four stub ids surface through the tool', () async {
+  group('G-PR7-2 procedure.list (bound surface) lists the shipped procedures',
+      () {
+    test('the shipped procedure ids surface through the tool', () async {
       final engine = engineFor(<LoadedProcedure>[
         _procedure(
           'caller_v1',
@@ -222,6 +226,9 @@ Future<Object?> run(inputs) async {
 }
 ''',
         ),
+        // plan_v1 is the real planning loop now, but still a listable shipped
+        // procedure; the two remaining stubs round out the set.
+        await loadSystem('plan_v1'),
         for (final verb in _stubVerbKinds.keys) await loadSystem('${verb}_v1'),
       ]);
 
@@ -237,14 +244,14 @@ Future<Object?> run(inputs) async {
           .toSet();
       expect(
         procedures,
-        containsAll(<String>['plan_v1', 'create_v1', 'critique_v1', 'decide_v1']),
+        containsAll(<String>['plan_v1', 'critique_v1', 'decide_v1']),
       );
     });
   });
 
   group('G-PR7-3 the explicit verb tools are registered and route to <verb>_v1',
       () {
-    test('procedure.plan / create / critique / decide register under the '
+    test('procedure.plan / critique / decide register under the '
         'procedure group', () {
       final registry = ToolRegistry();
       registerBasicTools(registry);
@@ -256,11 +263,11 @@ Future<Object?> run(inputs) async {
       }
     });
 
-    test('procedure.plan routes to plan_v1 through the engine surface',
+    test('procedure.decide routes to decide_v1 through the engine surface',
         () async {
-      // Through the real engine: invoking procedure.plan reaches the plan_v1
-      // stub, which fails loudly — the explicit tool is a thin alias for
-      // procedure.run with the id fixed to plan_v1.
+      // Through the real engine: invoking procedure.decide reaches the
+      // decide_v1 stub, which fails loudly — the explicit tool is a thin alias
+      // for procedure.run with the id fixed to decide_v1.
       final engine = engineFor(<LoadedProcedure>[
         _procedure(
           'caller_v1',
@@ -268,11 +275,11 @@ Future<Object?> run(inputs) async {
 import '$_toolLibrary';
 
 Future<Object?> run(inputs) async {
-  return await tool.invoke('procedure.plan', {});
+  return await tool.invoke('procedure.decide', {});
 }
 ''',
         ),
-        await loadSystem('plan_v1'),
+        await loadSystem('decide_v1'),
       ]);
 
       final outcome = await engine
@@ -281,8 +288,8 @@ Future<Object?> run(inputs) async {
 
       expect(outcome.result!.output<bool>('ok'), isTrue);
       final result = outcome.result!.output<Map<Object?, Object?>>('result')!;
-      // plan_v1 is still a clear-error stub: the run fails (the throw is
-      // swallowed on the tool path), proving the route reached plan_v1.
+      // decide_v1 is still a clear-error stub: the run fails (the throw is
+      // swallowed on the tool path), proving the route reached decide_v1.
       expect(result['status'], 'failed');
     });
   });

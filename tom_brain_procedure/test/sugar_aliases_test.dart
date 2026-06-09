@@ -4,9 +4,11 @@
 // Plan step C.40 (verbatim): "Implement the sugar `think(…)`, `plan(…)`,
 // `create(…)`, `critique(…)`, `decide(…)` as bridged aliases over
 // `runProcedure('<name>_v1', …)`." As of Todo 4 (§ 5.2.1) all five `<verb>_v1`
-// targets now ship: `think_v1` is a no-op stub; `plan_v1` / `create_v1` /
-// `critique_v1` / `decide_v1` are clear-error stubs that throw the typed
-// `ProcedureNotImplemented` until their real loops land (plan Todos 8–9).
+// targets now ship: `think_v1` is a no-op stub; `plan_v1` / `critique_v1` /
+// `decide_v1` are clear-error stubs that throw the typed
+// `ProcedureNotImplemented` until their real loops land (plan Todo 8); and
+// `create_v1` ships as a real creation loop (Todo 9, see
+// `f_create_loop_test.dart`).
 //
 // These tests pin the four facts that make the sugar correct:
 //
@@ -15,7 +17,7 @@
 //   2. THINK     — `think(inputs)` from a script resolves to `think_v1`
 //                  and runs the no-op stub; the stub's result threads back
 //                  to the caller unchanged, and both runs are recorded.
-//   3. STUB-FAIL — `plan` / `create` / `critique` / `decide` resolve to their
+//   3. STUB-FAIL — `plan` / `critique` / `decide` resolve to their
 //                  shipped clear-error stub (no longer `ProcedureNotFound`)
 //                  and the nested stub fails loudly: the caller's run closes
 //                  `errored`, both runs are recorded (the stub *ran*), and the
@@ -163,7 +165,9 @@ Future<Object?> run(inputs) async {
       return resolver.resolve(id);
     }
 
-    for (final verb in const <String>['plan', 'create', 'critique', 'decide']) {
+    // `plan` is excluded: `plan_v1` ships as the real planning loop (Todo 8,
+    // `plan_v1_test.dart`), so its sugar alias no longer resolves to a stub.
+    for (final verb in const <String>['critique', 'decide']) {
       test('$verb resolves to the shipped ${verb}_v1 stub and closes errored',
           () async {
         final engine = engineFor(<LoadedProcedure>[
