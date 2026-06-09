@@ -103,6 +103,13 @@ export 'file_backed_role_loader.dart';
 // the twelve-role thinking + retrieval roster. Adding the roles is
 // config-only — no router / registry / template engine change.
 export 'retrieval/retrieval_barrel.dart';
+// Todo 7 (G-PR2/G-PR3) — the three procedure-subsystem roles
+// (`procedure_specification.md` § 8.2 / § 10.3): `procedure_author`,
+// `procedure_critic`, `procedure_selector`. A separate, optional roster (like
+// the Extension-H retrieval roster): `bootstrapRoleRegistry()` still returns
+// exactly the six core roles; `bootstrapRoleRegistryWithProcedure()` composes
+// the nine-role thinking + procedure roster.
+export 'procedure/procedure_barrel.dart';
 export 'role_budget_defaults.dart';
 export 'role_registry.dart';
 export 'role_template.dart';
