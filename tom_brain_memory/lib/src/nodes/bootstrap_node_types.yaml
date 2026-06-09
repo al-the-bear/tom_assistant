@@ -249,8 +249,12 @@ types:
       demote_from_indexes: true
     # `produced_by` is OUTGOING: a Plan is an output of a planning run
     # (EdgeType.producedBy: "output → producing run"; Q-D.39.2).
+    # `superseded_by` is self-superseding (Plan→Plan): a revised plan is a new
+    # Plan node and the predecessor emits `superseded_by` to it, so the label
+    # must appear on BOTH sides (hard principle 6 — the original is retained,
+    # never overwritten; retrieval prefers the tip with no outgoing edge).
     allowed_outgoing: [targets, mentions, superseded_by, produced_by]
-    allowed_incoming: [part_of, satisfied_by, derived_from, mentions]
+    allowed_incoming: [part_of, satisfied_by, derived_from, mentions, superseded_by]
 
   # 10. PlanStep — a node of a plan graph.
   - name: PlanStep
@@ -269,8 +273,10 @@ types:
       demote_from_indexes: true
     # `depends_on` is modelled as a `part_of` edge with `attrs.kind=depends_on`
     # (per spec § 4.1 footnote); no new edge label.
-    allowed_outgoing: [part_of, mentions]
-    allowed_incoming: [part_of, satisfied_by, mentions]
+    # `superseded_by` is self-superseding (PlanStep→PlanStep): a revised step is
+    # a new PlanStep node, so the label appears on BOTH sides (hard principle 6).
+    allowed_outgoing: [part_of, mentions, superseded_by]
+    allowed_incoming: [part_of, satisfied_by, mentions, superseded_by]
 
   # 11. Artifact — a created thing (file, snippet, design, document).
   - name: Artifact
@@ -311,8 +317,11 @@ types:
     # authoring run (EdgeType.producedBy: "output → producing run";
     # Q-D.39.2). `authored_by` (also outgoing) records the author; the two
     # are distinct edges.
+    # `superseded_by` is self-superseding (Procedure→Procedure): a new revision
+    # is a new Procedure node, so the label appears on BOTH sides (hard
+    # principle 6 — prior revisions are retained as a chain, never overwritten).
     allowed_outgoing: [superseded_by, authored_by, mentions, produced_by]
-    allowed_incoming: [satisfied_by, motivates, mentions, derived_from]
+    allowed_incoming: [satisfied_by, motivates, mentions, derived_from, superseded_by]
 
   # 13. ProcedureRun — one execution of a procedure.
   # Field shape mirrors what the sole producer — the procedure prototype's
