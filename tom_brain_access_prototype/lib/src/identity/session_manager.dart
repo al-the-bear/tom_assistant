@@ -70,6 +70,7 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
     show SelectionSettings;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
+import 'history_markdown.dart';
 import 'history_store.dart';
 import 'memory_profile_selector.dart';
 
@@ -167,6 +168,17 @@ class _SessionEntry {
   final ConversationHistory history;
   DateTime lastActivityAt;
 
+  /// The principal this session belongs to, or `null` while unknown (a session
+  /// the Telegram registry adopted via [SessionManager.ensureSession] before any
+  /// [SessionManager.resolve] turn has attributed it). Filled in on the first
+  /// resolve, so the readable-markdown mirror can file the session under its
+  /// principal (access spec § 6.5 / § 21.10).
+  String? principalId;
+
+  /// The channel this session belongs to, or `null` while unknown (see
+  /// [principalId]). Filled in on the first resolve.
+  AccessChannel? channel;
+
   /// The confidently pinned memory profile, or `null` while the conversation is
   /// still on the default (never selected, or last selection inconclusive).
   String? pinnedProfile;
@@ -187,6 +199,8 @@ class _SessionEntry {
   _SessionEntry({
     required this.history,
     required this.lastActivityAt,
+    this.principalId,
+    this.channel,
     this.pinnedProfile,
     this.everSelected = false,
     this.selectionInconclusive = false,
@@ -244,6 +258,8 @@ final class SessionHistoriesSnapshot {
                 (value['lastActivityAt'] as String?) ?? '',
               ) ??
               DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+          principalId: value['principalId'] as String?,
+          channel: _channelFromWire(value['channel'] as String?),
           pinnedProfile: value['pinnedProfile'] as String?,
           everSelected: (value['everSelected'] as bool?) ?? false,
           selectionInconclusive:
@@ -277,6 +293,9 @@ final class SessionHistoriesSnapshot {
             e.key: <String, Object?>{
               'history': e.value.history.toJson(),
               'lastActivityAt': e.value.lastActivityAt.toIso8601String(),
+              if (e.value.principalId != null)
+                'principalId': e.value.principalId,
+              if (e.value.channel != null) 'channel': e.value.channel!.wireName,
               if (e.value.pinnedProfile != null)
                 'pinnedProfile': e.value.pinnedProfile,
               'everSelected': e.value.everSelected,
@@ -341,6 +360,13 @@ final class SessionManager {
   /// "nothing is ever lost" restart contract (umbrella Hard principle 6).
   final HistoryStore? _store;
 
+  /// The readable-markdown mirror sink. [persist] renders each live history into
+  /// per-principal / per-session `.raw.md` + `.memory.md` files through it, so an
+  /// operator can read what the brain remembers (access spec § 21.10). Defaults
+  /// to a no-op ([NullHistoryMarkdownSink]) — the mirror is opt-in; the JSON
+  /// snapshot remains the source of truth.
+  final HistoryMarkdownSink _markdownSink;
+
   /// Builds a session manager.
   ///
   /// [sizing] (default [HistorySizing.standard]) shapes each history's window
@@ -363,11 +389,13 @@ final class SessionManager {
     MemoryProfileSelector? profileSelector,
     SelectionSettings selection = const SelectionSettings(),
     HistoryStore? historyStore,
+    HistoryMarkdownSink markdownSink = const NullHistoryMarkdownSink(),
   })  : _mint = sessionIdMinter ?? _defaultMinter(),
         _now = now ?? systemClock,
         _profileSelector = profileSelector,
         _selection = selection,
-        _store = historyStore {
+        _store = historyStore,
+        _markdownSink = markdownSink {
     final store = _store;
     if (store != null) {
       final document = store.load();
@@ -441,6 +469,8 @@ final class SessionManager {
       final entry = _sessions[echoed]!;
       entry.history.append(turn);
       entry.lastActivityAt = now;
+      entry.principalId = identity.principalId;
+      entry.channel = channel;
       global.append(turn);
       return SessionResolution(
         session: Session(sessionId: echoed, conversationId: envelope.conversationId),
@@ -458,6 +488,8 @@ final class SessionManager {
     _sessions[mintedId] = _SessionEntry(
       history: ConversationHistory(sizing: sizing),
       lastActivityAt: now,
+      principalId: identity.principalId,
+      channel: channel,
     );
     global.append(turn);
     return SessionResolution(
@@ -706,8 +738,47 @@ final class SessionManager {
   /// simple (no incremental-write bookkeeping to get wrong).
   void persist() {
     final store = _store;
-    if (store == null) return;
-    store.save(snapshot().toJson());
+    if (store != null) {
+      store.save(snapshot().toJson());
+    }
+    // The readable mirror runs independently of the JSON store: a deployment may
+    // want human-readable history without the opaque snapshot, or both. The
+    // records are a lazy iterable, so the default no-op sink computes nothing.
+    _markdownSink.write(_readableHistoryRecords());
+  }
+
+  /// Lazily builds one [HistoryMarkdownRecord] per live history — the global
+  /// "all prompts" record for each (principal, channel) and each dedicated
+  /// session — filed under per-principal / per-session path segments
+  /// (access spec § 21.10). A session whose principal is not yet known (adopted
+  /// but never resolved) is filed under `_unattached` rather than dropped.
+  Iterable<HistoryMarkdownRecord> _readableHistoryRecords() sync* {
+    for (final e in _globals.entries) {
+      final (principalId, channel) = e.key;
+      yield HistoryMarkdownRecord(
+        pathSegments: [principalId, channel.wireName, 'global'],
+        title: '$principalId / ${channel.wireName} / global',
+        history: e.value,
+      );
+    }
+    for (final e in _sessions.entries) {
+      final entry = e.value;
+      final principalId = entry.principalId;
+      final channel = entry.channel;
+      if (principalId != null && channel != null) {
+        yield HistoryMarkdownRecord(
+          pathSegments: [principalId, channel.wireName, 'sessions', e.key],
+          title: '$principalId / ${channel.wireName} / session ${e.key}',
+          history: entry.history,
+        );
+      } else {
+        yield HistoryMarkdownRecord(
+          pathSegments: ['_unattached', 'sessions', e.key],
+          title: 'unattached / session ${e.key}',
+          history: entry.history,
+        );
+      }
+    }
   }
 
   /// Rehydrates this manager from [snapshot], replacing any current state. The
@@ -733,6 +804,8 @@ final class SessionManager {
   static _SessionEntry _copyEntry(_SessionEntry e) => _SessionEntry(
         history: _copyHistory(e.history),
         lastActivityAt: e.lastActivityAt,
+        principalId: e.principalId,
+        channel: e.channel,
         pinnedProfile: e.pinnedProfile,
         everSelected: e.everSelected,
         selectionInconclusive: e.selectionInconclusive,

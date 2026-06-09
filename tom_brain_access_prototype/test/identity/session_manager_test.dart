@@ -54,6 +54,29 @@ SessionIdMinter _counterMinter() {
 List<String> _prompts(ConversationHistory? h) =>
     h == null ? const [] : [for (final t in h.durableRecord) t.userPrompt];
 
+/// A [HistoryMarkdownSink] that records, rather than writes, the records it is
+/// handed — so a test can assert the per-principal/per-session path segments and
+/// the rendered content the manager would write to disk.
+final class _RecordingMarkdownSink implements HistoryMarkdownSink {
+  final List<HistoryMarkdownRecord> records = [];
+
+  @override
+  void write(Iterable<HistoryMarkdownRecord> records) =>
+      this.records.addAll(records);
+
+  /// The record whose path segments are exactly [segments], or `null`.
+  HistoryMarkdownRecord? at(List<String> segments) {
+    for (final r in records) {
+      if (r.pathSegments.length == segments.length &&
+          List.generate(segments.length, (i) => r.pathSegments[i] == segments[i])
+              .every((m) => m)) {
+        return r;
+      }
+    }
+    return null;
+  }
+}
+
 void main() {
   group('AccessChannel — channel discriminator', () {
     test('wire names match the E.24 channel strings', () {
@@ -236,6 +259,75 @@ void main() {
       final global =
           manager.peekGlobal(principalId: 'p1', channel: AccessChannel.openai);
       expect(global!.durableRecord.single.brainAnswer, 'hi there');
+    });
+  });
+
+  group('persist — readable markdown mirror (§ 21.10, "make it readable")', () {
+    test('emits a global file and a per-session file under principal/channel '
+        'folders, with the answer rendered', () {
+      final sink = _RecordingMarkdownSink();
+      final manager = SessionManager(
+        sessionIdMinter: _counterMinter(),
+        historyStore: MapHistoryStore(),
+        markdownSink: sink,
+      );
+
+      // Turn 1: sessionless → mints 'sess-0', answers from the global.
+      final first = manager.resolve(
+        identity: _identity('owner'),
+        channel: AccessChannel.telegram,
+        envelope: _inbound(text: 'My name is Alexis.'),
+      );
+      first.history.amendLastTurnAnswer('Nice to meet you, Alexis!');
+      manager.backfillGlobalAnswer(
+        identity: _identity('owner'),
+        channel: AccessChannel.telegram,
+        resolution: first,
+      );
+
+      // Turn 2: echo the minted id → answers from the dedicated session.
+      final second = manager.resolve(
+        identity: _identity('owner'),
+        channel: AccessChannel.telegram,
+        envelope: _inbound(text: 'What is my name?', sessionId: 'sess-0'),
+      );
+      second.history.amendLastTurnAnswer('Your name is Alexis.');
+      manager.backfillGlobalAnswer(
+        identity: _identity('owner'),
+        channel: AccessChannel.telegram,
+        resolution: second,
+      );
+
+      manager.persist();
+
+      final global = sink.at(['owner', 'telegram', 'global']);
+      expect(global, isNotNull,
+          reason: 'the global "all prompts" record must be mirrored');
+      final globalRaw =
+          renderConversationRaw(global!.history, title: global.title);
+      expect(globalRaw, contains('My name is Alexis.'));
+      expect(globalRaw, contains('Nice to meet you, Alexis!'));
+      expect(globalRaw, contains('Your name is Alexis.'));
+
+      // The dedicated session is filed under the same principal/channel, which
+      // is only possible if the manager tracks the session's principal.
+      final session = sink.at(['owner', 'telegram', 'sessions', 'sess-0']);
+      expect(session, isNotNull,
+          reason: 'the dedicated session must be filed under its principal');
+      final sessionRaw =
+          renderConversationRaw(session!.history, title: session.title);
+      expect(sessionRaw, contains('What is my name?'));
+      expect(sessionRaw, contains('Your name is Alexis.'));
+    });
+
+    test('persist without a markdown sink does not throw', () {
+      final manager = SessionManager(historyStore: MapHistoryStore());
+      manager.resolve(
+        identity: _identity('p'),
+        channel: AccessChannel.openai,
+        envelope: _inbound(text: 'hi'),
+      );
+      expect(manager.persist, returnsNormally);
     });
   });
 

@@ -71,6 +71,8 @@ import '../edge_security/edge_security.dart'
         EdgeStateStore,
         JsonFileEdgeStateStore,
         MapEdgeStateStore;
+import '../identity/history_markdown.dart'
+    show DirectoryHistoryMarkdownSink, HistoryMarkdownSink;
 import '../identity/history_store.dart'
     show HistoryStore, JsonFileHistoryStore;
 import '../identity/telegram_session_registry.dart'
@@ -559,6 +561,16 @@ BrainAccessConfig _toBrainAccessConfig(
       ? null
       : JsonFileHistoryStore(_edgeStatePath(historyDir, _historiesFile));
 
+  // The readable-markdown mirror lives beside the JSON snapshot, under a
+  // `readable/` subfolder of the history directory, so an operator can read the
+  // per-principal / per-session raw turns and compacted memory (§ 21.10). `null`
+  // when no history directory is configured (no durable history to mirror).
+  final HistoryMarkdownSink? markdownSink = historyDir == null
+      ? null
+      : DirectoryHistoryMarkdownSink(
+          _edgeStatePath(historyDir, _readableHistoryDir),
+        );
+
   return BrainAccessConfig(
     rateLimitPolicy: config.rateLimitPolicy,
     dailyQuotaPolicy: config.dailyQuotaPolicy,
@@ -574,6 +586,7 @@ BrainAccessConfig _toBrainAccessConfig(
     rateLimitStore: rateLimitStore,
     quotaStore: quotaStore,
     historyStore: historyStore,
+    markdownSink: markdownSink,
     incomingTrailSink: incomingTrailSink,
   );
 }
@@ -585,6 +598,10 @@ const String _quotaStateFile = 'quota_state.json';
 /// The conversation-histories snapshot file name under
 /// [AccessConfig.historyDirectory] (§ 21.10).
 const String _historiesFile = 'histories.json';
+
+/// The subfolder of [AccessConfig.historyDirectory] holding the readable
+/// markdown mirror of the histories (§ 21.10; "make the history readable").
+const String _readableHistoryDir = 'readable';
 
 /// The Telegram per-user session registry file (§ 6.5). Lives under
 /// [telegramSessionStoreDirectory] — beside the edge limiters when an
