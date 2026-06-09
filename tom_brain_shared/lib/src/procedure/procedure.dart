@@ -16,3 +16,12 @@
 
 export 'procedure_not_implemented.dart'
     show ProcedureNotImplemented, procedureNotImplementedCode;
+
+// Todo 7 — the procedure lifecycle vocabulary. `ProcedureStatus` is the closed
+// stage alphabet (authored → draft → active → preferred → demoted) with the
+// forward-only + demotion transition rule; `CapabilitySet` is the `requires`-
+// name set with the overlap measure the selector re-rank scores on. Both are
+// cross-component (memory stores them, the selector ranks on them, the
+// authoring loop stamps them), so they live in shared (spec § 14).
+export 'capability_set.dart' show CapabilitySet;
+export 'procedure_status.dart' show ProcedureStatus;

@@ -93,8 +93,19 @@ export 'src/version/version.dart' show BrainVersion;
 // substrate trail render) references it without depending on the procedure
 // package. `ProcedureNotFound` (resolver miss, pre-run) stays in
 // `tom_brain_procedure`.
+//
+// Todo 7 adds the lifecycle vocabulary: `ProcedureStatus` (the closed stage
+// alphabet authored → draft → active → preferred → demoted with the forward-
+// only + demotion transition rule) and `CapabilitySet` (the `requires`-name set
+// with the selector's overlap measure). Both are cross-component value types
+// (memory stores them, the selector ranks on them, the authoring loop stamps
+// them), so they belong to the shared vocabulary (procedure spec § 14).
 export 'src/procedure/procedure.dart'
-    show ProcedureNotImplemented, procedureNotImplementedCode;
+    show
+        CapabilitySet,
+        ProcedureNotImplemented,
+        ProcedureStatus,
+        procedureNotImplementedCode;
 
 // A.17 — anchor/ module: `AssistantDedicationAnchor` is the framing
 // every internal Tom Brain prompt opens with (overview's Postulate 3).
