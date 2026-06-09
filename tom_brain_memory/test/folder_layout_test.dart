@@ -59,6 +59,7 @@ const _requiredSubfolders = <String>[
   'migrations',
   'nodes',
   'observability', // A.84
+  'procedures', // Todo 7 (G-PR4/G-PR5) — typed procedure queries + metrics writer
   'profiles', // H.27 — memory profiles (registry + open(profile))
   'retrieval',
   'stacks',
@@ -75,9 +76,9 @@ void main() {
       // the contract. A.23 seeded 12; A.68 added `budget` for 13;
       // A.69 added `cognitive_agents` for 14; A.84 added
       // `observability` for 15; Q-A.87.8 added `sync` for 16;
-      // H.27 added `profiles` for 17.
-      expect(_requiredSubfolders, hasLength(17));
-      expect(_requiredSubfolders.toSet(), hasLength(17),
+      // H.27 added `profiles` for 17; Todo 7 added `procedures` for 18.
+      expect(_requiredSubfolders, hasLength(18));
+      expect(_requiredSubfolders.toSet(), hasLength(18),
           reason: 'subfolder list must be free of duplicates');
     });
 
