@@ -154,6 +154,69 @@ void main() {
     expect(find.byIcon(Icons.code), findsNothing);
   });
 
+  testWidgets('tapping a primitive with a resultId invokes onOpenNode (PT-7.1)',
+      (tester) async {
+    String? opened;
+    await _pump(
+      tester,
+      RunTreeView(
+        run: const ProcedureRun(
+          procedureId: 'p',
+          runId: 'r',
+          turnId: null,
+          status: 'accepted',
+          elapsedMs: 10,
+          entryCount: 1,
+          nodes: <RunNode>[
+            PrimitiveCallNode(
+                primitive: 'persist', resultId: 'n_fixtureA1', recall: null),
+          ],
+        ),
+        onOpenNode: (id) => opened = id,
+      ),
+    );
+
+    await tester.tap(find.textContaining('p · accepted'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('persist → n_fixtureA1'));
+    await tester.pumpAndSettle();
+
+    expect(opened, 'n_fixtureA1');
+  });
+
+  testWidgets('a recall primitive carries no node id, so it never cross-links',
+      (tester) async {
+    var calls = 0;
+    await _pump(
+      tester,
+      RunTreeView(
+        run: const ProcedureRun(
+          procedureId: 'p',
+          runId: 'r',
+          turnId: null,
+          status: 'accepted',
+          elapsedMs: 10,
+          entryCount: 1,
+          nodes: <RunNode>[
+            PrimitiveCallNode(
+              primitive: 'recall',
+              resultId: null,
+              recall: RecallDescriptor(modes: 'bm25', k: 5, returned: 3),
+            ),
+          ],
+        ),
+        onOpenNode: (_) => calls++,
+      ),
+    );
+
+    await tester.tap(find.textContaining('p · accepted'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('recall (bm25'));
+    await tester.pumpAndSettle();
+
+    expect(calls, 0);
+  });
+
   testWidgets('renders an error node with error emphasis', (tester) async {
     await _pump(
       tester,

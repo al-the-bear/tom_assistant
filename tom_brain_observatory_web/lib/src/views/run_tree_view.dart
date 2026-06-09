@@ -10,6 +10,12 @@
 // [onOpenLlmCall] to open the full LLM-call detail (§ 4.5 / PT-2.4). Every run
 // row (the root and each sub-run) carries an "inspect script" action that
 // invokes [onInspectScript] to open that run's procedure source (§ 4.6 / PT-3.2).
+//
+// A primitive that persisted a node (`persist → <id>`) surfaces that node id;
+// tapping it invokes [onOpenNode] to deep-link into Module 2's node view
+// (§ 4.7 / PT-7.1). The recall primitive carries only a result *count* and edge
+// endpoints are not modelled in the run-tree contract (§ 3.9), so those rows are
+// inert — the richer ids live in the per-profile memory log, wired separately.
 
 import 'package:flutter/material.dart';
 
@@ -18,17 +24,20 @@ import 'collapsed_row.dart';
 
 /// Renders [run] as the recursive run tree. [onOpenLlmCall] opens the detail of
 /// a tapped LLM-call row; [onInspectScript] opens the procedure source behind a
-/// run row. A `null` callback makes the corresponding affordance inert/absent.
+/// run row; [onOpenNode] deep-links a persisted node id into Module 2 (§ 4.7).
+/// A `null` callback makes the corresponding affordance inert/absent.
 class RunTreeView extends StatelessWidget {
   final ProcedureRun run;
   final ValueChanged<LlmCallNode>? onOpenLlmCall;
   final ValueChanged<ProcedureRun>? onInspectScript;
+  final ValueChanged<String>? onOpenNode;
 
   const RunTreeView({
     super.key,
     required this.run,
     this.onOpenLlmCall,
     this.onInspectScript,
+    this.onOpenNode,
   });
 
   @override
@@ -37,6 +46,7 @@ class RunTreeView extends StatelessWidget {
         depth: 0,
         onOpenLlmCall: onOpenLlmCall,
         onInspectScript: onInspectScript,
+        onOpenNode: onOpenNode,
       );
 }
 
@@ -48,12 +58,14 @@ class _RunTile extends StatefulWidget {
   final int depth;
   final ValueChanged<LlmCallNode>? onOpenLlmCall;
   final ValueChanged<ProcedureRun>? onInspectScript;
+  final ValueChanged<String>? onOpenNode;
 
   const _RunTile({
     required this.run,
     required this.depth,
     required this.onOpenLlmCall,
     required this.onInspectScript,
+    required this.onOpenNode,
   });
 
   @override
@@ -109,6 +121,7 @@ class _RunTileState extends State<_RunTile> {
                       depth: widget.depth + 1,
                       onOpenLlmCall: widget.onOpenLlmCall,
                       onInspectScript: widget.onInspectScript,
+                      onOpenNode: widget.onOpenNode,
                     ),
                 ],
               ),
@@ -124,12 +137,14 @@ class _RunNodeRow extends StatelessWidget {
   final int depth;
   final ValueChanged<LlmCallNode>? onOpenLlmCall;
   final ValueChanged<ProcedureRun>? onInspectScript;
+  final ValueChanged<String>? onOpenNode;
 
   const _RunNodeRow({
     required this.node,
     required this.depth,
     required this.onOpenLlmCall,
     required this.onInspectScript,
+    required this.onOpenNode,
   });
 
   @override
@@ -139,6 +154,7 @@ class _RunNodeRow extends StatelessWidget {
             depth: depth,
             onOpenLlmCall: onOpenLlmCall,
             onInspectScript: onInspectScript,
+            onOpenNode: onOpenNode,
           ),
         LlmCallNode() => CollapsedRow(
             icon: Icons.smart_toy,
@@ -149,12 +165,17 @@ class _RunNodeRow extends StatelessWidget {
                 ? null
                 : () => onOpenLlmCall!(node as LlmCallNode),
           ),
-        PrimitiveCallNode() => CollapsedRow(
+        // A persisted node id (`persist → <id>`) deep-links into Module 2
+        // (§ 4.7); a recall (count only) or bare primitive carries no id, so it
+        // stays inert.
+        PrimitiveCallNode(:final resultId) => CollapsedRow(
             icon: Icons.memory,
             label: _primitiveSummary(node as PrimitiveCallNode),
-            expandable: false,
+            expandable: resultId != null && onOpenNode != null,
             expanded: false,
-            onTap: null,
+            onTap: resultId == null || onOpenNode == null
+                ? null
+                : () => onOpenNode!(resultId),
           ),
         NoteNode(:final category) => CollapsedRow(
             icon: Icons.sticky_note_2,

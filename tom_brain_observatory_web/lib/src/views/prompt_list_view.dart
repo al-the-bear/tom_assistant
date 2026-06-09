@@ -59,7 +59,11 @@ class _PromptListViewState extends State<PromptListView> {
 
   void _openDetail(String turnId) {
     Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => PromptTraceDetailView(client: widget.client, turnId: turnId),
+      builder: (_) => PromptTraceDetailView(
+        client: widget.client,
+        memoryClient: widget.memoryClient,
+        turnId: turnId,
+      ),
     ));
   }
 

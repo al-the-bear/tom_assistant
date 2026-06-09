@@ -10,6 +10,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../api/memory_api_client.dart';
 import '../api/trace_api_client.dart';
 import '../model/live_step.dart';
 import '../model/prompt_trace.dart';
@@ -17,19 +18,23 @@ import 'configuration_in_effect_view.dart';
 import 'format.dart';
 import 'live_reply_view.dart';
 import 'llm_call_detail_view.dart';
+import 'memory/node_detail_view.dart';
 import 'monospace_block.dart';
 import 'outcome_chip.dart';
 import 'procedure_script_view.dart';
 import 'run_tree_view.dart';
 
-/// The detail page for [turnId], over [client].
+/// The detail page for [turnId], over [client]. [memoryClient] backs the
+/// cross-links from run-tree node ids into Module 2's node view (§ 4.7 / PT-7.1).
 class PromptTraceDetailView extends StatefulWidget {
   final TraceApiClient client;
+  final MemoryApiClient memoryClient;
   final String turnId;
 
   const PromptTraceDetailView({
     super.key,
     required this.client,
+    required this.memoryClient,
     required this.turnId,
   });
 
@@ -73,6 +78,7 @@ class _PromptTraceDetailViewState extends State<PromptTraceDetailView> {
                 trace,
                 onOpenLlmCall: (node) => _openLlmCall(context, node),
                 onInspectScript: (run) => _openScript(context, run),
+                onOpenNode: (nodeId) => _openNode(context, nodeId),
                 liveReply: LiveReplyView(steps: _liveSteps),
               ),
             );
@@ -95,13 +101,23 @@ class _PromptTraceDetailViewState extends State<PromptTraceDetailView> {
       builder: (_) => ProcedureScriptView(client: widget.client, run: run),
     ));
   }
+
+  /// Walks from a run-tree node id into Module 2's node view (§ 4.7 / PT-7.1).
+  void _openNode(BuildContext context, String nodeId) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) =>
+          NodeDetailView(client: widget.memoryClient, nodeId: nodeId),
+    ));
+  }
 }
 
 /// The four §4.2 sections for [trace], each an independently-expandable tile.
 /// Pure (no Navigator/Future) so widget tests exercise it directly.
 /// [onOpenLlmCall] is invoked when an LLM-call row in the run tree is opened
 /// (§ 4.5 / PT-2.4); [onInspectScript] when a run row's inspect-script action is
-/// triggered (§ 4.6 / PT-3.2). A `null` callback makes the affordance inert.
+/// triggered (§ 4.6 / PT-3.2); [onOpenNode] when a persisted node id in the run
+/// tree is tapped, deep-linking into Module 2 (§ 4.7 / PT-7.1). A `null`
+/// callback makes the affordance inert.
 /// [liveReply] is the streaming Reply view (§ 4.8 / PT-4.2) shown for an
 /// in-flight turn (no static reply yet); when `null` an in-flight turn's Reply
 /// section is simply empty.
@@ -109,6 +125,7 @@ List<Widget> buildTraceSections(
   PromptTrace trace, {
   ValueChanged<LlmCallNode>? onOpenLlmCall,
   ValueChanged<ProcedureRun>? onInspectScript,
+  ValueChanged<String>? onOpenNode,
   Widget? liveReply,
 }) {
   final inFlight = trace.reply == null;
@@ -140,6 +157,7 @@ List<Widget> buildTraceSections(
                 run: trace.runTree!,
                 onOpenLlmCall: onOpenLlmCall,
                 onInspectScript: onInspectScript,
+                onOpenNode: onOpenNode,
               ),
       ),
     ];

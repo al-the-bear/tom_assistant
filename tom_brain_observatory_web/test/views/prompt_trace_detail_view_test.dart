@@ -10,10 +10,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tom_brain_observatory_web/src/model/live_step.dart';
+import 'package:tom_brain_observatory_web/src/model/memory_nodes.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
 import 'package:tom_brain_observatory_web/src/views/configuration_in_effect_view.dart';
 import 'package:tom_brain_observatory_web/src/views/live_reply_view.dart';
+import 'package:tom_brain_observatory_web/src/views/memory/node_detail_view.dart';
 import 'package:tom_brain_observatory_web/src/views/prompt_trace_detail_view.dart';
+
+import '../support/stub_api_client.dart';
+import '../support/stub_memory_api_client.dart';
 
 PromptTrace _trace({bool withRunTree = true}) => PromptTrace(
       turnId: '260101-120000.000001',
@@ -132,5 +137,57 @@ void main() {
         heading: '💬 assistant', body: 'streaming answer', isDone: false));
     await tester.pumpAndSettle();
     expect(find.text('streaming answer'), findsOneWidget);
+  });
+
+  testWidgets(
+      'cross-link: tapping a persisted node id deep-links into its Module-2 '
+      'node view (PT-7.1)', (tester) async {
+    const turnId = '260101-120000.000001';
+    final client = StubApiClient(traces: <String, PromptTrace>{
+      turnId: const PromptTrace(
+        turnId: turnId,
+        inbound: null,
+        configuration: Configuration(entries: <ConfigEntry>[], memoryProfile: null),
+        reply: null,
+        runTree: ProcedureRun(
+          procedureId: 'answer_with_memory_v1',
+          runId: 'run-root',
+          turnId: turnId,
+          status: 'accepted',
+          elapsedMs: 2100,
+          entryCount: 1,
+          // A memory access referencing a known fixture node id.
+          nodes: <RunNode>[
+            PrimitiveCallNode(
+                primitive: 'persist', resultId: 'n_fixtureA1', recall: null),
+          ],
+        ),
+      ),
+    });
+    final memory = StubMemoryApiClient(nodes: <String, MemoryNode>{
+      'n_fixtureA1': MemoryNode(
+        id: 'n_fixtureA1',
+        typeName: 'Conclusion',
+        status: 'active',
+        createdAt: '2026-01-01T00:00:00Z',
+        values: const <String, dynamic>{'text': 'tiered backup'},
+      ),
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      home: PromptTraceDetailView(
+          client: client, memoryClient: memory, turnId: turnId),
+    ));
+    await tester.pumpAndSettle();
+
+    // The run-tree section is expanded; expand the root run to reveal the
+    // persisted-node row, then tap it to walk into Module 2.
+    await tester.tap(find.textContaining('answer_with_memory_v1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('persist → n_fixtureA1'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NodeDetailView), findsOneWidget);
+    expect(find.widgetWithText(AppBar, 'Node n_fixtureA1'), findsOneWidget);
   });
 }
