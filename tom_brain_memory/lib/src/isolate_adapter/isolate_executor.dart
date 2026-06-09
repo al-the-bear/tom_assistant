@@ -231,6 +231,22 @@ class MemoryIsolateExecutor extends TomExecutor {
           await _requireOpenMemory().forget(id, reason);
           return const ForgetResponse();
 
+        case UpdateProcedureMetricsRequest(
+              :final id,
+              :final status,
+              :final successRate,
+              :final runCount,
+              :final lastRunAt,
+            ):
+          await _requireOpenMemory().updateProcedureMetrics(
+            id,
+            status: status,
+            successRate: successRate,
+            runCount: runCount,
+            lastRunAt: lastRunAt,
+          );
+          return const UpdateProcedureMetricsResponse();
+
         // ─── A.82: edges ─────────────────────────────────────────
         case CreateEdgeRequest(
               :final from,

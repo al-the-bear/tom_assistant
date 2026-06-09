@@ -7,6 +7,7 @@
 // `ProcedureRunView`) live in `tom_brain_shared`; the scoring they apply
 // (`scoreProcedureCandidate`) lives in `tom_core_agentic`.
 
+export 'procedure_metrics_writer.dart' show ProcedureMetricsWriter;
 export 'procedure_queries.dart'
     show
         CandidateProceduresFor,

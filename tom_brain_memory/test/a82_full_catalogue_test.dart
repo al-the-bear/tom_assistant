@@ -31,7 +31,15 @@ import 'dart:typed_data';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show BrainVersion, EdgeId, NodeId, StackEntryId, TrailId, Vec, WriteBudget;
+    show
+        BrainVersion,
+        EdgeId,
+        NodeId,
+        ProcedureStatus,
+        StackEntryId,
+        TrailId,
+        Vec,
+        WriteBudget;
 import 'package:test/test.dart';
 
 // ─── Top-level fake (must be top-level/static to be sendable) ─────
@@ -142,6 +150,7 @@ final class _IsolateSideFakeMemoryA82 implements TomBrainMemory {
   // path already proved it round-trips).
   String _lastDemoteReason = '';
   String _lastForgetReason = '';
+  String _lastProcedureMetrics = '';
 
   @override
   Future<void> demote(NodeId id, DemotionReason reason) async {
@@ -151,6 +160,18 @@ final class _IsolateSideFakeMemoryA82 implements TomBrainMemory {
   @override
   Future<void> forget(NodeId id, ForgetReason reason) async {
     _lastForgetReason = reason.name;
+  }
+
+  @override
+  Future<void> updateProcedureMetrics(
+    NodeId id, {
+    ProcedureStatus? status,
+    double? successRate,
+    int? runCount,
+    DateTime? lastRunAt,
+  }) async {
+    _lastProcedureMetrics =
+        'status=${status?.token}:rate=$successRate:runs=$runCount';
   }
 
   // ─── Edges ───────────────────────────────────────────────────
@@ -353,6 +374,8 @@ final class _IsolateSideFakeMemoryA82 implements TomBrainMemory {
       nodeCountByType: <String, int>{
         if (_lastDemoteReason.isNotEmpty) 'demote:$_lastDemoteReason': 1,
         if (_lastForgetReason.isNotEmpty) 'forget:$_lastForgetReason': 1,
+        if (_lastProcedureMetrics.isNotEmpty)
+          'procMetrics:$_lastProcedureMetrics': 1,
         if (_lastCentroidKey.isNotEmpty)
           'centroid:$_lastCentroidKey:dims=$_lastCentroidDims': 1,
         if (_lastAppendedNote.isNotEmpty) 'note:$_lastAppendedNote': 1,
@@ -697,6 +720,19 @@ void main() {
         await client.forget(id, ForgetReason.userRequested);
         s = await client.stats();
         expect(s.nodeCountByType, contains('forget:userRequested'));
+
+        // updateProcedureMetrics — the Procedure-only derived-cache write
+        // (every nullable field rides the wire intact).
+        await client.updateProcedureMetrics(
+          id,
+          status: ProcedureStatus.preferred,
+          successRate: 0.9,
+          runCount: 10,
+          lastRunAt: DateTime.utc(2026, 6, 1),
+        );
+        s = await client.stats();
+        expect(s.nodeCountByType,
+            contains('procMetrics:status=preferred:rate=0.9:runs=10'));
       } finally {
         await host.shutdown();
       }

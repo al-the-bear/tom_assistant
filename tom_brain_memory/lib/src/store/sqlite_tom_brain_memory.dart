@@ -99,6 +99,7 @@ import '../nodes/node_type_registry.dart';
 import '../nodes/node_type_yaml_loader.dart';
 import '../observability/memory_event_bus.dart';
 import '../observability/memory_stats_collector.dart';
+import '../procedures/procedure_metrics_writer.dart';
 import '../profiles/sqlite_memory_profile_registry.dart';
 import '../retrieval/bm25_recall.dart';
 import '../retrieval/fts5_catalog.dart';
@@ -204,6 +205,9 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
 
   /// Owner of the node-lifecycle transitions ([demote] / [forget]).
   late NodeLifecycleManager _lifecycle;
+
+  /// Owner of the Procedure metric/status cache write ([updateProcedureMetrics]).
+  late ProcedureMetricsWriter _procedureMetrics;
 
   /// `memory.db` side of the centroid table backing [updateCentroid].
   late CentroidStore _centroidStore;
@@ -392,6 +396,10 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
       memoryDb: memoryDb,
       now: _clock.now,
       eventSink: _eventBus.emit,
+    );
+    _procedureMetrics = ProcedureMetricsWriter(
+      memoryDb: memoryDb,
+      now: _clock.now,
     );
     _centroidStore = CentroidStore(
       memoryDb: memoryDb,
@@ -671,6 +679,24 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   Future<void> forget(NodeId id, ForgetReason reason) async {
     _ensureOpen('forget');
     return _lifecycle.forget(id, reason);
+  }
+
+  @override
+  Future<void> updateProcedureMetrics(
+    NodeId id, {
+    ProcedureStatus? status,
+    double? successRate,
+    int? runCount,
+    DateTime? lastRunAt,
+  }) async {
+    _ensureOpen('updateProcedureMetrics');
+    return _procedureMetrics.updateProcedureMetrics(
+      id,
+      status: status,
+      successRate: successRate,
+      runCount: runCount,
+      lastRunAt: lastRunAt,
+    );
   }
 
   // ─── Edges ───────────────────────────────────────────────────────

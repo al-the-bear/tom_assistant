@@ -38,7 +38,7 @@
 //   that carry a non-null `reRank` with `ArgumentError.value` before
 //   constructing the envelope (see `tom_brain_memory_isolate_client.dart`).
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MigrationCursor, MigrationDecl, MigrationStatus, MultiRecallQuery, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, RecallQuery, RecallResult, Scope, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackInfo, StackPolicy, StackSummary, StreamQuery, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MigrationCursor, MigrationDecl, MigrationStatus, MultiRecallQuery, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, ProcedureStatus, RecallQuery, RecallResult, Scope, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackInfo, StackPolicy, StackSummary, StreamQuery, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
 
 import 'isolate_cancellation_protocol.dart';
 import 'isolate_messages.dart';
@@ -141,6 +141,29 @@ final class ForgetRequest extends IsolateRequest {
 
 final class ForgetResponse extends IsolateResponse {
   const ForgetResponse();
+}
+
+/// Round-trips the Procedure-only derived-metric cache write
+/// (`updateProcedureMetrics`). Only the non-null fields are merged on the
+/// host side; the nullability of each field rides the wire so a caller that
+/// recomputes the counters without changing the stage sends `status: null`.
+final class UpdateProcedureMetricsRequest extends IsolateRequest {
+  final NodeId id;
+  final ProcedureStatus? status;
+  final double? successRate;
+  final int? runCount;
+  final DateTime? lastRunAt;
+  const UpdateProcedureMetricsRequest({
+    required this.id,
+    this.status,
+    this.successRate,
+    this.runCount,
+    this.lastRunAt,
+  });
+}
+
+final class UpdateProcedureMetricsResponse extends IsolateResponse {
+  const UpdateProcedureMetricsResponse();
 }
 
 // ─── Edges ──────────────────────────────────────────────────────────

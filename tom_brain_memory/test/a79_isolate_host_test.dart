@@ -37,7 +37,14 @@
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, StackEntryId, TrailId, Vec, WriteBudget;
+    show
+        EdgeId,
+        NodeId,
+        ProcedureStatus,
+        StackEntryId,
+        TrailId,
+        Vec,
+        WriteBudget;
 import 'package:test/test.dart';
 
 // ─── Top-level fake + factory (must be top-level to be sendable) ──
@@ -119,6 +126,15 @@ final class _IsolateSideFakeMemory implements TomBrainMemory {
 
   @override
   Future<void> forget(NodeId id, ForgetReason reason) async {}
+
+  @override
+  Future<void> updateProcedureMetrics(
+    NodeId id, {
+    ProcedureStatus? status,
+    double? successRate,
+    int? runCount,
+    DateTime? lastRunAt,
+  }) async {}
 
   @override
   Future<EdgeId> edge(

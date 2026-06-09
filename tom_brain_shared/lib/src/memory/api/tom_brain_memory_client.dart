@@ -41,6 +41,7 @@ import '../config/memory_config.dart';
 import '../edges/edge.dart';
 import '../edges/edge_type.dart';
 import '../migrations/migration_api.dart';
+import '../../procedure/procedure_status.dart' show ProcedureStatus;
 import '../nodes/node.dart';
 import '../nodes/node_type_decl.dart';
 import '../retrieval/multi_recall_query.dart';
@@ -164,6 +165,34 @@ abstract class TomBrainMemoryClient {
   /// **only** path that ever removes a row from the live table;
   /// every other lifecycle transition is reversible.
   Future<void> forget(NodeId id, ForgetReason reason);
+
+  /// Updates the derived metric/status cache of a `Procedure` node in place
+  /// (`procedure_specification.md` § 6.4, § 7.1). The metrics pass
+  /// (`dream_procedure_metrics_v1`) recomputes `successRate` / `runCount` /
+  /// `lastRunAt` from the immutable `ProcedureRun` history and applies any
+  /// `active ⇄ preferred` stage change here.
+  ///
+  /// Only the non-null arguments are written; the rest of the node's values are
+  /// preserved. This carries no [Scope] — like [demote], it mutates a cached
+  /// lifecycle field rather than writing a graph node/edge. Sound under hard
+  /// principle 6: the authoritative record is the (untouched, immutable) run
+  /// history, from which this cache is always recomputable.
+  ///
+  /// Contract:
+  ///   * A write against a missing id is a no-op (a concurrent forget is not a
+  ///     failure).
+  ///   * A write against a node that is not a `Procedure` throws
+  ///     `ArgumentError` — the Procedure-only guard keeps this write from being
+  ///     turned against immutable Claim/Event nodes.
+  ///   * `demoted` is reached through [demote], not here; this moves only
+  ///     `active ⇄ preferred` and the cached counters.
+  Future<void> updateProcedureMetrics(
+    NodeId id, {
+    ProcedureStatus? status,
+    double? successRate,
+    int? runCount,
+    DateTime? lastRunAt,
+  });
 
   // ─── Edges ───────────────────────────────────────────────────
 

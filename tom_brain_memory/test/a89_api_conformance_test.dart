@@ -83,6 +83,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         BrainVersion,
         EdgeId,
         NodeId,
+        ProcedureStatus,
         StackEntryId,
         SymbolicFilter,
         TrailId,
@@ -211,6 +212,33 @@ final class ConformanceFakeMemory implements TomBrainMemory {
   @override
   Future<void> forget(NodeId id, ForgetReason reason) async {
     _nodes.remove(id);
+  }
+
+  @override
+  Future<void> updateProcedureMetrics(
+    NodeId id, {
+    ProcedureStatus? status,
+    double? successRate,
+    int? runCount,
+    DateTime? lastRunAt,
+  }) async {
+    final n = _nodes[id];
+    if (n == null) return;
+    final values = <String, Object?>{...n.values};
+    if (status != null) values['status'] = status.token;
+    if (successRate != null) values['successRate'] = successRate;
+    if (runCount != null) values['runCount'] = runCount;
+    if (lastRunAt != null) {
+      values['lastRunAt'] = lastRunAt.toUtc().toIso8601String();
+    }
+    _nodes[id] = Node(
+      id: n.id,
+      typeName: n.typeName,
+      values: values,
+      createdAt: n.createdAt,
+      embedding: n.embedding,
+      status: n.status,
+    );
   }
 
   // ─── Edges ─────────────────────────────────────────────────────────────
