@@ -806,16 +806,27 @@ void main() {
 
           // HP6 — every episodic Event the pass read is byte-identical
           // afterward: consolidation produced *derived* Claim nodes, it never
-          // overwrote an original. `Node`'s value equality compares id,
-          // typeName, values, embedding, createdAt and status — so an in-place
-          // mutation of any field would fail this assertion.
+          // overwrote an original. Compare each persisted field with a deep
+          // matcher rather than `Node.==` (whose `values`-map equality trips on
+          // collection identity across two reads): identity, content, status,
+          // creation instant and embedding must all be unchanged.
           for (final id in eventIds) {
             final after = await store.get(id);
+            final original = before[id];
+            expect(original, isNotNull, reason: 'snapshot precondition');
             expect(after, isNotNull,
                 reason: 'the episodic original $id still exists');
-            expect(after, equals(before[id]),
-                reason: 'the Event $id was not mutated by the scheduled dream '
-                    'pass (HP6: originals are immutable)');
+            expect(after!.typeName, original!.typeName,
+                reason: 'the Event $id was not retyped (HP6)');
+            expect(after.status, original.status,
+                reason: 'the Event $id status is unchanged (HP6)');
+            expect(after.createdAt, original.createdAt,
+                reason: 'the Event $id creation instant is unchanged (HP6)');
+            expect(after.values, equals(original.values),
+                reason: 'the Event $id content was not overwritten by the '
+                    'scheduled dream pass (HP6: originals are immutable)');
+            expect(after.embedding, original.embedding,
+                reason: 'the Event $id embedding is unchanged (HP6)');
           }
 
           final statsAfter = await store.stats();

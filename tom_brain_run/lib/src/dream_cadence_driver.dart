@@ -186,8 +186,7 @@ final class DreamCadenceDriver {
     final now = clock.nowMs();
     final ran = <String>[];
     for (final lane in DreamLane.values) {
-      final elapsed = now - _lastFiredMs[lane]!;
-      if (elapsed < schedule.intervals[lane]!.inMilliseconds) {
+      if (!_isDue(lane, now)) {
         continue;
       }
       var laneComplete = true;
@@ -205,6 +204,14 @@ final class DreamCadenceDriver {
     }
     return ran;
   }
+
+  /// Whether [lane]'s interval has elapsed since it last fired, as of [nowMs].
+  ///
+  /// A lane is due the moment `now - lastFired >= interval`; a deferred lane
+  /// keeps its old last-fired baseline, so the elapsed interval still counts on
+  /// the next tick rather than restarting the wait.
+  bool _isDue(DreamLane lane, int nowMs) =>
+      nowMs - _lastFiredMs[lane]! >= schedule.intervals[lane]!.inMilliseconds;
 
   /// Fires the reconsolidator for a raised `ShakingEvent`
   /// (`memory_specification.md` § 9.4) — the event-driven path, off the timer.
