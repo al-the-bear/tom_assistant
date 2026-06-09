@@ -11,26 +11,26 @@
 // Why a *separate* group from `bootstrapRoleRegistry()` (and not added
 // into it):
 //
-//   * `bootstrapRoleRegistry()` is pinned at exactly the five prototype
-//     roles by `b22_role_registry_test.dart` (`length == 5`,
-//     `prototypeRoleIds` exactly the five). The six retrieval roles are a
+//   * `bootstrapRoleRegistry()` is pinned at exactly the six core
+//     roles by `b22_role_registry_test.dart` (`length == 6`,
+//     `prototypeRoleIds` exactly those six). The six retrieval roles are a
 //     distinct, optional roster — a deployment that never enables
 //     Extension-H retrieval need not register them. Composing them is the
 //     job of `bootstrapRoleRegistryWithRetrieval()`, which a retrieval-
-//     enabled facade uses in place of the five-role bootstrap.
+//     enabled facade uses in place of the core-role bootstrap.
 //
 // Why bootstrap *in code* (mirroring `bootstrap_roles.dart`):
 //
 //   * Spec § 6.1 names `<workspace>/_ai/prompts/<role>.system.md` as the
 //     eventual on-disk source. No `.system.md` mechanism ships for *any*
-//     role today — the five prototype roles are bootstrap-in-code and the
+//     role today — the six core roles are bootstrap-in-code and the
 //     file-backed loader (Plan-2 item 11) only re-voices an existing
-//     prototype role's `personaText`. The retrieval roles follow the same
+//     core role's `personaText`. The retrieval roles follow the same
 //     pattern: their voice / objective / output schema live in code, the
 //     `<role>.system.md` form is the same future on-disk override the
-//     prototype roles will gain. The plan's "<role>.system.md template"
+//     core roles will gain. The plan's "<role>.system.md template"
 //     phrasing is satisfied by the in-code template that the loader would
-//     later re-voice, exactly as for the bootstrap five.
+//     later re-voice, exactly as for the bootstrap core roles.
 //
 // Capability surface (all six identical, per § 6.2a — retrieval-internal
 // transforms): each role allows `llmCall` only and forbids
@@ -96,14 +96,14 @@ List<RoleTemplate> retrievalRoleTemplates() => <RoleTemplate>[
 RoleRegistry bootstrapRetrievalRoleRegistry() =>
     RoleRegistry(templates: retrievalRoleTemplates());
 
-/// A [RoleRegistry] holding the five prototype roles
+/// A [RoleRegistry] holding the six core roles
 /// ([bootstrapRoleRegistry]) plus the six retrieval roles, in that order
-/// (eleven roles total).
+/// (twelve roles total).
 ///
 /// A retrieval-enabled substrate facade composes its registry from this
-/// factory in place of the five-role bootstrap. The bootstrap roster is
-/// unchanged — `bootstrapRoleRegistry()` still returns exactly five
-/// roles, so the b22 contract holds.
+/// factory in place of the core-role bootstrap. The bootstrap roster is
+/// unchanged — `bootstrapRoleRegistry()` still returns exactly the six
+/// core roles, so the b22 contract holds.
 RoleRegistry bootstrapRoleRegistryWithRetrieval() {
   final bootstrap = bootstrapRoleRegistry();
   return RoleRegistry(

@@ -38,7 +38,7 @@
 //                              `role_registry.dart` header for the
 //                              two-layer split rationale.
 //   * `bootstrapRoleRegistry`— *(B.22)* Top-level factory that
-//                              constructs the five prototype roles in
+//                              constructs the six core roles in
 //                              code (no IO, no global state) and
 //                              returns a fresh `RoleRegistry`. The
 //                              file-backed loader (`_ai/prompts/<role>.
@@ -99,8 +99,8 @@ export 'file_backed_role_loader.dart';
 // A separate, optional roster (template + cheap-route config + a
 // deterministic, never-throwing output parser per role). The bootstrap
 // roster is untouched: `bootstrapRoleRegistry()` still returns exactly the
-// five prototype roles; `bootstrapRoleRegistryWithRetrieval()` composes
-// the eleven-role thinking + retrieval roster. Adding the roles is
+// six core roles; `bootstrapRoleRegistryWithRetrieval()` composes
+// the twelve-role thinking + retrieval roster. Adding the roles is
 // config-only — no router / registry / template engine change.
 export 'retrieval/retrieval_barrel.dart';
 export 'role_budget_defaults.dart';

@@ -1,8 +1,9 @@
 // Plan-2 item 11 — file-backed role loader.
 //
-// `loadFileBackedRoleRegistry({promptsDir})` loads the five prototype
+// `loadFileBackedRoleRegistry({promptsDir})` loads the six core
 // roles (`assistant_to_user`, `analyser`, `sub_thinker`, `recaller`,
-// `evaluator`) from `<promptsDir>/<role>.system.md`, falling back to the
+// `evaluator`, `researcher`) from `<promptsDir>/<role>.system.md`,
+// falling back to the
 // in-code `bootstrapRoleRegistry()` template whenever a file is absent
 // (or blank). The on-disk file overrides only the role's `personaText`
 // (its voice); the structured policy — objective, allowed / forbidden
@@ -52,10 +53,11 @@ void main() {
   }
 
   group('P2.11 / loadFileBackedRoleRegistry — roster', () {
-    test('returns all five prototype roles in canonical order', () {
+    test('returns all bootstrap roles (the prototype five plus researcher, '
+        '§ 6.2b) in canonical order', () {
       final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
       expect(registry.ids.toList(), equals(prototypeRoleIds));
-      expect(registry.length, equals(5));
+      expect(registry.length, equals(6));
     });
   });
 

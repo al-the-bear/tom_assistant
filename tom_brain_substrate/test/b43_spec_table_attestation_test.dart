@@ -10,9 +10,9 @@
 // as the load-bearing taxonomies the review confirmed match the
 // implementation:
 //
-//   1. Spec § 6.2 — Five prototype roles
+//   1. Spec § 6.2 / § 6.2b — Six core roles
 //      (`assistant_to_user`, `analyser`, `sub_thinker`, `recaller`,
-//      `evaluator`).
+//      `evaluator`, plus the completion-phase `researcher` § 6.2b).
 //   2. Spec § 5.4 — Failover classification (eleven required codes;
 //      the implementation carries one additional documented entry —
 //      `cancelled_by_consumer` — tracked under Q-B.43.1).
@@ -37,40 +37,42 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 void main() {
   // ---------------------------------------------------------------------
-  // Spec § 6.2 — Five prototype roles
+  // Spec § 6.2 / § 6.2b — Six core roles
   // ---------------------------------------------------------------------
-  group('spec § 6.2 — five prototype roles', () {
-    // The canonical role list from the spec, transcribed verbatim.
-    // If the spec changes, this list changes — the test then either
-    // passes (code matches) or fails with a clear message naming
-    // which side drifted.
+  group('spec § 6.2 — six core roles', () {
+    // The canonical role list from the spec, transcribed verbatim: the
+    // prototype five (§ 6.2) plus the completion-phase `researcher`
+    // (§ 6.2b, G-T3). If the spec changes, this list changes — the test
+    // then either passes (code matches) or fails with a clear message
+    // naming which side drifted.
     const specRoleIds = <String>[
       'assistant_to_user',
       'analyser',
       'sub_thinker',
       'recaller',
       'evaluator',
+      'researcher',
     ];
 
     test(
-      'prototypeRoleIds matches spec § 6.2 exactly (order + count)',
+      'prototypeRoleIds matches spec § 6.2 / § 6.2b exactly (order + count)',
       () {
         expect(
           prototypeRoleIds,
           equals(specRoleIds),
           reason:
-              'spec § 6.2 lists exactly these five role ids in this '
-              'order. If the implementation drifted, fix '
+              'spec § 6.2 / § 6.2b lists exactly these six role ids in '
+              'this order. If the implementation drifted, fix '
               '`lib/src/roles/bootstrap_roles.dart#prototypeRoleIds`; '
               'if the spec drifted, fix '
-              '`_ai/quests/tom_brain/substrate_specification.md` § 6.2 '
-              'and update this list.',
+              '`_ai/quests/tom_brain/substrate_specification.md` § 6.2 / '
+              '§ 6.2b and update this list.',
         );
       },
     );
 
     test(
-      'bootstrapRoleRegistry resolves every spec § 6.2 role to a '
+      'bootstrapRoleRegistry resolves every spec § 6.2 / § 6.2b role to a '
       'valid template',
       () {
         final registry = bootstrapRoleRegistry();
@@ -79,13 +81,13 @@ void main() {
           equals(specRoleIds.length),
           reason:
               'The bootstrap registry must hold exactly the spec '
-              '§ 6.2 roles — no more, no less.',
+              '§ 6.2 / § 6.2b roles — no more, no less.',
         );
         for (final id in specRoleIds) {
           expect(
             registry.contains(id),
             isTrue,
-            reason: 'spec § 6.2 role `$id` missing from bootstrap '
+            reason: 'spec § 6.2 / § 6.2b role `$id` missing from bootstrap '
                 'registry',
           );
           final template = registry.get(id);

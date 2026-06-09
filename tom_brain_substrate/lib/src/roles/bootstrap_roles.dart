@@ -1,4 +1,5 @@
-// B.22 — bootstrap of the five prototype roles.
+// B.22 / § 6.2b — bootstrap of the six core roles (the five § 6.2
+// prototype roles plus the § 6.2b `researcher` completion role).
 //
 // Plan-step text (verbatim):
 //   "B.22 Implement template registry with at least these roles for the
@@ -16,6 +17,10 @@
 //   | `recaller`         | Re-ranking and answer composition over memory recall.                     |
 //   | `evaluator`        | The self-critique stage.                                                  |
 //
+// Spec § 6.2b adds the completion-phase sixth role:
+//
+//   | `researcher`       | Thinking-loop Stage-B web search/fetch + `research_v1` (G-T3).            |
+//
 // Why bootstrap *in code* (not loaded from disk) at B.22:
 //
 //   * Spec § 6.1 names `<workspace>/_ai/prompts/<role>.system.md` as
@@ -27,13 +32,14 @@
 //   * The plan text for B.22 names *only* the five role ids; it does
 //     not require file loading. The minimum that satisfies "template
 //     registry with at least these roles" is a registry whose roster
-//     materialises the five `RoleTemplate` instances, regardless of
-//     where the persona / objective text comes from.
+//     materialises the prototype `RoleTemplate` instances (plus the
+//     `researcher` completion role, § 6.2b), regardless of where the
+//     persona / objective text comes from.
 //
 //   * Bootstrap-in-code keeps B.22 testable without a fixture-tree on
 //     disk. The tests pin the registry's structural contract
-//     (`length == 5`, all five ids present, allowed-action shapes
-//     respect spec § 6.2) without an `_ai/prompts/` directory.
+//     (`length == 6`, all six ids present, allowed-action shapes
+//     respect spec § 6.2 / § 6.2b) without an `_ai/prompts/` directory.
 //
 //   * The file-backed loader at B.36 will produce `RoleTemplate`
 //     instances through the same `RoleTemplate` factory; the registry
@@ -70,22 +76,35 @@ import 'role_budget_defaults.dart';
 import 'role_registry.dart';
 import 'role_template.dart';
 
-/// The five prototype role ids, in canonical insertion order.
+/// The canonical bootstrap role ids, in canonical insertion order.
 ///
 /// Iteration order of `RoleRegistry.ids` follows this list verbatim
 /// when the registry is constructed via [bootstrapRoleRegistry] — used
-/// by tests that assert "registry has exactly these five ids, in this
+/// by tests that assert "registry has exactly these ids, in this
 /// order" so the trail / observability layer can rely on a stable
 /// iteration ordering for diagnostic dumps.
+///
+/// The first five are the original prototype roles (B.22, spec § 6.2).
+/// `researcher` (spec § 6.2b, G-T3) is the completion-phase sixth: a
+/// thinking-loop role, sibling to `analyser` / `sub_thinker` /
+/// `recaller` / `evaluator`, that fits the same structural invariants
+/// every bootstrap role obeys (it allows `llmCall` + `memoryRead`,
+/// grants no `memoryWrite`, and is not user-facing). It belongs in the
+/// always-on roster — `research_v1` dispatches `sub.llm(role:
+/// 'researcher')` on the running path — rather than in the optional
+/// Extension-H retrieval roster, whose roles are `llmCall`-only and so
+/// cannot satisfy the "every bootstrap role permits memoryRead"
+/// invariant.
 const List<String> prototypeRoleIds = <String>[
   'assistant_to_user',
   'analyser',
   'sub_thinker',
   'recaller',
   'evaluator',
+  'researcher',
 ];
 
-/// Constructs the five prototype `RoleTemplate` instances and returns
+/// Constructs the six core `RoleTemplate` instances and returns
 /// a `RoleRegistry` populated with them, in the order declared by
 /// [prototypeRoleIds].
 ///
@@ -117,6 +136,7 @@ RoleRegistry bootstrapRoleRegistry() {
       _subThinker(),
       _recaller(),
       _evaluator(),
+      _researcher(),
     ],
   );
 }
@@ -312,6 +332,47 @@ RoleTemplate _evaluator() {
           'type': 'string',
         },
       },
+    },
+    budgetDefaults: RoleBudgetDefaults.empty,
+  );
+}
+
+// ----- `researcher` -----
+//
+// Spec § 6.2b (G-T3): the thinking loop's Stage-B evidence gatherer, and
+// the role `research_v1` dispatches. It runs web search / fetch (its
+// `tool_call` grant) and reads memory to assemble cited findings the
+// downstream synthesis / answer stage consumes. It is *not* the
+// user-facing voice — its output is internal, like the analyser's — so it
+// forbids `user_facing_answer`. It does not persist (the host procedure
+// does), so it forbids `memory_write`. It gathers and summarises rather
+// than decomposing, so it forbids `sub_thinking`. Carries `memory_read`
+// (findings are cross-checked against prior conclusions) — which is why
+// it lives in the bootstrap roster alongside the prototype five and not
+// in the `llmCall`-only Extension-H retrieval roster.
+RoleTemplate _researcher() {
+  return RoleTemplate(
+    id: 'researcher',
+    personaText: 'I am the researcher. I gather external evidence — '
+        'through web search and fetch — and cross-check it against what '
+        'the brain already knows, so the thinking loop reasons from '
+        'sourced facts rather than guesses.',
+    objective: 'Given a research question, gather relevant evidence using '
+        'the search and fetch tools and memory recall, then compose a '
+        'concise findings summary in which every claim is attributed to '
+        'its source. Do not answer the user; the findings are consumed by '
+        'the synthesis stage. Prefer fewer, well-sourced claims over a '
+        'broad sweep of unattributed ones; surface gaps where the evidence '
+        'is thin rather than papering over them.',
+    allowedActions: const {
+      AllowedAction.llmCall,
+      AllowedAction.toolCall,
+      AllowedAction.memoryRead,
+    },
+    forbiddenActions: const {
+      AllowedAction.userFacingAnswer,
+      AllowedAction.memoryWrite,
+      AllowedAction.subThinking,
     },
     budgetDefaults: RoleBudgetDefaults.empty,
   );

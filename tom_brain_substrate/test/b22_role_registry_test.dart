@@ -54,6 +54,8 @@
 //     `forbiddenActions`. Lives in Phase D.
 
 import 'package:test/test.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show AssistantDedicationAnchor;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 void main() {
@@ -242,10 +244,10 @@ void main() {
   });
 
   group('bootstrapRoleRegistry — roster shape', () {
-    test('returns a registry with exactly the prototype five roles, in '
-        'canonical order', () {
+    test('returns a registry with exactly the prototype five roles plus the '
+        'researcher completion role (§ 6.2b), in canonical order', () {
       final r = bootstrapRoleRegistry();
-      expect(r.length, equals(5));
+      expect(r.length, equals(6));
       expect(r.ids.toList(), equals(prototypeRoleIds));
       expect(
         prototypeRoleIds,
@@ -255,6 +257,7 @@ void main() {
           'sub_thinker',
           'recaller',
           'evaluator',
+          'researcher',
         ]),
       );
     });
@@ -374,6 +377,29 @@ void main() {
       expect(t.forbiddenActions.contains(AllowedAction.subThinking), isTrue);
     });
 
+    test('researcher permits toolCall (it runs web search/fetch) and '
+        'memoryRead, but forbids userFacingAnswer, memoryWrite and '
+        'subThinking (§ 6.2b)', () {
+      final t = bootstrapRoleRegistry().get('researcher');
+      expect(t.permits(AllowedAction.llmCall), isTrue);
+      expect(t.permits(AllowedAction.toolCall), isTrue);
+      expect(t.permits(AllowedAction.memoryRead), isTrue);
+      expect(t.forbiddenActions.contains(AllowedAction.userFacingAnswer),
+          isTrue);
+      expect(t.forbiddenActions.contains(AllowedAction.memoryWrite), isTrue);
+      expect(t.forbiddenActions.contains(AllowedAction.subThinking), isTrue);
+    });
+
+    test('researcher is registered and its assembled template carries the '
+        'assistant-dedication anchor (§ 6.2b / G-T3, Q-2)', () {
+      final r = bootstrapRoleRegistry();
+      expect(r.contains('researcher'), isTrue);
+      final p = r.get('researcher').assemble();
+      expect(p.body, startsWith(AssistantDedicationAnchor.text));
+      expect(p.anchorHash, equals(AnchorRegistry.currentHash));
+      expect(p.roleId, equals('researcher'));
+    });
+
     test('every role has the default RoleBudgetDefaults.empty (the per-role '
         'budget tuning is deferred to a future config-loader step)', () {
       final r = bootstrapRoleRegistry();
@@ -399,11 +425,11 @@ void main() {
 
     test('bootstrapRoleRegistry is importable from the package barrel', () {
       final r = bootstrapRoleRegistry();
-      expect(r.length, equals(5));
+      expect(r.length, equals(6));
     });
 
     test('prototypeRoleIds is importable from the package barrel', () {
-      expect(prototypeRoleIds, hasLength(5));
+      expect(prototypeRoleIds, hasLength(6));
     });
   });
 }

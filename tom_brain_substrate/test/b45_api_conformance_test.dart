@@ -728,8 +728,8 @@ TomBrainSubstrateClient _buildUnopenedClient({
 }
 
 /// Builds + opens a client with the minimal config and the supplied
-/// collaborator overrides. Default role coverage is all five prototype
-/// roles so the per-role tests can share one fixture shape.
+/// collaborator overrides. Default role coverage is all six core roles
+/// (`prototypeRoleIds`) so the per-role tests can share one fixture shape.
 Future<TomBrainSubstrateClient> _openClient({
   LlmProvider? provider,
   WebSearch? webSearch,

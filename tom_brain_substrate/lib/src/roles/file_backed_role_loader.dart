@@ -1,6 +1,6 @@
 // Plan-2 item 11 — file-backed role loader.
 //
-// `bootstrapRoleRegistry()` (B.22) materialises the five prototype roles
+// `bootstrapRoleRegistry()` (B.22 / § 6.2b) materialises the six core roles
 // entirely in code. This loader is the on-disk counterpart the
 // bootstrap-file header has pointed at since B.22: it reads each role's
 // voice from `<promptsDir>/<role>.system.md` when present, and falls
@@ -53,7 +53,7 @@ import 'bootstrap_roles.dart';
 import 'role_registry.dart';
 import 'role_template.dart';
 
-/// Loads the five prototype roles, preferring an on-disk persona from
+/// Loads the six core roles, preferring an on-disk persona from
 /// `<`[promptsDir]`>/<role>.system.md` and falling back to the in-code
 /// [bootstrapRoleRegistry] template for any role whose file is absent or
 /// blank.

@@ -87,12 +87,13 @@ void main() {
     final registry = bootstrapRoleRegistry();
     final roles = registry.templates.toList(growable: false);
 
-    test('the bootstrap registry has the five prototype roles', () {
+    test('the bootstrap registry has the six core roles', () {
       // Pre-flight: if the registry roster ever shrinks, the
       // remaining tests would still pass against the shrunken set
       // and we would silently lose coverage. Pin the expected ids
       // here so a future B.22 change that touches the roster shows
-      // up as a B.24 failure.
+      // up as a B.24 failure. The roster is the prototype five (§ 6.2)
+      // plus the completion-phase `researcher` (§ 6.2b, G-T3).
       expect(
         roles.map((t) => t.id).toList(),
         equals(const [
@@ -101,6 +102,7 @@ void main() {
           'sub_thinker',
           'recaller',
           'evaluator',
+          'researcher',
         ]),
       );
     });

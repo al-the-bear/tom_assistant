@@ -117,9 +117,10 @@ import 'role_budget_defaults.dart';
 ///
 /// Sourced from a role config file at registry `open()` time
 /// (B.22 — `_ai/prompts/<role>.system.md` plus the matching
-/// `roles_registry.yaml` entry). The five prototype roles
+/// `roles_registry.yaml` entry). The six core roles
 /// (`assistant_to_user`, `analyser`, `sub_thinker`, `recaller`,
-/// `evaluator`) each materialise as a `RoleTemplate` instance.
+/// `evaluator`, `researcher`) each materialise as a `RoleTemplate`
+/// instance.
 ///
 /// `RoleTemplate` is a *value class*: immutable, `==` / `hashCode`
 /// defined, no mutable state. The registry hands the same instance

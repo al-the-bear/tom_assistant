@@ -53,7 +53,7 @@
 //   * It does not construct any runtime object. `buildRouterPolicy()`,
 //     for example, returns a `RouterPolicy` value — the actual
 //     `LlmRouter` and provider instances are constructed at B.40.
-//   * It does not bind to the `RoleRegistry`. The five prototype
+//   * It does not bind to the `RoleRegistry`. The six core
 //     roles are bootstrapped in `bootstrap_roles.dart` (deferred
 //     file-backed loading per Q-B.22.1/.2/.3); SubstrateConfig only
 //     provides the cross-validation hook (`validateRoleRegistry`)

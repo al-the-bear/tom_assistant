@@ -83,18 +83,19 @@ void main() {
       expect(reg.ids.toList(), equals(retrievalRoleIds));
     });
 
-    test('bootstrapRoleRegistryWithRetrieval() composes 5 bootstrap + 6 '
+    test('bootstrapRoleRegistryWithRetrieval() composes 6 bootstrap + 6 '
         'retrieval roles without disturbing the bootstrap roster', () {
       final composed = bootstrapRoleRegistryWithRetrieval();
-      expect(composed.length, equals(11));
+      expect(composed.length, equals(12));
       for (final id in prototypeRoleIds) {
         expect(composed.contains(id), isTrue, reason: id);
       }
       for (final id in retrievalRoleIds) {
         expect(composed.contains(id), isTrue, reason: id);
       }
-      // The bootstrap factory must remain a five-role roster (b22 lock).
-      expect(bootstrapRoleRegistry().length, equals(5));
+      // The bootstrap factory holds the six core roles (b22 lock): the
+      // prototype five plus the researcher completion role (§ 6.2b).
+      expect(bootstrapRoleRegistry().length, equals(6));
     });
   });
 

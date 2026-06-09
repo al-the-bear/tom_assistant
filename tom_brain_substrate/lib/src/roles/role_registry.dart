@@ -21,7 +21,7 @@
 //   * `RoleTemplateNotFound` — the typed exception thrown by `get(id)`
 //     when the id is not registered. Carries the requested id and the
 //     known ids for diagnostics.
-//   * `bootstrap_roles.dart` — the five prototype roles assembled in
+//   * `bootstrap_roles.dart` — the six core roles assembled in
 //     code (see file header for the rationale on in-memory bootstrap
 //     vs. file-backed loading at this step).
 //
@@ -30,7 +30,7 @@
 //   * File-backed template loading. The spec's § 6.1 line —
 //     "Templates live under `<workspace>/_ai/prompts/<role>.system.md`.
 //     The registry loads them at `open()`" — describes the *eventual*
-//     load path. The prototype five roles are inline in
+//     load path. The six core roles are inline in
 //     `bootstrap_roles.dart` (see Q-B.22.1 / Q-B.22.2 for the deferred-
 //     loader decision). Adding a file-backed `RoleRegistry.openFromDisk
 //     (Directory)` factory later does not change this file's API.
@@ -114,7 +114,7 @@ final class RoleRegistry {
   ///     construction so the loader cannot pick a "silent winner".
   ///   * An empty [templates] list is permitted but produces a
   ///     registry whose `get` always misses; callers that want the
-  ///     prototype five roles use [RoleRegistry.bootstrap] (in
+  ///     six core roles use [RoleRegistry.bootstrap] (in
   ///     `bootstrap_roles.dart`).
   ///
   /// The internal map is wrapped in [Map.unmodifiable] so a consumer

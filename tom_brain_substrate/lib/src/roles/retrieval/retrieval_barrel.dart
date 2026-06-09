@@ -14,7 +14,7 @@
 //   * `retrievalRoleIds` / `retrievalRoleTemplates()` /
 //     `bootstrapRetrievalRoleRegistry()` /
 //     `bootstrapRoleRegistryWithRetrieval()` — the roster + registry
-//     factories. `bootstrapRoleRegistry()` is unchanged (still 5 roles).
+//     factories. `bootstrapRoleRegistry()` is unchanged (still 6 roles).
 //   * `defaultRetrievalRoleRoutes({providerId, model})` — the default
 //     cheap-route config; merge into a `RouterPolicy.roleRoutes`.
 //   * `parseRetrievalRoleOutput(roleId, json)` + the sealed

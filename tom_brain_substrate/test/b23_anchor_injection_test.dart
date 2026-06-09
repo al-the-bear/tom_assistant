@@ -357,6 +357,7 @@ void main() {
         'analyser',
         'sub_thinker',
         'recaller',
+        'researcher',
       ]) {
         final t = registry.get(id);
         expect(t.outputSchema, isNull,

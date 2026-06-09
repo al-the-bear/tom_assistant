@@ -153,11 +153,12 @@ export 'src/router/router_barrel.dart';
 // lookup APIs and a duplicate-id rejection at construction),
 // `RoleTemplateNotFound` (the registry-specific miss exception, distinct
 // from the router's `RoleNotFound`), `bootstrapRoleRegistry` (top-level
-// factory producing the five prototype roles — `assistant_to_user`,
-// `analyser`, `sub_thinker`, `recaller`, `evaluator` — in code; file-
+// factory producing the six core roles — the prototype five
+// `assistant_to_user`, `analyser`, `sub_thinker`, `recaller`, `evaluator`
+// plus the `researcher` completion role (§ 6.2b, G-T3) — in code; file-
 // backed loading from `_ai/prompts/<role>.system.md` is deferred to
 // B.36 per the bootstrap-file header), `prototypeRoleIds` (the canonical
-// iteration order of those five ids).
+// iteration order of those six ids).
 //
 // B.23: `RoleTemplate.assemble({inputs})` — the anchor-injecting
 // producer of `WirePrompt`. Every assembled prompt has its body
