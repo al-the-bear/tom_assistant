@@ -176,6 +176,15 @@ dependencies:
   # already present transitively, promoted to a direct dependency because
   # `lib/src/tools/basic_tools.dart` now imports it.
   path: ^1.9.0
+  # file.search tool — the `file.search` basic tool (§ 21.4, `ToolGroup.file`)
+  # finds files by *name* under the file-scope root using a glob pattern
+  # (`*`, `?`, `[abc]`, `[a-z]`), complementing `grep.search` (which scans
+  # file *contents*). The glob matching is delegated to dcli's `find()`
+  # rather than re-implementing a globber. Already present transitively
+  # (via `tom_d4rt_dcli`); promoted to a direct dependency because
+  # `lib/src/tools/basic_tools.dart` now imports `package:dcli/dcli.dart`
+  # directly (never import a symbol from a transitive dep).
+  dcli: ^8.4.2
   # F.8 MCP client — `mcp.servers` / `mcp.list` / `mcp.call` (§ 21.3) call
   # out to MCP servers over the workspace MCP library. `lib/src/mcp/`
   # imports `dart_mcp` (the client) and `stream_channel` (the transport

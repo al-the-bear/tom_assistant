@@ -4,7 +4,7 @@
 //
 // What this suite locks:
 //
-//   F.7-1 — `registerBasicTools` registers the fifteen shipped tools under
+//   F.7-1 — `registerBasicTools` registers the sixteen shipped tools under
 //           their § 21.4 names, groups, and `readOnly` flags.
 //   F.7-2 — each tool's happy path against stubs routes through the existing
 //           surface (memory client, web surface, engine surface, the
@@ -12,8 +12,9 @@
 //   F.7-3 — `memory.write` charges one `memoryWrites` unit and honours the
 //           § 5.1 node-shape rule (only Conclusion / Claim / Question /
 //           Procedure; an `Event` write is refused before it reaches memory).
-//   F.7-4 — `file.read` / `file.write` / `grep.search` cannot escape the
-//           configured file-scope root.
+//   F.7-4 — `file.read` / `file.write` / `grep.search` / `file.search` cannot
+//           escape the configured file-scope root; `file.search` matches by
+//           filename glob (dcli `find`) and returns scope-relative paths.
 //   F.7-5 — `script.run_d4rt` rejects a non-JSON-serialisable result and is
 //           depth-capped (a `RecursionLimitExceeded` from the engine surface
 //           propagates, it is not swallowed).
@@ -29,7 +30,7 @@ import 'package:test/test.dart';
 
 void main() {
   group('F.7-1 registerBasicTools catalogue', () {
-    test('registers the fifteen § 21.4 tools with their groups + readOnly',
+    test('registers the sixteen § 21.4 tools with their groups + readOnly',
         () {
       final registry = ToolRegistry();
       registerBasicTools(registry);
@@ -46,6 +47,7 @@ void main() {
         'file.read': (group: ToolGroup.file, readOnly: true),
         'file.write': (group: ToolGroup.file, readOnly: false),
         'grep.search': (group: ToolGroup.file, readOnly: true),
+        'file.search': (group: ToolGroup.file, readOnly: true),
         'web.search': (group: ToolGroup.web, readOnly: true),
         'web.fetch': (group: ToolGroup.web, readOnly: true),
         'script.run_d4rt': (group: ToolGroup.script, readOnly: false),
@@ -71,9 +73,9 @@ void main() {
   });
 
   group('F.7-1b defaultToolCatalogue wire descriptors', () {
-    test('describes the fifteen basic tools with name/group/description', () {
+    test('describes the sixteen basic tools with name/group/description', () {
       final catalogue = defaultToolCatalogue();
-      expect(catalogue, hasLength(15));
+      expect(catalogue, hasLength(16));
 
       // Each descriptor carries the four wire fields the substrate's
       // tool-catalogue render reads (`{name, group, description, input_schema}`,
@@ -102,6 +104,7 @@ void main() {
           'file.read',
           'file.write',
           'grep.search',
+          'file.search',
           'web.search',
           'web.fetch',
           'script.run_d4rt',
@@ -291,6 +294,78 @@ void main() {
       final ctx = _ctx(fileScopeRoot: root.path);
       await expectLater(
         _run('grep.search', {'pattern': 'x', 'path': '../..'}, ctx),
+        throwsA(isA<FileScopeViolation>()),
+      );
+    });
+  });
+
+  group('F.7-7 file.search matches by filename glob within the root', () {
+    late Directory root;
+
+    setUp(() => root = Directory.systemTemp.createTempSync('f7_filesearch_'));
+    tearDown(() => root.deleteSync(recursive: true));
+
+    test('a glob pattern matches recursively and returns scope-relative paths',
+        () async {
+      File(p.join(root.path, 'alpha.txt')).writeAsStringSync('a');
+      File(p.join(root.path, 'beta.md')).writeAsStringSync('b');
+      final sub = Directory(p.join(root.path, 'nested'))..createSync();
+      File(p.join(sub.path, 'gamma.txt')).writeAsStringSync('g');
+
+      final ctx = _ctx(fileScopeRoot: root.path);
+      final found = await _run('file.search', {'pattern': '*.txt'}, ctx);
+      final matches = ((found! as Map)['matches'] as List).cast<String>();
+
+      expect(matches, containsAll(<String>['alpha.txt', p.join('nested', 'gamma.txt')]));
+      expect(matches, isNot(contains('beta.md')));
+    });
+
+    test('a non-recursive search stays in the top directory', () async {
+      File(p.join(root.path, 'top.txt')).writeAsStringSync('t');
+      final sub = Directory(p.join(root.path, 'nested'))..createSync();
+      File(p.join(sub.path, 'deep.txt')).writeAsStringSync('d');
+
+      final ctx = _ctx(fileScopeRoot: root.path);
+      final found = await _run(
+        'file.search',
+        {'pattern': '*.txt', 'recursive': false},
+        ctx,
+      );
+      final matches = ((found! as Map)['matches'] as List).cast<String>();
+
+      expect(matches, <String>['top.txt']);
+    });
+
+    test('a search inside a named sub-directory is scoped to it', () async {
+      final sub = Directory(p.join(root.path, 'docs'))..createSync();
+      File(p.join(sub.path, 'note.txt')).writeAsStringSync('n');
+      File(p.join(root.path, 'outside.txt')).writeAsStringSync('o');
+
+      final ctx = _ctx(fileScopeRoot: root.path);
+      final found = await _run(
+        'file.search',
+        {'pattern': '*.txt', 'path': 'docs'},
+        ctx,
+      );
+      final matches = ((found! as Map)['matches'] as List).cast<String>();
+
+      expect(matches, <String>[p.join('docs', 'note.txt')]);
+    });
+
+    test('a search in a missing sub-directory returns no matches', () async {
+      final ctx = _ctx(fileScopeRoot: root.path);
+      final found = await _run(
+        'file.search',
+        {'pattern': '*.txt', 'path': 'absent'},
+        ctx,
+      );
+      expect((found! as Map)['matches'], isEmpty);
+    });
+
+    test('a sub-path that escapes the root is rejected', () async {
+      final ctx = _ctx(fileScopeRoot: root.path);
+      await expectLater(
+        _run('file.search', {'pattern': '*', 'path': '../..'}, ctx),
         throwsA(isA<FileScopeViolation>()),
       );
     });

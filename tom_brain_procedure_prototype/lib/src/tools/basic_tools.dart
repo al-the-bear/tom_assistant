@@ -11,7 +11,8 @@
 //     tool write counts the same `memoryWrites` a scripted `persist` does.
 //   - todo.list / add / update / remove → the in-process `ToolContext.todos`
 //     store (ephemeral, run-scoped; never persisted to memory).
-//   - file.read / write, grep.search → a `dart:io` handle re-derived from the
+//   - file.read / write, grep.search, file.search → a `dart:io` handle (and,
+//     for `file.search`, dcli's `find` globber) re-derived from the
 //     `ToolContext.fileScopeRoot` string and path-escape-checked on every call
 //     (PE-1): a resolved path outside the root raises `FileScopeViolation`
 //     before any byte moves.
@@ -30,6 +31,7 @@
 
 import 'dart:io';
 
+import 'package:dcli/dcli.dart' show find;
 import 'package:path/path.dart' as p;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
@@ -81,6 +83,7 @@ List<BrainTool> _basicTools() => <BrainTool>[
       _FileReadTool(),
       _FileWriteTool(),
       _GrepSearchTool(),
+      _FileSearchTool(),
       _WebSearchTool(),
       _WebFetchTool(),
       _ScriptRunD4rtTool(),
@@ -429,6 +432,54 @@ final class _GrepSearchTool extends BrainTool {
         }
       }
     }
+    return <String, Object?>{'matches': matches};
+  }
+}
+
+final class _FileSearchTool extends BrainTool {
+  @override
+  String get name => 'file.search';
+  @override
+  ToolGroup get group => ToolGroup.file;
+  @override
+  bool get readOnly => true;
+  @override
+  String get description =>
+      'Finds files by name under the file-scope root using a glob pattern '
+      '(*, ?, [abc], [a-z]); complements grep.search (which scans contents).';
+  @override
+  Map<String, Object?> get inputSchema => const <String, Object?>{
+        'type': 'object',
+        'required': <Object?>['pattern'],
+        'properties': <String, Object?>{
+          'pattern': <String, Object?>{'type': 'string'},
+          'path': <String, Object?>{'type': 'string'},
+          'recursive': <String, Object?>{'type': 'boolean'},
+          'caseSensitive': <String, Object?>{'type': 'boolean'},
+        },
+      };
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final pattern = args['pattern'] as String;
+    final sub = args['path'] as String? ?? '.';
+    final recursive = args['recursive'] as bool? ?? true;
+    final caseSensitive = args['caseSensitive'] as bool? ?? false;
+    final root = _normalizedRoot(ctx.fileScopeRoot);
+    final dir = _resolveWithin(ctx.fileScopeRoot, sub);
+    // A missing search directory is an empty result, mirroring grep.search —
+    // not an error: a not-yet-created sub-path is a legitimate query.
+    if (!Directory(dir).existsSync()) {
+      return <String, Object?>{'matches': const <String>[]};
+    }
+    // dcli `find` returns absolute paths; re-base each onto the scope root so
+    // the caller only ever sees containment-checked relative paths.
+    final matches = find(
+      pattern,
+      workingDirectory: dir,
+      recursive: recursive,
+      caseSensitive: caseSensitive,
+    ).toList().map((abs) => p.relative(abs, from: root)).toList()..sort();
     return <String, Object?>{'matches': matches};
   }
 }
