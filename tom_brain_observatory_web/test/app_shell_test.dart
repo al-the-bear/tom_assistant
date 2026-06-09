@@ -27,7 +27,7 @@ void main() {
   });
 
   testWidgets('shows the empty-state when no prompts are traced', (tester) async {
-    await tester.pumpWidget(const ObservatoryApp(client: StubApiClient()));
+    await tester.pumpWidget(ObservatoryApp(client: StubApiClient()));
     await tester.pumpAndSettle();
 
     expect(find.text('No prompts traced yet.'), findsOneWidget);

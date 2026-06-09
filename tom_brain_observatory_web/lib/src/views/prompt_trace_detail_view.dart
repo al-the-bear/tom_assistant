@@ -11,9 +11,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../api/trace_api_client.dart';
+import '../model/live_step.dart';
 import '../model/prompt_trace.dart';
 import 'configuration_in_effect_view.dart';
 import 'format.dart';
+import 'live_reply_view.dart';
 import 'llm_call_detail_view.dart';
 import 'monospace_block.dart';
 import 'outcome_chip.dart';
@@ -38,10 +40,16 @@ class PromptTraceDetailView extends StatefulWidget {
 class _PromptTraceDetailViewState extends State<PromptTraceDetailView> {
   late Future<PromptTrace?> _trace;
 
+  /// The per-turn SSE live-tail (§ 4.8), created once so the streaming Reply
+  /// view subscribes a single time. Cold until listened — a finished turn
+  /// (static reply present) never opens it.
+  late final Stream<LiveStep> _liveSteps;
+
   @override
   void initState() {
     super.initState();
     _trace = widget.client.traceFor(widget.turnId);
+    _liveSteps = widget.client.tailTurn(widget.turnId);
   }
 
   @override
@@ -65,6 +73,7 @@ class _PromptTraceDetailViewState extends State<PromptTraceDetailView> {
                 trace,
                 onOpenLlmCall: (node) => _openLlmCall(context, node),
                 onInspectScript: (run) => _openScript(context, run),
+                liveReply: LiveReplyView(steps: _liveSteps),
               ),
             );
           },
@@ -93,12 +102,18 @@ class _PromptTraceDetailViewState extends State<PromptTraceDetailView> {
 /// [onOpenLlmCall] is invoked when an LLM-call row in the run tree is opened
 /// (§ 4.5 / PT-2.4); [onInspectScript] when a run row's inspect-script action is
 /// triggered (§ 4.6 / PT-3.2). A `null` callback makes the affordance inert.
+/// [liveReply] is the streaming Reply view (§ 4.8 / PT-4.2) shown for an
+/// in-flight turn (no static reply yet); when `null` an in-flight turn's Reply
+/// section is simply empty.
 List<Widget> buildTraceSections(
   PromptTrace trace, {
   ValueChanged<LlmCallNode>? onOpenLlmCall,
   ValueChanged<ProcedureRun>? onInspectScript,
-}) =>
-    <Widget>[
+  Widget? liveReply,
+}) {
+  final inFlight = trace.reply == null;
+  final streamReply = inFlight && liveReply != null;
+  return <Widget>[
       TraceSection(
         title: 'Inbound',
         present: trace.inbound != null,
@@ -111,8 +126,9 @@ List<Widget> buildTraceSections(
       ),
       TraceSection(
         title: 'Reply',
-        present: trace.reply != null,
-        child: _ReplyBody(reply: trace.reply),
+        present: trace.reply != null || streamReply,
+        initiallyExpanded: streamReply,
+        child: streamReply ? liveReply : _ReplyBody(reply: trace.reply),
       ),
       TraceSection(
         title: 'Run Tree',
@@ -127,6 +143,7 @@ List<Widget> buildTraceSections(
               ),
       ),
     ];
+}
 
 /// The Inbound section body (§ 3.3): an envelope header, the full prompt text,
 /// and the secret-redacted raw envelope as indented JSON.

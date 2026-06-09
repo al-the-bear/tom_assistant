@@ -70,7 +70,7 @@ void main() {
 
   testWidgets('shows a not-found message when the script is unavailable',
       (tester) async {
-    final client = const StubApiClient(); // no scripts
+    final client = StubApiClient(); // no scripts
     await _pump(tester, ProcedureScriptView(client: client, run: _run()));
     expect(find.textContaining('No source'), findsOneWidget);
   });

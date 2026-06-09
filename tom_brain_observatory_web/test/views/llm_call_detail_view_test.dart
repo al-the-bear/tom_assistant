@@ -77,7 +77,7 @@ void main() {
   });
 
   testWidgets('shows a not-found state when the host has no dump', (tester) async {
-    await _pump(tester, const StubApiClient());
+    await _pump(tester, StubApiClient());
     expect(find.text('No raw dump for this LLM call.'), findsOneWidget);
   });
 }

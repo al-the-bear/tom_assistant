@@ -4,6 +4,7 @@
 // up a dump by its `rawPath` link (PT-2.4 LLM-call detail).
 
 import 'package:tom_brain_observatory_web/src/api/trace_api_client.dart';
+import 'package:tom_brain_observatory_web/src/model/live_step.dart';
 import 'package:tom_brain_observatory_web/src/model/llm_call_detail.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
 
@@ -17,16 +18,33 @@ class StubApiClient implements TraceApiClient {
   /// Keyed by procedureId — the verbatim d4rt source (PT-3.2).
   final Map<String, String> scripts;
 
-  const StubApiClient({
+  /// Canned SSE live-tail per turnId, keyed by turnId (PT-4.2).
+  final Map<String, Stream<LiveStep>> turnStreams;
+
+  /// The list-level change stream (PT-4.2); empty when not driven.
+  final Stream<void>? changes;
+
+  /// Re-fetch override: when set, [listTraces] returns these after [changes]
+  /// fires, letting a test assert the list reloads on a tick.
+  final List<PromptListRow>? rowsAfterChange;
+
+  StubApiClient({
     this.rows = const <PromptListRow>[],
     this.traces = const <String, PromptTrace>{},
     this.llmCalls = const <String, LlmCallDetail>{},
     this.scripts = const <String, String>{},
+    this.turnStreams = const <String, Stream<LiveStep>>{},
+    this.changes,
+    this.rowsAfterChange,
   });
 
+  bool _reloaded = false;
+
   @override
-  Future<List<PromptListRow>> listTraces({int? limit}) async =>
-      limit == null ? rows : rows.take(limit).toList();
+  Future<List<PromptListRow>> listTraces({int? limit}) async {
+    final source = _reloaded && rowsAfterChange != null ? rowsAfterChange! : rows;
+    return limit == null ? source : source.take(limit).toList();
+  }
 
   @override
   Future<PromptTrace?> traceFor(String turnId) async => traces[turnId];
@@ -38,6 +56,18 @@ class StubApiClient implements TraceApiClient {
   @override
   Future<String?> procedureScript(String procedureId) async =>
       scripts[procedureId];
+
+  @override
+  Stream<LiveStep> tailTurn(String turnId) =>
+      turnStreams[turnId] ?? const Stream<LiveStep>.empty();
+
+  @override
+  Stream<void> listChanges() async* {
+    await for (final _ in changes ?? const Stream<void>.empty()) {
+      _reloaded = true;
+      yield null;
+    }
+  }
 }
 
 /// A §4.1 row with sensible defaults; override per test.

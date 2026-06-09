@@ -5,10 +5,14 @@
 // profile, role) tuples with the read-only deep-link chip. `buildTraceSections`
 // is exercised directly (no Navigator) over a static trace.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tom_brain_observatory_web/src/model/live_step.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
 import 'package:tom_brain_observatory_web/src/views/configuration_in_effect_view.dart';
+import 'package:tom_brain_observatory_web/src/views/live_reply_view.dart';
 import 'package:tom_brain_observatory_web/src/views/prompt_trace_detail_view.dart';
 
 PromptTrace _trace({bool withRunTree = true}) => PromptTrace(
@@ -90,5 +94,43 @@ void main() {
       matching: find.byType(TraceSection),
     ));
     expect(runTree.present, isFalse);
+  });
+
+  testWidgets('an in-flight turn streams its Reply via the live-tail (PT-4.2)',
+      (tester) async {
+    final controller = StreamController<LiveStep>();
+    addTearDown(controller.close);
+    const inFlight = PromptTrace(
+      turnId: '260101-120300.000004',
+      inbound: null,
+      configuration: Configuration(entries: <ConfigEntry>[], memoryProfile: null),
+      reply: null, // in flight — no static reply yet
+      runTree: null,
+    );
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ListView(
+          children: buildTraceSections(
+            inFlight,
+            liveReply: LiveReplyView(steps: controller.stream),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // The Reply section is present (streaming) and shows the live view expanded.
+    final reply = tester.widget<TraceSection>(find.ancestor(
+      of: find.text('Reply'),
+      matching: find.byType(TraceSection),
+    ));
+    expect(reply.present, isTrue);
+    expect(find.byType(LiveReplyView), findsOneWidget);
+
+    // A streamed assistant block appears in place without a static reply.
+    controller.add(const LiveStep(
+        heading: '💬 assistant', body: 'streaming answer', isDone: false));
+    await tester.pumpAndSettle();
+    expect(find.text('streaming answer'), findsOneWidget);
   });
 }

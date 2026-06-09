@@ -5,6 +5,8 @@
 // PromptTrace detail (§ 4.2 / PT-2.2). The view depends only on [TraceApiClient]
 // so tests drive a stub (no live brain).
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api/trace_api_client.dart';
@@ -25,11 +27,26 @@ class PromptListView extends StatefulWidget {
 
 class _PromptListViewState extends State<PromptListView> {
   late Future<List<PromptListRow>> _rows;
+  StreamSubscription<void>? _changes;
 
   @override
   void initState() {
     super.initState();
     _rows = widget.client.listTraces();
+    // The list-level live-tail (§ 4.8): re-fetch whenever a session live-trail
+    // changes, so newly-arrived prompts appear without a manual refresh.
+    _changes = widget.client.listChanges().listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _rows = widget.client.listTraces();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _changes?.cancel();
+    super.dispose();
   }
 
   void _openDetail(String turnId) {

@@ -13,6 +13,7 @@
 // `/api/*` is dispatched before the static root so an unknown `turnId` returns a
 // real `404` instead of falling through to the SPA's `index.html`.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -21,6 +22,7 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:shelf_static/shelf_static.dart';
 
+import '../live/live_tail.dart';
 import '../model/prompt_trace.dart';
 import '../parse/prompt_list_builder.dart';
 import '../parse/prompt_trace_parser.dart';
@@ -68,7 +70,9 @@ final class TrailReadApi {
   static bool _isApiPath(String path) => path == 'api' || path.startsWith('api/');
 
   Router get _apiRouter => Router()
+    ..get('/api/stream', _listStream)
     ..get('/api/traces', _listTraces)
+    ..get('/api/traces/<turnId>/stream', _turnStream)
     ..get('/api/traces/<turnId>', _singleTrace)
     ..get('/api/llm', _llmRaw)
     ..get('/api/procedures/<procedureId>', _procedureScript);
@@ -91,6 +95,35 @@ final class TrailReadApi {
           status: HttpStatus.notFound);
     }
     return _json(trace.toJson());
+  }
+
+  /// `GET /api/traces/{turnId}/stream` — the SSE live-tail of one turn (§ 4.8):
+  /// one `data:` event per cognitive step as the brain appends it to the
+  /// per-session streaming live-trail, the stream closing after the turn's
+  /// `✅ DONE`. Backed by a read-only file watch over that session's
+  /// `*.live-trail.md` (OBS-5: no hook inside the brain). `404` when no session
+  /// has written this turn yet — absence is never an error (§ 4.1).
+  Response _turnStream(Request request, String turnId) {
+    final file = host.liveTrailFileForTurn(turnId);
+    if (file == null) {
+      return _json(<String, Object?>{'error': 'no live trail for turn $turnId'},
+          status: HttpStatus.notFound);
+    }
+    final steps = tailTurnSteps(
+      file: file,
+      turnId: turnId,
+      changes: liveTrailChanges(file),
+    );
+    return _sse(steps.map((step) => step.toJson()));
+  }
+
+  /// `GET /api/stream` — the list-level live-tail (§ 4.8): an SSE `{"changed":
+  /// true}` tick the prompt list re-fetches `/api/traces` on. It emits once on
+  /// connect (so a fresh client immediately syncs) and again whenever any
+  /// session live-trail changes. Read-only — a directory watch, never a hook.
+  Response _listStream(Request request) {
+    final dir = Directory(p.join(host.root.path, 'sessions'));
+    return _sse(_listChanges(dir).map((_) => <String, Object?>{'changed': true}));
   }
 
   /// `GET /api/llm?turn=<turnId>&path=<rawPath>` — the verbatim raw LLM dump
@@ -190,4 +223,30 @@ final class TrailReadApi {
           'content-type': 'application/json; charset=utf-8',
         },
       );
+
+  /// Wraps [events] as a `text/event-stream` response, one `data: <json>` frame
+  /// per event. When the source stream closes (a finished turn) the SSE closes;
+  /// when the client disconnects shelf cancels the body subscription, tearing
+  /// down the underlying file watch (the source streams' `onCancel`).
+  Response _sse(Stream<Object?> events) => Response.ok(
+        events.map((event) =>
+            utf8.encode('data: ${jsonEncode(event)}\n\n')),
+        headers: <String, String>{
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-cache',
+        },
+      );
+
+  /// A read-only change signal for the list-level stream: an immediate tick on
+  /// connect plus a tick whenever a `*.live-trail.md` under [dir] changes (an
+  /// OS directory watch). Opens nothing for writing (OBS-5); cancelling the
+  /// subscription tears the watch down (the `async*` body returns).
+  Stream<void> _listChanges(Directory dir) async* {
+    yield null; // Sync the client immediately on connect.
+    if (!dir.existsSync()) return;
+    yield* dir
+        .watch()
+        .where((event) => event.path.endsWith('.live-trail.md'))
+        .map((_) {});
+  }
 }

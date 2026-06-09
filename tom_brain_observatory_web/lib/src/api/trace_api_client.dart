@@ -12,8 +12,10 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../model/live_step.dart';
 import '../model/llm_call_detail.dart';
 import '../model/prompt_trace.dart';
+import 'sse.dart';
 
 /// The read-only Trail Read API surface the UI depends on.
 abstract interface class TraceApiClient {
@@ -34,6 +36,16 @@ abstract interface class TraceApiClient {
   /// procedure script (§ 4.6 / PT-3.1), or `null` when the host exposes no such
   /// script (no script root, or the id is unknown — absence is not an error).
   Future<String?> procedureScript(String procedureId);
+
+  /// `GET /api/traces/{turnId}/stream` — the SSE live-tail of a turn (§ 4.8):
+  /// one [LiveStep] per cognitive step as the brain appends it, the stream
+  /// closing after the turn's `✅ DONE`. The streaming Reply view (§ 3.5)
+  /// replays the `💬 assistant` steps and the terminal banner from this.
+  Stream<LiveStep> tailTurn(String turnId);
+
+  /// `GET /api/stream` — the list-level live-tail (§ 4.8): a tick on connect and
+  /// whenever a session live-trail changes, so the prompt list re-fetches.
+  Stream<void> listChanges();
 }
 
 /// Talks to the same-origin `/api` via [http]. URLs resolve against [origin]
@@ -95,6 +107,21 @@ class HttpTraceApiClient implements TraceApiClient {
       throw http.ClientException('GET $uri → ${res.statusCode}', uri);
     }
     return res.body;
+  }
+
+  @override
+  Stream<LiveStep> tailTurn(String turnId) async* {
+    final uri = _resolve('api/traces/$turnId/stream', const <String, String>{});
+    final res = await _http.send(http.Request('GET', uri));
+    yield* sseDataFrames(res.stream).map((data) =>
+        LiveStep.fromJson(jsonDecode(data) as Map<String, dynamic>));
+  }
+
+  @override
+  Stream<void> listChanges() async* {
+    final uri = _resolve('api/stream', const <String, String>{});
+    final res = await _http.send(http.Request('GET', uri));
+    yield* sseDataFrames(res.stream).map((_) {});
   }
 
   /// Resolve [path] (and optional [query]) against the document origin. Relative

@@ -83,6 +83,30 @@ final class TrailHost {
     return file.existsSync() ? file : null;
   }
 
+  /// The per-session streaming live-trail file for [sessionId]
+  /// (`sessions/<sessionId>.live-trail.md`, § 3.5, § 4.8), which the brain
+  /// appends one block per cognitive step. Returns the (possibly absent)
+  /// `File` so the live-tail can watch a path that does not exist yet.
+  File sessionLiveTrailFile(String sessionId) => File(
+        p.join(root.path, 'sessions', '${_sanitize(sessionId)}.live-trail.md'),
+      );
+
+  /// The live-trail file whose stream currently contains [turnId]'s prompt
+  /// block (`## 🚀 PROMPT <turnId> …`), or `null` when no session has written
+  /// that turn yet. Scans `sessions/*.live-trail.md` read-only.
+  File? liveTrailFileForTurn(String turnId) {
+    final dir = Directory(p.join(root.path, 'sessions'));
+    if (!dir.existsSync()) return null;
+    final marker = '## 🚀 PROMPT $turnId ';
+    for (final file in dir.listSync().whereType<File>()) {
+      if (!file.path.endsWith('.live-trail.md')) continue;
+      if (file.readAsLinesSync().any((line) => line.startsWith(marker))) {
+        return file;
+      }
+    }
+    return null;
+  }
+
   /// True when the host is in unconfigured mode (no structured trail tree) —
   /// neither `incoming/` nor `procedures/` exists (§ 8.1).
   bool get isUnconfigured =>
