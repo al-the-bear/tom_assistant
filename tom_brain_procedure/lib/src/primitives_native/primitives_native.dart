@@ -44,6 +44,7 @@ export 'native_primitives_installer.dart'
         noteName,
         notImplementedName,
         runProcedureName,
+        validateName,
         yieldIfForegroundWaitingName;
 export 'note_primitive.dart' show NotePrimitive;
 export 'procedure_inputs_bridge.dart'

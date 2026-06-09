@@ -48,4 +48,9 @@ export 'procedure_sandbox_violation.dart'
         ProcedureSandboxViolation,
         SandboxViolationKind,
         procedureSandboxViolationCode;
+// Todo 7 (G-PR2) — the LLM-free `validate(source)` dry-run that the authoring
+// loop calls between drafts (§ 8.3); collects findings instead of failing fast.
+export 'procedure_validation.dart'
+    show ProcedureValidation, ProcedureValidationFinding;
+export 'procedure_validation_chain.dart' show ProcedureValidationChain;
 export 'sandbox_validator.dart' show SandboxValidator;

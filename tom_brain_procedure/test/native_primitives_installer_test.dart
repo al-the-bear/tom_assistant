@@ -329,6 +329,71 @@ run(inputs) async {
     expect(resumed, isTrue);
   });
 
+  // ── validate(source) — d4rt wiring (Todo 7 / G-PR2) ─────────────────
+
+  // A minimal procedure source the validate primitive should pass clean.
+  const validProcedureSource = '''
+/// @procedure
+/// id: sample_v1
+/// version: 1
+/// summary: A sample used by the validate wiring test.
+/// successCriterion: returns a succeeded ProcedureResult.
+/// budget: { wallClockMs: 1000 }
+/// requires: [ note ]
+import 'package:tom_brain_procedure/src/api/procedure_inputs.dart';
+import 'package:tom_brain_procedure/src/api/procedure_result.dart';
+import 'package:tom_brain_procedure/src/primitives_native/primitives_native.dart';
+
+Future<ProcedureResult> run(ProcedureInputs inputs) async {
+  note('x', {});
+  return ProcedureResult.succeeded();
+}
+''';
+
+  test('validate is callable from a script and returns ok for a clean source',
+      () async {
+    final host = hostFor(idleRunProcedure());
+
+    final result = await host.run(
+      '''
+import '$engineNativeLibrary';
+
+run(inputs) async {
+  return await validate(inputs.get('source'));
+}
+''',
+      inputs: <Object?>[
+        ProcedureInputs(<String, Object?>{'source': validProcedureSource}),
+      ],
+    );
+
+    expect(result, isA<Map<Object?, Object?>>());
+    final map = (result! as Map).cast<String, Object?>();
+    expect(map['ok'], isTrue);
+    expect(map['findings'], isEmpty);
+  });
+
+  test('validate reports findings (ok:false) for an invalid source', () async {
+    final host = hostFor(idleRunProcedure());
+
+    final result = await host.run(
+      '''
+import '$engineNativeLibrary';
+
+run(inputs) async {
+  return await validate(inputs.get('source'));
+}
+''',
+      inputs: <Object?>[
+        ProcedureInputs(<String, Object?>{'source': 'not a procedure'}),
+      ],
+    );
+
+    final map = (result! as Map).cast<String, Object?>();
+    expect(map['ok'], isFalse);
+    expect(map['findings'], isNotEmpty);
+  });
+
   // ── emit(textDelta) — d4rt wiring (P1.3 #8) ─────────────────────────
 
   test('emit is callable from a script and streams each delta to the sink '

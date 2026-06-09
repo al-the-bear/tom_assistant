@@ -67,6 +67,10 @@ final class BridgedPrimitiveCatalog {
     'note',
     'yield_if_foreground_waiting',
     'notImplemented',
+    // The LLM-free `validate(source)` dry-run the authoring loop calls between
+    // drafts (Todo 7 / G-PR2, § 8.3). A procedure that calls it — chiefly
+    // `author_new_procedure_v1` — must declare `validate` in `requires`.
+    'validate',
   };
 
   /// Sugar aliases over `runProcedure` (C.40). All five verbs now resolve to a

@@ -43,6 +43,7 @@ import 'package:tom_d4rt/d4rt.dart';
 
 import '../api/procedure_inputs.dart';
 import '../api/procedure_result.dart';
+import '../validator/procedure_validation_chain.dart';
 import 'emit_primitive.dart';
 import 'note_primitive.dart';
 import 'procedure_inputs_bridge.dart';
@@ -86,6 +87,15 @@ const String emitName = 'emit';
 /// stub message is built, so the four stub bodies stay one-liners.
 const String notImplementedName = 'notImplemented';
 
+/// The d4rt global name the LLM-free procedure-validation dry-run is bound to.
+///
+/// A procedure reaches it as `await validate(source)` after importing
+/// [engineNativeLibrary]; it runs the three-layer validator chain over a
+/// candidate procedure source *without executing it* and returns a
+/// `{ok, findings}` map (Todo 7 / G-PR2, § 8.3). The authoring loop calls it
+/// between drafts, so the validation never spends substrate budget.
+const String validateName = 'validate';
+
 /// The d4rt global name the cooperative-preemption checkpoint is bound to.
 ///
 /// Spec-cased `snake_case` (`yield_if_foreground_waiting`) per § 5.1; a
@@ -105,6 +115,7 @@ void Function(D4rt) nativePrimitivesInstaller({
   required NotePrimitive notePrimitive,
   required YieldPrimitive yieldPrimitive,
   required EmitPrimitive emitPrimitive,
+  ProcedureValidationChain validationChain = ProcedureValidationChain.shared,
 }) {
   return (D4rt interpreter) {
     // The read surface of `ProcedureInputs`, so a body can call
@@ -170,6 +181,19 @@ void Function(D4rt) nativePrimitivesInstaller({
           _invokeNotImplemented(arguments),
       engineNativeLibrary,
       signature: 'Object? notImplemented(String verb)',
+    );
+
+    interpreter.registertopLevelFunction(
+      validateName,
+      (
+        InterpreterVisitor visitor,
+        List<Object?> arguments,
+        Map<String, Object?> namedArguments,
+        List<RuntimeType>? typeArguments,
+      ) =>
+          _invokeValidate(validationChain, arguments),
+      engineNativeLibrary,
+      signature: 'Future<Map<String, Object?>> validate(String source)',
     );
 
     interpreter.registertopLevelFunction(
@@ -356,6 +380,34 @@ Never _invokeNotImplemented(List<Object?> arguments) {
   }
 
   throw ProcedureNotImplemented(verb);
+}
+
+/// Marshals a d4rt `validate(...)` call onto [chain].
+///
+/// Positional args: `[0]` the candidate procedure source (String). Runs the
+/// deterministic, LLM-free validator chain and returns the `{ok, findings}`
+/// projection as a `Future` so the script's `await validate(...)` resolves to
+/// the map. The chain never executes the candidate (§ 9.4).
+Future<Map<String, Object?>> _invokeValidate(
+  ProcedureValidationChain chain,
+  List<Object?> arguments,
+) {
+  if (arguments.isEmpty) {
+    throw ArgumentError(
+      'validate expects (String source); got 0 positional arguments',
+    );
+  }
+
+  final source = arguments[0];
+  if (source is! String) {
+    throw ArgumentError.value(
+      source,
+      'source',
+      'validate source must be a String',
+    );
+  }
+
+  return Future<Map<String, Object?>>.value(chain.validate(source).toMap());
 }
 
 /// Marshals a d4rt `emit(...)` call onto [primitive].
