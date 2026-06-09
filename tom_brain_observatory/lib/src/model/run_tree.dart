@@ -1,0 +1,224 @@
+// The run-tree projection of a traced prompt (`prompt_tracing.md` § 3.2 / § 3.6).
+//
+// A [ProcedureRun] is the parser's reconstruction of the §5.7 combined run tree
+// the brain writes to `procedures/<proc>/<turnId>__<runId>.log` (the rendered
+// `ProcedureTreeRecord` — see `procedure_tree_writer.dart`). The recursion lives
+// in the data: a run's nodes include [SubRunNode]s, each carrying its own
+// [ProcedureRun], to whatever depth the run reached.
+//
+// Fidelity note (load-bearing — the spec must not drift from the writers).
+// The parser reads the **rendered** `.log`, not the in-memory `ProcedureTreeRecord`.
+// The renderer is deliberately lossy: a subtree shows its nodes and a status on
+// its header, but no `outcome` line — and the renderer never writes a procedure
+// `version`, a run `depth`, or a sub-run's `elapsedMs` / `entryCount` at all.
+// So those fields are nullable here and are populated only where the file
+// carries them: `status` / `elapsedMs` / `entryCount` for the top-level run
+// (from its `outcome` line) and `status` for a sub-run (from its `subprocedure …
+// (status)` header). Everything else the file omits stays `null`. This matches
+// the §3.6 shape projected onto the bytes the §5.7 file actually carries.
+
+/// One reconstructed procedure run — a node of the PromptTrace run-tree
+/// (`prompt_tracing.md` § 3.6). The top-level run is the tree root; nested runs
+/// hang off [SubRunNode]s in [nodes].
+final class ProcedureRun {
+  /// The procedure script this run executed (`answer_with_memory_v1`, …).
+  final String procedureId;
+
+  /// The run-correlation id (`run-…`).
+  final String runId;
+
+  /// The turn this run served, present only on a top-level run (the file
+  /// header carries it); `null` on a sub-run and on a turn-less dream run.
+  final String? turnId;
+
+  /// The terminal outcome status name (`accepted`, `errored`, `rejected`, …).
+  /// Read from the top-level `outcome` line or a sub-run's header. Never `null`
+  /// for a well-formed run.
+  final String status;
+
+  /// Wall-clock elapsed in milliseconds — top-level only (from the `outcome`
+  /// line). `null` for a sub-run (the rendered subtree omits it).
+  final int? elapsedMs;
+
+  /// Trail-entry count — top-level only (from the `outcome` line). `null` for a
+  /// sub-run.
+  final int? entryCount;
+
+  /// The structural steps of the run, in trail order, with each sub-run spliced
+  /// in at its call position.
+  final List<RunNode> nodes;
+
+  ProcedureRun({
+    required this.procedureId,
+    required this.runId,
+    required this.status,
+    this.turnId,
+    this.elapsedMs,
+    this.entryCount,
+    List<RunNode> nodes = const <RunNode>[],
+  }) : nodes = List<RunNode>.unmodifiable(nodes);
+
+  /// The locked § 3.6 JSON projection. Optional fields are omitted when `null`
+  /// so the shape mirrors what the trail file carried.
+  Map<String, Object?> toJson() => <String, Object?>{
+        'procedureId': procedureId,
+        'runId': runId,
+        if (turnId != null) 'turnId': turnId,
+        'status': status,
+        if (elapsedMs != null) 'elapsedMs': elapsedMs,
+        if (entryCount != null) 'entryCount': entryCount,
+        'nodes': <Object?>[for (final node in nodes) node.toJson()],
+      };
+}
+
+/// One structural step of a [ProcedureRun] — a sealed hierarchy mirroring the
+/// shipped `ProcedureTreeNode` kinds so every kind is rendered (`prompt_tracing.md`
+/// § 3.2). The `kind` discriminator in [toJson] is the UI's render selector.
+sealed class RunNode {
+  const RunNode();
+
+  /// The locked JSON projection, tagged by `kind` (§ 3.2).
+  Map<String, Object?> toJson();
+}
+
+/// A bridged-primitive call other than `llm` — `recall`, `recallMulti`,
+/// `persist`, `edge`, `embed`, `stackPush`, … (`prompt_tracing.md` § 3.8 / § 4.4).
+///
+/// The rendered `.log` carries only what the writer chose to show: the primitive
+/// name always, a `→ <id>` result id for an id-returning primitive (`persist`,
+/// `edge`), and a parsed [recall] descriptor (modes / k / returned) for a
+/// `recall`. The richer `input` / `result` maps live in `memory/<profile>.log`
+/// (§ 3.8) and are wired in a later phase.
+final class PrimitiveCallNode extends RunNode {
+  /// The primitive name (`recall`, `recallMulti`, `persist`, `edge`, `embed`, …).
+  final String primitive;
+
+  /// The `→ <id>` target the writer rendered for an id-returning primitive, or
+  /// `null` when the line carried none.
+  final String? resultId;
+
+  /// The parsed `recall (<modes> k=<k> → <returned>)` descriptor, present only
+  /// for a `recall` primitive.
+  final RecallDescriptor? recall;
+
+  const PrimitiveCallNode({
+    required this.primitive,
+    this.resultId,
+    this.recall,
+  });
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'kind': 'primitive',
+        'primitive': primitive,
+        if (resultId != null) 'resultId': resultId,
+        if (recall != null) 'recall': recall!.toJson(),
+      };
+}
+
+/// The parsed parenthetical of a `recall` primitive line
+/// (`recall (bm25+vector k=8 → 8)`).
+final class RecallDescriptor {
+  /// The recall modes the call ran (`bm25`, `vector`, `graphWalk`, `symbolic`).
+  final List<String> modes;
+
+  /// The requested `k`, verbatim as rendered (the writer prints the raw value);
+  /// `null` when the line carried none.
+  final String? k;
+
+  /// The number of fused nodes the recall returned.
+  final int returned;
+
+  RecallDescriptor({
+    required List<String> modes,
+    required this.returned,
+    this.k,
+  }) : modes = List<String>.unmodifiable(modes);
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'modes': modes,
+        if (k != null) 'k': k,
+        'returned': returned,
+      };
+}
+
+/// One substrate call node (`prompt_tracing.md` § 3.7 / § 4.5). The rendered
+/// `.log` carries the link facts (role, tokens, raw path); the full wire body +
+/// answer stay in the linked `llm/<role>/…raw.json` (read in Phase 2).
+final class LlmCallNode extends RunNode {
+  /// The role the call was assembled for (`assistant_to_user`, `recall_planner`, …).
+  final String callType;
+
+  /// Prompt tokens the call consumed.
+  final int tokensIn;
+
+  /// Completion tokens the call produced.
+  final int tokensOut;
+
+  /// The relative link to the authoritative raw dump, exactly as the `.log`
+  /// rendered it (`../../llm/<role>/<stem>.raw.json`).
+  final String rawPath;
+
+  const LlmCallNode({
+    required this.callType,
+    required this.tokensIn,
+    required this.tokensOut,
+    required this.rawPath,
+  });
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'kind': 'llm',
+        'callType': callType,
+        'tokensIn': tokensIn,
+        'tokensOut': tokensOut,
+        'rawPath': rawPath,
+      };
+}
+
+/// A note node — the engine's `note` entry (`step_truncated`, `run_cancelled`, …).
+final class NoteNode extends RunNode {
+  /// The note category.
+  final String category;
+
+  const NoteNode({required this.category});
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'kind': 'note',
+        'category': category,
+      };
+}
+
+/// A typed error node — the engine's `error` entry.
+final class ErrorNode extends RunNode {
+  /// The typed error class (`substrateTimeout`, `procedure.runtime.crash`, …).
+  final String errorKind;
+
+  /// The error message.
+  final String message;
+
+  const ErrorNode({required this.errorKind, required this.message});
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'kind': 'error',
+        'errorKind': errorKind,
+        'message': message,
+      };
+}
+
+/// A nested run spliced at its call position — the recursion (`prompt_tracing.md`
+/// § 3.6 / § 6.1).
+final class SubRunNode extends RunNode {
+  /// The nested run's own tree.
+  final ProcedureRun run;
+
+  const SubRunNode({required this.run});
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'kind': 'subRun',
+        'run': run.toJson(),
+      };
+}

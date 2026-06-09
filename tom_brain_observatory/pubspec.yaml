@@ -27,6 +27,15 @@ dependencies:
     path: ../../tom_ai/core/tom_core_server
   tom_build_base:
     path: ../../tom_ai/basics/tom_build_base
+  # The Trail Read API (PT-1.4 / PT-1.5) is a thin read-only shelf service.
+  # tom_core_server uses shelf internally but does not re-export it, so the
+  # router + static-file handler are taken directly (the same shelf the base
+  # server is built on). `path` resolves the `../../llm/...` links the
+  # procedures `.log` files carry, server-side, against the trail root.
+  shelf: ^1.4.2
+  shelf_router: ^1.1.2
+  shelf_static: ^1.1.3
+  path: ^1.9.0
 
 dev_dependencies:
   lints: ^6.0.0

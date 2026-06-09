@@ -1,0 +1,35 @@
+ID,Groups,Description,Baseline [06-09 13:11],[06-09 13:13]
+,parseRunTree — deep accepted fixture (a0),top-level run header + outcome,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),"top-level nodes in trail order, by kind",OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),top-level llm call decoded,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),id-returning primitives carry their result id,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),inbound projects the incoming record,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),recurses to full depth: a0 → a1 → a2,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),walk helpers count across the whole tree,OK/OK,OK/OK
+,promptList — configured host,"one row per incoming record, newest-first",OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),configuration is what actually ran (distinct tuples),OK/OK,OK/OK
+,parseRunTree — error fixture (b0),errored outcome with elapsed in seconds,OK/OK,OK/OK
+,promptList — configured host,accepted turn row carries outcome + counts,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),reply joins the summary answer with the run outcome,OK/OK,OK/OK
+,parseRunTree — error fixture (b0),typed error node decoded,OK/OK,OK/OK
+,promptList — configured host,errored turn row reflects the errored outcome,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),run tree is present and recursive,OK/OK,OK/OK
+,"parseRunTree — malformed input degrades, never throws",empty content → null,OK/OK,OK/OK
+,promptList — configured host,in-flight turn row has no outcome and zero counts,OK/OK,OK/OK
+,"parseRunTree — malformed input degrades, never throws",no header → null,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),toJson is the locked §3 shape,OK/OK,OK/OK
+,promptList — configured host,"limit caps the window, keeping the newest",OK/OK,OK/OK
+,promptTraceFor — errored turn (b0),reply carries the verbatim no-answer placeholder + errored outcome,OK/OK,OK/OK
+,promptList — unconfigured host (§ 8.1),"degrades to an empty list, never an error",OK/OK,OK/OK
+,"promptTraceFor — in-flight turn (c, incoming only)",inbound present but run-tree / reply absent,OK/OK,OK/OK
+,promptTraceFor — unknown turn,returns null (turn unknown to host),OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,GET /api/traces → newest-first prompt list,OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,GET /api/traces?limit=1 caps the window,OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,GET /api/traces/{turnId} → the PromptTrace,OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,"GET /api/traces/{unknown} → 404, not an SPA fallthrough",OK/OK,OK/OK
+OBS-1,PT-1.4 — /api JSON endpoints,exercising every endpoint mutates no trail file,OK/OK,OK/OK
+,PT-1.5 — static root at /,GET / serves the build index,OK/OK,OK/OK
+,PT-1.5 — static root at /,GET /assets/main.dart.js serves the static asset,OK/OK,OK/OK
+,PT-1.5 — static root at /,unknown app route falls back to index.html (SPA),OK/OK,OK/OK
+,PT-1.5 — static root at /,"/api still routes to the JSON API, not the static root",OK/OK,OK/OK
+,PT-1.5 — static root at /,path-traversal never serves a file outside the web root,OK/OK,OK/OK

@@ -1,0 +1,109 @@
+// The Trail Read API (`prompt_tracing.md` § 8.3) — one shelf handler serving the
+// read-only JSON API under `/api` and the embedded Flutter-web build under `/`,
+// from a single process and origin (§ 8.5). Two endpoints in Phase 1:
+//
+//   GET /api/traces            → the §4.1 prompt list (last-N rows, newest-first)
+//   GET /api/traces/{turnId}   → the §3.2 PromptTrace for one turn (404 if absent)
+//
+// Read-only is load-bearing (OBS-1, § 6.2): every request is a *fresh* parse of
+// the immutable trail — the handler holds no cache that could diverge from what
+// the brain wrote (§ 8.3) — and no path in this file ever opens a trail file for
+// writing. The static root is read-only too (PT-1.5).
+//
+// `/api/*` is dispatched before the static root so an unknown `turnId` returns a
+// real `404` instead of falling through to the SPA's `index.html`.
+
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+import 'package:shelf/shelf.dart';
+import 'package:shelf_router/shelf_router.dart';
+import 'package:shelf_static/shelf_static.dart';
+
+import '../model/prompt_trace.dart';
+import '../parse/prompt_list_builder.dart';
+import '../parse/prompt_trace_parser.dart';
+import '../parse/trail_host.dart';
+
+/// A read-only shelf service over one [TrailHost], optionally serving an
+/// embedded web build from [webRoot]. Construct it, then mount [handler].
+final class TrailReadApi {
+  /// The host whose trail tree is read (fresh on every request).
+  final TrailHost host;
+
+  /// The default prompt-list window (`GET /api/traces`), configurable (§ 8.3).
+  final int listLimit;
+
+  /// The directory the embedded web build is served from at `/`, or `null` to
+  /// serve only the `/api` surface (the web build lands in PT-2.0).
+  final Directory? webRoot;
+
+  TrailReadApi({
+    required this.host,
+    this.listLimit = 10,
+    this.webRoot,
+  });
+
+  /// The composed handler: `/api/*` routed to the JSON API, everything else to
+  /// the static root (when [webRoot] is set) with SPA fallback.
+  Handler get handler {
+    final api = _apiRouter.call;
+    final static = webRoot == null ? null : _staticHandler(webRoot!);
+    return (Request request) {
+      if (_isApiPath(request.url.path)) return api(request);
+      if (static != null) return static(request);
+      return Response.notFound('not found');
+    };
+  }
+
+  /// True when the request path addresses the JSON API (`api` or `api/…`).
+  static bool _isApiPath(String path) => path == 'api' || path.startsWith('api/');
+
+  Router get _apiRouter => Router()
+    ..get('/api/traces', _listTraces)
+    ..get('/api/traces/<turnId>', _singleTrace);
+
+  /// `GET /api/traces` — the prompt list as a JSON array (§ 4.1). An optional
+  /// `?limit=` overrides the default window.
+  Response _listTraces(Request request) {
+    final limit = int.tryParse(request.url.queryParameters['limit'] ?? '') ??
+        listLimit;
+    final rows = promptList(host, limit: limit);
+    return _json(<Object?>[for (final row in rows) row.toJson()]);
+  }
+
+  /// `GET /api/traces/{turnId}` — one PromptTrace, or `404` when the host has no
+  /// trace for the turn (§ 4.1 — absence is a clean not-found, not an error).
+  Response _singleTrace(Request request, String turnId) {
+    final PromptTrace? trace = promptTraceFor(host, turnId);
+    if (trace == null) {
+      return _json(<String, Object?>{'error': 'no trace for turn $turnId'},
+          status: HttpStatus.notFound);
+    }
+    return _json(trace.toJson());
+  }
+
+  /// The static root (PT-1.5): the web build served read-only, with an
+  /// `index.html` SPA fallback for unknown app routes. `createStaticHandler`
+  /// refuses path-traversal outside [root]; the fallback only ever serves the
+  /// build's own `index.html`, never a file outside the root.
+  Handler _staticHandler(Directory root) {
+    final files = createStaticHandler(root.path, defaultDocument: 'index.html');
+    final index = File(p.join(root.path, 'index.html'));
+    return Cascade().add(files).add((_) => _spaFallback(index)).handler;
+  }
+
+  Response _spaFallback(File index) => index.existsSync()
+      ? Response.ok(index.readAsBytesSync(),
+          headers: <String, String>{'content-type': 'text/html'})
+      : Response.notFound('not found');
+
+  Response _json(Object? body, {int status = HttpStatus.ok}) => Response(
+        status,
+        body: jsonEncode(body),
+        headers: <String, String>{
+          'content-type': 'application/json; charset=utf-8',
+        },
+      );
+}
