@@ -10,10 +10,12 @@ import 'package:tom_brain_observatory_web/src/app.dart';
 import 'package:tom_brain_observatory_web/src/views/prompt_list_view.dart';
 
 import 'support/stub_api_client.dart';
+import 'support/stub_memory_api_client.dart';
 
 void main() {
   testWidgets('renders the rows returned by the API client', (tester) async {
     await tester.pumpWidget(ObservatoryApp(
+      memoryClient: StubMemoryApiClient(),
       client: StubApiClient(rows: [
         stubRow('260101-120200.000003', preview: 'newest prompt'),
         stubRow('260101-120100.000002', preview: 'older prompt'),
@@ -27,7 +29,10 @@ void main() {
   });
 
   testWidgets('shows the empty-state when no prompts are traced', (tester) async {
-    await tester.pumpWidget(ObservatoryApp(client: StubApiClient()));
+    await tester.pumpWidget(ObservatoryApp(
+      memoryClient: StubMemoryApiClient(),
+      client: StubApiClient(),
+    ));
     await tester.pumpAndSettle();
 
     expect(find.text('No prompts traced yet.'), findsOneWidget);

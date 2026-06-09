@@ -14,6 +14,7 @@ import 'package:tom_brain_observatory_web/src/views/prompt_list_view.dart';
 import 'package:tom_brain_observatory_web/src/views/prompt_trace_detail_view.dart';
 
 import '../support/stub_api_client.dart';
+import '../support/stub_memory_api_client.dart';
 
 void main() {
   testWidgets('reloads the list when a list-change tick arrives (PT-4.2)',
@@ -21,6 +22,7 @@ void main() {
     final changes = StreamController<void>.broadcast();
     addTearDown(changes.close);
     await tester.pumpWidget(ObservatoryApp(
+      memoryClient: StubMemoryApiClient(),
       client: StubApiClient(
         rows: <PromptListRow>[stubRow('260101-120000.000001', preview: 'first')],
         rowsAfterChange: <PromptListRow>[
@@ -41,6 +43,7 @@ void main() {
 
   testWidgets('renders §4.1 row content', (tester) async {
     await tester.pumpWidget(ObservatoryApp(
+      memoryClient: StubMemoryApiClient(),
       client: StubApiClient(rows: [
         stubRow(
           '260101-120000.000001',
@@ -64,6 +67,7 @@ void main() {
 
   testWidgets('renders rows in the order the client returned them', (tester) async {
     await tester.pumpWidget(ObservatoryApp(
+      memoryClient: StubMemoryApiClient(),
       client: StubApiClient(rows: [
         stubRow('260101-120200.000003', preview: 'newest'),
         stubRow('260101-120000.000001', preview: 'oldest'),
@@ -81,6 +85,7 @@ void main() {
   testWidgets('an in-flight row shows the in-flight chip and em-dash clock',
       (tester) async {
     await tester.pumpWidget(ObservatoryApp(
+      memoryClient: StubMemoryApiClient(),
       client: StubApiClient(rows: [
         stubRow('260101-120300.000004',
             preview: 'in flight', outcomeStatus: null, wallClockMs: null),
@@ -96,6 +101,7 @@ void main() {
   testWidgets('selecting a row opens its PromptTrace detail', (tester) async {
     const turnId = '260101-120000.000001';
     await tester.pumpWidget(ObservatoryApp(
+      memoryClient: StubMemoryApiClient(),
       client: StubApiClient(
         rows: [stubRow(turnId, preview: 'open me')],
         traces: <String, PromptTrace>{

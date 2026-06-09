@@ -135,11 +135,11 @@ class HttpMemoryApiClient implements MemoryApiClient {
     int? wallClockMs,
   }) async {
     final body = await _postJson('api/memory/recall', <String, dynamic>{
-      if (text != null) 'text': text,
-      if (embedding != null) 'embedding': embedding,
+      'text': ?text,
+      'embedding': ?embedding,
       if (modes != null) 'modes': <String>[for (final m in modes) m.wireName],
-      if (k != null) 'k': k,
-      if (wallClockMs != null) 'wallClockMs': wallClockMs,
+      'k': ?k,
+      'wallClockMs': ?wallClockMs,
     });
     return RecallResult.fromJson(body);
   }
@@ -152,8 +152,8 @@ class HttpMemoryApiClient implements MemoryApiClient {
   }) async {
     final body = await _postJson('api/memory/recall/multi', <String, dynamic>{
       'seeds': <dynamic>[for (final seed in seeds) seed.toJson()],
-      if (k != null) 'k': k,
-      if (wallClockMs != null) 'wallClockMs': wallClockMs,
+      'k': ?k,
+      'wallClockMs': ?wallClockMs,
     });
     return RecallResult.fromJson(body);
   }

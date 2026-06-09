@@ -6,9 +6,13 @@
 
 import 'package:flutter/material.dart';
 
+import 'src/api/memory_api_client.dart';
 import 'src/api/trace_api_client.dart';
 import 'src/app.dart';
 
 void main() {
-  runApp(ObservatoryApp(client: HttpTraceApiClient()));
+  runApp(ObservatoryApp(
+    client: HttpTraceApiClient(),
+    memoryClient: HttpMemoryApiClient(),
+  ));
 }

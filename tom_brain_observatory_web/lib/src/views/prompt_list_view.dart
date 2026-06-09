@@ -9,17 +9,25 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../api/memory_api_client.dart';
 import '../api/trace_api_client.dart';
 import '../model/prompt_trace.dart';
 import 'format.dart';
+import 'memory/memory_home_view.dart';
 import 'outcome_chip.dart';
 import 'prompt_trace_detail_view.dart';
 
-/// The prompt-list page over [client].
+/// The prompt-list page over [client], with a toolbar route into the Module-2
+/// memory home over [memoryClient] (§ 5, PT-6).
 class PromptListView extends StatefulWidget {
   final TraceApiClient client;
+  final MemoryApiClient memoryClient;
 
-  const PromptListView({super.key, required this.client});
+  const PromptListView({
+    super.key,
+    required this.client,
+    required this.memoryClient,
+  });
 
   @override
   State<PromptListView> createState() => _PromptListViewState();
@@ -55,9 +63,24 @@ class _PromptListViewState extends State<PromptListView> {
     ));
   }
 
+  void _openMemory() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => MemoryHomeView(client: widget.memoryClient),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Tom Brain Observatory — Prompt Tracing')),
+        appBar: AppBar(
+          title: const Text('Tom Brain Observatory — Prompt Tracing'),
+          actions: <Widget>[
+            IconButton(
+              icon: const Icon(Icons.memory),
+              tooltip: 'Memory',
+              onPressed: _openMemory,
+            ),
+          ],
+        ),
         body: FutureBuilder<List<PromptListRow>>(
           future: _rows,
           builder: (context, snapshot) {
