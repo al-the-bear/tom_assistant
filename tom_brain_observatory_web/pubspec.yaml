@@ -1,11 +1,12 @@
 name: tom_brain_observatory_web
 description: >-
   Flutter-web front-end for the Tom Brain Observatory (Module 1 — Prompt
-  Tracing). Built by `flutter build web` into static assets that the
-  tom_brain_observatory Trail Read API serves from its static root, so the
-  whole observatory is one process on one origin (prompt_tracing.md § 2.2,
-  § 8.5). The app reads the read-only §3.9 JSON contract under the same-origin
-  `/api` — no base-URL config, no CORS — and never writes (OBS-1..OBS-5).
+  Tracing; Module 2 — Memory Monitoring). Built by `flutter build web` into
+  static assets that the tom_brain_observatory Trail Read API serves from its
+  static root, so the whole observatory is one process on one origin
+  (prompt_tracing.md § 2.2, § 8.5). The app reads the read-only §3.9 JSON
+  contract and the `/api/memory/*` read surface under the same-origin `/api` —
+  no base-URL config, no CORS — and never writes (OBS-1..OBS-5).
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
