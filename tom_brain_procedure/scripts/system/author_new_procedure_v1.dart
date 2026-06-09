@@ -91,12 +91,11 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // it hands the facts back so this loop does not need a second parser. Fall
   // back to the intent when the header itself was unparseable.
   final header = validation['header'];
-  final hasHeader = header is Map;
-  final name = hasHeader && header['id'] is String ? header['id'] : intent;
-  final summary =
-      hasHeader && header['summary'] is String ? header['summary'] : intent;
-  final requires =
-      hasHeader && header['requires'] is List ? header['requires'] : <String>[];
+  final name = _headerString(header, 'id', intent);
+  final summary = _headerString(header, 'summary', intent);
+  final requires = header is Map && header['requires'] is List
+      ? header['requires']
+      : <String>[];
 
   final embedding = await sub.embed('$name $summary');
   final valid = validation['ok'] == true;
@@ -160,4 +159,13 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     'status': status,
     'producedNodeIds': [nodeId],
   };
+}
+
+/// Reads a String field [key] from the validator-parsed [header], or [fallback]
+/// when the header was unparseable or the field is absent / non-String. The
+/// intent-fallback policy for the persisted node's identity fields lives here,
+/// in one place, rather than being repeated per field.
+String _headerString(Object? header, String key, String fallback) {
+  if (header is Map && header[key] is String) return header[key] as String;
+  return fallback;
 }
