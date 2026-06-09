@@ -325,9 +325,10 @@ substrate:
       // `hypothesis_writer`, … — failed `open()`'s cross-validation because the
       // routed role was not registered. The conductor then silently degraded its
       // LLM recall legs to the two non-LLM seeds. The builder now defaults to
-      // `bootstrapRoleRegistryWithRetrievalAndProcedure()`, so the six retrieval
-      // roles (and the three Todo-7 procedure roles) are registered live and a
-      // config routing them validates.
+      // `bootstrapRoleRegistryWithRetrievalProcedureAndCreation()`, so the six
+      // retrieval roles (plus the three Todo-7 procedure roles and the three
+      // Todo-9 creation roles) are registered live and a config routing them
+      // validates.
       const String retrievalSubstrate = '''
 substrate:
   providers:

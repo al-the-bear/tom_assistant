@@ -110,6 +110,13 @@ export 'retrieval/retrieval_barrel.dart';
 // exactly the six core roles; `bootstrapRoleRegistryWithProcedure()` composes
 // the nine-role thinking + procedure roster.
 export 'procedure/procedure_barrel.dart';
+// Todo 9 (G-C4) — the three creation-subsystem roles
+// (`creation_specification.md` § 6): `creator`, `tester`, `reviewer`. A
+// separate, optional roster (like the retrieval and procedure rosters):
+// `bootstrapRoleRegistry()` still returns exactly the six core roles;
+// `bootstrapRoleRegistryWithRetrievalProcedureAndCreation()` composes the full
+// eighteen-role live roster (core + retrieval + procedure + creation).
+export 'creation/creation_barrel.dart';
 export 'role_budget_defaults.dart';
 export 'role_registry.dart';
 export 'role_template.dart';
