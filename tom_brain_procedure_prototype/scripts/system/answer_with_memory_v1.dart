@@ -253,7 +253,15 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // minimal local-history assembly the prototype owns until `call_llm_v1`
   // (§ 21.5) takes over the full assembler.
   final priorTurns = inputs.has('priorTurns') ? inputs.get('priorTurns') : null;
-  final prompt = _assemblePrompt(recall, text, priorTurns);
+  // The dispatcher route threads the default tool catalogue in under
+  // `toolCatalogue` (procedure spec § 21.4) so a memoryless substrate can name
+  // the tools it has. This path is *awareness only* — `answer_with_memory_v1`
+  // runs the `assistant_to_user` role and does not invoke tools; callable
+  // end-to-end invocation is the deferred `call_llm_v1` path. Absent on hosts
+  // that pass no catalogue, so default to empty (PE-9: the prompt is unchanged).
+  final toolCatalogue =
+      inputs.has('toolCatalogue') ? inputs.get('toolCatalogue') : null;
+  final prompt = _assemblePrompt(recall, text, priorTurns, toolCatalogue);
   final completion = await sub.llm(prompt, role: 'assistant_to_user');
   final answer = completion['text'];
 
@@ -405,7 +413,9 @@ List<String> _citedNodeIds(Map recall) {
 /// then each recalled node's `text` value becomes a context line; then the
 /// user's live prompt. An empty / absent history and an empty recall each drop
 /// their block, so a cold first turn sends only the user prompt (PE-9).
-String _assemblePrompt(Map recall, Object? text, Object? priorTurns) {
+String _assemblePrompt(
+    Map recall, Object? text, Object? priorTurns, Object? toolCatalogue) {
+  final tools = _renderToolCatalogue(toolCatalogue);
   final history = _renderPriorTurns(priorTurns);
 
   var context = '';
@@ -421,7 +431,30 @@ String _assemblePrompt(Map recall, Object? text, Object? priorTurns) {
     }
   }
   final preamble = context.isEmpty ? '' : 'Relevant recalled memory:\n$context\n';
-  return '$history${preamble}User prompt:\n$text';
+  return '$tools$history${preamble}User prompt:\n$text';
+}
+
+/// Renders the default tool catalogue as a "Tools available to you" block, or
+/// `''` when there is none. Each descriptor is a `{name, group, description}`
+/// map (procedure spec § 21.4); the block lets the substrate name its tools
+/// from the prompt alone. This is awareness, not invocation — the
+/// `assistant_to_user` role does not call tools.
+String _renderToolCatalogue(Object? toolCatalogue) {
+  if (toolCatalogue is! List || toolCatalogue.isEmpty) return '';
+  var rendered = '';
+  for (final tool in toolCatalogue) {
+    if (tool is! Map) continue;
+    final name = tool['name'];
+    if (name == null || '$name'.isEmpty) continue;
+    final group = tool['group'];
+    final description = tool['description'];
+    final groupSuffix =
+        (group != null && '$group'.isNotEmpty) ? ' ($group)' : '';
+    final descSuffix =
+        (description != null && '$description'.isNotEmpty) ? ': $description' : '';
+    rendered += '- $name$groupSuffix$descSuffix\n';
+  }
+  return rendered.isEmpty ? '' : 'Tools available to you:\n$rendered\n';
 }
 
 /// Renders the prior conversation turns as `User:` / `Assistant:` lines (the

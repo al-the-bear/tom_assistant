@@ -70,6 +70,54 @@ void main() {
     });
   });
 
+  group('F.7-1b defaultToolCatalogue wire descriptors', () {
+    test('describes the fifteen basic tools with name/group/description', () {
+      final catalogue = defaultToolCatalogue();
+      expect(catalogue, hasLength(15));
+
+      // Each descriptor carries the four wire fields the substrate's
+      // tool-catalogue render reads (`{name, group, description, input_schema}`,
+      // mirroring `ToolBridge._describe`).
+      for (final descriptor in catalogue) {
+        expect(descriptor['name'], isA<String>());
+        expect((descriptor['name']! as String), isNotEmpty);
+        expect(descriptor['group'], isA<String>());
+        expect((descriptor['description']! as String), isNotEmpty);
+        expect(descriptor['input_schema'], isA<Map<Object?, Object?>>());
+      }
+
+      final names = catalogue
+          .map((d) => d['name']! as String)
+          .toSet();
+      expect(
+        names,
+        containsAll(<String>[
+          'memory.read',
+          'memory.write',
+          'memory.delete',
+          'todo.list',
+          'todo.add',
+          'todo.update',
+          'todo.remove',
+          'file.read',
+          'file.write',
+          'grep.search',
+          'web.search',
+          'web.fetch',
+          'script.run_d4rt',
+          'procedure.list',
+          'procedure.run',
+        ]),
+      );
+
+      // The group token is the wire `ToolGroup.name` (e.g. `memory`), not the
+      // enum's `toString()`.
+      final memoryRead =
+          catalogue.firstWhere((d) => d['name'] == 'memory.read');
+      expect(memoryRead['group'], 'memory');
+    });
+  });
+
   group('F.7-2 happy paths route through the existing surface', () {
     test('memory.read routes through recall and returns the nodes', () async {
       const nodeId = 'n_00000000000000000000000001';

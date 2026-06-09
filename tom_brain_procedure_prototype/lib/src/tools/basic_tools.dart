@@ -64,26 +64,47 @@ const Set<String> writableNodeShapes = <String>{
 /// any duplicate registration does (§ 21.2). The composition root calls this
 /// once when it builds the run's registry.
 void registerBasicTools(ToolRegistry registry) {
-  for (final tool in <BrainTool>[
-    _MemoryReadTool(),
-    _MemoryWriteTool(),
-    _MemoryDeleteTool(),
-    _TodoListTool(),
-    _TodoAddTool(),
-    _TodoUpdateTool(),
-    _TodoRemoveTool(),
-    _FileReadTool(),
-    _FileWriteTool(),
-    _GrepSearchTool(),
-    _WebSearchTool(),
-    _WebFetchTool(),
-    _ScriptRunD4rtTool(),
-    _ProcedureListTool(),
-    _ProcedureRunTool(),
-  ]) {
+  for (final tool in _basicTools()) {
     registry.register(tool);
   }
 }
+
+/// The shipped basic tool set (§ 21.4), one fresh instance per call.
+List<BrainTool> _basicTools() => <BrainTool>[
+      _MemoryReadTool(),
+      _MemoryWriteTool(),
+      _MemoryDeleteTool(),
+      _TodoListTool(),
+      _TodoAddTool(),
+      _TodoUpdateTool(),
+      _TodoRemoveTool(),
+      _FileReadTool(),
+      _FileWriteTool(),
+      _GrepSearchTool(),
+      _WebSearchTool(),
+      _WebFetchTool(),
+      _ScriptRunD4rtTool(),
+      _ProcedureListTool(),
+      _ProcedureRunTool(),
+    ];
+
+/// The wire descriptors for the shipped basic tool set (§ 21.4).
+///
+/// Each descriptor is the `{name, group, description, input_schema}` shape the
+/// substrate tool-catalogue render reads (the same shape `ToolBridge._describe`
+/// emits for the d4rt `tool.list()` global). Threading this list into the live
+/// answer path lets a memoryless substrate name the tools it has available,
+/// independent of whether the wire provider yet honours an OpenAI `tools`
+/// request field (callable end-to-end invocation is the deferred `call_llm_v1`
+/// path).
+List<Map<String, Object?>> defaultToolCatalogue() => _basicTools()
+    .map((tool) => <String, Object?>{
+          'name': tool.name,
+          'group': tool.group.name,
+          'description': tool.description,
+          'input_schema': tool.inputSchema,
+        })
+    .toList(growable: false);
 
 // ── memory.* ─────────────────────────────────────────────────────────
 

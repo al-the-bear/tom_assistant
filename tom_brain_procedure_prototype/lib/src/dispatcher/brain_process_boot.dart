@@ -74,6 +74,7 @@ import '../recorder/memory_access_record.dart' show MemoryAccessSink;
 import '../recorder/procedure_tree_record.dart' show ProcedureTreeSink;
 import '../recorder/turn_summary.dart' show TurnSummary, TurnSummarySink;
 import '../procedure_store/procedure_resolver.dart';
+import '../tools/basic_tools.dart' show defaultToolCatalogue;
 import 'dispatcher_entry.dart';
 import 'inbound_classifier.dart';
 import 'memory_provisioning.dart';
@@ -119,6 +120,18 @@ const String inboundTextArgumentKey = 'text';
 /// on a cold first turn (no history, or only the just-admitted turn), so the
 /// procedure treats a missing key as "no history" (PE-9).
 const String priorTurnsArgumentKey = 'priorTurns';
+
+/// The tool-catalogue argument key the routed procedure
+/// (`answer_with_memory_v1`, § 11) reads as `toolCatalogue` (procedure spec
+/// § 21.4).
+///
+/// Boot's route binds the default tool catalogue (`defaultToolCatalogue()`)
+/// under this key so the procedure can render a "Tools available to you" block
+/// into the answer prompt — letting a memoryless substrate name the tools it
+/// has. This is awareness only: `answer_with_memory_v1` runs the
+/// `assistant_to_user` role and does not invoke tools (callable end-to-end
+/// invocation is the deferred `call_llm_v1` path).
+const String toolCatalogueArgumentKey = 'toolCatalogue';
 
 /// The default best-effort bound [BootedBrain.shutdown] gives the coordinator
 /// drain (D.45).
@@ -702,6 +715,11 @@ abstract final class BrainProcessBoot {
     required ProcedureEngine engine,
     required TurnSummarySink? turnSummarySink,
   }) {
+    // The default tool catalogue is process-stable, so build it once and thread
+    // the same list into every routed invocation (procedure spec § 21.4). The
+    // procedure renders it into the answer prompt so the substrate can name its
+    // tools; awareness only — invocation is the deferred `call_llm_v1` path.
+    final List<Map<String, Object?>> toolCatalogue = defaultToolCatalogue();
     return (Access access) async {
       // A confident centroid hint routes directly to its procedure; a no-hint
       // inbound falls back through classify → select (Q-E.50.1). Either
@@ -741,6 +759,7 @@ abstract final class BrainProcessBoot {
                     inboundTextArgumentKey: access.envelope.text,
                     if (priorTurns.isNotEmpty)
                       priorTurnsArgumentKey: priorTurns,
+                    toolCatalogueArgumentKey: toolCatalogue,
                   },
                   // Carry the access-edge-minted turn id (logging-spec §3) onto
                   // the invocation so the engine threads it — plus a per-turn

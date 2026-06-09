@@ -19,7 +19,8 @@
 // client, and the `tool.list` / `tool.invoke` bridged primitives wire the
 // registry + policy into the d4rt host.
 
-export 'basic_tools.dart' show registerBasicTools, writableNodeShapes;
+export 'basic_tools.dart'
+    show defaultToolCatalogue, registerBasicTools, writableNodeShapes;
 export 'brain_tool.dart';
 export 'todo_store.dart' show TodoEntry, TodoStore;
 export 'tool_context.dart';
