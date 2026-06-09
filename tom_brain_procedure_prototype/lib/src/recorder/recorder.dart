@@ -41,6 +41,9 @@ export 'llm_trail_record.dart' show LlmTrailRecord, LlmTrailSink;
 // memory call + run-correlation) and its sink type.
 export 'memory_access_record.dart'
     show MemoryAccessRecord, MemoryAccessSink;
+// The engine-layer tool-access record (emitted tool event + run-correlation)
+// and its sink type — the trail half of "tool calls must be in the trails".
+export 'tool_access_record.dart' show ToolAccessRecord, ToolAccessSink;
 // §10 step #9 — the engine-layer combined per-procedure run tree (structure +
 // link-only LLM refs + spliced subprocedures) and its sink type.
 export 'procedure_tree_record.dart'

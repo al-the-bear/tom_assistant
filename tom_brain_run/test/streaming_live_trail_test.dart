@@ -25,7 +25,15 @@ import 'dart:io';
 import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
     show AccessChannel, IncomingTrailRecord;
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
-    show LlmCallObservation, LlmTrailRecord, MemoryAccessRecord, TurnSummary;
+    show
+        LlmCallObservation,
+        LlmTrailRecord,
+        MemoryAccessRecord,
+        ToolAccessRecord,
+        ToolEvent,
+        ToolFailed,
+        ToolInvoked,
+        TurnSummary;
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart' show TurnId;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart' show LlmCallReport;
@@ -38,6 +46,9 @@ const _t2 = '260608-120831.000002';
 const _t3 = '260608-120831.000003';
 const _ta = '260608-120831.000010';
 const _tb = '260608-120831.000011';
+
+/// Deterministic UTC instant for tool-event `occurredAt` stamps.
+final _at = DateTime.utc(2026, 6, 8, 12, 8, 31);
 
 void main() {
   late Directory root;
@@ -167,19 +178,67 @@ void main() {
     });
   });
 
+  group('StreamingLiveTrailWriter — onToolCall', () {
+    test('renders a 🔧 tool block naming the invoked tool', () {
+      final w = StreamingLiveTrailWriter(root: root, turnsKept: 20);
+      w.beginPrompt(_incoming(turnId: _t1, sessionId: 'sess-1', text: 'q'));
+      w.onToolCall(_tool(
+          turnId: _t1, event: ToolInvoked(occurredAt: _at, name: 'memory.read', group: 'memory')));
+
+      final md = read('sessions/sess-1.live-trail.md');
+      expect(md, contains('### 🔧 tool memory.read [${_t1}__01]'),
+          reason: 'first step of the turn gets seq 01');
+      expect(md, contains('```json'));
+      expect(md, contains('"name": "memory.read"'));
+      expect(md, contains('"group": "memory"'));
+    });
+
+    test('a failed invocation is labelled (failed) and carries the reason', () {
+      final w = StreamingLiveTrailWriter(root: root, turnsKept: 20);
+      w.beginPrompt(_incoming(turnId: _t1, sessionId: 'sess-1', text: 'q'));
+      w.onToolCall(_tool(
+          turnId: _t1,
+          event: ToolFailed(
+              occurredAt: _at, name: 'does.not.exist', reason: 'unknown tool "does.not.exist"')));
+
+      final md = read('sessions/sess-1.live-trail.md');
+      expect(md, contains('### 🔧 tool does.not.exist (failed) [${_t1}__01]'));
+      expect(md, contains('unknown tool'));
+    });
+
+    test('a turn-less (dream) tool call writes nothing', () {
+      StreamingLiveTrailWriter(root: root, turnsKept: 20).onToolCall(_tool(
+          turnId: null,
+          event: ToolInvoked(occurredAt: _at, name: 'memory.read', group: 'memory')));
+      final sessions = Directory('${root.path}/sessions');
+      expect(sessions.existsSync() && sessions.listSync().isNotEmpty, isFalse);
+    });
+
+    test('a tool call with no open turn writes nothing', () {
+      StreamingLiveTrailWriter(root: root, turnsKept: 20).onToolCall(_tool(
+          turnId: _t1,
+          event: ToolInvoked(occurredAt: _at, name: 'memory.read', group: 'memory')));
+      expect(exists('sessions/sess-1.live-trail.md'), isFalse);
+    });
+  });
+
   group('StreamingLiveTrailWriter — endPrompt', () {
     test('writes the DONE banner with the step counts', () {
       final w = StreamingLiveTrailWriter(root: root, turnsKept: 20);
       w.beginPrompt(_incoming(turnId: _t1, sessionId: 'sess-1', text: 'q'));
       w.onLlmCall(_llm(turnId: _t1, role: 'recaller', answer: 'r'));
       w.onMemoryCall(_mem(turnId: _t1, primitive: 'recall'));
+      w.onToolCall(_tool(
+          turnId: _t1, event: ToolInvoked(occurredAt: _at, name: 'memory.read', group: 'memory')));
       w.onLlmCall(_llm(turnId: _t1, role: 'assistant_to_user', answer: 'done'));
       w.endPrompt(_turn(turnId: _t1, sessionId: 'sess-1'));
 
       final md = read('sessions/sess-1.live-trail.md');
-      expect(md, contains('### ✅ DONE (llmCalls=2, memCalls=1,'));
-      expect(md,
-          matches(RegExp(r'### ✅ DONE \(llmCalls=2, memCalls=1, \d+ms\)')));
+      expect(md, contains('### ✅ DONE (llmCalls=2, memCalls=1, toolCalls=1,'));
+      expect(
+          md,
+          matches(RegExp(
+              r'### ✅ DONE \(llmCalls=2, memCalls=1, toolCalls=1, \d+ms\)')));
     });
 
     test('endPrompt with no open turn is a no-op', () {
@@ -317,6 +376,17 @@ MemoryAccessRecord _mem({
       at: DateTime.utc(2026, 6, 8, 12, 8, 31),
       turnId: turnId,
       profile: 'default',
+    );
+
+ToolAccessRecord _tool({
+  required String? turnId,
+  required ToolEvent event,
+}) =>
+    ToolAccessRecord(
+      event: event,
+      runId: 'run-7',
+      trailId: 'trail-7',
+      turnId: turnId,
     );
 
 TurnSummary _turn({

@@ -71,6 +71,7 @@ import '../mcp/mcp_client.dart' show McpConnector;
 import '../procedure_store/disk_procedure_store.dart';
 import '../recorder/llm_trail_record.dart' show LlmTrailSink;
 import '../recorder/memory_access_record.dart' show MemoryAccessSink;
+import '../recorder/tool_access_record.dart' show ToolAccessSink;
 import '../recorder/procedure_tree_record.dart' show ProcedureTreeSink;
 import '../recorder/turn_summary.dart' show TurnSummary, TurnSummarySink;
 import '../procedure_store/procedure_resolver.dart';
@@ -308,6 +309,15 @@ final class BrainProcessConfig {
   /// config; tests pass a capture closure.
   final MemoryAccessSink? memoryAccessSink;
 
+  /// The per-run tool-access sink (the trail half of "tool calls must be in
+  /// the trails files, especially the live-trail"), or `null` for the prototype
+  /// default (no tool trail). When non-null, boot threads it onto the
+  /// [ProcedureEngine] so every run's tool bridge reports one record per
+  /// `tool.list` / `tool.invoke` into it, run-correlated and turn-stamped.
+  /// Production binds the live-trail's `onToolCall`; tests pass a capture
+  /// closure. Best-effort and non-blocking (§9).
+  final ToolAccessSink? toolAccessSink;
+
   /// The per-procedure combined run-tree sink (`tom_brain_logging.md` §5.7 / §10
   /// step #9), or `null` for the prototype default (no per-procedure tree). When
   /// non-null, boot threads it onto the [ProcedureEngine] so every top-level (or
@@ -344,6 +354,7 @@ final class BrainProcessConfig {
     this.mcpConnector,
     this.llmTrailSink,
     this.memoryAccessSink,
+    this.toolAccessSink,
     this.procedureTreeSink,
     this.turnSummarySink,
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
@@ -571,6 +582,7 @@ abstract final class BrainProcessBoot {
       extensions: extensions,
       llmTrailSink: config.llmTrailSink,
       memoryAccessSink: config.memoryAccessSink,
+      toolAccessSink: config.toolAccessSink,
       procedureTreeSink: config.procedureTreeSink,
       memoryWriteLimits: config.memoryWriteLimits,
     );
@@ -634,6 +646,7 @@ abstract final class BrainProcessBoot {
     required BrainEngineExtensions? extensions,
     required LlmTrailSink? llmTrailSink,
     required MemoryAccessSink? memoryAccessSink,
+    required ToolAccessSink? toolAccessSink,
     required ProcedureTreeSink? procedureTreeSink,
     required MemoryWriteLimits memoryWriteLimits,
   }) =>
@@ -646,6 +659,7 @@ abstract final class BrainProcessBoot {
         extensions: extensions,
         llmTrailSink: llmTrailSink,
         memoryAccessSink: memoryAccessSink,
+        toolAccessSink: toolAccessSink,
         procedureTreeSink: procedureTreeSink,
         memoryWriteLimits: memoryWriteLimits,
       );

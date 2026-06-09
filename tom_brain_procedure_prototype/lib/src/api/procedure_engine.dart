@@ -90,6 +90,7 @@ import '../procedure_store/procedure_resolver.dart';
 import '../recorder/llm_trail_record.dart';
 import '../recorder/memory_access_record.dart';
 import '../recorder/procedure_tree_record.dart';
+import '../recorder/tool_access_record.dart';
 import '../recorder/run_records.dart';
 import '../recorder/run_recorder.dart';
 import '../validator/sandbox_validator.dart';
@@ -181,6 +182,7 @@ final class ProcedureEngine {
     String Function()? newRunId,
     LlmTrailSink? llmTrailSink,
     MemoryAccessSink? memoryAccessSink,
+    ToolAccessSink? toolAccessSink,
     ProcedureTreeSink? procedureTreeSink,
     this.memoryWriteLimits = MemoryWriteLimits.standard,
   })  : preemptionState = preemptionState ?? PreemptionState(),
@@ -192,6 +194,7 @@ final class ProcedureEngine {
         _newRunId = newRunId ?? _defaultRunIdGenerator(),
         _llmTrailSink = llmTrailSink,
         _memoryAccessSink = memoryAccessSink,
+        _toolAccessSink = toolAccessSink,
         _procedureTreeSink = procedureTreeSink;
 
   /// Resolves a procedure id (and optional version) to a loaded source.
@@ -264,6 +267,15 @@ final class ProcedureEngine {
   /// [MemoryAccessRecord] and hands here (the host binds a
   /// `MemoryProfileLogWriter`).
   final MemoryAccessSink? _memoryAccessSink;
+
+  /// The per-run tool-access sink (the trail half of "tool calls must be in
+  /// the trails files, especially the live-trail"). `null` leaves the engine
+  /// wiring no `onEvent` onto the run's tool bridge, so no tool record is
+  /// emitted; when bound, each `tool.list` / `tool.invoke` the run issues fires
+  /// a typed [ToolEvent] which the engine wraps with run-correlation (`runId`,
+  /// the live `trailId`, the turn it serves) into a [ToolAccessRecord] and
+  /// hands here (the host binds a live-trail writer).
+  final ToolAccessSink? _toolAccessSink;
 
   /// The combined per-procedure tree sink (`tom_brain_logging.md` §5.7 / §10
   /// step #9). `null` leaves the engine emitting no per-procedure tree; when
@@ -587,6 +599,15 @@ final class ProcedureEngine {
     }
     final toolPolicy =
         (exts?.toolPolicy ?? const ToolPolicyConfig()).policyFor(null);
+    // Per-run tool-access seam (the trail half of "tool calls must be in the
+    // trails, especially the live-trail"): when a tool-access sink is bound,
+    // wire the run's tool bridge with an `onEvent` that wraps each emitted
+    // [ToolEvent] (with this run's `runId`, the live `trailId`, and the turn it
+    // serves) into a [ToolAccessRecord] for the writer. `clock: _now` stamps
+    // each event's `occurredAt` with the engine clock so trails are
+    // deterministic. Best-effort: a throwing sink is swallowed so it cannot
+    // break the run. `null` leaves the bridge a pure tool router.
+    final toolAccessSink = _toolAccessSink;
     final runToolBridge = ToolBridge(
       toolRegistry,
       toolPolicy,
@@ -595,6 +616,21 @@ final class ProcedureEngine {
         memory: runMemoryBridge.client,
         fileScopeRoot: _defaultToolFileScopeRoot,
       ),
+      clock: _now,
+      onEvent: toolAccessSink == null
+          ? null
+          : (event) {
+              try {
+                toolAccessSink(ToolAccessRecord(
+                  event: event,
+                  runId: runId,
+                  trailId: recorder.isOpen ? recorder.trailId.value : null,
+                  turnId: turn?.turnId.value,
+                ));
+              } catch (_) {
+                // Trail writing is non-essential; never break the run.
+              }
+            },
     );
     final host = D4rtDcliHost(
       memoryBridge: runMemoryBridge,

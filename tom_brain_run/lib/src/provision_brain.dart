@@ -57,6 +57,8 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
         MemoryAccessSink,
         MemoryProvisioningConfig,
         ProcedureTreeSink,
+        ToolAccessRecord,
+        ToolAccessSink,
         TurnSummary,
         TurnSummarySink;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
@@ -139,6 +141,7 @@ Future<ProvisionedBrain> provisionBrain({
   LlmTrailSink? llmTrailSink,
   TurnSummarySink? turnSummarySink,
   MemoryAccessSink? memoryAccessSink,
+  ToolAccessSink? toolAccessSink,
   ProcedureTreeSink? procedureTreeSink,
 }) async {
   final Directory scriptsDir =
@@ -161,6 +164,7 @@ Future<ProvisionedBrain> provisionBrain({
       llmTrailSink: llmTrailSink,
       turnSummarySink: turnSummarySink,
       memoryAccessSink: memoryAccessSink,
+      toolAccessSink: toolAccessSink,
       procedureTreeSink: procedureTreeSink,
     ),
   );
@@ -259,6 +263,7 @@ Future<BrainProcess> standUpBrainProcess({
   TurnSummarySink? turnSummarySink,
   IncomingTrailSink? incomingTrailSink,
   MemoryAccessSink? memoryAccessSink,
+  ToolAccessSink? toolAccessSink,
   ProcedureTreeSink? procedureTreeSink,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
@@ -272,6 +277,7 @@ Future<BrainProcess> standUpBrainProcess({
     llmTrailSink: llmTrailSink,
     turnSummarySink: turnSummarySink,
     memoryAccessSink: memoryAccessSink,
+    toolAccessSink: toolAccessSink,
     procedureTreeSink: procedureTreeSink,
   );
 
@@ -337,6 +343,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     turnSummarySink: sinks.turnSummarySink,
     incomingTrailSink: sinks.incomingTrailSink,
     memoryAccessSink: sinks.memoryAccessSink,
+    toolAccessSink: sinks.toolAccessSink,
     procedureTreeSink: sinks.procedureTreeSink,
   );
 }
@@ -364,6 +371,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   TurnSummarySink? turnSummarySink,
   IncomingTrailSink? incomingTrailSink,
   MemoryAccessSink? memoryAccessSink,
+  ToolAccessSink? toolAccessSink,
   ProcedureTreeSink? procedureTreeSink,
 }) _trailSinksFor(
   TrailConfig? trail,
@@ -374,6 +382,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
       turnSummarySink: null,
       incomingTrailSink: null,
       memoryAccessSink: null,
+      toolAccessSink: null,
       procedureTreeSink: null,
     );
   }
@@ -418,6 +427,13 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     liveTrail.onMemoryCall(record);
   }
 
+  // The §5.9 streaming live-trail is the only writer for tool calls today — the
+  // per-profile / raw surfaces do not yet have a tool tier, so a tool access
+  // streams into the live-trail and nowhere else.
+  void toolAccessSink(ToolAccessRecord record) {
+    liveTrail.onToolCall(record);
+  }
+
   void turnSummarySink(TurnSummary summary) {
     fanout.onTurnComplete(summary);
     liveTrail.endPrompt(summary);
@@ -428,6 +444,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     turnSummarySink: turnSummarySink,
     incomingTrailSink: incomingTrailSink,
     memoryAccessSink: memoryAccessSink,
+    toolAccessSink: toolAccessSink,
     procedureTreeSink: treeWriter.write,
   );
 }

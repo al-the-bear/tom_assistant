@@ -16,6 +16,7 @@
 //   * [onLlmCall]     ← `LlmTrailSink`        (one completed LLM call → thinking /
 //                                              assistant)
 //   * [onMemoryCall]  ← `MemoryAccessSink`    (one bridged memory primitive → 🔧)
+//   * [onToolCall]    ← `ToolAccessSink`      (one bridged tool call → 🔧)
 //   * [endPrompt]     ← `TurnSummarySink`     (turn complete → ✅ DONE banner)
 //
 // Routing is keyed by **`turnId`**, which is the one correlation id present on
@@ -39,7 +40,17 @@ import 'dart:io';
 import 'package:tom_brain_access_prototype/tom_brain_access_prototype.dart'
     show IncomingTrailRecord;
 import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart'
-    show LlmTrailRecord, MemoryAccessRecord, SubstrateBridge, TurnSummary;
+    show
+        LlmTrailRecord,
+        MemoryAccessRecord,
+        SubstrateBridge,
+        ToolAccessRecord,
+        ToolDenied,
+        ToolEvent,
+        ToolFailed,
+        ToolInvoked,
+        ToolListed,
+        TurnSummary;
 
 /// Marker comment identifying the per-session live-trail file, self-identifying
 /// next to its `.summary.md` sibling.
@@ -148,6 +159,37 @@ final class StreamingLiveTrailWriter {
     _safe(() => _append(_sessionFile(turn.sessionId), body));
   }
 
+  /// Renders one bridged tool call as a `### 🔧 tool <name> [<turnId>__<seq>]`
+  /// block with the event's payload as a JSON fence — the trail half of "tool
+  /// calls must be in the trails files, especially the live-trail". A failed
+  /// or denied invocation is labelled `(failed)` / `(denied)`; an enumeration
+  /// (`tool.list`) renders as `tool.list`.
+  void onToolCall(ToolAccessRecord record) {
+    final turnId = record.turnId;
+    if (turnId == null) return; // turn-less (dream) call.
+    final turn = _turns[turnId];
+    if (turn == null) return;
+
+    turn.toolCalls++;
+    turn.step++;
+    final seq = turn.step.toString().padLeft(2, '0');
+    final payloadJson = _clip(
+        _prettyJson(record.event.payloadJson()), _toolInputPreviewChars);
+    final body = '\n### 🔧 ${_toolLabel(record.event)} [${turnId}__$seq]\n\n'
+        '```json\n$payloadJson\n```\n';
+    _safe(() => _append(_sessionFile(turn.sessionId), body));
+  }
+
+  /// The human label for a tool event: the tool name for an invocation
+  /// (suffixed `(failed)` / `(denied)` on a non-success), or `tool.list` for an
+  /// enumeration.
+  static String _toolLabel(ToolEvent event) => switch (event) {
+        ToolInvoked(:final name) => 'tool $name',
+        ToolFailed(:final name) => 'tool $name (failed)',
+        ToolDenied(:final name) => 'tool $name (denied)',
+        ToolListed() => 'tool.list',
+      };
+
   /// Writes the `### ✅ DONE` banner and closes the turn's live state.
   void endPrompt(TurnSummary summary) {
     final turn = _turns.remove(summary.turnId);
@@ -155,7 +197,8 @@ final class StreamingLiveTrailWriter {
     _safe(() {
       final ms = DateTime.now().toUtc().difference(turn.startedAt).inMilliseconds;
       final body = '\n\n### ✅ DONE '
-          '(llmCalls=${turn.llmCalls}, memCalls=${turn.memCalls}, ${ms}ms)\n';
+          '(llmCalls=${turn.llmCalls}, memCalls=${turn.memCalls}, '
+          'toolCalls=${turn.toolCalls}, ${ms}ms)\n';
       _append(_sessionFile(turn.sessionId), body);
     });
   }
@@ -254,6 +297,9 @@ class _LiveTurn {
   /// Bridged memory calls appended to this turn's block.
   int memCalls = 0;
 
-  /// Monotonic step counter across both call kinds — the `<turnId>__<seq>` tag.
+  /// Bridged tool calls appended to this turn's block.
+  int toolCalls = 0;
+
+  /// Monotonic step counter across all call kinds — the `<turnId>__<seq>` tag.
   int step = 0;
 }
