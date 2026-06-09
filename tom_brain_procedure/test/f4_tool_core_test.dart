@@ -62,7 +62,8 @@ void main() {
     });
 
     test('ToolGroup members map to their wire `.name`', () {
-      // The eight groups the policy step (§ 21.8) keys on.
+      // The groups the policy step (§ 21.8) keys on, plus the two creation
+      // families (`analyze` / `test`, `creation_specification.md` § 5.2-5.3).
       expect(
         ToolGroup.values.map((g) => g.name),
         containsAll(<String>[
@@ -72,11 +73,13 @@ void main() {
           'web',
           'procedure',
           'script',
+          'analyze',
+          'test',
           'mcp',
           'vscode',
         ]),
       );
-      expect(ToolGroup.values, hasLength(8));
+      expect(ToolGroup.values, hasLength(10));
     });
   });
 

@@ -41,13 +41,17 @@ export 'tool_failures.dart'
     show
         FileScopeViolation,
         NodeShapeNotWritable,
+        ProcessExecutableNotAllowed,
         ScriptResultNotJson,
         ToolSurfaceUnavailable,
         fileScopeViolationCode,
         nodeShapeNotWritableCode,
+        processExecutableNotAllowedCode,
         scriptResultNotJsonCode,
         toolSurfaceUnavailableCode;
 export 'tool_group.dart' show ToolGroup;
+export 'tool_process_surface.dart'
+    show ProcessRunResult, ToolProcessSurface;
 export 'tool_input_schema.dart' show validateToolArgs;
 export 'tool_policy.dart' show ToolPolicy;
 export 'tool_policy_config.dart' show ToolPolicyConfig;

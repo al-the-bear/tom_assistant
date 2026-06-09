@@ -4,10 +4,13 @@
 //
 // What this suite locks:
 //
-//   F.7-1 — `registerBasicTools` registers the twenty shipped tools under
-//           their § 21.4 names, groups, and `readOnly` flags (the sixteen base
-//           tools plus the four explicit verb tools `procedure.plan` /
-//           `create` / `critique` / `decide`, Todo 4 / § 11).
+//   F.7-1 — `registerBasicTools` registers the twenty-seven shipped tools under
+//           their § 21.4 / § 5.2-5.3 names, groups, and `readOnly` flags (the
+//           sixteen base tools, the four explicit verb tools `procedure.plan` /
+//           `create` / `critique` / `decide` (Todo 4 / § 11), and the seven
+//           creation families `file.edit` / `file.diff` / `analyze.dart` /
+//           `analyze.format` / `analyze.schema` / `test.run` / `test.baseline`
+//           (`creation_specification.md` § 5)).
 //   F.7-2 — each tool's happy path against stubs routes through the existing
 //           surface (memory client, web surface, engine surface, the
 //           in-process `TodoStore`, the file-scope root) — no new effect path.
@@ -32,7 +35,7 @@ import 'package:test/test.dart';
 
 void main() {
   group('F.7-1 registerBasicTools catalogue', () {
-    test('registers the twenty § 21.4 tools with their groups + readOnly',
+    test('registers the twenty-seven § 21.4 / § 5.2-5.3 tools with groups',
         () {
       final registry = ToolRegistry();
       registerBasicTools(registry);
@@ -49,8 +52,16 @@ void main() {
         'todo.remove': (group: ToolGroup.todo, readOnly: false),
         'file.read': (group: ToolGroup.file, readOnly: true),
         'file.write': (group: ToolGroup.file, readOnly: false),
+        'file.edit': (group: ToolGroup.file, readOnly: false),
+        'file.diff': (group: ToolGroup.file, readOnly: true),
         'grep.search': (group: ToolGroup.file, readOnly: true),
         'file.search': (group: ToolGroup.file, readOnly: true),
+        // Creation code-understanding + test families (§ 5.2 / § 5.3).
+        'analyze.dart': (group: ToolGroup.analyze, readOnly: true),
+        'analyze.format': (group: ToolGroup.analyze, readOnly: true),
+        'analyze.schema': (group: ToolGroup.analyze, readOnly: true),
+        'test.run': (group: ToolGroup.test, readOnly: false),
+        'test.baseline': (group: ToolGroup.test, readOnly: false),
         'web.search': (group: ToolGroup.web, readOnly: true),
         'web.fetch': (group: ToolGroup.web, readOnly: true),
         'script.run_d4rt': (group: ToolGroup.script, readOnly: false),
@@ -80,9 +91,10 @@ void main() {
   });
 
   group('F.7-1b defaultToolCatalogue wire descriptors', () {
-    test('describes the twenty basic tools with name/group/description', () {
+    test('describes the twenty-seven basic tools with name/group/description',
+        () {
       final catalogue = defaultToolCatalogue();
-      expect(catalogue, hasLength(20));
+      expect(catalogue, hasLength(27));
 
       // Each descriptor carries the four wire fields the substrate's
       // tool-catalogue render reads (`{name, group, description, input_schema}`,
@@ -110,8 +122,15 @@ void main() {
           'todo.remove',
           'file.read',
           'file.write',
+          'file.edit',
+          'file.diff',
           'grep.search',
           'file.search',
+          'analyze.dart',
+          'analyze.format',
+          'analyze.schema',
+          'test.run',
+          'test.baseline',
           'web.search',
           'web.fetch',
           'script.run_d4rt',

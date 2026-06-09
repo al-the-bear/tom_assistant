@@ -48,6 +48,7 @@ import 'brain_tool.dart';
 import 'tool_context.dart';
 import 'tool_failures.dart';
 import 'tool_group.dart';
+import 'tool_process_surface.dart';
 import 'tool_registry.dart';
 
 /// The node types `memory.write` may persist (§ 5.1). An `Event` and any other
@@ -83,8 +84,18 @@ List<BrainTool> _basicTools() => <BrainTool>[
       _TodoRemoveTool(),
       _FileReadTool(),
       _FileWriteTool(),
+      _FileEditTool(),
+      _FileDiffTool(),
       _GrepSearchTool(),
       _FileSearchTool(),
+      // Creation code-understanding + test families (creation_specification.md
+      // § 5.2 / § 5.3): each names one fixed executable run through the
+      // allow-listed `ToolProcessSurface` — no general shell (§ 5.4).
+      _AnalyzeDartTool(),
+      _AnalyzeFormatTool(),
+      _AnalyzeSchemaTool(),
+      _TestRunTool(),
+      _TestBaselineTool(),
       _WebSearchTool(),
       _WebFetchTool(),
       _ScriptRunD4rtTool(),
@@ -402,6 +413,262 @@ final class _FileWriteTool extends BrainTool {
     final file = await File(resolved).create(recursive: true);
     await file.writeAsString(content);
     return <String, Object?>{'path': relative, 'bytesWritten': content.length};
+  }
+}
+
+final class _FileEditTool extends BrainTool {
+  @override
+  String get name => 'file.edit';
+  @override
+  ToolGroup get group => ToolGroup.file;
+  @override
+  bool get readOnly => false;
+  @override
+  String get description =>
+      'Applies a structured edit (replace / insert / delete by 1-based line '
+      'range) to a file under the file-scope root.';
+  @override
+  Map<String, Object?> get inputSchema => const <String, Object?>{
+        'type': 'object',
+        'required': <Object?>['path', 'op', 'start'],
+        'properties': <String, Object?>{
+          'path': <String, Object?>{'type': 'string'},
+          'op': <String, Object?>{
+            'type': 'string',
+            'enum': <Object?>['replace', 'insert', 'delete'],
+          },
+          'start': <String, Object?>{'type': 'integer'},
+          'end': <String, Object?>{'type': 'integer'},
+          'text': <String, Object?>{'type': 'string'},
+        },
+      };
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final relative = args['path'] as String;
+    final op = args['op'] as String;
+    final start = (args['start'] as num).toInt();
+    final end = (args['end'] as num?)?.toInt() ?? start;
+    final text = args['text'] as String? ?? '';
+    final hit = _resolveTarget(ctx, relative);
+    final file = File(hit.path);
+    final lines = file.existsSync() ? await file.readAsLines() : <String>[];
+    final newLines = text.isEmpty ? <String>[] : text.split('\n');
+
+    switch (op) {
+      case 'replace':
+        _requireRange(op, start, end, lines.length);
+        lines.replaceRange(start - 1, end, newLines);
+      case 'delete':
+        _requireRange(op, start, end, lines.length);
+        lines.removeRange(start - 1, end);
+      case 'insert':
+        // Insert *before* line `start`; `start == length + 1` appends.
+        if (start < 1 || start > lines.length + 1) {
+          throw ArgumentError.value(
+              start, 'start', 'file.edit insert line out of range');
+        }
+        lines.insertAll(start - 1, newLines);
+      default:
+        throw ArgumentError.value(op, 'op', 'unknown file.edit op');
+    }
+
+    // Text files end with a trailing newline by POSIX convention.
+    final content = lines.isEmpty ? '' : '${lines.join('\n')}\n';
+    await File(hit.path).writeAsString(content);
+    return <String, Object?>{
+      'path': relative,
+      'op': op,
+      'bytesWritten': content.length,
+    };
+  }
+}
+
+final class _FileDiffTool extends BrainTool {
+  @override
+  String get name => 'file.diff';
+  @override
+  ToolGroup get group => ToolGroup.file;
+  @override
+  bool get readOnly => true;
+  @override
+  String get description =>
+      'Produces a unified-style line diff between a file under the file-scope '
+      'root and a proposed new content (read-only; writes nothing).';
+  @override
+  Map<String, Object?> get inputSchema => const <String, Object?>{
+        'type': 'object',
+        'required': <Object?>['path', 'content'],
+        'properties': <String, Object?>{
+          'path': <String, Object?>{'type': 'string'},
+          'content': <String, Object?>{'type': 'string'},
+        },
+      };
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final relative = args['path'] as String;
+    final proposed = args['content'] as String;
+    final hit = _resolveTarget(ctx, relative);
+    final file = File(hit.path);
+    final current = file.existsSync() ? await file.readAsString() : '';
+    final body = _unifiedDiffBody(_splitLines(current), _splitLines(proposed));
+    final changed = body.any((line) => !line.startsWith(' '));
+    final diff = <String>['--- a/$relative', '+++ b/$relative', ...body];
+    return <String, Object?>{
+      'path': relative,
+      'changed': changed,
+      'diff': diff.join('\n'),
+    };
+  }
+}
+
+// ── analyze.* ────────────────────────────────────────────────────────
+
+final class _AnalyzeDartTool extends BrainTool {
+  @override
+  String get name => 'analyze.dart';
+  @override
+  ToolGroup get group => ToolGroup.analyze;
+  @override
+  bool get readOnly => true;
+  @override
+  String get description =>
+      'Runs `dart analyze` over a path under the file-scope root '
+      '(allow-listed process; read-only).';
+  @override
+  Map<String, Object?> get inputSchema => _pathOnlySchema;
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final relative = args['path'] as String? ?? '.';
+    final hit = _resolveTarget(ctx, relative);
+    final result = await _runAllowed(
+      ctx,
+      name,
+      'dart',
+      <String>['analyze', hit.path],
+      workingDirectory: hit.root,
+    );
+    return _processResultMap(relative, result);
+  }
+}
+
+final class _AnalyzeFormatTool extends BrainTool {
+  @override
+  String get name => 'analyze.format';
+  @override
+  ToolGroup get group => ToolGroup.analyze;
+  @override
+  bool get readOnly => true;
+  @override
+  String get description =>
+      'Runs `dart format --set-exit-if-changed` over a path under the '
+      'file-scope root (allow-listed process; reports formatting drift).';
+  @override
+  Map<String, Object?> get inputSchema => _pathOnlySchema;
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final relative = args['path'] as String? ?? '.';
+    final hit = _resolveTarget(ctx, relative);
+    final result = await _runAllowed(
+      ctx,
+      name,
+      'dart',
+      <String>['format', '--set-exit-if-changed', hit.path],
+      workingDirectory: hit.root,
+    );
+    return _processResultMap(relative, result);
+  }
+}
+
+final class _AnalyzeSchemaTool extends BrainTool {
+  @override
+  String get name => 'analyze.schema';
+  @override
+  ToolGroup get group => ToolGroup.analyze;
+  @override
+  bool get readOnly => true;
+  @override
+  String get description =>
+      'Validates a YAML or JSON file under the file-scope root against its '
+      'registered schema via the `tom` CLI (allow-listed process; read-only).';
+  @override
+  Map<String, Object?> get inputSchema => _pathRequiredSchema;
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final relative = args['path'] as String;
+    final hit = _resolveTarget(ctx, relative);
+    final result = await _runAllowed(
+      ctx,
+      name,
+      'tom',
+      <String>['schema', 'validate', hit.path],
+      workingDirectory: hit.root,
+    );
+    return _processResultMap(relative, result);
+  }
+}
+
+// ── test.* ───────────────────────────────────────────────────────────
+
+final class _TestRunTool extends BrainTool {
+  @override
+  String get name => 'test.run';
+  @override
+  ToolGroup get group => ToolGroup.test;
+  @override
+  bool get readOnly => false;
+  @override
+  String get description =>
+      'Runs `testkit :test` in a directory under the file-scope root '
+      '(allow-listed process).';
+  @override
+  Map<String, Object?> get inputSchema => _pathOnlySchema;
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final relative = args['path'] as String? ?? '.';
+    final hit = _resolveTarget(ctx, relative);
+    final result = await _runAllowed(
+      ctx,
+      name,
+      'testkit',
+      const <String>[':test'],
+      workingDirectory: hit.path,
+    );
+    return _processResultMap(relative, result);
+  }
+}
+
+final class _TestBaselineTool extends BrainTool {
+  @override
+  String get name => 'test.baseline';
+  @override
+  ToolGroup get group => ToolGroup.test;
+  @override
+  bool get readOnly => false;
+  @override
+  String get description =>
+      'Runs `testkit :baseline` in a directory under the file-scope root to '
+      'create a new baseline (allow-listed process).';
+  @override
+  Map<String, Object?> get inputSchema => _pathOnlySchema;
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final relative = args['path'] as String? ?? '.';
+    final hit = _resolveTarget(ctx, relative);
+    final result = await _runAllowed(
+      ctx,
+      name,
+      'testkit',
+      const <String>[':baseline'],
+      workingDirectory: hit.path,
+    );
+    return _processResultMap(relative, result);
   }
 }
 
@@ -730,6 +997,130 @@ Map<String, Object?> _nodeToMap(Node node) => <String, Object?>{
       'values': node.values,
       'status': node.status.name,
     };
+
+/// The input schema for a process tool whose only argument is an optional
+/// `path` (defaulting to the primary root).
+const Map<String, Object?> _pathOnlySchema = <String, Object?>{
+  'type': 'object',
+  'properties': <String, Object?>{
+    'path': <String, Object?>{'type': 'string'},
+  },
+};
+
+/// The input schema for a process tool whose `path` argument is required.
+const Map<String, Object?> _pathRequiredSchema = <String, Object?>{
+  'type': 'object',
+  'required': <Object?>['path'],
+  'properties': <String, Object?>{
+    'path': <String, Object?>{'type': 'string'},
+  },
+};
+
+/// Resolves [relative] under the file-scope roots, preferring the first root
+/// where the target already exists (a file *or* a directory) and falling back
+/// to the primary root otherwise. The containment check still applies (an
+/// escaping path raises `FileScopeViolation` inside `_resolveWithinRoots`).
+_ScopeHit _resolveTarget(ToolContext ctx, String relative) {
+  final hits = _resolveWithinRoots(ctx.fileScopeRoots, relative);
+  return hits.firstWhere(
+    (h) => File(h.path).existsSync() || Directory(h.path).existsSync(),
+    orElse: () => hits.first,
+  );
+}
+
+/// Runs [executable] with [arguments] through the context's allow-listed
+/// [ToolProcessSurface], raising `ToolSurfaceUnavailable` when the run carries
+/// none. The surface — not this helper — enforces the executable allow-list,
+/// so "no general shell" (`creation_specification.md` § 5.4) holds even though
+/// the call site names the executable.
+Future<ProcessRunResult> _runAllowed(
+  ToolContext ctx,
+  String toolName,
+  String executable,
+  List<String> arguments, {
+  String? workingDirectory,
+}) {
+  final process = ctx.process;
+  if (process == null) {
+    throw ToolSurfaceUnavailable(surface: 'process', tool: toolName);
+  }
+  return process.run(executable, arguments,
+      workingDirectory: workingDirectory);
+}
+
+/// The JSON-serialisable shape an `analyze.*` / `test.*` tool returns.
+Map<String, Object?> _processResultMap(String relative, ProcessRunResult r) =>
+    <String, Object?>{
+      'path': relative,
+      'exitCode': r.exitCode,
+      'ok': r.ok,
+      'stdout': r.stdout,
+      'stderr': r.stderr,
+    };
+
+/// Splits [text] into lines, dropping a single trailing newline so a file that
+/// ends with `\n` does not yield a spurious trailing empty line in the diff.
+List<String> _splitLines(String text) {
+  if (text.isEmpty) return const <String>[];
+  final lines = text.split('\n');
+  if (lines.isNotEmpty && lines.last.isEmpty) lines.removeLast();
+  return lines;
+}
+
+/// Validates that the 1-based inclusive `[start, end]` line range is within an
+/// [length]-line file for the `replace` / `delete` ops.
+void _requireRange(String op, int start, int end, int length) {
+  if (start < 1 || end < start || end > length) {
+    throw ArgumentError(
+        'file.edit $op range [$start, $end] is outside a $length-line file');
+  }
+}
+
+/// Builds the body of a unified-style diff (lines prefixed ` `/`-`/`+`) between
+/// [a] and [b] via a longest-common-subsequence walk.
+///
+/// Dependency-free on purpose: the package's dependency set is locked by
+/// `dependency_surface_test.dart`, so a diff library is not pulled in. The LCS
+/// table is `O(n·m)` — bounded for the small files creation handles.
+List<String> _unifiedDiffBody(List<String> a, List<String> b) {
+  final n = a.length;
+  final m = b.length;
+  final lcs = List<List<int>>.generate(
+      n + 1, (_) => List<int>.filled(m + 1, 0),
+      growable: false);
+  for (var i = n - 1; i >= 0; i--) {
+    for (var j = m - 1; j >= 0; j--) {
+      lcs[i][j] = a[i] == b[j]
+          ? lcs[i + 1][j + 1] + 1
+          : (lcs[i + 1][j] >= lcs[i][j + 1] ? lcs[i + 1][j] : lcs[i][j + 1]);
+    }
+  }
+  final out = <String>[];
+  var i = 0;
+  var j = 0;
+  while (i < n && j < m) {
+    if (a[i] == b[j]) {
+      out.add(' ${a[i]}');
+      i++;
+      j++;
+    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+      out.add('-${a[i]}');
+      i++;
+    } else {
+      out.add('+${b[j]}');
+      j++;
+    }
+  }
+  while (i < n) {
+    out.add('-${a[i]}');
+    i++;
+  }
+  while (j < m) {
+    out.add('+${b[j]}');
+    j++;
+  }
+  return out;
+}
 
 /// The absolute, normalised form of [root].
 String _normalizedRoot(String root) => p.normalize(p.absolute(root));

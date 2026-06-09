@@ -28,18 +28,20 @@
 // order, writes target the primary (first) root, and discovery tools
 // (`grep.search` / `file.search`) span every root.
 //
-// `web` / `engine` / `vscode` are nullable because the surfaces they wrap
-// genuinely do not exist on every run (the `vscode` surface only when the
-// prototype is colocated with a VS Code extension and the merge profile is on,
-// § 21.8); a tool handed a context without the surface it needs raises
-// `ToolSurfaceUnavailable` rather than silently degrading. `budget`,
-// `memory`, and `fileScopeRoots` stay required.
+// `web` / `engine` / `process` / `vscode` are nullable because the surfaces
+// they wrap genuinely do not exist on every run (the `process` surface only on
+// a run that exposes the `analyze.*` / `test.*` creation tools, § 5.2 / § 5.3;
+// the `vscode` surface only when the prototype is colocated with a VS Code
+// extension and the merge profile is on, § 21.8); a tool handed a context
+// without the surface it needs raises `ToolSurfaceUnavailable` rather than
+// silently degrading. `budget`, `memory`, and `fileScopeRoots` stay required.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show TomBrainMemoryClient;
 
 import '../budget/budget_ledger.dart' show BudgetLedger;
 import 'todo_store.dart';
 import 'tool_engine_surface.dart';
+import 'tool_process_surface.dart';
 import 'tool_web_surface.dart';
 import 'vscode_tool_source.dart';
 
@@ -79,6 +81,13 @@ final class ToolContext {
   /// route through, or `null` on a run that exposes none.
   final ToolEngineSurface? engine;
 
+  /// The optional, allow-listed process surface the `analyze.*` / `test.*`
+  /// tools route through (`creation_specification.md` § 5.2, § 5.3), or `null`
+  /// on a run that exposes none. Never a raw `Process.run` handle: the surface
+  /// admits only a fixed set of executables, so holding the context grants no
+  /// general-shell capability (§ 5.4 / § 12.1 decision 2).
+  final ToolProcessSurface? process;
+
   /// The optional VS Code extension surface the merged `vscode.*` tools
   /// (§ 21.8) route through, or `null` on a run not colocated with a VS Code
   /// extension (or with the merge profile off).
@@ -86,8 +95,8 @@ final class ToolContext {
 
   /// Builds the surface. [budget], [memory], and [fileScopeRoots] are required;
   /// [fileScopeRoots] must be non-empty (its first entry is the primary root).
-  /// [todos] defaults to a fresh run-scoped store; [web], [engine], and
-  /// [vscode] are supplied only when the run exposes tools that need them.
+  /// [todos] defaults to a fresh run-scoped store; [web], [engine], [process],
+  /// and [vscode] are supplied only when the run exposes tools that need them.
   ToolContext({
     required this.budget,
     required this.memory,
@@ -95,6 +104,7 @@ final class ToolContext {
     TodoStore? todos,
     this.web,
     this.engine,
+    this.process,
     this.vscode,
   })  : assert(fileScopeRoots.isNotEmpty,
             'fileScopeRoots must carry at least one root'),

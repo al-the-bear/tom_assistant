@@ -110,19 +110,59 @@ final class ScriptResultNotJson implements Exception {
   String toString() => '$code: $message';
 }
 
+/// Wire-stable discriminator for a process executable off the allow-list.
+const String processExecutableNotAllowedCode =
+    'tool.process_executable_not_allowed';
+
+/// Raised by a [ToolProcessSurface] implementation when an `analyze.*` /
+/// `test.*` tool asks it to run an executable that is not on the surface's
+/// fixed allow-list (`creation_specification.md` § 5.2, § 5.3, § 5.4).
+///
+/// The process surface is the back door "no general shell" would otherwise
+/// leave open: every shipped process-running tool names exactly one fixed
+/// executable (`dart`, `testkit`, …). A request for anything else is a wiring
+/// mistake or an attempt to widen the capability, so the surface refuses it
+/// loudly rather than spawning the process. The allowed set is carried for the
+/// message so the operator sees what the deployment permits.
+final class ProcessExecutableNotAllowed implements Exception {
+  /// The executable that was refused.
+  final String executable;
+
+  /// The allow-list the surface enforces, for the message.
+  final Set<String> allowed;
+
+  /// Builds the failure for the rejected [executable].
+  const ProcessExecutableNotAllowed({
+    required this.executable,
+    required this.allowed,
+  });
+
+  /// The wire-stable failure class (`tool.process_executable_not_allowed`).
+  String get code => processExecutableNotAllowedCode;
+
+  /// Human-readable detail.
+  String get message =>
+      'process executable "$executable" is not on the allow-list — '
+      'allowed: ${(allowed.toList()..sort()).join(', ')}';
+
+  @override
+  String toString() => '$code: $message';
+}
+
 /// Wire-stable discriminator for a tool invoked without its required surface.
 const String toolSurfaceUnavailableCode = 'tool.surface_unavailable';
 
 /// Raised when a tool that needs an optional [ToolContext] surface (the web
 /// surface for `web.*`, the engine surface for `script.run_d4rt` /
-/// `procedure.*`, the VS Code surface for the merged `vscode.*` tools) runs in
-/// a context that did not supply it.
+/// `procedure.*`, the process surface for `analyze.*` / `test.*`, the VS Code
+/// surface for the merged `vscode.*` tools) runs in a context that did not
+/// supply it.
 ///
-/// A memory-only run carries no web/engine/vscode surface; exposing such a
-/// tool there is a wiring mistake the policy should have prevented, so it
-/// surfaces loudly rather than silently returning an empty result.
+/// A memory-only run carries no web/engine/process/vscode surface; exposing
+/// such a tool there is a wiring mistake the policy should have prevented, so
+/// it surfaces loudly rather than silently returning an empty result.
 final class ToolSurfaceUnavailable implements Exception {
-  /// The name of the missing surface (`web`, `engine`, `vscode`).
+  /// The name of the missing surface (`web`, `engine`, `process`, `vscode`).
   final String surface;
 
   /// The tool that needed it.
