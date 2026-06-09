@@ -100,6 +100,12 @@ import 'trail_janitor.dart' show TrailJanitor;
 /// no-hint classifier fallback; [foregroundQueueDepth] caps the foreground
 /// admission queue.
 ///
+/// [toolFileScopeRoots] threads the configured file-scope roots (§ 21.4) onto
+/// the engine so the `file.*` tools resolve against the union of those
+/// directories. `null` (the default) leaves the engine on its neutral
+/// placeholder root; [standUpBrainProcessFromConfig] threads `tools.fileScope`
+/// here when the `tools:` block is present.
+///
 /// [isolateLogRootPath] threads the trail log root (CWD when unconfigured,
 /// `trail.root` in full mode — `tom_brain_logging.md` §4.1) into the memory
 /// isolate so its own `tomLog` installs a `FanoutLogOutput` at the same root
@@ -137,6 +143,7 @@ Future<ProvisionedBrain> provisionBrain({
   Directory? systemScriptsDir,
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
+  List<String>? toolFileScopeRoots,
   String? isolateLogRootPath,
   LlmTrailSink? llmTrailSink,
   TurnSummarySink? turnSummarySink,
@@ -160,6 +167,7 @@ Future<ProvisionedBrain> provisionBrain({
       ),
       systemScriptsDir: scriptsDir,
       foregroundQueueDepth: foregroundQueueDepth,
+      toolFileScopeRoots: toolFileScopeRoots,
       classifyFallback: classifyFallback,
       llmTrailSink: llmTrailSink,
       turnSummarySink: turnSummarySink,
@@ -201,6 +209,7 @@ BrainProvisioner brainProvisioner({
   Directory? systemScriptsDir,
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
+  List<String>? toolFileScopeRoots,
 }) =>
     (AccessConfig config) => provisionBrain(
           substrate: substrate,
@@ -209,6 +218,7 @@ BrainProvisioner brainProvisioner({
           systemScriptsDir: systemScriptsDir,
           classifyFallback: classifyFallback,
           foregroundQueueDepth: foregroundQueueDepth,
+          toolFileScopeRoots: toolFileScopeRoots,
         );
 
 /// A booted, running brain process — the bound socket plus the graceful
@@ -258,6 +268,7 @@ Future<BrainProcess> standUpBrainProcess({
   AccessServeSeam serve = serveWithShelfIo,
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
+  List<String>? toolFileScopeRoots,
   String? isolateLogRootPath,
   LlmTrailSink? llmTrailSink,
   TurnSummarySink? turnSummarySink,
@@ -273,6 +284,7 @@ Future<BrainProcess> standUpBrainProcess({
     systemScriptsDir: systemScriptsDir,
     classifyFallback: classifyFallback,
     foregroundQueueDepth: foregroundQueueDepth,
+    toolFileScopeRoots: toolFileScopeRoots,
     isolateLogRootPath: isolateLogRootPath,
     llmTrailSink: llmTrailSink,
     turnSummarySink: turnSummarySink,
@@ -338,6 +350,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     serve: serve,
     classifyFallback: classifyFallback,
     foregroundQueueDepth: foregroundQueueDepth,
+    toolFileScopeRoots: runConfig.tools?.fileScope,
     isolateLogRootPath: isolateLogRootPath,
     llmTrailSink: sinks.llmTrailSink,
     turnSummarySink: sinks.turnSummarySink,

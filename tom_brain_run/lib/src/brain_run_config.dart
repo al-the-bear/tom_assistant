@@ -28,6 +28,7 @@ import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryConfig;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig;
 
+import 'tools_config.dart';
 import 'trail_config.dart';
 
 /// The assembled whole-process configuration: the three sections the run
@@ -59,15 +60,23 @@ final class BrainRunConfig {
   /// value selects [TrailMode.full] (the whole tree under `trail.root`).
   final TrailConfig? trail;
 
+  /// The optional `tools:` section (§ 21.4) — the file-scope roots the engine's
+  /// `file.*` tools resolve against. `null` when the document carries no
+  /// `tools:` block, leaving the engine on its neutral placeholder root. A
+  /// value threads its non-empty `fileScope` list onto the procedure engine.
+  final ToolsConfig? tools;
+
   /// Assembles the parsed sections into the run configuration.
   ///
-  /// [trail] is optional: an absent `trail:` block leaves it `null`
-  /// (unconfigured mode).
+  /// [trail] and [tools] are optional: an absent `trail:` block leaves [trail]
+  /// `null` (unconfigured mode); an absent `tools:` block leaves [tools] `null`
+  /// (the engine's placeholder file-scope root).
   const BrainRunConfig({
     required this.substrate,
     required this.memory,
     required this.access,
     this.trail,
+    this.tools,
   });
 
   /// The active trail mode, derived from whether a `trail:` block was

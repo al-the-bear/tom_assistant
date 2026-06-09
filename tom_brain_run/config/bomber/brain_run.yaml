@@ -114,3 +114,13 @@ access:
 # versioned. Caps left at their §8 defaults.
 trail:
   root: /srv/repos/al_the_bear/_ai/tom_brain_trail/bomber
+# File-scope roots for the engine's `file.*` tools (spec § 21.4). The list is
+# the sandbox the creation/file tools resolve against — the first root is the
+# primary write target, the rest are additional readable/writable roots. Add
+# directories here as the brain needs reach into more of the tree. For now this
+# is scoped to the `tom_brain_run` project folder (configurable, per the
+# "file scope folders must be configurable" requirement); omitting the block
+# leaves the engine on its neutral placeholder root (no real file reach).
+tools:
+  fileScope:
+    - /srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_assistant/tom_brain_run

@@ -541,6 +541,111 @@ substrate:
     });
   });
 
+  group('#31 ToolsConfigLoader — the tools.fileScope section', () {
+    test('a tools section loads its file-scope roots onto the run config', () {
+      final String doc = '$_substrateSection\n'
+          'memory:\n'
+          '  root: /tmp/x\n'
+          '  sqliteVec:\n'
+          '    binariesRoot: /opt/vec\n'
+          'tools:\n'
+          '  fileScope:\n'
+          '    - /srv/project/a\n'
+          '    - /srv/project/b\n'
+          '$_accessSection\n';
+
+      final BrainRunConfig config = BrainRunConfigLoader.parse(doc);
+
+      expect(config.tools, isNotNull);
+      expect(config.tools!.fileScope,
+          <String>['/srv/project/a', '/srv/project/b']);
+    });
+
+    test('a missing tools section leaves config.tools null (engine placeholder)',
+        () {
+      final String doc = '$_substrateSection\n'
+          'memory:\n'
+          '  root: /tmp/x\n'
+          '  sqliteVec:\n'
+          '    binariesRoot: /opt/vec\n'
+          '$_accessSection\n';
+
+      expect(BrainRunConfigLoader.parse(doc).tools, isNull);
+    });
+
+    test('an env token in a file-scope root is expanded', () {
+      const String doc = '''
+tools:
+  fileScope:
+    - \${PROJECT_ROOT}/sub''';
+
+      final ToolsConfig? tools = ToolsConfigLoader.parse(
+        doc,
+        envVars: const <String, String>{'PROJECT_ROOT': '/srv/proj'},
+      );
+
+      expect(tools!.fileScope, <String>['/srv/proj/sub']);
+    });
+
+    test('an empty fileScope list is refused with a located error', () {
+      const String doc = '''
+tools:
+  fileScope: []''';
+
+      expect(
+        () => ToolsConfigLoader.parse(doc),
+        throwsA(isA<ToolsConfigException>().having((e) => e.message, 'message',
+            allOf(contains('tools.fileScope'), contains('at least one')))),
+      );
+    });
+
+    test('a tools block with no fileScope key is refused with a located error',
+        () {
+      const String doc = '''
+tools:
+  somethingElse: true''';
+
+      expect(
+        () => ToolsConfigLoader.parse(doc),
+        throwsA(isA<ToolsConfigException>().having(
+            (e) => e.message, 'message', contains('somethingElse'))),
+      );
+    });
+
+    test('a non-string file-scope entry is refused with a located error', () {
+      const String doc = '''
+tools:
+  fileScope:
+    - 42''';
+
+      expect(
+        () => ToolsConfigLoader.parse(doc),
+        throwsA(isA<ToolsConfigException>().having((e) => e.message, 'message',
+            allOf(contains('tools.fileScope[0]'), contains('string')))),
+      );
+    });
+
+    test('the whole-process loader rejects an unknown top-level section', () {
+      // The access loader gatekeeps top-level keys; a typo'd section name (not
+      // one of substrate/memory/engine/dispatcher/trail/tools/access) is caught.
+      final String doc = '$_substrateSection\n'
+          'memory:\n'
+          '  root: /tmp/x\n'
+          '  sqliteVec:\n'
+          '    binariesRoot: /opt/vec\n'
+          'toolz:\n'
+          '  fileScope:\n'
+          '    - /srv/x\n'
+          '$_accessSection\n';
+
+      expect(
+        () => BrainRunConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>()
+            .having((e) => e.toString(), 'toString', contains('toolz'))),
+      );
+    });
+  });
+
   group('#31 standUpBrainProcessFromConfig — starts from the config file', () {
     test('binds a port, answers /healthz + /v1/models, and leaves the config '
         'file bytes unmodified', () async {

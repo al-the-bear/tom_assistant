@@ -54,6 +54,8 @@ export 'src/provision_brain.dart'
 
 // ── Trail config + mode + banner (logging-spec §4.1 / §8; §10 step #1) ─
 export 'src/trail_banner.dart' show TrailBanner;
+export 'src/tools_config.dart' show ToolsConfig, ToolsConfigException;
+export 'src/tools_config_loader.dart' show ToolsConfigLoader;
 export 'src/trail_config.dart' show TrailConfig, TrailConfigException, TrailMode;
 export 'src/trail_config_loader.dart' show TrailConfigLoader;
 

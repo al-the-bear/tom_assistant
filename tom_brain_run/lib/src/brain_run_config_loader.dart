@@ -23,6 +23,8 @@
 //     so a typo'd section name is caught here with a located error).
 //   * `trail:`     → `TrailConfigLoader.parse` (reads `doc['trail']`; returns
 //     `null` when the block is absent — unconfigured trail mode, §4.1).
+//   * `tools:`     → `ToolsConfigLoader.parse` (reads `doc['tools']`; returns
+//     `null` when absent — the engine's placeholder file-scope root; § 21.4).
 //
 // Each section loader produces a *located* error (dotted key path) on its own
 // malformed or missing section, so the whole-process loader needs no error
@@ -51,6 +53,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, SubstrateConfigLoader;
 
 import 'brain_run_config.dart';
+import 'tools_config.dart';
+import 'tools_config_loader.dart';
 import 'trail_config.dart';
 import 'trail_config_loader.dart';
 
@@ -86,11 +90,14 @@ abstract final class BrainRunConfigLoader {
         AccessConfigLoader.parse(content, envVars: envVars);
     final TrailConfig? trail =
         TrailConfigLoader.parse(content, envVars: envVars);
+    final ToolsConfig? tools =
+        ToolsConfigLoader.parse(content, envVars: envVars);
     return BrainRunConfig(
       substrate: substrate,
       memory: memory,
       access: access,
       trail: trail,
+      tools: tools,
     );
   }
 
