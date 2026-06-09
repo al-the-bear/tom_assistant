@@ -23,10 +23,12 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:shelf_static/shelf_static.dart';
 
 import '../live/live_tail.dart';
+import '../memory/memory_read_client.dart';
 import '../model/prompt_trace.dart';
 import '../parse/prompt_list_builder.dart';
 import '../parse/prompt_trace_parser.dart';
 import '../parse/trail_host.dart';
+import 'memory_read_api.dart';
 
 /// A read-only shelf service over one [TrailHost], optionally serving an
 /// embedded web build from [webRoot]. Construct it, then mount [handler].
@@ -47,12 +49,20 @@ final class TrailReadApi {
   /// endpoint then 404s — absence is never an error, § 4.1).
   final Directory? scriptRoot;
 
+  /// The Module-2 memory read surface (`prompt_tracing.md` § 8.4), serving
+  /// `/api/memory/*` over the injected [memory] client. The client is optional:
+  /// absent it (the `dart_mcp` connector is deferred at run-assembly) every
+  /// `/api/memory/*` route answers `503` "memory unavailable" — the routes
+  /// always exist, so the UI gets a clean signal, never a 404.
+  final MemoryReadApi _memoryApi;
+
   TrailReadApi({
     required this.host,
     this.listLimit = 10,
     this.webRoot,
     this.scriptRoot,
-  });
+    MemoryReadClient? memory,
+  }) : _memoryApi = MemoryReadApi(client: memory);
 
   /// The composed handler: `/api/*` routed to the JSON API, everything else to
   /// the static root (when [webRoot] is set) with SPA fallback.
@@ -69,13 +79,17 @@ final class TrailReadApi {
   /// True when the request path addresses the JSON API (`api` or `api/…`).
   static bool _isApiPath(String path) => path == 'api' || path.startsWith('api/');
 
-  Router get _apiRouter => Router()
-    ..get('/api/stream', _listStream)
-    ..get('/api/traces', _listTraces)
-    ..get('/api/traces/<turnId>/stream', _turnStream)
-    ..get('/api/traces/<turnId>', _singleTrace)
-    ..get('/api/llm', _llmRaw)
-    ..get('/api/procedures/<procedureId>', _procedureScript);
+  Router get _apiRouter {
+    final router = Router()
+      ..get('/api/stream', _listStream)
+      ..get('/api/traces', _listTraces)
+      ..get('/api/traces/<turnId>/stream', _turnStream)
+      ..get('/api/traces/<turnId>', _singleTrace)
+      ..get('/api/llm', _llmRaw)
+      ..get('/api/procedures/<procedureId>', _procedureScript);
+    _memoryApi.registerRoutes(router); // /api/memory/* (§ 8.4)
+    return router;
+  }
 
   /// `GET /api/traces` — the prompt list as a JSON array (§ 4.1). An optional
   /// `?limit=` overrides the default window.

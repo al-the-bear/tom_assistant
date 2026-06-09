@@ -45,6 +45,14 @@ final class TypeBrowseResult {
     List<String> sources = const <String>[],
   })  : nodes = List<MemoryNode>.unmodifiable(nodes),
         sources = List<String>.unmodifiable(sources);
+
+  /// The wire shape the backend re-serializes for the browser.
+  Map<String, Object?> toJson() => <String, Object?>{
+        'typeName': typeName,
+        'exhaustive': exhaustive,
+        'nodes': <Object?>[for (final node in nodes) node.toJson()],
+        'sources': sources,
+      };
 }
 
 /// Composes browse-by-type from the [MemoryReadClient]'s read tools (PT-5.2).

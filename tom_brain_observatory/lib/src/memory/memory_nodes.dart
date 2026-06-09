@@ -24,6 +24,14 @@ enum RecallMode {
 
   /// The JSON token in a `modes`/`mode` argument.
   final String wireName;
+
+  /// The mode for [wire], or `null` when the token is unknown.
+  static RecallMode? fromWire(String wire) {
+    for (final mode in values) {
+      if (mode.wireName == wire) return mode;
+    }
+    return null;
+  }
 }
 
 /// Edge-traversal direction (`memory.edgesOf`, § 5.3).
@@ -95,6 +103,18 @@ final class MemoryNode {
             const <String, Object?>{},
         embedding: _doubleList(json['embedding']),
       );
+
+  /// The wire shape the backend re-serializes for the browser (round-trips
+  /// [MemoryNode.fromJson]). The embedding rides along when present so node
+  /// detail can render its dimensionality and norm (§ 5.2).
+  Map<String, Object?> toJson() => <String, Object?>{
+        'id': id,
+        'typeName': typeName,
+        'status': status,
+        'createdAt': createdAt,
+        'values': values,
+        'embedding': ?embedding,
+      };
 }
 
 /// A memory edge (§ 5.3) — the decoded `Edge` wire shape.
@@ -124,6 +144,16 @@ final class MemoryEdge {
         attrs: (json['attrs'] as Map?)?.cast<String, Object?>() ??
             const <String, Object?>{},
       );
+
+  /// The wire shape the backend re-serializes (round-trips [MemoryEdge.fromJson]).
+  Map<String, Object?> toJson() => <String, Object?>{
+        'id': id,
+        'from': from,
+        'type': type,
+        'to': to,
+        'weight': weight,
+        'attrs': attrs,
+      };
 }
 
 /// A stack inventory row (`memory.stack.list`, § 5.5).
@@ -147,6 +177,14 @@ final class MemoryStackSummary {
         topPriority: (json['topPriority'] as num?)?.toDouble() ?? 0.0,
         bootstrap: json['bootstrap'] as bool? ?? false,
       );
+
+  /// The wire shape the backend re-serializes (round-trips the factory above).
+  Map<String, Object?> toJson() => <String, Object?>{
+        'name': name,
+        'size': size,
+        'topPriority': topPriority,
+        'bootstrap': bootstrap,
+      };
 }
 
 /// A stack entry (`memory.stack.peek`, § 5.5).
@@ -180,6 +218,17 @@ final class MemoryStackEntry {
         attrs: (json['attrs'] as Map?)?.cast<String, Object?>() ??
             const <String, Object?>{},
       );
+
+  /// The wire shape the backend re-serializes (round-trips the factory above).
+  Map<String, Object?> toJson() => <String, Object?>{
+        'id': id,
+        'stackName': stackName,
+        'nodeId': nodeId,
+        'priority': priority,
+        'pushedAt': pushedAt,
+        'status': status,
+        'attrs': attrs,
+      };
 }
 
 /// A centroid classification result (`memory.classify`, § 5.6).
@@ -204,6 +253,14 @@ final class MemoryClassification {
         bestSimilarity: (json['bestSimilarity'] as num?)?.toDouble() ?? 0.0,
         secondSimilarity: (json['secondSimilarity'] as num?)?.toDouble() ?? 0.0,
       );
+
+  /// The wire shape the backend re-serializes (round-trips the factory above).
+  Map<String, Object?> toJson() => <String, Object?>{
+        'decision': decision,
+        'bestMatch': bestMatch,
+        'bestSimilarity': bestSimilarity,
+        'secondSimilarity': secondSimilarity,
+      };
 }
 
 /// The per-mode cost report of a recall (§ 5.4).
@@ -243,6 +300,18 @@ final class RecallReport {
         reRankInvoked: json['reRankInvoked'] as bool? ?? false,
         degraded: json['degraded'] as bool? ?? false,
       );
+
+  /// The wire shape the backend re-serializes (round-trips the factory above).
+  Map<String, Object?> toJson() => <String, Object?>{
+        'candidatesPerMode': candidatesPerMode,
+        'fusionStrategy': fusionStrategy,
+        'diversityStrategy': diversityStrategy,
+        'diversityLambda': ?diversityLambda,
+        'elapsedMs': elapsedMs,
+        'embeddingsCallouts': embeddingsCallouts,
+        'reRankInvoked': reRankInvoked,
+        'degraded': degraded,
+      };
 }
 
 /// Per-node seed provenance returned by multi-seed recall (§ 5.4).
@@ -266,6 +335,13 @@ final class RecallProvenance {
             (i as num).toInt(),
         ],
       );
+
+  /// The wire shape the backend re-serializes (round-trips the factory above).
+  Map<String, Object?> toJson() => <String, Object?>{
+        'nodeId': nodeId,
+        'fusedScore': fusedScore,
+        'seedIndexes': seedIndexes,
+      };
 }
 
 /// A recall result (§ 5.4): the fused-and-diversified node list, the cost
@@ -300,6 +376,17 @@ final class RecallResult {
             ],
     );
   }
+
+  /// The wire shape the backend re-serializes (round-trips the factory above).
+  Map<String, Object?> toJson() {
+    final prov = provenance;
+    return <String, Object?>{
+      'nodes': <Object?>[for (final node in nodes) node.toJson()],
+      'report': report.toJson(),
+      if (prov != null)
+        'provenance': <Object?>[for (final p in prov) p.toJson()],
+    };
+  }
 }
 
 /// One seed of a multi-seed recall (`memory.recall.multi`, § 5.4). Marshalled to
@@ -322,6 +409,20 @@ final class RecallSeedSpec {
     this.weight = 1.0,
     this.k,
   });
+
+  /// Decodes one `seeds[]` object (the inverse of [toJson]). An unknown or
+  /// absent `mode` token falls back to [RecallMode.bm25].
+  factory RecallSeedSpec.fromJson(Map<String, Object?> json) => RecallSeedSpec(
+        mode: RecallMode.fromWire(json['mode'] as String? ?? '') ??
+            RecallMode.bm25,
+        text: json['text'] as String?,
+        embedding: _doubleList(json['embedding']),
+        terms: (json['terms'] as List?)?.map((t) => t as String).toList(),
+        startNodes:
+            (json['startNodes'] as List?)?.map((n) => n as String).toList(),
+        weight: (json['weight'] as num?)?.toDouble() ?? 1.0,
+        k: (json['k'] as num?)?.toInt(),
+      );
 
   /// The seed as the MCP `seeds[]` object — null fields omitted.
   Map<String, Object?> toJson() => <String, Object?>{

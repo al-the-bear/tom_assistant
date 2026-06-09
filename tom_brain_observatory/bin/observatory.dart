@@ -70,6 +70,14 @@ Future<void> main(List<String> args) async {
     );
   }
 
+  // The Module-2 memory surface (§ 8.4) is deferred: the real `dart_mcp`-backed
+  // McpReadConnection is wired at the run-assembly seam, not here. Until then
+  // `memory:` stays null, so every `/api/memory/*` route answers 503 "memory
+  // unavailable" — the routes exist, the UI degrades cleanly, nothing crashes.
+  stderr.writeln(
+    'observatory: memory connector not wired — /api/memory/* will 503 '
+    '"memory unavailable" until the MCP read connection is injected (§ 8.4).',
+  );
   final api = TrailReadApi(
     host: TrailHost.at(trailRoot),
     webRoot: webRoot.existsSync() ? webRoot : null,
