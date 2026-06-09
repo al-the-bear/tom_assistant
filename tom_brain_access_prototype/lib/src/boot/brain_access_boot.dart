@@ -64,6 +64,7 @@ import '../delivery/telegram_delivery.dart';
 import '../edge_security/edge_security.dart';
 import '../heuristic_classifier/embedding_cache.dart';
 import '../heuristic_classifier/heuristic_kind_hint_classifier.dart';
+import '../identity/history_store.dart';
 import '../identity/identity_resolver.dart';
 import '../identity/persona_resolver.dart';
 import '../identity/session_manager.dart';
@@ -137,6 +138,15 @@ final class BrainAccessConfig {
   /// [rateLimitStore] so each limiter owns its own file / row format.
   final EdgeStateStore? quotaStore;
 
+  /// Durable backing for the session manager's conversation histories
+  /// (persistence of history; umbrella Hard principle 6 — "nothing is ever
+  /// lost"), or `null` to keep histories in process only. The process boot
+  /// (E.45) supplies a [JsonFileHistoryStore] when `access.history.directory`
+  /// is configured; tests inject a [MapHistoryStore]. When present the session
+  /// manager rehydrates from it on construction and persists back to it after
+  /// each answered turn, so a restart resumes every conversation mid-stream.
+  final HistoryStore? historyStore;
+
   /// The optional §5.3 incoming-prompt trail sink (`tom_brain_logging.md`
   /// §10 step #7). A higher assembly (`tom_brain_run`) binds the
   /// `IncomingTrailWriter.write` here in full-trail mode; `null` (the default)
@@ -159,6 +169,7 @@ final class BrainAccessConfig {
     DateTime Function()? clock,
     this.rateLimitStore,
     this.quotaStore,
+    this.historyStore,
     this.incomingTrailSink,
   }) : clock = clock ?? systemClock;
 }
@@ -231,7 +242,10 @@ abstract final class BrainAccessBoot {
         bearerTokenBindings: config.bearerTokenBindings,
         telegramUserIdBindings: config.telegramUserIdBindings,
       ),
-      sessionManager: SessionManager(now: config.clock),
+      sessionManager: SessionManager(
+        now: config.clock,
+        historyStore: config.historyStore,
+      ),
       personaResolver: PersonaResolver(knownModels: config.personaVocabulary),
       rateLimiter: RateLimiter(
         policy: config.rateLimitPolicy,

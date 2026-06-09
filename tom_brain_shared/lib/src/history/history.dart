@@ -31,10 +31,14 @@
 //     (`tom_brain_procedure_prototype`), which reads this store, runs the
 //     call, and hands the rewritten summary back via [applyCompaction]. The
 //     shared layer carries no I/O (A.9 dependency discipline).
-//   * No persistence. Turns are persisted as memory nodes by the access
-//     layer's `SessionManager` (hub § 22.3, "persisted as memory nodes");
-//     the in-value `record` is the faithful representation of that durable
-//     trail the pure store can hold.
+//   * No file I/O. This module stays pure (A.9 dependency discipline): it
+//     offers `toJson` / `fromJson` as a structural codec, but the actual
+//     persistence — writing a session's history to disk so it survives a
+//     process restart ("nothing is ever lost") — is the access layer's
+//     `JsonFileHistoryStore` (access spec § 21.10). Turns are *also* persisted
+//     as memory nodes by the answer procedure (hub § 22.3); the two are
+//     complementary (the JSON store rehydrates the live session window, the
+//     memory nodes feed recall).
 
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show listEquals, textPreview;
@@ -65,6 +69,25 @@ final class HistoryTurn {
     required this.brainAnswer,
     this.toolRound,
   });
+
+  /// Rebuilds a turn from its [toJson] map. A missing prompt/answer reads as
+  /// empty (a turn body is allowed to be empty, hub § 22.8); a missing or null
+  /// `tool` key reads as no tool round, so the codec round-trips
+  /// `toolRound == null` faithfully.
+  factory HistoryTurn.fromJson(Map<String, Object?> json) => HistoryTurn(
+        userPrompt: (json['user'] as String?) ?? '',
+        brainAnswer: (json['answer'] as String?) ?? '',
+        toolRound: json['tool'] as String?,
+      );
+
+  /// The turn as a JSON-encodable map. The optional `tool` key is omitted when
+  /// there was no tool round, so the encoding distinguishes "no tools ran" from
+  /// "an empty tool round ran".
+  Map<String, Object?> toJson() => <String, Object?>{
+        'user': userPrompt,
+        'answer': brainAnswer,
+        if (toolRound != null) 'tool': toolRound,
+      };
 
   @override
   bool operator ==(Object other) =>
@@ -118,6 +141,26 @@ final class HistorySizing {
 
   /// The standard sizing — every knob at its documented default.
   const HistorySizing.standard() : this();
+
+  /// Rebuilds a sizing from its [toJson] map. A missing or non-numeric knob
+  /// falls back to its documented default (hub § 22.6, "not an error"), so an
+  /// old or partial persisted sizing still rehydrates.
+  factory HistorySizing.fromJson(Map<String, Object?> json) => HistorySizing(
+        rawCount: (json['rawCount'] as num?)?.toInt() ?? 10,
+        compactionThreshold:
+            (json['compactionThreshold'] as num?)?.toInt() ?? 40,
+        maxCompactedTokens:
+            (json['maxCompactedTokens'] as num?)?.toInt() ?? 1024,
+        maxCompactedChars: (json['maxCompactedChars'] as num?)?.toInt() ?? 6000,
+      );
+
+  /// The sizing as a JSON-encodable map.
+  Map<String, Object?> toJson() => <String, Object?>{
+        'rawCount': rawCount,
+        'compactionThreshold': compactionThreshold,
+        'maxCompactedTokens': maxCompactedTokens,
+        'maxCompactedChars': maxCompactedChars,
+      };
 
   @override
   bool operator ==(Object other) =>
@@ -199,6 +242,48 @@ final class ConversationHistory {
     _pending.addAll(pending);
     _record.addAll(durableRecord);
   }
+
+  /// Rehydrates a history from its [toJson] map — the on-disk restart seam.
+  ///
+  /// Delegates to [ConversationHistory.restore], so the rebuilt store shares no
+  /// mutable state with the decoded lists. A missing `sizing` block falls back
+  /// to the standard sizing; missing turn lists read as empty; a missing
+  /// summary reads as empty (a fresh session).
+  factory ConversationHistory.fromJson(Map<String, Object?> json) {
+    final sizingJson = json['sizing'];
+    return ConversationHistory.restore(
+      sizing: sizingJson is Map<String, Object?>
+          ? HistorySizing.fromJson(sizingJson)
+          : const HistorySizing.standard(),
+      compactedSummary: (json['compactedSummary'] as String?) ?? '',
+      rawWindow: _turnsFromJson(json['rawWindow']),
+      pending: _turnsFromJson(json['pending']),
+      durableRecord: _turnsFromJson(json['durableRecord']),
+    );
+  }
+
+  /// Decodes a JSON list of turn maps; a missing or non-list value reads as an
+  /// empty list.
+  static List<HistoryTurn> _turnsFromJson(Object? value) {
+    if (value is! List) return <HistoryTurn>[];
+    return value
+        .whereType<Map<String, Object?>>()
+        .map(HistoryTurn.fromJson)
+        .toList();
+  }
+
+  /// The history as a JSON-encodable map covering all four working views.
+  ///
+  /// The durable record is included in full so the "nothing is ever lost"
+  /// invariant (Hard principle 6) survives a process restart, not just the
+  /// live window.
+  Map<String, Object?> toJson() => <String, Object?>{
+        'sizing': sizing.toJson(),
+        'compactedSummary': _compactedSummary,
+        'rawWindow': _rawWindow.map((t) => t.toJson()).toList(),
+        'pending': _pending.map((t) => t.toJson()).toList(),
+        'durableRecord': _record.map((t) => t.toJson()).toList(),
+      };
 
   /// The newest [HistorySizing.rawCount] turns, kept verbatim. Unmodifiable.
   List<HistoryTurn> get rawWindow => List.unmodifiable(_rawWindow);

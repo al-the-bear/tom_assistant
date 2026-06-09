@@ -60,9 +60,12 @@ substrate:
     dims: 768
     normalize: true
 memory:
-  # Runtime data store (the .db files + checkpoints) — machine-local, untracked
-  # (lives under the git-ignored ztmp tree).
-  root: /srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/ztmp/brain_run/memory
+  # Runtime data store (the .db files + checkpoints) — machine-local, DURABLE.
+  # Lives under the shared `_ai` mount keyed by fleet host (bomber), so it
+  # survives a process restart (the "nothing is ever lost" contract). The
+  # runtime .db files themselves are git-ignored (`_ai/tom_brain/.gitignore`);
+  # backup is the tiered-backup pipeline's job, not git's.
+  root: /srv/repos/al_the_bear/_ai/tom_brain/bomber/memory
   sqliteVec:
     binariesRoot: /srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_binaries/sqlite_vec
 access:
@@ -92,6 +95,18 @@ access:
     refillPeriodSeconds: 60
   quota:
     dailyCap: 100000
+  # Conversation-history persistence (access spec § 21.10; umbrella Hard
+  # principle 6 — "nothing is ever lost"). The session manager writes the whole
+  # session-histories snapshot (the global per-(user, channel) histories plus
+  # every per-session entry) to `histories.json` under this directory after
+  # each answered turn, and rehydrates from it on boot — so a process restart
+  # resumes every conversation mid-stream (the brain keeps remembering your name
+  # across a restart). Lives under the shared `_ai` mount keyed by fleet host
+  # (bomber), DURABLE on disk but git-ignored (`_ai/tom_brain/.gitignore`);
+  # backup is the tiered-backup pipeline's job, not git's. `null` (omit the
+  # block) keeps histories in process only.
+  history:
+    directory: /srv/repos/al_the_bear/_ai/tom_brain/bomber/history
 # Full trailing mode (tom_brain_logging.md §4.1): the whole trail tree is
 # written under the shared `_ai` mount, keyed by fleet host id (bomber). The
 # raw tiers (llm/, incoming/, procedures/, memory/, brain.log, components/) are

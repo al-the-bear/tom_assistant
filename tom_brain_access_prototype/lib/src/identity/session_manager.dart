@@ -70,6 +70,7 @@ import 'package:tom_brain_procedure_prototype/tom_brain_procedure_prototype.dart
     show SelectionSettings;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
+import 'history_store.dart';
 import 'memory_profile_selector.dart';
 
 /// The originating channel of an inbound request — the second component of a
@@ -207,6 +208,95 @@ final class SessionHistoriesSnapshot {
 
   SessionHistoriesSnapshot._(this._globals, this._sessions);
 
+  /// Rehydrates a snapshot from its [toJson] document — the on-disk restart
+  /// seam ([JsonFileHistoryStore], access spec § 21.10). A missing or malformed
+  /// section reads as empty rather than throwing here: structural validation of
+  /// the file is the store's job ([HistoryStoreException]); this codec is
+  /// tolerant of partial documents so an older snapshot still loads what it can.
+  factory SessionHistoriesSnapshot.fromJson(Map<String, Object?> json) {
+    final globals = <(String, AccessChannel), ConversationHistory>{};
+    final globalsJson = json['globals'];
+    if (globalsJson is List) {
+      for (final entry in globalsJson.whereType<Map<String, Object?>>()) {
+        final principalId = entry['principalId'] as String?;
+        final channel = _channelFromWire(entry['channel'] as String?);
+        final historyJson = entry['history'];
+        if (principalId == null ||
+            channel == null ||
+            historyJson is! Map<String, Object?>) {
+          continue;
+        }
+        globals[(principalId, channel)] =
+            ConversationHistory.fromJson(historyJson);
+      }
+    }
+
+    final sessions = <String, _SessionEntry>{};
+    final sessionsJson = json['sessions'];
+    if (sessionsJson is Map<String, Object?>) {
+      sessionsJson.forEach((id, value) {
+        if (value is! Map<String, Object?>) return;
+        final historyJson = value['history'];
+        if (historyJson is! Map<String, Object?>) return;
+        sessions[id] = _SessionEntry(
+          history: ConversationHistory.fromJson(historyJson),
+          lastActivityAt: DateTime.tryParse(
+                (value['lastActivityAt'] as String?) ?? '',
+              ) ??
+              DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+          pinnedProfile: value['pinnedProfile'] as String?,
+          everSelected: (value['everSelected'] as bool?) ?? false,
+          selectionInconclusive:
+              (value['selectionInconclusive'] as bool?) ?? false,
+          turnsSinceProfileCheck:
+              (value['turnsSinceProfileCheck'] as num?)?.toInt() ?? 0,
+        );
+      });
+    }
+
+    return SessionHistoriesSnapshot._(globals, sessions);
+  }
+
+  /// The snapshot as a JSON-encodable document covering both history stores.
+  ///
+  /// Globals serialize as a list (their `(principalId, channel)` key is a Dart
+  /// record, not a JSON-able string) and sessions as a map keyed by the
+  /// brain-minted session id — so a restored id is attachable again, an echoing
+  /// request resolves it as known (access spec § 21.10).
+  Map<String, Object?> toJson() => <String, Object?>{
+        'globals': [
+          for (final e in _globals.entries)
+            <String, Object?>{
+              'principalId': e.key.$1,
+              'channel': e.key.$2.wireName,
+              'history': e.value.toJson(),
+            },
+        ],
+        'sessions': <String, Object?>{
+          for (final e in _sessions.entries)
+            e.key: <String, Object?>{
+              'history': e.value.history.toJson(),
+              'lastActivityAt': e.value.lastActivityAt.toIso8601String(),
+              if (e.value.pinnedProfile != null)
+                'pinnedProfile': e.value.pinnedProfile,
+              'everSelected': e.value.everSelected,
+              'selectionInconclusive': e.value.selectionInconclusive,
+              'turnsSinceProfileCheck': e.value.turnsSinceProfileCheck,
+            },
+        },
+      };
+
+  /// Resolves a persisted [wireName] back to its [AccessChannel], or `null`
+  /// when the name is absent or unknown (a global with an unknown channel is
+  /// skipped rather than crashing the whole restore).
+  static AccessChannel? _channelFromWire(String? wireName) {
+    if (wireName == null) return null;
+    for (final c in AccessChannel.values) {
+      if (c.wireName == wireName) return c;
+    }
+    return null;
+  }
+
   /// The number of global histories captured.
   int get globalCount => _globals.length;
 
@@ -245,6 +335,12 @@ final class SessionManager {
   /// The dedicated per-session histories, keyed by the brain-minted id.
   final Map<String, _SessionEntry> _sessions = {};
 
+  /// The durable backing for both history stores, or `null` for an in-process
+  /// (non-durable) manager. When present, the manager rehydrates from it on
+  /// construction and [persist] writes the live snapshot back to it — the
+  /// "nothing is ever lost" restart contract (umbrella Hard principle 6).
+  final HistoryStore? _store;
+
   /// Builds a session manager.
   ///
   /// [sizing] (default [HistorySizing.standard]) shapes each history's window
@@ -256,17 +352,30 @@ final class SessionManager {
   /// (access spec § 7.4); when omitted (or when [selection] is disabled),
   /// [selectMemoryProfile] never calls the substrate and the conversation stays
   /// on the process default profile. [selection] is the selection policy
-  /// (default: disabled).
+  /// (default: disabled). [historyStore] is the durable backing: when given,
+  /// the manager loads any persisted histories from it now (so a restart
+  /// resumes mid-conversation) and [persist] writes back to it; when omitted
+  /// the manager is in-process only (the prototype's original behaviour).
   SessionManager({
     this.sizing = const HistorySizing.standard(),
     SessionIdMinter? sessionIdMinter,
     DateTime Function()? now,
     MemoryProfileSelector? profileSelector,
     SelectionSettings selection = const SelectionSettings(),
+    HistoryStore? historyStore,
   })  : _mint = sessionIdMinter ?? _defaultMinter(),
         _now = now ?? systemClock,
         _profileSelector = profileSelector,
-        _selection = selection;
+        _selection = selection,
+        _store = historyStore {
+    final store = _store;
+    if (store != null) {
+      final document = store.load();
+      if (document.isNotEmpty) {
+        restore(SessionHistoriesSnapshot.fromJson(document));
+      }
+    }
+  }
 
   /// The number of dedicated per-session histories currently held — *not* the
   /// global histories (which are bounded by the active (principal, channel)
@@ -549,6 +658,21 @@ final class SessionManager {
           for (final e in _sessions.entries) e.key: _copyEntry(e.value),
         },
       );
+
+  /// Writes the live histories to the durable [HistoryStore], if one is wired.
+  ///
+  /// The save seam (access spec § 21.10): the dispatcher calls this once a turn
+  /// has been answered and back-filled into its history, so the exchange
+  /// survives a process restart. A no-op for an in-process manager (no store).
+  /// Serializes the whole snapshot every call — prompts are slow (a full
+  /// thinking loop), so a synchronous full-document write per turn is not a
+  /// performance concern, and it keeps the "nothing is ever lost" contract
+  /// simple (no incremental-write bookkeeping to get wrong).
+  void persist() {
+    final store = _store;
+    if (store == null) return;
+    store.save(snapshot().toJson());
+  }
 
   /// Rehydrates this manager from [snapshot], replacing any current state. The
   /// restored histories are deep copies, so the manager and the snapshot stay

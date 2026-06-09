@@ -716,6 +716,83 @@ access:
     });
   });
 
+  group('history persistence (§ 21.10 — "nothing is ever lost")', () {
+    test('no history section ⇒ null (in-process histories)', () {
+      const doc = '''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+''';
+      expect(AccessConfigLoader.parse(doc).historyDirectory, isNull);
+    });
+
+    test('parses access.history.directory', () {
+      const doc = '''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+  history:
+    directory: /var/lib/tom_brain/history
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.historyDirectory, '/var/lib/tom_brain/history');
+    });
+
+    test('expands \${ENV} in the directory', () {
+      const doc = r'''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+  history:
+    directory: "${HISTORY_DIR}/history"
+''';
+      final config = AccessConfigLoader.parse(
+        doc,
+        envVars: const {'HISTORY_DIR': '/srv/state'},
+      );
+      expect(config.historyDirectory, '/srv/state/history');
+    });
+
+    test('rejects an unknown key within history', () {
+      const doc = '''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+  history: { directory: /x, mystery: 1 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.history has unknown key "mystery"'),
+        )),
+      );
+    });
+
+    test('rejects an empty directory', () {
+      const doc = '''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+  history: { directory: "" }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('access.history.directory must be non-empty'),
+        )),
+      );
+    });
+  });
+
   group('E.44 forward-only schema (AC-12)', () {
     test('rejects an unknown top-level section', () {
       const doc = '''

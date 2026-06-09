@@ -20,6 +20,7 @@
 // shared `OpenAiPersonaMapping.knownModels` vocabulary (AC-5).
 // E.27 ⏳ — the resolution-test sweep (token / user-id / session / persona).
 
+export 'history_store.dart';
 export 'identity_resolver.dart';
 export 'memory_profile_selector.dart';
 export 'persona_resolver.dart';

@@ -273,6 +273,15 @@ final class AccessConfig {
   /// against the process working directory by boot.
   final String? edgeStateDirectory;
 
+  /// Directory the session manager persists its conversation histories under
+  /// (persistence of history; umbrella Hard principle 6 — "nothing is ever
+  /// lost"; access spec § 21.10), or `null` to keep histories in process only.
+  /// When set, boot (E.45) places one JSON file inside it holding the whole
+  /// session-histories snapshot, so a restart resumes every conversation
+  /// mid-stream (the "doesn't remember after restart" defect this fixes). A
+  /// relative path is resolved against the process working directory by boot.
+  final String? historyDirectory;
+
   /// Builds an access config. Callers normally go through
   /// [AccessConfigLoader]; tests construct one directly.
   AccessConfig({
@@ -292,6 +301,7 @@ final class AccessConfig {
     this.personaVocabulary,
     this.embeddingCacheTtl = const Duration(minutes: 5),
     this.edgeStateDirectory,
+    this.historyDirectory,
   })  : users = List.unmodifiable(users),
         bearerTokenBindings = Map.unmodifiable(bearerTokenBindings),
         telegramUserIdBindings = Map.unmodifiable(telegramUserIdBindings) {

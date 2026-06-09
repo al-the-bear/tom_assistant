@@ -514,6 +514,27 @@ final class AccessAssembler {
     }
 
     await dispatcher.accept(access);
+
+    // The run has streamed and the engine has back-filled its answer into the
+    // session's live history (the same ConversationHistory the SessionManager
+    // holds). Persist both history stores now so the exchange survives a
+    // process restart — the "nothing is ever lost" contract (umbrella Hard
+    // principle 6; access spec § 21.10). Best-effort: a persistence failure
+    // must never fail an otherwise-completed turn (it is a no-op when no
+    // durable HistoryStore is wired).
+    _persistHistories();
+  }
+
+  /// Writes the live conversation histories to the SessionManager's durable
+  /// store, swallowing any failure (§9 best-effort, mirroring the trail sinks).
+  void _persistHistories() {
+    try {
+      sessionManager.persist();
+    } catch (_) {
+      // A history-persistence miss is never an access failure — the answer was
+      // already delivered. The next persisted turn re-captures the full
+      // snapshot (persist writes the whole document, not a delta).
+    }
   }
 
   /// Hands the configured [incomingTrailSink] one [IncomingTrailRecord] for the

@@ -71,6 +71,8 @@ import '../edge_security/edge_security.dart'
         EdgeStateStore,
         JsonFileEdgeStateStore,
         MapEdgeStateStore;
+import '../identity/history_store.dart'
+    show HistoryStore, JsonFileHistoryStore;
 import '../identity/telegram_session_registry.dart'
     show TelegramSessionRegistry;
 import '../heuristic_classifier/heuristic_kind_hint_classifier.dart'
@@ -541,6 +543,15 @@ BrainAccessConfig _toBrainAccessConfig(
     quotaStore = JsonFileEdgeStateStore(_edgeStatePath(dir, _quotaStateFile));
   }
 
+  // The conversation-history store is durable under `access.history.directory`,
+  // a separate path from the edge-state store (P1.4 limiter rows vs. § 21.10
+  // session histories — different lifecycles, different backup tiers). `null`
+  // there keeps histories in process only.
+  final historyDir = config.historyDirectory;
+  final HistoryStore? historyStore = historyDir == null
+      ? null
+      : JsonFileHistoryStore(_edgeStatePath(historyDir, _historiesFile));
+
   return BrainAccessConfig(
     rateLimitPolicy: config.rateLimitPolicy,
     dailyQuotaPolicy: config.dailyQuotaPolicy,
@@ -555,6 +566,7 @@ BrainAccessConfig _toBrainAccessConfig(
     clock: clock,
     rateLimitStore: rateLimitStore,
     quotaStore: quotaStore,
+    historyStore: historyStore,
     incomingTrailSink: incomingTrailSink,
   );
 }
@@ -562,6 +574,10 @@ BrainAccessConfig _toBrainAccessConfig(
 /// The per-limiter state file names under [AccessConfig.edgeStateDirectory].
 const String _rateLimitStateFile = 'rate_limit_state.json';
 const String _quotaStateFile = 'quota_state.json';
+
+/// The conversation-histories snapshot file name under
+/// [AccessConfig.historyDirectory] (§ 21.10).
+const String _historiesFile = 'histories.json';
 
 /// The Telegram per-user session registry file under
 /// [AccessConfig.edgeStateDirectory] (§ 6.5).

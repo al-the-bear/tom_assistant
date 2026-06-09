@@ -119,6 +119,7 @@ AccessConfig _config({
   bool telegram = false,
   bool bearer = false,
   String? edgeStateDir,
+  String? historyDir,
   int? ollamaPort,
   int? anthropicPort,
 }) =>
@@ -137,6 +138,7 @@ AccessConfig _config({
           ? {'secret-token': IdentityBinding(principalId: 'principal-1')}
           : const {},
       edgeStateDirectory: edgeStateDir,
+      historyDirectory: historyDir,
     );
 
 Future<Response> _post(Handler handler, String path, String body) async =>
@@ -233,6 +235,54 @@ void main() {
           reason: 'daily-quota counter should be persisted');
       expect(File('${dir.path}/rate_limit_state.json').existsSync(), isTrue,
           reason: 'rate-limit bucket should be persisted');
+    });
+  });
+
+  group('startBrainAccessProcess — history persistence (§ 21.10)', () {
+    test('a configured history directory persists the histories snapshot',
+        () async {
+      final dir = Directory.systemTemp.createTempSync('history_proc_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+
+      final serve = _CaptureServe();
+      final process = await startBrainAccessProcess(
+        config: _config(bearer: true, historyDir: dir.path),
+        brain: _provisionedBrain().brain,
+        serve: serve.call,
+        clock: _fixedNow,
+        shutdownSignals: const [],
+        terminate: (_) {},
+      );
+      addTearDown(process.stop);
+
+      // One admitted chat completion records a turn the session manager
+      // persists after the answer is back-filled.
+      final response = await serve.handler!(
+        Request(
+          'POST',
+          Uri.parse('http://localhost/v1/chat/completions'),
+          headers: const <String, String>{
+            'content-type': 'application/json',
+            'authorization': 'Bearer secret-token',
+          },
+          body: jsonEncode(<String, Object?>{
+            'model': 'tom-assistant',
+            'stream': false,
+            'messages': <Object?>[
+              <String, Object?>{'role': 'user', 'content': 'hi'},
+            ],
+          }),
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(response.statusCode, 200);
+      final histories = File('${dir.path}/histories.json');
+      expect(histories.existsSync(), isTrue,
+          reason: 'the conversation history should be persisted after a turn');
+      final decoded =
+          jsonDecode(histories.readAsStringSync()) as Map<String, Object?>;
+      expect(decoded['globals'], isA<List<Object?>>());
     });
   });
 

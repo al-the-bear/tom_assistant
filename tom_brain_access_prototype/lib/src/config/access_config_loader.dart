@@ -155,6 +155,7 @@ abstract final class AccessConfigLoader {
         'personas',
         'classifier',
         'edgeState',
+        'history',
       },
       'access',
     );
@@ -209,6 +210,10 @@ abstract final class AccessConfigLoader {
       _optionalMap(node, 'edgeState', 'access.edgeState'),
       env,
     );
+    final historyDir = _parseHistory(
+      _optionalMap(node, 'history', 'access.history'),
+      env,
+    );
 
     return AccessConfig(
       openAiPort: port,
@@ -227,6 +232,7 @@ abstract final class AccessConfigLoader {
       personaVocabulary: personas,
       embeddingCacheTtl: cacheTtl,
       edgeStateDirectory: edgeStateDir,
+      historyDirectory: historyDir,
     );
   }
 
@@ -602,6 +608,29 @@ abstract final class AccessConfigLoader {
     if (expanded.isEmpty) {
       throw const AccessConfigException(
         'access.edgeState.directory must be non-empty when present.',
+      );
+    }
+    return expanded;
+  }
+
+  /// Parses `access.history` → the directory the session manager persists its
+  /// conversation histories under (persistence of history, umbrella Hard
+  /// principle 6), or `null` when the section is absent (histories stay in
+  /// process only). The single `directory` key is a `${ENV}`-expandable string
+  /// and must be non-empty when present — mirrors [_parseEdgeState].
+  static String? _parseHistory(YamlMap? node, Map<String, String> env) {
+    if (node == null) return null;
+    _rejectUnknownKeys(node, const <String>{'directory'}, 'access.history');
+    final dir = _optionalString(
+      node,
+      'directory',
+      'access.history.directory',
+    );
+    if (dir == null) return null;
+    final expanded = _expandEnv(dir, env, 'access.history.directory');
+    if (expanded.isEmpty) {
+      throw const AccessConfigException(
+        'access.history.directory must be non-empty when present.',
       );
     }
     return expanded;
