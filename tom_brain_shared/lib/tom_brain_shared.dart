@@ -100,12 +100,21 @@ export 'src/version/version.dart' show BrainVersion;
 // with the selector's overlap measure). Both are cross-component value types
 // (memory stores them, the selector ranks on them, the authoring loop stamps
 // them), so they belong to the shared vocabulary (procedure spec § 14).
+//
+// Todo 7 also adds the typed read-projections `ProcedureView` / `ProcedureRunView`
+// (and the `procedure(Run)NodeTypeName` constants), which decode a stored
+// `Procedure` / `ProcedureRun` node once at the boundary so memory's typed
+// queries and a Forge inspector read the same shape (procedure spec § 7.1, § 9.2).
 export 'src/procedure/procedure.dart'
     show
         CapabilitySet,
         ProcedureNotImplemented,
+        ProcedureRunView,
         ProcedureStatus,
-        procedureNotImplementedCode;
+        ProcedureView,
+        procedureNodeTypeName,
+        procedureNotImplementedCode,
+        procedureRunNodeTypeName;
 
 // A.17 — anchor/ module: `AssistantDedicationAnchor` is the framing
 // every internal Tom Brain prompt opens with (overview's Postulate 3).

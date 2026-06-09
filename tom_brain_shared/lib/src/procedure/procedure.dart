@@ -25,3 +25,14 @@ export 'procedure_not_implemented.dart'
 // authoring loop stamps them), so they live in shared (spec § 14).
 export 'capability_set.dart' show CapabilitySet;
 export 'procedure_status.dart' show ProcedureStatus;
+
+// Todo 7 — typed read-projections over the `Procedure` / `ProcedureRun` nodes.
+// `ProcedureView` / `ProcedureRunView` decode the untyped node `values` map once,
+// at the node boundary, so memory's typed queries, the selector re-rank, and a
+// Forge inspector all read the same shape (procedure spec § 7.1, § 9.2).
+export 'procedure_view.dart'
+    show
+        ProcedureView,
+        ProcedureRunView,
+        procedureNodeTypeName,
+        procedureRunNodeTypeName;
