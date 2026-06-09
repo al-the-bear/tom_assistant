@@ -260,6 +260,14 @@ final class BrainProcessConfig {
   /// real request, bounded enough to catch a loop.
   final MemoryWriteLimits memoryWriteLimits;
 
+  /// The configured file-scope roots every per-run [ToolContext] is built over
+  /// (§ 21.4), or `null` to fall back to the engine's neutral placeholder. When
+  /// non-null, boot threads the list onto the [ProcedureEngine] so the `file.*`
+  /// tools resolve and path-escape-check against the *union* of these roots.
+  /// Production binds the run config's `tools.fileScope`; tests that exercise
+  /// real files pass an explicit list.
+  final List<String>? toolFileScopeRoots;
+
   /// Installs the inbound access layer over the booted dispatcher, or `null`
   /// for the prototype default (no channel). See [AccessLayerInstaller].
   final AccessLayerInstaller? installAccessLayer;
@@ -350,6 +358,7 @@ final class BrainProcessConfig {
     this.userScriptsDir,
     this.foregroundQueueDepth = 4,
     this.memoryWriteLimits = MemoryWriteLimits.standard,
+    this.toolFileScopeRoots,
     this.installAccessLayer,
     this.classifyFallback,
     this.extensions,
@@ -587,6 +596,7 @@ abstract final class BrainProcessBoot {
       toolAccessSink: config.toolAccessSink,
       procedureTreeSink: config.procedureTreeSink,
       memoryWriteLimits: config.memoryWriteLimits,
+      toolFileScopeRoots: config.toolFileScopeRoots,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
     final dispatcher = _wireDispatcher(
@@ -651,6 +661,7 @@ abstract final class BrainProcessBoot {
     required ToolAccessSink? toolAccessSink,
     required ProcedureTreeSink? procedureTreeSink,
     required MemoryWriteLimits memoryWriteLimits,
+    required List<String>? toolFileScopeRoots,
   }) =>
       ProcedureEngine(
         resolver: resolver,
@@ -664,6 +675,7 @@ abstract final class BrainProcessBoot {
         toolAccessSink: toolAccessSink,
         procedureTreeSink: procedureTreeSink,
         memoryWriteLimits: memoryWriteLimits,
+        toolFileScopeRoots: toolFileScopeRoots,
       );
 
   /// Wires the [RunCoordinator] over the shared [preemption] state (it drives

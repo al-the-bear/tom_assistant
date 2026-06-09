@@ -62,6 +62,7 @@ void main() {
   BrainProcessConfig configWith({
     SubstrateConfig? substrateConfig,
     AccessLayerInstaller? installAccessLayer,
+    List<String>? toolFileScopeRoots,
   }) =>
       BrainProcessConfig(
         substrate: substrate,
@@ -71,6 +72,7 @@ void main() {
           memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d44_boot'),
         ),
         installAccessLayer: installAccessLayer,
+        toolFileScopeRoots: toolFileScopeRoots,
       );
 
   Access userPrompt(String text) => Access(
@@ -130,6 +132,29 @@ void main() {
       addTearDown(booted.shutdown);
 
       expect(substrate.openCount, 0);
+    });
+
+    test('boot threads the configured tool file-scope roots onto the engine',
+        () async {
+      final booted = await BrainProcessBoot.boot(
+        configWith(toolFileScopeRoots: const <String>['/scope/a', '/scope/b']),
+      );
+      addTearDown(booted.shutdown);
+
+      expect(
+        booted.engine.toolFileScopeRoots,
+        const <String>['/scope/a', '/scope/b'],
+      );
+    });
+
+    test('boot falls back to the engine placeholder root when none configured',
+        () async {
+      final booted = await BrainProcessBoot.boot(configWith());
+      addTearDown(booted.shutdown);
+
+      // A null config leaves the engine on its neutral placeholder, so the
+      // tool-calling path stays well-formed even with no `tools.fileScope`.
+      expect(booted.engine.toolFileScopeRoots, const <String>['/tom-brain-engine']);
     });
   });
 
