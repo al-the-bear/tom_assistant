@@ -69,6 +69,7 @@ export 'src/dream_window_schedule.dart'
     show DreamWindow, DreamWindowSchedule;
 export 'src/dream_controller.dart'
     show DreamController, DreamModeKind, DreamStatus;
+export 'src/late_dream_surface.dart' show LateDreamSurface;
 export 'src/dream_config.dart' show DreamConfig, DreamConfigException;
 export 'src/dream_config_loader.dart' show DreamConfigLoader;
 

@@ -71,6 +71,7 @@ import 'brain_substrate_builder.dart' show buildSubstrate;
 import 'dream_cadence_wiring.dart' show dreamCadenceDriverOverScheduler;
 import 'dream_config.dart' show DreamConfig;
 import 'dream_controller.dart' show DreamController;
+import 'late_dream_surface.dart' show LateDreamSurface;
 import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
@@ -160,6 +161,16 @@ Future<ProvisionedBrain> provisionBrain({
   final Directory scriptsDir =
       systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
 
+  // The `dream.control` tool (item c) reaches the cadence through the
+  // `ToolDreamSurface` the engine's per-run `ToolContext` carries. That context
+  // is wired *during* boot, before we have a coordinator to build the
+  // controller from — so we hand the boot a late-bound holder now and bind it
+  // to the real controller after the cadence is up (below). When dreaming is
+  // off, no holder is wired and the tool raises `ToolSurfaceUnavailable`.
+  final bool dreamEnabled = dream != null && dream.enabled;
+  final LateDreamSurface? dreamHolder =
+      dreamEnabled ? LateDreamSurface() : null;
+
   // Boot the cognition: real substrate → real on-disk memory (isolate-hosted
   // via the production factory) → engine → dispatcher.
   final booted = await BrainProcessBoot.boot(
@@ -180,6 +191,7 @@ Future<ProvisionedBrain> provisionBrain({
       memoryAccessSink: memoryAccessSink,
       toolAccessSink: toolAccessSink,
       procedureTreeSink: procedureTreeSink,
+      toolDreamSurface: dreamHolder,
     ),
   );
 
@@ -192,7 +204,11 @@ Future<ProvisionedBrain> provisionBrain({
   // with no background cadence — the prototype's deterministic live tests never
   // spin one (so r30 / r32 / r35 / r36 stay deterministic).
   final DreamController? dreamController =
-      (dream != null && dream.enabled) ? _startDreamLoop(booted, dream) : null;
+      dreamEnabled ? _startDreamLoop(booted, dream) : null;
+  // Bind the holder to the live controller so the `dream.control` tool drives
+  // the running cadence (item c). `dreamHolder` is non-null exactly when the
+  // controller is.
+  if (dreamController != null) dreamHolder!.bind(dreamController);
 
   // Project the booted cognition: the access process holds only a `Dispatcher`
   // and a `QueueSnapshotSource`. We own the `RunCoordinator`, so we project its

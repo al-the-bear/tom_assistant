@@ -31,6 +31,9 @@
 // measures elapsed *intervals* — wall-clock zone is irrelevant there but
 // load-bearing here.
 
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
+    show ToolDreamSurface;
+
 import 'dream_cadence_driver.dart' show DreamCadenceDriver;
 import 'dream_cadence_wiring.dart' show DreamCadenceLoop;
 import 'dream_window_schedule.dart' show DreamWindowSchedule;
@@ -74,11 +77,27 @@ final class DreamStatus {
 
   /// When a [DreamModeKind.forced] period ends, or `null` outside forced mode.
   final DateTime? forcedUntil;
+
+  /// The wire shape the `dream.control` tool returns to a procedure (the
+  /// [ToolDreamSurface.dreamStatus] contract). [forcedUntil] is emitted as an
+  /// ISO-8601 string so the map carries only JSON-native scalars.
+  Map<String, Object?> toMap() => <String, Object?>{
+        'mode': mode.name,
+        'active': active,
+        'running': running,
+        'alwaysActive': alwaysActive,
+        'forcedUntil': forcedUntil?.toIso8601String(),
+      };
 }
 
 /// Owns the [DreamCadenceLoop] and gates it by the configured windows and the
 /// runtime mode (items b + c).
-final class DreamController {
+///
+/// It is the live implementation of [ToolDreamSurface]: the `dream.control`
+/// tool drives `forceFor` / `suspend` / `resume` / `dreamStatus` straight onto
+/// the running controller (reached through the run assembly's late-bound
+/// holder).
+final class DreamController implements ToolDreamSurface {
   /// Builds a controller over the already-assembled cadence [driver] and the
   /// configured [schedule].
   ///
@@ -149,6 +168,7 @@ final class DreamController {
   /// Forces dreaming on for [period], regardless of the configured windows
   /// (item c — "start dreaming for a certain period"). After the period the
   /// controller reverts to [DreamModeKind.scheduled].
+  @override
   void forceFor(Duration period) {
     _mode = DreamModeKind.forced;
     _forcedUntil = _now().add(period);
@@ -156,6 +176,7 @@ final class DreamController {
 
   /// Suspends dreaming until [resume] is called, even inside a configured window
   /// (item c — "stop dreaming").
+  @override
   void suspend() {
     _mode = DreamModeKind.suspended;
     _forcedUntil = null;
@@ -164,6 +185,7 @@ final class DreamController {
   /// Returns to following the configured schedule (item c — "continue dreaming
   /// if the configured schedule was interrupted"). Clears any forced deadline or
   /// suspension.
+  @override
   void resume() {
     _mode = DreamModeKind.scheduled;
     _forcedUntil = null;
@@ -178,4 +200,9 @@ final class DreamController {
         alwaysActive: _schedule.isAlwaysActive,
         forcedUntil: _forcedUntil,
       );
+
+  /// The [ToolDreamSurface] read the `dream.control` tool returns for every
+  /// action — the [status] snapshot as a JSON-native map.
+  @override
+  Map<String, Object?> dreamStatus() => status().toMap();
 }
