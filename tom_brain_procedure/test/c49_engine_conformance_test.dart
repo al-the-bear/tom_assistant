@@ -95,7 +95,7 @@ void main() {
   LoadedProcedure hangingProcedure(String id) => _procedure(
         id,
         '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.llm('hang forever');

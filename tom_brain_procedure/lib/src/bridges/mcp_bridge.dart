@@ -5,7 +5,7 @@
 // This is a **plain Dart class** bridged exactly like `MemoryBridge` /
 // `SubstrateBridge` / `ToolBridge`: `build.yaml` lists this file under the
 // `all` module's `barrelFiles`, `tom_d4rt_generator` emits the bridge, and
-// `BrainBridges.register` registers it under [BrainBridges.mcpLibrary]. A
+// `BrainBridges.register` registers it under [BridgeLibraries.mcpLibrary]. A
 // procedure script that imports that library sees the host-injected `mcp`
 // global (`D4rtDcliHost.mcpGlobal`) and calls `mcp.servers()` /
 // `mcp.list(server)` / `mcp.call(server, tool, args)` directly — the same

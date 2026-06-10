@@ -170,7 +170,8 @@
 //     (`procedure_result_bridge.dart`, step #30);
 //   - `…/src/bridges/memory_bridge.dart` brings the `mem` global into scope
 //     so `mem.persist(...)` / `mem.edge(...)` / `mem.classify(...)` /
-//     `mem.stackPush(...)` resolve (`brain_bridges_registrar.dart`);
+//     `mem.stackPush(...)` resolve (generated `BrainBridges.register`,
+//     `dartscript.b.dart`);
 //   - `…/src/bridges/substrate_bridge.dart` brings the `sub` global into
 //     scope so `sub.llm(...)` / `sub.embed(...)` resolve (D.38).
 //   - `…/src/primitives_native/primitives_native.dart` brings the bare

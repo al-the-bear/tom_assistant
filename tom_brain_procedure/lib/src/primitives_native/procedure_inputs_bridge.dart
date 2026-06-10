@@ -38,7 +38,7 @@ import '../api/procedure_inputs.dart';
 /// dispatch its accessors.
 ///
 /// Canonical `package:` URI of the source file — required for the same
-/// reason the bridge libraries are (`BrainBridges.memoryLibrary`): d4rt's
+/// reason the bridge libraries are (`BridgeLibraries.memoryLibrary`): d4rt's
 /// `ModuleLoader` resolves `package:` imports directly against the
 /// registered-library map, whereas a relative import needs a filesystem
 /// base URI the interpreter does not have at script-execute time.

@@ -16,12 +16,15 @@
 //   - The `tom_d4rt_generator`-produced `*.b.dart` companions
 //     (`brain_bridges.b.dart` → `AllBridge`,
 //     `package_tom_brain_procedure_bridges.b.dart`,
-//     `d4rt_bridges.b.dart` barrel). ✅ C.14.
-//   - `BrainBridges.register(d4rt)` — the hand-authored registration
-//     entrypoint over the generated `AllBridge`
-//     (`brain_bridges_registrar.dart`; `generateDartscript` is OFF
-//     because the 1.8.24 generated dartscript does not compile —
-//     Q-C.14.1). ✅ C.14.
+//     `d4rt_bridges.b.dart` barrel, `relaxers.b.dart`,
+//     `dartscript.b.dart` → `BrainBridges`). ✅ C.14.
+//   - `BrainBridges.register(d4rt)` — the generator-produced registration
+//     entrypoint over `AllBridge` (`dartscript.b.dart`; `generateDartscript`
+//     is ON since `tom_d4rt_generator 1.9.1` fixed the dartscript template —
+//     plan-2 item #13a). ✅ C.14.
+//   - `BridgeLibraries.*Library` — the host-owned canonical `package:` URIs
+//     each bridge is registered/injected under (`bridge_libraries.dart`);
+//     injection wiring shared by the host, validator, and tests.
 //
 // Hard invariant (PE-7): every prompt the machinery issues carries the
 // assistant-dedication anchor because `SubstrateBridge.llm(...)` always
@@ -32,12 +35,15 @@
 //   - C.11 — `build.yaml` generator config targeting this folder. ✅
 //   - C.12 — `MemoryBridge` source class. ✅
 //   - C.13 — `SubstrateBridge` source class. ✅
-//   - C.14 — `dart run build_runner build` output + `BrainBridges`
-//     registrar; generated bridges compile and register. ✅
+//   - C.14 — `dart run build_runner build` output + generated
+//     `BrainBridges` registration; generated bridges compile and register. ✅
 //   - C.15 — generator-output round-trip tests against in-memory
 //     test doubles.
 
-export 'brain_bridges_registrar.dart';
+export 'bridge_libraries.dart' show BridgeLibraries;
+// The generator-produced registration entrypoint (`generateDartscript:true`,
+// plan-2 item #13a). Registers every bridge under each `BridgeLibraries` URI.
+export 'dartscript.b.dart' show BrainBridges;
 export 'bridge_call_recorder.dart' show BridgeCallRecorder;
 // §10 step #4 — the bridge-layer raw-LLM-trail observation and its sink type.
 export 'llm_call_observation.dart' show LlmCallObservation, LlmTrailObserver;

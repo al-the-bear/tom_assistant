@@ -62,7 +62,7 @@ void main() {
   LoadedProcedure toolUsingProcedure() => _procedure(
         'tool_using_v1',
         '''
-import '${BrainBridges.toolLibrary}';
+import '${BridgeLibraries.toolLibrary}';
 
 Future<Object?> run(inputs) async {
   await tool.list();

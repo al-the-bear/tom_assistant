@@ -201,9 +201,14 @@ dependencies:
 # dependency: no `lib/` source imports them, so they cannot leak into the
 # engine's shipped surface.
 #
-#   - tom_d4rt_generator — `^1.9.0`, the latest *published* version (so
+#   - tom_d4rt_generator — `^1.9.1`, the latest *published* version (so
 #                          the constraint resolves from pub.dev) and the
-#                          version matching the workspace project. The
+#                          version matching the workspace project. `1.9.1`
+#                          fixed the dartscript template (it now writes
+#                          `relaxers.b.dart` and emits
+#                          `AllBridge.subPackageBarrels()`), which let
+#                          plan-2 item #13a re-enable `generateDartscript`
+#                          and delete the hand-authored registrar. The
 #                          caret admits any `1.x` uptake while a `2.0.0` major
 #                          bump trips a re-verify of the C.11 `build.yaml`
 #                          option schema and the C.12–C.13 bridge-source
@@ -223,5 +228,5 @@ dependencies:
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
-  tom_d4rt_generator: ^1.9.0
+  tom_d4rt_generator: ^1.9.1
   build_runner: ^2.10.4

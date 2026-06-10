@@ -117,15 +117,15 @@ void main() {
     test('accepts an import of the memory bridge library', () {
       expect(
         () => validator
-            .validateSource("import '${BrainBridges.memoryLibrary}';"),
+            .validateSource("import '${BridgeLibraries.memoryLibrary}';"),
         returnsNormally,
       );
     });
 
     test('accepts the four host-injected imports together', () {
       final source = '''
-import '${BrainBridges.memoryLibrary}';
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 import '$engineNativeLibrary';
 import '$procedureInputsLibrary';
 
@@ -154,13 +154,13 @@ Future<Object?> run(inputs) async => 1;
       expect(
         SandboxValidator.defaultAllowedImportUris,
         <String>{
-          BrainBridges.memoryLibrary,
-          BrainBridges.substrateLibrary,
+          BridgeLibraries.memoryLibrary,
+          BridgeLibraries.substrateLibrary,
           // D.43 — the tool library brings the `tool` global into scope for the
           // tool-calling loop; the engine binds a per-run `ToolBridge` on every
-          // run, so the import always resolves. `BrainBridges.mcpLibrary` stays
+          // run, so the import always resolves. `BridgeLibraries.mcpLibrary` stays
           // off the list until the engine wires the `mcp` global.
-          BrainBridges.toolLibrary,
+          BridgeLibraries.toolLibrary,
           engineNativeLibrary,
           procedureInputsLibrary,
           procedureResultLibrary,

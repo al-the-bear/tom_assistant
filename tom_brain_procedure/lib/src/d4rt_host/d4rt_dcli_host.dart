@@ -32,7 +32,7 @@
 // `run(ProcedureInputs inputs)` (§ 4.3) — a single typed argument with
 // no room for the bridges. So the bridges are injected as **named
 // globals** (`mem`, `sub`) via `D4rt.registerGlobalVariable`, keyed to
-// the two bridge library URIs (`BrainBridges.memoryLibrary` /
+// the two bridge library URIs (`BridgeLibraries.memoryLibrary` /
 // `…substrateLibrary`). A script that `import`s a bridge library sees
 // the matching global and can call `mem.recall(...)` / `sub.llm(...)`
 // directly, leaving the entry point free to carry only `inputs`. This
@@ -77,7 +77,8 @@
 import 'package:tom_d4rt/d4rt.dart';
 import 'package:tom_d4rt_dcli/tom_d4rt_cli_api.dart';
 
-import '../bridges/brain_bridges_registrar.dart';
+import '../bridges/bridge_libraries.dart';
+import '../bridges/dartscript.b.dart';
 import '../bridges/mcp_bridge.dart';
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
@@ -240,12 +241,12 @@ final class D4rtDcliHost {
     _interpreter.registerGlobalVariable(
       memoryGlobal,
       memoryBridge,
-      BrainBridges.memoryLibrary,
+      BridgeLibraries.memoryLibrary,
     );
     _interpreter.registerGlobalVariable(
       substrateGlobal,
       substrateBridge,
-      BrainBridges.substrateLibrary,
+      BridgeLibraries.substrateLibrary,
     );
 
     // 2b. The tool bridge, when the host runs the scripted LLM loop
@@ -257,7 +258,7 @@ final class D4rtDcliHost {
       _interpreter.registerGlobalVariable(
         toolGlobal,
         tools,
-        BrainBridges.toolLibrary,
+        BridgeLibraries.toolLibrary,
       );
     }
 
@@ -270,7 +271,7 @@ final class D4rtDcliHost {
       _interpreter.registerGlobalVariable(
         mcpGlobal,
         mcp,
-        BrainBridges.mcpLibrary,
+        BridgeLibraries.mcpLibrary,
       );
     }
 

@@ -72,7 +72,7 @@ void main() {
   LoadedProcedure hangingProcedure(String id) => _procedure(
         id,
         '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.llm('hang forever');
@@ -206,7 +206,7 @@ Object? run(inputs) {
           _procedure(
             'slow_v1',
             '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.llm('think forever');
@@ -350,7 +350,7 @@ Future<Object?> run(inputs) async {
         _procedure(
           'embed_v1',
           '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.embed('hello');
@@ -570,7 +570,7 @@ Future<Object?> run(inputs) async {
       final engine = engineFor(<LoadedProcedure>[
         _procedure(
           'clean_v1',
-          "import '${BrainBridges.memoryLibrary}';\n"
+          "import '${BridgeLibraries.memoryLibrary}';\n"
               'Object? run(inputs) => 1;',
         ),
       ]);
@@ -594,7 +594,7 @@ Future<Object?> run(inputs) async {
             _procedure(
               'stream_v1',
               '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {

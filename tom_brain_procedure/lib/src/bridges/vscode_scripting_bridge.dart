@@ -6,7 +6,7 @@
 // `SubstrateBridge` / `ToolBridge` / `McpBridge`: `build.yaml` lists this file
 // under the `all` module's `barrelFiles`, `tom_d4rt_generator` emits the
 // bridge, and `BrainBridges.register` registers it under
-// [BrainBridges.vscodeScriptingLibrary]. A procedure script that imports that
+// [BridgeLibraries.vscodeScriptingLibrary]. A procedure script that imports that
 // library sees the host-injected `vscode` global
 // (`D4rtDcliHost.vsCodeScriptingGlobal`) and calls
 // `vscode.call(api, method, args)` directly — the same named-global convention

@@ -73,7 +73,7 @@ void main() {
 
       final result = await interpreter.execute(
         source: '''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 
 Future<Map<String, Object?>> main(MemoryBridge mem) async {
   final recall = await mem.recall('how do I automate backups?');
@@ -129,7 +129,7 @@ Future<Map<String, Object?>> main(MemoryBridge mem) async {
 
       final result = await interpreter.execute(
         source: '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Map<String, Object?>> main(SubstrateBridge sub) async {
   final answer = await sub.llm('draft the answer');
@@ -192,8 +192,8 @@ Future<Map<String, Object?>> main(SubstrateBridge sub) async {
 
       final result = await interpreter.execute(
         source: '''
-import '${BrainBridges.memoryLibrary}';
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Map<String, Object?>> main(MemoryBridge mem, SubstrateBridge sub) async {
   final recall = await mem.recall('prior?');
@@ -226,7 +226,7 @@ Future<Map<String, Object?>> main(MemoryBridge mem, SubstrateBridge sub) async {
 
       final result = await interpreter.execute(
         source: '''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 
 Future<String> main(MemoryBridge mem) async {
   return await mem.persist(

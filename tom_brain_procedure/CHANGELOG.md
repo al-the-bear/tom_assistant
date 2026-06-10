@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — re-enable `generateDartscript`; delete hand-authored registrar (plan-2 #13a)
+
+`tom_d4rt_generator 1.9.1` fixed the dartscript template that blocked C.14: the
+per-package orchestrator now writes `relaxers.b.dart` (no-op stubs) and emits
+`AllBridge.subPackageBarrels()`, so the generated `dartscript.b.dart` compiles.
+
+- Bumped the `tom_d4rt_generator` dev-dep `^1.9.0` → `^1.9.1`.
+- `build.yaml`: `generateDartscript: true`, `dartscriptPath:
+  lib/src/bridges/dartscript.b.dart`, `registrationClass: BrainBridges`;
+  `barrelFiles` switched to canonical `package:` URIs so the generated
+  registration keys each bridge under the URI a procedure script imports from.
+- Deleted the hand-authored `brain_bridges_registrar.dart` (no shim). The
+  generated `BrainBridges.register` (`dartscript.b.dart`) is now the sole
+  registration entrypoint; the host calls it unchanged.
+- The five canonical bridge `package:` URIs moved to a host-owned
+  `BridgeLibraries` (`lib/src/bridges/bridge_libraries.dart`) — they are
+  injection wiring (which URI the host injects each global under, which the
+  validator allow-lists), distinct from generated registration. All ~28 lib +
+  test references migrated from `BrainBridges.*Library` to
+  `BridgeLibraries.*Library`.
+- Revised the C.9 `dev_dependency_surface_test` (pin `^1.9.1`), the C.11
+  `build_yaml_config_test` (assert `generateDartscript: true` + `dartscriptPath`
+  + `registrationClass` + `package:` `barrelFiles`), and the C.14
+  `generated_bridges_test` (assert `dartscript.b.dart`/`relaxers.b.dart` exist
+  and the registrar is gone).
+
 ## Unreleased — `answer_with_memory_v1` memoryWrites budget raised 6 → 16
 
 The procedure's `memoryWrites` cap was structurally too small for its own

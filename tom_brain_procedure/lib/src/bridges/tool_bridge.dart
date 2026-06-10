@@ -5,7 +5,7 @@
 // This is a **plain Dart class** bridged exactly like `MemoryBridge` /
 // `SubstrateBridge`: `build.yaml` lists this file under the `all` module's
 // `barrelFiles`, `tom_d4rt_generator` emits the bridge, and
-// `BrainBridges.register` registers it under [BrainBridges.toolLibrary]. A
+// `BrainBridges.register` registers it under [BridgeLibraries.toolLibrary]. A
 // procedure script that imports that library sees the host-injected `tool`
 // global (`D4rtDcliHost.toolGlobal`) and calls `tool.list()` /
 // `tool.invoke(...)` directly — the same named-global convention `mem` /

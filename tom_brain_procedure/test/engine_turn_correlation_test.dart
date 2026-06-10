@@ -57,7 +57,7 @@ void main() {
         _procedure(
           'two_calls_v1',
           '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.llm('first');
@@ -87,7 +87,7 @@ Future<Object?> run(inputs) async {
         _procedure(
           'parent_v1',
           '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {
@@ -99,7 +99,7 @@ Future<Object?> run(inputs) async {
         _procedure(
           'child_v1',
           '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.llm('child call');
@@ -129,7 +129,7 @@ Future<Object?> run(inputs) async {
         _procedure(
           'internal_v1',
           '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.llm('internal');

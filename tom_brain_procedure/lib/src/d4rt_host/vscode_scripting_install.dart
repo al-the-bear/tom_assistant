@@ -21,7 +21,7 @@
 
 import 'package:tom_d4rt/d4rt.dart';
 
-import '../bridges/brain_bridges_registrar.dart';
+import '../bridges/bridge_libraries.dart';
 import '../bridges/vscode_scripting_bridge.dart';
 import 'd4rt_dcli_host.dart';
 
@@ -30,7 +30,7 @@ import 'd4rt_dcli_host.dart';
 ///
 /// Pass the result to `D4rtDcliHost(installVsCodeIntegration: …)` together with
 /// `SandboxConfig(enableVsCodeIntegration: true)`. The host runs it once at
-/// boot, binding `vscode` under [BrainBridges.vscodeScriptingLibrary] so a
+/// boot, binding `vscode` under [BridgeLibraries.vscodeScriptingLibrary] so a
 /// procedure that imports that library can call
 /// `vscode.call(api, method, args)`. With the switch off (the locked default)
 /// the installer is never built or run and the global stays absent.
@@ -38,5 +38,5 @@ SandboxSurfaceInstaller vsCodeScriptingInstaller(VsCodeScriptingBridge bridge) =
     (D4rt interpreter) => interpreter.registerGlobalVariable(
           D4rtDcliHost.vsCodeScriptingGlobal,
           bridge,
-          BrainBridges.vscodeScriptingLibrary,
+          BridgeLibraries.vscodeScriptingLibrary,
         );

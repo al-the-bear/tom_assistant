@@ -208,7 +208,7 @@ void main() {
 
       final result = await interpreter.execute(
         source: '''
-import '${BrainBridges.toolLibrary}';
+import '${BridgeLibraries.toolLibrary}';
 
 Future<Map<String, Object?>> main(ToolBridge tool) async {
   final tools = await tool.list();
@@ -238,7 +238,7 @@ Future<Map<String, Object?>> main(ToolBridge tool) async {
 
       final result = await interpreter.execute(
         source: '''
-import '${BrainBridges.toolLibrary}';
+import '${BridgeLibraries.toolLibrary}';
 
 Future<Object?> main(ToolBridge tool) async {
   final invoked = await tool.invoke('missing', {});
@@ -263,7 +263,7 @@ Future<Object?> main(ToolBridge tool) async {
 
       final result = await host.run(
         '''
-import '${BrainBridges.toolLibrary}';
+import '${BridgeLibraries.toolLibrary}';
 
 Future<Object?> run(Object? inputs) async {
   final invoked = await tool.invoke('echo', {'value': 'wired'});

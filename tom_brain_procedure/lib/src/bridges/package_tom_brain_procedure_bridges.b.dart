@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Sources: 5 files
-// Generated: 2026-06-09T21:11:01.827213
+// Generated: 2026-06-10T16:10:23.879183
 
 // ignore_for_file: unused_import, deprecated_member_use, prefer_function_declarations_over_variables, implementation_imports, sort_child_properties_last, non_constant_identifier_names, avoid_function_literals_in_foreach_calls, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member
 
@@ -55,6 +55,19 @@ class PackageTomBrainProcedureBridge {
       'ToolBridge': 'package:tom_brain_procedure/src/bridges/tool_bridge.dart',
       'McpBridge': 'package:tom_brain_procedure/src/bridges/mcp_bridge.dart',
       'VsCodeScriptingBridge': 'package:tom_brain_procedure/src/bridges/vscode_scripting_bridge.dart',
+    };
+  }
+
+  /// Returns a map of class names to their flattened (transitive)
+  /// native supertype names (superclasses, interfaces and mixins).
+  ///
+  /// Fed to `BridgedClass.registerSupertypes` so interpreted subclasses
+  /// of bridged classes pass `is`/subtype checks against bridged
+  /// ancestors and the interface-proxy supertype walk resolves up the
+  /// chain (MCI#1 / A1).
+  static Map<String, List<String>> classSupertypes() {
+    return {
+      'LlmCompletionFailure': ['Exception'],
     };
   }
 
@@ -132,6 +145,11 @@ class PackageTomBrainProcedureBridge {
     for (final bridge in classes) {
       interpreter.registerBridgedClass(bridge, importPath, sourceUri: classSources[bridge.name]);
     }
+
+    // MCI#1 / A1: Register the flattened native supertype table so
+    // interpreted subclasses pass subtype checks against bridged
+    // ancestors. Idempotent — safe to call per barrel.
+    BridgedClass.registerSupertypes(classSupertypes());
 
     // Register function typedefs for type resolution
     final typedefs = functionTypedefs();

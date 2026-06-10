@@ -5,14 +5,15 @@
 //
 // This test is the executable acceptance check for that step. It proves
 // three things about the output of `tom_d4rt_generator` (run via
-// build_runner against `build.yaml`, C.11) and the hand-authored
-// `BrainBridges` registrar (C.14, Q-C.14.1):
+// build_runner against `build.yaml`, C.11) and the generated
+// `BrainBridges` registration entrypoint (`dartscript.b.dart`, re-enabled
+// by plan-2 item #13a):
 //
-//   1. COMPILES — the generated `*.b.dart` files and the registrar are
-//      part of the package's import graph (this test imports them; if
-//      they did not compile, the suite would not load). The expected
-//      generator outputs are present and the broken dartscript / relaxer
-//      files are absent.
+//   1. COMPILES — the generated `*.b.dart` files (including the
+//      `dartscript.b.dart` registration entrypoint and `relaxers.b.dart`)
+//      are part of the package's import graph (this test imports them; if
+//      they did not compile, the suite would not load). All expected
+//      generator outputs are present.
 //   2. STRUCTURE — the generated delegating `AllBridge` exposes exactly
 //      the authored bridged classes (`MemoryBridge`, `SubstrateBridge`,
 //      and the substrate failure carrier `LlmCompletionFailure` at
@@ -37,7 +38,8 @@ import 'package:test/test.dart';
 import 'package:tom_d4rt/d4rt.dart';
 
 import 'package:tom_brain_procedure/src/bridges/brain_bridges.b.dart';
-import 'package:tom_brain_procedure/src/bridges/brain_bridges_registrar.dart';
+import 'package:tom_brain_procedure/src/bridges/bridge_libraries.dart';
+import 'package:tom_brain_procedure/src/bridges/dartscript.b.dart';
 
 void main() {
   group('C.14 generated bridge output — files', () {
@@ -47,6 +49,8 @@ void main() {
         'package_tom_brain_procedure_bridges.b.dart', // per-package
         'd4rt_bridges.b.dart', // generateBarrel output
         'bridges_trigger.b.dart', // regeneration trigger
+        'dartscript.b.dart', // BrainBridges registration entrypoint (#13a)
+        'relaxers.b.dart', // generic/relaxer factory stubs (#13a)
       ]) {
         expect(
           File('lib/src/bridges/$name').existsSync(),
@@ -56,15 +60,16 @@ void main() {
       }
     });
 
-    test('the non-compiling dartscript / relaxer files are NOT produced', () {
-      // Q-C.14.1: generateDartscript is off because the 1.8.24 dartscript
-      // does not compile (it imports a never-written relaxers.b.dart and
-      // calls an unemitted subPackageBarrels()). Guard against a
-      // regression that turns the feature back on.
-      expect(File('lib/src/bridges/dartscript.b.dart').existsSync(), isFalse,
-          reason: 'dartscript.b.dart must not be generated (Q-C.14.1).');
-      expect(File('lib/src/bridges/relaxers.b.dart').existsSync(), isFalse,
-          reason: 'relaxers.b.dart is never written by the 1.8.24 builder.');
+    test('the hand-authored registrar is gone (#13a — no shim)', () {
+      // #13a: tom_d4rt_generator 1.9.1 fixed the dartscript template, so the
+      // generated dartscript.b.dart is now the registration entrypoint and
+      // the hand-authored registrar is deleted with no shim. Guard against a
+      // regression that re-introduces a parallel hand-authored registrar.
+      expect(
+        File('lib/src/bridges/brain_bridges_registrar.dart').existsSync(),
+        isFalse,
+        reason: 'brain_bridges_registrar.dart must be deleted (#13a, no shim).',
+      );
     });
 
     test('per-package generator output stays inside lib/src/bridges/', () {
@@ -175,7 +180,7 @@ void main() {
       // method round-trip).
       final role = await interpreter.execute(
         source: '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 String main() => SubstrateBridge.defaultRole;
 ''',
       );
@@ -187,7 +192,7 @@ String main() => SubstrateBridge.defaultRole;
       BrainBridges.register(interpreter);
       final result = await interpreter.execute(
         source: '''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 bool main() {
   Object? x = 0;
   return x is MemoryBridge;
@@ -207,7 +212,7 @@ bool main() {
       expect(
         () => bare.execute(
           source: '''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 bool main() {
   Object? x = 0;
   return x is MemoryBridge;

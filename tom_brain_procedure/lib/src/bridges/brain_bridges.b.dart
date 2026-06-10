@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Delegating barrel for all
-// Generated: 2026-06-09T21:11:01.863650
+// Generated: 2026-06-10T16:10:23.910242
 
 // ignore_for_file: unused_import, deprecated_member_use, sort_child_properties_last, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member
 
@@ -49,6 +49,11 @@ class AllBridge {
 
   /// Returns the import block for scripts.
   static String getImportBlock() {
-    return "import 'lib/src/bridges/memory_bridge.dart';\n";
+    return "import 'package:tom_brain_procedure/src/bridges/memory_bridge.dart';\n";
+  }
+
+  /// Returns barrel import URIs for sub-packages with bridged content.
+  static List<String> subPackageBarrels() {
+    return const [];
   }
 }

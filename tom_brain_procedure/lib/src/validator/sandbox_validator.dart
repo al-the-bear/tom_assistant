@@ -26,7 +26,7 @@
 // the right amount of machinery. See Q-C.28.x in
 // `prototype_implementation_questions.md`.
 
-import '../bridges/brain_bridges_registrar.dart';
+import '../bridges/bridge_libraries.dart';
 import '../primitives_native/native_primitives_installer.dart'
     show engineNativeLibrary;
 import '../primitives_native/procedure_inputs_bridge.dart'
@@ -89,21 +89,21 @@ final class SandboxValidator {
   /// other URI — `dart:io`, an arbitrary package, a relative path — is a
   /// violation, because it pulls in code from outside the bridged surface.
   ///
-  /// Sourced from the canonical URI constants (`BrainBridges.memoryLibrary` /
+  /// Sourced from the canonical URI constants (`BridgeLibraries.memoryLibrary` /
   /// `…substrateLibrary` / `…toolLibrary`, [engineNativeLibrary],
   /// [procedureInputsLibrary], [procedureResultLibrary]) so the allow-list
   /// cannot drift from the libraries the host actually registers.
   /// `…toolLibrary` brings the `tool` global into scope so a procedure that
   /// runs the tool-calling loop (e.g. `answer_with_memory_v1`'s `tool.list` /
   /// `tool.invoke`) clears the gate; the engine binds a per-run `ToolBridge`
-  /// on every run, so the global is always present. `BrainBridges.mcpLibrary`
+  /// on every run, so the global is always present. `BridgeLibraries.mcpLibrary`
   /// is deliberately *not* listed: the engine does not yet bind the `mcp`
   /// global, so allow-listing its import would pass the static gate only to
   /// fail at runtime — it is added here the day the engine wires `McpBridge`.
   static const Set<String> defaultAllowedImportUris = {
-    BrainBridges.memoryLibrary,
-    BrainBridges.substrateLibrary,
-    BrainBridges.toolLibrary,
+    BridgeLibraries.memoryLibrary,
+    BridgeLibraries.substrateLibrary,
+    BridgeLibraries.toolLibrary,
     engineNativeLibrary,
     procedureInputsLibrary,
     procedureResultLibrary,

@@ -92,7 +92,7 @@ void main() {
       // instance is a known quirk; a method call is the meaningful proof.)
       final result = await host.interpreter.execute(
         source: '''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 
 Future<bool> main(MemoryBridge mem) async {
   final recall = await mem.recall('anything');
@@ -112,7 +112,7 @@ Future<bool> main(MemoryBridge mem) async {
       expect(
         () => bare.execute(
           source: '''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 
 bool main(MemoryBridge mem) => true;
 ''',
@@ -149,7 +149,7 @@ bool main(MemoryBridge mem) => true;
       // the entry point free to carry only inputs (here: a question).
       final result = await host.run(
         '''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 
 Future<Map<String, Object?>> run(String question) async {
   final recall = await mem.recall(question);
@@ -194,7 +194,7 @@ Future<Map<String, Object?>> run(String question) async {
 
       final result = await host.run(
         '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<String> run(String prompt) async {
   final answer = await sub.llm(prompt);
@@ -247,8 +247,8 @@ Future<String> run(String prompt) async {
 
       final result = await host.run(
         '''
-import '${BrainBridges.memoryLibrary}';
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Map<String, Object?>> run(String question) async {
   final recall = await mem.recall(question);

@@ -51,7 +51,7 @@ void main() {
         _procedure(
           'greedy_v1',
           '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.embed('first');   // within budget
@@ -101,7 +101,7 @@ Future<Object?> run(inputs) async {
         _procedure(
           'adaptive_v1',
           '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.embed('first');
@@ -132,7 +132,7 @@ Future<Object?> run(inputs) async {
         _procedure(
           'free_v1',
           '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.embed('a');

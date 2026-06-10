@@ -57,7 +57,7 @@ void main() {
   LoadedProcedure twoWrites() => _procedure(
         'two_writes_v1',
         '''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 
 Future<Object?> run(inputs) async {
   await mem.persist('Event', {'summary': 'first'}, producer: 'p');

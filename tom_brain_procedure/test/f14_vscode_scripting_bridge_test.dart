@@ -6,7 +6,7 @@
 // `MemoryBridge` / `SubstrateBridge` / `ToolBridge` / `McpBridge`: `build.yaml`
 // lists its source file under the `all` module's `barrelFiles`,
 // `tom_d4rt_generator` emits the bridge, and `BrainBridges.register` registers
-// it under [BrainBridges.vscodeScriptingLibrary]. It exposes one d4rt-facing
+// it under [BridgeLibraries.vscodeScriptingLibrary]. It exposes one d4rt-facing
 // method — `vscode.call(api, method, args)` — over a narrow
 // [VsCodeScriptingSurface] port (the prototype stays decoupled from
 // `tom_vscode_scripting_api`, PE-10; the concrete socket adapter is built at
@@ -157,7 +157,7 @@ void main() {
 
       final result = await interpreter.execute(
         source: '''
-import '${BrainBridges.vscodeScriptingLibrary}';
+import '${BridgeLibraries.vscodeScriptingLibrary}';
 
 Future<Map<String, Object?>> main(VsCodeScriptingBridge vscode) async {
   return await vscode.call('window', 'showInformationMessage', ['from script']);
@@ -187,7 +187,7 @@ Future<Map<String, Object?>> main(VsCodeScriptingBridge vscode) async {
 
       final result = await host.run(
         '''
-import '${BrainBridges.vscodeScriptingLibrary}';
+import '${BridgeLibraries.vscodeScriptingLibrary}';
 
 Future<Object?> run(Object? inputs) async {
   final r = await vscode.call('window', 'showInformationMessage', ['hello']);
@@ -235,7 +235,7 @@ Future<Object?> run(Object? inputs) async {
       await expectLater(
         host.run(
           '''
-import '${BrainBridges.vscodeScriptingLibrary}';
+import '${BridgeLibraries.vscodeScriptingLibrary}';
 
 Future<Object?> run(Object? inputs) async {
   return await vscode.call('window', 'showInformationMessage', []);

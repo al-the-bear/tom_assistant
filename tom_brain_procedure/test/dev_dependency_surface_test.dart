@@ -4,12 +4,15 @@
 // adds, with the exact pins the C.5 record fixed as the single source of
 // truth:
 //
-//   - tom_d4rt_generator: ^1.9.0   — the bridge generator. C.14 drives
+//   - tom_d4rt_generator: ^1.9.1   — the bridge generator. C.14 drives
 //                                    its `d4rt_bridge_builder` builder
 //                                    (factory `d4rtBridgeBuilder`) through
 //                                    `dart run build_runner build`.
 //                                    (Prototype-plan-2 item 1 re-pinned the
-//                                    C.5 `^1.8.24` to the published `^1.9.0`.)
+//                                    C.5 `^1.8.24` to `^1.9.0`; plan-2 item
+//                                    #13a re-pinned it to `^1.9.1`, which
+//                                    fixed the dartscript template so
+//                                    `generateDartscript` could be re-enabled.)
 //   - build_runner:       ^2.10.4  — the build-runner the generator runs
 //                                    under.
 //
@@ -81,13 +84,14 @@ void main() {
       devBlock = pubspec.substring(devIdx);
     });
 
-    test('tom_d4rt_generator is a dev-dep pinned ^1.9.0 (prototype-plan-2 item 1)', () {
+    test('tom_d4rt_generator is a dev-dep pinned ^1.9.1 (plan-2 item #13a)', () {
       expect(
         devBlock.contains(
-            RegExp(r'^  tom_d4rt_generator:\s*\^1\.9\.0', multiLine: true)),
+            RegExp(r'^  tom_d4rt_generator:\s*\^1\.9\.1', multiLine: true)),
         isTrue,
-        reason: 'Prototype-plan-2 item 1 re-pinned tom_d4rt_generator to the '
-            'published ^1.9.0 (from the C.5 ^1.8.24); dev_dependencies must '
+        reason: 'Plan-2 item #13a re-pinned tom_d4rt_generator to ^1.9.1 (from '
+            'the ^1.9.0 of plan-2 item 1), which fixed the dartscript template '
+            'so generateDartscript could be re-enabled; dev_dependencies must '
             'adopt it verbatim.',
       );
     });

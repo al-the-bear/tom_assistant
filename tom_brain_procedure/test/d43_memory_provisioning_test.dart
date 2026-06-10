@@ -257,6 +257,15 @@ class _NoopProfileRegistry implements MemoryProfileRegistry {
 
   @override
   Future<void> dropProfile(String name) async {}
+
+  @override
+  Future<T> readInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) =>
+      throw UnimplementedError(
+        'readInProfile is not exercised by this double.',
+      );
 }
 
 class _NoopStackApi implements StackApi {

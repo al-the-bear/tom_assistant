@@ -307,7 +307,7 @@ void main() {
 
       final result = await interpreter.execute(
         source: '''
-import '${BrainBridges.mcpLibrary}';
+import '${BridgeLibraries.mcpLibrary}';
 
 Future<Map<String, Object?>> main(McpBridge mcp) async {
   final servers = await mcp.servers();
@@ -353,7 +353,7 @@ Future<Map<String, Object?>> main(McpBridge mcp) async {
 
       final result = await host.run(
         '''
-import '${BrainBridges.mcpLibrary}';
+import '${BridgeLibraries.mcpLibrary}';
 
 Future<Object?> run(Object? inputs) async {
   final called = await mcp.call('stub', 'echo', {});

@@ -48,7 +48,7 @@ void main() {
           _procedure(
             'two_calls_v1',
             '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.llm('first');
@@ -97,7 +97,7 @@ Future<Object?> run(inputs) async {
         _procedure(
           'one_call_v1',
           '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.llm('only');

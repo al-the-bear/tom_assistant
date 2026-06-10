@@ -97,7 +97,7 @@ void main() {
       // resolve AND the `mem` global to be bound — both are the host's
       // boot work. A returned value proves resolution succeeded.
       final resolved = await host.run('''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 
 Future<bool> run() async {
   final recall = await mem.recall('probe');
@@ -113,7 +113,7 @@ Future<bool> run() async {
       final host = makeLockedHost();
 
       final resolved = await host.run('''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<bool> run() async {
   final answer = await sub.llm('probe');
@@ -132,7 +132,7 @@ Future<bool> run() async {
       expect(
         () => bare.execute(
           source: '''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 
 Future<bool> run() async => (await mem.recall('x')).containsKey('nodes');
 ''',
@@ -166,7 +166,7 @@ Future<bool> run() async => (await mem.recall('x')).containsKey('nodes');
 
       final result = await host.run(
         '''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 
 Future<Map<String, Object?>> run(String question) async {
   final recall = await mem.recall(question);
@@ -197,7 +197,7 @@ Future<Map<String, Object?>> run(String question) async {
 
       final result = await host.run(
         '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<String> run(String prompt) async {
   final answer = await sub.llm(prompt);
@@ -236,8 +236,8 @@ Future<String> run(String prompt) async {
 
       final result = await host.run(
         '''
-import '${BrainBridges.memoryLibrary}';
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Map<String, Object?>> run(String question) async {
   final recall = await mem.recall(question);

@@ -299,7 +299,7 @@ void main() {
       for (final entry in memoryBodies.entries) {
         await interpreter.execute(
           source: '''
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 
 Future<Object?> main(MemoryBridge mem) async {
   return ${entry.value}
@@ -311,7 +311,7 @@ Future<Object?> main(MemoryBridge mem) async {
       for (final entry in substrateBodies.entries) {
         await interpreter.execute(
           source: '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> main(SubstrateBridge sub) async {
   return ${entry.value}

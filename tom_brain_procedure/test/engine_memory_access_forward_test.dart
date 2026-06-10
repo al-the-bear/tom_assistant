@@ -62,8 +62,8 @@ void main() {
   LoadedProcedure mixedAccessProcedure() => _procedure(
         'mixed_access_v1',
         '''
-import '${BrainBridges.substrateLibrary}';
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.llm('hello');

@@ -67,8 +67,8 @@ void main() {
         _procedure(
           'parent_v1',
           '''
-import '${BrainBridges.substrateLibrary}';
-import '${BrainBridges.memoryLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
+import '${BridgeLibraries.memoryLibrary}';
 import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {
@@ -83,7 +83,7 @@ Future<Object?> run(inputs) async {
         _procedure(
           'child_v1',
           '''
-import '${BrainBridges.substrateLibrary}';
+import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.llm('child', role: 'evaluator');

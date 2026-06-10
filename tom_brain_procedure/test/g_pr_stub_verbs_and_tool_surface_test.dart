@@ -51,7 +51,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 /// The d4rt library a caller script imports to reach the `tool` global
 /// (`tool.list()` / `tool.invoke(name, args)`). Hard-coded to the canonical
 /// `package:` URI the host registers the tool bridge under (mirrors
-/// `BrainBridges.toolLibrary`).
+/// `BridgeLibraries.toolLibrary`).
 const String _toolLibrary =
     'package:tom_brain_procedure/src/bridges/tool_bridge.dart';
 
