@@ -85,6 +85,8 @@ import '../tools/basic_tools.dart' show registerBasicTools;
 import '../tools/substrate_tool_web_surface.dart' show SubstrateToolWebSurface;
 import '../tools/tool_context.dart' show ToolContext;
 import '../tools/tool_dream_surface.dart' show ToolDreamSurface;
+import '../tools/process_run_surface.dart' show ProcessRunToolSurface;
+import '../tools/tool_process_surface.dart' show ToolProcessSurface;
 import '../tools/tool_event.dart' show ToolNoticeSink;
 import '../tools/tool_policy_config.dart' show ToolPolicyConfig;
 import '../tools/tool_registry.dart' show ToolRegistry;
@@ -178,6 +180,7 @@ final class ProcedureEngine {
     this.validator = SandboxValidator.shared,
     this.extensions,
     this.toolDreamSurface,
+    this.toolProcessSurface = const ProcessRunToolSurface(),
     List<String>? toolFileScopeRoots,
     PreemptionState? preemptionState,
     Duration stepDeadline = defaultStepDeadline,
@@ -271,6 +274,15 @@ final class ProcedureEngine {
   /// controller is built post-boot; the `dream.control` tool routes through it,
   /// and a context without it raises `ToolSurfaceUnavailable`.
   final ToolDreamSurface? toolDreamSurface;
+
+  /// The allow-listed process surface every per-run [ToolContext] is built over
+  /// (`creation_specification.md` § 5.2–§ 5.4). The `analyze.*` / `test.*` tools
+  /// name an executable (`dart` / `testkit` / `tom`) and hand it here; the
+  /// surface — not the tool — runs it, refusing anything off its fixed allow-list
+  /// with `ProcessExecutableNotAllowed` before a process is spawned, so the
+  /// `create_v1` check phase has no general-shell capability. Defaults to the
+  /// real [ProcessRunToolSurface]; tests inject a fake to avoid spawning.
+  final ToolProcessSurface toolProcessSurface;
 
   final Duration _stepDeadlineLimit;
   final DeadlineTimerFactory? _deadlineTimerFactory;
@@ -670,6 +682,7 @@ final class ProcedureEngine {
           resolver: resolver,
           runPrimitive: runPrimitive,
         ),
+        process: toolProcessSurface,
         dream: toolDreamSurface,
       ),
       clock: _now,

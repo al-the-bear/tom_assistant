@@ -51,6 +51,7 @@ export 'tool_failures.dart'
         scriptResultNotJsonCode,
         toolSurfaceUnavailableCode;
 export 'tool_group.dart' show ToolGroup;
+export 'process_run_surface.dart' show ProcessRunToolSurface;
 export 'tool_process_surface.dart'
     show ProcessRunResult, ToolProcessSurface;
 export 'tool_input_schema.dart' show validateToolArgs;

@@ -12,6 +12,10 @@
 //           `ToolProcessSurface`, each naming exactly one fixed executable —
 //           never a raw `Process.run` (no general shell, § 5.4) — and raise
 //           `ToolSurfaceUnavailable` when the run carries no process surface.
+//   F.9-4 — `file.delete` is the reversible counterpart to `file.write`: it
+//           removes a file within scope (the rollback of a rejected draft,
+//           § 4.7), is idempotent on a missing target, and refuses an escaping
+//           path before touching the filesystem.
 
 import 'dart:io';
 
@@ -204,6 +208,45 @@ void main() {
         throwsA(isA<ToolSurfaceUnavailable>()
             .having((e) => e.surface, 'surface', 'process')),
       );
+    });
+  });
+
+  group('F.9-4 file.delete is the reversible counterpart to file.write', () {
+    test('removes an in-scope file and reports it existed', () async {
+      final victim = File(p.join(root.path, 'draft.txt'))
+        ..writeAsStringSync('rejected draft');
+      final ctx = _ctx(roots: <String>[root.path]);
+
+      final out = await _run('file.delete', {'path': 'draft.txt'}, ctx) as Map;
+
+      expect(out['path'], 'draft.txt');
+      expect(out['deleted'], isTrue);
+      expect(victim.existsSync(), isFalse);
+    });
+
+    test('is idempotent: deleting a missing target is not an error', () async {
+      final ctx = _ctx(roots: <String>[root.path]);
+
+      final out = await _run('file.delete', {'path': 'gone.txt'}, ctx) as Map;
+
+      expect(out['deleted'], isFalse);
+    });
+
+    test('a path escaping the root is rejected before any filesystem touch',
+        () async {
+      final sibling = File(p.join(root.parent.path, 'escape.txt'))
+        ..writeAsStringSync('outside');
+      addTearDown(() {
+        if (sibling.existsSync()) sibling.deleteSync();
+      });
+      final ctx = _ctx(roots: <String>[root.path]);
+
+      await expectLater(
+        _run('file.delete', {'path': '../escape.txt'}, ctx),
+        throwsA(isA<FileScopeViolation>()),
+      );
+      // The out-of-scope file was never touched.
+      expect(sibling.existsSync(), isTrue);
     });
   });
 }

@@ -54,10 +54,21 @@
 //          runaway-stop (§ 7.4), declaring no count cap that would throttle the
 //          loop's persists / writes; the *enforcement* of that wall clock is
 //          proven generically in `c51_budget_enforcement_test.dart`.
-//   F-C-8  test-first execution is deferred (§ 12.1 decision 5) — the loop is
-//          write-on-accept-only: it declares no `analyze.*` / `test.*`
-//          primitive and never runs the `tester` role, so the § 4.4 check
-//          cycle is provably not yet wired (and cannot silently appear).
+//   F-C-8  test-first + check run for code kind — a `kind: 'code'` request
+//          drafts a test first (the `tester` role), runs it through the
+//          allow-listed process surface, and on each iteration writes the draft,
+//          runs the `analyze.*` check against the written file, and folds the
+//          check into the critique. The capability surface stays unchanged: the
+//          checks route through the single `tool.invoke` primitive, so `requires`
+//          still names no `analyze.*` / `test.*` bridge (the sandbox did not
+//          widen, § 5.4).
+//   F-C-9  the check gates acceptance — a failing analyzer (non-zero exit)
+//          blocks acceptance even when the reviewer says ACCEPT, so every draft
+//          is rolled back (`file.delete`) and the run ends incomplete with
+//          nothing on disk (§ 4.6 `accept requires successSatisfied`, § 4.7).
+//   F-C-10 per-iteration write → rollback → re-enter — a code-kind REVISE,
+//          REVISE, ACCEPT writes and rolls back two drafts before keeping the
+//          third; only the accepted draft survives on disk (§ 4.4–§ 4.7).
 
 import 'dart:async';
 import 'dart:io';
@@ -90,13 +101,19 @@ void main() {
 
   tearDown(() => root.deleteSync(recursive: true));
 
-  ProcedureEngine engineFor(Iterable<LoadedProcedure> procedures) =>
+  ProcedureEngine engineFor(
+    Iterable<LoadedProcedure> procedures, {
+    ToolProcessSurface? process,
+  }) =>
       ProcedureEngine(
         resolver: ProcedureResolver(procedures),
         memory: memory,
         memoryBridge: memoryBridge,
         substrateBridge: substrateBridge,
         toolFileScopeRoots: <String>[root.path],
+        // A hermetic, non-spawning default: the text-kind cases run no check, so
+        // the surface is unused, but a fake guarantees no test ever shells out.
+        toolProcessSurface: process ?? _FakeProcess(),
         now: () => DateTime.utc(2026, 6, 9, 12, 0, 0),
       );
 
@@ -105,9 +122,15 @@ void main() {
     return ProcedureResolver.fromStore(store);
   }
 
-  Future<ProcedureOutcome> create(Map<String, Object?> arguments) async {
+  Future<ProcedureOutcome> create(
+    Map<String, Object?> arguments, {
+    ToolProcessSurface? process,
+  }) async {
     final resolver = await systemResolver();
-    final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
+    final engine = engineFor(
+      resolver.ids.map(resolver.resolve).toList(),
+      process: process,
+    );
     return engine
         .invoke(ProcedureInvocation(
           procedureId: 'create_v1',
@@ -331,14 +354,12 @@ void main() {
     });
   });
 
-  group('F-C-8 test-first execution is deferred (§ 12.1 decision 5)', () {
-    test('create_v1 declares no check primitive and never runs the tester role',
+  group('F-C-8 test-first + check run for code kind (§ 4.3, § 4.5)', () {
+    test('a code request drafts a test, runs it, and checks the written draft',
         () async {
-      // (a) Structural: the loop touches no `analyze.*` / `test.*`
-      //     process-surface primitive — the § 4.4 "write → re-observe → check"
-      //     cycle defers until a `ToolProcessSurface` is wired into the run's
-      //     ToolContext and a reversible-write primitive exists (§ 12.1
-      //     decision 5).
+      // (a) Structural: the checks route through `tool.invoke`, so the declared
+      //     capability surface still names no `analyze.*` / `test.*` bridge —
+      //     the sandbox did not widen (§ 5.4).
       final resolver = await systemResolver();
       final requires = resolver.resolve('create_v1').header.requires;
       for (final check in const <String>[
@@ -350,22 +371,121 @@ void main() {
         'test',
       ]) {
         expect(requires, isNot(contains(check)),
-            reason: 'test-first check execution is deferred ($check)');
+            reason: 'checks route through tool.invoke, not a new bridge ($check)');
       }
 
-      // (b) Dynamic: a full ACCEPT run is write-on-accept-only — the `tester`
-      //     role (registered, G-C4) is never invoked, so no test-first check
-      //     ran before the write.
+      // (b) Dynamic: a code-kind ACCEPT drafts a test first (tester role), runs
+      //     it through the allow-listed surface, and runs the analyzer over the
+      //     written draft before keeping it.
+      final process = _FakeProcess(); // exitCode 0 — test runs, analyzer clean
       substrate.reviewerVerdicts = <String>['ACCEPT'];
-      final outcome = await create(request());
+
+      final outcome = await create(
+        request(target: 'lib.dart', kind: 'code'),
+        process: process,
+      );
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(substrate.countOf('tester'), 0,
-          reason: 'the loop is write-on-accept-only; the tester role is not '
-              'yet on the path (§ 12.1 decision 5)');
+      expect(outcome.result!.output<bool>('written'), isTrue);
+      expect(substrate.countOf('tester'), 1,
+          reason: 'test-first drafts the success-check before the artifact');
       expect(substrate.countOf('creator'), 1);
+
+      // The test-first run shelled `testkit :test`; the per-iteration check
+      // shelled `dart analyze` over the written file — both allow-listed.
+      expect(
+        process.calls.where((c) => c.exe == 'testkit' && c.args.contains(':test')),
+        hasLength(1),
+        reason: 'the drafted test was run before the artifact existed',
+      );
+      expect(
+        process.calls.where((c) => c.exe == 'dart' && c.args.first == 'analyze'),
+        hasLength(1),
+        reason: 'the analyzer checked the written draft (§ 4.5)',
+      );
+      expect(targetFile('lib.dart').readAsStringSync(), substrate.draftFor(1));
     });
   });
+
+  group('F-C-9 the check gates acceptance (§ 4.6, § 4.7)', () {
+    test('a failing analyzer blocks accept even on an ACCEPT verdict', () async {
+      // The analyzer fails every iteration; the reviewer would accept, but the
+      // unsatisfied check forbids it, so each draft is rolled back.
+      final process = _FakeProcess(
+        result: const ProcessRunResult(
+            exitCode: 1, stdout: '', stderr: 'analysis error'),
+      );
+      substrate.reviewerVerdicts = <String>['ACCEPT'];
+      substrate.defaultVerdict = 'ACCEPT';
+
+      final outcome = await create(
+        request(target: 'lib.dart', kind: 'code'),
+        process: process,
+      );
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(outcome.result!.output<bool>('written'), isFalse);
+      expect(outcome.result!.output<bool>('incomplete'), isTrue);
+      // Every code draft was written then rolled back: nothing survives.
+      expect(targetFile('lib.dart').existsSync(), isFalse);
+      // The bounded loop ran to exhaustion, drafting + checking each time.
+      expect(substrate.countOf('creator'), 3);
+      // No Artifact was produced; the Question remains for the dreamer.
+      expect(memory.persistedOfType('Artifact'), isEmpty);
+      expect(memory.persistedOfType('Question'), hasLength(1));
+    });
+  });
+
+  group('F-C-10 per-iteration write → rollback → re-enter (§ 4.4–§ 4.7)', () {
+    test('two revised drafts are rolled back; only the accepted one survives',
+        () async {
+      final process = _FakeProcess(); // analyzer clean every iteration
+      substrate.reviewerVerdicts = <String>['REVISE', 'REVISE', 'ACCEPT'];
+
+      final outcome = await create(
+        request(target: 'lib.dart', kind: 'code'),
+        process: process,
+      );
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(outcome.result!.output<bool>('written'), isTrue);
+      expect(substrate.countOf('creator'), 3);
+      // Only the third (accepted) draft is on disk — the first two were written
+      // then rolled back via file.delete.
+      expect(targetFile('lib.dart').readAsStringSync(), substrate.draftFor(3));
+      // The analyzer ran once per iteration over the written draft.
+      expect(
+        process.calls.where((c) => c.exe == 'dart' && c.args.first == 'analyze'),
+        hasLength(3),
+      );
+    });
+  });
+}
+
+// ── A deterministic `ToolProcessSurface` fake ───────────────────────
+//
+// Records each call and returns a canned [ProcessRunResult]; no process is
+// spawned. exitCode 0 by default (a clean analyzer / a test that "ran"), so the
+// per-iteration check is satisfied and acceptance is driven by the reviewer.
+class _FakeProcess implements ToolProcessSurface {
+  _FakeProcess({
+    this.result =
+        const ProcessRunResult(exitCode: 0, stdout: 'ok', stderr: ''),
+  });
+
+  final ProcessRunResult result;
+  final List<({String exe, List<String> args, String? cwd})> calls =
+      <({String exe, List<String> args, String? cwd})>[];
+
+  @override
+  Future<ProcessRunResult> run(
+    String executable,
+    List<String> arguments, {
+    String? workingDirectory,
+  }) async {
+    calls.add((exe: executable, args: arguments, cwd: workingDirectory));
+    return result;
+  }
 }
 
 // ── A role-aware `TomBrainSubstrateClient` ──────────────────────────

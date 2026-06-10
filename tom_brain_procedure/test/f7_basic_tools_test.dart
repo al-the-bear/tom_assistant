@@ -54,6 +54,7 @@ void main() {
         'file.read': (group: ToolGroup.file, readOnly: true),
         'file.write': (group: ToolGroup.file, readOnly: false),
         'file.edit': (group: ToolGroup.file, readOnly: false),
+        'file.delete': (group: ToolGroup.file, readOnly: false),
         'file.diff': (group: ToolGroup.file, readOnly: true),
         'grep.search': (group: ToolGroup.file, readOnly: true),
         'file.search': (group: ToolGroup.file, readOnly: true),
@@ -94,10 +95,10 @@ void main() {
   });
 
   group('F.7-1b defaultToolCatalogue wire descriptors', () {
-    test('describes the twenty-eight basic tools with name/group/description',
+    test('describes the twenty-nine basic tools with name/group/description',
         () {
       final catalogue = defaultToolCatalogue();
-      expect(catalogue, hasLength(28));
+      expect(catalogue, hasLength(29));
 
       // Each descriptor carries the four wire fields the substrate's
       // tool-catalogue render reads (`{name, group, description, input_schema}`,
@@ -126,6 +127,7 @@ void main() {
           'file.read',
           'file.write',
           'file.edit',
+          'file.delete',
           'file.diff',
           'grep.search',
           'file.search',

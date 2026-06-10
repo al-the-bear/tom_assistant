@@ -87,6 +87,7 @@ List<BrainTool> _basicTools() => <BrainTool>[
       _FileReadTool(),
       _FileWriteTool(),
       _FileEditTool(),
+      _FileDeleteTool(),
       _FileDiffTool(),
       _GrepSearchTool(),
       _FileSearchTool(),
@@ -484,6 +485,36 @@ final class _FileEditTool extends BrainTool {
       'op': op,
       'bytesWritten': content.length,
     };
+  }
+}
+
+final class _FileDeleteTool extends BrainTool {
+  @override
+  String get name => 'file.delete';
+  @override
+  ToolGroup get group => ToolGroup.file;
+  @override
+  bool get readOnly => false;
+  @override
+  String get description =>
+      'Removes a file under the file-scope root — the reversible counterpart '
+      'to file.write, so a rejected draft can be rolled back '
+      '(creation_specification.md § 4.7). Idempotent: a missing target is not '
+      'an error.';
+  @override
+  Map<String, Object?> get inputSchema => _pathRequiredSchema;
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final relative = args['path'] as String;
+    // Resolve within scope (an escaping path raises FileScopeViolation before
+    // any filesystem touch), preferring the root where the target exists so the
+    // rollback undoes the write that actually landed.
+    final hit = _resolveTarget(ctx, relative);
+    final file = File(hit.path);
+    final existed = file.existsSync();
+    if (existed) await file.delete();
+    return <String, Object?>{'path': relative, 'deleted': existed};
   }
 }
 
