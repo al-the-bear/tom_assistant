@@ -179,8 +179,15 @@ types:
       default_horizon_ms: null
       reinforcement_resets_horizon: true
       demote_from_indexes: true
+    # `targets` is INCOMING: a Question is the goal node a Plan or Artifact is
+    # *about* (EdgeType.targets: "Plan / Artifact → the goal node"). A goal is an
+    # open inquiry the work exists to answer, so Question is the sole `targets`
+    # receiver (memory_specification.md § 4.1‡; planning_specification.md § 5.3;
+    # creation_specification.md § 4.8). No other type receives `targets` — adding
+    # a receiver is purely additive under the open-node-types policy, so receivers
+    # are added only when a built emitter targets them, never speculatively.
     allowed_outgoing: [motivates, mentions]
-    allowed_incoming: [satisfied_by, mentions, derived_from]
+    allowed_incoming: [satisfied_by, mentions, derived_from, targets]
 
   # 6. Pattern — a recurring template (event sequence, prompt shape, …).
   - name: Pattern

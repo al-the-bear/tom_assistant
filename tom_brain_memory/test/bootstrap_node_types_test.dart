@@ -84,7 +84,7 @@ const _expectedKeyEdges = <String, Set<String>>{
   'Claim': {'evidence_for', 'contradicts', 'derived_from'},
   'Concept': {'part_of', 'mentions'},
   'Conclusion': {'evidence_for', 'derived_from', 'satisfied_by'},
-  'Question': {'motivates', 'satisfied_by'},
+  'Question': {'motivates', 'satisfied_by', 'targets'},
   'Pattern': {'derived_from', 'mentions'},
   'Contradiction': {'contradicts'},
   'Source': {'evidence_for', 'mentions'},

@@ -244,6 +244,18 @@ void main() {
       );
     }
 
+    Future<NodeId> persistPlan(String goal, String summary, String key,
+        {int seed = 1}) {
+      return persister.persist(
+        NodeDraft(
+          typeName: 'Plan',
+          values: <String, Object?>{'goal': goal, 'summary': summary},
+          embedding: _v768(seed: seed),
+        ),
+        scope: Scope(producer: 'a39:test:r1', idempotencyKey: key),
+      );
+    }
+
     // ProcedureRun is operational metadata: it declares EmbeddingPolicy.none
     // (spec § 4.1), so the draft carries no embedding. Field shape mirrors
     // the RunRecorder's final record (camelCase; § 4.1).
@@ -548,6 +560,91 @@ void main() {
       expect(caught, isA<EdgeNotPermitted>());
       expect((caught as EdgeNotPermitted).side, equals(EdgeEndpointSide.from),
           reason: 'ProcedureRun.allowed_outgoing must not carry produced_by');
+    });
+
+    test('Plan --targets--> Question commits and round-trips '
+        '(goal-node receiver)', () async {
+      // The `targets` edge names the goal a Plan is *about*. The
+      // goal-node receiver decision (memory_spec § 4.1‡;
+      // planning_specification.md § 5.3; creation_specification.md § 4.8)
+      // fixes `Question` as the single receiving type:
+      //   Plan.allowed_outgoing     includes `targets`,
+      //   Question.allowed_incoming includes `targets`.
+      // Before that decision Question rejected the edge on the to-side
+      // and `targets` had no receiver at all — this test is the contract
+      // that the bootstrap grammar now permits the edge.
+      final question =
+          await persistQuestion('how do we ship tiered backups?',
+              'k-goal-q', seed: 41);
+      final plan = await persistPlan('ship tiered backups',
+          'three-tier backup plan', 'k-goal-plan', seed: 42);
+
+      final eventsBefore = events.length;
+      final edgeId = await edgeWriter.edge(plan, EdgeType.targets, question,
+          scope: _testScope);
+
+      // The edge row landed with the resolved endpoints and wire-name.
+      final row = db.select(
+        'SELECT from_node, to_node, type FROM edges WHERE id = ?',
+        <Object?>[edgeId.toString()],
+      );
+      expect(row, hasLength(1));
+      expect(row.first['from_node'], equals(plan.toString()));
+      expect(row.first['to_node'], equals(question.toString()));
+      expect(row.first['type'], equals('targets'));
+
+      // Exactly one EdgeCreated event with the resolved type names.
+      final after = events.sublist(eventsBefore);
+      expect(after, hasLength(1));
+      final created = after.single as EdgeCreated;
+      expect(created.type, equals(EdgeType.targets));
+      expect(created.fromTypeName, equals('Plan'));
+      expect(created.toTypeName, equals('Question'));
+
+      // Round-trips through EdgeReader in both directions.
+      final out = await edgeReader.edgesOf(plan,
+          direction: EdgeDirection.outgoing);
+      expect(out.map((e) => e.id).toList(), equals(<EdgeId>[edgeId]));
+      final inc = await edgeReader.edgesOf(question,
+          direction: EdgeDirection.incoming);
+      expect(inc.map((e) => e.id).toList(), equals(<EdgeId>[edgeId]));
+    });
+
+    test('Plan --targets--> non-Question is rejected on the to-side '
+        '(Question is the only goal-node receiver)', () async {
+      // The receiver decision is deliberately narrow: only `Question`
+      // lists `targets` in allowed_incoming. A Conclusion — a plausible
+      // "goal-ish" node — must therefore reject the edge on the to-side,
+      // proving the grammar is not wide-open and guarding against a
+      // future blanket-permit regression.
+      final plan = await persistPlan('decide the substrate',
+          'substrate decision plan', 'k-goal-plan2', seed: 43);
+      final conclusion = await persistConclusion(
+          'use vLLM on bomber', 'best latency', 'k-goal-concl', seed: 44);
+
+      final beforeRows =
+          db.select('SELECT COUNT(*) AS n FROM edges').first['n'] as int;
+      final beforeEvents = events.length;
+
+      Object? caught;
+      try {
+        await edgeWriter.edge(plan, EdgeType.targets, conclusion,
+            scope: _testScope);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, isA<EdgeNotPermitted>());
+      final ex = caught as EdgeNotPermitted;
+      expect(ex.side, equals(EdgeEndpointSide.to));
+      expect(ex.rejectingTypeName, equals('Conclusion'));
+      expect(ex.reason, equals(EdgeRejectionReason.notInAllowedIncoming));
+
+      expect(db.select('SELECT COUNT(*) AS n FROM edges').first['n'],
+          equals(beforeRows));
+      final afterEvents = events.sublist(beforeEvents);
+      expect(afterEvents, hasLength(1));
+      expect((afterEvents.single as EdgeRejected).reason,
+          equals(EdgeRejectionReason.notInAllowedIncoming));
     });
 
     // ═════════════════════════════════════════════════════════════
