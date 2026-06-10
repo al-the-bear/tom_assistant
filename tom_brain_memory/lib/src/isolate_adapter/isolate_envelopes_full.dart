@@ -6,7 +6,7 @@
 // A.81 shipped the two stream-open proofs (`OpenReadTrailStreamRequest`,
 // `OpenEventsStreamRequest`) plus the generic stream-opened response
 // (`StreamOpenedResponse`), the cancellation protocol
-// (`CancellationToken`, `CancelRequest`, `CancelResponse`) and the
+// (`IsolateCancellationToken`, `CancelRequest`, `CancelResponse`) and the
 // streaming control envelopes (`StreamPullRequest`, `StreamCloseRequest`,
 // side-channel envelopes). Those three stream-open envelopes originally
 // lived in a separate `isolate_envelopes.dart`; they were merged into
@@ -39,6 +39,8 @@
 //   constructing the envelope (see `tom_brain_memory_isolate_client.dart`).
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MigrationCursor, MigrationDecl, MigrationStatus, MultiRecallQuery, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, ProcedureStatus, RecallQuery, RecallResult, Scope, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackInfo, StackPolicy, StackSummary, StreamQuery, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show IsolateCancellationToken;
 
 import 'isolate_cancellation_protocol.dart';
 import 'isolate_messages.dart';
@@ -273,7 +275,7 @@ final class OpenStreamQueryRequest extends IsolateRequest {
   final StreamId streamId;
   final StreamQuery query;
   final int initialCredits;
-  final CancellationToken? cancellation;
+  final IsolateCancellationToken? cancellation;
   const OpenStreamQueryRequest({
     required this.streamId,
     required this.query,
@@ -458,7 +460,7 @@ final class OpenStacksArchivedStreamRequest extends IsolateRequest {
   final String name;
   final int? limit;
   final int initialCredits;
-  final CancellationToken? cancellation;
+  final IsolateCancellationToken? cancellation;
   const OpenStacksArchivedStreamRequest({
     required this.streamId,
     required this.name,
@@ -474,7 +476,7 @@ final class OpenStacksArchivedStreamRequest extends IsolateRequest {
 final class OpenStacksEventsStreamRequest extends IsolateRequest {
   final StreamId streamId;
   final String name;
-  final CancellationToken cancellation;
+  final IsolateCancellationToken cancellation;
   const OpenStacksEventsStreamRequest({
     required this.streamId,
     required this.name,
@@ -629,14 +631,14 @@ final class OpenReadTrailStreamRequest extends IsolateRequest {
   final TrailId trailId;
 
   /// Initial credit allowance on the per-stream
-  /// [BackpressureTracker]. Must be positive.
+  /// `BackpressureTracker`. Must be positive.
   final int initialCredits;
 
   /// Optional cancellation token. When the host wants to abort an
   /// in-flight trail read, it sends a [CancelRequest] for this token
   /// and the executor honours it at the next chunk-boundary
   /// checkpoint.
-  final CancellationToken? cancellation;
+  final IsolateCancellationToken? cancellation;
 
   const OpenReadTrailStreamRequest({
     required this.streamId,
@@ -660,7 +662,7 @@ final class OpenEventsStreamRequest extends IsolateRequest {
   /// way to stop an unbounded stream from the client is the cancel
   /// path; making the token mandatory makes that intent visible at
   /// the type level.
-  final CancellationToken cancellation;
+  final IsolateCancellationToken cancellation;
 
   const OpenEventsStreamRequest({
     required this.streamId,

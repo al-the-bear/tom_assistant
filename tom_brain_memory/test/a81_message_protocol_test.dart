@@ -7,8 +7,13 @@
 //     (open envelope + chunk envelope + control envelopes).
 //   * End-to-end wiring for `readTrail` (backpressure proof) and
 //     `events` (cancellation proof) through a real isolate.
-//   * Mechanism unit tests for `CancellationRegistry` and
-//     `BackpressureTracker`.
+//
+// The generic mechanism unit tests (`IsolateCancellationRegistry`,
+// `IsolateCancellationToken`, `BackpressureTracker`, …) moved to
+// `tom_core_agentic/test/isolate_streaming_test.dart` when that
+// machinery was promoted to `tom_core_agentic` (Tom Brain
+// completion-plan item 7). This file keeps the memory-coupled envelope
+// shapes and the isolate round-trip proofs.
 //
 // The remaining streams (`stream`, `stacks.streamArchived`,
 // `stacks.events`) and every non-streaming non-primitive method
@@ -96,133 +101,8 @@ MemoryConfig _fakeConfig() => MemoryConfig.forTesting(
 // ─── Tests ────────────────────────────────────────────────────────
 
 void main() {
-  group('A.81 CancellationRegistry', () {
-    test('register then cancel flips the flag', () {
-      final reg = CancellationRegistry();
-      final tok = const CancellationToken(1);
-      final h = reg.register(tok);
-      expect(h.isCancelled, isFalse);
-      reg.cancel(tok);
-      expect(h.isCancelled, isTrue);
-      expect(reg.isCancelled(tok), isTrue);
-    });
-
-    test('cancel-before-register is remembered (late-cancel race)', () {
-      final reg = CancellationRegistry();
-      final tok = const CancellationToken(2);
-      reg.cancel(tok);
-      expect(reg.pendingCancelCount, equals(1));
-      final h = reg.register(tok);
-      expect(h.isCancelled, isTrue,
-          reason: 'register must consume the pending cancel');
-      expect(reg.pendingCancelCount, equals(0));
-    });
-
-    test('throwIfCancelled raises CancellationException with the token', () {
-      final reg = CancellationRegistry();
-      final tok = const CancellationToken(3);
-      final h = reg.register(tok);
-      h.throwIfCancelled(); // does nothing
-      reg.cancel(tok);
-      expect(
-        h.throwIfCancelled,
-        throwsA(
-          isA<CancellationException>()
-              .having((e) => e.token.id, 'token.id', 3),
-        ),
-      );
-    });
-
-    test('dispose is idempotent and unregisters', () {
-      final reg = CancellationRegistry();
-      final tok = const CancellationToken(4);
-      final h = reg.register(tok);
-      expect(reg.inFlightCount, equals(1));
-      h.dispose();
-      expect(reg.inFlightCount, equals(0));
-      h.dispose(); // idempotent
-      expect(reg.inFlightCount, equals(0));
-    });
-
-    test('cancel on unknown then register elsewhere does not leak', () {
-      final reg = CancellationRegistry();
-      reg.cancel(const CancellationToken(10));
-      reg.cancel(const CancellationToken(11));
-      expect(reg.pendingCancelCount, equals(2));
-      reg.register(const CancellationToken(10));
-      expect(reg.pendingCancelCount, equals(1));
-    });
-  });
-
-  group('A.81 BackpressureTracker', () {
-    test('awaitCredit returns immediately when credits > 0', () async {
-      final t = BackpressureTracker(initialCredits: 3);
-      await t.awaitCredit();
-      expect(t.credits, equals(3));
-      t.consume();
-      expect(t.credits, equals(2));
-    });
-
-    test('awaitCredit parks at zero and unblocks on grant', () async {
-      final t = BackpressureTracker(initialCredits: 1);
-      t.consume();
-      expect(t.credits, equals(0));
-      var unblocked = false;
-      final f = t.awaitCredit().then((_) => unblocked = true);
-      // Yield so the await actually parks.
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      expect(unblocked, isFalse);
-      expect(t.waiterCount, equals(1));
-      t.grant(1);
-      await f;
-      expect(unblocked, isTrue);
-      expect(t.waiterCount, equals(0));
-    });
-
-    test('grant wakes parked waiters', () async {
-      // The protocol's intended use is one producer per tracker, so
-      // we never see more than one waiter at a time in production.
-      // But the tracker is robust against being shared: a single
-      // grant releases every parked waiter because credits stay
-      // positive until the producer's `consume` call drains them.
-      final t = BackpressureTracker(initialCredits: 0);
-      final order = <int>[];
-      final f1 = t.awaitCredit().then((_) => order.add(1));
-      final f2 = t.awaitCredit().then((_) => order.add(2));
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      expect(t.waiterCount, equals(2));
-      t.grant(2);
-      await Future.wait([f1, f2]);
-      // FIFO wake order: f1 completed before f2.
-      expect(order, equals(<int>[1, 2]));
-      expect(t.waiterCount, equals(0));
-    });
-
-    test('consume rejects negative and over-consume', () {
-      final t = BackpressureTracker(initialCredits: 1);
-      expect(() => t.consume(-1), throwsArgumentError);
-      expect(() => t.consume(2), throwsStateError);
-    });
-
-    test('close fails parked waiters', () async {
-      final t = BackpressureTracker(initialCredits: 0);
-      final f = t.awaitCredit();
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      t.close();
-      expect(t.isClosed, isTrue);
-      await expectLater(f, throwsStateError);
-    });
-  });
-
-  group('A.81 Allocators', () {
-    test('CancellationTokenAllocator hands out monotonic ids', () {
-      final a = CancellationTokenAllocator();
-      expect(a.next().id, equals(1));
-      expect(a.next().id, equals(2));
-      expect(a.peekNext, equals(3));
-    });
-
-    test('StreamIdAllocator hands out monotonic ids', () {
+  group('A.81 StreamIdAllocator', () {
+    test('hands out monotonic ids', () {
       final a = StreamIdAllocator();
       expect(a.next().id, equals(1));
       expect(a.next().id, equals(2));
@@ -380,12 +260,6 @@ void main() {
         ),
         throwsA(isA<AssertionError>()),
       );
-    });
-
-    test('CancellationToken value equality', () {
-      expect(const CancellationToken(7), equals(const CancellationToken(7)));
-      expect(const CancellationToken(7),
-          isNot(equals(const CancellationToken(8))));
     });
 
     test('StreamId value equality', () {

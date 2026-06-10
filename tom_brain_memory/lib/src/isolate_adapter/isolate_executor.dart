@@ -25,7 +25,7 @@
 //
 // A.81 additions:
 //
-//   * Owns a `CancellationRegistry` for cancellable requests.
+//   * Owns a `IsolateCancellationRegistry` for cancellable requests.
 //   * Honors `CancelRequest` by flipping the registry's flag.
 //   * Handles `OpenReadTrailStreamRequest` (backpressure proof) and
 //     `OpenEventsStreamRequest` (cancellation proof) by starting an
@@ -41,6 +41,13 @@
 import 'dart:async';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryStats, Node, StackEntry, StackEvent, StreamQuery, TrailId;
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show
+        BackpressureTracker,
+        IsolateCancellationHandle,
+        IsolateCancellationRegistry,
+        IsolateCancellationToken,
+        IsolateStreamCloseSignal;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomExecutor, TomWorker;
 
 import '../api/tom_brain_memory.dart';
@@ -67,17 +74,17 @@ class MemoryIsolateExecutor extends TomExecutor {
   final MemoryFactory factory;
 
   /// A.81 — in-isolate cancellation state.
-  final CancellationRegistry _cancellation = CancellationRegistry();
+  final IsolateCancellationRegistry _cancellation = IsolateCancellationRegistry();
 
   /// A.81 — per-stream backpressure trackers (keyed by streamId.id).
   /// Streams without backpressure (events) do not register here.
   final Map<int, BackpressureTracker> _trackers = <int, BackpressureTracker>{};
 
   /// A.81 — per-stream live-producer markers (keyed by streamId.id).
-  /// A producer's entry holds a `_StreamControl` block the producer
+  /// A producer's entry holds a `IsolateStreamCloseSignal` block the producer
   /// loop checks every iteration; a `StreamCloseRequest` flips
   /// `closed = true` so the producer terminates cleanly.
-  final Map<int, _StreamControl> _streamControls = <int, _StreamControl>{};
+  final Map<int, IsolateStreamCloseSignal> _streamControls = <int, IsolateStreamCloseSignal>{};
 
   TomBrainMemory? _memory;
 
@@ -92,7 +99,7 @@ class MemoryIsolateExecutor extends TomExecutor {
   TomBrainMemory? get memoryForTesting => _memory;
 
   /// Visible to tests only.
-  CancellationRegistry get cancellationForTesting => _cancellation;
+  IsolateCancellationRegistry get cancellationForTesting => _cancellation;
 
   /// Visible to tests only.
   int get liveStreamCount => _streamControls.length;
@@ -505,7 +512,7 @@ class MemoryIsolateExecutor extends TomExecutor {
     required StreamId streamId,
     required TrailId trailId,
     required int initialCredits,
-    required CancellationToken? cancellation,
+    required IsolateCancellationToken? cancellation,
     required TomBrainMemory memory,
   }) {
     _startBackpressuredProducer(
@@ -523,7 +530,7 @@ class MemoryIsolateExecutor extends TomExecutor {
     required StreamId streamId,
     required StreamQuery query,
     required int initialCredits,
-    required CancellationToken? cancellation,
+    required IsolateCancellationToken? cancellation,
     required TomBrainMemory memory,
   }) {
     _startBackpressuredProducer<Node>(
@@ -540,7 +547,7 @@ class MemoryIsolateExecutor extends TomExecutor {
     required String name,
     required int? limit,
     required int initialCredits,
-    required CancellationToken? cancellation,
+    required IsolateCancellationToken? cancellation,
     required TomBrainMemory memory,
   }) {
     _startBackpressuredProducer<StackEntry>(
@@ -556,7 +563,7 @@ class MemoryIsolateExecutor extends TomExecutor {
   void _startStacksEventsProducer({
     required StreamId streamId,
     required String name,
-    required CancellationToken cancellation,
+    required IsolateCancellationToken cancellation,
     required TomBrainMemory memory,
   }) {
     _startUnboundedProducer<StackEvent>(
@@ -573,15 +580,15 @@ class MemoryIsolateExecutor extends TomExecutor {
   void _startBackpressuredProducer<T>({
     required StreamId streamId,
     required int initialCredits,
-    required CancellationToken? cancellation,
+    required IsolateCancellationToken? cancellation,
     required Stream<T> Function() source,
   }) {
     final tracker = BackpressureTracker(initialCredits: initialCredits);
     _trackers[streamId.id] = tracker;
-    final control = _StreamControl();
+    final control = IsolateStreamCloseSignal();
     _streamControls[streamId.id] = control;
 
-    CancellationHandle? handle;
+    IsolateCancellationHandle? handle;
     if (cancellation != null) {
       handle = _cancellation.register(cancellation);
     }
@@ -646,10 +653,10 @@ class MemoryIsolateExecutor extends TomExecutor {
   /// is purely via cancellation / close / source completion.
   void _startUnboundedProducer<T>({
     required StreamId streamId,
-    required CancellationToken cancellation,
+    required IsolateCancellationToken cancellation,
     required Stream<T> Function() source,
   }) {
-    final control = _StreamControl();
+    final control = IsolateStreamCloseSignal();
     _streamControls[streamId.id] = control;
     final handle = _cancellation.register(cancellation);
 
@@ -732,7 +739,7 @@ class MemoryIsolateExecutor extends TomExecutor {
   /// (`MemoryEvent`) is inferred from the source.
   void _startEventsProducer({
     required StreamId streamId,
-    required CancellationToken cancellation,
+    required IsolateCancellationToken cancellation,
     required TomBrainMemory memory,
   }) {
     _startUnboundedProducer(
@@ -770,21 +777,6 @@ class MemoryIsolateExecutor extends TomExecutor {
   static int _wallClockMs() => DateTime.now().millisecondsSinceEpoch;
 }
 
-/// Internal per-stream control block. Held by the executor's
-/// `_streamControls` map. A `StreamCloseRequest` calls [requestClose],
-/// which both raises the flag (read at the backpressured producer's
-/// checkpoints) and fires [closeSignal] (awaited by the unbounded
-/// producer instead of a poll timer — review D.5.2).
-class _StreamControl {
-  bool closeRequested = false;
-
-  /// Completes the first time [requestClose] is called. Never
-  /// completes if the stream is not asked to close.
-  final Completer<void> closeSignal = Completer<void>();
-
-  /// Idempotently flags the stream for close and fires [closeSignal].
-  void requestClose() {
-    closeRequested = true;
-    if (!closeSignal.isCompleted) closeSignal.complete();
-  }
-}
+// The per-stream close-signal block (`IsolateStreamCloseSignal`) was
+// promoted to `tom_core_agentic` (`isolate_streaming/`) by Tom Brain
+// completion-plan item 7; the executor consumes it from there.

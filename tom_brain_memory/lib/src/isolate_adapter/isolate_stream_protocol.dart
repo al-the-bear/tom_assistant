@@ -36,7 +36,7 @@
 // Cancellation:
 //
 //   Every stream open envelope optionally carries a
-//   `CancellationToken`. The executor checks the token's flag between
+//   `IsolateCancellationToken`. The executor checks the token's flag between
 //   every chunk push. On cancellation, the executor sends a
 //   terminal `StreamCancelledEnvelope` and unregisters.
 //
@@ -48,9 +48,9 @@
 //   rules. The chunk payload type is a generic `Object?` so each
 //   stream's per-method protocol can land its own payload class.
 
-import 'dart:async';
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show IsolateCancellationToken;
 
-import 'isolate_cancellation_protocol.dart';
 import 'isolate_messages.dart';
 
 /// Opaque identifier for an open stream, sendable across an isolate
@@ -76,7 +76,7 @@ final class StreamId {
 /// Host-side counter that hands out unique [StreamId]s.
 ///
 /// One allocator per `TomBrainMemoryIsolateClient`. Same single-isolate
-/// safety reasoning as `CancellationTokenAllocator`.
+/// safety reasoning as `IsolateCancellationTokenAllocator`.
 final class StreamIdAllocator {
   int _next = 1;
   StreamId next() => StreamId(_next++);
@@ -108,9 +108,9 @@ final class StreamPullResponse extends IsolateResponse {
 /// Cancels an open stream. The executor sends a terminal
 /// [StreamCancelledEnvelope] then unregisters.
 ///
-/// Distinct from [CancelRequest]: a cancel request flips a flag on a
-/// [CancellationToken] (general-purpose), while a stream-close request
-/// also tears down the chunk plumbing for that specific stream.
+/// Distinct from [CancelRequest]: a cancel request flips a flag on an
+/// [IsolateCancellationToken] (general-purpose), while a stream-close
+/// request also tears down the chunk plumbing for that specific stream.
 final class StreamCloseRequest extends IsolateRequest {
   final StreamId streamId;
   const StreamCloseRequest(this.streamId);
@@ -196,114 +196,7 @@ final class StreamErrorEnvelope extends StreamSideChannelMessage {
 final class StreamCancelledEnvelope extends StreamSideChannelMessage {
   @override
   final StreamId streamId;
-  final CancellationToken? token;
+  final IsolateCancellationToken? token;
 
   const StreamCancelledEnvelope({required this.streamId, this.token});
-}
-
-// ─── Backpressure tracker (executor-side) ────────────────────────
-
-/// Per-stream credit ledger held inside the executor.
-///
-/// Backpressured streams (e.g. `readTrail`) construct one of these
-/// with the initial credit allowance from the open envelope.
-/// Unbounded streams (`events`) skip the tracker entirely — chunks
-/// flow without credit accounting.
-///
-/// Usage:
-///
-///   ```dart
-///   final tracker = BackpressureTracker(initialCredits: 16);
-///   while (more) {
-///     await tracker.awaitCredit();
-///     pushChunk();
-///     tracker.consume(1);
-///   }
-///   ```
-///
-/// `awaitCredit()` returns immediately when credits > 0; otherwise it
-/// waits until [grant] is called. Multiple callers may be parked; they
-/// are released in FIFO order one credit at a time.
-final class BackpressureTracker {
-  int _credits;
-  final List<Completer<void>> _waiters = <Completer<void>>[];
-  bool _closed = false;
-
-  BackpressureTracker({required int initialCredits})
-      : _credits = initialCredits {
-    if (initialCredits < 0) {
-      throw ArgumentError.value(
-        initialCredits,
-        'initialCredits',
-        'must be non-negative',
-      );
-    }
-  }
-
-  /// Remaining credits. Visible for tests.
-  int get credits => _credits;
-
-  /// Number of waiters parked on [awaitCredit]. Visible for tests.
-  int get waiterCount => _waiters.length;
-
-  /// Whether [close] has been called. Subsequent [awaitCredit] calls
-  /// throw [StateError].
-  bool get isClosed => _closed;
-
-  /// Returns once at least one credit is available. Does not decrement
-  /// — call [consume] after pushing the chunk.
-  Future<void> awaitCredit() {
-    if (_closed) {
-      return Future<void>.error(
-        StateError('BackpressureTracker is closed.'),
-      );
-    }
-    if (_credits > 0) return Future<void>.value();
-    final completer = Completer<void>();
-    _waiters.add(completer);
-    return completer.future;
-  }
-
-  /// Consumes [n] credits (default 1). Permits going to zero; rejects
-  /// going negative.
-  void consume([int n = 1]) {
-    if (n < 0) {
-      throw ArgumentError.value(n, 'n', 'must be non-negative');
-    }
-    if (n > _credits) {
-      throw StateError(
-        'BackpressureTracker.consume($n) but only $_credits credits available.',
-      );
-    }
-    _credits -= n;
-  }
-
-  /// Grants [n] more credits. Wakes up to [n] parked waiters in FIFO
-  /// order; remaining credits stay on the ledger.
-  void grant(int n) {
-    if (_closed) return;
-    if (n <= 0) {
-      throw ArgumentError.value(n, 'n', 'must be positive');
-    }
-    _credits += n;
-    while (_waiters.isNotEmpty && _credits > 0) {
-      final w = _waiters.removeAt(0);
-      if (!w.isCompleted) {
-        w.complete();
-      }
-    }
-  }
-
-  /// Closes the tracker. Pending waiters fail with [StateError].
-  void close() {
-    if (_closed) return;
-    _closed = true;
-    final waiters = List<Completer<void>>.from(_waiters);
-    _waiters.clear();
-    for (final w in waiters) {
-      if (!w.isCompleted) {
-        w.completeError(StateError('BackpressureTracker is closed.'));
-      }
-    }
-  }
 }

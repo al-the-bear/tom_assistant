@@ -52,15 +52,14 @@
 //   - A.85    — multi-machine variant (RPC over the canonical-
 //               authority transport described in § 10).
 
+// The generic cancellation machinery (`IsolateCancellationToken` family,
+// `IsolateCancellationRegistry`, `IsolateCancellationHandle`,
+// `IsolateCancellationException`) was promoted to `tom_core_agentic`
+// (`isolate_streaming/`) by Tom Brain completion-plan item 7. Consumers
+// import it from `package:tom_core_agentic/tom_core_agentic.dart`. Only
+// the memory-coupled cancel envelopes stay here.
 export 'isolate_cancellation_protocol.dart'
-    show
-        CancelRequest,
-        CancelResponse,
-        CancellationException,
-        CancellationHandle,
-        CancellationRegistry,
-        CancellationToken,
-        CancellationTokenAllocator;
+    show CancelRequest, CancelResponse;
 export 'isolate_envelopes_full.dart'
     show
         AppendTrailRequest,
@@ -157,9 +156,11 @@ export 'isolate_messages.dart'
         OpenMemoryResponse,
         PingRequest,
         PongResponse;
+// `BackpressureTracker` was promoted to `tom_core_agentic`
+// (`isolate_streaming/`) by completion-plan item 7; consumers import it
+// from there.
 export 'isolate_stream_protocol.dart'
     show
-        BackpressureTracker,
         StreamCancelledEnvelope,
         StreamChunkEnvelope,
         StreamCloseRequest,

@@ -48,8 +48,9 @@
 import 'dart:async';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MemoryConfig, MemoryEvent, MemoryStats, MigrationApi, MigrationCursor, MigrationDecl, MigrationStatus, MultiRecallQuery, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, ProcedureStatus, RecallQuery, RecallResult, Scope, StackApi, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackEvent, StackInfo, StackPolicy, StackSummary, StreamQuery, TomBrainMemoryClient, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show IsolateCancellationToken;
 
-import 'isolate_cancellation_protocol.dart';
 import 'isolate_envelopes_full.dart';
 import 'isolate_messages.dart';
 import 'isolate_stream_protocol.dart';
@@ -436,7 +437,7 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
   Stream<T> _wrapWithCancellation<T>(
     Stream<T> raw,
     StreamId streamId,
-    CancellationToken token,
+    IsolateCancellationToken token,
   ) {
     final out = StreamController<T>();
     StreamSubscription<T>? sub;

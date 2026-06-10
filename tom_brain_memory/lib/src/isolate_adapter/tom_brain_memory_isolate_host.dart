@@ -10,7 +10,7 @@
 //
 // A.81 additions:
 //
-//   * Owns the host-side `CancellationTokenAllocator` and
+//   * Owns the host-side `IsolateCancellationTokenAllocator` and
 //     `StreamIdAllocator` so every cancellable request /
 //     stream-open carries a fresh id.
 //   * Registers a creator-side `TomExecutor` (`_StreamRouter`) on
@@ -26,6 +26,8 @@ import 'dart:async';
 
 import 'package:tom_basics/tom_basics.dart'
     show TomEnvironment, TomPlatform, defaultTomEnvironment;
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show IsolateCancellationToken, IsolateCancellationTokenAllocator;
 import 'package:tom_core_kernel/tom_core_kernel.dart'
     show TomExecutor, TomWorker;
 
@@ -74,8 +76,8 @@ class TomBrainMemoryIsolateHost {
   /// A.81 — host-side allocators. Public-getter accessible so the
   /// client can mint tokens/ids without re-implementing the
   /// counter.
-  final CancellationTokenAllocator _cancellationAllocator =
-      CancellationTokenAllocator();
+  final IsolateCancellationTokenAllocator _cancellationAllocator =
+      IsolateCancellationTokenAllocator();
   final StreamIdAllocator _streamIdAllocator = StreamIdAllocator();
 
   /// A.81 — host-side stream sinks. Keyed by `streamId.id`. The
@@ -120,7 +122,7 @@ class TomBrainMemoryIsolateHost {
   bool get isMemoryOpen => _memoryOpen;
 
   /// A.81 — visible to tests.
-  CancellationTokenAllocator get cancellationAllocator =>
+  IsolateCancellationTokenAllocator get cancellationAllocator =>
       _cancellationAllocator;
   StreamIdAllocator get streamIdAllocator => _streamIdAllocator;
   int get liveStreamCount => _streamSinks.length;
@@ -334,7 +336,7 @@ class TomBrainMemoryIsolateHost {
 
   /// Cancels an open token. The in-flight stream / recall will
   /// honour the cancellation at its next checkpoint.
-  Future<void> cancel(CancellationToken token) async {
+  Future<void> cancel(IsolateCancellationToken token) async {
     await send<CancelResponse>(CancelRequest(token));
   }
 
