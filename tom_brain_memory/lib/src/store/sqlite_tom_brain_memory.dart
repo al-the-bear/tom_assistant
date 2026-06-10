@@ -162,6 +162,12 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   /// seeded registry.
   late NodePersister _persister;
 
+  /// Optional storage-stack embedder (Q-H.1, non-generative). Threaded
+  /// into the [RecallExecutor] so a vector seed carrying only `text` can
+  /// be embedded; `null` leaves text-only vector seeds degrading. Shared
+  /// with the profile child stores spawned by [_profiles].
+  final RecallEmbedder? _embedder;
+
   /// Owner of the node-read path ([get] / [getMany]). Reads `memory.db`
   /// only — embeddings live in `vectors.db` and are not rehydrated here
   /// (Q-A.35.1).
@@ -249,9 +255,18 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   ///
   /// [sqlite] defaults to the process-global `sqlite3` instance;
   /// [clock] defaults to `const SystemClock()`.
-  SqliteTomBrainMemory({Sqlite3? sqlite, Clock clock = const SystemClock()})
-      : _sqlite = sqlite ?? sqlite3,
-        _clock = clock;
+  ///
+  /// [embedder] is the optional storage-stack embedding model (Q-H.1,
+  /// non-generative). When supplied it lets `recall` / `recallMulti`
+  /// embed a vector seed that carries only `text` (no precomputed
+  /// `embedding`); when `null`, such seeds degrade — vector mode skipped.
+  SqliteTomBrainMemory({
+    Sqlite3? sqlite,
+    Clock clock = const SystemClock(),
+    RecallEmbedder? embedder,
+  })  : _sqlite = sqlite ?? sqlite3,
+        _clock = clock,
+        _embedder = embedder;
 
   /// The opened `memory.db` handle. **Test-only** introspection seam;
   /// production consumers go through the [TomBrainMemoryClient] surface.
@@ -376,6 +391,7 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
       symbolic: SymbolicRecall(memoryDb: memoryDb),
       graphWalk: GraphWalkRecall(memoryDb: memoryDb),
       nodeReader: _reader,
+      embedder: _embedder,
       clock: _clock,
     );
 
@@ -446,8 +462,11 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
     //     events ride this store's bus via `_eventBus.emit`.
     _profiles = SqliteMemoryProfileRegistry(
       baseConfig: config.withProfile(null),
-      childStoreFactory: () =>
-          SqliteTomBrainMemory(sqlite: _sqlite, clock: _clock),
+      childStoreFactory: () => SqliteTomBrainMemory(
+        sqlite: _sqlite,
+        clock: _clock,
+        embedder: _embedder,
+      ),
       emit: _eventBus.emit,
       clock: _clock,
     );

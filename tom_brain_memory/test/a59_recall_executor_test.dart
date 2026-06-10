@@ -25,13 +25,27 @@
 //   -----------------
 //   * BM25 without text → 0 candidates, not degraded.
 //   * Symbolic without filter → 0 candidates, not degraded.
-//   * Vector without embedding → 0 candidates, degraded = true.
+//   * Vector without embedding *and* no embedder → 0 candidates,
+//     degraded = true.
 //   * Vector with null executor (boot-degraded) → 0 candidates,
 //     degraded = true.
 //   * graphWalk without seeds → 0 candidates, not degraded.
 //   * graphWalk with seeds → ranked via the executor, not degraded.
 //   * graphWalk executor throws → 0 candidates, degraded = true.
 //   * Mode executor throws → 0 candidates, degraded = true.
+//
+//   Vector embed callout (Extension H, todo #1 — non-LLM, Q-H.1)
+//   -----------------------------------------------------------
+//   * Text-only vector seed embeds via the injected storage-stack
+//     embedder, surfaces the vector candidates, and counts one
+//     `embeddingsCallouts` (not degraded).
+//   * Caller-supplied `embedding` bypasses the embedder (no callout).
+//   * Text-only vector seed with NO embedder still degrades (0
+//     candidates, no callout) — the pre-hookup contract.
+//   * Embedder throwing degrades the vector mode (0 candidates) — and
+//     no vector candidates surface.
+//   * `recallMulti` embeds a text-only vector seed and counts the
+//     callout in its report.
 //
 //   Fusion gates
 //   ------------
@@ -66,7 +80,7 @@
 //   Report fields
 //   -------------
 //   * `elapsedMs` matches the clock delta (MutableTestClock).
-//   * `embeddingsCallouts` is always 0 at A.59.
+//   * `embeddingsCallouts` is 0 when no mode embeds (e.g. BM25-only).
 //   * `diversityLambda` populated only when strategy is MMR.
 //   * `candidatesPerMode` is unmodifiable.
 //
@@ -149,6 +163,7 @@ void main() {
       bool vectorNullExecutor = false,
       SymbolicModeFn? symbolic,
       GraphWalkModeFn? graphWalk,
+      RecallEmbedder? embedder,
       required NodeBulkReader nodeReader,
       MutableTestClock? clock,
     }) =>
@@ -158,6 +173,7 @@ void main() {
           symbolic: symbolic ?? noSymbolic(),
           graphWalk: graphWalk ?? noGraphWalk(),
           nodeReader: nodeReader,
+          embedder: embedder,
           clock: clock ?? MutableTestClock(BrainTime.utc(2026, 1, 1)),
         );
 
@@ -331,8 +347,11 @@ void main() {
       expect(result.report.degraded, isFalse);
     });
 
-    test('vector without embedding → degraded', () async {
+    test('vector without embedding and no embedder → degraded', () async {
       var called = false;
+      // No `embedder` wired and the query carries no text, so there is
+      // nothing to embed — the mode degrades without ever calling the
+      // vector executor.
       final exec = newExecutor(
         vector: ({
           required Vec query,
@@ -350,6 +369,7 @@ void main() {
       expect(called, isFalse);
       expect(result.report.candidatesPerMode, {RecallMode.vector: 0});
       expect(result.report.degraded, isTrue);
+      expect(result.report.embeddingsCallouts, 0);
     });
 
     test('vector with null executor (boot-degraded) → degraded', () async {
@@ -364,6 +384,178 @@ void main() {
       ));
       expect(result.report.candidatesPerMode, {RecallMode.vector: 0});
       expect(result.report.degraded, isTrue);
+    });
+
+    // ─── Vector embed callout (Extension H todo #1; Q-H.1) ─────────
+
+    test('text-only vector seed embeds via the storage model and surfaces',
+        () async {
+      final id1 = mintId();
+      final id2 = mintId();
+      final nodes = [makeNode(id1), makeNode(id2)];
+      final embedCalls = <String>[];
+      Vec? seenQuery;
+      final exec = newExecutor(
+        embedder: (text) async {
+          embedCalls.add(text);
+          return Vec.fromList(const [0.1, 0.2, 0.3]);
+        },
+        vector: ({
+          required Vec query,
+          Set<String>? typeNames,
+          int perModeK = 64,
+        }) {
+          seenQuery = query;
+          return [
+            VectorRecallCandidate(
+                nodeId: id1, typeName: 'Concept', modelId: 'm', distance: 0.1),
+            VectorRecallCandidate(
+                nodeId: id2, typeName: 'Concept', modelId: 'm', distance: 0.2),
+          ];
+        },
+        nodeReader: makeBulkReader(nodes),
+      );
+      final result = await exec.recall(RecallQuery(
+        modes: const {RecallMode.vector},
+        text: 'a curious cat',
+        k: 5,
+        diversity: const DiversityPolicy(strategy: DiversityStrategy.off),
+      ));
+      // The seed's text was embedded once, and the resulting vector was
+      // fed to the vector executor.
+      expect(embedCalls, ['a curious cat']);
+      expect(seenQuery, isNotNull);
+      // The embedded vector (dim 3) was handed to the vector executor.
+      expect(seenQuery!.values.length, 3);
+      // The vector candidates surfaced as nodes.
+      expect(result.nodes.map((n) => n.id), [id1, id2]);
+      expect(result.report.candidatesPerMode, {RecallMode.vector: 2});
+      expect(result.report.degraded, isFalse);
+      // Exactly one storage-stack embed callout.
+      expect(result.report.embeddingsCallouts, 1);
+    });
+
+    test('caller-supplied embedding bypasses the embedder (no callout)',
+        () async {
+      final id1 = mintId();
+      var embedderCalled = false;
+      final exec = newExecutor(
+        embedder: (text) async {
+          embedderCalled = true;
+          return Vec.fromList(const [9.9]);
+        },
+        vector: ({
+          required Vec query,
+          Set<String>? typeNames,
+          int perModeK = 64,
+        }) =>
+            [
+              VectorRecallCandidate(
+                  nodeId: id1, typeName: 'Concept', modelId: 'm', distance: 0.1),
+            ],
+        nodeReader: makeBulkReader([makeNode(id1)]),
+      );
+      final result = await exec.recall(RecallQuery(
+        modes: const {RecallMode.vector},
+        embedding: Vec.fromList(const [1.0, 0.0]),
+        // Text present too — but the precomputed embedding wins.
+        text: 'ignored when embedding present',
+        k: 5,
+        diversity: const DiversityPolicy(strategy: DiversityStrategy.off),
+      ));
+      expect(embedderCalled, isFalse);
+      expect(result.nodes.map((n) => n.id), [id1]);
+      expect(result.report.degraded, isFalse);
+      expect(result.report.embeddingsCallouts, 0);
+    });
+
+    test('text-only vector seed without an embedder still degrades',
+        () async {
+      var vectorCalled = false;
+      final exec = newExecutor(
+        // No embedder wired.
+        vector: ({
+          required Vec query,
+          Set<String>? typeNames,
+          int perModeK = 64,
+        }) {
+          vectorCalled = true;
+          return const [];
+        },
+        nodeReader: makeBulkReader(const []),
+      );
+      final result = await exec.recall(RecallQuery(
+        modes: const {RecallMode.vector},
+        text: 'has text but no embedder to embed it',
+        k: 5,
+      ));
+      expect(vectorCalled, isFalse);
+      expect(result.report.candidatesPerMode, {RecallMode.vector: 0});
+      expect(result.report.degraded, isTrue);
+      expect(result.report.embeddingsCallouts, 0);
+    });
+
+    test('embedder throwing degrades the vector mode', () async {
+      var vectorCalled = false;
+      final exec = newExecutor(
+        embedder: (text) async => throw StateError('embed boom'),
+        vector: ({
+          required Vec query,
+          Set<String>? typeNames,
+          int perModeK = 64,
+        }) {
+          vectorCalled = true;
+          return const [];
+        },
+        nodeReader: makeBulkReader(const []),
+      );
+      final result = await exec.recall(RecallQuery(
+        modes: const {RecallMode.vector},
+        text: 'will fail to embed',
+        k: 5,
+      ));
+      // The embed failed → vector executor never ran → mode degraded.
+      expect(vectorCalled, isFalse);
+      expect(result.report.candidatesPerMode, {RecallMode.vector: 0});
+      expect(result.report.degraded, isTrue);
+    });
+
+    test('recallMulti embeds a text-only vector seed and counts the callout',
+        () async {
+      final id1 = mintId();
+      final id2 = mintId();
+      final nodes = [makeNode(id1), makeNode(id2)];
+      final embedCalls = <String>[];
+      final exec = newExecutor(
+        embedder: (text) async {
+          embedCalls.add(text);
+          return Vec.fromList(const [0.4, 0.5, 0.6]);
+        },
+        vector: ({
+          required Vec query,
+          Set<String>? typeNames,
+          int perModeK = 64,
+        }) =>
+            [
+              VectorRecallCandidate(
+                  nodeId: id1, typeName: 'Concept', modelId: 'm', distance: 0.1),
+              VectorRecallCandidate(
+                  nodeId: id2, typeName: 'Concept', modelId: 'm', distance: 0.2),
+            ],
+        nodeReader: makeBulkReader(nodes),
+      );
+      final result = await exec.recallMulti(MultiRecallQuery(
+        seeds: const [
+          RecallSeed(mode: RecallMode.vector, text: 'semantic seed'),
+        ],
+        k: 10,
+        diversity: const DiversityPolicy(strategy: DiversityStrategy.off),
+      ));
+      expect(embedCalls, ['semantic seed']);
+      expect(result.nodes.map((n) => n.id), [id1, id2]);
+      expect(result.report.candidatesPerMode, {RecallMode.vector: 2});
+      expect(result.report.degraded, isFalse);
+      expect(result.report.embeddingsCallouts, 1);
     });
 
     test('graphWalk without seeds yields 0 candidates, not degraded',
@@ -751,7 +943,7 @@ void main() {
       expect(result.report.elapsedMs, 73);
     });
 
-    test('embeddingsCallouts is 0 at A.59', () async {
+    test('embeddingsCallouts is 0 when no mode embeds', () async {
       final id = mintId();
       final exec = newExecutor(
         bm25: ({
@@ -765,6 +957,7 @@ void main() {
             ],
         nodeReader: makeBulkReader([makeNode(id, typeName: 'X')]),
       );
+      // BM25-only recall: no vector mode requested, so nothing embeds.
       final result = await exec.recall(RecallQuery(
         modes: const {RecallMode.bm25},
         text: 'x',

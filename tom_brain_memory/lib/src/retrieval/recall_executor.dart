@@ -31,11 +31,13 @@
 //     in `rrf.dart`; `mmrDiversify` lives in `mmr.dart`. The executor
 //     is the *composer* — it knows nothing about the math beyond the
 //     contracts those files document.
-//   - Embedding callouts. Memory does not embed on the caller's
-//     behalf at A.59. A vector-mode recall whose `query.embedding` is
-//     `null` is treated as degraded (vector mode skipped, no embed
-//     callout counted). The substrate-side `Embedder` integration is
-//     a later step; until it lands `embeddingsCallouts` is always 0.
+//   - The embedding model itself. The executor does not *own* an
+//     embedder; it calls an optional injected one (`RecallEmbedder`,
+//     the storage-stack model — non-generative, Q-H.1) when a
+//     vector-mode seed carries `text` but no precomputed `embedding`.
+//     When no embedder is wired (or the seed has no text), the vector
+//     mode degrades — vector skipped, no callout counted. Each embed
+//     that does happen increments `embeddingsCallouts`.
 //   - The cosine-over-embeddings similarity. Cosine itself is in
 //     `tom_brain_shared` (`Vec.cosine`), but reading a *node's*
 //     embedding requires `VectorTable` to expose a `getEmbeddingsFor`
@@ -104,11 +106,6 @@
 //     similarity is the only similarity used; spec § 6.2's "for nodes
 //     without embeddings, similarity falls back to BM25 score" is the
 //     *only* branch implemented.
-//   - **Embedder callout.** When `query.embedding == null` AND
-//     `RecallMode.vector` is requested, the executor today degrades
-//     the vector mode. The future hookup will call a caller-injected
-//     `Embedder` once, count the callout, and feed the result to
-//     `VectorRecall.recall(...)`.
 //   - **`FusionStrategy.weighted`.** The policy carries optional
 //     weights; the executor today routes only RRF. The gate is the
 //     `FusionStrategy` switch in `_fuse`. See Q-A.57.4.
@@ -194,6 +191,18 @@ typedef GraphWalkModeFn = List<GraphWalkRecallCandidate> Function({
 /// an in-memory map; production wires the method tear-off.
 typedef NodeBulkReader = Future<List<Node>> Function(List<NodeId> ids);
 
+/// The storage-stack embedding model, as seen by [RecallExecutor].
+///
+/// Non-generative (Q-H.1): it turns a vector seed's `text` into a query
+/// `Vec` when the caller supplied no pre-computed `embedding`. It is part
+/// of memory's storage stack, not an LLM — invoking it does **not** count
+/// as instantiating a generative model.
+///
+/// `null` when no embedder is wired into the executor; in that case a
+/// text-only vector seed degrades (vector mode skipped) exactly as it did
+/// before the embedder hookup landed.
+typedef RecallEmbedder = Future<Vec> Function(String text);
+
 /// Orchestrates the four-mode retrieval pipeline (memory_specification.md § 6).
 ///
 /// One executor per open `SqliteTomBrainMemory`. Stateless across
@@ -233,6 +242,13 @@ final class RecallExecutor {
   /// Bulk-node reader for the post-fusion materialisation.
   final NodeBulkReader _nodeReader;
 
+  /// Optional storage-stack embedder. When supplied, a `RecallMode.vector`
+  /// seed that carries `text` but no pre-computed `embedding` is embedded
+  /// once via this callable (counted as one `embeddingsCallouts`) before
+  /// the vector executor runs. When `null`, such a seed degrades — the
+  /// pre-hookup behaviour. Non-generative (Q-H.1).
+  final RecallEmbedder? _embedder;
+
   /// Clock for `elapsedMs` measurement + wall-clock budget enforcement.
   final Clock _clock;
 
@@ -259,6 +275,10 @@ final class RecallExecutor {
   /// [clock] defaults to `SystemClock` for production. Tests inject
   /// a `MutableTestClock` to pin `elapsedMs`.
   ///
+  /// [embedder] is the optional storage-stack embedding model. When
+  /// supplied, a vector seed carrying only `text` (no `embedding`) is
+  /// embedded through it; when `null` such a seed degrades.
+  ///
   /// [eventSink] is optional — wire it to the memory store's typed
   /// event stream to receive `RetrievalConflict` signals when the
   /// per-mode results disagree (spec § 9.4; A.69).
@@ -268,6 +288,7 @@ final class RecallExecutor {
     required SymbolicRecall symbolic,
     required GraphWalkRecall graphWalk,
     required NodeReader nodeReader,
+    RecallEmbedder? embedder,
     Clock clock = const SystemClock(),
     void Function(MemoryEvent)? eventSink,
   }) : this.fromCallables(
@@ -276,6 +297,7 @@ final class RecallExecutor {
           symbolic: symbolic.recall,
           graphWalk: graphWalk.recall,
           nodeReader: nodeReader.getMany,
+          embedder: embedder,
           clock: clock,
           eventSink: eventSink,
         );
@@ -293,6 +315,7 @@ final class RecallExecutor {
     required SymbolicModeFn symbolic,
     required GraphWalkModeFn graphWalk,
     required NodeBulkReader nodeReader,
+    RecallEmbedder? embedder,
     Clock clock = const SystemClock(),
     void Function(MemoryEvent)? eventSink,
   })  : _bm25 = bm25,
@@ -300,6 +323,7 @@ final class RecallExecutor {
         _symbolic = symbolic,
         _graphWalk = graphWalk,
         _nodeReader = nodeReader,
+        _embedder = embedder,
         _clock = clock,
         _eventSink = eventSink;
 
@@ -314,10 +338,13 @@ final class RecallExecutor {
   ///   * `RecallResult.report` is **always** present.
   ///   * Empty `query.modes` → empty result, report with zero counts
   ///     and `degraded = false`.
-  ///   * A mode whose pre-requisites are missing (vector mode
-  ///     without an embedding, vector mode with no vector executor,
-  ///     graph walk before A.61) is degraded silently. `degraded`
-  ///     bit on the report reflects this.
+  ///   * A mode whose pre-requisites are missing (vector mode with no
+  ///     embedding *and* no embedder/text to derive one, vector mode
+  ///     with no vector executor, graph walk without seeds) is degraded
+  ///     silently. `degraded` bit on the report reflects this. A vector
+  ///     mode that embeds a text-only seed via the storage-stack
+  ///     embedder counts one `embeddingsCallouts` and is **not**
+  ///     degraded.
   ///   * Wall-clock budget exceeded → partial result, `degraded =
   ///     true`. The check runs between modes and after fusion; an
   ///     individual mode executor cannot be cancelled mid-call.
@@ -348,6 +375,7 @@ final class RecallExecutor {
     final bm25ScoreByNodeId = <String, double>{};
     var degraded = false;
     var reRankInvoked = false;
+    var embeddingsCallouts = 0;
 
     for (final mode in query.modes) {
       // Budget short-circuit between modes.
@@ -355,9 +383,10 @@ final class RecallExecutor {
         degraded = true;
         break;
       }
-      final result = _runMode(mode, query, bm25ScoreByNodeId);
+      final result = await _runMode(mode, query, bm25ScoreByNodeId);
       candidatesPerMode[mode] = result.candidateCount;
       perModeRanked[mode] = result.ranked;
+      embeddingsCallouts += result.embeddingsCallouts;
       if (result.degraded) degraded = true;
     }
 
@@ -415,7 +444,7 @@ final class RecallExecutor {
           ? query.diversity.lambda
           : null,
       elapsedMs: (endMs - startMs).clamp(0, _maxElapsedMs),
-      embeddingsCallouts: 0,
+      embeddingsCallouts: embeddingsCallouts,
       reRankInvoked: reRankInvoked,
       degraded: degraded,
     );
@@ -503,6 +532,7 @@ final class RecallExecutor {
     final candidatesPerMode = <RecallMode, int>{};
     final bm25ScoreByNodeId = <String, double>{};
     var degraded = false;
+    var embeddingsCallouts = 0;
 
     for (final seed in seeds) {
       // Budget short-circuit between seeds. A seed we skip past the
@@ -516,10 +546,11 @@ final class RecallExecutor {
         continue;
       }
       final synthetic = _seedToQuery(seed, query.budget.wallClockMs);
-      final result = _runMode(seed.mode, synthetic, bm25ScoreByNodeId);
+      final result = await _runMode(seed.mode, synthetic, bm25ScoreByNodeId);
       seedRankedLists.add(result.ranked);
       seedWeights.add(seed.weight);
       seedCandidateCounts.add(result.candidateCount);
+      embeddingsCallouts += result.embeddingsCallouts;
       candidatesPerMode.update(
         seed.mode,
         (n) => n + result.candidateCount,
@@ -580,7 +611,7 @@ final class RecallExecutor {
           ? query.diversity.lambda
           : null,
       elapsedMs: (endMs - startMs).clamp(0, _maxElapsedMs),
-      embeddingsCallouts: 0,
+      embeddingsCallouts: embeddingsCallouts,
       reRankInvoked: false,
       degraded: degraded,
     );
@@ -681,11 +712,15 @@ final class RecallExecutor {
 
   // ─── Internal: per-mode dispatch ─────────────────────────────────
 
-  _ModeResult _runMode(
+  /// Dispatches one mode. Async because the vector branch may embed a
+  /// text-only seed through the storage-stack [_embedder]; the other
+  /// three branches are synchronous and their results are returned
+  /// directly (auto-wrapped in a completed future).
+  Future<_ModeResult> _runMode(
     RecallMode mode,
     RecallQuery query,
     Map<String, double> bm25ScoreByNodeId,
-  ) {
+  ) async {
     switch (mode) {
       case RecallMode.bm25:
         return _runBm25(query, bm25ScoreByNodeId);
@@ -778,7 +813,7 @@ final class RecallExecutor {
     }
   }
 
-  _ModeResult _runVector(RecallQuery query) {
+  Future<_ModeResult> _runVector(RecallQuery query) async {
     final vector = _vector;
     if (vector == null) {
       // No vector backend was wired into this executor. In production
@@ -792,18 +827,39 @@ final class RecallExecutor {
         degraded: true,
       );
     }
-    final embedding = query.embedding;
+
+    // Resolve the query embedding. A caller-supplied embedding is used
+    // verbatim (no callout). Otherwise, when a storage-stack embedder is
+    // wired and the seed carries text, embed the text once (spec § 6.5;
+    // Q-H.1 — non-generative). With no embedder or no text there is
+    // nothing to embed, so the mode degrades exactly as it did before
+    // the hookup.
+    var embedding = query.embedding;
+    var embeddingsCallouts = 0;
     if (embedding == null) {
-      // Caller did not supply an embedding and we do not embed on
-      // their behalf at A.59. Degrade. The future embedder hookup
-      // will add an `else { embed(text); count callout; }` branch
-      // here.
-      return const _ModeResult(
-        candidateCount: 0,
-        ranked: <NodeId>[],
-        degraded: true,
-      );
+      final embedder = _embedder;
+      final text = query.text;
+      if (embedder == null || text == null || text.isEmpty) {
+        return const _ModeResult(
+          candidateCount: 0,
+          ranked: <NodeId>[],
+          degraded: true,
+        );
+      }
+      try {
+        embedding = await embedder(text);
+      } catch (_) {
+        // An embedder failure degrades the vector mode, mirroring the
+        // silent-degrade contract the mode executors already follow.
+        return const _ModeResult(
+          candidateCount: 0,
+          ranked: <NodeId>[],
+          degraded: true,
+        );
+      }
+      embeddingsCallouts = 1;
     }
+
     try {
       final candidates = vector(
         query: embedding,
@@ -816,12 +872,16 @@ final class RecallExecutor {
         candidateCount: candidates.length,
         ranked: List<NodeId>.unmodifiable(ranked),
         degraded: false,
+        embeddingsCallouts: embeddingsCallouts,
       );
     } catch (_) {
-      return const _ModeResult(
+      // The embed callout (if it happened) still counts — it was a real
+      // call to the storage model — even though the vector lookup failed.
+      return _ModeResult(
         candidateCount: 0,
-        ranked: <NodeId>[],
+        ranked: const <NodeId>[],
         degraded: true,
+        embeddingsCallouts: embeddingsCallouts,
       );
     }
   }
@@ -1114,9 +1174,15 @@ final class _ModeResult {
   final List<NodeId> ranked;
   final bool degraded;
 
+  /// Number of storage-stack embed callouts this mode made (0 or 1).
+  /// Only the vector mode embeds, and only when it had to embed a
+  /// text-only seed; every other mode reports 0.
+  final int embeddingsCallouts;
+
   const _ModeResult({
     required this.candidateCount,
     required this.ranked,
     required this.degraded,
+    this.embeddingsCallouts = 0,
   });
 }

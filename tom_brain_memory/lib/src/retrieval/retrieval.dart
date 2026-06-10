@@ -75,6 +75,7 @@ export 'recall_executor.dart'
         Bm25ModeFn,
         GraphWalkModeFn,
         NodeBulkReader,
+        RecallEmbedder,
         RecallExecutor,
         SymbolicModeFn,
         VectorModeFn;
