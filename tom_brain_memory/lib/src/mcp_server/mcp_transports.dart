@@ -62,7 +62,8 @@ import 'dart:math' show Random;
 import 'package:async/async.dart' show StreamSinkTransformer;
 import 'package:stream_channel/stream_channel.dart';
 
-import 'bearer_auth.dart';
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show BearerAuthFailure, BearerTokenAuthenticator;
 
 // Re-export `stdioChannel` so callers depend on a single transport
 // surface (`mcp_server` barrel) rather than reaching directly into the
@@ -249,7 +250,7 @@ final class McpHttpServer {
   /// posture. When supplied, every `POST` / `DELETE` must carry a valid
   /// `Authorization: Bearer <token>` or it is refused `401`. See
   /// `bearer_auth.dart` for the two shipped implementations
-  /// ([JwtBearerTokenAuthenticator], [StaticBearerTokenAuthenticator]).
+  /// (`JwtBearerTokenAuthenticator`, `StaticBearerTokenAuthenticator`).
   static Future<McpHttpServer> bind({
     required McpHttpSessionHandler onSession,
     Object? address,

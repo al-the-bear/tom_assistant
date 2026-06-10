@@ -57,7 +57,20 @@
 // seven-tool registration helper (`mcp_tools.dart`) and the
 // closed-set rejection exception (`mcp_write_forbidden.dart`).
 
-export 'bearer_auth.dart';
+// The generic MCP transport-auth contract lives in `tom_core_agentic`
+// (`src/mcp_auth/`) since completion-plan item 8; re-export it here so
+// the package barrel still surfaces the whole auth surface to operators
+// (alongside the kernel-coupled concrete authenticators in
+// `bearer_auth.dart`).
+export 'package:tom_core_agentic/tom_core_agentic.dart'
+    show
+        BearerAuthFailure,
+        BearerAuthFailureReason,
+        BearerTokenAuthenticator,
+        bearerAuthRpcErrorCode,
+        bearerTokenMetaKey;
+export 'bearer_auth.dart'
+    show JwtBearerTokenAuthenticator, StaticBearerTokenAuthenticator;
 export 'mcp_tools.dart' show registerMemoryTools;
 export 'mcp_transports.dart';
 export 'mcp_write_forbidden.dart';

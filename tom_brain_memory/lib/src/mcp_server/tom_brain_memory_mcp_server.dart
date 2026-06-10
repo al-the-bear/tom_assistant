@@ -64,10 +64,20 @@
 
 import 'dart:async';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show
+        BearerAuthFailure,
+        BearerAuthFailureReason,
+        BearerTokenAuthenticator,
+        bearerAuthRpcErrorCode,
+        bearerTokenMetaKey;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal;
 
 import '../api/tom_brain_memory.dart';
 import '../observability/memory_log.dart';
+// The kernel-coupled concrete authenticators referenced in this class's
+// doc comments ([JwtBearerTokenAuthenticator], [StaticBearerTokenAuthenticator]).
+// The generic contract above comes from `tom_core_agentic`.
 import 'bearer_auth.dart';
 // MCP protocol types (`MCPServer`, `ToolsSupport`, `Implementation`,
 // `InitializeRequest`, `InitializeResult`) and the JSON-RPC error type
@@ -115,12 +125,6 @@ base class TomBrainMemoryMcpServer extends MCPServer with ToolsSupport {
   /// stale `serverInfo.version`.
   static const serverVersion = '0.0.1';
 
-  /// JSON-RPC error code for a failed bearer authentication. Sits in
-  /// the server-defined implementation range (-32099 … -32000) per the
-  /// JSON-RPC 2.0 spec; named so the value is not a bare literal at the
-  /// throw site.
-  static const int bearerAuthRpcErrorCode = -32001;
-
   /// The instructions string returned to clients during the `initialize`
   /// handshake. Documents the v1 contract — read-only by default with
   /// one constrained write, no LLM calls on the hot path, no silent
@@ -167,7 +171,7 @@ tests), listTools returns an empty list.
   /// Failure surfaces as a JSON-RPC error and the handshake is
   /// aborted; success caches the principal on [principal] for A.77
   /// tool handlers.
-  final BearerTokenAuthenticator? authenticator;
+  final BearerTokenAuthenticator<TomPrincipal>? authenticator;
 
   TomPrincipal? _principal;
 
@@ -292,7 +296,7 @@ tests), listTools returns an empty list.
   /// so unit tests can exercise the failure paths independently.
   static TomPrincipal _checkBearerToken(
     InitializeRequest request,
-    BearerTokenAuthenticator auth,
+    BearerTokenAuthenticator<TomPrincipal> auth,
   ) {
     // `_meta` is an extension-type map; we treat it as a plain
     // `Map<String, Object?>` for the lookup. Both `request.meta` and

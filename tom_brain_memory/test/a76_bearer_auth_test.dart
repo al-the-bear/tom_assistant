@@ -299,7 +299,7 @@ class _TestEnv {
   late final TomBrainMemoryMcpServer server;
   late final mcp_client.ServerConnection serverConnection;
 
-  _TestEnv({BearerTokenAuthenticator? authenticator}) {
+  _TestEnv({BearerTokenAuthenticator<TomPrincipal>? authenticator}) {
     clientChannel = StreamChannel<String>.withCloseGuarantee(
       serverController.stream,
       clientController.sink,

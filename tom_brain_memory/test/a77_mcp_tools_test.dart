@@ -790,7 +790,7 @@ class _TestEnv {
   late final mcp_client.ServerConnection serverConnection;
 
   _TestEnv({
-    BearerTokenAuthenticator? authenticator,
+    BearerTokenAuthenticator<TomPrincipal>? authenticator,
     TomBrainMemory? memory,
   }) {
     clientChannel = StreamChannel<String>.withCloseGuarantee(

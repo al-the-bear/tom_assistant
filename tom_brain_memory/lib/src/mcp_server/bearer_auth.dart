@@ -1,19 +1,15 @@
-// A.76 — Bearer-token authentication for the MCP server.
+// A.76 — Concrete bearer-token authenticators for the MCP server.
 //
-// The plan line for A.76 reads "Wire `TomBearerAuthentication` from
-// `tom_core_server` for the bearer-token check." `TomBearerAuthentication`
-// actually lives in `tom_core_kernel` (see Q-A.22.2); both packages are
-// already direct dependencies of this package, so the wiring works
-// regardless of which one the plan named.
-//
-// The MCP wire protocol used by `dart_mcp` 0.5.1 does not carry an
-// `Authorization` header on stdio / UNIX-socket transports — the
-// only request-level extensibility point exposed at the `initialize`
-// boundary is the `_meta` map (memory spec § 3.2 cross-references the
-// MCP specification's `_meta` extensibility rule). We therefore agree a
-// well-known meta key, [bearerTokenMetaKey], under which the client
-// MUST place the token when the server is constructed with a non-null
-// [BearerTokenAuthenticator].
+// The *generic* MCP transport-auth contract — the
+// [BearerTokenAuthenticator] interface, the [BearerAuthFailure] /
+// [BearerAuthFailureReason] taxonomy, the `_meta` slot key
+// ([bearerTokenMetaKey]), and the JSON-RPC error code
+// ([bearerAuthRpcErrorCode]) — was promoted to `tom_core_agentic`
+// (`src/mcp_auth/`) by Tom Brain completion-plan item 8 so every MCP
+// server in the framework reuses one contract. This file keeps only the
+// two concrete authenticators, which are kernel-coupled (they resolve to
+// a `TomPrincipal`) and therefore cannot live in the `tom_basics`-only
+// agentic package. Both bind `BearerTokenAuthenticator<TomPrincipal>`.
 //
 // Two implementations ship at A.76:
 //
@@ -56,75 +52,10 @@
 //     (are you allowed?). A.77 will register per-tool entitlement
 //     requirements.
 
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show BearerAuthFailure, BearerAuthFailureReason, BearerTokenAuthenticator;
 import 'package:tom_core_kernel/tom_core_kernel.dart'
     show TomBearerAuthentication, TomClientJwtToken, TomPrincipal;
-
-/// The JSON-RPC `_meta` key under which clients must place the bearer
-/// token at `initialize` time when the server is configured with a
-/// [BearerTokenAuthenticator].
-///
-/// Picked to be namespaced (`tomBrain…`) so it does not collide with
-/// the MCP standard `_meta.progressToken` reservation or with other
-/// `_meta` consumers a host might layer on.
-const bearerTokenMetaKey = 'tomBrainBearerToken';
-
-/// Validates a bearer token presented during the MCP `initialize`
-/// handshake.
-///
-/// Implementations are responsible for **authentication only** —
-/// converting a token string into a [TomPrincipal] or rejecting it.
-/// Per-tool authorisation (role / entitlement checks against the
-/// principal) is the tool handler's job, scheduled for A.77.
-///
-/// Implementations must be synchronous: the MCP `initialize` handshake
-/// is on the hot path and memory spec § 1.2 forbids any LLM / network
-/// call at this layer.
-abstract interface class BearerTokenAuthenticator {
-  /// Validates [token] and returns the resulting principal.
-  ///
-  /// Throws [BearerAuthFailure] if [token] is missing, malformed, or
-  /// otherwise rejected.
-  TomPrincipal authenticate(String token);
-}
-
-/// Raised when a bearer token cannot be accepted.
-///
-/// Carries a stable [reason] tag — useful for telemetry and tests —
-/// plus a human-readable [message]. The MCP server translates this
-/// into a JSON-RPC error during `initialize` (memory spec § 3.2);
-/// the underlying message is **not** leaked to the client unmodified
-/// because token-introspection error details can be a side-channel
-/// for token-guessing attacks.
-class BearerAuthFailure implements Exception {
-  /// Stable enum-like tag for the failure category.
-  final BearerAuthFailureReason reason;
-
-  /// Human-readable diagnostic, intended for server-side logs only.
-  final String message;
-
-  const BearerAuthFailure(this.reason, this.message);
-
-  @override
-  String toString() => 'BearerAuthFailure(${reason.name}): $message';
-}
-
-/// Categories of bearer-token authentication failure.
-///
-/// The set is closed by design — per memory spec § 1.7, adding a new
-/// category is a version bump, not a silent extension.
-enum BearerAuthFailureReason {
-  /// No `_meta.tomBrainBearerToken` field was present on the
-  /// `initialize` request when the server requires one.
-  missing,
-
-  /// The token string was present but could not be parsed (malformed
-  /// JWT, unknown format, …).
-  malformed,
-
-  /// The token parsed but failed authentication (guest principal,
-  /// expired, unknown subject, …).
-  rejected,
-}
 
 /// JWT-based bearer authenticator wiring
 /// `TomBearerAuthentication.convertTokenPayloadToPrincipal`.
@@ -135,7 +66,8 @@ enum BearerAuthFailureReason {
 /// principal. Decryption of secret-data (roles / entitlements) is
 /// done later, in tool-handler authorisation paths, where the key
 /// material is available.
-class JwtBearerTokenAuthenticator implements BearerTokenAuthenticator {
+class JwtBearerTokenAuthenticator
+    implements BearerTokenAuthenticator<TomPrincipal> {
   const JwtBearerTokenAuthenticator();
 
   @override
@@ -204,7 +136,8 @@ class JwtBearerTokenAuthenticator implements BearerTokenAuthenticator {
 ///
 /// Unknown tokens raise [BearerAuthFailureReason.rejected]; empty
 /// tokens raise [BearerAuthFailureReason.missing].
-class StaticBearerTokenAuthenticator implements BearerTokenAuthenticator {
+class StaticBearerTokenAuthenticator
+    implements BearerTokenAuthenticator<TomPrincipal> {
   /// Token-string → principal map. The map is copied defensively so a
   /// mutation after construction cannot grant or revoke access.
   final Map<String, TomPrincipal> _tokens;
