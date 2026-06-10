@@ -150,8 +150,10 @@ final class ProcedureTreeWriter {
 
   /// One primitive-call line. An `llm` node renders its token counts plus a
   /// relative link to its raw dump; a `recall` renders its modes / k / returned
-  /// count (no link — a memory primitive has no raw LLM file); any other
-  /// primitive renders its name, with `→ <id>` when its result carries one.
+  /// count, then the returned node ids the writer could resolve
+  /// (`→ <count>: <id>, <id>` — the §4.7 cross-link source; no link — a memory
+  /// primitive has no raw LLM file); any other primitive renders its name, with
+  /// `→ <id>` when its result carries one.
   String _primitiveLine(ProcedurePrimitiveNode node) {
     final llm = node.llm;
     if (llm != null) {
@@ -171,8 +173,14 @@ final class ProcedureTreeWriter {
               .join('+') ??
           '';
       final k = node.input['k'];
-      final returned = (node.result['nodes'] as List?)?.length ?? 0;
-      return 'recall ($modes k=$k → $returned)';
+      final nodes = node.result['nodes'] as List?;
+      final returned = nodes?.length ?? 0;
+      final ids = <String>[
+        for (final n in nodes ?? const <Object?>[])
+          if (n is Map && n['id'] is String) n['id'] as String,
+      ];
+      final idSuffix = ids.isEmpty ? '' : ': ${ids.join(', ')}';
+      return 'recall ($modes k=$k → $returned$idSuffix)';
     }
     final id = node.result['id'];
     return id == null ? node.primitive : '${node.primitive} → $id';

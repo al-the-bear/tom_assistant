@@ -146,6 +146,45 @@ void main() {
       expect(text, contains('└─ outcome accepted (entries=16, 1.4s)'));
     });
 
+    test('appends recall returned node ids after the count (PT-7 / §3.9)',
+        () async {
+      final record = ProcedureTreeRecord(
+        procedureId: 'retrieve_for_prompt_v1',
+        version: 1,
+        runId: 'recall-run-1',
+        parentRunId: null,
+        turnId: 'turn_RID',
+        depth: 1,
+        status: TrailOutcomeStatus.accepted,
+        elapsedMs: 200,
+        entryCount: 1,
+        nodes: <ProcedureTreeNode>[
+          ProcedurePrimitiveNode(
+            primitive: 'recall',
+            input: <String, Object?>{
+              'modes': <String>['bm25', 'vector'],
+              'k': 4,
+            },
+            result: <String, Object?>{
+              'nodes': <Object?>[
+                <String, Object?>{'id': 'n_alpha'},
+                <String, Object?>{'id': 'n_beta'},
+              ],
+            },
+          ),
+        ],
+      );
+
+      ProcedureTreeWriter(root: tempRoot).write(record);
+      final text = File(
+        '${tempRoot.path}/procedures/retrieve_for_prompt_v1/'
+        'turn_RID__recall-run-1.log',
+      ).readAsStringSync();
+
+      // Count then the resolvable returned ids — the §4.7 deep-link source.
+      expect(text, contains('recall (bm25+vector k=4 → 2: n_alpha, n_beta)'));
+    });
+
     test('keys a turn-less dream run by <runId>.log with a runId__callId stem',
         () async {
       final dream = ProcedureTreeRecord(

@@ -117,7 +117,7 @@ final class PrimitiveCallNode extends RunNode {
 }
 
 /// The parsed parenthetical of a `recall` primitive line
-/// (`recall (bm25+vector k=8 → 8)`).
+/// (`recall (bm25+vector k=8 → 8: n_a, n_b)`).
 final class RecallDescriptor {
   /// The recall modes the call ran (`bm25`, `vector`, `graphWalk`, `symbolic`).
   final List<String> modes;
@@ -129,16 +129,24 @@ final class RecallDescriptor {
   /// The number of fused nodes the recall returned.
   final int returned;
 
+  /// The returned node ids the writer could resolve, in fused order — the §4.7
+  /// recall deep-link source. Empty when the line carried none; may be shorter
+  /// than [returned] when a fused node had no attributable id.
+  final List<String> returnedIds;
+
   RecallDescriptor({
     required List<String> modes,
     required this.returned,
     this.k,
-  }) : modes = List<String>.unmodifiable(modes);
+    List<String> returnedIds = const <String>[],
+  })  : modes = List<String>.unmodifiable(modes),
+        returnedIds = List<String>.unmodifiable(returnedIds);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'modes': modes,
         if (k != null) 'k': k,
         'returned': returned,
+        if (returnedIds.isNotEmpty) 'returnedIds': returnedIds,
       };
 }
 

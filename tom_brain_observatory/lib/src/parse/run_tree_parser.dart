@@ -180,7 +180,7 @@ int _parseElapsed(String text) {
 final RegExp _llmPattern =
     RegExp(r'^llm (\S+) → (\d+)→(\d+) tok  → (\S+)$');
 final RegExp _recallPattern =
-    RegExp(r'^recall \((.*?) k=(\S*) → (\d+)\)$');
+    RegExp(r'^recall \((.*?) k=(\S*) → (\d+)(?:: (.+))?\)$');
 final RegExp _notePattern = RegExp(r'^note (.+)$');
 final RegExp _errorPattern = RegExp(r'^error (\S+): (.+)$');
 final RegExp _primitiveWithIdPattern = RegExp(r'^(\S+) → (\S+)$');
@@ -201,12 +201,15 @@ RunNode _leafNode(String content) {
   if (recall != null) {
     final modesRaw = recall.group(1)!;
     final kRaw = recall.group(2)!;
+    final idsRaw = recall.group(4);
     return PrimitiveCallNode(
       primitive: 'recall',
       recall: RecallDescriptor(
         modes: modesRaw.isEmpty ? const <String>[] : modesRaw.split('+'),
         k: kRaw.isEmpty ? null : kRaw,
         returned: int.parse(recall.group(3)!),
+        returnedIds:
+            idsRaw == null ? const <String>[] : idsRaw.split(', '),
       ),
     );
   }

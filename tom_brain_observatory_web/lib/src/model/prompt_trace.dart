@@ -207,22 +207,29 @@ class PrimitiveCallNode extends RunNode {
       );
 }
 
-/// The recall shape carried by a `recall` primitive.
+/// The recall shape carried by a `recall` primitive. `modes` is the list the
+/// §3.9 contract serialises (`["bm25","vector"]`); `returnedIds` are the fused
+/// result ids the §4.7 deep-links walk into Module 2 (absent when empty).
 class RecallDescriptor {
-  final String modes;
+  final List<String> modes;
   final int? k;
   final int returned;
+  final List<String> returnedIds;
 
   const RecallDescriptor({
     required this.modes,
     required this.k,
     required this.returned,
+    this.returnedIds = const <String>[],
   });
 
   factory RecallDescriptor.fromJson(Map<String, dynamic> json) => RecallDescriptor(
-        modes: json['modes'] as String,
+        modes: (json['modes'] as List<dynamic>).cast<String>(),
         k: json['k'] as int?,
         returned: json['returned'] as int,
+        returnedIds:
+            (json['returnedIds'] as List<dynamic>?)?.cast<String>() ??
+                const <String>[],
       );
 }
 

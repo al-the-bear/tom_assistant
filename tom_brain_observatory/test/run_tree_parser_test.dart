@@ -103,6 +103,37 @@ void main() {
     });
   });
 
+  group('parseRunTree — recall returned ids (PT-7 / §3.9)', () {
+    const log = 'procedure retrieve_for_prompt_v1  run r0  turn t0\n'
+        '├─ recall (bm25+vector k=4 → 2: n_alpha, n_beta)\n'
+        '├─ recall (bm25 k=2 → 0)\n'
+        '└─ outcome accepted (entries=2, 100ms)\n';
+    final run = parseRunTree(log)!;
+
+    test('a recall line carrying ids parses them into returnedIds', () {
+      final recall = run.nodes[0] as PrimitiveCallNode;
+      expect(recall.primitive, 'recall');
+      expect(recall.recall, isNotNull);
+      expect(recall.recall!.modes, <String>['bm25', 'vector']);
+      expect(recall.recall!.k, '4');
+      expect(recall.recall!.returned, 2);
+      expect(recall.recall!.returnedIds, <String>['n_alpha', 'n_beta']);
+    });
+
+    test('a count-only recall leaves returnedIds empty', () {
+      final recall = run.nodes[1] as PrimitiveCallNode;
+      expect(recall.recall!.returned, 0);
+      expect(recall.recall!.returnedIds, isEmpty);
+    });
+
+    test('returnedIds round-trips through toJson (omitted when empty)', () {
+      final withIds = (run.nodes[0] as PrimitiveCallNode).recall!.toJson();
+      expect(withIds['returnedIds'], <String>['n_alpha', 'n_beta']);
+      final empty = (run.nodes[1] as PrimitiveCallNode).recall!.toJson();
+      expect(empty.containsKey('returnedIds'), isFalse);
+    });
+  });
+
   group('parseRunTree — malformed input degrades, never throws', () {
     test('empty content → null', () => expect(parseRunTree(''), isNull));
     test('no header → null', () => expect(parseRunTree('not a run\n'), isNull));

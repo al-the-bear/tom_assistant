@@ -166,17 +166,10 @@ class _RunNodeRow extends StatelessWidget {
                 : () => onOpenLlmCall!(node as LlmCallNode),
           ),
         // A persisted node id (`persist → <id>`) deep-links into Module 2
-        // (§ 4.7); a recall (count only) or bare primitive carries no id, so it
-        // stays inert.
-        PrimitiveCallNode(:final resultId) => CollapsedRow(
-            icon: Icons.memory,
-            label: _primitiveSummary(node as PrimitiveCallNode),
-            expandable: resultId != null && onOpenNode != null,
-            expanded: false,
-            onTap: resultId == null || onOpenNode == null
-                ? null
-                : () => onOpenNode!(resultId),
-          ),
+        // (§ 4.7); a recall surfaces a deep-link chip per returned id; a recall
+        // with no resolvable ids or a bare primitive carries none, so it stays
+        // inert.
+        PrimitiveCallNode() => _buildPrimitive(node as PrimitiveCallNode),
         NoteNode(:final category) => CollapsedRow(
             icon: Icons.sticky_note_2,
             label: 'note $category',
@@ -194,6 +187,48 @@ class _RunNodeRow extends StatelessWidget {
           ),
       };
 
+  /// Renders a `kind: primitive` node. A recall whose descriptor carries
+  /// resolvable returned ids (and an [onOpenNode] seam) shows its summary row
+  /// plus a deep-link chip per id (§ 4.7); otherwise it is a single row that is
+  /// tappable only when it carries a persisted `resultId`.
+  Widget _buildPrimitive(PrimitiveCallNode node) {
+    final recall = node.recall;
+    final open = onOpenNode;
+    if (recall != null && recall.returnedIds.isNotEmpty && open != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          CollapsedRow(
+            icon: Icons.memory,
+            label: _primitiveSummary(node),
+            expandable: false,
+            expanded: false,
+            onTap: null,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 24, bottom: 4),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: <Widget>[
+                for (final id in recall.returnedIds)
+                  _NodeRefChip(nodeId: id, onOpen: open),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+    final resultId = node.resultId;
+    return CollapsedRow(
+      icon: Icons.memory,
+      label: _primitiveSummary(node),
+      expandable: resultId != null && open != null,
+      expanded: false,
+      onTap: resultId == null || open == null ? null : () => open(resultId),
+    );
+  }
+
   /// `llm <callType> · <in>→<out> tok` — what the run node carries (§ 3.9). The
   /// provider/model/wall-clock live in the raw dump (PT-2.4), shown on expand.
   static String _llmSummary(LlmCallNode n) =>
@@ -204,8 +239,29 @@ class _RunNodeRow extends StatelessWidget {
     final r = n.recall;
     if (r != null) {
       final k = r.k == null ? '' : ' k=${r.k}';
-      return 'recall (${r.modes}$k → ${r.returned})';
+      return 'recall (${r.modes.join('+')}$k → ${r.returned})';
     }
     return n.resultId == null ? n.primitive : '${n.primitive} → ${n.resultId}';
   }
+}
+
+/// A tappable chip naming a recall-returned node id; invokes [onOpen] to walk
+/// into Module 2's node view (§ 4.7). Mirrors `NodeLinkChip`'s affordance but
+/// routes through the run-tree's decoupled [RunTreeView.onOpenNode] seam rather
+/// than holding a `MemoryApiClient`. The `node-link:<id>` key matches
+/// `NodeLinkChip` so node references look and test the same everywhere.
+class _NodeRefChip extends StatelessWidget {
+  final String nodeId;
+  final ValueChanged<String> onOpen;
+
+  const _NodeRefChip({required this.nodeId, required this.onOpen});
+
+  @override
+  Widget build(BuildContext context) => ActionChip(
+        key: ValueKey<String>('node-link:$nodeId'),
+        avatar: const Icon(Icons.account_tree, size: 16),
+        label: Text(nodeId),
+        visualDensity: VisualDensity.compact,
+        onPressed: () => onOpen(nodeId),
+      );
 }

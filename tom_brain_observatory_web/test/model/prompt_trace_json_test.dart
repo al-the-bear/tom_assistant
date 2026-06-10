@@ -94,7 +94,7 @@ void main() {
                     {
                       "kind": "primitive",
                       "primitive": "recall",
-                      "recall": {"modes": "bm25+vector", "k": 8, "returned": 5}
+                      "recall": {"modes": ["bm25", "vector"], "k": 8, "returned": 5, "returnedIds": ["n_fixtureA1", "n_fixtureA2"]}
                     }
                   ]
                 }
@@ -128,7 +128,9 @@ void main() {
       expect(sub.run.procedureId, 'retrieve_for_prompt_v1');
       final recall = sub.run.nodes.single as PrimitiveCallNode;
       expect(recall.primitive, 'recall');
+      expect(recall.recall!.modes, <String>['bm25', 'vector']);
       expect(recall.recall!.returned, 5);
+      expect(recall.recall!.returnedIds, <String>['n_fixtureA1', 'n_fixtureA2']);
 
       final llm = run.nodes[1] as LlmCallNode;
       expect(llm.callType, 'assistant_to_user');

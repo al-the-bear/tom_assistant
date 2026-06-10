@@ -38,7 +38,8 @@ ProcedureRun _deepRun() => const ProcedureRun(
               PrimitiveCallNode(
                 primitive: 'recall',
                 resultId: null,
-                recall: RecallDescriptor(modes: 'bm25+vector', k: 8, returned: 5),
+                recall: RecallDescriptor(
+                    modes: <String>['bm25', 'vector'], k: 8, returned: 5),
               ),
               SubRunNode(
                 run: ProcedureRun(
@@ -184,7 +185,7 @@ void main() {
     expect(opened, 'n_fixtureA1');
   });
 
-  testWidgets('a recall primitive carries no node id, so it never cross-links',
+  testWidgets('a count-only recall (no returned ids) never cross-links',
       (tester) async {
     var calls = 0;
     await _pump(
@@ -201,7 +202,7 @@ void main() {
             PrimitiveCallNode(
               primitive: 'recall',
               resultId: null,
-              recall: RecallDescriptor(modes: 'bm25', k: 5, returned: 3),
+              recall: RecallDescriptor(modes: <String>['bm25'], k: 5, returned: 3),
             ),
           ],
         ),
@@ -215,6 +216,52 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(calls, 0);
+  });
+
+  testWidgets('a recall with returned ids deep-links each id via onOpenNode '
+      '(PT-7 / §4.7)', (tester) async {
+    final opened = <String>[];
+    await _pump(
+      tester,
+      RunTreeView(
+        run: const ProcedureRun(
+          procedureId: 'p',
+          runId: 'r',
+          turnId: null,
+          status: 'accepted',
+          elapsedMs: 10,
+          entryCount: 1,
+          nodes: <RunNode>[
+            PrimitiveCallNode(
+              primitive: 'recall',
+              resultId: null,
+              recall: RecallDescriptor(
+                modes: <String>['bm25', 'vector'],
+                k: 4,
+                returned: 2,
+                returnedIds: <String>['n_alpha', 'n_beta'],
+              ),
+            ),
+          ],
+        ),
+        onOpenNode: opened.add,
+      ),
+    );
+
+    await tester.tap(find.textContaining('p · accepted'));
+    await tester.pumpAndSettle();
+
+    // One deep-link chip per returned id, keyed like NodeLinkChip.
+    expect(find.byKey(const ValueKey<String>('node-link:n_alpha')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('node-link:n_beta')),
+        findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey<String>('node-link:n_alpha')));
+    await tester.tap(find.byKey(const ValueKey<String>('node-link:n_beta')));
+    await tester.pumpAndSettle();
+
+    expect(opened, <String>['n_alpha', 'n_beta']);
   });
 
   testWidgets('renders an error node with error emphasis', (tester) async {
