@@ -23,11 +23,16 @@
 //     router's internals.
 
 import 'dart:async';
+import 'dart:isolate';
 
 import 'package:tom_basics/tom_basics.dart'
     show TomEnvironment, TomPlatform, defaultTomEnvironment;
 import 'package:tom_core_agentic/tom_core_agentic.dart'
-    show IsolateCancellationToken, IsolateCancellationTokenAllocator;
+    show
+        IsolateCancellationToken,
+        IsolateCancellationTokenAllocator,
+        IsolateRequestFailure,
+        IsolateRequestGuard;
 import 'package:tom_core_kernel/tom_core_kernel.dart'
     show TomExecutor, TomWorker;
 
@@ -73,6 +78,27 @@ class TomBrainMemoryIsolateHost {
   /// the isolate's logging at its console default.
   final String? logRootPath;
 
+  /// Per-request deadline applied to every host → isolate [send].
+  ///
+  /// `null` (the default) leaves sends unbounded — a request to a
+  /// *live* but slow worker waits indefinitely, preserving the
+  /// pre-existing posture for long-running opens / recalls. Worker
+  /// *death* is always bounded regardless of this value (a dead worker
+  /// fails pending sends immediately via the isolate-exit listener).
+  /// Set this when a host wants to cap individual round-trips.
+  final Duration? requestTimeout;
+
+  /// Bounds each outbound request so a dead or unresponsive worker
+  /// fails the awaiting call with a typed [IsolateRequestFailure]
+  /// instead of hanging forever. Fed the worker-death signal by the
+  /// isolate-exit listener installed in [spawn].
+  late final IsolateRequestGuard _requestGuard;
+
+  /// Receives the worker isolate's exit signal so [_requestGuard] can
+  /// fail every pending send the moment the isolate dies. Installed in
+  /// [spawn] (once the isolate exists) and closed in [shutdown].
+  RawReceivePort? _exitPort;
+
   /// A.81 — host-side allocators. Public-getter accessible so the
   /// client can mint tokens/ids without re-implementing the
   /// counter.
@@ -104,7 +130,10 @@ class TomBrainMemoryIsolateHost {
     this.namePrefix = 'TomBrainMemory',
     this.args = const <String>[],
     this.logRootPath,
-  }) : platform = platform ?? _detectPlatform();
+    this.requestTimeout,
+  }) : platform = platform ?? _detectPlatform() {
+    _requestGuard = IsolateRequestGuard(defaultTimeout: requestTimeout);
+  }
 
   /// `true` once the spawned isolate has signalled ready and the
   /// host can send envelopes.
@@ -126,6 +155,16 @@ class TomBrainMemoryIsolateHost {
       _cancellationAllocator;
   StreamIdAllocator get streamIdAllocator => _streamIdAllocator;
   int get liveStreamCount => _streamSinks.length;
+
+  /// `true` once the worker isolate has been observed to die — after
+  /// which every [send] fails immediately with [IsolateRequestFailure]
+  /// (reason `workerDeath`) rather than hanging.
+  bool get isWorkerDead => _requestGuard.isWorkerDead;
+
+  /// The live worker isolate, or `null` before [spawn] / after
+  /// [shutdown]. Visible to tests so they can kill the isolate
+  /// mid-call and assert the host fails the pending send.
+  Isolate? get workerIsolate => _worker?.isolate;
 
   // ─── Lifecycle ────────────────────────────────────────────────
 
@@ -159,6 +198,16 @@ class TomBrainMemoryIsolateHost {
         logRootPath: logRootPath,
       );
       _worker = await TomWorker.spawn(TomWorker.startRemoteIsolate, ctx);
+      // Worker-death guard: listen for the isolate's exit so a killed
+      // or fatally-crashed worker fails every pending `send()` with a
+      // typed `IsolateRequestFailure` instead of hanging on a completer
+      // that will never be completed. `addOnExitListener` fires for
+      // both `Isolate.kill` and a fatal uncaught error.
+      _exitPort = RawReceivePort((Object? _) {
+        _requestGuard.markWorkerDead('worker isolate exited');
+        MemoryLog.isolate.status('isolate worker died — pending sends failed');
+      });
+      _worker!.isolate.addOnExitListener(_exitPort!.sendPort);
       // A.81: install the creator-side router so the isolate can push
       // stream chunks back to us via `sendToCreator(...)`.
       _router = _StreamRouter(_streamSinks);
@@ -191,7 +240,7 @@ class TomBrainMemoryIsolateHost {
       _shutdownComplete = true;
       return;
     }
-    if (_memoryOpen) {
+    if (_memoryOpen && !_requestGuard.isWorkerDead) {
       try {
         // Use the unguarded path: the public `send()` rejects calls
         // after shutdown has started, but the close envelope is
@@ -205,7 +254,15 @@ class TomBrainMemoryIsolateHost {
         // any other boundary error during shutdown is non-fatal:
         // we still want to close the worker.
         _memoryOpen = false;
+      } on IsolateRequestFailure {
+        // The worker died (or the flush exceeded its deadline) mid
+        // shutdown; there is no point retrying — proceed to tear down.
+        _memoryOpen = false;
       }
+    } else {
+      // Worker already dead: the WAL flush is unreachable, so just
+      // drop the host-side open-flag and continue tearing down.
+      _memoryOpen = false;
     }
     // A.81: tear down live streams + remove the router.
     for (final sink in _streamSinks.values.toList()) {
@@ -219,6 +276,11 @@ class TomBrainMemoryIsolateHost {
       TomWorker.executors.remove(router);
       _router = null;
     }
+    // Stop listening for the isolate exit before we close the worker:
+    // a clean shutdown exit is not a "worker death" and must not be
+    // reported as one.
+    _exitPort?.close();
+    _exitPort = null;
     worker.close();
     _shutdownComplete = true;
     // A.84 — matching `status` for clean shutdown so an operator can
@@ -265,7 +327,14 @@ class TomBrainMemoryIsolateHost {
         'reported ready.',
       );
     }
-    final raw = await worker.executeCommand(request);
+    // Guard the round-trip: if the worker dies (or exceeds the
+    // optional per-request deadline) the awaiting call fails with a
+    // typed `IsolateRequestFailure` instead of hanging on the kernel
+    // worker's never-completed completer.
+    final raw = await _requestGuard.guard(
+      worker.executeCommand(request),
+      operation: request.runtimeType.toString(),
+    );
     if (raw is IsolateErrorResponse) {
       throw IsolateBoundaryException(raw.message, raw.exceptionType);
     }
@@ -350,6 +419,9 @@ class TomBrainMemoryIsolateHost {
       // The producer may have already terminated; ignore.
     } on StateError {
       // The host may be mid-shutdown; ignore.
+    } on IsolateRequestFailure {
+      // The worker died (or timed out): the producer is already gone,
+      // so closing it is moot. Still tear down the host-side sink.
     }
     if (sink != null && !sink.controller.isClosed) {
       await sink.controller.close();
