@@ -103,6 +103,7 @@ List<BrainTool> _basicTools() => <BrainTool>[
       _ScriptRunD4rtTool(),
       _ProcedureListTool(),
       _ProcedureRunTool(),
+      _DreamControlTool(),
       // The four prominent verbs exposed as their own tools (Todo 4 / § 11):
       // fixed-id aliases of procedure.run so a model can call `procedure.plan`
       // directly instead of recalling the `<verb>_v1` id.
@@ -987,6 +988,81 @@ final class _ProcedureVerbTool extends BrainTool {
       throw ToolSurfaceUnavailable(surface: 'engine', tool: name);
     }
     return engine.runProcedure(_procedureId, args);
+  }
+}
+
+// ── dream.control ────────────────────────────────────────────────────
+
+/// The default forced-dreaming period a `dream.control` `start` uses when the
+/// caller names no `durationMinutes` (one hour).
+const int _defaultDreamMinutes = 60;
+
+/// One tool for the four dreaming-control actions (`memory_specification.md`
+/// § 9.7): `start` dreaming for a period, `stop` it, `resume` the configured
+/// schedule, and report `status`. Routes through the optional
+/// [ToolContext.dream] surface; a cognition booted without a dreaming cadence
+/// carries none, and the tool raises `ToolSurfaceUnavailable` (the same shape
+/// the `web.*` / `procedure.*` tools take when their surface is absent).
+///
+/// Every action returns the resulting status map, so `start` / `stop` /
+/// `resume` confirm the new dreaming state in the same call. `resume` accepts
+/// the alias `continue` (the user's "continue an interrupted schedule" wording).
+final class _DreamControlTool extends BrainTool {
+  @override
+  String get name => 'dream.control';
+  @override
+  ToolGroup get group => ToolGroup.dream;
+  @override
+  bool get readOnly => false;
+  @override
+  String get description =>
+      'Controls the background dreaming cadence: start dreaming for a period, '
+      'stop it, resume the configured schedule, or report whether the brain is '
+      'dreaming.';
+  @override
+  Map<String, Object?> get inputSchema => const <String, Object?>{
+        'type': 'object',
+        'required': <Object?>['action'],
+        'properties': <String, Object?>{
+          'action': <String, Object?>{
+            'type': 'string',
+            'enum': <Object?>['start', 'stop', 'resume', 'continue', 'status'],
+          },
+          'durationMinutes': <String, Object?>{'type': 'integer'},
+        },
+      };
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final dream = ctx.dream;
+    if (dream == null) {
+      throw const ToolSurfaceUnavailable(
+        surface: 'dream',
+        tool: 'dream.control',
+      );
+    }
+    final action = args['action'] as String;
+    switch (action) {
+      case 'start':
+        final minutes =
+            (args['durationMinutes'] as num?)?.toInt() ?? _defaultDreamMinutes;
+        if (minutes <= 0) {
+          throw ArgumentError.value(minutes, 'durationMinutes',
+              'dream.control start requires a positive duration');
+        }
+        dream.forceFor(Duration(minutes: minutes));
+      case 'stop':
+        dream.suspend();
+      case 'resume':
+      case 'continue':
+        dream.resume();
+      case 'status':
+        break;
+      default:
+        throw ArgumentError.value(
+            action, 'action', 'unknown dream.control action');
+    }
+    return dream.dreamStatus();
   }
 }
 

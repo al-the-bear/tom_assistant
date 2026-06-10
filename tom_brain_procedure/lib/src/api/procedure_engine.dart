@@ -84,6 +84,7 @@ import '../bridges/tool_bridge.dart' show ToolBridge;
 import '../tools/basic_tools.dart' show registerBasicTools;
 import '../tools/substrate_tool_web_surface.dart' show SubstrateToolWebSurface;
 import '../tools/tool_context.dart' show ToolContext;
+import '../tools/tool_dream_surface.dart' show ToolDreamSurface;
 import '../tools/tool_event.dart' show ToolNoticeSink;
 import '../tools/tool_policy_config.dart' show ToolPolicyConfig;
 import '../tools/tool_registry.dart' show ToolRegistry;
@@ -176,6 +177,7 @@ final class ProcedureEngine {
     required this.substrateBridge,
     this.validator = SandboxValidator.shared,
     this.extensions,
+    this.toolDreamSurface,
     List<String>? toolFileScopeRoots,
     PreemptionState? preemptionState,
     Duration stepDeadline = defaultStepDeadline,
@@ -261,6 +263,14 @@ final class ProcedureEngine {
   /// root is the primary (the `file.write` target). A deployment threads its
   /// real list here from `tools.fileScope`; tests fall back to a placeholder.
   final List<String> toolFileScopeRoots;
+
+  /// The optional dreaming-control surface every per-run [ToolContext] is built
+  /// over (`memory_specification.md` § 9.7), or `null` when the cognition booted
+  /// without a dreaming cadence. The run assembly (tom_brain_run) threads a
+  /// late-bound surface here that it points at its `DreamController` once that
+  /// controller is built post-boot; the `dream.control` tool routes through it,
+  /// and a context without it raises `ToolSurfaceUnavailable`.
+  final ToolDreamSurface? toolDreamSurface;
 
   final Duration _stepDeadlineLimit;
   final DeadlineTimerFactory? _deadlineTimerFactory;
@@ -660,6 +670,7 @@ final class ProcedureEngine {
           resolver: resolver,
           runPrimitive: runPrimitive,
         ),
+        dream: toolDreamSurface,
       ),
       clock: _now,
       onEvent: (toolAccessSink == null && noticeSink == null)

@@ -4,13 +4,14 @@
 //
 // What this suite locks:
 //
-//   F.7-1 — `registerBasicTools` registers the twenty-seven shipped tools under
+//   F.7-1 — `registerBasicTools` registers the twenty-eight shipped tools under
 //           their § 21.4 / § 5.2-5.3 names, groups, and `readOnly` flags (the
 //           sixteen base tools, the four explicit verb tools `procedure.plan` /
-//           `create` / `critique` / `decide` (Todo 4 / § 11), and the seven
+//           `create` / `critique` / `decide` (Todo 4 / § 11), the seven
 //           creation families `file.edit` / `file.diff` / `analyze.dart` /
 //           `analyze.format` / `analyze.schema` / `test.run` / `test.baseline`
-//           (`creation_specification.md` § 5)).
+//           (`creation_specification.md` § 5), and the `dream.control` cadence
+//           tool (`memory_specification.md` § 9.7)).
 //   F.7-2 — each tool's happy path against stubs routes through the existing
 //           surface (memory client, web surface, engine surface, the
 //           in-process `TodoStore`, the file-scope root) — no new effect path.
@@ -35,7 +36,7 @@ import 'package:test/test.dart';
 
 void main() {
   group('F.7-1 registerBasicTools catalogue', () {
-    test('registers the twenty-seven § 21.4 / § 5.2-5.3 tools with groups',
+    test('registers the twenty-eight § 21.4 / § 5.2-5.3 tools with groups',
         () {
       final registry = ToolRegistry();
       registerBasicTools(registry);
@@ -71,6 +72,8 @@ void main() {
         'procedure.create': (group: ToolGroup.procedure, readOnly: false),
         'procedure.critique': (group: ToolGroup.procedure, readOnly: false),
         'procedure.decide': (group: ToolGroup.procedure, readOnly: false),
+        // The dreaming-cadence control tool (memory_specification.md § 9.7).
+        'dream.control': (group: ToolGroup.dream, readOnly: false),
       };
 
       for (final entry in expected.entries) {
@@ -91,10 +94,10 @@ void main() {
   });
 
   group('F.7-1b defaultToolCatalogue wire descriptors', () {
-    test('describes the twenty-seven basic tools with name/group/description',
+    test('describes the twenty-eight basic tools with name/group/description',
         () {
       final catalogue = defaultToolCatalogue();
-      expect(catalogue, hasLength(27));
+      expect(catalogue, hasLength(28));
 
       // Each descriptor carries the four wire fields the substrate's
       // tool-catalogue render reads (`{name, group, description, input_schema}`,

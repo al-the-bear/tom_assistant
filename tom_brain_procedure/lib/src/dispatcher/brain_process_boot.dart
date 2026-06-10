@@ -79,6 +79,7 @@ import '../recorder/procedure_tree_record.dart' show ProcedureTreeSink;
 import '../recorder/turn_summary.dart' show TurnSummary, TurnSummarySink;
 import '../procedure_store/procedure_resolver.dart';
 import '../tools/basic_tools.dart' show defaultToolCatalogue;
+import '../tools/tool_dream_surface.dart' show ToolDreamSurface;
 import '../tools/tool_event.dart' show ToolEvent;
 import 'dispatcher_entry.dart';
 import 'inbound_classifier.dart';
@@ -270,6 +271,15 @@ final class BrainProcessConfig {
   /// real files pass an explicit list.
   final List<String>? toolFileScopeRoots;
 
+  /// The optional dreaming-control surface boot threads onto the
+  /// [ProcedureEngine] so the `dream.control` tool can reach the dreaming
+  /// cadence (`memory_specification.md` § 9.7), or `null` when the cognition
+  /// boots without one. The run assembly (tom_brain_run) passes a late-bound
+  /// surface it points at its `DreamController` once that controller is built
+  /// post-boot; the prototype default and every test that does not exercise the
+  /// tool pass `null`.
+  final ToolDreamSurface? toolDreamSurface;
+
   /// Installs the inbound access layer over the booted dispatcher, or `null`
   /// for the prototype default (no channel). See [AccessLayerInstaller].
   final AccessLayerInstaller? installAccessLayer;
@@ -361,6 +371,7 @@ final class BrainProcessConfig {
     this.foregroundQueueDepth = 4,
     this.memoryWriteLimits = MemoryWriteLimits.standard,
     this.toolFileScopeRoots,
+    this.toolDreamSurface,
     this.installAccessLayer,
     this.classifyFallback,
     this.extensions,
@@ -599,6 +610,7 @@ abstract final class BrainProcessBoot {
       procedureTreeSink: config.procedureTreeSink,
       memoryWriteLimits: config.memoryWriteLimits,
       toolFileScopeRoots: config.toolFileScopeRoots,
+      toolDreamSurface: config.toolDreamSurface,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
     final dispatcher = _wireDispatcher(
@@ -664,6 +676,7 @@ abstract final class BrainProcessBoot {
     required ProcedureTreeSink? procedureTreeSink,
     required MemoryWriteLimits memoryWriteLimits,
     required List<String>? toolFileScopeRoots,
+    required ToolDreamSurface? toolDreamSurface,
   }) =>
       ProcedureEngine(
         resolver: resolver,
@@ -678,6 +691,7 @@ abstract final class BrainProcessBoot {
         procedureTreeSink: procedureTreeSink,
         memoryWriteLimits: memoryWriteLimits,
         toolFileScopeRoots: toolFileScopeRoots,
+        toolDreamSurface: toolDreamSurface,
       );
 
   /// Wires the [RunCoordinator] over the shared [preemption] state (it drives

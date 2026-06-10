@@ -77,9 +77,10 @@ void main() {
           'test',
           'mcp',
           'vscode',
+          'dream',
         ]),
       );
-      expect(ToolGroup.values, hasLength(10));
+      expect(ToolGroup.values, hasLength(11));
     });
   });
 

@@ -25,6 +25,7 @@ export 'brain_tool.dart';
 export 'todo_store.dart' show TodoEntry, TodoStore;
 export 'tool_context.dart';
 export 'tool_denied.dart' show ToolDenial, toolDeniedCode;
+export 'tool_dream_surface.dart' show ToolDreamSurface;
 export 'tool_engine_surface.dart' show ToolEngineSurface;
 // Extension F step 16 — the tool observability stream (§ 13).
 export 'tool_event.dart'

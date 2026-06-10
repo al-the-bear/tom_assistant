@@ -49,4 +49,9 @@ enum ToolGroup {
   /// Tools bridged from the VS Code tool registry (the two registries unify,
   /// § 21.8).
   vscode,
+
+  /// Dreaming-cadence control (`dream.control`) — start/stop/resume the
+  /// background dream loop and report its state (`memory_specification.md`
+  /// § 9.7).
+  dream,
 }

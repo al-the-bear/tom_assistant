@@ -40,6 +40,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show TomBrainMemoryClien
 
 import '../budget/budget_ledger.dart' show BudgetLedger;
 import 'todo_store.dart';
+import 'tool_dream_surface.dart';
 import 'tool_engine_surface.dart';
 import 'tool_process_surface.dart';
 import 'tool_web_surface.dart';
@@ -93,10 +94,18 @@ final class ToolContext {
   /// extension (or with the merge profile off).
   final VsCodeToolSource? vscode;
 
+  /// The optional dreaming-control surface the `dream.control` tool routes
+  /// through (`memory_specification.md` § 9.7), or `null` on a cognition booted
+  /// without a dreaming cadence (the `dream:` block absent or disabled). Bound
+  /// by the run assembly once its `DreamController` is built (post-boot); a tool
+  /// handed a context without it raises `ToolSurfaceUnavailable`.
+  final ToolDreamSurface? dream;
+
   /// Builds the surface. [budget], [memory], and [fileScopeRoots] are required;
   /// [fileScopeRoots] must be non-empty (its first entry is the primary root).
   /// [todos] defaults to a fresh run-scoped store; [web], [engine], [process],
-  /// and [vscode] are supplied only when the run exposes tools that need them.
+  /// [vscode], and [dream] are supplied only when the run exposes tools that
+  /// need them.
   ToolContext({
     required this.budget,
     required this.memory,
@@ -106,6 +115,7 @@ final class ToolContext {
     this.engine,
     this.process,
     this.vscode,
+    this.dream,
   })  : assert(fileScopeRoots.isNotEmpty,
             'fileScopeRoots must carry at least one root'),
         fileScopeRoots = List<String>.unmodifiable(fileScopeRoots),
