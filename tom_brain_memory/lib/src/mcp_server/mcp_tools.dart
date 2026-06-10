@@ -92,7 +92,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, Edge, EdgeDirection, EdgeType, MultiRecallQuery, Node, NodeDraft, NodeId, RecallBudget, RecallMode, RecallQuery, RecallResult, RecallSeed, Scope, StackEntry, StackSummary, Vec;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, Edge, EdgeDirection, EdgeType, MultiRecallQuery, Node, NodeDraft, NodeId, RecallBudget, RecallMode, RecallQuery, RecallResult, RecallSeed, Scope, StackEntry, StackSummary, TomBrainMemoryClient, Vec;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal;
 
 import '../api/tom_brain_memory.dart';
@@ -184,6 +184,23 @@ const int _defaultRecallK = 20;
 /// call omits `wallClockMs` (or supplies a malformed value).
 const int _defaultRecallWallClockMs = 120;
 
+/// Description shared by the optional `profile` argument on every read
+/// tool (memory § 3.2 view-scoping). When omitted (or equal to the
+/// bound profile), the tool reads the profile this server is bound to;
+/// otherwise the data tools answer that one request against the named
+/// profile via a transient read handle, without ever switching the
+/// brain's bound profile.
+const String _profileArgDescription =
+    'Optional profile name to answer this read against (view-scoping). '
+    'When omitted or equal to the bound profile, reads the bound '
+    'profile; otherwise opens a transient read handle on the named '
+    'profile for this one call. Never switches the brain\'s bound '
+    'profile.';
+
+/// The shared optional `profile` schema entry for a read tool's
+/// `properties` map.
+Schema _profileArg() => Schema.string(description: _profileArgDescription);
+
 final _recallTool = Tool(
   name: 'memory.recall',
   description:
@@ -220,6 +237,7 @@ final _recallTool = Tool(
             'Default: $_defaultRecallWallClockMs.',
         minimum: 1,
       ),
+      'profile': _profileArg(),
     },
     additionalProperties: false,
   ),
@@ -283,6 +301,7 @@ final _recallMultiTool = Tool(
             'Default: $_defaultRecallWallClockMs.',
         minimum: 1,
       ),
+      'profile': _profileArg(),
     },
     required: ['seeds'],
     additionalProperties: false,
@@ -301,6 +320,7 @@ final _getTool = Tool(
         description: 'Node ids (canonical "n_<ULID>" form).',
         items: Schema.string(),
       ),
+      'profile': _profileArg(),
     },
     required: ['ids'],
     additionalProperties: false,
@@ -325,6 +345,7 @@ final _edgesOfTool = Tool(
             '12-edge alphabet).',
         items: Schema.string(),
       ),
+      'profile': _profileArg(),
     },
     required: ['id'],
     additionalProperties: false,
@@ -337,7 +358,7 @@ final _stackListTool = Tool(
       'and bootstrap flag per stack.',
   annotations: ToolAnnotations(readOnlyHint: true, openWorldHint: false),
   inputSchema: ObjectSchema(
-    properties: {},
+    properties: {'profile': _profileArg()},
     additionalProperties: false,
   ),
 );
@@ -354,6 +375,7 @@ final _stackPeekTool = Tool(
         description: 'How many entries to return. Default 16.',
         minimum: 1,
       ),
+      'profile': _profileArg(),
     },
     required: ['name'],
     additionalProperties: false,
@@ -375,6 +397,7 @@ final _classifyTool = Tool(
         description: 'One of "nodeType" (default), "procedure", or '
             '"concept".',
       ),
+      'profile': _profileArg(),
     },
     required: ['embedding'],
     additionalProperties: false,
@@ -389,7 +412,9 @@ final _profilesListTool = Tool(
       'MCP.',
   annotations: ToolAnnotations(readOnlyHint: true, openWorldHint: false),
   inputSchema: ObjectSchema(
-    properties: {},
+    // Accepts an (ignored) `profile` so the whole nine-tool read surface
+    // takes the same optional argument; the list is inherently global.
+    properties: {'profile': _profileArg()},
     additionalProperties: false,
   ),
 );
@@ -400,7 +425,10 @@ final _profileCurrentTool = Tool(
       'or null when the store operates on the unprofiled root (§ 3.1).',
   annotations: ToolAnnotations(readOnlyHint: true, openWorldHint: false),
   inputSchema: ObjectSchema(
-    properties: {},
+    // Accepts an (ignored) `profile` so the whole nine-tool read surface
+    // takes the same optional argument; `current` always reports the
+    // server's real binding, never the requested view.
+    properties: {'profile': _profileArg()},
     additionalProperties: false,
   ),
 );
@@ -446,13 +474,37 @@ final _persistNoteTool = Tool(
 
 // ─── Tool implementations ─────────────────────────────────────────
 
+/// Runs [body] against the profile named by the optional `profile`
+/// argument in [args] (memory § 3.2 view-scoping). When `profile` is
+/// absent, blank, or equal to the bound profile, [body] runs against
+/// [memory] directly; otherwise the read is answered through a transient
+/// handle on the named profile (`profiles.readInProfile`), which closes
+/// after [body] returns and never mutates `currentProfile`. [body]
+/// receives only the [TomBrainMemoryClient] surface, so this seam is
+/// structurally read-only — the data tools route their one read through
+/// it; the two profile-introspection tools do not (they accept-and-
+/// ignore `profile`).
+Future<T> _readScoped<T>(
+  TomBrainMemory memory,
+  Map<String, Object?> args,
+  Future<T> Function(TomBrainMemoryClient client) body,
+) {
+  final profile = args['profile'];
+  if (profile is String &&
+      profile.isNotEmpty &&
+      profile != memory.currentProfile) {
+    return memory.profiles.readInProfile(profile, body);
+  }
+  return body(memory);
+}
+
 Future<CallToolResult> _runRecall(
   CallToolRequest request,
   TomBrainMemory memory,
 ) async {
   final args = request.arguments ?? const <String, Object?>{};
   final query = _parseRecallQuery(args);
-  final result = await memory.recall(query);
+  final result = await _readScoped(memory, args, (m) => m.recall(query));
   return _ok(_encodeRecallResult(result));
 }
 
@@ -472,7 +524,7 @@ Future<CallToolResult> _runRecallMulti(
       'graphWalk, or symbolic.',
     );
   }
-  final result = await memory.recallMulti(parsed);
+  final result = await _readScoped(memory, args, (m) => m.recallMulti(parsed));
   return _ok(_encodeMultiRecallResult(result));
 }
 
@@ -511,7 +563,7 @@ Future<CallToolResult> _runGet(
       return _err('Invalid NodeId "$raw": ${e.message}');
     }
   }
-  final nodes = await memory.getMany(ids);
+  final nodes = await _readScoped(memory, args, (m) => m.getMany(ids));
   return _ok({'nodes': nodes.map(_encodeNode).toList()});
 }
 
@@ -555,7 +607,11 @@ Future<CallToolResult> _runEdgesOf(
     }
     types = parsed;
   }
-  final edges = await memory.edgesOf(id, direction: direction, types: types);
+  final edges = await _readScoped(
+    memory,
+    args,
+    (m) => m.edgesOf(id, direction: direction, types: types),
+  );
   return _ok({'edges': edges.map(_encodeEdge).toList()});
 }
 
@@ -563,7 +619,8 @@ Future<CallToolResult> _runStackList(
   CallToolRequest request,
   TomBrainMemory memory,
 ) async {
-  final summaries = await memory.stacks.list();
+  final args = request.arguments ?? const <String, Object?>{};
+  final summaries = await _readScoped(memory, args, (m) => m.stacks.list());
   return _ok({'stacks': summaries.map(_encodeStackSummary).toList()});
 }
 
@@ -586,7 +643,8 @@ Future<CallToolResult> _runStackPeek(
     }
     k = parsedK;
   }
-  final entries = await memory.stacks.peek(nameRaw, k: k);
+  final entries =
+      await _readScoped(memory, args, (m) => m.stacks.peek(nameRaw, k: k));
   return _ok({'entries': entries.map(_encodeStackEntry).toList()});
 }
 
@@ -616,7 +674,11 @@ Future<CallToolResult> _runClassify(
         'got "$targetName".',
       );
   }
-  final result = await memory.classify(embedding, target: target);
+  final result = await _readScoped(
+    memory,
+    args,
+    (m) => m.classify(embedding, target: target),
+  );
   return _ok(_encodeClassification(result));
 }
 

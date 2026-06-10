@@ -44,7 +44,8 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         MemoryEvent,
         MemoryProfileRegistry,
         NodeDraft,
-        Scope;
+        Scope,
+        TomBrainMemoryClient;
 
 import '../api/tom_brain_memory.dart';
 import '../config/memory_config_paths.dart';
@@ -143,6 +144,25 @@ final class SqliteMemoryProfileRegistry implements MemoryProfileRegistry {
     if (!dir.existsSync()) return;
     dir.deleteSync(recursive: true);
     _emit(ProfileDropped(profileName: name, occurredAt: _now()));
+  }
+
+  @override
+  Future<T> readInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) async {
+    _validateName(name);
+    // Same open/work/close lifecycle as seedProfile: a transient child
+    // handle bound to `name`, closed in finally even when `body` throws.
+    // `body` sees the TomBrainMemoryClient surface (read-shaped by the
+    // interface), so this view-scoping seam can never write.
+    final store = _childStoreFactory();
+    await store.open(_baseConfig.withProfile(name));
+    try {
+      return await body(store);
+    } finally {
+      await store.close();
+    }
   }
 
   /// Opens a child store bound to [name] just long enough for `open()`

@@ -26,22 +26,31 @@ class MemoryUnavailable implements Exception {
 }
 
 /// The read-only memory surface the Module-2 views depend on.
+///
+/// Every data read accepts an optional [profile] — the observatory profile
+/// switcher (`prompt_tracing.md` § 5.6) view-scopes a read to a named profile
+/// without ever switching the brain's bound profile (OBS-2). [profiles] itself
+/// is global (the list and the actual binding) and is never view-scoped.
+/// Profile filling is done once by [ProfileScopedMemoryApiClient]; views call
+/// the bare methods.
 abstract interface class MemoryApiClient {
   /// `GET /api/memory/nodes?type=` — the composed browse-by-type (§ 5.2).
   Future<TypeBrowseResult> browseNodes(
     String typeName, {
     List<String> knownIds,
     bool traverseEdges,
+    String? profile,
   });
 
   /// `GET /api/memory/nodes/{id}` — node detail (§ 5.2), or `null` when absent.
-  Future<MemoryNode?> node(String id);
+  Future<MemoryNode?> node(String id, {String? profile});
 
   /// `GET /api/memory/edges?id=` — incident edges (§ 5.3).
   Future<List<MemoryEdge>> edges(
     String id, {
     EdgeDirection direction,
     Set<String>? types,
+    String? profile,
   });
 
   /// `POST /api/memory/recall` — single-seed recall (§ 5.4).
@@ -51,6 +60,7 @@ abstract interface class MemoryApiClient {
     Set<RecallMode>? modes,
     int? k,
     int? wallClockMs,
+    String? profile,
   });
 
   /// `POST /api/memory/recall/multi` — multi-seed recall (§ 5.4).
@@ -58,22 +68,135 @@ abstract interface class MemoryApiClient {
     required List<RecallSeedSpec> seeds,
     int? k,
     int? wallClockMs,
+    String? profile,
   });
 
   /// `GET /api/memory/stacks` — the stack inventory (§ 5.5).
-  Future<List<MemoryStackSummary>> stacks();
+  Future<List<MemoryStackSummary>> stacks({String? profile});
 
   /// `GET /api/memory/stacks/{name}?k=` — the top-K of a stack (§ 5.5).
-  Future<List<MemoryStackEntry>> stackPeek(String name, {int? k});
+  Future<List<MemoryStackEntry>> stackPeek(
+    String name, {
+    int? k,
+    String? profile,
+  });
 
   /// `POST /api/memory/classify` — the centroid classification probe (§ 5.6).
   Future<MemoryClassification> classify(
     List<double> embedding, {
     ClassifyTarget target,
+    String? profile,
   });
 
   /// `GET /api/memory/profiles` — the profiles plus the current binding (§ 5.6).
+  /// Global by nature — never view-scoped.
   Future<MemoryProfiles> profiles();
+}
+
+/// A decorator that view-scopes every data read of an [inner] client to a fixed
+/// [profile] (the observatory profile switcher's selection — `prompt_tracing.md`
+/// § 5.6). It only fills the [profile] argument; it issues no writes and never
+/// calls `memory.profile.set` (OBS-2), so switching the *view* never switches
+/// the *brain*. [profiles] passes through unscoped (it is global).
+///
+/// A `null` [profile] is the bound profile — the decorator is then a transparent
+/// pass-through, so views can always wrap unconditionally.
+class ProfileScopedMemoryApiClient implements MemoryApiClient {
+  final MemoryApiClient inner;
+  final String? profile;
+
+  const ProfileScopedMemoryApiClient(this.inner, {this.profile});
+
+  @override
+  Future<TypeBrowseResult> browseNodes(
+    String typeName, {
+    List<String> knownIds = const <String>[],
+    bool traverseEdges = false,
+    String? profile,
+  }) =>
+      inner.browseNodes(
+        typeName,
+        knownIds: knownIds,
+        traverseEdges: traverseEdges,
+        profile: profile ?? this.profile,
+      );
+
+  @override
+  Future<MemoryNode?> node(String id, {String? profile}) =>
+      inner.node(id, profile: profile ?? this.profile);
+
+  @override
+  Future<List<MemoryEdge>> edges(
+    String id, {
+    EdgeDirection direction = EdgeDirection.both,
+    Set<String>? types,
+    String? profile,
+  }) =>
+      inner.edges(
+        id,
+        direction: direction,
+        types: types,
+        profile: profile ?? this.profile,
+      );
+
+  @override
+  Future<RecallResult> recall({
+    String? text,
+    List<double>? embedding,
+    Set<RecallMode>? modes,
+    int? k,
+    int? wallClockMs,
+    String? profile,
+  }) =>
+      inner.recall(
+        text: text,
+        embedding: embedding,
+        modes: modes,
+        k: k,
+        wallClockMs: wallClockMs,
+        profile: profile ?? this.profile,
+      );
+
+  @override
+  Future<RecallResult> recallMulti({
+    required List<RecallSeedSpec> seeds,
+    int? k,
+    int? wallClockMs,
+    String? profile,
+  }) =>
+      inner.recallMulti(
+        seeds: seeds,
+        k: k,
+        wallClockMs: wallClockMs,
+        profile: profile ?? this.profile,
+      );
+
+  @override
+  Future<List<MemoryStackSummary>> stacks({String? profile}) =>
+      inner.stacks(profile: profile ?? this.profile);
+
+  @override
+  Future<List<MemoryStackEntry>> stackPeek(
+    String name, {
+    int? k,
+    String? profile,
+  }) =>
+      inner.stackPeek(name, k: k, profile: profile ?? this.profile);
+
+  @override
+  Future<MemoryClassification> classify(
+    List<double> embedding, {
+    ClassifyTarget target = ClassifyTarget.nodeType,
+    String? profile,
+  }) =>
+      inner.classify(
+        embedding,
+        target: target,
+        profile: profile ?? this.profile,
+      );
+
+  @override
+  Future<MemoryProfiles> profiles() => inner.profiles();
 }
 
 /// Talks to the same-origin `/api/memory/*` via [http], resolving against
@@ -91,18 +214,22 @@ class HttpMemoryApiClient implements MemoryApiClient {
     String typeName, {
     List<String> knownIds = const <String>[],
     bool traverseEdges = false,
+    String? profile,
   }) async {
     final uri = _resolve('api/memory/nodes', <String, String>{
       'type': typeName,
       if (knownIds.isNotEmpty) 'knownIds': knownIds.join(','),
       if (traverseEdges) 'traverseEdges': 'true',
+      'profile': ?profile,
     });
     return TypeBrowseResult.fromJson(await _getJson(uri));
   }
 
   @override
-  Future<MemoryNode?> node(String id) async {
-    final uri = _resolve('api/memory/nodes/$id', const <String, String>{});
+  Future<MemoryNode?> node(String id, {String? profile}) async {
+    final uri = _resolve('api/memory/nodes/$id', <String, String>{
+      'profile': ?profile,
+    });
     final res = await _http.get(uri);
     if (res.statusCode == 404) return null;
     return MemoryNode.fromJson(_decode(uri, res));
@@ -113,11 +240,13 @@ class HttpMemoryApiClient implements MemoryApiClient {
     String id, {
     EdgeDirection direction = EdgeDirection.both,
     Set<String>? types,
+    String? profile,
   }) async {
     final uri = _resolve('api/memory/edges', <String, String>{
       'id': id,
       'direction': direction.wireName,
       if (types != null && types.isNotEmpty) 'types': types.join(','),
+      'profile': ?profile,
     });
     final body = await _getJson(uri);
     return <MemoryEdge>[
@@ -133,6 +262,7 @@ class HttpMemoryApiClient implements MemoryApiClient {
     Set<RecallMode>? modes,
     int? k,
     int? wallClockMs,
+    String? profile,
   }) async {
     final body = await _postJson('api/memory/recall', <String, dynamic>{
       'text': ?text,
@@ -140,6 +270,7 @@ class HttpMemoryApiClient implements MemoryApiClient {
       if (modes != null) 'modes': <String>[for (final m in modes) m.wireName],
       'k': ?k,
       'wallClockMs': ?wallClockMs,
+      'profile': ?profile,
     });
     return RecallResult.fromJson(body);
   }
@@ -149,19 +280,22 @@ class HttpMemoryApiClient implements MemoryApiClient {
     required List<RecallSeedSpec> seeds,
     int? k,
     int? wallClockMs,
+    String? profile,
   }) async {
     final body = await _postJson('api/memory/recall/multi', <String, dynamic>{
       'seeds': <dynamic>[for (final seed in seeds) seed.toJson()],
       'k': ?k,
       'wallClockMs': ?wallClockMs,
+      'profile': ?profile,
     });
     return RecallResult.fromJson(body);
   }
 
   @override
-  Future<List<MemoryStackSummary>> stacks() async {
-    final body = await _getJson(
-        _resolve('api/memory/stacks', const <String, String>{}));
+  Future<List<MemoryStackSummary>> stacks({String? profile}) async {
+    final body = await _getJson(_resolve('api/memory/stacks', <String, String>{
+      'profile': ?profile,
+    }));
     return <MemoryStackSummary>[
       for (final raw in (body['stacks'] as List?) ?? const <dynamic>[])
         MemoryStackSummary.fromJson((raw as Map).cast<String, dynamic>()),
@@ -169,9 +303,14 @@ class HttpMemoryApiClient implements MemoryApiClient {
   }
 
   @override
-  Future<List<MemoryStackEntry>> stackPeek(String name, {int? k}) async {
+  Future<List<MemoryStackEntry>> stackPeek(
+    String name, {
+    int? k,
+    String? profile,
+  }) async {
     final uri = _resolve('api/memory/stacks/$name', <String, String>{
       if (k != null) 'k': '$k',
+      'profile': ?profile,
     });
     final body = await _getJson(uri);
     return <MemoryStackEntry>[
@@ -184,10 +323,12 @@ class HttpMemoryApiClient implements MemoryApiClient {
   Future<MemoryClassification> classify(
     List<double> embedding, {
     ClassifyTarget target = ClassifyTarget.nodeType,
+    String? profile,
   }) async {
     final body = await _postJson('api/memory/classify', <String, dynamic>{
       'embedding': embedding,
       'target': target.wireName,
+      'profile': ?profile,
     });
     return MemoryClassification.fromJson(body);
   }

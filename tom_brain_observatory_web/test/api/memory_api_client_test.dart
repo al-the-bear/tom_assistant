@@ -145,6 +145,45 @@ void main() {
     expect(body['target'], 'concept');
   });
 
+  test('a profile view-scopes a GET into the query and a POST into the body',
+      () async {
+    // GET path: edges carries the named profile as a query parameter (§ 5.6).
+    final getSeen = <http.Request>[];
+    final getClient = clientThat(getSeen,
+        (_) => (200, <String, Object?>{'edges': <Object?>[]}));
+    await getClient.edges('n1', profile: 'eval');
+    expect(getSeen.single.url.queryParameters['profile'], 'eval');
+
+    // POST path: recall carries it inside the JSON body.
+    final postSeen = <http.Request>[];
+    final postClient = clientThat(postSeen, (_) => (200, <String, Object?>{
+          'nodes': <Object?>[],
+          'report': <String, Object?>{'fusionStrategy': 'rrf'},
+        }));
+    await postClient.recall(text: 'backup', profile: 'eval');
+    final body = jsonDecode(postSeen.single.body) as Map<String, dynamic>;
+    expect(body['profile'], 'eval');
+  });
+
+  test('an absent profile never marshals a profile key', () async {
+    // GET: no `profile` query parameter when unset.
+    final getSeen = <http.Request>[];
+    final getClient = clientThat(getSeen,
+        (_) => (200, <String, Object?>{'edges': <Object?>[]}));
+    await getClient.edges('n1');
+    expect(getSeen.single.url.queryParameters.containsKey('profile'), isFalse);
+
+    // POST: no `profile` body key when unset.
+    final postSeen = <http.Request>[];
+    final postClient = clientThat(postSeen, (_) => (200, <String, Object?>{
+          'nodes': <Object?>[],
+          'report': <String, Object?>{'fusionStrategy': 'rrf'},
+        }));
+    await postClient.recall(text: 'backup');
+    final body = jsonDecode(postSeen.single.body) as Map<String, dynamic>;
+    expect(body.containsKey('profile'), isFalse);
+  });
+
   test('profiles combines the list and the current binding', () async {
     final client = clientThat(<http.Request>[], (_) => (200, <String, Object?>{
           'profiles': <Object?>['default', 'eval'],

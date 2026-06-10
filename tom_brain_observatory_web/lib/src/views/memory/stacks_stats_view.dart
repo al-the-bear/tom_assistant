@@ -14,10 +14,22 @@ import 'memory_status.dart';
 import 'node_link_chip.dart';
 
 /// The stacks / stats / classify / profiles page over [client].
+///
+/// [selectedProfile] is the home-owned viewed profile (the switcher reflects it
+/// as selected); [onProfileChanged] raises a new selection so the home re-scopes
+/// every tab's reads (§ 5.6). When [onProfileChanged] is omitted the switcher is
+/// inert (used by tests that drive the page in isolation).
 class StacksStatsView extends StatefulWidget {
   final MemoryApiClient client;
+  final String? selectedProfile;
+  final ValueChanged<String?>? onProfileChanged;
 
-  const StacksStatsView({super.key, required this.client});
+  const StacksStatsView({
+    super.key,
+    required this.client,
+    this.selectedProfile,
+    this.onProfileChanged,
+  });
 
   @override
   State<StacksStatsView> createState() => _StacksStatsViewState();
@@ -61,7 +73,11 @@ class _StacksStatsViewState extends State<StacksStatsView> {
           const Divider(height: 32),
           _ClassifyProbe(client: widget.client),
           const Divider(height: 32),
-          _ProfileSwitcher(client: widget.client),
+          _ProfileSwitcher(
+            client: widget.client,
+            selectedProfile: widget.selectedProfile,
+            onProfileChanged: widget.onProfileChanged,
+          ),
         ],
       );
 }
@@ -255,11 +271,20 @@ class _ClassifyProbeState extends State<_ClassifyProbe> {
 }
 
 /// The view-only profile switcher (§ 5.6). Lists the profiles and the brain's
-/// current binding; selecting one changes only what this view *labels* as
-/// selected — it never switches the brain's profile (there is no write route).
+/// current binding; selecting one raises [onProfileChanged] so the home
+/// re-scopes every tab's reads to that profile's *view* — it never switches the
+/// brain's profile (there is no write route, OBS-2). [selectedProfile] is the
+/// home-owned selection the dropdown reflects.
 class _ProfileSwitcher extends StatefulWidget {
   final MemoryApiClient client;
-  const _ProfileSwitcher({required this.client});
+  final String? selectedProfile;
+  final ValueChanged<String?>? onProfileChanged;
+
+  const _ProfileSwitcher({
+    required this.client,
+    required this.selectedProfile,
+    required this.onProfileChanged,
+  });
 
   @override
   State<_ProfileSwitcher> createState() => _ProfileSwitcherState();
@@ -267,7 +292,6 @@ class _ProfileSwitcher extends StatefulWidget {
 
 class _ProfileSwitcherState extends State<_ProfileSwitcher> {
   late final Future<MemoryProfiles> _profiles = widget.client.profiles();
-  String? _viewed;
 
   @override
   Widget build(BuildContext context) {
@@ -278,7 +302,8 @@ class _ProfileSwitcherState extends State<_ProfileSwitcher> {
         Text('profiles (view-only)', style: theme.textTheme.titleSmall),
         const SizedBox(height: 4),
         Text(
-          'Switching the viewed profile never switches the brain’s profile.',
+          'Switching the viewed profile re-reads memory in that profile’s view '
+          '— it never switches the brain’s profile.',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
@@ -289,7 +314,7 @@ class _ProfileSwitcherState extends State<_ProfileSwitcher> {
             final status = memoryStatus(context, snapshot);
             if (status != null) return SizedBox(height: 60, child: status);
             final profiles = snapshot.data!;
-            final selected = _viewed ?? profiles.current;
+            final selected = widget.selectedProfile ?? profiles.current;
             return Row(
               children: <Widget>[
                 DropdownButton<String>(
@@ -299,7 +324,7 @@ class _ProfileSwitcherState extends State<_ProfileSwitcher> {
                     for (final p in profiles.profiles)
                       DropdownMenuItem<String>(value: p, child: Text(p)),
                   ],
-                  onChanged: (p) => setState(() => _viewed = p),
+                  onChanged: widget.onProfileChanged,
                 ),
                 const SizedBox(width: 12),
                 if (profiles.current != null)

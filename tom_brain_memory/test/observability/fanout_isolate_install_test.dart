@@ -30,6 +30,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         NodeId,
         ProcedureStatus,
         StackEntryId,
+        TomBrainMemoryClient,
         TrailId,
         Vec,
         WriteBudget;
@@ -308,6 +309,13 @@ class _NoopProfileRegistry implements MemoryProfileRegistry {
 
   @override
   Future<void> dropProfile(String name) async {}
+
+  @override
+  Future<T> readInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) async =>
+      throw UnimplementedError();
 }
 
 class _NoopStackApi implements StackApi {

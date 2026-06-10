@@ -28,7 +28,14 @@
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, ProcedureStatus, StackEntryId, TrailId, Vec;
+    show
+        EdgeId,
+        NodeId,
+        ProcedureStatus,
+        StackEntryId,
+        TomBrainMemoryClient,
+        TrailId,
+        Vec;
 import 'package:test/test.dart';
 
 void main() {
@@ -420,6 +427,13 @@ class _FakeProfileRegistry implements MemoryProfileRegistry {
 
   @override
   Future<void> dropProfile(String name) async {}
+
+  @override
+  Future<T> readInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) async =>
+      throw UnimplementedError();
 }
 
 const RecallReport _emptyReport = RecallReport(

@@ -32,7 +32,9 @@ class StubMemoryApiClient implements MemoryApiClient {
   final bool unavailable;
 
   /// Records every call for assertions (e.g. that switching the viewed profile
-  /// never issues a write — there is no write method to issue).
+  /// never issues a write — there is no write method to issue). A view-scoped
+  /// data read is recorded with an `@<profile>` suffix so a test can assert the
+  /// switch re-issued reads against the named profile.
   final List<String> calls = <String>[];
 
   StubMemoryApiClient({
@@ -47,8 +49,8 @@ class StubMemoryApiClient implements MemoryApiClient {
     this.unavailable = false,
   });
 
-  void _guard(String call) {
-    calls.add(call);
+  void _guard(String call, [String? profile]) {
+    calls.add(profile == null ? call : '$call@$profile');
     if (unavailable) throw const MemoryUnavailable();
   }
 
@@ -66,15 +68,16 @@ class StubMemoryApiClient implements MemoryApiClient {
     String typeName, {
     List<String> knownIds = const <String>[],
     bool traverseEdges = false,
+    String? profile,
   }) async {
-    _guard('browseNodes:$typeName');
+    _guard('browseNodes:$typeName', profile);
     return browses[typeName] ??
         TypeBrowseResult(typeName: typeName, exhaustive: false);
   }
 
   @override
-  Future<MemoryNode?> node(String id) async {
-    _guard('node:$id');
+  Future<MemoryNode?> node(String id, {String? profile}) async {
+    _guard('node:$id', profile);
     return nodes[id];
   }
 
@@ -83,8 +86,9 @@ class StubMemoryApiClient implements MemoryApiClient {
     String id, {
     EdgeDirection direction = EdgeDirection.both,
     Set<String>? types,
+    String? profile,
   }) async {
-    _guard('edges:$id');
+    _guard('edges:$id', profile);
     return edgesByNode[id] ?? const <MemoryEdge>[];
   }
 
@@ -95,8 +99,9 @@ class StubMemoryApiClient implements MemoryApiClient {
     Set<RecallMode>? modes,
     int? k,
     int? wallClockMs,
+    String? profile,
   }) async {
-    _guard('recall:$text');
+    _guard('recall:$text', profile);
     return recallResult ?? const RecallResult(report: _emptyReport);
   }
 
@@ -105,20 +110,25 @@ class StubMemoryApiClient implements MemoryApiClient {
     required List<RecallSeedSpec> seeds,
     int? k,
     int? wallClockMs,
+    String? profile,
   }) async {
-    _guard('recallMulti:${seeds.length}');
+    _guard('recallMulti:${seeds.length}', profile);
     return recallResult ?? const RecallResult(report: _emptyReport);
   }
 
   @override
-  Future<List<MemoryStackSummary>> stacks() async {
-    _guard('stacks');
+  Future<List<MemoryStackSummary>> stacks({String? profile}) async {
+    _guard('stacks', profile);
     return stackList;
   }
 
   @override
-  Future<List<MemoryStackEntry>> stackPeek(String name, {int? k}) async {
-    _guard('stackPeek:$name');
+  Future<List<MemoryStackEntry>> stackPeek(
+    String name, {
+    int? k,
+    String? profile,
+  }) async {
+    _guard('stackPeek:$name', profile);
     return stackEntries[name] ?? const <MemoryStackEntry>[];
   }
 
@@ -126,8 +136,9 @@ class StubMemoryApiClient implements MemoryApiClient {
   Future<MemoryClassification> classify(
     List<double> embedding, {
     ClassifyTarget target = ClassifyTarget.nodeType,
+    String? profile,
   }) async {
-    _guard('classify');
+    _guard('classify', profile);
     return classification ??
         const MemoryClassification(
           decision: 'unknown',

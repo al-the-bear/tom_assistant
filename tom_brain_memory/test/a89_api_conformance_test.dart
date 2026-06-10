@@ -488,6 +488,13 @@ class _ConformanceFakeProfileRegistry implements MemoryProfileRegistry {
 
   @override
   Future<void> dropProfile(String name) async {}
+
+  @override
+  Future<T> readInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) async =>
+      throw UnimplementedError();
 }
 
 /// In-memory backing for [StackApi]. Top-level so the isolate side

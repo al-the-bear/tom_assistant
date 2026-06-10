@@ -48,8 +48,9 @@ final class MemoryReadApi {
       ..get('/api/memory/profiles', _profiles);
   }
 
-  /// `GET /api/memory/nodes?type=<t>&knownIds=<csv>&traverseEdges=<bool>` — the
-  /// composed browse-by-type (§ 5.2). `?type=` is required.
+  /// `GET /api/memory/nodes?type=<t>&knownIds=<csv>&traverseEdges=<bool>&profile=<p>`
+  /// — the composed browse-by-type (§ 5.2). `?type=` is required; `?profile=`
+  /// view-scopes the read (OBS-2).
   Future<Response> _browseNodes(Request request) => _guard((client) async {
         final q = request.url.queryParameters;
         final type = q['type'];
@@ -60,14 +61,18 @@ final class MemoryReadApi {
           type,
           knownIds: _csv(q['knownIds']),
           traverseEdges: q['traverseEdges'] == 'true',
+          profile: _profileOf(q['profile']),
         );
         return _json(result.toJson());
       });
 
-  /// `GET /api/memory/nodes/<id>` — node detail via `memory.get` (§ 5.2). `404`
-  /// when the store holds no node for [id].
+  /// `GET /api/memory/nodes/<id>?profile=<p>` — node detail via `memory.get`
+  /// (§ 5.2). `404` when the store holds no node for [id].
   Future<Response> _getNode(Request request, String id) => _guard((client) async {
-        final nodes = await client.get(<String>[id]);
+        final nodes = await client.get(
+          <String>[id],
+          profile: _profileOf(request.url.queryParameters['profile']),
+        );
         if (nodes.isEmpty) {
           return _json(<String, Object?>{'error': 'no node $id'},
               status: 404);
@@ -75,8 +80,8 @@ final class MemoryReadApi {
         return _json(nodes.first.toJson());
       });
 
-  /// `GET /api/memory/edges?id=<id>&direction=<d>&types=<csv>` — incident edges
-  /// (§ 5.3). `?id=` is required; `direction` defaults to `both`.
+  /// `GET /api/memory/edges?id=<id>&direction=<d>&types=<csv>&profile=<p>` —
+  /// incident edges (§ 5.3). `?id=` is required; `direction` defaults to `both`.
   Future<Response> _edges(Request request) => _guard((client) async {
         final q = request.url.queryParameters;
         final id = q['id'];
@@ -91,6 +96,7 @@ final class MemoryReadApi {
             orElse: () => EdgeDirection.both,
           ),
           types: types.isEmpty ? null : types.toSet(),
+          profile: _profileOf(q['profile']),
         );
         return _json(<String, Object?>{
           'edges': <Object?>[for (final edge in edges) edge.toJson()],
@@ -98,7 +104,7 @@ final class MemoryReadApi {
       });
 
   /// `POST /api/memory/recall` — single-seed recall (§ 5.4). Body:
-  /// `{text?, embedding?, modes?, k?, wallClockMs?}`.
+  /// `{text?, embedding?, modes?, k?, wallClockMs?, profile?}`.
   Future<Response> _recall(Request request) => _guard((client) async {
         final body = await _body(request);
         final result = await client.recall(
@@ -107,12 +113,13 @@ final class MemoryReadApi {
           modes: _modes(body['modes']),
           k: (body['k'] as num?)?.toInt(),
           wallClockMs: (body['wallClockMs'] as num?)?.toInt(),
+          profile: _profileOf(body['profile']),
         );
         return _json(result.toJson());
       });
 
   /// `POST /api/memory/recall/multi` — multi-seed recall (§ 5.4). Body:
-  /// `{seeds: [...], k?, wallClockMs?}`.
+  /// `{seeds: [...], k?, wallClockMs?, profile?}`.
   Future<Response> _recallMulti(Request request) => _guard((client) async {
         final body = await _body(request);
         final result = await client.recallMulti(
@@ -122,30 +129,39 @@ final class MemoryReadApi {
           ],
           k: (body['k'] as num?)?.toInt(),
           wallClockMs: (body['wallClockMs'] as num?)?.toInt(),
+          profile: _profileOf(body['profile']),
         );
         return _json(result.toJson());
       });
 
-  /// `GET /api/memory/stacks` — the stack inventory (§ 5.5).
+  /// `GET /api/memory/stacks?profile=<p>` — the stack inventory (§ 5.5).
   Future<Response> _stacks(Request request) => _guard((client) async {
-        final stacks = await client.stackList();
+        final stacks = await client.stackList(
+          profile: _profileOf(request.url.queryParameters['profile']),
+        );
         return _json(<String, Object?>{
           'stacks': <Object?>[for (final s in stacks) s.toJson()],
         });
       });
 
-  /// `GET /api/memory/stacks/<name>?k=<k>` — the top-K of a stack (§ 5.5).
+  /// `GET /api/memory/stacks/<name>?k=<k>&profile=<p>` — the top-K of a stack
+  /// (§ 5.5).
   Future<Response> _stackPeek(Request request, String name) =>
       _guard((client) async {
-        final k = int.tryParse(request.url.queryParameters['k'] ?? '');
-        final entries = await client.stackPeek(name, k: k);
+        final q = request.url.queryParameters;
+        final k = int.tryParse(q['k'] ?? '');
+        final entries = await client.stackPeek(
+          name,
+          k: k,
+          profile: _profileOf(q['profile']),
+        );
         return _json(<String, Object?>{
           'entries': <Object?>[for (final e in entries) e.toJson()],
         });
       });
 
   /// `POST /api/memory/classify` — the centroid classification probe (§ 5.6).
-  /// Body: `{embedding: [...], target?}`.
+  /// Body: `{embedding: [...], target?, profile?}`.
   Future<Response> _classify(Request request) => _guard((client) async {
         final body = await _body(request);
         final embedding = _doubleList(body['embedding']);
@@ -158,6 +174,7 @@ final class MemoryReadApi {
             (t) => t.wireName == body['target'],
             orElse: () => ClassifyTarget.nodeType,
           ),
+          profile: _profileOf(body['profile']),
         );
         return _json(result.toJson());
       });
@@ -189,6 +206,12 @@ final class MemoryReadApi {
       return _unavailable(detail: e.message);
     }
   }
+
+  /// The view-scoping profile name from a `profile` request value (a query
+  /// parameter on GET, a body field on POST), or `null` when absent/blank.
+  /// A blank profile means "the bound profile" — never an empty-named one.
+  String? _profileOf(Object? raw) =>
+      (raw is String && raw.isNotEmpty) ? raw : null;
 
   /// The comma-separated values of [raw], or an empty list when absent/blank.
   List<String> _csv(String? raw) => (raw == null || raw.isEmpty)

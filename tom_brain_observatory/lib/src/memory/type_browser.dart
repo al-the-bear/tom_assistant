@@ -66,19 +66,22 @@ final class TypeBrowser {
   /// the type name), the [knownIds] surfaced in traces (`memory.get`), and —
   /// when [traverseEdges] is set — one hop of edge traversal from the hits.
   ///
-  /// [recallK] bounds the recall seed. The result is filtered to [typeName],
-  /// deduped by id, and is always [TypeBrowseResult.exhaustive] `== false`.
+  /// [recallK] bounds the recall seed. [profile] view-scopes every composed read
+  /// to a named profile (OBS-2). The result is filtered to [typeName], deduped
+  /// by id, and is always [TypeBrowseResult.exhaustive] `== false`.
   Future<TypeBrowseResult> browse(
     String typeName, {
     List<String> knownIds = const <String>[],
     bool traverseEdges = false,
     int recallK = 20,
+    String? profile,
   }) async {
     final gathered = <String, MemoryNode>{};
     final sources = <String>[];
 
     // 1. Recall seeded by the type name — always the first composition source.
-    final seeded = await client.recall(text: typeName, k: recallK);
+    final seeded =
+        await client.recall(text: typeName, k: recallK, profile: profile);
     sources.add('recall');
     for (final node in seeded.nodes) {
       gathered[node.id] = node;
@@ -87,7 +90,7 @@ final class TypeBrowser {
     // 2. Ids surfaced in traces — fetched directly.
     if (knownIds.isNotEmpty) {
       sources.add('get');
-      for (final node in await client.get(knownIds)) {
+      for (final node in await client.get(knownIds, profile: profile)) {
         gathered[node.id] = node;
       }
     }
@@ -97,7 +100,7 @@ final class TypeBrowser {
       sources.add('edgesOf');
       final neighbourIds = <String>{};
       for (final seedId in gathered.keys.toList()) {
-        for (final edge in await client.edgesOf(seedId)) {
+        for (final edge in await client.edgesOf(seedId, profile: profile)) {
           if (edge.from != seedId) neighbourIds.add(edge.from);
           if (edge.to != seedId) neighbourIds.add(edge.to);
         }
@@ -105,7 +108,8 @@ final class TypeBrowser {
       neighbourIds.removeAll(gathered.keys);
       if (neighbourIds.isNotEmpty) {
         sources.add('get');
-        for (final node in await client.get(neighbourIds.toList())) {
+        for (final node
+            in await client.get(neighbourIds.toList(), profile: profile)) {
           gathered[node.id] = node;
         }
       }

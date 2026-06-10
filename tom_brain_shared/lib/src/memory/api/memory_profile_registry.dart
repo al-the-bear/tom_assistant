@@ -23,6 +23,7 @@
 
 import '../api/scope.dart' show Scope;
 import '../nodes/node.dart' show NodeDraft;
+import 'tom_brain_memory_client.dart' show TomBrainMemoryClient;
 
 /// Administration surface for the `<memory-root>/profiles/<name>/`
 /// tier (memory § 2.5).
@@ -72,4 +73,28 @@ abstract interface class MemoryProfileRegistry {
   /// validated exactly as in [createProfile]. Emits a `ProfileDropped`
   /// event when a profile was actually removed (memory § 16).
   Future<void> dropProfile(String name);
+
+  /// Runs [body] against a transient read handle bound to the profile
+  /// named [name], returning [body]'s result (memory § 2.5, § 3.2).
+  ///
+  /// This is the **view-scoping** seam the read-only MCP surface uses to
+  /// honour the optional `profile` argument on its read tools
+  /// (memory § 3.2): it opens a short-lived child store on [name] (the
+  /// same open/work/close lifecycle as [seedProfile]), invokes [body]
+  /// with that store's [TomBrainMemoryClient] surface, and closes the
+  /// handle in a `finally` — even when [body] throws.
+  ///
+  /// It is **read-shaped by contract**: [body] receives only the
+  /// wire-capable client surface (recall / get / edgesOf / classify /
+  /// stacks), so a profile-scoped *view* can never become a
+  /// profile-scoped *write*. [name] is validated exactly as in
+  /// [createProfile]; reading a profile that does not exist materialises
+  /// an empty one (matching the child-handle lifecycle), so callers that
+  /// require existence should check [exists] first. Per the open/work/
+  /// close cost this is for short-lived inspector reads, never a hot
+  /// path.
+  Future<T> readInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  );
 }

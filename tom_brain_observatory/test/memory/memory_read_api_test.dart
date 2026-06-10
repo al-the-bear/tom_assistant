@@ -175,6 +175,59 @@ void main() {
     });
   });
 
+  group('PT-6 — view-scoping profile (OBS-2)', () {
+    late FakeReadConnection conn;
+    late TrailReadApi api;
+
+    setUp(() {
+      conn = FakeReadConnection(allReadToolStubs());
+      api = TrailReadApi(host: host, memory: MemoryReadClient(conn));
+    });
+
+    test('GET /api/memory/nodes?profile= forwards the profile to every '
+        'composed read', () async {
+      final res = await _get(
+          api, 'api/memory/nodes?type=Question&traverseEdges=true&profile=eval');
+      expect(res.statusCode, 200);
+      // The browse composes recall + edgesOf + get; every one carries the
+      // named profile so the whole view is scoped to it (brain-side, OBS-3).
+      for (final args in conn.calledArgs) {
+        expect(args['profile'], 'eval');
+      }
+    });
+
+    test('GET /api/memory/edges?profile= forwards the profile', () async {
+      await _get(api, 'api/memory/edges?id=n_question1&profile=eval');
+      expect(conn.calledTools, <String>['memory.edgesOf']);
+      expect(conn.calledArgs.single['profile'], 'eval');
+    });
+
+    test('POST /api/memory/recall with a "profile" body field forwards it',
+        () async {
+      await _post(api, 'api/memory/recall',
+          <String, Object?>{'text': 'backup', 'profile': 'eval'});
+      expect(conn.calledArgs.single['profile'], 'eval');
+    });
+
+    test('GET /api/memory/stacks/<name>?profile= forwards the profile',
+        () async {
+      await _get(api, 'api/memory/stacks/working?k=5&profile=eval');
+      expect(conn.calledArgs.single['profile'], 'eval');
+    });
+
+    test('a read without ?profile= carries no profile argument', () async {
+      await _get(api, 'api/memory/edges?id=n_question1');
+      expect(conn.calledArgs.single.containsKey('profile'), isFalse);
+    });
+
+    test('view-scoping never reaches the write tool (OBS-2)', () async {
+      await _get(api, 'api/memory/nodes?type=Question&profile=eval');
+      await _post(api, 'api/memory/recall',
+          <String, Object?>{'text': 'x', 'profile': 'eval'});
+      expect(conn.calledTools, isNot(contains(MemoryReadClient.writeToolName)));
+    });
+  });
+
   group('PT-6 — deferred connector (no client wired)', () {
     final api = TrailReadApi(host: host); // memory: null
 

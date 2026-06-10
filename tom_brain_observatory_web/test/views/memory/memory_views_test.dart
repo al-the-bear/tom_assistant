@@ -12,6 +12,7 @@ import 'package:tom_brain_observatory_web/src/views/memory/memory_status.dart';
 import 'package:tom_brain_observatory_web/src/views/memory/node_browser_view.dart';
 import 'package:tom_brain_observatory_web/src/views/memory/node_detail_view.dart';
 import 'package:tom_brain_observatory_web/src/views/memory/node_link_chip.dart';
+import 'package:tom_brain_observatory_web/src/views/memory/memory_home_view.dart';
 import 'package:tom_brain_observatory_web/src/views/memory/recall_view.dart';
 import 'package:tom_brain_observatory_web/src/views/memory/stacks_stats_view.dart';
 
@@ -191,6 +192,44 @@ void main() {
       expect(find.text('attention'), findsOneWidget);
       expect(find.textContaining('never switches the brain'), findsOneWidget);
       expect(find.text('brain: default'), findsOneWidget);
+    });
+  });
+
+  group('MemoryHomeView — profile switcher view-scoping', () {
+    testWidgets('selecting a profile re-issues the visible reads against it and '
+        'never issues a write', (tester) async {
+      final client = StubMemoryApiClient(
+        stackList: const <MemoryStackSummary>[
+          MemoryStackSummary(
+              name: 'attention', size: 1, topPriority: 0.5, bootstrap: false),
+        ],
+        profileList: const MemoryProfiles(
+            profiles: <String>['default', 'eval'], current: 'default'),
+      );
+      await tester.pumpWidget(_host(MemoryHomeView(client: client)));
+      await tester.pumpAndSettle();
+
+      // Move to the Stacks tab where the switcher lives; its first read is the
+      // bound view (no profile suffix).
+      await tester.tap(find.text('Stacks & Stats'));
+      await tester.pumpAndSettle();
+      expect(client.calls, contains('stacks'));
+
+      client.calls.clear();
+
+      // Switch the viewed profile to 'eval'.
+      await tester.tap(find.byType(DropdownButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('eval').last);
+      await tester.pumpAndSettle();
+
+      // The tab remounted and re-read memory in the 'eval' view (OBS-2):
+      // the read carried the named profile, proving the switch re-issues the
+      // visible reads against it.
+      expect(client.calls, contains('stacks@eval'));
+      // The whole surface is read-only — no write was ever issued (OBS-2:
+      // switching the view never switches the brain).
+      expect(client.calls.any((c) => c.startsWith('persist')), isFalse);
     });
   });
 

@@ -263,6 +263,13 @@ class _FakeProfileRegistry implements MemoryProfileRegistry {
 
   @override
   Future<void> dropProfile(String name) async {}
+
+  @override
+  Future<T> readInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) async =>
+      throw UnimplementedError();
 }
 
 const RecallReport _emptyReport = RecallReport(

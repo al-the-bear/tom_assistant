@@ -49,13 +49,15 @@ final class MemoryReadClient {
 
   /// `memory.recall` (§ 5.4): single-seed fused-and-diversified recall. [modes]
   /// are marshalled to their wire tokens; every argument is omitted when null
-  /// so the server applies its own defaults.
+  /// so the server applies its own defaults. [profile] view-scopes the read to
+  /// a named profile (OBS-2: a read-only view switch, never a brain switch).
   Future<RecallResult> recall({
     String? text,
     List<double>? embedding,
     Set<RecallMode>? modes,
     int? k,
     int? wallClockMs,
+    String? profile,
   }) async {
     final payload = await _call('memory.recall', <String, Object?>{
       'text': ?text,
@@ -64,43 +66,53 @@ final class MemoryReadClient {
         'modes': <String>[for (final m in modes) m.wireName],
       'k': ?k,
       'wallClockMs': ?wallClockMs,
+      'profile': ?profile,
     });
     return RecallResult.fromJson(payload);
   }
 
   /// `memory.recall.multi` (§ 5.4): multi-seed recall returning per-node seed
   /// provenance. Each [RecallSeedSpec] marshals itself to the `seeds[]` shape.
+  /// [profile] view-scopes the read (see [recall]).
   Future<RecallResult> recallMulti({
     required List<RecallSeedSpec> seeds,
     int? k,
     int? wallClockMs,
+    String? profile,
   }) async {
     final payload = await _call('memory.recall.multi', <String, Object?>{
       'seeds': <Object?>[for (final seed in seeds) seed.toJson()],
       'k': ?k,
       'wallClockMs': ?wallClockMs,
+      'profile': ?profile,
     });
     return RecallResult.fromJson(payload);
   }
 
   /// `memory.get` (§ 5.2): the nodes for [ids], in request order where present.
-  Future<List<MemoryNode>> get(List<String> ids) async {
-    final payload = await _call('memory.get', <String, Object?>{'ids': ids});
+  /// [profile] view-scopes the read (see [recall]).
+  Future<List<MemoryNode>> get(List<String> ids, {String? profile}) async {
+    final payload = await _call('memory.get', <String, Object?>{
+      'ids': ids,
+      'profile': ?profile,
+    });
     return _nodes(payload);
   }
 
   /// `memory.edgesOf` (§ 5.3): edges incident to [id]. [direction] and [types]
   /// are marshalled to their wire tokens; [types] is omitted when null (all
-  /// edge types).
+  /// edge types). [profile] view-scopes the read (see [recall]).
   Future<List<MemoryEdge>> edgesOf(
     String id, {
     EdgeDirection direction = EdgeDirection.both,
     Set<String>? types,
+    String? profile,
   }) async {
     final payload = await _call('memory.edgesOf', <String, Object?>{
       'id': id,
       'direction': direction.wireName,
       if (types != null) 'types': types.toList(),
+      'profile': ?profile,
     });
     return <MemoryEdge>[
       for (final raw in (payload['edges'] as List?) ?? const <Object?>[])
@@ -108,20 +120,29 @@ final class MemoryReadClient {
     ];
   }
 
-  /// `memory.stack.list` (§ 5.5): the stack inventory.
-  Future<List<MemoryStackSummary>> stackList() async {
-    final payload = await _call('memory.stack.list', const <String, Object?>{});
+  /// `memory.stack.list` (§ 5.5): the stack inventory. [profile] view-scopes the
+  /// read (see [recall]).
+  Future<List<MemoryStackSummary>> stackList({String? profile}) async {
+    final payload = await _call('memory.stack.list', <String, Object?>{
+      'profile': ?profile,
+    });
     return <MemoryStackSummary>[
       for (final raw in (payload['stacks'] as List?) ?? const <Object?>[])
         MemoryStackSummary.fromJson((raw as Map).cast<String, Object?>()),
     ];
   }
 
-  /// `memory.stack.peek` (§ 5.5): the top [k] entries of stack [name].
-  Future<List<MemoryStackEntry>> stackPeek(String name, {int? k}) async {
+  /// `memory.stack.peek` (§ 5.5): the top [k] entries of stack [name]. [profile]
+  /// view-scopes the read (see [recall]).
+  Future<List<MemoryStackEntry>> stackPeek(
+    String name, {
+    int? k,
+    String? profile,
+  }) async {
     final payload = await _call('memory.stack.peek', <String, Object?>{
       'name': name,
       'k': ?k,
+      'profile': ?profile,
     });
     return <MemoryStackEntry>[
       for (final raw in (payload['entries'] as List?) ?? const <Object?>[])
@@ -130,14 +151,17 @@ final class MemoryReadClient {
   }
 
   /// `memory.classify` (§ 5.6): the centroid classification of [embedding].
-  /// [target] is marshalled to its wire token.
+  /// [target] is marshalled to its wire token. [profile] view-scopes the read
+  /// (see [recall]).
   Future<MemoryClassification> classify(
     List<double> embedding, {
     ClassifyTarget target = ClassifyTarget.nodeType,
+    String? profile,
   }) async {
     final payload = await _call('memory.classify', <String, Object?>{
       'embedding': embedding,
       'target': target.wireName,
+      'profile': ?profile,
     });
     return MemoryClassification.fromJson(payload);
   }
