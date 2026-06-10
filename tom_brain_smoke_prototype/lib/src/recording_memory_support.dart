@@ -25,7 +25,7 @@
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, StackEntryId, TrailId, Vec, WriteBudget;
+    show EdgeId, NodeId, ProcedureStatus, StackEntryId, TrailId, Vec, WriteBudget;
 
 /// The shared recording surface of the two smoke memory doubles.
 ///
@@ -139,6 +139,15 @@ abstract class RecordingMemoryBase implements TomBrainMemory {
 
   @override
   Future<WriteBudget?> remainingBudget(String runId) async => null;
+
+  @override
+  Future<void> updateProcedureMetrics(
+    NodeId id, {
+    ProcedureStatus? status,
+    double? successRate,
+    int? runCount,
+    DateTime? lastRunAt,
+  }) async {}
 
   @override
   Future<void> demote(NodeId id, DemotionReason reason) async {}
