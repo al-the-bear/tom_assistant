@@ -102,7 +102,8 @@ void main() {
               {"kind": "llm", "callType": "assistant_to_user", "tokensIn": 88, "tokensOut": 40, "rawPath": "../../llm/assistant_to_user/x.raw.json"},
               {"kind": "note", "category": "selfCritique"},
               {"kind": "error", "errorKind": "substrateTimeout", "message": "timed out"},
-              {"kind": "primitive", "primitive": "persist", "resultId": "n_fixtureA1"}
+              {"kind": "primitive", "primitive": "persist", "resultId": "n_fixtureA1"},
+              {"kind": "primitive", "primitive": "edge", "resultId": "e_fixtureA1", "edge": {"type": "derived_from", "from": "n_fixtureA1", "to": "n_fixtureA2"}}
             ]
           }
         }
@@ -122,7 +123,7 @@ void main() {
     test('run-tree nodes discriminate by kind, sub-run recurses', () {
       final run = trace.runTree!;
       expect(run.procedureId, 'answer_with_memory_v1');
-      expect(run.nodes, hasLength(5));
+      expect(run.nodes, hasLength(6));
 
       final sub = run.nodes[0] as SubRunNode;
       expect(sub.run.procedureId, 'retrieve_for_prompt_v1');
@@ -140,6 +141,14 @@ void main() {
       expect((run.nodes[2] as NoteNode).category, 'selfCritique');
       expect((run.nodes[3] as ErrorNode).errorKind, 'substrateTimeout');
       expect((run.nodes[4] as PrimitiveCallNode).resultId, 'n_fixtureA1');
+
+      final edge = run.nodes[5] as PrimitiveCallNode;
+      expect(edge.primitive, 'edge');
+      expect(edge.resultId, 'e_fixtureA1'); // the edge's own id
+      expect(edge.edge, isNotNull);
+      expect(edge.edge!.type, 'derived_from');
+      expect(edge.edge!.from, 'n_fixtureA1');
+      expect(edge.edge!.to, 'n_fixtureA2');
     });
 
     test('an unknown run-node kind is a hard format error', () {

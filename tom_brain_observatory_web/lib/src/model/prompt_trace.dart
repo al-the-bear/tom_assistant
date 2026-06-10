@@ -193,17 +193,20 @@ class PrimitiveCallNode extends RunNode {
   final String primitive;
   final String? resultId;
   final RecallDescriptor? recall;
+  final EdgeDescriptor? edge;
 
   const PrimitiveCallNode({
     required this.primitive,
     required this.resultId,
     required this.recall,
+    this.edge,
   });
 
   factory PrimitiveCallNode.fromJson(Map<String, dynamic> json) => PrimitiveCallNode(
         primitive: json['primitive'] as String,
         resultId: json['resultId'] as String?,
         recall: _maybe(json['recall'], RecallDescriptor.fromJson),
+        edge: _maybe(json['edge'], EdgeDescriptor.fromJson),
       );
 }
 
@@ -230,6 +233,28 @@ class RecallDescriptor {
         returnedIds:
             (json['returnedIds'] as List<dynamic>?)?.cast<String>() ??
                 const <String>[],
+      );
+}
+
+/// The edge shape carried by an `edge` primitive (§ 3.9). [from] / [to] are the
+/// endpoint node ids the §4.7 deep-links walk into Module 2; [type] is the
+/// closed-alphabet relation. The edge's own id is the primitive's `resultId`
+/// (an edge, not a node, so it is not a node deep-link).
+class EdgeDescriptor {
+  final String type;
+  final String from;
+  final String to;
+
+  const EdgeDescriptor({
+    required this.type,
+    required this.from,
+    required this.to,
+  });
+
+  factory EdgeDescriptor.fromJson(Map<String, dynamic> json) => EdgeDescriptor(
+        type: json['type'] as String,
+        from: json['from'] as String,
+        to: json['to'] as String,
       );
 }
 

@@ -7,5 +7,5 @@ procedure answer_with_memory_v1  run run-fixture-a0  turn 260101-120000.000001
 ├─ llm assistant_to_user → 88→40 tok  → ../../llm/assistant_to_user/260101-120000.000001__02.raw.json
 ├─ embed
 ├─ persist → n_fixture0000000000000000A1
-├─ edge → e_fixture0000000000000000A1
+├─ edge n_fixture0000000000000000A1 -derived_from-> n_fixture0000000000000000A2 → e_fixture0000000000000000A1
 └─ outcome accepted (entries=6, 2.1s)

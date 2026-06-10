@@ -264,6 +264,85 @@ void main() {
     expect(opened, <String>['n_alpha', 'n_beta']);
   });
 
+  testWidgets('an edge primitive deep-links both endpoints via onOpenNode '
+      '(PT-7 / §3.8 / §4.7)', (tester) async {
+    final opened = <String>[];
+    await _pump(
+      tester,
+      RunTreeView(
+        run: const ProcedureRun(
+          procedureId: 'p',
+          runId: 'r',
+          turnId: null,
+          status: 'accepted',
+          elapsedMs: 10,
+          entryCount: 1,
+          nodes: <RunNode>[
+            PrimitiveCallNode(
+              primitive: 'edge',
+              resultId: 'e_edge1',
+              recall: null,
+              edge: EdgeDescriptor(
+                  type: 'supports', from: 'n_alpha', to: 'n_beta'),
+            ),
+          ],
+        ),
+        onOpenNode: opened.add,
+      ),
+    );
+
+    await tester.tap(find.textContaining('p · accepted'));
+    await tester.pumpAndSettle();
+
+    // The summary row renders the relation; the edge id itself is not a chip.
+    expect(find.textContaining('edge n_alpha -supports-> n_beta'),
+        findsOneWidget);
+    // One deep-link chip per endpoint, keyed like NodeLinkChip.
+    expect(find.byKey(const ValueKey<String>('node-link:n_alpha')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('node-link:n_beta')),
+        findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey<String>('node-link:n_alpha')));
+    await tester.tap(find.byKey(const ValueKey<String>('node-link:n_beta')));
+    await tester.pumpAndSettle();
+
+    expect(opened, <String>['n_alpha', 'n_beta']);
+  });
+
+  testWidgets('a bare edge (no endpoint descriptor) deep-links nothing',
+      (tester) async {
+    var calls = 0;
+    await _pump(
+      tester,
+      RunTreeView(
+        run: const ProcedureRun(
+          procedureId: 'p',
+          runId: 'r',
+          turnId: null,
+          status: 'accepted',
+          elapsedMs: 10,
+          entryCount: 1,
+          nodes: <RunNode>[
+            PrimitiveCallNode(
+                primitive: 'edge', resultId: 'e_bare2', recall: null),
+          ],
+        ),
+        onOpenNode: (_) => calls++,
+      ),
+    );
+
+    await tester.tap(find.textContaining('p · accepted'));
+    await tester.pumpAndSettle();
+
+    // No endpoint descriptor → no chips; the bare `edge → <id>` row deep-links
+    // its own id (an edge id) like any id-returning primitive.
+    expect(find.byKey(const ValueKey<String>('node-link:e_bare2')), findsNothing);
+    await tester.tap(find.textContaining('edge → e_bare2'));
+    await tester.pumpAndSettle();
+    expect(calls, 1); // the resultId tap fires once; no endpoint chips exist.
+  });
+
   testWidgets('renders an error node with error emphasis', (tester) async {
     await _pump(
       tester,

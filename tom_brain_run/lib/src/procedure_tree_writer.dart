@@ -152,8 +152,10 @@ final class ProcedureTreeWriter {
   /// relative link to its raw dump; a `recall` renders its modes / k / returned
   /// count, then the returned node ids the writer could resolve
   /// (`→ <count>: <id>, <id>` — the §4.7 cross-link source; no link — a memory
-  /// primitive has no raw LLM file); any other primitive renders its name, with
-  /// `→ <id>` when its result carries one.
+  /// primitive has no raw LLM file); an `edge` renders its endpoints + relation
+  /// then the new edge's id (`<from> -<type>-> <to> → <id>` — the §4.7 source,
+  /// where the *endpoints* deep-link, not the edge id); any other primitive
+  /// renders its name, with `→ <id>` when its result carries one.
   String _primitiveLine(ProcedurePrimitiveNode node) {
     final llm = node.llm;
     if (llm != null) {
@@ -183,6 +185,16 @@ final class ProcedureTreeWriter {
       return 'recall ($modes k=$k → $returned$idSuffix)';
     }
     final id = node.result['id'];
+    if (node.primitive == 'edge') {
+      final from = node.input['from'];
+      final type = node.input['type'];
+      final to = node.input['to'];
+      // The endpoint form only when the write carried all three; otherwise fall
+      // through to the bare `edge → <id>` form (the endpoints are unresolvable).
+      if (from is String && type is String && to is String && id != null) {
+        return 'edge $from -$type-> $to → $id';
+      }
+    }
     return id == null ? node.primitive : '${node.primitive} → $id';
   }
 

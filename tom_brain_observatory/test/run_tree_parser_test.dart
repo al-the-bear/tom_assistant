@@ -55,6 +55,11 @@ void main() {
       final edge = run.nodes[4] as PrimitiveCallNode;
       expect(edge.primitive, 'edge');
       expect(edge.resultId, 'e_fixture0000000000000000A1');
+      // The endpoints + relation are the §4.7 deep-link source.
+      expect(edge.edge, isNotNull);
+      expect(edge.edge!.from, 'n_fixture0000000000000000A1');
+      expect(edge.edge!.type, 'derived_from');
+      expect(edge.edge!.to, 'n_fixture0000000000000000A2');
     });
 
     test('recurses to full depth: a0 → a1 → a2', () {
@@ -131,6 +136,40 @@ void main() {
       expect(withIds['returnedIds'], <String>['n_alpha', 'n_beta']);
       final empty = (run.nodes[1] as PrimitiveCallNode).recall!.toJson();
       expect(empty.containsKey('returnedIds'), isFalse);
+    });
+  });
+
+  group('parseRunTree — edge endpoints (PT-7 / §3.8 / §3.9)', () {
+    const log = 'procedure answer_with_memory_v1  run r0  turn t0\n'
+        '├─ edge n_alpha -supports-> n_beta → e_edge1\n'
+        '├─ edge → e_bare2\n'
+        '└─ outcome accepted (entries=2, 100ms)\n';
+    final run = parseRunTree(log)!;
+
+    test('an edge line carrying endpoints parses into an EdgeDescriptor', () {
+      final edge = run.nodes[0] as PrimitiveCallNode;
+      expect(edge.primitive, 'edge');
+      expect(edge.resultId, 'e_edge1'); // the edge's own id
+      expect(edge.edge, isNotNull);
+      expect(edge.edge!.from, 'n_alpha');
+      expect(edge.edge!.type, 'supports');
+      expect(edge.edge!.to, 'n_beta');
+    });
+
+    test('a bare `edge → id` line carries the id but no endpoint descriptor', () {
+      final bare = run.nodes[1] as PrimitiveCallNode;
+      expect(bare.primitive, 'edge');
+      expect(bare.resultId, 'e_bare2');
+      expect(bare.edge, isNull);
+    });
+
+    test('the edge descriptor round-trips through toJson (omitted when absent)',
+        () {
+      final withEdge = (run.nodes[0] as PrimitiveCallNode).toJson();
+      expect(withEdge['edge'],
+          <String, Object?>{'type': 'supports', 'from': 'n_alpha', 'to': 'n_beta'});
+      final bare = (run.nodes[1] as PrimitiveCallNode).toJson();
+      expect(bare.containsKey('edge'), isFalse);
     });
   });
 

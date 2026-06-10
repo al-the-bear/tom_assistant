@@ -13,9 +13,11 @@
 //
 // A primitive that persisted a node (`persist → <id>`) surfaces that node id;
 // tapping it invokes [onOpenNode] to deep-link into Module 2's node view
-// (§ 4.7 / PT-7.1). The recall primitive carries only a result *count* and edge
-// endpoints are not modelled in the run-tree contract (§ 3.9), so those rows are
-// inert — the richer ids live in the per-profile memory log, wired separately.
+// (§ 4.7 / PT-7.1). A recall surfaces a deep-link chip per returned id; an
+// `edge` primitive surfaces a deep-link chip per endpoint (`from` / `to`) — the
+// edge id itself is an edge, not a node, so the main row stays inert (§ 3.8 /
+// § 3.9). A recall with no resolvable ids, a bare `edge → <id>`, or any other
+// bare primitive carries no chip and stays inert.
 
 import 'package:flutter/material.dart';
 
@@ -188,14 +190,40 @@ class _RunNodeRow extends StatelessWidget {
       };
 
   /// Renders a `kind: primitive` node. A recall whose descriptor carries
-  /// resolvable returned ids (and an [onOpenNode] seam) shows its summary row
-  /// plus a deep-link chip per id (§ 4.7); otherwise it is a single row that is
-  /// tappable only when it carries a persisted `resultId`.
+  /// resolvable returned ids, or an `edge` whose descriptor carries its two
+  /// endpoints (and an [onOpenNode] seam in either case) shows its summary row
+  /// plus a deep-link chip per node id (§ 4.7); otherwise it is a single row
+  /// that is tappable only when it carries a persisted `resultId`.
   Widget _buildPrimitive(PrimitiveCallNode node) {
     final recall = node.recall;
+    final edge = node.edge;
     final open = onOpenNode;
     if (recall != null && recall.returnedIds.isNotEmpty && open != null) {
-      return Column(
+      return _primitiveWithChips(node, recall.returnedIds, open);
+    }
+    // An `edge` write deep-links its two endpoints (`from` / `to`) — both are
+    // nodes. The edge's own id (`resultId`) is an edge, not a node, so the
+    // summary row stays inert.
+    if (edge != null && open != null) {
+      return _primitiveWithChips(node, <String>[edge.from, edge.to], open);
+    }
+    final resultId = node.resultId;
+    return CollapsedRow(
+      icon: Icons.memory,
+      label: _primitiveSummary(node),
+      expandable: resultId != null && open != null,
+      expanded: false,
+      onTap: resultId == null || open == null ? null : () => open(resultId),
+    );
+  }
+
+  /// An inert summary row followed by a deep-link chip per node id in [nodeIds].
+  Widget _primitiveWithChips(
+    PrimitiveCallNode node,
+    List<String> nodeIds,
+    ValueChanged<String> open,
+  ) =>
+      Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           CollapsedRow(
@@ -211,35 +239,30 @@ class _RunNodeRow extends StatelessWidget {
               spacing: 6,
               runSpacing: 4,
               children: <Widget>[
-                for (final id in recall.returnedIds)
-                  _NodeRefChip(nodeId: id, onOpen: open),
+                for (final id in nodeIds) _NodeRefChip(nodeId: id, onOpen: open),
               ],
             ),
           ),
         ],
       );
-    }
-    final resultId = node.resultId;
-    return CollapsedRow(
-      icon: Icons.memory,
-      label: _primitiveSummary(node),
-      expandable: resultId != null && open != null,
-      expanded: false,
-      onTap: resultId == null || open == null ? null : () => open(resultId),
-    );
-  }
 
   /// `llm <callType> · <in>→<out> tok` — what the run node carries (§ 3.9). The
   /// provider/model/wall-clock live in the raw dump (PT-2.4), shown on expand.
   static String _llmSummary(LlmCallNode n) =>
       'llm ${n.callType} · ${n.tokensIn}→${n.tokensOut} tok';
 
-  /// `recall (<modes> k=<k> → <returned>)` for a recall, else `<primitive>[ → id]`.
+  /// `recall (<modes> k=<k> → <returned>)` for a recall,
+  /// `edge <from> -<type>-> <to>` for an edge with endpoints,
+  /// else `<primitive>[ → id]`.
   static String _primitiveSummary(PrimitiveCallNode n) {
     final r = n.recall;
     if (r != null) {
       final k = r.k == null ? '' : ' k=${r.k}';
       return 'recall (${r.modes.join('+')}$k → ${r.returned})';
+    }
+    final e = n.edge;
+    if (e != null) {
+      return 'edge ${e.from} -${e.type}-> ${e.to}';
     }
     return n.resultId == null ? n.primitive : '${n.primitive} → ${n.resultId}';
   }

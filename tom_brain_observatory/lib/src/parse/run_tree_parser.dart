@@ -183,6 +183,8 @@ final RegExp _recallPattern =
     RegExp(r'^recall \((.*?) k=(\S*) → (\d+)(?:: (.+))?\)$');
 final RegExp _notePattern = RegExp(r'^note (.+)$');
 final RegExp _errorPattern = RegExp(r'^error (\S+): (.+)$');
+final RegExp _edgePattern =
+    RegExp(r'^edge (\S+) -(\S+)-> (\S+) → (\S+)$');
 final RegExp _primitiveWithIdPattern = RegExp(r'^(\S+) → (\S+)$');
 
 /// Decodes one non-subprocedure, non-outcome content string into its [RunNode].
@@ -222,6 +224,22 @@ RunNode _leafNode(String content) {
   final note = _notePattern.firstMatch(content);
   if (note != null) {
     return NoteNode(category: note.group(1)!);
+  }
+
+  // An `edge` line carrying its endpoints (`edge <from> -<type>-> <to> → <id>`)
+  // — checked before the generic id pattern, which would otherwise miss the
+  // endpoints. `resultId` keeps the edge's own id; `edge` carries the endpoints.
+  final edge = _edgePattern.firstMatch(content);
+  if (edge != null) {
+    return PrimitiveCallNode(
+      primitive: 'edge',
+      resultId: edge.group(4)!,
+      edge: EdgeDescriptor(
+        from: edge.group(1)!,
+        type: edge.group(2)!,
+        to: edge.group(3)!,
+      ),
+    );
   }
 
   final withId = _primitiveWithIdPattern.firstMatch(content);

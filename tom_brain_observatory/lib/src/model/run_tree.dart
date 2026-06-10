@@ -86,9 +86,10 @@ sealed class RunNode {
 ///
 /// The rendered `.log` carries only what the writer chose to show: the primitive
 /// name always, a `→ <id>` result id for an id-returning primitive (`persist`,
-/// `edge`), and a parsed [recall] descriptor (modes / k / returned) for a
-/// `recall`. The richer `input` / `result` maps live in `memory/<profile>.log`
-/// (§ 3.8) and are wired in a later phase.
+/// `edge`), a parsed [recall] descriptor (modes / k / returned) for a `recall`,
+/// and a parsed [edge] descriptor (type / from / to) for an `edge`. The richer
+/// `input` / `result` maps live in `memory/<profile>.log` (§ 3.8) and are wired
+/// in a later phase.
 final class PrimitiveCallNode extends RunNode {
   /// The primitive name (`recall`, `recallMulti`, `persist`, `edge`, `embed`, …).
   final String primitive;
@@ -101,10 +102,16 @@ final class PrimitiveCallNode extends RunNode {
   /// for a `recall` primitive.
   final RecallDescriptor? recall;
 
+  /// The parsed `<from> -<type>-> <to>` descriptor, present only for an `edge`
+  /// primitive whose endpoints the writer rendered — the §4.7 endpoint
+  /// deep-link source. Absent on a bare `edge → <id>` line.
+  final EdgeDescriptor? edge;
+
   const PrimitiveCallNode({
     required this.primitive,
     this.resultId,
     this.recall,
+    this.edge,
   });
 
   @override
@@ -113,6 +120,7 @@ final class PrimitiveCallNode extends RunNode {
         'primitive': primitive,
         if (resultId != null) 'resultId': resultId,
         if (recall != null) 'recall': recall!.toJson(),
+        if (edge != null) 'edge': edge!.toJson(),
       };
 }
 
@@ -147,6 +155,33 @@ final class RecallDescriptor {
         if (k != null) 'k': k,
         'returned': returned,
         if (returnedIds.isNotEmpty) 'returnedIds': returnedIds,
+      };
+}
+
+/// The parsed body of an `edge` primitive line
+/// (`edge n_alpha -supports-> n_beta → e_…`): the relation [type] and its two
+/// endpoint node ids [from] / [to]. Both endpoints are §4.7 node deep-links; the
+/// edge's own id (`resultId` on the [PrimitiveCallNode]) is an edge, not a node.
+final class EdgeDescriptor {
+  /// The closed-alphabet edge relation (`supports`, `derived_from`, `mentions`, …).
+  final String type;
+
+  /// The source endpoint node id.
+  final String from;
+
+  /// The target endpoint node id.
+  final String to;
+
+  const EdgeDescriptor({
+    required this.type,
+    required this.from,
+    required this.to,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'type': type,
+        'from': from,
+        'to': to,
       };
 }
 

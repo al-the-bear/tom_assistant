@@ -185,6 +185,72 @@ void main() {
       expect(text, contains('recall (bm25+vector k=4 → 2: n_alpha, n_beta)'));
     });
 
+    test('renders an edge\'s endpoints + type after the id (§3.8 / §3.9)',
+        () async {
+      final record = ProcedureTreeRecord(
+        procedureId: 'answer_with_memory_v1',
+        version: 1,
+        runId: 'edge-run-1',
+        parentRunId: null,
+        turnId: 'turn_EDG',
+        depth: 1,
+        status: TrailOutcomeStatus.accepted,
+        elapsedMs: 120,
+        entryCount: 1,
+        nodes: <ProcedureTreeNode>[
+          ProcedurePrimitiveNode(
+            primitive: 'edge',
+            input: <String, Object?>{
+              'from': 'n_alpha',
+              'type': 'supports',
+              'to': 'n_beta',
+            },
+            result: <String, Object?>{'id': 'e_fixtureA1'},
+          ),
+        ],
+      );
+
+      ProcedureTreeWriter(root: tempRoot).write(record);
+      final text = File(
+        '${tempRoot.path}/procedures/answer_with_memory_v1/'
+        'turn_EDG__edge-run-1.log',
+      ).readAsStringSync();
+
+      // Endpoints + relation, then the new edge's own id — the §4.7 source
+      // (the endpoints deep-link; the edge id does not).
+      expect(text, contains('edge n_alpha -supports-> n_beta → e_fixtureA1'));
+    });
+
+    test('an edge missing an endpoint falls back to the bare id form', () async {
+      final record = ProcedureTreeRecord(
+        procedureId: 'answer_with_memory_v1',
+        version: 1,
+        runId: 'edge-run-2',
+        parentRunId: null,
+        turnId: 'turn_EDG2',
+        depth: 1,
+        status: TrailOutcomeStatus.accepted,
+        elapsedMs: 120,
+        entryCount: 1,
+        nodes: <ProcedureTreeNode>[
+          ProcedurePrimitiveNode(
+            primitive: 'edge',
+            input: const <String, Object?>{'from': 'n_alpha'}, // no type/to
+            result: <String, Object?>{'id': 'e_fixtureB2'},
+          ),
+        ],
+      );
+
+      ProcedureTreeWriter(root: tempRoot).write(record);
+      final text = File(
+        '${tempRoot.path}/procedures/answer_with_memory_v1/'
+        'turn_EDG2__edge-run-2.log',
+      ).readAsStringSync();
+
+      expect(text, contains('├─ edge → e_fixtureB2'));
+      expect(text, isNot(contains('-supports->')));
+    });
+
     test('keys a turn-less dream run by <runId>.log with a runId__callId stem',
         () async {
       final dream = ProcedureTreeRecord(
