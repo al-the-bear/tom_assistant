@@ -74,17 +74,28 @@ final class DreamCadenceLoop {
   /// Builds a loop that pumps [driver] every [heartbeat] (default one minute —
   /// finer than the fast lane's 5-minute default so a due fast pass fires
   /// within a heartbeat of becoming due).
+  ///
+  /// [shouldTick] is the per-beat gate (item b): when supplied and it returns
+  /// `false`, the beat skips `driver.tick()` entirely — the heartbeat keeps
+  /// running but no lane is even *considered* due. The [DreamController] passes
+  /// its window/mode test here so dreaming only fires inside a configured
+  /// time-slot. A `null` gate (the default) means "always tick", the behaviour
+  /// before item b.
   DreamCadenceLoop({
     required this.driver,
     this.heartbeat = const Duration(minutes: 1),
+    bool Function()? shouldTick,
     void Function(Object error, StackTrace stack)? onTickError,
-  }) : _onTickError = onTickError;
+  })  : _shouldTick = shouldTick,
+        _onTickError = onTickError;
 
   /// The cadence driver this loop pumps.
   final DreamCadenceDriver driver;
 
   /// How often [DreamCadenceDriver.tick] is called.
   final Duration heartbeat;
+
+  final bool Function()? _shouldTick;
 
   final void Function(Object error, StackTrace stack)? _onTickError;
 
@@ -107,9 +118,13 @@ final class DreamCadenceLoop {
   }
 
   /// One heartbeat: pump the driver unless a previous tick is still running
-  /// (a slow background pass must never let two ticks overlap).
+  /// (a slow background pass must never let two ticks overlap) or the [_shouldTick]
+  /// gate closes this beat (item b — outside a configured dream window).
   Future<void> _pump() async {
     if (_ticking) {
+      return;
+    }
+    if (_shouldTick != null && !_shouldTick()) {
       return;
     }
     _ticking = true;

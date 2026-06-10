@@ -116,6 +116,43 @@ void main() {
       expect(attempts, greaterThan(1));
     });
 
+    test('DL-5: a closed shouldTick gate skips the pump (item b window gate)',
+        () async {
+      final fired = <String>[];
+      var gateOpen = false;
+      final clock = MutableTestClock(BrainTime.fromMs(0));
+      final schedule = CadenceSchedule.defaults();
+      final driver = DreamCadenceDriver(
+        clock: clock,
+        schedule: schedule,
+        fire: (id) async {
+          fired.add(id);
+          return FireOutcome.fired;
+        },
+      );
+      // The fast lane is perpetually due, so only the gate decides whether it
+      // fires.
+      clock.advance(schedule.intervals[DreamLane.fast]!);
+
+      final loop = DreamCadenceLoop(
+        driver: driver,
+        heartbeat: const Duration(milliseconds: 5),
+        shouldTick: () => gateOpen,
+      );
+      loop.start();
+      addTearDown(loop.stop);
+
+      // Gate closed: no fire despite the due lane.
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(fired, isEmpty, reason: 'a closed gate suppresses every beat');
+
+      // Open the gate: the next beat fires the due lane.
+      gateOpen = true;
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      await loop.stop();
+      expect(fired, containsAll(schedule.agents[DreamLane.fast]!));
+    });
+
     test('DL-4: stop before start is a harmless no-op', () async {
       final clock = MutableTestClock(BrainTime.fromMs(0));
       final driver = DreamCadenceDriver(

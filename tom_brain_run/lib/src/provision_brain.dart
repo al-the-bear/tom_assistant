@@ -48,9 +48,11 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
     show MemoryConfig, createSqliteTomBrainMemory;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show
+        BootedBrain,
         BrainProcessBoot,
         BrainProcessConfig,
         ClassifyFallback,
+        FreeTimeScheduler,
         LlmTrailRecord,
         LlmTrailSink,
         MemoryAccessRecord,
@@ -66,6 +68,9 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
 
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
+import 'dream_cadence_wiring.dart' show dreamCadenceDriverOverScheduler;
+import 'dream_config.dart' show DreamConfig;
+import 'dream_controller.dart' show DreamController;
 import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
@@ -150,6 +155,7 @@ Future<ProvisionedBrain> provisionBrain({
   MemoryAccessSink? memoryAccessSink,
   ToolAccessSink? toolAccessSink,
   ProcedureTreeSink? procedureTreeSink,
+  DreamConfig? dream,
 }) async {
   final Directory scriptsDir =
       systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
@@ -177,10 +183,22 @@ Future<ProvisionedBrain> provisionBrain({
     ),
   );
 
+  // Wire the scheduled dream cadence into startup (item b) when a `dream:` block
+  // is present AND enabled. The controller owns a `DreamCadenceLoop` whose
+  // heartbeat gate is its window/mode test, firing each due dream agent through
+  // the free-time scheduler's background slot. We build it *after* boot because
+  // the scheduler reads the booted coordinator / engine / memory client, then
+  // start the gated heartbeat. An absent or disabled block leaves the cognition
+  // with no background cadence — the prototype's deterministic live tests never
+  // spin one (so r30 / r32 / r35 / r36 stay deterministic).
+  final DreamController? dreamController =
+      (dream != null && dream.enabled) ? _startDreamLoop(booted, dream) : null;
+
   // Project the booted cognition: the access process holds only a `Dispatcher`
   // and a `QueueSnapshotSource`. We own the `RunCoordinator`, so we project its
-  // live getters onto a `QueueSnapshot` and hand `BootedBrain.shutdown` as the
-  // teardown.
+  // live getters onto a `QueueSnapshot`. The teardown stops the dream loop (if
+  // any) before `BootedBrain.shutdown` drains the coordinator, so no dream tick
+  // is admitted while the cognition is tearing down.
   return ProvisionedBrain(
     dispatcher: booted.dispatcher,
     queueSnapshot: () => QueueSnapshot(
@@ -190,8 +208,39 @@ Future<ProvisionedBrain> provisionBrain({
       backgroundRunning: booted.coordinator.hasBackgroundRun,
       draining: booted.coordinator.isDraining,
     ),
-    shutdown: booted.shutdown,
+    shutdown: dreamController == null
+        ? booted.shutdown
+        : () async {
+            await dreamController.stop();
+            await booted.shutdown();
+          },
   );
+}
+
+/// Builds and starts the scheduled dream cadence loop over the [booted]
+/// cognition per the [dream] config (item b).
+///
+/// The cadence fires each due dream agent through a [FreeTimeScheduler] bound to
+/// the booted coordinator / engine / memory client — the same single coordinator
+/// the inbound foreground path drives, so a dream pass cooperatively yields to a
+/// foreground arrival (PE-5). The [DreamController] gates that cadence by the
+/// configured windows; its heartbeat is the config's override or the loop's
+/// one-minute default. Returns the started controller so the caller can compose
+/// its `stop()` into the cognition teardown.
+DreamController _startDreamLoop(BootedBrain booted, DreamConfig dream) {
+  final scheduler = FreeTimeScheduler(
+    coordinator: booted.coordinator,
+    memory: booted.memory.client,
+    workFactory: (_) => null,
+    engine: booted.engine,
+  );
+  final controller = DreamController(
+    driver: dreamCadenceDriverOverScheduler(scheduler),
+    schedule: dream.schedule,
+    heartbeat: dream.heartbeat ?? const Duration(minutes: 1),
+  );
+  controller.start();
+  return controller;
 }
 
 /// Binds [provisionBrain] into a value matching the access package's
@@ -276,6 +325,7 @@ Future<BrainProcess> standUpBrainProcess({
   MemoryAccessSink? memoryAccessSink,
   ToolAccessSink? toolAccessSink,
   ProcedureTreeSink? procedureTreeSink,
+  DreamConfig? dream,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -291,6 +341,7 @@ Future<BrainProcess> standUpBrainProcess({
     memoryAccessSink: memoryAccessSink,
     toolAccessSink: toolAccessSink,
     procedureTreeSink: procedureTreeSink,
+    dream: dream,
   );
 
   final BrainAccessProcess process;
@@ -358,6 +409,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     memoryAccessSink: sinks.memoryAccessSink,
     toolAccessSink: sinks.toolAccessSink,
     procedureTreeSink: sinks.procedureTreeSink,
+    dream: runConfig.dream,
   );
 }
 

@@ -65,6 +65,12 @@ export 'src/dream_cadence_wiring.dart'
         DreamCadenceLoop,
         dreamCadenceDriverOverScheduler,
         fireThroughScheduler;
+export 'src/dream_window_schedule.dart'
+    show DreamWindow, DreamWindowSchedule;
+export 'src/dream_controller.dart'
+    show DreamController, DreamModeKind, DreamStatus;
+export 'src/dream_config.dart' show DreamConfig, DreamConfigException;
+export 'src/dream_config_loader.dart' show DreamConfigLoader;
 
 // ── Trail config + mode + banner (logging-spec §4.1 / §8; §10 step #1) ─
 export 'src/trail_banner.dart' show TrailBanner;

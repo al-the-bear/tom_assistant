@@ -28,6 +28,7 @@ import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryConfig;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig;
 
+import 'dream_config.dart';
 import 'tools_config.dart';
 import 'trail_config.dart';
 
@@ -66,17 +67,25 @@ final class BrainRunConfig {
   /// value threads its non-empty `fileScope` list onto the procedure engine.
   final ToolsConfig? tools;
 
+  /// The optional `dream:` section (item b) — the boot-time dream-cadence
+  /// policy (whether the loop starts, the daily windows it runs in, the
+  /// heartbeat override). `null` when the document carries no `dream:` block,
+  /// in which case the run assembly stands up no dream loop at all.
+  final DreamConfig? dream;
+
   /// Assembles the parsed sections into the run configuration.
   ///
-  /// [trail] and [tools] are optional: an absent `trail:` block leaves [trail]
-  /// `null` (unconfigured mode); an absent `tools:` block leaves [tools] `null`
-  /// (the engine's placeholder file-scope root).
+  /// [trail], [tools] and [dream] are optional: an absent `trail:` block leaves
+  /// [trail] `null` (unconfigured mode); an absent `tools:` block leaves [tools]
+  /// `null` (the engine's placeholder file-scope root); an absent `dream:` block
+  /// leaves [dream] `null` (no dream loop at boot).
   const BrainRunConfig({
     required this.substrate,
     required this.memory,
     required this.access,
     this.trail,
     this.tools,
+    this.dream,
   });
 
   /// The active trail mode, derived from whether a `trail:` block was

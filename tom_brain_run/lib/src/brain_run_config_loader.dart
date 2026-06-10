@@ -53,6 +53,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, SubstrateConfigLoader;
 
 import 'brain_run_config.dart';
+import 'dream_config.dart';
+import 'dream_config_loader.dart';
 import 'tools_config.dart';
 import 'tools_config_loader.dart';
 import 'trail_config.dart';
@@ -92,12 +94,15 @@ abstract final class BrainRunConfigLoader {
         TrailConfigLoader.parse(content, envVars: envVars);
     final ToolsConfig? tools =
         ToolsConfigLoader.parse(content, envVars: envVars);
+    final DreamConfig? dream =
+        DreamConfigLoader.parse(content, envVars: envVars);
     return BrainRunConfig(
       substrate: substrate,
       memory: memory,
       access: access,
       trail: trail,
       tools: tools,
+      dream: dream,
     );
   }
 
