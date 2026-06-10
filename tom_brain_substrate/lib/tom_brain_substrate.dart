@@ -328,12 +328,26 @@ export 'src/web/web_barrel.dart';
 //     their owning layers — see Q-B.41.2 / Q-B.41.3 in
 //     `prototype_implementation_questions.md`.
 //
-// The isolate adapter variant the substrate spec § 16 mentions is
-// deferred to `completion_steps.tom_brain.md`. The engine bridge
-// (plan B.40) binds against `TomBrainSubstrateClient`, so the
-// future isolate adapter ships through the same consumer surface
-// without touching engine code.
+// The isolate adapter variant the substrate spec § 16 mentions has
+// shipped (completion-plan item #12 — see the `isolate_adapter/`
+// export below). The engine bridge (plan B.40) binds against
+// `TomBrainSubstrateClient`, so the isolate adapter is a drop-in second
+// implementation of the same consumer surface without touching engine
+// code.
 export 'src/facade/facade_barrel.dart';
+
+// Item #12 — Isolate-backed second implementation of the substrate
+// client surface (`substrate_specification.md` § 3).
+//
+// `IsolateTomBrainSubstrateAdapter` hosts a real `TomBrainSubstrateClient`
+// inside a worker isolate (`TomBrainSubstrateIsolateHost`) built from a
+// top-level `SubstrateFactory`. It marshals every surface method across
+// the boundary and independently re-checks the assistant-dedication
+// anchor on every report it surfaces — so a worker that fails to enforce
+// the anchor cannot leak an unanchored report to a consumer. The
+// envelope catalogue, stream protocol, executor, boot context, and
+// exception codec are internal to the module and not exported.
+export 'src/isolate_adapter/isolate_adapter.dart';
 
 // B.37 / B.38 — Observability surface (Substrate Spec § 10.1 / § 10.2).
 //

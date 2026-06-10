@@ -62,7 +62,6 @@
 // surface* is intact, nothing more. Later steps in Phase B will add
 // their own behavioural tests.
 
-// ignore: unused_import
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' as shared;
@@ -144,6 +143,19 @@ void main() {
       // server side so the two stay protocol-pinned.
       expect(mcp_server.ProtocolVersion, isNotNull);
       expect(mcp_server.ProtocolVersion.values, isNotEmpty);
+    });
+  });
+
+  group('item #12 isolate-adapter public surface', () {
+    // The isolate-backed second implementation of the client surface
+    // must be reachable through the top-level barrel (the in-process
+    // facade is the first). Locking the export here means a regression
+    // that drops the barrel re-export fails this contract test, not
+    // just the behavioural conformance suite (b53).
+    test('barrel exports the isolate adapter, host, and factory', () {
+      expect(IsolateTomBrainSubstrateAdapter, isNotNull);
+      expect(TomBrainSubstrateIsolateHost, isNotNull);
+      expect(SubstrateFactory, isNotNull);
     });
   });
 
