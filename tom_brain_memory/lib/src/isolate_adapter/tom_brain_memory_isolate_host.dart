@@ -31,6 +31,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart'
     show
         IsolateCancellationToken,
         IsolateCancellationTokenAllocator,
+        IsolateExceptionRegistry,
         IsolateRequestFailure,
         IsolateRequestGuard;
 import 'package:tom_core_kernel/tom_core_kernel.dart'
@@ -44,6 +45,7 @@ import 'isolate_envelopes_full.dart';
 import 'isolate_messages.dart';
 import 'isolate_stream_protocol.dart';
 import 'memory_factory.dart';
+import 'memory_isolate_exceptions.dart';
 
 /// Owns a single memory-hosting Dart isolate and provides the
 /// host-side message dispatch.
@@ -99,6 +101,14 @@ class TomBrainMemoryIsolateHost {
   /// [spawn] (once the isolate exists) and closed in [shutdown].
   RawReceivePort? _exitPort;
 
+  /// Rebuilds the typed memory exception a worker threw from the flat
+  /// wire form a boundary error carries. Seeded once at construction with
+  /// the closed memory taxonomy via [MemoryIsolateExceptions.registerInto];
+  /// an error outside the taxonomy reconstructs to `null` and the host
+  /// falls back to [IsolateBoundaryException].
+  final IsolateExceptionRegistry _exceptionRegistry =
+      IsolateExceptionRegistry();
+
   /// A.81 — host-side allocators. Public-getter accessible so the
   /// client can mint tokens/ids without re-implementing the
   /// counter.
@@ -133,6 +143,7 @@ class TomBrainMemoryIsolateHost {
     this.requestTimeout,
   }) : platform = platform ?? _detectPlatform() {
     _requestGuard = IsolateRequestGuard(defaultTimeout: requestTimeout);
+    MemoryIsolateExceptions.registerInto(_exceptionRegistry);
   }
 
   /// `true` once the spawned isolate has signalled ready and the
@@ -210,7 +221,7 @@ class TomBrainMemoryIsolateHost {
       _worker!.isolate.addOnExitListener(_exitPort!.sendPort);
       // A.81: install the creator-side router so the isolate can push
       // stream chunks back to us via `sendToCreator(...)`.
-      _router = _StreamRouter(_streamSinks);
+      _router = _StreamRouter(_streamSinks, _exceptionRegistry);
       TomWorker.executors.add(_router!);
       // A.84 — host spawn is a major lifecycle event; one `status`
       // line so operators see the boot in any log filter.
@@ -336,7 +347,13 @@ class TomBrainMemoryIsolateHost {
       operation: request.runtimeType.toString(),
     );
     if (raw is IsolateErrorResponse) {
-      throw IsolateBoundaryException(raw.message, raw.exceptionType);
+      final translated = _exceptionRegistry.reconstruct(
+        raw.exceptionType,
+        raw.message,
+        raw.details,
+      );
+      throw translated ??
+          IsolateBoundaryException(raw.message, raw.exceptionType);
     }
     if (raw is! R) {
       throw StateError(
@@ -507,7 +524,12 @@ class _StreamSink {
 class _StreamRouter extends TomExecutor {
   final Map<int, _StreamSink> sinks;
 
-  _StreamRouter(this.sinks);
+  /// Shared with the owning host so a stream error reconstructs to the
+  /// same typed memory exception a unary `send` would (or falls back to
+  /// [IsolateBoundaryException] outside the closed taxonomy).
+  final IsolateExceptionRegistry exceptionRegistry;
+
+  _StreamRouter(this.sinks, this.exceptionRegistry);
 
   @override
   Object execute(Object command) {
@@ -536,8 +558,14 @@ class _StreamRouter extends TomExecutor {
     } else if (command is StreamErrorEnvelope) {
       sinks.remove(command.streamId.id);
       if (!sink.controller.isClosed) {
+        final translated = exceptionRegistry.reconstruct(
+          command.exceptionType,
+          command.message,
+          command.details,
+        );
         sink.controller.addError(
-          IsolateBoundaryException(command.message, command.exceptionType),
+          translated ??
+              IsolateBoundaryException(command.message, command.exceptionType),
         );
         unawaited(sink.controller.close());
       }

@@ -183,10 +183,18 @@ final class StreamErrorEnvelope extends StreamSideChannelMessage {
   final String message;
   final String exceptionType;
 
+  /// Sendable structured fields of a translatable taxonomy exception,
+  /// mirroring [IsolateErrorResponse.details]. Empty for exceptions
+  /// outside the closed memory taxonomy. The host reconstructs the
+  /// typed instance and forwards it to the consumer stream as the
+  /// `Stream.error`.
+  final Map<String, Object?> details;
+
   const StreamErrorEnvelope({
     required this.streamId,
     required this.message,
     required this.exceptionType,
+    this.details = const <String, Object?>{},
   });
 }
 

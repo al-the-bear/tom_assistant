@@ -57,6 +57,7 @@ import 'isolate_envelopes_full.dart';
 import 'isolate_messages.dart';
 import 'isolate_stream_protocol.dart';
 import 'memory_factory.dart';
+import 'memory_isolate_exceptions.dart';
 
 /// The executor that owns the in-isolate `TomBrainMemory`
 /// instance and translates inbound envelopes into method calls
@@ -491,11 +492,28 @@ class MemoryIsolateExecutor extends TomExecutor {
           );
       }
     } catch (e) {
+      final packed = MemoryIsolateExceptions.pack(e);
       return IsolateErrorResponse(
-        exceptionType: e.runtimeType.toString(),
-        message: e.toString(),
+        exceptionType: packed?.type ?? e.runtimeType.toString(),
+        message: packed?.message ?? e.toString(),
+        details: packed?.details ?? const <String, Object?>{},
       );
     }
+  }
+
+  /// Builds a [StreamErrorEnvelope] for [streamId] from [error], routing
+  /// it through the closed-taxonomy codec so the host rebuilds the typed
+  /// instance. Errors outside the taxonomy keep the flat runtime-type tag
+  /// and an empty `details` map (the host falls back to
+  /// `IsolateBoundaryException`).
+  StreamErrorEnvelope _streamError(StreamId streamId, Object error) {
+    final packed = MemoryIsolateExceptions.pack(error);
+    return StreamErrorEnvelope(
+      streamId: streamId,
+      message: packed?.message ?? error.toString(),
+      exceptionType: packed?.type ?? error.runtimeType.toString(),
+      details: packed?.details ?? const <String, Object?>{},
+    );
   }
 
   // ─── A.81: stream producers ────────────────────────────────────
@@ -635,11 +653,7 @@ class MemoryIsolateExecutor extends TomExecutor {
           sequence: seq,
         ));
       } catch (e) {
-        _sendStreamMessage(StreamErrorEnvelope(
-          streamId: streamId,
-          message: e.toString(),
-          exceptionType: e.runtimeType.toString(),
-        ));
+        _sendStreamMessage(_streamError(streamId, e));
       } finally {
         if (!tracker.isClosed) tracker.close();
         _trackers.remove(streamId.id);
@@ -682,11 +696,7 @@ class MemoryIsolateExecutor extends TomExecutor {
           },
           onError: (Object e) {
             if (!sourceFinished.isCompleted) {
-              _sendStreamMessage(StreamErrorEnvelope(
-                streamId: streamId,
-                message: e.toString(),
-                exceptionType: e.runtimeType.toString(),
-              ));
+              _sendStreamMessage(_streamError(streamId, e));
               sourceFinished.complete();
             }
           },
@@ -716,11 +726,7 @@ class MemoryIsolateExecutor extends TomExecutor {
           ));
         }
       } catch (e) {
-        _sendStreamMessage(StreamErrorEnvelope(
-          streamId: streamId,
-          message: e.toString(),
-          exceptionType: e.runtimeType.toString(),
-        ));
+        _sendStreamMessage(_streamError(streamId, e));
       } finally {
         await sub?.cancel();
         _streamControls.remove(streamId.id);

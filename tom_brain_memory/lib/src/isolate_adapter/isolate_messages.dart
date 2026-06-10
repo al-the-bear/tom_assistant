@@ -155,9 +155,13 @@ final class MemoryStatsResponse extends IsolateResponse {
 ///     the executor — a coding error this response makes visible).
 ///   * The handler threw — the message and runtime-type-name of
 ///     the original exception are preserved in [message] and
-///     [exceptionType]; the host re-raises as an
-///     [IsolateBoundaryException] so consumer code never sees an
-///     untyped `Object?` return.
+///     [exceptionType]; when the exception belongs to the closed
+///     memory taxonomy its structured fields are preserved in
+///     [details]. The host reconstructs the typed exception via the
+///     `IsolateExceptionRegistry` (`MemoryIsolateExceptions`) and
+///     re-raises *that* type; only an unregistered type falls back to
+///     [IsolateBoundaryException]. Consumer code never sees an untyped
+///     `Object?` return.
 ///
 /// The original exception's stack trace is *not* preserved across
 /// the boundary — Dart's send rules forbid `StackTrace` instances
@@ -165,18 +169,27 @@ final class MemoryStatsResponse extends IsolateResponse {
 /// will land an isolate-side stack capture mechanism at A.84 (the
 /// `tom_brain.memory.isolate` logger category in the plan).
 final class IsolateErrorResponse extends IsolateResponse {
-  /// Human-readable message, taken from `exception.toString()`.
+  /// Human-readable message. For a translatable taxonomy exception
+  /// this is the exception's own `message` field (so the host can
+  /// rebuild the typed instance); otherwise it is `exception.toString()`.
   final String message;
 
-  /// Runtime type name of the original exception, as a string.
-  /// Lets the consumer side translate well-known classes back into
-  /// their typed counterparts (e.g. `BudgetExceededError`,
-  /// `EdgeNotPermitted`). A.81 lands the typed translation table.
+  /// Runtime type name of the original exception, as a string. The
+  /// host looks this up in the `IsolateExceptionRegistry` to rebuild
+  /// the typed counterpart (e.g. `EdgeNotPermitted`, `StackNotFound`).
   final String exceptionType;
+
+  /// Sendable structured fields of the original exception, restricted
+  /// to isolate-sendable primitives (String / num / bool / null,
+  /// enum-names, and Lists / Maps thereof). Empty for exceptions
+  /// outside the closed memory taxonomy. The host's registered factory
+  /// consumes this to reconstruct the typed instance with fidelity.
+  final Map<String, Object?> details;
 
   const IsolateErrorResponse({
     required this.message,
     required this.exceptionType,
+    this.details = const <String, Object?>{},
   });
 }
 

@@ -174,6 +174,8 @@ export 'isolate_stream_protocol.dart'
         StreamSideChannelMessage;
 export 'memory_factory.dart'
     show MemoryFactory, createSqliteTomBrainMemory;
+export 'memory_isolate_exceptions.dart'
+    show MemoryIsolateExceptions, PackedMemoryException;
 export 'tom_brain_memory_isolate_client.dart'
     show TomBrainMemoryIsolateClient;
 export 'tom_brain_memory_isolate_host.dart' show TomBrainMemoryIsolateHost;
