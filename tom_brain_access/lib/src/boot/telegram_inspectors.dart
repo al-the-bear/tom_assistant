@@ -149,6 +149,23 @@ abstract interface class TelegramTodosInspector {
   Future<String> clear(String sessionId);
 }
 
+/// Renders the live budget of the prompt being processed right now for the
+/// `/check_usage` command.
+///
+/// Where [TelegramStatusInspector] answers "what is the system doing?", this
+/// answers "how much has the current prompt spent *so far*?" — the elapsed time
+/// since the prompt started and its accumulating effort (LLM calls, tool calls,
+/// estimated tokens). It reads the engine's process-lifetime live-run registry
+/// (the single foreground prompt's open runs), so it is process-global: there is
+/// no session to resolve. Implemented in `tom_brain_run`, the one assembly that
+/// may read the engine. Returns already-rendered, channel-neutral text.
+abstract interface class TelegramUsageInspector {
+  /// Renders the live budget of the prompt currently being processed — elapsed
+  /// time and accumulated effort — or an explicit "no prompt is being
+  /// processed" notice when nothing is in flight.
+  Future<String> currentUsage();
+}
+
 /// The read-only inspectors the Telegram edge drives for the inspection
 /// commands (parts b–e).
 ///
@@ -176,6 +193,10 @@ final class TelegramInspectors {
   /// and `/todos_clear`, or `null` when unavailable.
   final TelegramTodosInspector? todos;
 
+  /// Reads the live budget of the prompt being processed now for
+  /// `/check_usage`, or `null` when unavailable.
+  final TelegramUsageInspector? usage;
+
   /// Builds an inspector bundle; every member defaults to absent.
   const TelegramInspectors({
     this.prompts,
@@ -183,6 +204,7 @@ final class TelegramInspectors {
     this.memory,
     this.status,
     this.todos,
+    this.usage,
   });
 
   /// The no-inspectors bundle: every inspection command answers "not available

@@ -54,6 +54,13 @@ void main() {
           TelegramCommandKind.todosList);
     });
 
+    test('parses the check-usage command', () {
+      expect(parseTelegramCommand('/check_usage')!.kind,
+          TelegramCommandKind.checkUsage);
+      expect(parseTelegramCommand('/CHECK_USAGE@tom_brain_bot')!.kind,
+          TelegramCommandKind.checkUsage);
+    });
+
     test('strips a @botname suffix and is case-insensitive', () {
       expect(parseTelegramCommand('/list_sessions@tom_brain_bot')!.kind,
           TelegramCommandKind.listSessions);

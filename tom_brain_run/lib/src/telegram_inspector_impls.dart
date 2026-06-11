@@ -32,11 +32,17 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         TelegramPromptDigest,
         TelegramPromptInspector,
         TelegramStatusInspector,
-        TelegramTodosInspector;
+        TelegramTodosInspector,
+        TelegramUsageInspector;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
-    show SessionTodoStores, TodoEntry, TodoStore;
+    show
+        LiveRunRegistry,
+        LiveRunUsage,
+        SessionTodoStores,
+        TodoEntry,
+        TodoStore;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show LatencyHistogram, MemoryStats, TomBrainMemoryClient;
+    show EffortMetrics, LatencyHistogram, MemoryStats, TomBrainMemoryClient;
 
 /// Reads the §5.3 `incoming/` raw-prompt trail back for the `/observatory_*`
 /// commands (parts b + c).
@@ -566,5 +572,65 @@ final class SessionTodosInspector implements TelegramTodosInspector {
     if (removed == 0) return 'The working todo list was already empty.';
     final noun = removed == 1 ? 'entry' : 'entries';
     return 'Cleared $removed $noun from the working todo list.';
+  }
+}
+
+/// Renders the live budget of the prompt being processed right now for the
+/// `/check_usage` command, over the engine's process-lifetime [LiveRunRegistry].
+///
+/// Answers "how much has the current prompt spent *so far*?" — the elapsed time
+/// since the prompt's top-level run started and the accumulating effort summed
+/// across its open runs (the foreground prompt plus its in-flight
+/// sub-procedures). Reads the registry live on every call, so the figures grow
+/// while the prompt runs and the command reports "no prompt is being processed"
+/// the moment the run finishes. The clock is injected ([now]) so the elapsed
+/// formatting is deterministically testable.
+final class LiveUsageInspector implements TelegramUsageInspector {
+  /// The engine's process-lifetime registry of in-flight runs.
+  final LiveRunRegistry registry;
+
+  /// The wall-clock source; defaults to [DateTime.now]. Injected so a test can
+  /// pin the elapsed time the report renders.
+  final DateTime Function() now;
+
+  /// Builds an inspector over the engine's [registry].
+  LiveUsageInspector({required this.registry, DateTime Function()? now})
+      : now = now ?? DateTime.now;
+
+  @override
+  Future<String> currentUsage() async {
+    final LiveRunUsage? usage = registry.currentPromptUsage();
+    if (usage == null) return 'No prompt is being processed right now.';
+
+    final Duration elapsed = now().difference(usage.startedAt);
+    final EffortMetrics effort = usage.effort;
+    final buffer = StringBuffer('Processing the current prompt:')
+      ..write('\n  procedure: ${usage.procedureId}')
+      ..write('\n  elapsed: ${_formatElapsed(elapsed)}')
+      ..write('\n  open runs: ${usage.openRunCount}')
+      ..write('\n  LLM calls: ${effort.llmCalls}')
+      ..write('\n  tool calls: ${effort.toolCalls}')
+      ..write('\n  estimated tokens: ${effort.estimatedTokens}'
+          ' (in ${effort.inputTokens} / out ${effort.outputTokens})')
+      ..write('\n  memory reads: ${effort.memoryReads}')
+      ..write('\n  memory writes: ${effort.memoryWrites}');
+    return buffer.toString();
+  }
+
+  /// Renders a [Duration] as `Hh Mm Ss` dropping leading zero units, so a
+  /// just-started prompt reads `3s` and a long one reads `1h 4m 12s`. A
+  /// negative or zero span (a clock skew between start and read) reads `0s`.
+  static String _formatElapsed(Duration elapsed) {
+    final int totalSeconds = elapsed.inSeconds;
+    if (totalSeconds <= 0) return '0s';
+    final int hours = totalSeconds ~/ 3600;
+    final int minutes = (totalSeconds % 3600) ~/ 60;
+    final int seconds = totalSeconds % 60;
+    final parts = <String>[
+      if (hours > 0) '${hours}h',
+      if (minutes > 0) '${minutes}m',
+      if (seconds > 0) '${seconds}s',
+    ];
+    return parts.join(' ');
   }
 }

@@ -98,6 +98,14 @@ final class ProvisionedBrain {
   /// standalone serve path).
   final TelegramTodosInspector? todosInspector;
 
+  /// Reads the engine's live-run registry for the Telegram `/check_usage`
+  /// command — a `tom_brain_access` port type (an allowed dependency), so
+  /// surfacing it here does *not* pull `tom_brain_procedure` into the access
+  /// package. A higher assembly (`tom_brain_run`) sets it over the booted
+  /// engine's `LiveRunRegistry`; `null` when the provisioner does not expose
+  /// the live budget (the standalone serve path).
+  final TelegramUsageInspector? usageInspector;
+
   /// Builds a provisioned-brain handle.
   const ProvisionedBrain({
     required this.dispatcher,
@@ -105,6 +113,7 @@ final class ProvisionedBrain {
     required this.shutdown,
     this.memoryClient,
     this.todosInspector,
+    this.usageInspector,
   });
 }
 

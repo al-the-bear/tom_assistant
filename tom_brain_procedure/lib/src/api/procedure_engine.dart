@@ -103,6 +103,7 @@ import '../recorder/run_records.dart';
 import '../recorder/run_recorder.dart';
 import '../validator/sandbox_validator.dart';
 import 'engine_tool_surface.dart';
+import 'live_run_registry.dart';
 import 'procedure_inputs.dart';
 import 'procedure_invocation.dart';
 import 'procedure_outcome.dart';
@@ -226,6 +227,14 @@ final class ProcedureEngine {
   /// (`/todos_list` / `/todos_clear`) can read and reset a session's list off
   /// the booted engine.
   final SessionTodoStores sessionTodoStores = SessionTodoStores();
+
+  /// The process-lifetime registry of in-flight runs (`/check_usage`). The
+  /// engine opens a [LiveRun] when a run's recorder starts and closes it when
+  /// the run finishes, so an out-of-band observer can read the live accumulating
+  /// effort of the prompt currently being processed. Exposed so the access
+  /// layer's inspector seam (`/check_usage`) can read the live budget off the
+  /// booted engine.
+  final LiveRunRegistry liveRunRegistry = LiveRunRegistry();
 
   /// The static sandbox gate every resolved procedure clears before it runs.
   ///
@@ -763,6 +772,25 @@ final class ProcedureEngine {
       ),
     );
 
+    // Live-run seam (`/check_usage`): publish this run to the process-lifetime
+    // registry the moment its recorder opens, so an out-of-band observer can
+    // read the *live* accumulating effort of the prompt being processed right
+    // now. The handle holds a `readEffort` closure over this recorder rather
+    // than the recorder itself, so the registry never has to reach into engine
+    // internals. It is closed in `finish()` — the single terminal funnel all
+    // five exit paths pass through — so the run leaves the registry exactly
+    // when it stops accumulating effort.
+    liveRunRegistry.open(
+      LiveRun(
+        runId: runId,
+        procedureId: loaded.header.id,
+        parentRunId: parentRunId,
+        turnId: turn?.turnId.value,
+        startedAt: recorder.startedAt ?? _now(),
+        readEffort: () => recorder.accumulatedEffort,
+      ),
+    );
+
     // Terminal seam (§5.7 / §10 step #9): every one of the run's five exit
     // paths funnels through here so the combined tree is assembled and emitted
     // exactly once, in lockstep with the outcome. When a tree is built, the
@@ -777,6 +805,9 @@ final class ProcedureEngine {
       ProcedureResult? result,
       Object? error,
     }) {
+      // Leave the live-run registry first: the run stops accumulating effort
+      // here, so no observer should still fold it into the live prompt usage.
+      liveRunRegistry.close(runId);
       final entries = recorder.entries;
       if (buildTree) {
         final tree = _assembleProcedureTree(

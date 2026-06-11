@@ -45,6 +45,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         QueueSnapshotSource,
         TelegramInspectors,
         TelegramTodosInspector,
+        TelegramUsageInspector,
         serveWithShelfIo,
         startBrainAccessProcess;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
@@ -86,6 +87,7 @@ import 'streaming_live_trail.dart' show StreamingLiveTrailWriter;
 import 'summary_fanout.dart' show SummaryFanout;
 import 'telegram_inspector_impls.dart'
     show
+        LiveUsageInspector,
         MemoryStatsInspector,
         SessionTodosInspector,
         TrailIncomingPromptInspector,
@@ -256,6 +258,11 @@ Future<ProvisionedBrain> provisionBrain({
     // `tom_brain_procedure`.
     todosInspector:
         SessionTodosInspector(stores: booted.engine.sessionTodoStores),
+    // Surface the engine's live-run registry behind the access package's
+    // `TelegramUsageInspector` port, so the running process can build the
+    // Telegram `/check_usage` command over the engine's `LiveRunRegistry`
+    // without the access package depending on `tom_brain_procedure`.
+    usageInspector: LiveUsageInspector(registry: booted.engine.liveRunRegistry),
   );
 }
 
@@ -399,6 +406,7 @@ Future<BrainProcess> standUpBrainProcess({
         memoryClient: provisioned.memoryClient,
         queueSnapshot: provisioned.queueSnapshot,
         todos: provisioned.todosInspector,
+        usage: provisioned.usageInspector,
       ),
     );
   } on Object {
@@ -422,14 +430,17 @@ Future<BrainProcess> standUpBrainProcess({
 /// trail's `incoming/` + `procedures/` trees, so it too is wired only when a
 /// [trailRoot] is configured. The [todos] inspector reads the engine's live
 /// `SessionTodoStores` (not the trail), so it is wired whenever the provisioner
-/// exposed one. An absent member makes the edge answer the corresponding command
-/// with "not available on this deployment" — the honest report for a process
-/// that did not configure that surface.
+/// exposed one. The [usage] inspector reads the engine's live `LiveRunRegistry`
+/// (not the trail), so it too is wired whenever the provisioner exposed one. An
+/// absent member makes the edge answer the corresponding command with "not
+/// available on this deployment" — the honest report for a process that did not
+/// configure that surface.
 TelegramInspectors _telegramInspectorsFor({
   required String? trailRoot,
   required TomBrainMemoryClient? memoryClient,
   required QueueSnapshotSource queueSnapshot,
   required TelegramTodosInspector? todos,
+  required TelegramUsageInspector? usage,
 }) {
   final Directory? root = trailRoot == null ? null : Directory(trailRoot);
   return TelegramInspectors(
@@ -445,6 +456,9 @@ TelegramInspectors _telegramInspectorsFor({
     // engine's live `SessionTodoStores` — so it is wired whenever the
     // provisioner exposed one, independent of `trailRoot`.
     todos: todos,
+    // The usage inspector reads the engine's live `LiveRunRegistry`, also
+    // independent of `trailRoot`, so it is wired whenever one is exposed.
+    usage: usage,
   );
 }
 

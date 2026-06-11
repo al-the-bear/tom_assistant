@@ -102,4 +102,5 @@ export 'telegram_inspectors.dart'
         TelegramPromptDigest,
         TelegramPromptInspector,
         TelegramStatusInspector,
-        TelegramTodosInspector;
+        TelegramTodosInspector,
+        TelegramUsageInspector;

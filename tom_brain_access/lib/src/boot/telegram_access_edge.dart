@@ -292,6 +292,8 @@ class TelegramAccessEdge {
         await _handleTodosList(receiver, userId);
       case TelegramCommandKind.todosClear:
         await _handleTodosClear(receiver, userId);
+      case TelegramCommandKind.checkUsage:
+        await _handleCheckUsage(receiver);
     }
   }
 
@@ -438,6 +440,20 @@ class TelegramAccessEdge {
       return;
     }
     await _sendSplit(receiver, await inspector.clear(sessionId));
+  }
+
+  /// Handles `/check_usage`: sends the live budget of the prompt being processed
+  /// right now — elapsed time and accumulated effort — split across messages if
+  /// it overflows. Process-global (the single foreground prompt), so unlike the
+  /// todo commands there is no session to resolve. Replies the unavailable
+  /// message when no usage inspector is wired.
+  Future<void> _handleCheckUsage(ChatReceiver receiver) async {
+    final TelegramUsageInspector? inspector = _inspectors.usage;
+    if (inspector == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    await _sendSplit(receiver, await inspector.currentUsage());
   }
 
   /// Sends [text] as the minimum number of size-compliant Telegram messages,

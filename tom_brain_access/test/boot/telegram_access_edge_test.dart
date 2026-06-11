@@ -762,6 +762,50 @@ void main() {
           telegramInspectorUnavailableMessage,
         );
       });
+
+      test('/check_usage sends the live budget (no session resolution)',
+          () async {
+        final d = _answeringDispatcher();
+        final inspector = _FakeUsageInspector(
+          usageText: 'Processing for 0:01:30 — 3 LLM calls, 175 tokens',
+        );
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          sessionRegistry: _deterministicRegistry,
+          inspectors: TelegramInspectors(usage: inspector),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/check_usage'));
+        await pumpEventQueue();
+
+        // The brain is never involved — the budget is an engine read; and the
+        // command is process-global, so the inspector is called with no id.
+        expect(d.routed, isEmpty);
+        expect(inspector.calls, 1);
+        expect(
+          f.chatApi.sentMessages.single,
+          'Processing for 0:01:30 — 3 LLM calls, 175 tokens',
+        );
+      });
+
+      test('/check_usage is unavailable when no inspector is wired', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(dispatcher: d.dispatcher);
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/check_usage'));
+        await pumpEventQueue();
+
+        expect(
+          f.chatApi.sentMessages.single,
+          telegramInspectorUnavailableMessage,
+        );
+      });
     });
 
     group('telegramProcessingAcknowledgement', () {
@@ -862,6 +906,22 @@ final class _FakeTodosInspector implements TelegramTodosInspector {
   Future<String> clear(String sessionId) async {
     clearedSessions.add(sessionId);
     return clearText;
+  }
+}
+
+/// A usage inspector counting how often it is asked and returning a canned
+/// string, used to drive the `/check_usage` dispatch path. The command is
+/// process-global, so unlike the todos inspector it takes no session id.
+final class _FakeUsageInspector implements TelegramUsageInspector {
+  _FakeUsageInspector({this.usageText = 'usage'});
+
+  final String usageText;
+  int calls = 0;
+
+  @override
+  Future<String> currentUsage() async {
+    calls += 1;
+    return usageText;
   }
 }
 

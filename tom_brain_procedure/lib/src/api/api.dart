@@ -35,6 +35,7 @@
 //     driving `ProcedureEngine` only, folding the C.38/C.39/C.40 promises
 //     into one contract pass plus cancellation through a sugar call.
 
+export 'live_run_registry.dart';
 export 'procedure_engine.dart';
 export 'procedure_inputs.dart';
 export 'procedure_invocation.dart';

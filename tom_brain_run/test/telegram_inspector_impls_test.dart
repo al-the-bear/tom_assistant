@@ -21,10 +21,11 @@ import 'dart:io';
 import 'package:tom_brain_access/tom_brain_access.dart'
     show AccessChannel, IncomingTrailRecord, QueueSnapshot;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
-    show SessionTodoStores;
+    show LiveRun, LiveRunRegistry, SessionTodoStores;
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
+        EffortMetrics,
         LatencyHistogram,
         MemoryStats,
         TomBrainMemoryClient,
@@ -391,6 +392,66 @@ void main() {
       final inspector = SessionTodosInspector(stores: stores);
       expect(await inspector.clear('unseen'),
           'The working todo list was already empty.');
+    });
+  });
+
+  group('LiveUsageInspector', () {
+    test('reports nothing in flight when the registry is empty', () async {
+      final registry = LiveRunRegistry();
+      final inspector = LiveUsageInspector(registry: registry);
+      expect(await inspector.currentUsage(),
+          'No prompt is being processed right now.');
+    });
+
+    test('renders the live budget of the foreground prompt', () async {
+      final registry = LiveRunRegistry();
+      registry.open(LiveRun(
+        runId: 'top',
+        procedureId: 'answer_with_thinking_v1',
+        parentRunId: null,
+        turnId: 'turn-1',
+        startedAt: DateTime(2026, 6, 11, 10),
+        readEffort: () => EffortMetrics(
+          llmCalls: 3,
+          inputTokens: 150,
+          outputTokens: 25,
+          toolCalls: 2,
+          memoryReads: 4,
+          memoryWrites: 1,
+        ),
+      ));
+      // A clock pinned 1h 1m 5s after the run started.
+      final inspector = LiveUsageInspector(
+        registry: registry,
+        now: () => DateTime(2026, 6, 11, 11, 1, 5),
+      );
+
+      final text = await inspector.currentUsage();
+      expect(text, contains('procedure: answer_with_thinking_v1'));
+      expect(text, contains('elapsed: 1h 1m 5s'));
+      expect(text, contains('open runs: 1'));
+      expect(text, contains('LLM calls: 3'));
+      expect(text, contains('tool calls: 2'));
+      expect(text, contains('estimated tokens: 175 (in 150 / out 25)'));
+      expect(text, contains('memory reads: 4'));
+      expect(text, contains('memory writes: 1'));
+    });
+
+    test('a just-started prompt renders seconds only', () async {
+      final registry = LiveRunRegistry();
+      registry.open(LiveRun(
+        runId: 'top',
+        procedureId: 'answer_with_memory_v1',
+        parentRunId: null,
+        turnId: 'turn-1',
+        startedAt: DateTime(2026, 6, 11, 10),
+        readEffort: () => EffortMetrics.zero,
+      ));
+      final inspector = LiveUsageInspector(
+        registry: registry,
+        now: () => DateTime(2026, 6, 11, 10, 0, 3),
+      );
+      expect(await inspector.currentUsage(), contains('elapsed: 3s'));
     });
   });
 }

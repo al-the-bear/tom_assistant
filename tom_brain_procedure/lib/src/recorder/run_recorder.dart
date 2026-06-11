@@ -134,6 +134,13 @@ final class RunRecorder {
   /// Whether `start` has run and `complete` has not.
   bool get isOpen => _trailId != null && !_completed;
 
+  /// The wall-clock instant `start` stamped, or `null` before `start`.
+  ///
+  /// The live-run registry reads this so `/check_usage` can measure how long
+  /// the running prompt has been in flight (the recorder's own `wallClockMs`
+  /// is only filled in at `complete`, so it is zero while the run is open).
+  DateTime? get startedAt => _startedAt;
+
   /// Whether `complete` has run.
   bool get isCompleted => _completed;
 
