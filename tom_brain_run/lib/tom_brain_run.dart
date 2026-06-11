@@ -88,12 +88,13 @@ export 'src/llm_trail_writer.dart'
 export 'src/incoming_trail_writer.dart' show IncomingTrailWriter;
 
 // ── Telegram inspection ports: the run-layer reads behind the edge's
-//    /observatory_*, /show_logs, /memory_status commands ─────────────────────
+//    /observatory_*, /show_logs, /memory_status, /check_status commands ───────
 export 'src/telegram_inspector_impls.dart'
     show
         MemoryStatsInspector,
         TrailIncomingPromptInspector,
-        TrailLogInspector;
+        TrailLogInspector,
+        TrailStatusInspector;
 
 // ── Per-profile memory log writer (logging-spec §5.6; §10 step #8) ────
 export 'src/memory_profile_log_writer.dart' show MemoryProfileLogWriter;

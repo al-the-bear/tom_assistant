@@ -99,4 +99,5 @@ export 'telegram_inspectors.dart'
         TelegramLogTail,
         TelegramMemoryInspector,
         TelegramPromptDigest,
-        TelegramPromptInspector;
+        TelegramPromptInspector,
+        TelegramStatusInspector;

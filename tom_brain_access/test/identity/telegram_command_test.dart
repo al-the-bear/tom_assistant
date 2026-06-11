@@ -3,7 +3,7 @@
 //
 // What is proven:
 //   1. `parseTelegramCommand` recognises every command word (session,
-//      `/help`, and the four inspection commands) and lifts its argument.
+//      `/help`, and the five inspection commands) and lifts its argument.
 //   2. It strips a `@botname` suffix and is case-insensitive on the word.
 //   3. It returns null for an ordinary prompt or an unknown `/word`.
 //   4. `telegramHelpText` mentions every command word — so no command can ship
@@ -29,7 +29,7 @@ void main() {
           'new name');
     });
 
-    test('parses /help and the four inspection commands', () {
+    test('parses /help and the five inspection commands', () {
       expect(parseTelegramCommand('/help')!.kind, TelegramCommandKind.help);
       expect(parseTelegramCommand('/observatory_show_prompts')!.kind,
           TelegramCommandKind.observatoryShowPrompts);
@@ -41,6 +41,8 @@ void main() {
           TelegramCommandKind.showLogs);
       expect(parseTelegramCommand('/memory_status')!.kind,
           TelegramCommandKind.memoryStatus);
+      expect(parseTelegramCommand('/check_status')!.kind,
+          TelegramCommandKind.checkStatus);
     });
 
     test('strips a @botname suffix and is case-insensitive', () {

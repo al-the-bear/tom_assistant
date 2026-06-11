@@ -10,11 +10,16 @@
 //      `*.log.N` files.
 //   3. MemoryStatsInspector renders a `MemoryStats` snapshot to a readable
 //      overview (node/edge/stack counts, trail totals).
+//   4. TrailStatusInspector stitches the live queue snapshot, the newest
+//      recorded prompt, and the recent procedure-run outcomes/errors into one
+//      report — labelling the prompt "currently processing" when the foreground
+//      slot is busy, surfacing budget-overrun errors, and degrading to its
+//      empty forms when no trail exists.
 
 import 'dart:io';
 
 import 'package:tom_brain_access/tom_brain_access.dart'
-    show AccessChannel, IncomingTrailRecord;
+    show AccessChannel, IncomingTrailRecord, QueueSnapshot;
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
@@ -41,6 +46,21 @@ IncomingTrailRecord _record({
       persona: 'tom-assistant',
       text: text,
       rawEnvelope: const {'locale': 'en'},
+    );
+
+QueueSnapshot _queue({
+  bool foregroundRunning = false,
+  int foregroundWaiting = 0,
+  int foregroundQueueDepth = 4,
+  bool backgroundRunning = false,
+  bool draining = false,
+}) =>
+    QueueSnapshot(
+      foregroundRunning: foregroundRunning,
+      foregroundWaiting: foregroundWaiting,
+      foregroundQueueDepth: foregroundQueueDepth,
+      backgroundRunning: backgroundRunning,
+      draining: draining,
     );
 
 void main() {
@@ -199,6 +219,120 @@ void main() {
       final status = await inspector.status();
       expect(status, contains('Nodes (total 0):'));
       expect(status, contains('(none)'));
+    });
+  });
+
+  group('TrailStatusInspector', () {
+    test('reports an active foreground prompt as currently processing',
+        () async {
+      IncomingTrailWriter(root: root).write(_record(
+        turnId: '260608-120000.000001',
+        receivedAt: DateTime.utc(2026, 6, 8, 12),
+        text: 'what is the weather',
+      ));
+
+      final inspector = TrailStatusInspector(
+        queueSnapshot: () => _queue(
+          foregroundRunning: true,
+          foregroundWaiting: 2,
+        ),
+        trailRoot: root,
+      );
+      final report = await inspector.report();
+
+      expect(report, contains('Brain status'));
+      expect(report, contains('active — a prompt is being processed'));
+      expect(report, contains('Foreground: running (waiting 2, queue depth 4)'));
+      expect(report, contains('Background: idle'));
+      expect(report, contains('Latest prompt (currently processing):'));
+      expect(report, contains('what is the weather'));
+    });
+
+    test('labels the latest prompt "last received" when the foreground is idle',
+        () async {
+      IncomingTrailWriter(root: root).write(_record(
+        turnId: '260608-120000.000002',
+        receivedAt: DateTime.utc(2026, 6, 8, 12),
+        text: 'an earlier question',
+      ));
+
+      final inspector = TrailStatusInspector(
+        queueSnapshot: () => _queue(backgroundRunning: true),
+        trailRoot: root,
+      );
+      final report = await inspector.report();
+
+      expect(report, contains('idle (background work running)'));
+      expect(report, contains('Latest prompt (last received):'));
+    });
+
+    test('surfaces a procedure run outcome and its budget-overrun error',
+        () async {
+      final runDir = Directory('${root.path}/procedures/answer_with_memory_v1')
+        ..createSync(recursive: true);
+      File('${runDir.path}/turn_01__run_07.log').writeAsStringSync(
+        'run answer_with_memory_v1\n'
+        '├─ llm answerer\n'
+        '└─ error procedure.budget.exceeded: token budget of 2000 exhausted\n'
+        '└─ outcome failed (entries=2, 3.4s)\n',
+      );
+
+      final inspector = TrailStatusInspector(
+        queueSnapshot: _queue,
+        trailRoot: root,
+      );
+      final report = await inspector.report();
+
+      expect(report, contains('Recent runs:'));
+      expect(
+          report,
+          contains(
+              'answer_with_memory_v1/turn_01__run_07: outcome failed (entries=2, 3.4s)'));
+      expect(report, contains('Errors:'));
+      expect(
+          report,
+          contains('answer_with_memory_v1/turn_01__run_07: '
+              'error procedure.budget.exceeded: token budget of 2000 exhausted'));
+    });
+
+    test('a run with no outcome line shows "(in progress)" and no error',
+        () async {
+      final runDir = Directory('${root.path}/procedures/research_v1')
+        ..createSync(recursive: true);
+      File('${runDir.path}/turn_02__run_09.log')
+          .writeAsStringSync('run research_v1\n├─ llm planner\n');
+
+      final inspector = TrailStatusInspector(
+        queueSnapshot: () => _queue(foregroundRunning: true),
+        trailRoot: root,
+      );
+      final report = await inspector.report();
+
+      expect(report, contains('research_v1/turn_02__run_09: (in progress)'));
+      expect(report, contains('Errors:\n  (none)'));
+    });
+
+    test('degrades to empty forms when no trail exists', () async {
+      final inspector = TrailStatusInspector(
+        queueSnapshot: _queue,
+        trailRoot: root,
+      );
+      final report = await inspector.report();
+
+      expect(report, contains('idle (nothing being processed)'));
+      expect(report, contains('Latest prompt (none recorded yet):'));
+      expect(report, contains('(no prompts recorded yet)'));
+      expect(report, contains('(no runs recorded yet)'));
+      expect(report, contains('Errors:\n  (none)'));
+    });
+
+    test('reports the draining state during shutdown', () async {
+      final inspector = TrailStatusInspector(
+        queueSnapshot: () => _queue(draining: true),
+        trailRoot: root,
+      );
+      final report = await inspector.report();
+      expect(report, contains('draining (shutting down)'));
     });
   });
 }

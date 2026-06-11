@@ -53,6 +53,11 @@ enum TelegramCommandKind {
   /// `/memory_status` — show an overview of the brain's memory (node/edge
   /// counts, stack sizes, trail totals).
   memoryStatus,
+
+  /// `/check_status` — show a comprehensive operational status: what is being
+  /// processed right now, or, if processing has stopped, the recent runs'
+  /// outcomes and any errors (budget overruns included).
+  checkStatus,
 }
 
 /// The command word a user types for each [TelegramCommandKind], without the
@@ -69,6 +74,7 @@ const Map<TelegramCommandKind, String> telegramCommandWords =
   TelegramCommandKind.observatoryAnalyzePrompt: 'observatory_analyze_prompt',
   TelegramCommandKind.showLogs: 'show_logs',
   TelegramCommandKind.memoryStatus: 'memory_status',
+  TelegramCommandKind.checkStatus: 'check_status',
 };
 
 /// The reverse of [telegramCommandWords]: the command word (lower-cased,
@@ -136,6 +142,7 @@ String telegramHelpText() {
     ..write('\n/observatory_analyze_prompt <index> — full detail of one prompt')
     ..write('\n/show_logs — tail of each important log file')
     ..write('\n/memory_status — overview of the brain memory')
+    ..write('\n/check_status — what the brain is doing now + recent runs/errors')
     ..write('\n\n/help — show this list');
   return buffer.toString();
 }

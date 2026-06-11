@@ -42,6 +42,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         IncomingTrailSink,
         ProvisionedBrain,
         QueueSnapshot,
+        QueueSnapshotSource,
         TelegramInspectors,
         serveWithShelfIo,
         startBrainAccessProcess;
@@ -86,7 +87,8 @@ import 'telegram_inspector_impls.dart'
     show
         MemoryStatsInspector,
         TrailIncomingPromptInspector,
-        TrailLogInspector;
+        TrailLogInspector,
+        TrailStatusInspector;
 import 'trail_config.dart' show TrailConfig;
 import 'trail_janitor.dart' show TrailJanitor;
 
@@ -386,6 +388,7 @@ Future<BrainProcess> standUpBrainProcess({
       telegramInspectors: _telegramInspectorsFor(
         trailRoot: trailRoot,
         memoryClient: provisioned.memoryClient,
+        queueSnapshot: provisioned.queueSnapshot,
       ),
     );
   } on Object {
@@ -399,17 +402,21 @@ Future<BrainProcess> standUpBrainProcess({
 }
 
 /// Builds the Telegram inspection bundle the edge drives for the
-/// `/observatory_*`, `/show_logs`, and `/memory_status` commands.
+/// `/observatory_*`, `/show_logs`, `/memory_status`, and `/check_status`
+/// commands.
 ///
 /// The prompt + log inspectors read the on-disk trail, so they are wired only
 /// when a [trailRoot] is configured (full-trail mode); the memory inspector is
-/// wired whenever the provisioned [memoryClient] is available. An absent member
-/// makes the edge answer the corresponding command with "not available on this
-/// deployment" — the honest report for a process that did not configure that
-/// surface.
+/// wired whenever the provisioned [memoryClient] is available. The status
+/// inspector stitches the live [queueSnapshot] (always available) with the
+/// trail's `incoming/` + `procedures/` trees, so it too is wired only when a
+/// [trailRoot] is configured. An absent member makes the edge answer the
+/// corresponding command with "not available on this deployment" — the honest
+/// report for a process that did not configure that surface.
 TelegramInspectors _telegramInspectorsFor({
   required String? trailRoot,
   required TomBrainMemoryClient? memoryClient,
+  required QueueSnapshotSource queueSnapshot,
 }) {
   final Directory? root = trailRoot == null ? null : Directory(trailRoot);
   return TelegramInspectors(
@@ -418,6 +425,9 @@ TelegramInspectors _telegramInspectorsFor({
     logs: root == null ? null : TrailLogInspector(trailRoot: root),
     memory:
         memoryClient == null ? null : MemoryStatsInspector(client: memoryClient),
+    status: root == null
+        ? null
+        : TrailStatusInspector(queueSnapshot: queueSnapshot, trailRoot: root),
   );
 }
 

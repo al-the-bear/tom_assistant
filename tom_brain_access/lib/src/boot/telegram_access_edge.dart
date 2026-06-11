@@ -278,6 +278,8 @@ class TelegramAccessEdge {
         await _handleShowLogs(receiver);
       case TelegramCommandKind.memoryStatus:
         await _handleMemoryStatus(receiver);
+      case TelegramCommandKind.checkStatus:
+        await _handleCheckStatus(receiver);
     }
   }
 
@@ -375,6 +377,19 @@ class TelegramAccessEdge {
       return;
     }
     await _sendSplit(receiver, await inspector.status());
+  }
+
+  /// Handles `/check_status`: sends the comprehensive operational status (what
+  /// is being processed now, plus the recent runs' outcomes and any errors),
+  /// split across messages if it overflows. Replies the unavailable message
+  /// when no status inspector is wired.
+  Future<void> _handleCheckStatus(ChatReceiver receiver) async {
+    final TelegramStatusInspector? inspector = _inspectors.status;
+    if (inspector == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    await _sendSplit(receiver, await inspector.report());
   }
 
   /// Sends [text] as the minimum number of size-compliant Telegram messages,

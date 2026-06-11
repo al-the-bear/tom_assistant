@@ -650,6 +650,47 @@ void main() {
           telegramInspectorUnavailableMessage,
         );
       });
+
+      test('/check_status sends the operational status report', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            status: _FakeStatusInspector(
+              reportText: 'Brain status\nProcessing: active',
+            ),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/check_status'));
+        await pumpEventQueue();
+
+        // The brain is never involved — the status is an access-layer read.
+        expect(d.routed, isEmpty);
+        expect(
+          f.chatApi.sentMessages.single,
+          'Brain status\nProcessing: active',
+        );
+      });
+
+      test('/check_status is unavailable when no inspector is wired', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(dispatcher: d.dispatcher);
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/check_status'));
+        await pumpEventQueue();
+
+        expect(
+          f.chatApi.sentMessages.single,
+          telegramInspectorUnavailableMessage,
+        );
+      });
     });
 
     group('telegramProcessingAcknowledgement', () {
@@ -716,6 +757,17 @@ final class _FakeMemoryInspector implements TelegramMemoryInspector {
 
   @override
   Future<String> status() async => statusText;
+}
+
+/// A status inspector returning a canned report string, used to drive the
+/// `/check_status` dispatch path.
+final class _FakeStatusInspector implements TelegramStatusInspector {
+  _FakeStatusInspector({required this.reportText});
+
+  final String reportText;
+
+  @override
+  Future<String> report() async => reportText;
 }
 
 /// A [ChatApi] that throws on a `sendMessage` to one chosen receiver and

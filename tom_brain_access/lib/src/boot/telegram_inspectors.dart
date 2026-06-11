@@ -1,13 +1,17 @@
 // TelegramInspectors — the read-only inspection seams the Telegram edge drives
-// for the `/observatory_*`, `/show_logs`, and `/memory_status` commands.
+// for the `/observatory_*`, `/show_logs`, `/memory_status`, and `/check_status`
+// commands.
 //
 // ── Why these are seams, not direct reads ────────────────────────────
 //
-// The four inspection commands surface the brain's *operational* state — the
+// The inspection commands surface the brain's *operational* state — the
 // recorded incoming prompts (the Observatory trail), the important log files,
-// and the memory overview. None of that lives in the access package: the trail
-// is written by `tom_brain_run`, the memory is `tom_brain_memory`, and the
-// access package must not depend on either (`dependency_surface_test.dart`).
+// the memory overview, and the live processing status (what is running now and
+// the recent runs' outcomes / errors). None of that lives in the access
+// package: the trail is written by `tom_brain_run`, the memory is
+// `tom_brain_memory`, the run-slot state is owned by the procedure dispatcher,
+// and the access package must not depend on any of them
+// (`dependency_surface_test.dart`).
 //
 // So the edge consumes the same anti-dependency discipline the brain itself
 // arrives through (`BrainProvisioner`): three narrow read-only *port*
@@ -109,6 +113,21 @@ abstract interface class TelegramMemoryInspector {
   Future<String> status();
 }
 
+/// Renders a comprehensive operational status for the `/check_status` command.
+///
+/// Implemented in `tom_brain_run` over the live dispatcher-coordinator snapshot
+/// (what is running right now) plus the on-disk trail (the latest received
+/// prompt, the recent procedure runs' outcomes, and any errors — budget
+/// overruns included). Answers the user's "what is the system doing without me
+/// sending another prompt?" — whether a prompt is in flight, or, if processing
+/// has stopped, what halted it.
+abstract interface class TelegramStatusInspector {
+  /// Returns an already-rendered, multi-line operational status: the live
+  /// processing state, the latest prompt, and the recent runs' outcomes and
+  /// errors. The edge splits it across Telegram messages if it overflows.
+  Future<String> report();
+}
+
 /// The read-only inspectors the Telegram edge drives for the inspection
 /// commands (parts b–e).
 ///
@@ -128,8 +147,17 @@ final class TelegramInspectors {
   /// unavailable.
   final TelegramMemoryInspector? memory;
 
+  /// Reads the live operational status for `/check_status`, or `null` when
+  /// unavailable.
+  final TelegramStatusInspector? status;
+
   /// Builds an inspector bundle; every member defaults to absent.
-  const TelegramInspectors({this.prompts, this.logs, this.memory});
+  const TelegramInspectors({
+    this.prompts,
+    this.logs,
+    this.memory,
+    this.status,
+  });
 
   /// The no-inspectors bundle: every inspection command answers "not available
   /// on this deployment". The standalone access binary uses this.

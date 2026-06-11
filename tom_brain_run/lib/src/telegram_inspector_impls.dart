@@ -1,17 +1,19 @@
 // The run-layer concrete implementations of the access package's Telegram
 // inspection ports (`TelegramPromptInspector` / `TelegramLogInspector` /
-// `TelegramMemoryInspector`).
+// `TelegramMemoryInspector` / `TelegramStatusInspector`).
 //
 // ── Why these live here ──────────────────────────────────────────────
 //
 // The Telegram edge surfaces the brain's operational state — the recorded
-// incoming prompts (the §5.3 `incoming/` trail), the important log files, and
-// the memory overview — through three narrow read-only *port* interfaces it
-// defines in `tom_brain_access`. The access package must not read the trail
-// tree or the memory directly (`dependency_surface_test.dart`), so the concrete
-// reads live in `tom_brain_run` — the one assembly that legally wires the trail
-// writers and the memory client together. `standUpBrainProcess` builds a
-// [TelegramInspectors] bundle from these and injects it at the access seam.
+// incoming prompts (the §5.3 `incoming/` trail), the important log files, the
+// memory overview, and the live processing status — through narrow read-only
+// *port* interfaces it defines in `tom_brain_access`. The access package must
+// not read the trail tree, the memory, or the dispatcher coordinator directly
+// (`dependency_surface_test.dart`), so the concrete reads live in
+// `tom_brain_run` — the one assembly that legally wires the trail writers, the
+// memory client, and the coordinator snapshot together. `standUpBrainProcess`
+// builds a [TelegramInspectors] bundle from these and injects it at the access
+// seam.
 //
 // Each implementation returns already-rendered, channel-neutral data; the edge
 // owns the Telegram presentation (message formatting + the 4096-code-unit
@@ -22,11 +24,14 @@ import 'dart:io';
 
 import 'package:tom_brain_access/tom_brain_access.dart'
     show
+        QueueSnapshot,
+        QueueSnapshotSource,
         TelegramLogInspector,
         TelegramLogTail,
         TelegramMemoryInspector,
         TelegramPromptDigest,
-        TelegramPromptInspector;
+        TelegramPromptInspector,
+        TelegramStatusInspector;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show LatencyHistogram, MemoryStats, TomBrainMemoryClient;
 
@@ -299,4 +304,223 @@ final class MemoryStatsInspector implements TelegramMemoryInspector {
 
   int _sum(Map<String, int> counts) =>
       counts.values.fold(0, (acc, value) => acc + value);
+}
+
+/// Renders the comprehensive operational status for the `/check_status` command
+/// over the live dispatcher-coordinator snapshot + the on-disk trail.
+///
+/// Three sources are stitched into one report:
+///
+///   * the live [QueueSnapshot] (read through [queueSnapshot]) → whether a
+///     prompt is being processed right now, how many are queued behind it, and
+///     whether a background (dream) run is going;
+///   * the §5.3 `incoming/` trail (read through a composed
+///     [TrailIncomingPromptInspector]) → the latest received prompt, labelled
+///     "currently processing" when the foreground slot is busy and "last
+///     received" when it is idle;
+///   * the §5.7 `procedures/<procedureId>/…log` trees → the most recent runs'
+///     `outcome` lines and any `error …` lines (a budget overrun surfaces as
+///     `error procedure.budget.exceeded: …`), so a user can see what halted a
+///     run without sending another prompt.
+///
+/// There is no single live record that maps the running foreground slot to its
+/// turnId/prompt, so the inspector assembles "what is being processed" from the
+/// coordinator's *is-busy* signal and the newest recorded prompt — the best
+/// available proxy. Every read is best-effort: a missing trail tree or an
+/// unreadable log degrades a section to its empty form, never an error.
+final class TrailStatusInspector implements TelegramStatusInspector {
+  /// Reads the live dispatcher-coordinator state (run slots + queue depth).
+  final QueueSnapshotSource queueSnapshot;
+
+  /// The trail tree root (`trail.root`). The latest prompt lives under
+  /// `<trailRoot>/incoming/`; the recent runs under `<trailRoot>/procedures/`.
+  final Directory trailRoot;
+
+  /// Reuses the prompt inspector's newest-first `incoming/` read for the latest
+  /// recorded prompt (composition over a duplicate trail walk).
+  final TrailIncomingPromptInspector _prompts;
+
+  /// Builds a status inspector over the live [queueSnapshot] and the trail
+  /// [trailRoot].
+  TrailStatusInspector({required this.queueSnapshot, required this.trailRoot})
+      : _prompts = TrailIncomingPromptInspector(trailRoot: trailRoot);
+
+  /// How many of the most recent procedure runs the report summarises.
+  static const int recentRunLimit = 5;
+
+  /// The preview length of the latest prompt's user text in the report.
+  static const int promptPreviewLength = 200;
+
+  @override
+  Future<String> report() async {
+    final QueueSnapshot snapshot = queueSnapshot();
+    final List<TelegramPromptDigest> latest =
+        await _prompts.recentPrompts(limit: 1, previewLength: promptPreviewLength);
+    final List<_RunLogSummary> runs = await _recentRuns();
+
+    final buffer = StringBuffer()
+      ..writeln('Brain status')
+      ..writeln()
+      ..writeln('Processing: ${_processingState(snapshot)}')
+      ..writeln('  Foreground: ${snapshot.foregroundRunning ? 'running' : 'idle'}'
+          ' (waiting ${snapshot.foregroundWaiting}, '
+          'queue depth ${snapshot.foregroundQueueDepth})')
+      ..writeln(
+          '  Background: ${snapshot.backgroundRunning ? 'running' : 'idle'}')
+      ..writeln()
+      ..writeln('Latest prompt (${_latestPromptLabel(snapshot, latest)}):');
+    if (latest.isEmpty) {
+      buffer.writeln('  (no prompts recorded yet)');
+    } else {
+      final digest = latest.single;
+      buffer
+        ..writeln('  [${digest.receivedAt.toIso8601String()}]')
+        ..writeln('  ${digest.preview}');
+    }
+
+    buffer
+      ..writeln()
+      ..writeln('Recent runs:');
+    if (runs.isEmpty) {
+      buffer.writeln('  (no runs recorded yet)');
+    } else {
+      for (final run in runs) {
+        buffer.writeln('  ${run.key}: ${run.outcome ?? '(in progress)'}');
+      }
+    }
+
+    final List<String> errors = <String>[
+      for (final run in runs)
+        for (final error in run.errors) '${run.key}: $error',
+    ];
+    buffer
+      ..writeln()
+      ..writeln('Errors:');
+    if (errors.isEmpty) {
+      buffer.writeln('  (none)');
+    } else {
+      for (final error in errors) {
+        buffer.writeln('  $error');
+      }
+    }
+
+    return buffer.toString().trimRight();
+  }
+
+  /// The one-line processing state derived from the coordinator snapshot.
+  /// Draining wins over everything (the process is winding down); otherwise a
+  /// busy foreground slot means a prompt is in flight, a busy background slot
+  /// means free-time work, and an empty pair is plain idle.
+  String _processingState(QueueSnapshot snapshot) {
+    if (snapshot.draining) return 'draining (shutting down)';
+    if (snapshot.foregroundRunning) {
+      return 'active — a prompt is being processed';
+    }
+    if (snapshot.backgroundRunning) return 'idle (background work running)';
+    return 'idle (nothing being processed)';
+  }
+
+  /// How to label the latest recorded prompt: the one the foreground slot is
+  /// busy with (best-effort proxy) when it is running, the last one seen when
+  /// idle, and an explicit "none" when nothing has been recorded.
+  String _latestPromptLabel(
+    QueueSnapshot snapshot,
+    List<TelegramPromptDigest> latest,
+  ) {
+    if (latest.isEmpty) return 'none recorded yet';
+    return snapshot.foregroundRunning ? 'currently processing' : 'last received';
+  }
+
+  /// Loads the most recent procedure-run logs (newest-first by modified time),
+  /// capped at [recentRunLimit], each summarised to its outcome + error lines.
+  /// Best-effort: a missing `procedures/` tree yields an empty list.
+  Future<List<_RunLogSummary>> _recentRuns() async {
+    final proceduresDir = Directory('${trailRoot.path}/procedures');
+    if (!await proceduresDir.exists()) return const <_RunLogSummary>[];
+
+    final files = <File>[];
+    await for (final entity in proceduresDir.list(recursive: true)) {
+      if (entity is File && entity.path.endsWith('.log')) files.add(entity);
+    }
+    // Newest-first by modified time; a stat failure sorts the file last.
+    final stamped = <(File, DateTime)>[
+      for (final file in files) (file, await _modifiedOrEpoch(file)),
+    ]..sort((a, b) => b.$2.compareTo(a.$2));
+
+    final summaries = <_RunLogSummary>[];
+    for (final entry in stamped.take(recentRunLimit)) {
+      final summary = await _summarise(entry.$1, proceduresDir.path);
+      if (summary != null) summaries.add(summary);
+    }
+    return summaries;
+  }
+
+  /// The file's last-modified time, or the epoch when it cannot be stat'd (so a
+  /// stat failure never throws and the file simply sorts oldest).
+  Future<DateTime> _modifiedOrEpoch(File file) async {
+    try {
+      return (await file.stat()).modified;
+    } catch (_) {
+      return DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+    }
+  }
+
+  /// Summarises one `procedures/.../<key>.log` file to its outcome line and any
+  /// error lines, keyed by its path relative to [proceduresPath] (extension
+  /// dropped). Returns `null` when the file cannot be read.
+  Future<_RunLogSummary?> _summarise(File file, String proceduresPath) async {
+    final List<String> lines;
+    try {
+      lines = const LineSplitter().convert(await file.readAsString());
+    } catch (_) {
+      return null;
+    }
+
+    String? outcome;
+    final errors = <String>[];
+    for (final line in lines) {
+      final stripped = _stripTree(line);
+      if (stripped.startsWith('outcome ')) {
+        outcome = stripped; // keep the last (top-level) outcome line.
+      } else if (stripped.startsWith('error ')) {
+        errors.add(stripped);
+      }
+    }
+    return _RunLogSummary(
+      key: _runKey(file, proceduresPath),
+      outcome: outcome,
+      errors: errors,
+    );
+  }
+
+  /// The run's display key: its path relative to `procedures/`, with the `.log`
+  /// extension dropped (e.g. `answer_with_memory_v1/turn_01__run_07`).
+  String _runKey(File file, String proceduresPath) {
+    var path = file.path;
+    if (path.startsWith('$proceduresPath/')) {
+      path = path.substring(proceduresPath.length + 1);
+    } else {
+      path = file.uri.pathSegments.last;
+    }
+    return path.endsWith('.log')
+        ? path.substring(0, path.length - '.log'.length)
+        : path;
+  }
+
+  /// Strips the leading box-drawing connector (`├─`, `└─`, `│`, `─`) and
+  /// surrounding whitespace from a procedure-tree line, leaving the bare node
+  /// text (`outcome accepted (…)`, `error procedure.budget.exceeded: …`).
+  String _stripTree(String line) =>
+      line.replaceFirst(RegExp(r'^[\s├└│─]+'), '');
+}
+
+/// One procedure-run log file's distilled summary for the status report: its
+/// display [key], the terminal [outcome] line (`null` when the run wrote none —
+/// still in progress or crashed before the outcome), and any error node lines.
+final class _RunLogSummary {
+  final String key;
+  final String? outcome;
+  final List<String> errors;
+
+  _RunLogSummary({required this.key, required this.outcome, required this.errors});
 }
