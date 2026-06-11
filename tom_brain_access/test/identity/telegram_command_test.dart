@@ -45,6 +45,15 @@ void main() {
           TelegramCommandKind.checkStatus);
     });
 
+    test('parses the working-todo commands', () {
+      expect(parseTelegramCommand('/todos_list')!.kind,
+          TelegramCommandKind.todosList);
+      expect(parseTelegramCommand('/todos_clear')!.kind,
+          TelegramCommandKind.todosClear);
+      expect(parseTelegramCommand('/TODOS_LIST@tom_brain_bot')!.kind,
+          TelegramCommandKind.todosList);
+    });
+
     test('strips a @botname suffix and is case-insensitive', () {
       expect(parseTelegramCommand('/list_sessions@tom_brain_bot')!.kind,
           TelegramCommandKind.listSessions);

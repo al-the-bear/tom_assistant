@@ -83,6 +83,14 @@ const int telegramShowLogsLineCount = 50;
 const String telegramInspectorUnavailableMessage =
     'That inspection is not available on this deployment.';
 
+/// The reply to `/todos_list` / `/todos_clear` while the user is in the `global`
+/// session. The global session mints a fresh id every turn (it has no stable
+/// session id to key a working list on), so it keeps no persistent todo list —
+/// the user must be in a named session for the list to survive across prompts.
+const String telegramTodosGlobalSessionMessage =
+    'The global session keeps no persistent working todo list. '
+    'Switch to a named session with /create_session to use one.';
+
 /// The number of leading prompt characters echoed back in the immediate
 /// "Processing" acknowledgement ([telegramProcessingAcknowledgement]).
 const int telegramProcessingPreviewLength = 200;
@@ -280,6 +288,10 @@ class TelegramAccessEdge {
         await _handleMemoryStatus(receiver);
       case TelegramCommandKind.checkStatus:
         await _handleCheckStatus(receiver);
+      case TelegramCommandKind.todosList:
+        await _handleTodosList(receiver, userId);
+      case TelegramCommandKind.todosClear:
+        await _handleTodosClear(receiver, userId);
     }
   }
 
@@ -390,6 +402,42 @@ class TelegramAccessEdge {
       return;
     }
     await _sendSplit(receiver, await inspector.report());
+  }
+
+  /// Handles `/todos_list`: sends the working todo list of the user's active
+  /// session, split across messages if it overflows. Replies the unavailable
+  /// message when no todos inspector is wired, and the global-session notice
+  /// when the active session is `global` (which keeps no persistent list).
+  Future<void> _handleTodosList(ChatReceiver receiver, String userId) async {
+    final TelegramTodosInspector? inspector = _inspectors.todos;
+    if (inspector == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    final String? sessionId = _sessionRegistry.resolveActive(userId).sessionId;
+    if (sessionId == null) {
+      await _send(receiver, telegramTodosGlobalSessionMessage);
+      return;
+    }
+    await _sendSplit(receiver, await inspector.list(sessionId));
+  }
+
+  /// Handles `/todos_clear`: empties the working todo list of the user's active
+  /// session and reports the outcome. Replies the unavailable message when no
+  /// todos inspector is wired, and the global-session notice when the active
+  /// session is `global` (which keeps no persistent list to clear).
+  Future<void> _handleTodosClear(ChatReceiver receiver, String userId) async {
+    final TelegramTodosInspector? inspector = _inspectors.todos;
+    if (inspector == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    final String? sessionId = _sessionRegistry.resolveActive(userId).sessionId;
+    if (sessionId == null) {
+      await _send(receiver, telegramTodosGlobalSessionMessage);
+      return;
+    }
+    await _sendSplit(receiver, await inspector.clear(sessionId));
   }
 
   /// Sends [text] as the minimum number of size-compliant Telegram messages,

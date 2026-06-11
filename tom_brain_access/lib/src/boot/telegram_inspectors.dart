@@ -128,6 +128,27 @@ abstract interface class TelegramStatusInspector {
   Future<String> report();
 }
 
+/// Reads and clears the working todo list of one conversation session for the
+/// `/todos_list` and `/todos_clear` commands.
+///
+/// The brain keeps a scratch todo list per conversation session (the engine's
+/// process-lifetime `SessionTodoStores`), surviving across the prompts of a
+/// conversation but never written to memory. Implemented in `tom_brain_run`,
+/// the one assembly that may read the engine's stores; the access edge owns the
+/// session resolution (it maps the Telegram user to its active session id) and
+/// hands that id in. Each method returns already-rendered, channel-neutral text.
+abstract interface class TelegramTodosInspector {
+  /// Renders the working todo list of the session [sessionId] — each entry's
+  /// done-state and text — or an explicit empty notice when the session holds
+  /// no list yet or it is empty.
+  Future<String> list(String sessionId);
+
+  /// Empties the working todo list of the session [sessionId] and renders the
+  /// outcome (how many entries were removed, or that there was nothing to
+  /// clear).
+  Future<String> clear(String sessionId);
+}
+
 /// The read-only inspectors the Telegram edge drives for the inspection
 /// commands (parts b–e).
 ///
@@ -151,12 +172,17 @@ final class TelegramInspectors {
   /// unavailable.
   final TelegramStatusInspector? status;
 
+  /// Reads and clears the active session's working todo list for `/todos_list`
+  /// and `/todos_clear`, or `null` when unavailable.
+  final TelegramTodosInspector? todos;
+
   /// Builds an inspector bundle; every member defaults to absent.
   const TelegramInspectors({
     this.prompts,
     this.logs,
     this.memory,
     this.status,
+    this.todos,
   });
 
   /// The no-inspectors bundle: every inspection command answers "not available

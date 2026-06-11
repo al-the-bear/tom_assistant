@@ -20,6 +20,8 @@ import 'dart:io';
 
 import 'package:tom_brain_access/tom_brain_access.dart'
     show AccessChannel, IncomingTrailRecord, QueueSnapshot;
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
+    show SessionTodoStores;
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
@@ -333,6 +335,62 @@ void main() {
       );
       final report = await inspector.report();
       expect(report, contains('draining (shutting down)'));
+    });
+  });
+
+  group('SessionTodosInspector', () {
+    test('lists a session\'s working todos with done boxes and ids', () async {
+      final stores = SessionTodoStores();
+      final store = stores.forSession('sess-1');
+      final id1 = store.add('write the test');
+      store.add('make it pass');
+      store.update(id1, done: true);
+
+      final inspector = SessionTodosInspector(stores: stores);
+      final text = await inspector.list('sess-1');
+
+      expect(text, contains('Working todo list (2):'));
+      expect(text, contains('[x] $id1  write the test'));
+      expect(text, contains('[ ] t2  make it pass'));
+    });
+
+    test('reports the empty case without creating a store', () async {
+      final stores = SessionTodoStores();
+      final inspector = SessionTodosInspector(stores: stores);
+
+      expect(await inspector.list('never-seen'), 'The working todo list is empty.');
+      // The peek must not have minted a store for the unseen session.
+      expect(stores.peek('never-seen'), isNull);
+    });
+
+    test('clear empties the list and reports the count', () async {
+      final stores = SessionTodoStores();
+      final store = stores.forSession('sess-2');
+      store.add('one');
+      store.add('two');
+
+      final inspector = SessionTodosInspector(stores: stores);
+      final result = await inspector.clear('sess-2');
+
+      expect(result, 'Cleared 2 entries from the working todo list.');
+      expect(stores.peek('sess-2')!.list(), isEmpty);
+    });
+
+    test('clear of a single entry uses the singular noun', () async {
+      final stores = SessionTodoStores();
+      stores.forSession('sess-3').add('only one');
+
+      final inspector = SessionTodosInspector(stores: stores);
+      expect(await inspector.clear('sess-3'),
+          'Cleared 1 entry from the working todo list.');
+    });
+
+    test('clear of an empty/unseen session reports it was already empty',
+        () async {
+      final stores = SessionTodoStores();
+      final inspector = SessionTodosInspector(stores: stores);
+      expect(await inspector.clear('unseen'),
+          'The working todo list was already empty.');
     });
   });
 }

@@ -31,7 +31,10 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         TelegramMemoryInspector,
         TelegramPromptDigest,
         TelegramPromptInspector,
-        TelegramStatusInspector;
+        TelegramStatusInspector,
+        TelegramTodosInspector;
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
+    show SessionTodoStores, TodoEntry, TodoStore;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show LatencyHistogram, MemoryStats, TomBrainMemoryClient;
 
@@ -523,4 +526,45 @@ final class _RunLogSummary {
   final List<String> errors;
 
   _RunLogSummary({required this.key, required this.outcome, required this.errors});
+}
+
+/// Reads and clears the engine's per-session working todo lists for the
+/// `/todos_list` and `/todos_clear` commands, over the engine's process-lifetime
+/// [SessionTodoStores].
+///
+/// The brain keeps a scratch todo list per conversation session (bound to the
+/// run's `ToolContext.todos`, surviving across the prompts of a conversation but
+/// never written to memory). The Telegram edge resolves the user's active
+/// session id and hands it in; this inspector peeks the matching store without
+/// creating one — a session that has not yet written a todo simply reads empty.
+final class SessionTodosInspector implements TelegramTodosInspector {
+  /// The engine's process-lifetime registry of per-session todo stores.
+  final SessionTodoStores stores;
+
+  /// Builds an inspector over the engine's [stores].
+  SessionTodosInspector({required this.stores});
+
+  @override
+  Future<String> list(String sessionId) async {
+    final TodoStore? store = stores.peek(sessionId);
+    final List<TodoEntry> entries = store?.list() ?? const <TodoEntry>[];
+    if (entries.isEmpty) return 'The working todo list is empty.';
+
+    final buffer = StringBuffer('Working todo list (${entries.length}):');
+    for (final entry in entries) {
+      final box = entry.done ? '[x]' : '[ ]';
+      buffer.write('\n$box ${entry.id}  ${entry.text}');
+    }
+    return buffer.toString();
+  }
+
+  @override
+  Future<String> clear(String sessionId) async {
+    final TodoStore? store = stores.peek(sessionId);
+    final int removed = store?.list().length ?? 0;
+    stores.clearSession(sessionId);
+    if (removed == 0) return 'The working todo list was already empty.';
+    final noun = removed == 1 ? 'entry' : 'entries';
+    return 'Cleared $removed $noun from the working todo list.';
+  }
 }

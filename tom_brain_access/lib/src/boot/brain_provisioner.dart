@@ -42,6 +42,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 
 import '../config/access_config.dart';
 import 'health_check.dart';
+import 'telegram_inspectors.dart';
 
 /// Boots the cognition the access process serves over, from the access
 /// [AccessConfig] (E.45).
@@ -88,12 +89,22 @@ final class ProvisionedBrain {
   /// expose memory (the standalone serve path).
   final TomBrainMemoryClient? memoryClient;
 
+  /// Reads and clears the engine's per-session working todo lists for the
+  /// Telegram `/todos_list` / `/todos_clear` commands — a `tom_brain_access`
+  /// port type (an allowed dependency), so surfacing it here does *not* pull
+  /// `tom_brain_procedure` into the access package. A higher assembly
+  /// (`tom_brain_run`) sets it over the booted engine's `SessionTodoStores`;
+  /// `null` when the provisioner does not expose the working lists (the
+  /// standalone serve path).
+  final TelegramTodosInspector? todosInspector;
+
   /// Builds a provisioned-brain handle.
   const ProvisionedBrain({
     required this.dispatcher,
     required this.queueSnapshot,
     required this.shutdown,
     this.memoryClient,
+    this.todosInspector,
   });
 }
 

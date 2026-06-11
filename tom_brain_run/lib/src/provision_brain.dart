@@ -44,6 +44,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         QueueSnapshot,
         QueueSnapshotSource,
         TelegramInspectors,
+        TelegramTodosInspector,
         serveWithShelfIo,
         startBrainAccessProcess;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
@@ -86,6 +87,7 @@ import 'summary_fanout.dart' show SummaryFanout;
 import 'telegram_inspector_impls.dart'
     show
         MemoryStatsInspector,
+        SessionTodosInspector,
         TrailIncomingPromptInspector,
         TrailLogInspector,
         TrailStatusInspector;
@@ -247,6 +249,13 @@ Future<ProvisionedBrain> provisionBrain({
     // a `tom_brain_shared` type, so this does not pull `tom_brain_memory` into
     // the access package.
     memoryClient: booted.memory.client,
+    // Surface the engine's per-session working todo lists behind the access
+    // package's `TelegramTodosInspector` port, so the running process can build
+    // the Telegram `/todos_list` / `/todos_clear` commands over the engine's
+    // `SessionTodoStores` without the access package depending on
+    // `tom_brain_procedure`.
+    todosInspector:
+        SessionTodosInspector(stores: booted.engine.sessionTodoStores),
   );
 }
 
@@ -389,6 +398,7 @@ Future<BrainProcess> standUpBrainProcess({
         trailRoot: trailRoot,
         memoryClient: provisioned.memoryClient,
         queueSnapshot: provisioned.queueSnapshot,
+        todos: provisioned.todosInspector,
       ),
     );
   } on Object {
@@ -402,21 +412,24 @@ Future<BrainProcess> standUpBrainProcess({
 }
 
 /// Builds the Telegram inspection bundle the edge drives for the
-/// `/observatory_*`, `/show_logs`, `/memory_status`, and `/check_status`
-/// commands.
+/// `/observatory_*`, `/show_logs`, `/memory_status`, `/check_status`, and
+/// `/todos_list` / `/todos_clear` commands.
 ///
 /// The prompt + log inspectors read the on-disk trail, so they are wired only
 /// when a [trailRoot] is configured (full-trail mode); the memory inspector is
 /// wired whenever the provisioned [memoryClient] is available. The status
 /// inspector stitches the live [queueSnapshot] (always available) with the
 /// trail's `incoming/` + `procedures/` trees, so it too is wired only when a
-/// [trailRoot] is configured. An absent member makes the edge answer the
-/// corresponding command with "not available on this deployment" — the honest
-/// report for a process that did not configure that surface.
+/// [trailRoot] is configured. The [todos] inspector reads the engine's live
+/// `SessionTodoStores` (not the trail), so it is wired whenever the provisioner
+/// exposed one. An absent member makes the edge answer the corresponding command
+/// with "not available on this deployment" — the honest report for a process
+/// that did not configure that surface.
 TelegramInspectors _telegramInspectorsFor({
   required String? trailRoot,
   required TomBrainMemoryClient? memoryClient,
   required QueueSnapshotSource queueSnapshot,
+  required TelegramTodosInspector? todos,
 }) {
   final Directory? root = trailRoot == null ? null : Directory(trailRoot);
   return TelegramInspectors(
@@ -428,6 +441,10 @@ TelegramInspectors _telegramInspectorsFor({
     status: root == null
         ? null
         : TrailStatusInspector(queueSnapshot: queueSnapshot, trailRoot: root),
+    // The working-todo inspector does not read the trail — it reads the
+    // engine's live `SessionTodoStores` — so it is wired whenever the
+    // provisioner exposed one, independent of `trailRoot`.
+    todos: todos,
   );
 }
 

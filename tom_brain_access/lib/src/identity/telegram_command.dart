@@ -58,6 +58,14 @@ enum TelegramCommandKind {
   /// processed right now, or, if processing has stopped, the recent runs'
   /// outcomes and any errors (budget overruns included).
   checkStatus,
+
+  /// `/todos_list` — show the working todo list of the active session (the
+  /// scratch plan the brain keeps for itself, surviving across the prompts of
+  /// the conversation).
+  todosList,
+
+  /// `/todos_clear` — empty the working todo list of the active session.
+  todosClear,
 }
 
 /// The command word a user types for each [TelegramCommandKind], without the
@@ -75,6 +83,8 @@ const Map<TelegramCommandKind, String> telegramCommandWords =
   TelegramCommandKind.showLogs: 'show_logs',
   TelegramCommandKind.memoryStatus: 'memory_status',
   TelegramCommandKind.checkStatus: 'check_status',
+  TelegramCommandKind.todosList: 'todos_list',
+  TelegramCommandKind.todosClear: 'todos_clear',
 };
 
 /// The reverse of [telegramCommandWords]: the command word (lower-cased,
@@ -143,6 +153,8 @@ String telegramHelpText() {
     ..write('\n/show_logs — tail of each important log file')
     ..write('\n/memory_status — overview of the brain memory')
     ..write('\n/check_status — what the brain is doing now + recent runs/errors')
+    ..write('\n/todos_list — show the working todo list of the active session')
+    ..write('\n/todos_clear — empty the working todo list of the active session')
     ..write('\n\n/help — show this list');
   return buffer.toString();
 }

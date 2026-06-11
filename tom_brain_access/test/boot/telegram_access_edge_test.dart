@@ -691,6 +691,77 @@ void main() {
           telegramInspectorUnavailableMessage,
         );
       });
+
+      test('/todos_list sends the working list for the active session',
+          () async {
+        final d = _answeringDispatcher();
+        final inspector = _FakeTodosInspector(
+          listText: 'Working todo list (1):\n[ ] t1  do the thing',
+        );
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          sessionRegistry: _deterministicRegistry,
+          inspectors: TelegramInspectors(todos: inspector),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/todos_list'));
+        await pumpEventQueue();
+
+        // The brain is never involved — the working list is an engine read.
+        expect(d.routed, isEmpty);
+        // First contact silently activates `default` (minted _vid(0)); the
+        // inspector is asked for exactly that active session id.
+        expect(inspector.listedSessions, equals([_vid(0)]));
+        expect(
+          f.chatApi.sentMessages.single,
+          'Working todo list (1):\n[ ] t1  do the thing',
+        );
+      });
+
+      test('/todos_clear sends the clear result for the active session',
+          () async {
+        final d = _answeringDispatcher();
+        final inspector = _FakeTodosInspector(
+          clearText: 'Cleared 2 entries from the working todo list.',
+        );
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          sessionRegistry: _deterministicRegistry,
+          inspectors: TelegramInspectors(todos: inspector),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/todos_clear'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(inspector.clearedSessions, equals([_vid(0)]));
+        expect(
+          f.chatApi.sentMessages.single,
+          'Cleared 2 entries from the working todo list.',
+        );
+      });
+
+      test('/todos_list is unavailable when no inspector is wired', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(dispatcher: d.dispatcher);
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/todos_list'));
+        await pumpEventQueue();
+
+        expect(
+          f.chatApi.sentMessages.single,
+          telegramInspectorUnavailableMessage,
+        );
+      });
     });
 
     group('telegramProcessingAcknowledgement', () {
@@ -768,6 +839,30 @@ final class _FakeStatusInspector implements TelegramStatusInspector {
 
   @override
   Future<String> report() async => reportText;
+}
+
+/// A todos inspector recording the session ids it is asked about and returning
+/// canned strings, used to drive the `/todos_list` / `/todos_clear` dispatch
+/// paths and to assert the edge passes the *active* session id through.
+final class _FakeTodosInspector implements TelegramTodosInspector {
+  _FakeTodosInspector({this.listText = 'list', this.clearText = 'clear'});
+
+  final String listText;
+  final String clearText;
+  final List<String> listedSessions = <String>[];
+  final List<String> clearedSessions = <String>[];
+
+  @override
+  Future<String> list(String sessionId) async {
+    listedSessions.add(sessionId);
+    return listText;
+  }
+
+  @override
+  Future<String> clear(String sessionId) async {
+    clearedSessions.add(sessionId);
+    return clearText;
+  }
 }
 
 /// A [ChatApi] that throws on a `sendMessage` to one chosen receiver and

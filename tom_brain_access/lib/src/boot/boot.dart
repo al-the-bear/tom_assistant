@@ -87,6 +87,7 @@ export 'telegram_access_edge.dart'
     show
         TelegramAccessEdge,
         telegramInspectorUnavailableMessage,
+        telegramTodosGlobalSessionMessage,
         telegramShowLogsLineCount,
         telegramShowPromptsLimit,
         telegramStartupAnnouncement,
@@ -100,4 +101,5 @@ export 'telegram_inspectors.dart'
         TelegramMemoryInspector,
         TelegramPromptDigest,
         TelegramPromptInspector,
-        TelegramStatusInspector;
+        TelegramStatusInspector,
+        TelegramTodosInspector;
