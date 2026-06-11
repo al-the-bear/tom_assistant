@@ -42,6 +42,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         IncomingTrailSink,
         ProvisionedBrain,
         QueueSnapshot,
+        TelegramInspectors,
         serveWithShelfIo,
         startBrainAccessProcess;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
@@ -64,6 +65,8 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         ToolAccessSink,
         TurnSummary,
         TurnSummarySink;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show TomBrainMemoryClient;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, TomBrainSubstrateClient;
 
@@ -79,6 +82,11 @@ import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
 import 'procedure_tree_writer.dart' show ProcedureTreeWriter;
 import 'streaming_live_trail.dart' show StreamingLiveTrailWriter;
 import 'summary_fanout.dart' show SummaryFanout;
+import 'telegram_inspector_impls.dart'
+    show
+        MemoryStatsInspector,
+        TrailIncomingPromptInspector,
+        TrailLogInspector;
 import 'trail_config.dart' show TrailConfig;
 import 'trail_janitor.dart' show TrailJanitor;
 
@@ -232,6 +240,11 @@ Future<ProvisionedBrain> provisionBrain({
             await dreamController.stop();
             await booted.shutdown();
           },
+    // Surface the booted memory's read client so the running process can build
+    // the Telegram `/memory_status` inspector over it. `TomBrainMemoryClient` is
+    // a `tom_brain_shared` type, so this does not pull `tom_brain_memory` into
+    // the access package.
+    memoryClient: booted.memory.client,
   );
 }
 
@@ -337,6 +350,7 @@ Future<BrainProcess> standUpBrainProcess({
   int foregroundQueueDepth = 4,
   FileScope? toolFileScope,
   String? isolateLogRootPath,
+  String? trailRoot,
   LlmTrailSink? llmTrailSink,
   TurnSummarySink? turnSummarySink,
   IncomingTrailSink? incomingTrailSink,
@@ -369,6 +383,10 @@ Future<BrainProcess> standUpBrainProcess({
       brain: provisioned,
       serve: serve,
       incomingTrailSink: incomingTrailSink,
+      telegramInspectors: _telegramInspectorsFor(
+        trailRoot: trailRoot,
+        memoryClient: provisioned.memoryClient,
+      ),
     );
   } on Object {
     // The cognition is booted but never reached a running access process —
@@ -378,6 +396,29 @@ Future<BrainProcess> standUpBrainProcess({
   }
 
   return BrainProcess._(process);
+}
+
+/// Builds the Telegram inspection bundle the edge drives for the
+/// `/observatory_*`, `/show_logs`, and `/memory_status` commands.
+///
+/// The prompt + log inspectors read the on-disk trail, so they are wired only
+/// when a [trailRoot] is configured (full-trail mode); the memory inspector is
+/// wired whenever the provisioned [memoryClient] is available. An absent member
+/// makes the edge answer the corresponding command with "not available on this
+/// deployment" — the honest report for a process that did not configure that
+/// surface.
+TelegramInspectors _telegramInspectorsFor({
+  required String? trailRoot,
+  required TomBrainMemoryClient? memoryClient,
+}) {
+  final Directory? root = trailRoot == null ? null : Directory(trailRoot);
+  return TelegramInspectors(
+    prompts:
+        root == null ? null : TrailIncomingPromptInspector(trailRoot: root),
+    logs: root == null ? null : TrailLogInspector(trailRoot: root),
+    memory:
+        memoryClient == null ? null : MemoryStatsInspector(client: memoryClient),
+  );
 }
 
 /// Stands the whole cognition up from a parsed whole-process [runConfig]
@@ -421,6 +462,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     foregroundQueueDepth: foregroundQueueDepth,
     toolFileScope: runConfig.tools?.toFileScope(),
     isolateLogRootPath: isolateLogRootPath,
+    trailRoot: trail?.root,
     llmTrailSink: sinks.llmTrailSink,
     turnSummarySink: sinks.turnSummarySink,
     incomingTrailSink: sinks.incomingTrailSink,

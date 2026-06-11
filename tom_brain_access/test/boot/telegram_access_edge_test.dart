@@ -78,6 +78,7 @@ InboundRequest _inbound({
   RateLimitPolicy? rateLimitPolicy,
   int dailyCap = 100,
   TelegramSessionRegistry Function(BootedAccessLayer booted)? sessionRegistry,
+  TelegramInspectors inspectors = TelegramInspectors.none,
 }) {
   final booted = BrainAccessBoot.install(
     dispatcher: dispatcher,
@@ -96,6 +97,7 @@ InboundRequest _inbound({
     chatApi: chatApi,
     authorizedInbound: inbound.stream,
     sessionRegistry: sessionRegistry?.call(booted) ?? _registry(booted),
+    inspectors: inspectors,
   );
   return (edge: edge, booted: booted, chatApi: chatApi, inbound: inbound);
 }
@@ -418,6 +420,238 @@ void main() {
       });
     });
 
+    group('/help + inspection commands (parts a–e)', () {
+      test('/help is intercepted and lists every command word', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(dispatcher: d.dispatcher);
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/help'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        final String reply = f.chatApi.sentMessages.single;
+        for (final String word in telegramCommandWords.values) {
+          expect(reply, contains('/$word'));
+        }
+      });
+
+      test('/observatory_show_prompts lists recorded prompts newest-first',
+          () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            prompts: _FakePromptInspector(
+              digests: [
+                TelegramPromptDigest(
+                  index: 0,
+                  receivedAt: DateTime.utc(2026, 6, 2, 12),
+                  preview: 'most recent',
+                ),
+                TelegramPromptDigest(
+                  index: 1,
+                  receivedAt: DateTime.utc(2026, 6, 2, 11),
+                  preview: 'older one',
+                ),
+              ],
+              detail: 'full detail',
+            ),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/observatory_show_prompts'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        final String reply = f.chatApi.sentMessages.single;
+        expect(reply, contains('Recent prompts:'));
+        expect(reply, contains('[0] 2026-06-02T12:00:00.000Z'));
+        expect(reply, contains('most recent'));
+        expect(reply, contains('[1]'));
+        expect(reply, contains('older one'));
+      });
+
+      test('/observatory_show_prompts reports the empty case', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            prompts: _FakePromptInspector(digests: const [], detail: null),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/observatory_show_prompts'));
+        await pumpEventQueue();
+
+        expect(f.chatApi.sentMessages.single, 'No prompts have been recorded yet.');
+      });
+
+      test('/observatory_show_prompts is unavailable when no inspector is wired',
+          () async {
+        final d = _answeringDispatcher();
+        final f = _edge(dispatcher: d.dispatcher); // no inspectors
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/observatory_show_prompts'));
+        await pumpEventQueue();
+
+        expect(
+          f.chatApi.sentMessages.single,
+          telegramInspectorUnavailableMessage,
+        );
+      });
+
+      test('/observatory_analyze_prompt sends the prompt detail', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            prompts: _FakePromptInspector(
+              digests: const [],
+              detail: 'the full prompt detail',
+            ),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/observatory_analyze_prompt 0'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(f.chatApi.sentMessages.single, 'the full prompt detail');
+      });
+
+      test('/observatory_analyze_prompt rejects a non-numeric index', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            prompts: _FakePromptInspector(digests: const [], detail: 'x'),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/observatory_analyze_prompt abc'));
+        await pumpEventQueue();
+
+        expect(f.chatApi.sentMessages.single, contains('Usage:'));
+      });
+
+      test('/observatory_analyze_prompt reports a missing index', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            prompts: _FakePromptInspector(digests: const [], detail: null),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/observatory_analyze_prompt 7'));
+        await pumpEventQueue();
+
+        expect(f.chatApi.sentMessages.single, contains('No prompt numbered 7'));
+      });
+
+      test('/show_logs sends one message per log file', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            logs: _FakeLogInspector(tails: const [
+              TelegramLogTail(name: 'brain.log', content: 'line a\nline b'),
+              TelegramLogTail(
+                name: 'components/sub.log',
+                content: 'sub line',
+              ),
+            ]),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/show_logs'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(f.chatApi.sentMessages, hasLength(2));
+        expect(f.chatApi.sentMessages[0], contains('=== brain.log ==='));
+        expect(f.chatApi.sentMessages[0], contains('line a'));
+        expect(f.chatApi.sentMessages[1], contains('=== components/sub.log ==='));
+      });
+
+      test('/show_logs reports the empty case', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            logs: _FakeLogInspector(tails: const []),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/show_logs'));
+        await pumpEventQueue();
+
+        expect(f.chatApi.sentMessages.single, 'No log files to show.');
+      });
+
+      test('/memory_status sends the memory overview', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            memory: _FakeMemoryInspector(statusText: 'Memory status\nNodes: 3'),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/memory_status'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(f.chatApi.sentMessages.single, 'Memory status\nNodes: 3');
+      });
+
+      test('/memory_status is unavailable when no inspector is wired', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(dispatcher: d.dispatcher);
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/memory_status'));
+        await pumpEventQueue();
+
+        expect(
+          f.chatApi.sentMessages.single,
+          telegramInspectorUnavailableMessage,
+        );
+      });
+    });
+
     group('telegramProcessingAcknowledgement', () {
       test('echoes a short prompt whole behind the "Processing:" prefix', () {
         expect(
@@ -441,6 +675,47 @@ void main() {
       });
     });
   });
+}
+
+/// A prompt inspector returning canned digests + a single canned detail, used
+/// to drive the `/observatory_*` dispatch paths without a real trail.
+final class _FakePromptInspector implements TelegramPromptInspector {
+  _FakePromptInspector({required this.digests, required this.detail});
+
+  final List<TelegramPromptDigest> digests;
+  final String? detail;
+
+  @override
+  Future<List<TelegramPromptDigest>> recentPrompts({
+    required int limit,
+    required int previewLength,
+  }) async =>
+      digests;
+
+  @override
+  Future<String?> promptDetail(int index) async => detail;
+}
+
+/// A log inspector returning canned tails, used to drive the `/show_logs`
+/// dispatch path.
+final class _FakeLogInspector implements TelegramLogInspector {
+  _FakeLogInspector({required this.tails});
+
+  final List<TelegramLogTail> tails;
+
+  @override
+  Future<List<TelegramLogTail>> tailLogs({required int lines}) async => tails;
+}
+
+/// A memory inspector returning a canned status string, used to drive the
+/// `/memory_status` dispatch path.
+final class _FakeMemoryInspector implements TelegramMemoryInspector {
+  _FakeMemoryInspector({required this.statusText});
+
+  final String statusText;
+
+  @override
+  Future<String> status() async => statusText;
 }
 
 /// A [ChatApi] that throws on a `sendMessage` to one chosen receiver and

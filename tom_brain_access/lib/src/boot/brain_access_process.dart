@@ -88,6 +88,7 @@ import 'incoming_trail_record.dart' show IncomingTrailSink;
 import 'ollama_access_edge.dart';
 import 'openai_access_edge.dart';
 import 'telegram_access_edge.dart';
+import 'telegram_inspectors.dart';
 
 /// Binds the composed access handler to a port and returns the live server
 /// (E.45).
@@ -248,6 +249,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
   Duration shutdownDeadline = defaultShutdownDeadline,
   DateTime Function()? clock,
   IncomingTrailSink? incomingTrailSink,
+  TelegramInspectors telegramInspectors = TelegramInspectors.none,
 }) async {
   // The proto spec § 12 phase 5 sequence, one extracted step each:
   final BootedAccessLayer booted = _composeAccessLayer(
@@ -281,6 +283,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
     booted: booted,
     config: config,
     telegramChatApiFactory: telegramChatApiFactory,
+    inspectors: telegramInspectors,
   );
   final List<AccessServer> servers = <AccessServer>[
     server,
@@ -409,6 +412,7 @@ Future<_TelegramEdge> _startTelegram({
   required BootedAccessLayer booted,
   required AccessConfig config,
   required TelegramChatApiFactory telegramChatApiFactory,
+  required TelegramInspectors inspectors,
 }) async {
   if (!config.hasTelegram) {
     return _TelegramEdge.none;
@@ -444,6 +448,7 @@ Future<_TelegramEdge> _startTelegram({
     chatApi: chatApi,
     authorizedInbound: adapter.authorizedInboundRequests,
     sessionRegistry: sessionRegistry,
+    inspectors: inspectors,
   );
   edge.start();
   // Ping each whitelisted owner that the link is live, naming the host this

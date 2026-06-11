@@ -109,91 +109,14 @@ final class TelegramActiveSession {
   });
 }
 
-/// The four session slash-commands a Telegram user can send (§ 6.5).
-enum TelegramSessionCommandKind {
-  /// `/create_session <name>` — mint a new session and activate it.
-  createSession,
-
-  /// `/list_sessions` — list every session, three-digit-numbered.
-  listSessions,
-
-  /// `/pick_session <nnn>` — activate the session at a three-digit index.
-  pickSession,
-
-  /// `/rename_session <new name>` — rename the active session.
-  renameSession,
-}
-
-/// A parsed session command: its [kind] and the trailing [argument]
-/// (the session name, or the three-digit index; empty when the command takes
-/// none or the user supplied none).
-final class TelegramSessionCommand {
-  /// Which of the four commands this is.
-  final TelegramSessionCommandKind kind;
-
-  /// The trailing argument text (trimmed), or `''` when absent.
-  final String argument;
-
-  /// Builds a parsed command.
-  const TelegramSessionCommand({required this.kind, required this.argument});
-}
-
-/// Parses one Telegram message body into a [TelegramSessionCommand], or returns
-/// `null` when the body is not one of the four session commands (an ordinary
-/// prompt). Pure — no I/O, no state.
-///
-/// `/cmd@botname` is normalised to `/cmd` (Telegram appends the bot username to
-/// commands in group chats). The match is case-insensitive on the command word.
-TelegramSessionCommand? parseSessionCommand(String text) {
-  final String trimmed = text.trim();
-  if (!trimmed.startsWith('/')) return null;
-
-  // Split the leading command word from the rest (the argument).
-  final int firstSpace = trimmed.indexOf(RegExp(r'\s'));
-  final String word =
-      (firstSpace == -1 ? trimmed : trimmed.substring(0, firstSpace));
-  final String argument =
-      (firstSpace == -1 ? '' : trimmed.substring(firstSpace + 1)).trim();
-
-  // Strip a `@botname` suffix and the leading slash, lower-case for matching.
-  String command = word.substring(1);
-  final int at = command.indexOf('@');
-  if (at != -1) command = command.substring(0, at);
-  command = command.toLowerCase();
-
-  switch (command) {
-    case 'create_session':
-      return TelegramSessionCommand(
-        kind: TelegramSessionCommandKind.createSession,
-        argument: argument,
-      );
-    case 'list_sessions':
-      return TelegramSessionCommand(
-        kind: TelegramSessionCommandKind.listSessions,
-        argument: argument,
-      );
-    case 'pick_session':
-      return TelegramSessionCommand(
-        kind: TelegramSessionCommandKind.pickSession,
-        argument: argument,
-      );
-    case 'rename_session':
-      return TelegramSessionCommand(
-        kind: TelegramSessionCommandKind.renameSession,
-        argument: argument,
-      );
-    default:
-      return null;
-  }
-}
-
 /// Maps each Telegram user id to its session continuity, persisting across
 /// restarts and handling the four session commands (access spec § 6.5).
 ///
 /// Construct one per running Telegram channel over an [EdgeStateStore]; it
-/// loads on construction and saves on every mutation. The edge calls
-/// [parseSessionCommand] to detect a command and dispatches to the matching
-/// method (each returns the reply to send); for an ordinary prompt it calls
+/// loads on construction and saves on every mutation. The edge parses the
+/// shared Telegram command vocabulary (`parseTelegramCommand`) to detect a
+/// command and dispatches the four session kinds to the matching method here
+/// (each returns the reply to send); for an ordinary prompt it calls
 /// [resolveActive] to learn which session id to stamp.
 final class TelegramSessionRegistry {
   final EdgeStateStore _store;

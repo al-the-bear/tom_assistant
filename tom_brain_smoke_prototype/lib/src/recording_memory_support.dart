@@ -233,6 +233,16 @@ class NoopProfileRegistry implements MemoryProfileRegistry {
 
   @override
   Future<void> dropProfile(String name) async {}
+
+  @override
+  Future<T> readInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) =>
+      throw UnsupportedError(
+        'NoopProfileRegistry does not materialise profile views; the smoke '
+        'harness never reads in a profile.',
+      );
 }
 
 /// A recording [StackApi] shared by both smoke memory doubles.

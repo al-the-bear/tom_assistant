@@ -37,6 +37,8 @@
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show Dispatcher;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show TomBrainMemoryClient;
 
 import '../config/access_config.dart';
 import 'health_check.dart';
@@ -78,11 +80,20 @@ final class ProvisionedBrain {
   /// the access layer have stopped, so no new work arrives mid-teardown.
   final Future<void> Function() shutdown;
 
+  /// The booted memory's read surface — a `tom_brain_shared` type (an allowed
+  /// dependency), so surfacing it here does *not* pull `tom_brain_memory` into
+  /// the access package. A higher assembly (`tom_brain_run`) sets it from the
+  /// booted memory client so the running process can build the Telegram
+  /// `/memory_status` inspector over it; `null` when the provisioner does not
+  /// expose memory (the standalone serve path).
+  final TomBrainMemoryClient? memoryClient;
+
   /// Builds a provisioned-brain handle.
   const ProvisionedBrain({
     required this.dispatcher,
     required this.queueSnapshot,
     required this.shutdown,
+    this.memoryClient,
   });
 }
 

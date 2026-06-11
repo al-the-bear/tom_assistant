@@ -14,8 +14,9 @@
 //   7. State persists across a "restart" (a new registry over the same store).
 //   8. A malformed stored id is recreated with a notice; a well-formed one is
 //      re-adopted silently.
-//   9. `parseSessionCommand` parses the four commands (and `/cmd@botname`) and
-//      returns null for an ordinary prompt.
+//
+// The shared command parser (`parseTelegramCommand`) + help text live in their
+// own suite (`telegram_command_test.dart`).
 
 import 'package:test/test.dart';
 import 'package:tom_brain_access/tom_brain_access.dart';
@@ -28,36 +29,6 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show TimestampId;
 String _vid(int n) => '260608-000000.${n.toString().padLeft(6, '0')}';
 
 void main() {
-  group('parseSessionCommand', () {
-    test('parses each of the four commands with its argument', () {
-      expect(parseSessionCommand('/create_session work')!.kind,
-          TelegramSessionCommandKind.createSession);
-      expect(parseSessionCommand('/create_session work')!.argument, 'work');
-      expect(parseSessionCommand('/list_sessions')!.kind,
-          TelegramSessionCommandKind.listSessions);
-      expect(parseSessionCommand('/pick_session 002')!.kind,
-          TelegramSessionCommandKind.pickSession);
-      expect(parseSessionCommand('/pick_session 002')!.argument, '002');
-      expect(parseSessionCommand('/rename_session new name')!.kind,
-          TelegramSessionCommandKind.renameSession);
-      expect(
-          parseSessionCommand('/rename_session new name')!.argument, 'new name');
-    });
-
-    test('strips a @botname suffix and is case-insensitive', () {
-      expect(parseSessionCommand('/list_sessions@tom_brain_bot')!.kind,
-          TelegramSessionCommandKind.listSessions);
-      expect(parseSessionCommand('/LIST_SESSIONS')!.kind,
-          TelegramSessionCommandKind.listSessions);
-    });
-
-    test('returns null for an ordinary prompt or unknown command', () {
-      expect(parseSessionCommand('hello there'), isNull);
-      expect(parseSessionCommand('/unknown_command'), isNull);
-      expect(parseSessionCommand('not a /command'), isNull);
-    });
-  });
-
   group('TelegramSessionRegistry', () {
     // A deterministic minter so assertions can name ids.
     ({TelegramSessionRegistry registry, List<String> adopted}) build({

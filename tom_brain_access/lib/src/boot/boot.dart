@@ -86,6 +86,17 @@ export 'openai_access_edge.dart' show OpenAiAccessEdge;
 export 'telegram_access_edge.dart'
     show
         TelegramAccessEdge,
+        telegramInspectorUnavailableMessage,
+        telegramShowLogsLineCount,
+        telegramShowPromptsLimit,
         telegramStartupAnnouncement,
         telegramProcessingAcknowledgement,
         telegramProcessingPreviewLength;
+export 'telegram_inspectors.dart'
+    show
+        TelegramInspectors,
+        TelegramLogInspector,
+        TelegramLogTail,
+        TelegramMemoryInspector,
+        TelegramPromptDigest,
+        TelegramPromptInspector;
