@@ -167,9 +167,9 @@ void main() {
 
     test('the foreground FIFO depth default agrees across config and runtime',
         () {
-      expect(defaultForegroundQueueDepth, 4);
-      expect(DispatcherConfig().foregroundQueueDepth, 4);
-      expect(RunCoordinator().foregroundQueueDepth, 4);
+      expect(defaultForegroundQueueDepth, 1000000);
+      expect(DispatcherConfig().foregroundQueueDepth, 1000000);
+      expect(RunCoordinator().foregroundQueueDepth, 1000000);
     });
   });
 }

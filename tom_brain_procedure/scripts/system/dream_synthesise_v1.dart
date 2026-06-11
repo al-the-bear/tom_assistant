@@ -5,7 +5,7 @@
 /// successCriterion: A Conclusion node is persisted (its statement + rationale
 ///   embedded) and a derived_from edge ties it to each recalled Claim, and the
 ///   Conclusion id is returned.
-/// budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 24, memoryWrites: 64 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: source, type: String, required: true }
 /// outputs:

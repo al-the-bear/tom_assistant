@@ -8,9 +8,9 @@
 // primitive) plus the `ProcedureInputs` / `ProcedureResult` contract it
 // consumes and returns. The d4rt-facing wiring (the `runProcedure` global)
 // is covered by `native_primitives_installer_test.dart`. The headline
-// PE-3 fact — the 11th level errors with `RecursionLimitExceeded` — is
-// proven here against the real cap of 10 and against a small cap for
-// chain-shape clarity.
+// PE-3 fact — the level past the cap errors with `RecursionLimitExceeded`
+// — is proven here against explicit small caps for chain-shape clarity (the
+// production default cap is very high — a runaway backstop, not a throttle).
 
 import 'package:test/test.dart';
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
@@ -157,12 +157,13 @@ void main() {
   });
 
   group('RunProcedurePrimitive — hard recursion cap (PE-3)', () {
-    test('a chain that re-enters reaches depth 10 then the 11th level errors',
+    test('a chain that re-enters reaches the cap then the next level errors',
         () async {
       // The executor models a procedure that re-enters itself, so the
-      // chain deepens by one each time. With the real cap of 10 and
+      // chain deepens by one each time. With an explicit cap of 10 and
       // startDepth 1, depths 2..10 are allowed (9 nested calls); the call
-      // that would run at depth 11 throws.
+      // that would run at depth 11 throws. (The production default cap is
+      // very high — set here to a small value so the chain stays short.)
       late RunProcedurePrimitive primitive;
       var deepestReached = 0;
       primitive = RunProcedurePrimitive(
@@ -171,6 +172,7 @@ void main() {
           // Re-enter until the cap stops us.
           return primitive.runProcedure(call.id, call.inputs);
         },
+        hardDepthCap: 10,
       );
 
       await expectLater(
@@ -178,7 +180,7 @@ void main() {
         throwsA(isA<RecursionLimitExceeded>()),
       );
       // The deepest frame that actually executed is the cap itself.
-      expect(deepestReached, RunProcedurePrimitive.defaultHardDepthCap);
+      expect(deepestReached, 10);
     });
 
     test('the rejected invocation carries the attempted depth and target',
@@ -186,7 +188,8 @@ void main() {
       // startDepth at the cap means the very next call is over the line.
       final primitive = RunProcedurePrimitive(
         executor: (call) async => ProcedureResult.succeeded(),
-        startDepth: RunProcedurePrimitive.defaultHardDepthCap,
+        hardDepthCap: 10,
+        startDepth: 10,
       );
 
       try {
@@ -209,7 +212,8 @@ void main() {
           executorCalls++;
           return ProcedureResult.succeeded();
         },
-        startDepth: RunProcedurePrimitive.defaultHardDepthCap,
+        hardDepthCap: 10,
+        startDepth: 10,
       );
       await expectLater(
         primitive.runProcedure('p_v1', ProcedureInputs.empty()),
@@ -221,6 +225,7 @@ void main() {
     test('depthDelta can breach the cap in a single jump', () async {
       final primitive = RunProcedurePrimitive(
         executor: (call) async => ProcedureResult.succeeded(),
+        hardDepthCap: 10,
       );
       // startDepth 1 + depthDelta 10 = 11 > 10.
       await expectLater(

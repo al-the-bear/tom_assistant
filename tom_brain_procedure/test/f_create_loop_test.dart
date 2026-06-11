@@ -146,12 +146,14 @@ void main() {
     String? successCriterion = 'the file contains the word hello',
     String? target = 'out.txt',
     String kind = 'text',
+    int? maxIterations,
   }) =>
       <String, Object?>{
         'intent': ?intent,
         'successCriterion': ?successCriterion,
         'target': ?target,
         'kind': kind,
+        'maxIterations': ?maxIterations,
       };
 
   File targetFile(String name) => File(p.join(root.path, name));
@@ -340,14 +342,15 @@ void main() {
       final resolver = await systemResolver();
       final budget = resolver.resolve('create_v1').header.budget;
 
-      // A 5-minute runaway-stop (§ 7.4), enforced by the StepDeadline — proven
+      // A 24-hour runaway-stop (§ 7.4), enforced by the StepDeadline — proven
       // generically in `c51_budget_enforcement_test.dart`. A creation run
       // issues several memory writes (Question + Artifact + edge) and
       // tool/substrate calls per iteration, so any count cap would throttle the
       // loop; the budget is deliberately wall-clock-only (the c51-3 "a
-      // wall-clock-only budget never refuses a tool call" case).
-      expect(budget.raw, <String, int>{'wallClockMs': 300000});
-      expect(budget.wallClockMs, 300000);
+      // wall-clock-only budget never refuses a tool call" case) and set very
+      // high so a long creation is never artificially cut short.
+      expect(budget.raw, <String, int>{'wallClockMs': 86400000});
+      expect(budget.wallClockMs, 86400000);
       expect(budget.toolCalls, isNull);
       expect(budget.memoryWrites, isNull);
       expect(budget.tokenSpend, isNull);
@@ -418,8 +421,12 @@ void main() {
       substrate.reviewerVerdicts = <String>['ACCEPT'];
       substrate.defaultVerdict = 'ACCEPT';
 
+      // The deliberation budget is caller-overridable (§ 4.1); pin it small
+      // here so the always-failing analyzer exhausts it in a bounded,
+      // observable number of passes rather than the very-high production
+      // default.
       final outcome = await create(
-        request(target: 'lib.dart', kind: 'code'),
+        request(target: 'lib.dart', kind: 'code', maxIterations: 3),
         process: process,
       );
 

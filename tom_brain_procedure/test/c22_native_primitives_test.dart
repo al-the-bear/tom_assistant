@@ -66,15 +66,19 @@ void main() {
 
   // ── Clause 1: depth cap honoured (11th level errors) ────────────────
   //
-  // PE-3, against the real production cap of 10. A script calls
-  // `runProcedure`; the injected executor models a procedure that
-  // re-enters itself on the same primitive, so the chain deepens one level
-  // per frame. Depths 2..10 execute (the top-level frame the host invokes
-  // is depth 1); the call that would run at depth 11 — "the 11th level" —
-  // is refused with `RecursionLimitExceeded`, which surfaces out of the
+  // PE-3, against an explicit cap of 10. A script calls `runProcedure`;
+  // the injected executor models a procedure that re-enters itself on the
+  // same primitive, so the chain deepens one level per frame. The cap is
+  // injected explicitly (not the production default, which is now very
+  // high) so the re-entering chain stays short enough to run a real
+  // self-recursion through the interpreter without exhausting the native
+  // stack. Depths 2..10 execute (the top-level frame the host invokes is
+  // depth 1); the call that would run at depth 11 — "the 11th level" — is
+  // refused with `RecursionLimitExceeded`, which surfaces out of the
   // script call.
+  const cap = 10;
   group('C.22 — depth cap honoured (PE-3)', () {
-    test('a self-re-entering chain reaches depth 10 then the 11th level '
+    test('a self-re-entering chain reaches the cap then the next level '
         'errors with RecursionLimitExceeded, surfaced out of the script',
         () async {
       late RunProcedurePrimitive primitive;
@@ -85,6 +89,7 @@ void main() {
           // Re-enter on the same primitive until the cap stops the chain.
           return primitive.runProcedure(call.id, call.inputs);
         },
+        hardDepthCap: cap,
       );
       final host = hostWith(runProcedure: primitive);
 
@@ -104,17 +109,17 @@ run(inputs) async {
 
       // The deepest frame that actually ran is the cap itself (10); the
       // 11th was refused before the executor saw it.
-      expect(deepestExecuted, 10);
-      expect(deepestExecuted, RunProcedurePrimitive.defaultHardDepthCap);
+      expect(deepestExecuted, cap);
     });
 
-    test('the refused 11th-level call carries the attempted depth (11), the '
-        'cap (10), and the target id', () async {
+    test('the refused over-cap call carries the attempted depth (cap + 1), '
+        'the cap, and the target id', () async {
       // startDepth pinned at the cap → the script's first call is already
       // over the line, so the error fields are deterministic.
       final primitive = RunProcedurePrimitive(
         executor: (call) async => ProcedureResult.succeeded(),
-        startDepth: RunProcedurePrimitive.defaultHardDepthCap,
+        hardDepthCap: cap,
+        startDepth: cap,
       );
       final host = hostWith(runProcedure: primitive);
 
@@ -131,8 +136,8 @@ run(inputs) async {
         );
         fail('expected RecursionLimitExceeded to surface out of the script');
       } on RecursionLimitExceeded catch (e) {
-        expect(e.attemptedDepth, 11);
-        expect(e.hardDepthCap, RunProcedurePrimitive.defaultHardDepthCap);
+        expect(e.attemptedDepth, cap + 1);
+        expect(e.hardDepthCap, cap);
         expect(e.procedureId, 'over_cap_v1');
         expect(e.toString(), contains('over_cap_v1'));
       }

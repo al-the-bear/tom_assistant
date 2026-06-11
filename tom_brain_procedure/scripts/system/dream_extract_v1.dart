@@ -4,7 +4,7 @@
 /// summary: Extract atomic Claim nodes from a seeded episodic trail.
 /// successCriterion: For every recalled Event, an atomic Claim is persisted
 ///   (its statement embedded), and the persisted Claim ids are returned.
-/// budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 24, memoryWrites: 32 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: source, type: String, required: true }
 /// outputs:

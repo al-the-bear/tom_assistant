@@ -5,7 +5,7 @@
 /// successCriterion: A Pattern node summarising the recurrence is persisted
 ///   (embedded), an AutomationIdea is persisted (embedded) and pushed onto the
 ///   automation_ideas stack, and both ids are returned.
-/// budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 24, memoryWrites: 32 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: source, type: String, required: true }
 /// outputs:

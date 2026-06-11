@@ -52,9 +52,9 @@ final class _FakeTimer implements Timer {
 
 void main() {
   group('StepDeadline construction', () {
-    test('defaults to the 60 s wall-clock cap', () {
-      expect(defaultStepDeadline, const Duration(seconds: 60));
-      expect(StepDeadline().limit, const Duration(seconds: 60));
+    test('defaults to the 24 h wall-clock cap (effectively unlimited)', () {
+      expect(defaultStepDeadline, const Duration(hours: 24));
+      expect(StepDeadline().limit, const Duration(hours: 24));
     });
 
     test('honours an explicit limit', () {

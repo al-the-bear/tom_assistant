@@ -7,7 +7,7 @@
 ///   rewritten query plus one seed per synonym); degrades to an empty list
 ///   when the role result is unusable (PE-6), so a malformed model output
 ///   never crashes retrieval.
-/// budget: { wallClockMs: 30000, tokenSpend: 2000, toolCalls: 2, memoryWrites: 0 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: text, type: String, required: true }
 /// outputs:

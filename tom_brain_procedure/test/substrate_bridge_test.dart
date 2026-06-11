@@ -68,8 +68,8 @@ void main() {
       final call = client.lastCall!;
       expect(call.roleId, SubstrateBridge.defaultRole);
       expect(call.inputs, <String, Object?>{'prompt': 'what is X?'});
-      expect(call.budget.wallClockMs, 120000);
-      expect(call.budget.tokenSpend, 40000);
+      expect(call.budget.wallClockMs, 86400000);
+      expect(call.budget.tokenSpend, 100000000);
 
       // (b) Outbound flattening — concatenated text + report map.
       expect(out['text'], 'Hello, world.');
@@ -104,8 +104,8 @@ void main() {
       final b = client.lastCall!.budget;
       expect(b.wallClockMs, 5000);
       expect(b.tokenSpend, 200);
-      expect(b.toolCalls, 30); // default
-      expect(b.memoryWrites, 6); // default
+      expect(b.toolCalls, 800); // default
+      expect(b.memoryWrites, 1000000); // default
     });
 
     test('rejects a non-numeric budget field with a FormatException (E.3.3)',

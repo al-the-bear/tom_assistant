@@ -6,7 +6,7 @@
 ///   lands with the system library (Phase D).
 /// successCriterion: returns a succeeded result without touching memory,
 ///   the substrate, or any other effect surface.
-/// budget: { wallClockMs: 1000 }
+/// budget: { wallClockMs: 86400000 }
 /// inputs:
 ///   - { name: prompt, type: String, required: false }
 /// outputs:

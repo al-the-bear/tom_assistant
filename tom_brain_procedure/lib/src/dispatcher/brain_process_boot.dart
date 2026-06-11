@@ -150,9 +150,10 @@ const String toolCatalogueArgumentKey = 'toolCatalogue';
 /// and the substrate; the abandoned body, if any, runs on untracked.
 ///
 /// Tied to the coordinator's own hard step deadline
-/// ([defaultCoordinatorHardStepDeadline] = `defaultStepDeadline` 60 s +
-/// `defaultCoordinatorDeadlineGrace` 5 s = 65 s) plus a 25 s margin = 90 s, so
-/// the two cannot silently drift apart (F.5.2): the drain must sit *above* the
+/// ([defaultCoordinatorHardStepDeadline] = `defaultStepDeadline` 24 h +
+/// `defaultCoordinatorDeadlineGrace` 5 s = 24 h 5 s) plus a 25 s margin =
+/// 24 h 30 s, so the two cannot silently drift apart (F.5.2): the drain must sit
+/// *above* the
 /// coordinator's force-yield so the normal bound on a run is that force-yield —
 /// which itself frees the slot and idles the coordinator — and this drain
 /// timeout fires only for a run that bypassed *both* the engine and coordinator
@@ -165,7 +166,7 @@ const String toolCatalogueArgumentKey = 'toolCatalogue';
 /// default of [BootedBrain.shutdown]'s `drainTimeout`. The anti-drift
 /// relationship `defaultShutdownDrainTimeout > defaultCoordinatorHardStepDeadline`
 /// is asserted by `test/f_dispatcher_cleanup_test.dart`.
-const Duration defaultShutdownDrainTimeout = Duration(seconds: 90);
+const Duration defaultShutdownDrainTimeout = Duration(hours: 24, seconds: 30);
 
 /// Which stage of [BrainProcessBoot.boot]'s § 12 bring-up sequence failed.
 ///

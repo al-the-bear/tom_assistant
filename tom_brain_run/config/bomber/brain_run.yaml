@@ -89,12 +89,15 @@ access:
         - run-token
       telegramUserIds:
         - ${TELEGRAM_TOM_BRAIN_USER}
+  # Rate limit / quota set very high (effectively unlimited): the owner is the
+  # sole principal and the brain should never throttle or quota-block its own
+  # multi-step agentic work.
   rateLimit:
-    capacity: 1000
-    refillTokens: 1000
-    refillPeriodSeconds: 60
+    capacity: 1000000000
+    refillTokens: 1000000000
+    refillPeriodSeconds: 1
   quota:
-    dailyCap: 100000
+    dailyCap: 1000000000
   # Conversation-history persistence (access spec § 21.10; umbrella Hard
   # principle 6 — "nothing is ever lost"). The session manager writes the whole
   # session-histories snapshot (the global per-(user, channel) histories plus

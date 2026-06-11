@@ -16,12 +16,14 @@
 /// # unlimited on every count dimension, exactly as `answer_with_memory_v1`.
 /// # 14400000 ms (240 min) is the spec's external default — a runaway-stop for
 /// # a genuinely hung run, not a throttle. The recursive re-entry is bounded
-/// # separately by `maxIterations` (a literal in the body, § 4.1), so the loop
-/// # terminates long before the wall clock fires; the deadline is the orthogonal
-/// # backstop for a single hung substrate call (gap-hunt § 6.5).
+/// # separately by `maxIterations` (a caller override defaulting very high in the
+/// # body, § 4.1), so the loop terminates long before the wall clock fires; the
+/// # deadline is the orthogonal backstop for a single hung substrate call
+/// # (gap-hunt § 6.5).
 /// inputs:
 ///   - { name: text, type: String, required: true }
 ///   - { name: priorTurns, type: List, required: false }
+///   - { name: maxIterations, type: int, required: false }
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: incomplete, type: bool }
@@ -71,8 +73,11 @@
 //
 // ── Bounded re-entry + the never-silent contract (§ 4.1, gap-hunt § 6.5) ─
 //
-// The loop runs at most `maxIterations` (3) passes. The bound is a literal
-// here, not an import: a d4rt body cannot import `tom_core_agentic`, so the
+// The loop runs at most `maxIterations` passes — a caller override defaulting
+// very high (effectively unlimited) so a real prompt is never artificially
+// cut short; a caller (or test) may pass a small `maxIterations` to bound it.
+// The bound is resolved inline here, not an import: a d4rt body cannot import
+// `tom_core_agentic`, so the
 // domain-free re-entry/budget vocabulary lives there for the *native* callers
 // while the loop itself enforces the cap inline. Termination is one of two:
 //
@@ -128,10 +133,14 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final retrieval = await runProcedure('retrieve_for_prompt_v1', inputs);
   final recall = retrieval.output('recall');
 
-  // Bounded re-entry (§ 4.1): at most three deliberation passes. The bound is a
-  // literal — a d4rt body cannot import the domain-free `tom_core_agentic`
-  // re-entry vocabulary, so the loop enforces the cap inline.
-  const maxIterations = 3;
+  // Bounded re-entry (§ 4.1): a caller-overridable deliberation cap. The default
+  // is set very high so a foreground prompt is effectively unbounded on the
+  // re-entry count (only the wall-clock deadline backstops a genuinely hung
+  // run); a caller (or test) may pass `maxIterations` to bound it. A d4rt body
+  // cannot import the domain-free `tom_core_agentic` re-entry vocabulary, so the
+  // loop enforces the cap inline.
+  final maxArg = inputs.getOrNull('maxIterations');
+  final maxIterations = maxArg is int ? maxArg : 800;
   var iteration = 0;
   var accepted = false;
   var draft = '';

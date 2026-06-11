@@ -94,7 +94,7 @@ final class EngineConfig {
   final SandboxConfig sandbox;
 
   /// The hard per-step wall-clock cap the engine arms for every step.
-  /// Defaults to [defaultStepDeadline] (60 s).
+  /// Defaults to [defaultStepDeadline] (24 h — effectively unlimited).
   final Duration stepDeadline;
 
   /// Builds an engine configuration. Every field defaults to the

@@ -153,16 +153,18 @@ void main() {
       expect(coordinator.isIdle, isTrue);
     });
 
-    test('the default foreground queue depth is 4', () {
-      expect(RunCoordinator().foregroundQueueDepth, 4);
+    test('the default foreground queue depth is very high', () {
+      expect(RunCoordinator().foregroundQueueDepth, 1000000);
     });
 
-    test('a fifth foreground submission past the full depth-4 queue overflows '
+    test('a submission past a full depth-4 queue overflows '
         'with ForegroundQueueFull(4)', () async {
-      final coordinator = RunCoordinator();
+      // An explicit small depth exercises the overflow path; the production
+      // default is very high, so relying on it here would never overflow.
+      final coordinator = RunCoordinator(foregroundQueueDepth: 4);
       final gate = Completer<void>();
 
-      // One run occupies the slot; four more exactly fill the default queue.
+      // One run occupies the slot; four more exactly fill the queue.
       coordinator.submitForeground<void>(() => gate.future);
       for (var i = 0; i < 4; i++) {
         coordinator.submitForeground<void>(() async {});
@@ -282,13 +284,14 @@ void main() {
     });
   });
 
-  // ── Fact 4: the 60 s step deadline (+ 5 s grace) backstop ──────────────────
-  group('P2.26 deadline — coordinator hard step deadline = 60 s + 5 s grace',
+  // ── Fact 4: the 24 h step deadline (+ 5 s grace) backstop ──────────────────
+  group('P2.26 deadline — coordinator hard step deadline = 24 h + 5 s grace',
       () {
-    test('defaults to the engine per-step 60 s deadline plus the 5 s grace', () {
-      expect(defaultStepDeadline, const Duration(seconds: 60));
+    test('defaults to the engine per-step 24 h deadline plus the 5 s grace', () {
+      expect(defaultStepDeadline, const Duration(hours: 24));
       expect(defaultCoordinatorDeadlineGrace, const Duration(seconds: 5));
-      expect(defaultCoordinatorHardStepDeadline, const Duration(seconds: 65));
+      expect(defaultCoordinatorHardStepDeadline,
+          const Duration(hours: 24, seconds: 5));
       expect(RunCoordinator().hardStepDeadline,
           defaultStepDeadline + defaultCoordinatorDeadlineGrace);
     });

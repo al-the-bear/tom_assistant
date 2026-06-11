@@ -6,7 +6,7 @@
 ///   the real decision loop ships (Todo 8/9).
 /// successCriterion: throws ProcedureNotImplemented naming the decision loop;
 ///   it resolves, lists, and validates, but never produces a decision.
-/// budget: { wallClockMs: 1000 }
+/// budget: { wallClockMs: 86400000 }
 /// inputs:
 ///   - { name: question, type: String, required: false }
 /// requires: [ notImplemented ]

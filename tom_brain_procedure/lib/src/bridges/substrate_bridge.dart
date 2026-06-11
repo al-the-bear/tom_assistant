@@ -250,10 +250,10 @@ class SubstrateBridge {
   /// then the bridge needs a concrete envelope to build an [LlmCall].
   /// (Q-C.13.2.)
   static Budget get defaultBudget => Budget(
-        wallClockMs: 120000,
-        tokenSpend: 40000,
-        toolCalls: 30,
-        memoryWrites: 6,
+        wallClockMs: 86400000,
+        tokenSpend: 100000000,
+        toolCalls: 800,
+        memoryWrites: 1000000,
       );
 
   // ── llm ───────────────────────────────────────────────────────────

@@ -32,9 +32,9 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
 
 void main() {
   group('D.19 foreground queue — construction', () {
-    test('default foreground queue depth is 4 and starts empty', () {
+    test('default foreground queue depth is 1000000 and starts empty', () {
       final coordinator = RunCoordinator();
-      expect(coordinator.foregroundQueueDepth, 4);
+      expect(coordinator.foregroundQueueDepth, 1000000);
       expect(coordinator.foregroundQueueLength, 0);
     });
 
@@ -146,10 +146,12 @@ void main() {
 
   group('D.19 foreground queue — overflow', () {
     test('a submission past a full queue raises ForegroundQueueFull', () async {
-      final coordinator = RunCoordinator();
+      // An explicit small depth exercises the overflow path; the production
+      // default is very high, so relying on it here would never overflow.
+      final coordinator = RunCoordinator(foregroundQueueDepth: 4);
       final gate = Completer<void>();
 
-      // One run occupies the slot; four more fill the default-depth-4 queue.
+      // One run occupies the slot; four more fill the depth-4 queue.
       coordinator.submitForeground<void>(() => gate.future);
       for (var i = 0; i < 4; i++) {
         coordinator.submitForeground<void>(() async {});

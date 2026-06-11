@@ -8,7 +8,7 @@
 ///   from the surviving strategies' seeds; with every LLM strategy failing the
 ///   conductor still returns a fused non-LLM result (PE-6), because the cheap
 ///   BM25 seed and the non-LLM `recall_symbolic_v1` always contribute.
-/// budget: { wallClockMs: 90000 }
+/// budget: { wallClockMs: 86400000 }
 /// inputs:
 ///   - { name: text, type: String, required: true }
 ///   - { name: retrievalConfig, type: Map, required: false }

@@ -5,7 +5,7 @@
 /// successCriterion: A Contradiction node is persisted (its summary embedded),
 ///   a contradicts edge ties it to each conflicting Claim, the superseded Claim
 ///   is demoted, and the Contradiction id is returned.
-/// budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 24, memoryWrites: 64 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: source, type: String, required: true }
 /// outputs:

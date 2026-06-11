@@ -6,7 +6,7 @@
 /// successCriterion: Returns a `seeds` list of symbolic `RecallSeed` maps the
 ///   conductor merges into `recall.multi`; never calls the substrate, so it
 ///   survives an LLM outage (PE-6).
-/// budget: { wallClockMs: 5000, tokenSpend: 0, toolCalls: 0, memoryWrites: 0 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: text, type: String, required: true }
 /// outputs:

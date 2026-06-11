@@ -238,23 +238,24 @@ void main() {
 
   // §10.3 / §13 — foreground queue depth default agrees across runtime/config.
   group('D.51-6: §10.3 foreground queue-depth default', () {
-    test('the config default is 4', () {
-      expect(defaultForegroundQueueDepth, 4);
-      expect(DispatcherConfig().foregroundQueueDepth, 4);
+    test('the config default is 1000000 (effectively unlimited)', () {
+      expect(defaultForegroundQueueDepth, 1000000);
+      expect(DispatcherConfig().foregroundQueueDepth, 1000000);
     });
 
     test('a default RunCoordinator honours the same depth', () {
-      // The coordinator constructor defaults to 4 (§ 10.3); a config built
-      // from defaults must not silently disagree with it.
-      expect(RunCoordinator().foregroundQueueDepth, 4);
+      // The coordinator constructor defaults to 1000000 (§ 10.3); a config
+      // built from defaults must not silently disagree with it.
+      expect(RunCoordinator().foregroundQueueDepth, 1000000);
     });
   });
 
   // §13 — DispatcherConfig non-queue defaults.
   group('D.51-7: §13 DispatcherConfig defaults', () {
-    test('the hard step deadline default is 65 s and the scheduler is off', () {
+    test('the hard step deadline default is 24 h + 5 s and the scheduler is off',
+        () {
       final cfg = DispatcherConfig();
-      expect(cfg.hardStepDeadline, const Duration(seconds: 65));
+      expect(cfg.hardStepDeadline, const Duration(hours: 24, seconds: 5));
       expect(cfg.schedulerEnabled, isFalse);
     });
   });

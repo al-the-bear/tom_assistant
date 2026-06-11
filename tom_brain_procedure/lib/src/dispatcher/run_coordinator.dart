@@ -298,8 +298,9 @@ final class ForegroundQueueFull implements Exception {
 const Duration defaultCoordinatorDeadlineGrace = Duration(seconds: 5);
 
 /// The coordinator's default hard step deadline (D.21): the engine's per-step
-/// deadline ([defaultStepDeadline], 60 s) plus the backstop
-/// [defaultCoordinatorDeadlineGrace] (5 s) = 65 s.
+/// deadline ([defaultStepDeadline], 24 h) plus the backstop
+/// [defaultCoordinatorDeadlineGrace] (5 s) = 24 h 5 s. Set very high
+/// (effectively unlimited) in lock-step with [defaultStepDeadline].
 ///
 /// Named (rather than inlined at the constructor default) so the shutdown drain
 /// timeout can be tied to it (F.5.2 — `defaultShutdownDrainTimeout`) instead of
@@ -315,7 +316,7 @@ const Duration defaultCoordinatorDeadlineGrace = Duration(seconds: 5);
 /// therefore *asserted* by `test/f_dispatcher_cleanup_test.dart` — change either
 /// component and that test fails — so the literal cannot silently drift from its
 /// two summands.
-const Duration defaultCoordinatorHardStepDeadline = Duration(seconds: 65);
+const Duration defaultCoordinatorHardStepDeadline = Duration(hours: 24, seconds: 5);
 
 /// Raised through a submission's future when the coordinator's hard step
 /// deadline (D.21) force-yields a run whose body did not complete in time.
@@ -389,7 +390,8 @@ final class CoordinatorDraining implements Exception {
 final class RunCoordinator {
   /// Builds a coordinator over a [preemption] state (default: a fresh
   /// [PreemptionState]) with a FIFO foreground queue of
-  /// [foregroundQueueDepth] waiting runs (default 4).
+  /// [foregroundQueueDepth] waiting runs (default very high — effectively
+  /// unlimited — so foreground prompts are never rejected for queue overflow).
   ///
   /// The preemption state is injectable so the engine and the coordinator can
   /// be handed the *same* object — the coordinator drives the write side
@@ -439,7 +441,7 @@ final class RunCoordinator {
     PreemptionController? preemptionController,
     this.runRegistry,
     RunIdMint? runIdMint,
-    this.foregroundQueueDepth = 4,
+    this.foregroundQueueDepth = 1000000,
     Duration? hardStepDeadline,
     DeadlineTimerFactory? deadlineTimerFactory,
   })  : preemption = preemption ?? PreemptionState(),

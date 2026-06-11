@@ -1,9 +1,10 @@
 // RecursionLimitExceeded — thrown when a `runProcedure` call would push
-// the procedure call chain past the hard depth cap of 10
-// (`tom_brain_procedure_specification.md` § 8 error table, PE-3;
+// the procedure call chain past the hard depth cap
+// (`RunProcedurePrimitive.defaultHardDepthCap`, set very high — effectively
+// unlimited; `tom_brain_procedure_specification.md` § 8 error table, PE-3;
 // `tom_brain_definition.md` § 7.3).
 //
-// PE-3: "`runProcedure(...)` may not exceed depth 10; the 11th level
+// PE-3: "`runProcedure(...)` may not exceed the hard depth cap; the next level
 // errors with `RecursionLimitExceeded`. `request_depth_extension` does
 // **not** exist in the prototype." The cap is a *hard* ceiling: it cannot
 // be raised from inside the engine in v1, so this error is terminal for
@@ -38,7 +39,7 @@ final class RecursionLimitExceeded implements Exception {
   /// than [hardDepthCap]).
   final int attemptedDepth;
 
-  /// The hard ceiling that was breached (10 in v1).
+  /// The hard ceiling that was breached.
   final int hardDepthCap;
 
   /// The id of the procedure the rejected invocation targeted.

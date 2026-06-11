@@ -7,7 +7,7 @@
 ///   prompt — `normal` → answer_with_memory_v1, `thinking` →
 ///   answer_with_thinking_v1 — picking deterministically even when the
 ///   classification verdict is unparseable (defaults to `normal`).
-/// budget: { wallClockMs: 60000 }
+/// budget: { wallClockMs: 86400000 }
 /// # One small classification LLM call (§ 4.0): a router decision is cheap and
 /// # must not stall the request it gates. 60000 ms (60s) is a generous
 /// # runaway-stop for a single `analyser` completion, not a throttle.

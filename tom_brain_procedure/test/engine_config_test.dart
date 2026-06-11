@@ -19,7 +19,7 @@ void main() {
       expect(config.systemScriptsPath, 'scripts/system');
       expect(config.userScriptsPath, isNull);
       expect(config.sandbox, const SandboxConfig.locked());
-      expect(config.stepDeadline, const Duration(seconds: 60));
+      expect(config.stepDeadline, const Duration(hours: 24));
     });
 
     test('an empty document yields the all-defaults configuration', () {
@@ -90,9 +90,9 @@ deadline:
       expect(config.sandbox.enableVsCodeIntegration, isFalse);
     });
 
-    test('an omitted deadline section keeps the 60 s default', () {
+    test('an omitted deadline section keeps the 24 h default', () {
       final config = EngineConfig.fromYamlString('scripts:\n  user: u\n');
-      expect(config.stepDeadline, const Duration(seconds: 60));
+      expect(config.stepDeadline, const Duration(hours: 24));
     });
   });
 

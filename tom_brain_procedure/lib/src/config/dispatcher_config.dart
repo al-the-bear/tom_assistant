@@ -66,26 +66,30 @@ export 'engine_config.dart' show defaultSystemScriptsPath, defaultUserScriptsPat
 /// The default foreground FIFO queue depth the [DispatcherConfig] applies
 /// when the `queue.foregroundDepth` field is absent.
 ///
-/// Matches `RunCoordinator`'s own constructor default (4): the maximum number
-/// of foreground runs that may *wait* behind the running one. A depth of 0
-/// disables queueing (a busy slot overflows immediately).
-const int defaultForegroundQueueDepth = 4;
+/// Matches `RunCoordinator`'s own constructor default: the maximum number of
+/// foreground runs that may *wait* behind the running one. Set very high
+/// (effectively unlimited) so foreground prompts are never rejected for queue
+/// overflow under normal operation. A depth of 0 disables queueing (a busy slot
+/// overflows immediately).
+const int defaultForegroundQueueDepth = 1000000;
 
 /// The default coordinator hard step deadline the [DispatcherConfig] applies
 /// when the `deadline.hardStepMs` field is absent.
 ///
-/// The engine's own per-step deadline (`defaultStepDeadline`, 60 s) plus the
-/// coordinator's grace (`defaultCoordinatorDeadlineGrace`, 5 s) = 65 s, so the
-/// engine's in-band truncation wins under normal operation and the
+/// The engine's own per-step deadline (`defaultStepDeadline`, 24 h) plus the
+/// coordinator's grace (`defaultCoordinatorDeadlineGrace`, 5 s) = 24 h 5 s, so
+/// the engine's in-band truncation wins under normal operation and the
 /// coordinator's harder abort is a backstop. Mirrors `RunCoordinator`'s own
-/// `hardStepDeadline` default.
+/// `hardStepDeadline` default. Set very high (effectively unlimited) in lock-step
+/// with `defaultStepDeadline`: a backstop for a genuinely hung run, not a
+/// throttle.
 ///
 /// Hardcoded here because `defaultStepDeadline + defaultCoordinatorDeadlineGrace`
 /// is not a const expression (`Duration.operator +` is not a const
 /// constructor), and a default value must be const. The dispatcher-config test
 /// guards this constant against drift by asserting it equals the sum of the two
 /// source constants.
-const Duration defaultDispatcherHardStepDeadline = Duration(seconds: 65);
+const Duration defaultDispatcherHardStepDeadline = Duration(hours: 24, seconds: 5);
 
 /// The default for the free-time scheduler's enabled flag.
 ///

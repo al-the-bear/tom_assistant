@@ -5,7 +5,7 @@
 /// successCriterion: For the recalled Claims, a Question node is persisted (its
 ///   text embedded) and pushed onto the questions_open stack, and the persisted
 ///   Question ids are returned.
-/// budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 24, memoryWrites: 32 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: source, type: String, required: true }
 /// outputs:

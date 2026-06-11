@@ -110,8 +110,12 @@ final class RunProcedurePrimitive {
     }
   }
 
-  /// The hard recursion ceiling in v1 (`tom_brain_definition.md` § 7.3).
-  static const int defaultHardDepthCap = 10;
+  /// The hard recursion ceiling (`tom_brain_definition.md` § 7.3). Set very
+  /// high (effectively unlimited) — the deepest legitimate procedure chain is a
+  /// handful of levels, so this is a safety backstop against runaway self-
+  /// recursion, not a throttle. Kept finite (not millions) so a pathological
+  /// chain cannot exhaust memory before it is stopped.
+  static const int defaultHardDepthCap = 1000;
 
   /// Resolves and runs each depth-validated [ProcedureCall].
   final ProcedureExecutor executor;

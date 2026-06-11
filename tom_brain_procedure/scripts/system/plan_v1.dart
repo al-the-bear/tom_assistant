@@ -8,7 +8,7 @@
 ///   part_of step→plan edges and part_of[kind=depends_on] dependency edges, the
 ///   plan id is returned and produced, and a PlanningEvent trail is emitted; a
 ///   re-plan supersedes the replaced steps (structural, never destructive).
-/// budget: { wallClockMs: 120000, tokenSpend: 40000, toolCalls: 64, memoryWrites: 128 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: goal, type: String, required: true }
 ///   - { name: context, type: String, required: false }
@@ -76,7 +76,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final observation = inputs.getOrNull('observation');
   final planArg = inputs.getOrNull('plan');
   final maxArg = inputs.getOrNull('maxIterations');
-  final maxIterations = maxArg is int ? maxArg : 3;
+  final maxIterations = maxArg is int ? maxArg : 800;
 
   note('planning.requested', {'goal': goal});
 

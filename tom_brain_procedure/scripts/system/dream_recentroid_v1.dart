@@ -5,7 +5,7 @@
 /// successCriterion: The centroid for forKey is replaced with the mean of the
 ///   recalled members' re-embedded text, the borderline members are surfaced
 ///   via findUncertain, and the uncertain count is returned.
-/// budget: { wallClockMs: 90000, tokenSpend: 8000, toolCalls: 80, memoryWrites: 8 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: source, type: String, required: true }
 ///   - { name: forKey, type: String, required: true }

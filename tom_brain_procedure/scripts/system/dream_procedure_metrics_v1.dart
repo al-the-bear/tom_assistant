@@ -8,7 +8,7 @@
 ///   cached successRate / runCount / lastRunAt are refreshed from the
 ///   ProcedureRun history, and any earned active→preferred / lapsed
 ///   preferred→active / failing-demotion transition is applied.
-/// budget: { wallClockMs: 60000, tokenSpend: 0, toolCalls: 0, memoryWrites: 256 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: promoteSuccessRate, type: double, required: false }
 ///   - { name: promoteMinRuns, type: int, required: false }

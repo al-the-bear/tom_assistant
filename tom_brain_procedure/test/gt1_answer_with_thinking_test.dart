@@ -82,13 +82,16 @@ void main() {
     return ProcedureResolver.fromStore(store);
   }
 
-  Future<ProcedureOutcome> thinkAbout(String text) async {
+  Future<ProcedureOutcome> thinkAbout(String text, {int? maxIterations}) async {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
         .invoke(ProcedureInvocation(
           procedureId: 'answer_with_thinking_v1',
-          arguments: <String, Object?>{'text': text},
+          arguments: <String, Object?>{
+            'text': text,
+            'maxIterations': ?maxIterations,
+          },
         ))
         .outcome;
   }
@@ -228,10 +231,16 @@ void main() {
       substrate.evaluatorVerdicts = <String>[];
       substrate.defaultVerdict = 'REJECT';
 
-      final outcome = await thinkAbout('ponder the nature of consciousness');
+      // The re-entry budget is caller-overridable (§ 4.1); pin it small here
+      // so an always-rejecting evaluator exhausts it in a bounded, observable
+      // number of passes rather than the very-high production default.
+      final outcome = await thinkAbout(
+        'ponder the nature of consciousness',
+        maxIterations: 3,
+      );
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      // The re-entry budget is 3 (§ 4.1): three drafts, three critiques.
+      // The re-entry budget is 3 here: three drafts, three critiques.
       expect(substrate.countOf('assistant_to_user'), 3);
       expect(substrate.countOf('evaluator'), 3);
       // Best-effort = the last (most-informed) draft; the run is flagged
@@ -252,7 +261,10 @@ void main() {
       substrate.evaluatorVerdicts = <String>[];
       substrate.defaultVerdict = 'REJECT';
 
-      final outcome = await thinkAbout('deliberate on an unanswerable question');
+      final outcome = await thinkAbout(
+        'deliberate on an unanswerable question',
+        maxIterations: 3,
+      );
 
       final answer = outcome.result!.output<String>('answer');
       expect(answer, isNotNull);

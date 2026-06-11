@@ -7,7 +7,7 @@
 ///   embeddings are over the hypothetical *answers* (never the questions), so
 ///   the seeds land near real answers in vector space (HyDE); degrades to an
 ///   empty list when either role result is unusable (PE-6).
-/// budget: { wallClockMs: 45000, tokenSpend: 4000, toolCalls: 8, memoryWrites: 0 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: text, type: String, required: true }
 /// outputs:

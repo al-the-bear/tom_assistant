@@ -184,8 +184,8 @@ void main() {
 
   // PE-3 — recursion hard cap.
   group('C.46-5: PE-3 recursion hard cap', () {
-    test('the default hard depth cap is 10', () {
-      expect(RunProcedurePrimitive.defaultHardDepthCap, 10);
+    test('the default hard depth cap is 1000 (effectively unlimited)', () {
+      expect(RunProcedurePrimitive.defaultHardDepthCap, 1000);
     });
   });
 

@@ -47,10 +47,12 @@
 import 'dart:async';
 
 /// The default hard cap on a single background step (definition § 7.1:
-/// "configurable; default 60 s wall clock"). The configurable override
-/// lands with `EngineConfig` (C.42); until then this is the floor every
-/// `StepDeadline` uses unless a caller passes an explicit `limit`.
-const Duration defaultStepDeadline = Duration(seconds: 60);
+/// "configurable; default wall clock"). The configurable override lands with
+/// `EngineConfig` (C.42); until then this is the floor every `StepDeadline`
+/// uses unless a caller passes an explicit `limit`. Set very high (effectively
+/// unlimited): the deadline is a runaway-stop for a genuinely hung step, not a
+/// throttle on legitimate multi-step agentic work.
+const Duration defaultStepDeadline = Duration(hours: 24);
 
 /// The trail-note category a truncated step is recorded under.
 ///

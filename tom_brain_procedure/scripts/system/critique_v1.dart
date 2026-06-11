@@ -6,7 +6,7 @@
 ///   until the real critique loop ships (Todo 8/9).
 /// successCriterion: throws ProcedureNotImplemented naming the critique loop;
 ///   it resolves, lists, and validates, but never produces a critique.
-/// budget: { wallClockMs: 1000 }
+/// budget: { wallClockMs: 86400000 }
 /// inputs:
 ///   - { name: draft, type: String, required: false }
 /// requires: [ notImplemented ]

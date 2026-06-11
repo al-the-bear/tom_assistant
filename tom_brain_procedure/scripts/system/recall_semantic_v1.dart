@@ -8,7 +8,7 @@
 ///   symbolic recall on the nearest Concept name (no LLM); only an unknown
 ///   (or match-less) classification escalates to the `category_selector` role;
 ///   degrades to an empty list when that role result is unusable (PE-6).
-/// budget: { wallClockMs: 30000, tokenSpend: 2000, toolCalls: 3, memoryWrites: 0 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: text, type: String, required: true }
 /// outputs:

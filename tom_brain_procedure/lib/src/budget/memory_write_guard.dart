@@ -63,11 +63,12 @@ final class MemoryWriteLimits {
   /// skipped as a duplicate (the within-run loop detector).
   final bool dedupEdgesWithinRun;
 
-  /// The standard process default: virtually unlimited for any real request,
-  /// bounded enough to catch a runaway loop, with edge dedup on.
+  /// The standard process default: set very high (effectively unlimited) for
+  /// any real request, while still a finite backstop against a pathological
+  /// runaway loop, with edge dedup on.
   static const MemoryWriteLimits standard = MemoryWriteLimits(
-    maxWritesPerRun: 2048,
-    maxEdgesPerRun: 1024,
+    maxWritesPerRun: 1000000,
+    maxEdgesPerRun: 1000000,
     dedupEdgesWithinRun: true,
   );
 

@@ -14,11 +14,12 @@
 ///   survives; the request is recorded as a Question and the produced file as an
 ///   Artifact satisfied_by that Question. A request missing intent or the
 ///   success criterion is refused (vagueIntent) before any draft is composed.
-/// budget: { wallClockMs: 300000 }
-/// # A wall-clock backstop only (§ 7.4): 300000 ms (5 min) is the spec's default
-/// # runaway-stop for a genuinely hung run, not a throttle. The creation
-/// # re-entry is bounded separately by `maxIterations` (a literal in the body,
-/// # § 4.1), so the loop terminates long before the wall clock fires.
+/// budget: { wallClockMs: 86400000 }
+/// # A wall-clock backstop only (§ 7.4): set very high so creation is virtually
+/// # unbounded — a runaway-stop for a genuinely hung run, not a throttle. The
+/// # creation re-entry is bounded separately by `maxIterations` (a caller
+/// # override defaulting very high in the body, § 4.1), so the loop terminates
+/// # long before the wall clock fires.
 /// inputs:
 ///   - { name: intent, type: String, required: true }
 ///   - { name: successCriterion, type: String, required: true }
@@ -26,6 +27,7 @@
 ///   - { name: kind, type: String, required: false }
 ///   - { name: context, type: String, required: false }
 ///   - { name: constraints, type: String, required: false }
+///   - { name: maxIterations, type: int, required: false }
 /// outputs:
 ///   - { name: written, type: bool }
 ///   - { name: target, type: String }
@@ -215,12 +217,15 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     }
   }
 
-  // Bounded re-entry (§ 4.1): at most three creation passes. The bound is a
-  // literal — a d4rt body cannot import the domain-free re-entry vocabulary, so
-  // the loop enforces the cap inline. The accept test is folded into the guard
-  // rather than using `break` (the d4rt interpreter rejects `break` in this
-  // async `while`).
-  const maxIterations = 3;
+  // Bounded re-entry (§ 4.1): a caller-overridable creation cap. The default is
+  // set very high so creation is effectively unbounded on the re-entry count
+  // (only the wall-clock deadline backstops a genuinely hung run); a caller (or
+  // test) may pass `maxIterations` to bound it. A d4rt body cannot import the
+  // domain-free re-entry vocabulary, so the loop enforces the cap inline. The
+  // accept test is folded into the guard rather than using `break` (the d4rt
+  // interpreter rejects `break` in this async `while`).
+  final maxArg = inputs.getOrNull('maxIterations');
+  final maxIterations = maxArg is int ? maxArg : 800;
   var iteration = 0;
   var accepted = false;
   var draft = '';

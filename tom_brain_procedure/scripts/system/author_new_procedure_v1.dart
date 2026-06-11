@@ -6,7 +6,7 @@
 /// successCriterion: A Procedure node is persisted carrying the validated draft
 ///   source and its lifecycle status, and (on a valid, critic-gated draft) its
 ///   id is returned and produced.
-/// budget: { wallClockMs: 120000, tokenSpend: 20000, toolCalls: 16, memoryWrites: 8 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: intent, type: String, required: true }
 ///   - { name: predecessor, type: String, required: false }

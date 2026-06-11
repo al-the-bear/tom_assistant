@@ -276,7 +276,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // streams to the live caller through the engine's per-run token sink: under
   // the OpenAI protocol a tool-deciding turn emits no answer text, so only the
   // terminal answer reaches the user; the intermediate turns stream nothing.
-  const maxToolTurns = 6;
+  const maxToolTurns = 800;
   final liveTools = await tool.list();
   var transcript = _assemblePrompt(recall, text, priorTurns, toolCatalogue);
   Map completion = const <String, Object?>{'text': ''};

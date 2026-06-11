@@ -5,7 +5,7 @@
 /// successCriterion: A web search + fetch yields a Source node (its title
 ///   embedded) and a Claim node (its statement embedded) tied by an
 ///   evidence_for edge, and the Claim id is returned.
-/// budget: { wallClockMs: 90000, tokenSpend: 8000, toolCalls: 24, memoryWrites: 32 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: source, type: String, required: true }
 /// outputs:

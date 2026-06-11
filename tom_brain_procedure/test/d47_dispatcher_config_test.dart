@@ -20,8 +20,8 @@ void main() {
       final config = DispatcherConfig();
       expect(config.systemScriptsPath, 'scripts/system');
       expect(config.userScriptsPath, isNull);
-      expect(config.foregroundQueueDepth, 4);
-      expect(config.hardStepDeadline, const Duration(seconds: 65));
+      expect(config.foregroundQueueDepth, 1000000);
+      expect(config.hardStepDeadline, const Duration(hours: 24, seconds: 5));
       expect(config.schedulerEnabled, isFalse);
     });
 
@@ -31,8 +31,11 @@ void main() {
     });
 
     test('the named defaults match the constructor defaults', () {
-      expect(defaultForegroundQueueDepth, 4);
-      expect(defaultDispatcherHardStepDeadline, const Duration(seconds: 65));
+      expect(defaultForegroundQueueDepth, 1000000);
+      expect(
+        defaultDispatcherHardStepDeadline,
+        const Duration(hours: 24, seconds: 5),
+      );
       expect(defaultSchedulerEnabled, isFalse);
     });
 
@@ -102,13 +105,13 @@ scheduler:
     test('omitting the queue section uses the default depth', () {
       final config =
           DispatcherConfig.fromYamlString('scheduler:\n  enabled: true');
-      expect(config.foregroundQueueDepth, 4);
+      expect(config.foregroundQueueDepth, 1000000);
       expect(config.schedulerEnabled, isTrue);
     });
 
     test('omitting the deadline section uses the default deadline', () {
       final config = DispatcherConfig.fromYamlString('queue:\n  foregroundDepth: 2');
-      expect(config.hardStepDeadline, const Duration(seconds: 65));
+      expect(config.hardStepDeadline, const Duration(hours: 24, seconds: 5));
       expect(config.foregroundQueueDepth, 2);
     });
 
@@ -125,7 +128,7 @@ scheduler:
   enabled:
 ''';
       final config = DispatcherConfig.fromYamlString(yaml);
-      expect(config.foregroundQueueDepth, 4);
+      expect(config.foregroundQueueDepth, 1000000);
       expect(config.schedulerEnabled, isFalse);
     });
   });

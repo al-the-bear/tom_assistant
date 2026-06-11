@@ -5,7 +5,7 @@
 /// successCriterion: For the recalled Claims, a derived_from edge ties each
 ///   linked Claim to the episodic Events it derived from, and a mentions edge
 ///   ties each Claim to the next, and the drawn edge ids are returned.
-/// budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 24, memoryWrites: 64 }
+/// budget: { wallClockMs: 86400000, tokenSpend: 100000000, toolCalls: 800, memoryWrites: 1000000 }
 /// inputs:
 ///   - { name: source, type: String, required: true }
 /// outputs:
