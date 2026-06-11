@@ -126,6 +126,15 @@ export 'creation/creation_barrel.dart';
 // the full twenty-three-role live roster (core + retrieval + procedure +
 // creation + planning).
 export 'planning/planning_barrel.dart';
+// The seven dreaming-agent roles (`memory_specification.md` § 9): `extractor`,
+// `connector`, `synthesiser`, `inquisitor`, `pruner`, `reconsolidator`,
+// `repetition_detector`. A separate, optional roster (like the retrieval /
+// procedure / creation / planning rosters): `bootstrapRoleRegistry()` still
+// returns exactly the six core roles;
+// `bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream()`
+// composes the full thirty-role live roster (core + retrieval + procedure +
+// creation + planning + dream).
+export 'dream/dream_barrel.dart';
 export 'role_budget_defaults.dart';
 export 'role_registry.dart';
 export 'role_template.dart';

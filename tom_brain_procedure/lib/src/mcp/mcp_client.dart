@@ -107,7 +107,9 @@ abstract interface class McpConnector {
 final class McpClient {
   /// Builds a client over [servers] (a list or an [McpServersConfig]) and a
   /// [connector], with an optional per-call wall-clock [callTimeout]
-  /// (default 30s).
+  /// (default 24h — effectively unbounded, matching the operational-limit
+  /// convention so a long agentic tool call is never cut short; tests inject
+  /// an explicit small timeout to exercise the bounded path).
   ///
   /// [onEvent], when supplied, receives a typed [McpEvent] on every connect,
   /// call, and failure (step 16); the composition root wires it to an
@@ -117,7 +119,7 @@ final class McpClient {
   McpClient(
     Object servers,
     this._connector, {
-    Duration callTimeout = const Duration(seconds: 30),
+    Duration callTimeout = const Duration(hours: 24),
     McpEventSink? onEvent,
     DateTime Function()? clock,
   })  : _config = servers is McpServersConfig

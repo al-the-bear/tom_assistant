@@ -117,11 +117,13 @@ InProcessTomBrainSubstrate buildSubstrate(
     // loop's `creator` / `tester` / `reviewer` calls unroutable; and
     // registering only the creation roster left the planning loop's `planner` /
     // `decomposer` / `estimator` / `plan_evaluator` / `re_planner` calls
-    // unroutable. This roster registers all their templates; the config's
-    // `roleRoutes` supplies their routes (both halves are required for a role
-    // to dispatch).
+    // unroutable; and registering only the planning roster left the dreaming
+    // agents' `extractor` / `connector` / `synthesiser` / `inquisitor` /
+    // `pruner` / `reconsolidator` / `repetition_detector` calls unroutable.
+    // This roster registers all their templates; the config's `roleRoutes`
+    // supplies their routes (both halves are required for a role to dispatch).
     roleRegistry: roleRegistry ??
-        bootstrapRoleRegistryWithRetrievalProcedureCreationAndPlanning(),
+        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream(),
     providers: providers,
     router: router,
     embeddingService: embeddingService,

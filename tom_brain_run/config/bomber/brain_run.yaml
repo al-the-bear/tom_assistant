@@ -54,6 +54,90 @@ substrate:
     profile_selector:
       - providerId: omlx
         model: gemma-4-26b-a4b-it-4bit
+    # Core thinking-loop roles. `prompt_analyzer_v1` dispatches `analyser`;
+    # `answer_with_thinking_v1` dispatches `analyser` (analyse), `sub_thinker`
+    # (sub-prompt), `assistant_to_user` (synthesise, above), and `evaluator`
+    # (self-critique). Without these routes the thinking loop throws
+    # `RoleNotFound` on the first analyse — so they are mandatory for step 9.
+    # `recaller` and `researcher` complete the six-role core roster.
+    analyser:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    sub_thinker:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    recaller:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    evaluator:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    researcher:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    # Procedure-authoring roles (`author_new_procedure_v1`): draft / critique /
+    # select an authored procedure.
+    procedure_author:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    procedure_critic:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    procedure_selector:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    # Creation-loop roles (`create_v1`): draft / test / review an artifact.
+    creator:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    tester:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    reviewer:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    # Planning-loop roles (`plan_v1`): frame / decompose / order / critique /
+    # re-plan.
+    planner:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    decomposer:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    estimator:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    plan_evaluator:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    re_planner:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    # Dreaming-agent roles (`dream_*_v1`, gated by the `dream:` block below —
+    # off by default). Each dreaming pass makes one LLM judgement under its
+    # role; an unrouted role would throw `RoleNotFound` the moment dreaming is
+    # enabled.
+    extractor:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    connector:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    synthesiser:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    inquisitor:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    pruner:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    reconsolidator:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
+    repetition_detector:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
   embedding:
     providerId: ollama
     model: nomic-embed-text

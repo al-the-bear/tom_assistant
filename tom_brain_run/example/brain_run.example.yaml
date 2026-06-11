@@ -48,6 +48,85 @@ substrate:
     profile_selector:
       - providerId: omlx
         model: ${TOM_BRAIN_OMLX_MODEL}
+    # Core thinking-loop roles. `prompt_analyzer_v1` dispatches `analyser`;
+    # `answer_with_thinking_v1` dispatches `analyser`, `sub_thinker`,
+    # `assistant_to_user` (above), and `evaluator`. An unrouted role throws
+    # `RoleNotFound` on the first dispatch, so these are mandatory for the
+    # thinking loop. `recaller` / `researcher` complete the core roster.
+    analyser:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    sub_thinker:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    recaller:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    evaluator:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    researcher:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    # Procedure-authoring roles (`author_new_procedure_v1`).
+    procedure_author:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    procedure_critic:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    procedure_selector:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    # Creation-loop roles (`create_v1`).
+    creator:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    tester:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    reviewer:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    # Planning-loop roles (`plan_v1`).
+    planner:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    decomposer:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    estimator:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    plan_evaluator:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    re_planner:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    # Dreaming-agent roles (`dream_*_v1`, gated by the `dream:` block — off by
+    # default).
+    extractor:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    connector:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    synthesiser:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    inquisitor:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    pruner:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    reconsolidator:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
+    repetition_detector:
+      - providerId: omlx
+        model: ${TOM_BRAIN_OMLX_MODEL}
   embedding:
     providerId: ollama
     model: ${TOM_BRAIN_OLLAMA_EMBED_MODEL}
