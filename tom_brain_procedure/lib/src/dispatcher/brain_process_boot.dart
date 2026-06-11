@@ -835,6 +835,7 @@ abstract final class BrainProcessBoot {
                     },
                     turnId: access.turnId,
                     memoryProfile: access.session.memoryProfile,
+                    sessionId: access.session.sessionId,
                   ),
                 )
                 .outcome;
@@ -874,6 +875,11 @@ abstract final class BrainProcessBoot {
                     // the engine stamps it onto every memory access this turn
                     // issues, bucketing the per-profile memory log correctly.
                     memoryProfile: access.session.memoryProfile,
+                    // Carry the conversation session id (access § 21.10) so the
+                    // engine binds the run's working todo list to the session's
+                    // persistent store — the list survives across prompts of the
+                    // conversation rather than resetting every turn.
+                    sessionId: access.session.sessionId,
                   ),
                   tokenSink: streamDelta,
                   noticeSink: noticeSink,

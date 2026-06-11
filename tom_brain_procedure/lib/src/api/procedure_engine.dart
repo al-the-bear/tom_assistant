@@ -84,6 +84,8 @@ import '../bridges/tool_bridge.dart' show ToolBridge;
 import '../tools/basic_tools.dart' show registerBasicTools;
 import '../tools/file_scope.dart' show FileScope;
 import '../tools/substrate_tool_web_surface.dart' show SubstrateToolWebSurface;
+import '../tools/session_todo_stores.dart' show SessionTodoStores;
+import '../tools/todo_store.dart' show TodoStore;
 import '../tools/tool_context.dart' show ToolContext;
 import '../tools/tool_dream_surface.dart' show ToolDreamSurface;
 import '../tools/process_run_surface.dart' show ProcessRunToolSurface;
@@ -214,6 +216,16 @@ final class ProcedureEngine {
 
   /// The memory client the recorder writes every run to.
   final TomBrainMemoryClient memory;
+
+  /// The process-lifetime per-session todo registry (§ 21.4). The engine binds
+  /// each run's `ToolContext.todos` to the store of the run's
+  /// [ProcedureInvocation.sessionId], so a session's working todo list survives
+  /// from one prompt to the next within a conversation; a session-less run
+  /// (turn-less / internal / dream, [ProcedureInvocation.sessionId] `null`) gets
+  /// a fresh per-run store instead. Exposed so the access layer's inspector seam
+  /// (`/todos_list` / `/todos_clear`) can read and reset a session's list off
+  /// the booted engine.
+  final SessionTodoStores sessionTodoStores = SessionTodoStores();
 
   /// The static sandbox gate every resolved procedure clears before it runs.
   ///
@@ -394,6 +406,7 @@ final class ProcedureEngine {
             noticeSink: noticeSink,
             turn: turn,
             profile: invocation.memoryProfile,
+            sessionId: invocation.sessionId,
           );
           outcome.complete(result);
         } catch (error, stack) {
@@ -435,6 +448,13 @@ final class ProcedureEngine {
   /// top-level external run, `null` for a nested run (the top-level body owns
   /// the answer stream; a nested `runProcedure` does not re-stream).
   ///
+  /// [sessionId] is the conversation session the run serves (access spec
+  /// § 21.10), threaded down so the run's `ToolContext.todos` binds to the
+  /// session's persistent store (and every nested run of the session shares it)
+  /// — so the working todo list survives across the runs of one conversation.
+  /// `null` for a turn-less / internal / dream run, which gets a fresh per-run
+  /// store instead.
+  ///
   /// [onTree] is the combined-tree bubble seam (§5.7 / §10 step #9): `null` for
   /// the top-level run (which emits its assembled [ProcedureTreeRecord] to the
   /// engine's `_procedureTreeSink`), and the parent's "splice my sub-record in
@@ -454,6 +474,7 @@ final class ProcedureEngine {
     ToolNoticeSink? noticeSink,
     TurnContext? turn,
     String? profile,
+    String? sessionId,
     void Function(ProcedureTreeRecord tree)? onTree,
   }) async {
     final LoadedProcedure loaded = resolver.resolve(procedureId, version: version);
@@ -613,6 +634,7 @@ final class ProcedureEngine {
           parentRunId: runId,
           turn: turn,
           profile: profile,
+          sessionId: sessionId,
           onTree: buildTree
               ? (childTree) =>
                   childTrees.add(_PositionedChildTree(position, childTree))
@@ -670,6 +692,14 @@ final class ProcedureEngine {
     // Either failing is swallowed — neither trail writing nor a notification
     // may break the run. With both unbound the bridge stays a pure router.
     final toolAccessSink = _toolAccessSink;
+    // Session-scoped todo list (§ 21.4): bind this run's `todo.*` store to the
+    // conversation session's persistent store so the working list survives from
+    // one prompt to the next within the session. A session-less run (turn-less /
+    // internal / dream — `sessionId` `null`) keeps the old run-scoped behaviour:
+    // a fresh, ephemeral store discarded at run end.
+    final TodoStore runTodos = sessionId == null
+        ? TodoStore()
+        : sessionTodoStores.forSession(sessionId);
     final runToolBridge = ToolBridge(
       toolRegistry,
       toolPolicy,
@@ -677,6 +707,7 @@ final class ProcedureEngine {
         budget: ledger,
         memory: runMemoryBridge.client,
         fileScope: toolFileScope,
+        todos: runTodos,
         web: SubstrateToolWebSurface(substrateBridge.client),
         engine: EngineToolSurface(
           resolver: resolver,
@@ -971,6 +1002,7 @@ final class ProcedureEngine {
     required String parentRunId,
     TurnContext? turn,
     String? profile,
+    String? sessionId,
     void Function(ProcedureTreeRecord tree)? onTree,
   }) async {
     final outcome = await _runInternal(
@@ -983,6 +1015,7 @@ final class ProcedureEngine {
       depth: call.depth,
       turn: turn,
       profile: profile,
+      sessionId: sessionId,
       onTree: onTree,
     );
     return outcome.result ?? ProcedureResult.failed();

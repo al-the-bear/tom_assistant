@@ -5,9 +5,16 @@
 // The four `todo.*` tools are the one basic-tool family that touches no
 // existing primitive: they manage an ephemeral working list the scripted LLM
 // loop can keep its own bookkeeping in. It is deliberately *not* persisted to
-// memory — a todo is loop scratch, not a memory node. The store therefore
-// lives on the `ToolContext` (built once per run), so the list is run-scoped
-// and the tools stay stateless descriptors that read `ctx.todos` (PE-1).
+// memory — a todo is loop scratch, not a memory node. The store hangs off the
+// `ToolContext` (built once per run); the tools stay stateless descriptors that
+// read `ctx.todos` (PE-1).
+//
+// What the store is *scoped to* is the engine's decision, not the store's: for
+// a user turn the engine binds the run's `ToolContext.todos` to the
+// conversation session's persistent store ([SessionTodoStores], so the working
+// list survives from one prompt to the next within a conversation); for a
+// turn-less / internal / dream run it binds a fresh per-run store. Either way
+// the store stays a plain in-memory list — never written to memory.
 
 /// One entry in a [TodoStore].
 ///
@@ -68,6 +75,12 @@ final class TodoStore {
     _entries.removeWhere((e) => e.id == id);
     return _entries.length != before;
   }
+
+  /// Removes every entry, resetting the list to empty (the `/todos_clear`
+  /// command's effect). The id sequence is preserved, so a later [add] never
+  /// reuses an id a cleared entry held. Editing in place — an in-flight run
+  /// holding this store sees the cleared list.
+  void clear() => _entries.clear();
 
   TodoEntry? _find(String id) {
     for (final entry in _entries) {

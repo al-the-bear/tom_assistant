@@ -43,6 +43,12 @@ final class ProcedureInvocation {
   /// profile the request runs under (logging-spec §5.6); the engine threads it
   /// onto every memory access this turn issues so the per-profile memory log
   /// buckets correctly. `null` for a turn-less / process-default invocation.
+  /// [sessionId] is the conversation session this invocation serves (access
+  /// spec § 21.10); the engine binds the run's working todo list to the
+  /// session's persistent store so the list survives from one prompt to the
+  /// next within the conversation. `null` for a turn-less / internal / dream
+  /// invocation that belongs to no user session — those get a fresh, run-scoped
+  /// todo list as before.
   ProcedureInvocation({
     required this.procedureId,
     Map<String, Object?> arguments = const <String, Object?>{},
@@ -51,6 +57,7 @@ final class ProcedureInvocation {
     this.runId,
     this.turnId,
     this.memoryProfile,
+    this.sessionId,
   }) : arguments = Map<String, Object?>.unmodifiable(
           Map<String, Object?>.of(arguments),
         ) {
@@ -88,6 +95,13 @@ final class ProcedureInvocation {
   /// for a turn-less / process-default invocation. Threaded onto every memory
   /// access of the turn so the per-profile memory log buckets correctly.
   final String? memoryProfile;
+
+  /// The conversation session this invocation serves (access spec § 21.10), or
+  /// `null` for a turn-less / internal / dream invocation that belongs to no
+  /// user session. The engine binds the run's `ToolContext.todos` to the
+  /// session's persistent store, so the working todo list survives across the
+  /// runs of one conversation; a `null` session id gets a fresh per-run store.
+  final String? sessionId;
 
   /// The typed input bag the procedure's `run` entry point receives.
   ///
