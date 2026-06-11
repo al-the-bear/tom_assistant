@@ -320,7 +320,7 @@ ToolBridge _bridge({
   final context = ToolContext(
     budget: BudgetLedger(ProcedureBudget(const <String, int>{})),
     memory: _StubMemoryClient(),
-    fileScopeRoots: const <String>['/tom-brain-engine'],
+    fileScope: FileScope.fromPriorityList(const <String>['/tom-brain-engine']),
   );
   return ToolBridge(registry, policy, context, onEvent: onEvent);
 }

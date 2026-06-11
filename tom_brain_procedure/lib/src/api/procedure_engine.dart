@@ -82,6 +82,7 @@ import '../primitives_native/trail_note.dart';
 import '../primitives_native/yield_primitive.dart';
 import '../bridges/tool_bridge.dart' show ToolBridge;
 import '../tools/basic_tools.dart' show registerBasicTools;
+import '../tools/file_scope.dart' show FileScope;
 import '../tools/substrate_tool_web_surface.dart' show SubstrateToolWebSurface;
 import '../tools/tool_context.dart' show ToolContext;
 import '../tools/tool_dream_surface.dart' show ToolDreamSurface;
@@ -107,13 +108,14 @@ import 'procedure_result.dart';
 import 'procedure_run.dart';
 import 'run_cancellation.dart';
 
-/// The neutral file-scope roots the per-run [ToolContext] is built over when a
-/// deployment configures none. A run that enables the `file.*` tools supplies a
-/// real, configured list through [ProcedureEngine.toolFileScopeRoots] (threaded
-/// from `tools.fileScope` in the run config); this single placeholder keeps the
-/// tool-calling path well-formed for the many tests that never touch a real
-/// filesystem.
-const List<String> _defaultToolFileScopeRoots = <String>['/tom-brain-engine'];
+/// The neutral file-scope sandbox the per-run [ToolContext] is built over when
+/// a deployment configures none. A run that enables the `file.*` tools supplies
+/// a real, configured scope through [ProcedureEngine.toolFileScope] (threaded
+/// from `tools.readScope` / `tools.writeScope` in the run config); this single
+/// placeholder keeps the tool-calling path well-formed for the many tests that
+/// never touch a real filesystem.
+final FileScope _defaultToolFileScope =
+    FileScope(writeRoots: const <String>['/tom-brain-engine']);
 
 /// The typed failure class a crashed run is recorded under (§ 10.4).
 const String _runtimeCrashKind = 'procedure.runtime.crash';
@@ -181,7 +183,7 @@ final class ProcedureEngine {
     this.extensions,
     this.toolDreamSurface,
     this.toolProcessSurface = const ProcessRunToolSurface(),
-    List<String>? toolFileScopeRoots,
+    FileScope? toolFileScope,
     PreemptionState? preemptionState,
     Duration stepDeadline = defaultStepDeadline,
     DeadlineTimerFactory? deadlineTimerFactory,
@@ -194,10 +196,7 @@ final class ProcedureEngine {
     ToolAccessSink? toolAccessSink,
     ProcedureTreeSink? procedureTreeSink,
     this.memoryWriteLimits = MemoryWriteLimits.standard,
-  })  : assert(toolFileScopeRoots == null || toolFileScopeRoots.isNotEmpty,
-            'toolFileScopeRoots, when provided, must carry at least one root'),
-        toolFileScopeRoots = List<String>.unmodifiable(
-            toolFileScopeRoots ?? _defaultToolFileScopeRoots),
+  })  : toolFileScope = toolFileScope ?? _defaultToolFileScope,
         preemptionState = preemptionState ?? PreemptionState(),
         _stepDeadlineLimit = stepDeadline,
         _deadlineTimerFactory = deadlineTimerFactory,
@@ -259,13 +258,14 @@ final class ProcedureEngine {
   /// continues — an answer already produced is never silenced by a later write.
   final MemoryWriteLimits memoryWriteLimits;
 
-  /// The configured file-scope roots every per-run [ToolContext] is built over
-  /// (§ 21.4). Non-empty and unmodifiable: the file tools resolve and
-  /// path-escape-check against the *union* of these roots, so a `file.*` call
-  /// may reach any configured directory but nothing outside them all. The first
-  /// root is the primary (the `file.write` target). A deployment threads its
-  /// real list here from `tools.fileScope`; tests fall back to a placeholder.
-  final List<String> toolFileScopeRoots;
+  /// The configured two-tier file sandbox every per-run [ToolContext] is built
+  /// over (§ 21.4). The file tools resolve and path-escape-check against it: a
+  /// read tool against `readableRoots`, a write/delete tool against
+  /// `writeableRoots`, so a `file.*` call may reach a configured directory but
+  /// nothing outside its tier. The first writeable root is the primary
+  /// (`file.write` target). A deployment threads its real scope here from
+  /// `tools.readScope` / `tools.writeScope`; tests fall back to a placeholder.
+  final FileScope toolFileScope;
 
   /// The optional dreaming-control surface every per-run [ToolContext] is built
   /// over (`memory_specification.md` § 9.7), or `null` when the cognition booted
@@ -676,7 +676,7 @@ final class ProcedureEngine {
       ToolContext(
         budget: ledger,
         memory: runMemoryBridge.client,
-        fileScopeRoots: toolFileScopeRoots,
+        fileScope: toolFileScope,
         web: SubstrateToolWebSurface(substrateBridge.client),
         engine: EngineToolSurface(
           resolver: resolver,

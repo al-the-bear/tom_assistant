@@ -105,10 +105,10 @@ void main() {
 
       expect(ctx.budget, isA<BudgetLedger>());
       expect(ctx.memory, isA<TomBrainMemoryClient>());
-      expect(ctx.fileScopeRoots, <String>['/tmp/scope']);
+      expect(ctx.fileScope.readableRoots, <String>['/tmp/scope']);
     });
 
-    test('fileScopeRoots is a plain list of String paths, never dart:io handles',
+    test('fileScope exposes plain list of String paths, never dart:io handles',
         () {
       final ctx =
           _context(fileScopeRoots: const <String>['/tmp/scope', '/tmp/docs']);
@@ -117,9 +117,9 @@ void main() {
       // context. A list of String paths keeps the file sandbox a value, not an
       // open capability — full path-escape enforcement lands with the file
       // tools (step 7), but the *handle* must never be reachable from here.
-      expect(ctx.fileScopeRoots, isA<List<String>>());
-      expect(ctx.fileScopeRoots, <String>['/tmp/scope', '/tmp/docs']);
-      for (final root in ctx.fileScopeRoots) {
+      expect(ctx.fileScope.readableRoots, isA<List<String>>());
+      expect(ctx.fileScope.readableRoots, <String>['/tmp/scope', '/tmp/docs']);
+      for (final root in ctx.fileScope.readableRoots) {
         expect(root, isA<String>());
         expect(root, isNot(isA<Directory>()));
         expect(root, isNot(isA<File>()));
@@ -196,7 +196,7 @@ void main() {
 ToolContext _context({required List<String> fileScopeRoots}) => ToolContext(
       budget: BudgetLedger(ProcedureBudget(const <String, int>{'toolCalls': 12})),
       memory: _StubMemory(),
-      fileScopeRoots: fileScopeRoots,
+      fileScope: FileScope.fromPriorityList(fileScopeRoots),
     );
 
 /// A trivial tool that reaches nothing past its [ToolContext]: it reads its
@@ -225,7 +225,10 @@ final class _EchoTool extends BrainTool {
 
   @override
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async =>
-      <String, Object?>{'echoed': args['value'], 'root': ctx.fileScopeRoots.first};
+      <String, Object?>{
+        'echoed': args['value'],
+        'root': ctx.fileScope.readableRoots.first,
+      };
 }
 
 final class _MemoryReadTool extends BrainTool {

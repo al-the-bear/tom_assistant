@@ -274,7 +274,7 @@ ToolContext _ctx({
     ToolContext(
       budget: BudgetLedger(ProcedureBudget(const <String, int>{})),
       memory: _NoMemory(),
-      fileScopeRoots: roots,
+      fileScope: FileScope.fromPriorityList(roots),
       process: process,
     );
 

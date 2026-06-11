@@ -4,14 +4,15 @@
 //
 // What this suite locks:
 //
-//   F.7-1 — `registerBasicTools` registers the twenty-eight shipped tools under
+//   F.7-1 — `registerBasicTools` registers the thirty-two shipped tools under
 //           their § 21.4 / § 5.2-5.3 names, groups, and `readOnly` flags (the
-//           sixteen base tools, the four explicit verb tools `procedure.plan` /
-//           `create` / `critique` / `decide` (Todo 4 / § 11), the seven
-//           creation families `file.edit` / `file.diff` / `analyze.dart` /
-//           `analyze.format` / `analyze.schema` / `test.run` / `test.baseline`
-//           (`creation_specification.md` § 5), and the `dream.control` cadence
-//           tool (`memory_specification.md` § 9.7)).
+//           sixteen base tools, the three file-scope discovery tools `file.list`
+//           / `file.readableRoots` / `file.writeableRoots` (§ 21.4), the four
+//           explicit verb tools `procedure.plan` / `create` / `critique` /
+//           `decide` (Todo 4 / § 11), the seven creation families `file.edit` /
+//           `file.diff` / `analyze.dart` / `analyze.format` / `analyze.schema` /
+//           `test.run` / `test.baseline` (`creation_specification.md` § 5), and
+//           the `dream.control` cadence tool (`memory_specification.md` § 9.7)).
 //   F.7-2 — each tool's happy path against stubs routes through the existing
 //           surface (memory client, web surface, engine surface, the
 //           in-process `TodoStore`, the file-scope root) — no new effect path.
@@ -36,7 +37,7 @@ import 'package:test/test.dart';
 
 void main() {
   group('F.7-1 registerBasicTools catalogue', () {
-    test('registers the twenty-eight § 21.4 / § 5.2-5.3 tools with groups',
+    test('registers the thirty-two § 21.4 / § 5.2-5.3 tools with groups',
         () {
       final registry = ToolRegistry();
       registerBasicTools(registry);
@@ -58,6 +59,10 @@ void main() {
         'file.diff': (group: ToolGroup.file, readOnly: true),
         'grep.search': (group: ToolGroup.file, readOnly: true),
         'file.search': (group: ToolGroup.file, readOnly: true),
+        // File-scope discovery + introspection tools (§ 21.4).
+        'file.list': (group: ToolGroup.file, readOnly: true),
+        'file.readableRoots': (group: ToolGroup.file, readOnly: true),
+        'file.writeableRoots': (group: ToolGroup.file, readOnly: true),
         // Creation code-understanding + test families (§ 5.2 / § 5.3).
         'analyze.dart': (group: ToolGroup.analyze, readOnly: true),
         'analyze.format': (group: ToolGroup.analyze, readOnly: true),
@@ -95,10 +100,10 @@ void main() {
   });
 
   group('F.7-1b defaultToolCatalogue wire descriptors', () {
-    test('describes the twenty-nine basic tools with name/group/description',
+    test('describes the thirty-two basic tools with name/group/description',
         () {
       final catalogue = defaultToolCatalogue();
-      expect(catalogue, hasLength(29));
+      expect(catalogue, hasLength(32));
 
       // Each descriptor carries the four wire fields the substrate's
       // tool-catalogue render reads (`{name, group, description, input_schema}`,
@@ -131,6 +136,9 @@ void main() {
           'file.diff',
           'grep.search',
           'file.search',
+          'file.list',
+          'file.readableRoots',
+          'file.writeableRoots',
           'analyze.dart',
           'analyze.format',
           'analyze.schema',
@@ -574,7 +582,8 @@ ToolContext _ctx({
     ToolContext(
       budget: budget ?? _uncappedLedger(),
       memory: memory ?? _StubMemory(),
-      fileScopeRoots: fileScopeRoots ?? const <String>['/tom-brain-engine'],
+      fileScope: FileScope.fromPriorityList(
+          fileScopeRoots ?? const <String>['/tom-brain-engine']),
       todos: todos,
       web: web,
       engine: engine,

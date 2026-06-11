@@ -79,6 +79,7 @@ import '../recorder/procedure_tree_record.dart' show ProcedureTreeSink;
 import '../recorder/turn_summary.dart' show TurnSummary, TurnSummarySink;
 import '../procedure_store/procedure_resolver.dart';
 import '../tools/basic_tools.dart' show defaultToolCatalogue;
+import '../tools/file_scope.dart' show FileScope;
 import '../tools/tool_dream_surface.dart' show ToolDreamSurface;
 import '../tools/tool_event.dart' show ToolEvent;
 import 'dispatcher_entry.dart';
@@ -263,13 +264,14 @@ final class BrainProcessConfig {
   /// real request, bounded enough to catch a loop.
   final MemoryWriteLimits memoryWriteLimits;
 
-  /// The configured file-scope roots every per-run [ToolContext] is built over
-  /// (§ 21.4), or `null` to fall back to the engine's neutral placeholder. When
-  /// non-null, boot threads the list onto the [ProcedureEngine] so the `file.*`
-  /// tools resolve and path-escape-check against the *union* of these roots.
-  /// Production binds the run config's `tools.fileScope`; tests that exercise
-  /// real files pass an explicit list.
-  final List<String>? toolFileScopeRoots;
+  /// The configured two-tier file sandbox every per-run [ToolContext] is built
+  /// over (§ 21.4), or `null` to fall back to the engine's neutral placeholder.
+  /// When non-null, boot threads it onto the [ProcedureEngine] so the `file.*`
+  /// tools resolve and path-escape-check against it: a read tool against the
+  /// readable union, a write/delete tool against the writeable roots. Production
+  /// binds the run config's `tools.readScope` / `tools.writeScope`; tests that
+  /// exercise real files pass an explicit scope.
+  final FileScope? toolFileScope;
 
   /// The optional dreaming-control surface boot threads onto the
   /// [ProcedureEngine] so the `dream.control` tool can reach the dreaming
@@ -370,7 +372,7 @@ final class BrainProcessConfig {
     this.userScriptsDir,
     this.foregroundQueueDepth = 4,
     this.memoryWriteLimits = MemoryWriteLimits.standard,
-    this.toolFileScopeRoots,
+    this.toolFileScope,
     this.toolDreamSurface,
     this.installAccessLayer,
     this.classifyFallback,
@@ -609,7 +611,7 @@ abstract final class BrainProcessBoot {
       toolAccessSink: config.toolAccessSink,
       procedureTreeSink: config.procedureTreeSink,
       memoryWriteLimits: config.memoryWriteLimits,
-      toolFileScopeRoots: config.toolFileScopeRoots,
+      toolFileScope: config.toolFileScope,
       toolDreamSurface: config.toolDreamSurface,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
@@ -675,7 +677,7 @@ abstract final class BrainProcessBoot {
     required ToolAccessSink? toolAccessSink,
     required ProcedureTreeSink? procedureTreeSink,
     required MemoryWriteLimits memoryWriteLimits,
-    required List<String>? toolFileScopeRoots,
+    required FileScope? toolFileScope,
     required ToolDreamSurface? toolDreamSurface,
   }) =>
       ProcedureEngine(
@@ -690,7 +692,7 @@ abstract final class BrainProcessBoot {
         toolAccessSink: toolAccessSink,
         procedureTreeSink: procedureTreeSink,
         memoryWriteLimits: memoryWriteLimits,
-        toolFileScopeRoots: toolFileScopeRoots,
+        toolFileScope: toolFileScope,
         toolDreamSurface: toolDreamSurface,
       );
 

@@ -15,18 +15,21 @@
 //                `script.run_d4rt` tools route through (likewise optional).
 //
 // Each new surface is a *value or method-only contract*, never a raw `dart:io`
-// or network handle: the file scope is a plain list of `String` paths, the
-// web/engine surfaces expose only their declared methods, and the todo store
-// is in-memory scratch. Holding the context still grants a tool no open
-// capability (PE-1) — it re-derives a constrained one (a path-checked file
-// handle, a budget-gated memory write) when it runs.
+// or network handle: the file scope is a [FileScope] value (two plain lists of
+// `String` paths), the web/engine surfaces expose only their declared methods,
+// and the todo store is in-memory scratch. Holding the context still grants a
+// tool no open capability (PE-1) — it re-derives a constrained one (a
+// path-checked file handle, a budget-gated memory write) when it runs.
 //
-// The file scope is a *list* of roots, not one path: a deployment configures
-// which directories the file tools may reach, and may add more as needed
-// (e.g. a workspace folder plus a shared docs tree). A path is in scope when
-// it resolves inside the *union* of the roots; reads search the roots in
-// order, writes target the primary (first) root, and discovery tools
-// (`grep.search` / `file.search`) span every root.
+// The file scope is a *two-tier* [FileScope], not one undifferentiated list: a
+// deployment configures which directories may be *written* (and deleted in) and
+// which may only be *read*. A read tool resolves against `readableRoots` (the
+// union of write + read-only roots, since writeable implies readable); a
+// write/delete tool resolves against `writeableRoots`. A read path is in scope
+// when it resolves inside a readable root and a write path inside a writeable
+// root; reads search the roots in order, writes target the primary (first)
+// writeable root, and discovery tools (`grep.search` / `file.search` /
+// `file.list`) span every readable root.
 //
 // `web` / `engine` / `process` / `vscode` are nullable because the surfaces
 // they wrap genuinely do not exist on every run (the `process` surface only on
@@ -34,11 +37,12 @@
 // the `vscode` surface only when the prototype is colocated with a VS Code
 // extension and the merge profile is on, § 21.8); a tool handed a context
 // without the surface it needs raises `ToolSurfaceUnavailable` rather than
-// silently degrading. `budget`, `memory`, and `fileScopeRoots` stay required.
+// silently degrading. `budget`, `memory`, and `fileScope` stay required.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show TomBrainMemoryClient;
 
 import '../budget/budget_ledger.dart' show BudgetLedger;
+import 'file_scope.dart';
 import 'todo_store.dart';
 import 'tool_dream_surface.dart';
 import 'tool_engine_surface.dart';
@@ -60,15 +64,18 @@ final class ToolContext {
   /// contract (`recall` / `persist` / `demote`), never the concrete store.
   final TomBrainMemoryClient memory;
 
-  /// The file-scope roots as a non-empty list of path strings. Not `dart:io`
-  /// handles: the file tools resolve and path-escape-check against the *union*
-  /// of these roots; the context itself exposes no open filesystem capability.
+  /// The two-tier file sandbox the `file.*` tools resolve against. Not
+  /// `dart:io` handles: a read tool resolves and path-escape-checks against
+  /// `fileScope.readableRoots`, a write/delete tool against
+  /// `fileScope.writeableRoots`; the context itself exposes no open filesystem
+  /// capability.
   ///
-  /// A path is in scope when it resolves inside at least one root. Reads search
-  /// the roots in order; writes target the primary (first) root; discovery
-  /// tools (`grep.search` / `file.search`) span every root. The first root is
-  /// the deployment's primary directory.
-  final List<String> fileScopeRoots;
+  /// A read path is in scope when it resolves inside at least one readable root
+  /// (writeable roots are implicitly readable); a write path must resolve inside
+  /// a writeable root. Reads search the roots in order; writes target the
+  /// primary (first) writeable root; discovery tools (`grep.search` /
+  /// `file.search` / `file.list`) span every readable root.
+  final FileScope fileScope;
 
   /// The in-process, run-scoped todo list the `todo.*` tools manage. Ephemeral
   /// and never persisted to memory; defaults to a fresh store per context.
@@ -101,23 +108,19 @@ final class ToolContext {
   /// handed a context without it raises `ToolSurfaceUnavailable`.
   final ToolDreamSurface? dream;
 
-  /// Builds the surface. [budget], [memory], and [fileScopeRoots] are required;
-  /// [fileScopeRoots] must be non-empty (its first entry is the primary root).
-  /// [todos] defaults to a fresh run-scoped store; [web], [engine], [process],
-  /// [vscode], and [dream] are supplied only when the run exposes tools that
-  /// need them.
+  /// Builds the surface. [budget], [memory], and [fileScope] are required;
+  /// [fileScope] enforces its own non-empty invariant. [todos] defaults to a
+  /// fresh run-scoped store; [web], [engine], [process], [vscode], and [dream]
+  /// are supplied only when the run exposes tools that need them.
   ToolContext({
     required this.budget,
     required this.memory,
-    required List<String> fileScopeRoots,
+    required this.fileScope,
     TodoStore? todos,
     this.web,
     this.engine,
     this.process,
     this.vscode,
     this.dream,
-  })  : assert(fileScopeRoots.isNotEmpty,
-            'fileScopeRoots must carry at least one root'),
-        fileScopeRoots = List<String>.unmodifiable(fileScopeRoots),
-        todos = todos ?? TodoStore();
+  }) : todos = todos ?? TodoStore();
 }

@@ -1,5 +1,5 @@
 // ToolsConfigLoader — parses the `tools:` section of the whole-process config
-// into a `ToolsConfig?` (§ 21.4; the file-scope roots).
+// into a `ToolsConfig?` (§ 21.4; the two-tier file-scope roots).
 //
 // Loading goes through the canonical plain-map loader (`loadYamlAsMap`) so no
 // `YamlMap`/`YamlList` node ever leaks into a `ToolsConfig`, and `${ENV}`
@@ -8,9 +8,9 @@
 //
 //   * No `tools:` block at all      → returns `null`. The caller resolves that
 //     to the engine's neutral placeholder root.
-//   * A `tools:` block present      → `fileScope` is REQUIRED and must be a
-//     non-empty list of strings. An empty list is a located error (a sandbox
-//     with no roots cannot host a `file.*` call).
+//   * A `tools:` block present      → at least one of `writeScope` /
+//     `readScope` must be a non-empty list of strings. Both empty (or absent)
+//     is a located error (a sandbox with no roots cannot host a `file.*` call).
 //
 // Every malformed shape surfaces a located `ToolsConfigException` (dotted key
 // path), matching the discipline of the sibling section loaders.
@@ -30,7 +30,10 @@ abstract final class ToolsConfigLoader {
 
   /// The keys a `tools:` block may carry. Any other key is a located error —
   /// the forward-only discipline the sibling loaders apply.
-  static const Set<String> _allowedToolsKeys = <String>{'fileScope'};
+  static const Set<String> _allowedToolsKeys = <String>{
+    'writeScope',
+    'readScope',
+  };
 
   static const MapFieldReader _reader = MapFieldReader(ToolsConfigException.new);
 
@@ -58,34 +61,49 @@ abstract final class ToolsConfigLoader {
     final Map<Object?, Object?> tools = _reader.mapValue(doc['tools'], 'tools')!;
     _rejectUnknownKeys(tools, _allowedToolsKeys, 'tools');
 
-    final List<Object?>? rawScope =
-        _reader.optionalList(tools, 'fileScope', 'tools.fileScope');
-    if (rawScope == null) {
+    final List<String> writeScope =
+        _readScopeList(tools, 'writeScope', envVars);
+    final List<String> readScope = _readScopeList(tools, 'readScope', envVars);
+
+    if (writeScope.isEmpty && readScope.isEmpty) {
       throw const ToolsConfigException(
-        'tools.fileScope is required when a `tools:` block is present; list at '
-        'least one file-scope root directory.',
-      );
-    }
-    if (rawScope.isEmpty) {
-      throw const ToolsConfigException(
-        'tools.fileScope must list at least one root; an empty sandbox cannot '
-        'host a file.* call.',
+        'a `tools:` block must list at least one root under writeScope or '
+        'readScope; an empty sandbox cannot host a file.* call.',
       );
     }
 
-    final List<String> fileScope = <String>[];
-    for (var i = 0; i < rawScope.length; i++) {
-      final String path = 'tools.fileScope[$i]';
-      final String raw = _reader.stringValue(rawScope[i], path)!;
-      fileScope.add(expandEnvVars(
-        raw,
+    return ToolsConfig(writeScope: writeScope, readScope: readScope);
+  }
+
+  /// Reads an optional list of file-scope roots under [key], expanding `${ENV}`
+  /// tokens. Returns an empty list when the key is absent; an empty list under
+  /// a present key is a located error (a tier should be omitted, not empty).
+  static List<String> _readScopeList(
+    Map<Object?, Object?> tools,
+    String key,
+    Map<String, String> envVars,
+  ) {
+    final List<Object?>? raw =
+        _reader.optionalList(tools, key, 'tools.$key');
+    if (raw == null) return const <String>[];
+    if (raw.isEmpty) {
+      throw ToolsConfigException(
+        'tools.$key, when present, must list at least one root; omit the key '
+        'instead of listing an empty tier.',
+      );
+    }
+    final List<String> roots = <String>[];
+    for (var i = 0; i < raw.length; i++) {
+      final String path = 'tools.$key[$i]';
+      final String value = _reader.stringValue(raw[i], path)!;
+      roots.add(expandEnvVars(
+        value,
         envVars,
         path: path,
         errorFactory: ToolsConfigException.new,
       ));
     }
-
-    return ToolsConfig(fileScope: fileScope);
+    return roots;
   }
 
   /// Rejects any key in [map] outside [allowed], with a located error.

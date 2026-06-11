@@ -161,7 +161,8 @@ void main() {
         ToolContext(
           budget: BudgetLedger(ProcedureBudget(const <String, int>{})),
           memory: _StubMemoryClient(),
-          fileScopeRoots: const <String>['/tom-brain-engine'],
+          fileScope:
+              FileScope.fromPriorityList(const <String>['/tom-brain-engine']),
         ),
       );
 
@@ -204,7 +205,7 @@ Future<ToolBridge> _mergedBridge({
   final context = ToolContext(
     budget: BudgetLedger(ProcedureBudget(const <String, int>{})),
     memory: _StubMemoryClient(),
-    fileScopeRoots: const <String>['/tom-brain-engine'],
+    fileScope: FileScope.fromPriorityList(const <String>['/tom-brain-engine']),
     vscode: source,
   );
   return ToolBridge(registry, policy, context);

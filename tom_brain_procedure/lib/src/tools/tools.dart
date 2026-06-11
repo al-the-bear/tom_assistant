@@ -22,6 +22,7 @@
 export 'basic_tools.dart'
     show defaultToolCatalogue, registerBasicTools, writableNodeShapes;
 export 'brain_tool.dart';
+export 'file_scope.dart' show FileScope;
 export 'todo_store.dart' show TodoEntry, TodoStore;
 export 'tool_context.dart';
 export 'tool_denied.dart' show ToolDenial, toolDeniedCode;

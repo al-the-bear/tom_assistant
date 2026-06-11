@@ -11,12 +11,15 @@
 //     tool write counts the same `memoryWrites` a scripted `persist` does.
 //   - todo.list / add / update / remove → the in-process `ToolContext.todos`
 //     store (ephemeral, run-scoped; never persisted to memory).
-//   - file.read / write, grep.search, file.search → a `dart:io` handle (and,
-//     for `file.search`, dcli's `find` globber) re-derived from the
-//     `ToolContext.fileScopeRoots` list and path-escape-checked on every call
-//     (PE-1): a resolved path outside *every* root raises `FileScopeViolation`
-//     before any byte moves. Reads search the roots in order, writes target the
-//     primary (first) root, and discovery spans all roots.
+//   - file.read / write / list, grep.search, file.search → a `dart:io` handle
+//     (and, for `file.search`, dcli's `find` globber) re-derived from the
+//     `ToolContext.fileScope` value and path-escape-checked on every call
+//     (PE-1): a read resolves against `fileScope.readableRoots`, a write/delete
+//     against `fileScope.writeableRoots`; a resolved path outside the relevant
+//     tier raises `FileScopeViolation` before any byte moves. Reads search the
+//     roots in order, writes target the primary (first) writeable root, and
+//     discovery spans every readable root. `file.readableRoots` /
+//     `file.writeableRoots` report the configured tiers themselves.
 //   - web.search / fetch → the optional `ToolContext.web` surface (the
 //     substrate web client); the one `toolCalls` unit `tool.invoke`
 //     pre-charges *is* the web call, so these do not re-charge.
@@ -91,6 +94,9 @@ List<BrainTool> _basicTools() => <BrainTool>[
       _FileDiffTool(),
       _GrepSearchTool(),
       _FileSearchTool(),
+      _FileListTool(),
+      _FileReadableRootsTool(),
+      _FileWriteableRootsTool(),
       // Creation code-understanding + test families (creation_specification.md
       // § 5.2 / § 5.3): each names one fixed executable run through the
       // allow-listed `ToolProcessSurface` — no general shell (§ 5.4).
@@ -376,7 +382,7 @@ final class _FileReadTool extends BrainTool {
   @override
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String;
-    final hits = _resolveWithinRoots(ctx.fileScopeRoots, relative);
+    final hits = _resolveWithinRoots(ctx.fileScope.readableRoots, relative);
     // Reads search the roots in order: the first root holding the file wins;
     // if none holds it yet, fall through to the primary so the caller sees a
     // normal "file not found" rather than a scope error.
@@ -412,8 +418,10 @@ final class _FileWriteTool extends BrainTool {
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String;
     final content = args['content'] as String;
-    // Writes target the primary (first admitting) root — the earliest hit.
-    final resolved = _resolveWithinRoots(ctx.fileScopeRoots, relative).first.path;
+    // Writes target the primary (first admitting) writeable root — the earliest
+    // hit within the writeable tier.
+    final resolved =
+        _resolveWithinRoots(ctx.fileScope.writeableRoots, relative).first.path;
     final file = await File(resolved).create(recursive: true);
     await file.writeAsString(content);
     return <String, Object?>{'path': relative, 'bytesWritten': content.length};
@@ -454,7 +462,7 @@ final class _FileEditTool extends BrainTool {
     final start = (args['start'] as num).toInt();
     final end = (args['end'] as num?)?.toInt() ?? start;
     final text = args['text'] as String? ?? '';
-    final hit = _resolveTarget(ctx, relative);
+    final hit = _resolveTarget(ctx, relative, forWrite: true);
     final file = File(hit.path);
     final lines = file.existsSync() ? await file.readAsLines() : <String>[];
     final newLines = text.isEmpty ? <String>[] : text.split('\n');
@@ -507,10 +515,10 @@ final class _FileDeleteTool extends BrainTool {
   @override
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String;
-    // Resolve within scope (an escaping path raises FileScopeViolation before
-    // any filesystem touch), preferring the root where the target exists so the
-    // rollback undoes the write that actually landed.
-    final hit = _resolveTarget(ctx, relative);
+    // Resolve within the writeable tier (an escaping path raises
+    // FileScopeViolation before any filesystem touch), preferring the root where
+    // the target exists so the rollback undoes the write that actually landed.
+    final hit = _resolveTarget(ctx, relative, forWrite: true);
     final file = File(hit.path);
     final existed = file.existsSync();
     if (existed) await file.delete();
@@ -543,7 +551,7 @@ final class _FileDiffTool extends BrainTool {
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String;
     final proposed = args['content'] as String;
-    final hit = _resolveTarget(ctx, relative);
+    final hit = _resolveTarget(ctx, relative, forWrite: false);
     final file = File(hit.path);
     final current = file.existsSync() ? await file.readAsString() : '';
     final body = _unifiedDiffBody(_splitLines(current), _splitLines(proposed));
@@ -576,7 +584,7 @@ final class _AnalyzeDartTool extends BrainTool {
   @override
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String? ?? '.';
-    final hit = _resolveTarget(ctx, relative);
+    final hit = _resolveTarget(ctx, relative, forWrite: false);
     final result = await _runAllowed(
       ctx,
       name,
@@ -605,7 +613,7 @@ final class _AnalyzeFormatTool extends BrainTool {
   @override
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String? ?? '.';
-    final hit = _resolveTarget(ctx, relative);
+    final hit = _resolveTarget(ctx, relative, forWrite: false);
     final result = await _runAllowed(
       ctx,
       name,
@@ -634,7 +642,7 @@ final class _AnalyzeSchemaTool extends BrainTool {
   @override
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String;
-    final hit = _resolveTarget(ctx, relative);
+    final hit = _resolveTarget(ctx, relative, forWrite: false);
     final result = await _runAllowed(
       ctx,
       name,
@@ -665,7 +673,7 @@ final class _TestRunTool extends BrainTool {
   @override
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String? ?? '.';
-    final hit = _resolveTarget(ctx, relative);
+    final hit = _resolveTarget(ctx, relative, forWrite: true);
     final result = await _runAllowed(
       ctx,
       name,
@@ -694,7 +702,7 @@ final class _TestBaselineTool extends BrainTool {
   @override
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String? ?? '.';
-    final hit = _resolveTarget(ctx, relative);
+    final hit = _resolveTarget(ctx, relative, forWrite: true);
     final result = await _runAllowed(
       ctx,
       name,
@@ -730,10 +738,10 @@ final class _GrepSearchTool extends BrainTool {
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final pattern = args['pattern'] as String;
     final sub = args['path'] as String? ?? '.';
-    // Discovery spans every root: scan each that admits the sub-path and
-    // exists, rebasing matches onto that root. A missing dir is skipped, not an
-    // error (a not-yet-created sub-path is a legitimate query).
-    final hits = _resolveWithinRoots(ctx.fileScopeRoots, sub);
+    // Discovery spans every readable root: scan each that admits the sub-path
+    // and exists, rebasing matches onto that root. A missing dir is skipped, not
+    // an error (a not-yet-created sub-path is a legitimate query).
+    final hits = _resolveWithinRoots(ctx.fileScope.readableRoots, sub);
     final matches = <Map<String, Object?>>[];
     for (final hit in hits) {
       final directory = Directory(hit.path);
@@ -788,10 +796,10 @@ final class _FileSearchTool extends BrainTool {
     final sub = args['path'] as String? ?? '.';
     final recursive = args['recursive'] as bool? ?? true;
     final caseSensitive = args['caseSensitive'] as bool? ?? false;
-    // Discovery spans every root that admits the sub-path. A missing search
-    // directory is skipped (empty result), mirroring grep.search — not an
+    // Discovery spans every readable root that admits the sub-path. A missing
+    // search directory is skipped (empty result), mirroring grep.search — not an
     // error: a not-yet-created sub-path is a legitimate query.
-    final hits = _resolveWithinRoots(ctx.fileScopeRoots, sub);
+    final hits = _resolveWithinRoots(ctx.fileScope.readableRoots, sub);
     final matches = <String>[];
     for (final hit in hits) {
       if (!Directory(hit.path).existsSync()) {
@@ -808,6 +816,110 @@ final class _FileSearchTool extends BrainTool {
     }
     matches.sort();
     return <String, Object?>{'matches': matches};
+  }
+}
+
+/// Reports the configured readable file-scope roots so a caller can discover
+/// where the read tools may reach (the union of write + read-only roots).
+final class _FileReadableRootsTool extends BrainTool {
+  @override
+  String get name => 'file.readableRoots';
+  @override
+  ToolGroup get group => ToolGroup.file;
+  @override
+  bool get readOnly => true;
+  @override
+  String get description =>
+      'Lists the directories the read tools (file.read / file.diff / '
+      'grep.search / file.search / file.list) may reach — the union of the '
+      'writeable and read-only roots.';
+  @override
+  Map<String, Object?> get inputSchema => _noArgsSchema;
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async =>
+      <String, Object?>{'roots': ctx.fileScope.readableRoots};
+}
+
+/// Reports the configured writeable file-scope roots so a caller can discover
+/// where the write/delete tools may target.
+final class _FileWriteableRootsTool extends BrainTool {
+  @override
+  String get name => 'file.writeableRoots';
+  @override
+  ToolGroup get group => ToolGroup.file;
+  @override
+  bool get readOnly => true;
+  @override
+  String get description =>
+      'Lists the directories the write tools (file.write / file.edit / '
+      'file.delete) may target. The first is the primary write target.';
+  @override
+  Map<String, Object?> get inputSchema => _noArgsSchema;
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async =>
+      <String, Object?>{'roots': ctx.fileScope.writeableRoots};
+}
+
+/// Lists the immediate (non-recursive) entries of a directory under the
+/// readable file-scope roots, so a caller can discover what is there before
+/// reaching for `file.read` / `grep.search`.
+final class _FileListTool extends BrainTool {
+  @override
+  String get name => 'file.list';
+  @override
+  ToolGroup get group => ToolGroup.file;
+  @override
+  bool get readOnly => true;
+  @override
+  String get description =>
+      'Lists files and sub-directories directly inside a directory under the '
+      'readable file-scope roots (non-recursive), for discovery. Defaults to '
+      'the root itself; spans every readable root.';
+  @override
+  Map<String, Object?> get inputSchema => const <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'path': <String, Object?>{'type': 'string'},
+        },
+      };
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final sub = args['path'] as String? ?? '.';
+    // Discovery spans every readable root that admits the sub-path. A missing
+    // directory is skipped (it contributes no entries), mirroring grep.search /
+    // file.search — a not-yet-created sub-path is a legitimate query, not an
+    // error. An escaping path still raises `FileScopeViolation` first.
+    final hits = _resolveWithinRoots(ctx.fileScope.readableRoots, sub);
+    // De-duplicate by the entry's scope-relative path so the same name reached
+    // through two overlapping roots is reported once, the first root winning.
+    final byRelative = <String, Map<String, Object?>>{};
+    for (final hit in hits) {
+      final directory = Directory(hit.path);
+      if (!directory.existsSync()) {
+        continue;
+      }
+      for (final entity in directory.listSync()) {
+        final relative = p.relative(entity.path, from: hit.root);
+        byRelative.putIfAbsent(
+          relative,
+          () => <String, Object?>{
+            'name': p.basename(entity.path),
+            'path': relative,
+            'type': entity is Directory
+                ? 'dir'
+                : entity is File
+                    ? 'file'
+                    : 'other',
+          },
+        );
+      }
+    }
+    final entries = byRelative.values.toList()
+      ..sort((a, b) => (a['path']! as String).compareTo(b['path']! as String));
+    return <String, Object?>{'entries': entries};
   }
 }
 
@@ -1107,6 +1219,12 @@ Map<String, Object?> _nodeToMap(Node node) => <String, Object?>{
       'status': node.status.name,
     };
 
+/// The input schema for a tool that takes no arguments (an empty object).
+const Map<String, Object?> _noArgsSchema = <String, Object?>{
+  'type': 'object',
+  'properties': <String, Object?>{},
+};
+
 /// The input schema for a process tool whose only argument is an optional
 /// `path` (defaulting to the primary root).
 const Map<String, Object?> _pathOnlySchema = <String, Object?>{
@@ -1127,10 +1245,19 @@ const Map<String, Object?> _pathRequiredSchema = <String, Object?>{
 
 /// Resolves [relative] under the file-scope roots, preferring the first root
 /// where the target already exists (a file *or* a directory) and falling back
-/// to the primary root otherwise. The containment check still applies (an
-/// escaping path raises `FileScopeViolation` inside `_resolveWithinRoots`).
-_ScopeHit _resolveTarget(ToolContext ctx, String relative) {
-  final hits = _resolveWithinRoots(ctx.fileScopeRoots, relative);
+/// to the primary root otherwise. [forWrite] selects the tier: a write/delete
+/// tool resolves against the writeable roots, a read tool against the readable
+/// union. The containment check still applies (an escaping path raises
+/// `FileScopeViolation` inside `_resolveWithinRoots`).
+_ScopeHit _resolveTarget(
+  ToolContext ctx,
+  String relative, {
+  required bool forWrite,
+}) {
+  final roots = forWrite
+      ? ctx.fileScope.writeableRoots
+      : ctx.fileScope.readableRoots;
+  final hits = _resolveWithinRoots(roots, relative);
   return hits.firstWhere(
     (h) => File(h.path).existsSync() || Directory(h.path).existsSync(),
     orElse: () => hits.first,

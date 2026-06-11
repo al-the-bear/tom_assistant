@@ -124,7 +124,7 @@ Future<Object?> _run(Map<String, Object?> args, ToolContext ctx) {
 ToolContext _ctx(ToolDreamSurface? dream) => ToolContext(
       budget: BudgetLedger(ProcedureBudget(const <String, int>{})),
       memory: _NoopMemory(),
-      fileScopeRoots: const <String>['/tom-brain-engine'],
+      fileScope: FileScope.fromPriorityList(const <String>['/tom-brain-engine']),
       dream: dream,
     );
 

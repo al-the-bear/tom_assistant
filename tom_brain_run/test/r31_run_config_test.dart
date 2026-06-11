@@ -543,24 +543,38 @@ substrate:
     });
   });
 
-  group('#31 ToolsConfigLoader — the tools.fileScope section', () {
-    test('a tools section loads its file-scope roots onto the run config', () {
+  group('#31 ToolsConfigLoader — the tools two-tier file-scope section', () {
+    test('a tools section loads its write and read roots onto the run config',
+        () {
       final String doc = '$_substrateSection\n'
           'memory:\n'
           '  root: /tmp/x\n'
           '  sqliteVec:\n'
           '    binariesRoot: /opt/vec\n'
           'tools:\n'
-          '  fileScope:\n'
+          '  writeScope:\n'
           '    - /srv/project/a\n'
+          '  readScope:\n'
           '    - /srv/project/b\n'
           '$_accessSection\n';
 
       final BrainRunConfig config = BrainRunConfigLoader.parse(doc);
 
       expect(config.tools, isNotNull);
-      expect(config.tools!.fileScope,
-          <String>['/srv/project/a', '/srv/project/b']);
+      expect(config.tools!.writeScope, <String>['/srv/project/a']);
+      expect(config.tools!.readScope, <String>['/srv/project/b']);
+    });
+
+    test('a read-only tools section grants reach without a writeable root', () {
+      const String doc = '''
+tools:
+  readScope:
+    - /srv/readonly''';
+
+      final ToolsConfig? tools = ToolsConfigLoader.parse(doc);
+
+      expect(tools!.writeScope, isEmpty);
+      expect(tools.readScope, <String>['/srv/readonly']);
     });
 
     test('a missing tools section leaves config.tools null (engine placeholder)',
@@ -575,10 +589,10 @@ substrate:
       expect(BrainRunConfigLoader.parse(doc).tools, isNull);
     });
 
-    test('an env token in a file-scope root is expanded', () {
+    test('an env token in a write-scope root is expanded', () {
       const String doc = '''
 tools:
-  fileScope:
+  writeScope:
     - \${PROJECT_ROOT}/sub''';
 
       final ToolsConfig? tools = ToolsConfigLoader.parse(
@@ -586,23 +600,22 @@ tools:
         envVars: const <String, String>{'PROJECT_ROOT': '/srv/proj'},
       );
 
-      expect(tools!.fileScope, <String>['/srv/proj/sub']);
+      expect(tools!.writeScope, <String>['/srv/proj/sub']);
     });
 
-    test('an empty fileScope list is refused with a located error', () {
+    test('an empty writeScope list is refused with a located error', () {
       const String doc = '''
 tools:
-  fileScope: []''';
+  writeScope: []''';
 
       expect(
         () => ToolsConfigLoader.parse(doc),
         throwsA(isA<ToolsConfigException>().having((e) => e.message, 'message',
-            allOf(contains('tools.fileScope'), contains('at least one')))),
+            allOf(contains('tools.writeScope'), contains('at least one')))),
       );
     });
 
-    test('a tools block with no fileScope key is refused with a located error',
-        () {
+    test('a tools block with neither tier is refused with a located error', () {
       const String doc = '''
 tools:
   somethingElse: true''';
@@ -614,16 +627,16 @@ tools:
       );
     });
 
-    test('a non-string file-scope entry is refused with a located error', () {
+    test('a non-string write-scope entry is refused with a located error', () {
       const String doc = '''
 tools:
-  fileScope:
+  writeScope:
     - 42''';
 
       expect(
         () => ToolsConfigLoader.parse(doc),
         throwsA(isA<ToolsConfigException>().having((e) => e.message, 'message',
-            allOf(contains('tools.fileScope[0]'), contains('string')))),
+            allOf(contains('tools.writeScope[0]'), contains('string')))),
       );
     });
 
@@ -636,7 +649,7 @@ tools:
           '  sqliteVec:\n'
           '    binariesRoot: /opt/vec\n'
           'toolz:\n'
-          '  fileScope:\n'
+          '  writeScope:\n'
           '    - /srv/x\n'
           '$_accessSection\n';
 

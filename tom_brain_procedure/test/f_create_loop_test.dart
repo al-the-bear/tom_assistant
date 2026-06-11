@@ -20,7 +20,7 @@
 //     persist(Question) → persist(Artifact) → edge(satisfied_by) post-
 //     conditions can be read off one object; and
 //   - a real on-disk file-scope root (a temp dir) wired through the engine's
-//     `toolFileScopeRoots`, so the single `file.write` actually lands a file
+//     `toolFileScope`, so the single `file.write` actually lands a file
 //     (and an escaping `target` actually raises `FileScopeViolation`).
 //
 // The behaviours the plan pins:
@@ -110,7 +110,7 @@ void main() {
         memory: memory,
         memoryBridge: memoryBridge,
         substrateBridge: substrateBridge,
-        toolFileScopeRoots: <String>[root.path],
+        toolFileScope: FileScope(writeRoots: <String>[root.path]),
         // A hermetic, non-spawning default: the text-kind cases run no check, so
         // the surface is unused, but a fake guarantees no test ever shells out.
         toolProcessSurface: process ?? _FakeProcess(),
