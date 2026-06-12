@@ -319,10 +319,12 @@ class SubstrateBridge {
   /// This is the *only* widening of the low-level surface; it adds no turn
   /// loop — that lives entirely in `call_llm_v1` (step 11).
   ///
-  /// Returns `{'text': …, 'toolCalls': [{id, name, arguments}…], 'report':
-  /// {...}}` — `text` is the concatenated answer, `toolCalls` is empty when
-  /// none, and the report mirrors [LlmCallReport]. Throws
-  /// [LlmCompletionFailure] when the
+  /// Returns `{'text': …, 'toolCalls': [{id, name, arguments}…],
+  /// 'unresolvedToolCall': bool, 'report': {...}}` — `text` is the concatenated
+  /// answer, `toolCalls` is empty when none, `unresolvedToolCall` is `true` only
+  /// when the text looked like a tool call but resolved to zero executable calls
+  /// (§ 9.1 Todo 8 — the answer loop's signal to feed an error turn back), and
+  /// the report mirrors [LlmCallReport]. Throws [LlmCompletionFailure] when the
   /// stream terminates with [LlmStreamFailed].
   Future<Map<String, Object?>> llm(
     String prompt, {
@@ -431,12 +433,20 @@ class SubstrateBridge {
                         ?.call(providerId ?? report.providerId) ??
                     ToolProtocol.openai;
                 final answer = buffer.toString();
-                final toolCalls = await _resolveToolCalls(
+                final resolved = await _resolveToolCalls(
                   protocol,
                   nativeToolCalls,
                   answer,
                   catalogue,
                 );
+                final toolCalls = resolved.calls;
+                // The § 9.1 Todo 8 guard: the text looked like a tool call but
+                // resolved to zero executable calls (a name not on offer, or
+                // args that failed every parse). It is the model *failing to
+                // work*, not an answer — so its text must be kept off the
+                // answer channel (routed to thinking below) and the flag is
+                // surfaced for the loop body to feed an error turn back.
+                final unresolvedToolCall = resolved.unresolvedAttempt;
                 // Buffered-turn routing (§ 9.2 Todo 6). A live answer turn
                 // already streamed its tokens, so it needs no completion
                 // routing. Otherwise route the buffered text by outcome:
@@ -451,12 +461,14 @@ class SubstrateBridge {
                 //     original chunk boundaries, so a buffered terminal answer
                 //     still streams to the user.
                 if (!liveAnswer) {
-                  if (toolCalls.isNotEmpty || toThinking) {
+                  if (toolCalls.isNotEmpty || toThinking || unresolvedToolCall) {
                     // Label the streamed stage (§ 9.2 Todo 7): prefix the notice
                     // with a short, role-keyed stage marker so the user can
                     // follow the live process (`🧠 analysing… …`). The label
                     // rides only on the notice — `answer` (returned to the body
-                    // for persist / transcript) stays unlabeled.
+                    // for persist / transcript) stays unlabeled. An unresolved
+                    // tool-call attempt (§ 9.1 Todo 8) routes here too: its
+                    // `call:NAME{…}` text is working text, never the answer.
                     _onThinking?.call(_labelThinkingStage(role, answer));
                   } else if (onToken != null && bufferedDeltas != null) {
                     for (final delta in bufferedDeltas) {
@@ -488,6 +500,7 @@ class SubstrateBridge {
                 return <String, Object?>{
                   'text': answer,
                   'toolCalls': toolCalls,
+                  'unresolvedToolCall': unresolvedToolCall,
                   'report': _reportToMap(report),
                 };
               case LlmStreamFailed(:final failure, report: final failReport):
@@ -528,34 +541,47 @@ class SubstrateBridge {
   ///
   /// A completion with no tools on offer ([catalogue] empty) is never a tool
   /// call. Text that looked like a tool-call attempt but did not parse — or
-  /// named a tool not on offer — yields an empty list plus the typed
-  /// `llm.toolcall.parse.failed` note (the text still falls through as the
-  /// no-tool answer); plain prose is silent.
-  Future<List<Object?>> _resolveToolCalls(
+  /// named a tool not on offer — yields an empty list, sets [_ResolvedToolCalls.unresolvedAttempt],
+  /// and emits the typed `llm.toolcall.parse.failed` note; plain prose is
+  /// silent (and `unresolvedAttempt` stays `false`).
+  ///
+  /// The `unresolvedAttempt` flag is the § 9.1 Todo 8 guard signal: the answer
+  /// loop reads it to feed an error turn back instead of returning the raw
+  /// `call:NAME{…}` text as the user's answer, and [llm] routes that text to the
+  /// thinking channel (never the answer) at completion.
+  Future<_ResolvedToolCalls> _resolveToolCalls(
     ToolProtocol protocol,
     List<Object?> native,
     String text,
     ToolCatalogue catalogue,
   ) async {
-    if (native.isNotEmpty) return native;
-    if (catalogue.isEmpty) return const <Object?>[];
+    if (native.isNotEmpty) {
+      return _ResolvedToolCalls(native, unresolvedAttempt: false);
+    }
+    if (catalogue.isEmpty) {
+      return const _ResolvedToolCalls(<Object?>[], unresolvedAttempt: false);
+    }
 
     final knownNames = <String>{for (final tool in catalogue.tools) tool.name};
     final parsed = parseToolCallsFromText(text, knownToolNames: knownNames);
     if (parsed.isEmpty) {
       if (looksLikeToolCallAttempt(text)) {
         await _noteToolCallParseFailed(text);
+        return const _ResolvedToolCalls(<Object?>[], unresolvedAttempt: true);
       }
-      return const <Object?>[];
+      return const _ResolvedToolCalls(<Object?>[], unresolvedAttempt: false);
     }
-    return <Object?>[
-      for (final call in parsed)
-        <String, Object?>{
-          'id': null,
-          'name': call.name,
-          'arguments': call.arguments,
-        },
-    ];
+    return _ResolvedToolCalls(
+      <Object?>[
+        for (final call in parsed)
+          <String, Object?>{
+            'id': null,
+            'name': call.name,
+            'arguments': call.arguments,
+          },
+      ],
+      unresolvedAttempt: false,
+    );
   }
 
   /// Emits the `llm.toolcall.parse.failed` note when a `json_text` completion
@@ -923,6 +949,21 @@ class SubstrateBridge {
               'contentLength': result.binaryMeta!.contentLength,
           },
       };
+}
+
+/// The outcome of resolving a completion's tool calls (§ 9.1 Todo 8).
+///
+/// [calls] is the uniform `{id, name, arguments}` list (empty when none).
+/// [unresolvedAttempt] is `true` only when the completion *looked* like a
+/// tool-call attempt yet resolved to zero executable calls (a tool name not on
+/// offer, or args that failed every parse) — the signal [SubstrateBridge.llm]
+/// surfaces as `unresolvedToolCall` so the answer loop feeds an error turn back
+/// instead of returning the raw `call:NAME{…}` text as the answer.
+class _ResolvedToolCalls {
+  const _ResolvedToolCalls(this.calls, {required this.unresolvedAttempt});
+
+  final List<Object?> calls;
+  final bool unresolvedAttempt;
 }
 
 /// Receives each generated text delta from [SubstrateBridge.llm] as it

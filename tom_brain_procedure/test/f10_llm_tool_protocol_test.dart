@@ -307,6 +307,79 @@ void main() {
     });
   });
 
+  group('F.10 SubstrateBridge.llm — unresolved tool-call guard (§ 9.1 Todo 8)',
+      () {
+    // A completion that *looks* like a tool-call attempt but resolves to zero
+    // executable calls (a name not on offer, or args that fail every parse)
+    // must be flagged so the answer loop feeds an error turn back instead of
+    // leaking the raw `call:NAME{…}` text as the answer. The flag rides on the
+    // result map (`unresolvedToolCall`), alongside the existing typed note.
+
+    test('an unknown-tool text call flags unresolvedToolCall', () async {
+      final notes = <_CapturedNote>[];
+      client.streamEvents = _completed(
+        'call:totally.bogus{text: "x"}',
+        providerId: 'omlx',
+      );
+      // Catalogue offers only memory.read; totally.bogus is not on offer.
+      final bridge = SubstrateBridge(client, onNote: _capture(notes));
+
+      final out = await bridge.llm('q', tools: _oneTool());
+
+      expect(out['toolCalls'], isEmpty);
+      // The new guard signal — the loop reads this to feed an error turn back.
+      expect(out['unresolvedToolCall'], isTrue);
+      // The existing typed note still fires (defense-in-depth, both signals).
+      expect(notes.single.category, 'llm.toolcall.parse.failed');
+    });
+
+    test('plain prose does not flag unresolvedToolCall', () async {
+      client.streamEvents = _completed('The answer is 42.', providerId: 'omlx');
+      final bridge = SubstrateBridge(client);
+
+      final out = await bridge.llm('q', tools: _oneTool());
+
+      expect(out['text'], 'The answer is 42.');
+      expect(out['toolCalls'], isEmpty);
+      expect(out['unresolvedToolCall'], isFalse);
+    });
+
+    test('a resolved tool call does not flag unresolvedToolCall', () async {
+      client.streamEvents = _completed(
+        'call:memory.read{id: "n1"}',
+        providerId: 'omlx',
+      );
+      final bridge = SubstrateBridge(client);
+
+      final out = await bridge.llm('q', tools: _oneTool());
+
+      expect((out['toolCalls']! as List<Object?>), hasLength(1));
+      expect(out['unresolvedToolCall'], isFalse);
+    });
+
+    test('an unresolved attempt routes its text to the thinking channel, '
+        'never the answer', () async {
+      final notices = <String>[];
+      final answerTokens = <String>[];
+      final bridge = SubstrateBridge(
+        client,
+        onToken: (delta) async => answerTokens.add(delta),
+        onThinking: (text) => notices.add(text),
+      );
+      client.streamEvents = _completed(
+        'call:totally.bogus{text: "x"}',
+        providerId: 'omlx',
+      );
+
+      await bridge.llm('q', tools: _oneTool());
+
+      // The bogus call text surfaces on the thinking channel…
+      expect(notices.single, contains('call:totally.bogus'));
+      // …and is never replayed to the answer the user reads.
+      expect(answerTokens.join(), isNot(contains('call:totally.bogus')));
+    });
+  });
+
   group('F.10 SubstrateBridge.llm — protocol uniformity (Q-F.4)', () {
     test('openai native and json_text text yield the same toolCalls shape',
         () async {

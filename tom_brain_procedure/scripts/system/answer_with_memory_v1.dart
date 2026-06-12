@@ -321,6 +321,14 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       // `x`), so the awaited call must settle into a local first.
       final toolResults = await _runToolCalls(toolCalls);
       transcript = _appendToolResults(transcript, toolResults);
+    } else if (completion['unresolvedToolCall'] == true) {
+      // The completion looked like a tool call but resolved to zero executable
+      // calls — a tool name not on offer, or args that failed every parse
+      // (§ 9.1 Todo 8). The raw `call:NAME{…}` text is the model *failing to
+      // work*, not an answer, so it must never become the user's answer. Feed
+      // an error turn back naming the available tools and re-enter; do not
+      // evaluate termination on this turn (the model has produced no answer).
+      transcript = _appendToolCallError(transcript, liveTools);
     } else {
       // A plain-answer turn: keep the last non-empty answer text, then let the
       // live session todo store decide termination (§ 3.1).
@@ -516,6 +524,27 @@ String _appendOpenTodoReminder(String transcript, int open) {
   return '$transcript\nYou still have $open open todo(s). You are not finished '
       'until every todo is marked done with todo.update. Continue the work, or '
       'mark the remaining todos done if they are already complete.\n';
+}
+
+/// Folds an "invalid tool call" error turn into the transcript when a
+/// completion looked like a tool-call attempt but resolved to zero executable
+/// calls (§ 9.1 Todo 8). It names the live catalogue so the model can correct
+/// itself — issue a valid `call:NAME{…}` or just answer in plain prose — and
+/// re-enter, rather than the unusable `call:…` text leaking as the answer. The
+/// tool names come from the same `tool.list()` catalogue offered every turn, so
+/// the listed names are exactly the ones `tool.invoke` accepts.
+String _appendToolCallError(String transcript, List liveTools) {
+  final names = <String>[];
+  for (final tool in liveTools) {
+    if (tool is Map) {
+      final name = tool['name'];
+      if (name is String && name.isNotEmpty) names.add(name);
+    }
+  }
+  final available = names.isEmpty ? '(none)' : names.join(', ');
+  return '$transcript\nThat was not a valid tool call: it named no available '
+      'tool, or its arguments could not be read. Available tools: $available. '
+      'Reply with a valid call (call:NAME{arg: value}) or a plain answer.\n';
 }
 
 /// Executes each proposed tool call through the live `tool.invoke` surface
