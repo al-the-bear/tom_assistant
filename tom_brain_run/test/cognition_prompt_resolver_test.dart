@@ -204,6 +204,141 @@ void main() {
     });
   });
 
+  group('§9 thinking-path glue — buildPromptResolver over the real templates',
+      () {
+    late final String configRoot;
+    setUpAll(() => configRoot = _cognitionRoot());
+
+    const base = 'assist_user.answer_with_thinking';
+
+    final recall = <String, Object?>{
+      'nodes': <Object?>[
+        <String, Object?>{
+          'values': <String, Object?>{'text': 'fact A'},
+        },
+      ],
+    };
+    const analysis = 'Analysis: the answer must cover X and Y.';
+    const subReasoning = 'Sub-reasoning: X depends on Z.';
+    const text = 'How does memory consolidate?';
+    const rejection =
+        'Attempt 1:\nDraft:\nthe bad draft\nCritique:\nREJECT missing Y\n\n';
+
+    Future<ResolvedPrompt?> resolveStage(
+      String stage,
+      Map<String, Object?> inputs,
+    ) async {
+      final cfg = CognitionConfigLoader.loadFromDir(configRoot);
+      final resolve = buildPromptResolver(cfg, _builtins(configRoot));
+      return resolve('$base.$stage', inputs);
+    }
+
+    test('synthesis is the tool-enabled "normal prompt": catalogue survives, '
+        'role + route inherited, bindings rendered', () async {
+      final resolved = await resolveStage('synthesis', {
+        'text': text,
+        'recall': recall,
+        'priorTurns': const <Object?>[],
+        'rejection_context': '',
+        'analysis': analysis,
+        'sub_reasoning': subReasoning,
+      });
+
+      expect(resolved, isNotNull);
+      // §9: synthesis inherits the user-facing role + assistant route + tools:all.
+      expect(resolved!.role, 'assistant_to_user');
+      expect(resolved.llmRoute, 'assistant');
+      expect(resolved.tools, isNotEmpty);
+      // The catalogue marker survives for SubstrateBridge.run to render.
+      expect(resolved.templateBody, contains(r'${tools.catalogue}'));
+      // The §6 thinking bindings are rendered generically.
+      expect(resolved.templateBody, contains(analysis));
+      expect(resolved.templateBody, contains(subReasoning));
+      expect(resolved.templateBody, contains('- fact A'));
+      expect(resolved.templateBody, contains(text));
+    });
+
+    test('synthesis_reentry folds the accumulated rejection history in via '
+        '\${rejection_context}', () async {
+      final resolved = await resolveStage('synthesis_reentry', {
+        'text': text,
+        'recall': recall,
+        'priorTurns': const <Object?>[],
+        'rejection_context': rejection,
+        'analysis': analysis,
+        'sub_reasoning': subReasoning,
+      });
+
+      expect(resolved, isNotNull);
+      expect(resolved!.tools, isNotEmpty);
+      expect(resolved.templateBody, contains(r'${tools.catalogue}'));
+      // The increasing history reaches the prompt verbatim.
+      expect(resolved.templateBody, contains('the bad draft'));
+      expect(resolved.templateBody, contains('REJECT missing Y'));
+    });
+
+    test('analysis runs as the read-only analyser and does not leak the '
+        'rejection context', () async {
+      final resolved = await resolveStage('analysis', {
+        'text': text,
+        'recall': recall,
+        'priorTurns': const <Object?>[],
+        // Always passed by the procedure; the base template must not reference it.
+        'rejection_context': rejection,
+      });
+
+      expect(resolved, isNotNull);
+      expect(resolved!.role, 'analyser');
+      // `tools: readonly` resolves to a non-empty (filtered) catalogue.
+      expect(resolved.tools, isNotEmpty);
+      expect(resolved.templateBody, contains(text));
+      expect(resolved.templateBody, contains('- fact A'));
+      // The first-pass template never surfaces the rejection history.
+      expect(resolved.templateBody, isNot(contains('the bad draft')));
+    });
+
+    test('analysis_reentry runs as the analyser and surfaces the rejection '
+        'history', () async {
+      final resolved = await resolveStage('analysis_reentry', {
+        'text': text,
+        'recall': recall,
+        'priorTurns': const <Object?>[],
+        'rejection_context': rejection,
+      });
+
+      expect(resolved, isNotNull);
+      expect(resolved!.role, 'analyser');
+      expect(resolved.templateBody, contains('the bad draft'));
+    });
+
+    test('sub_think runs as the sub_thinker over the analysis', () async {
+      final resolved = await resolveStage('sub_think', {
+        'text': text,
+        'analysis': analysis,
+      });
+
+      expect(resolved, isNotNull);
+      expect(resolved!.role, 'sub_thinker');
+      expect(resolved.templateBody, contains(analysis));
+      expect(resolved.templateBody, contains(text));
+    });
+
+    test('critique is the no-tool evaluator over the draft', () async {
+      final resolved = await resolveStage('critique', {
+        'text': text,
+        'draft': 'the draft under review',
+      });
+
+      expect(resolved, isNotNull);
+      expect(resolved!.role, 'evaluator');
+      // §9: critique is `tools: none`.
+      expect(resolved.tools, isEmpty);
+      expect(resolved.templateBody, contains('the draft under review'));
+      // No tool catalogue marker in the critique template.
+      expect(resolved.templateBody, isNot(contains(r'${tools.catalogue}')));
+    });
+  });
+
   group('§8 cognition glue — buildRouteChainResolver', () {
     test('expands the assistant route to its single oMLX entry', () {
       final cfg = CognitionConfigLoader.loadFromDir(_cognitionRoot());

@@ -82,13 +82,7 @@ proc.PromptResolver buildPromptResolver(
       // The dynamic blocks are rendered here and restored *after* resolution so
       // user-controlled `${…}` in them is never re-scanned. The catalogue marker
       // restores to itself — `SubstrateBridge.run` renders it from the tool set.
-      restore: <String, String>{
-        _catalogueToken: _catalogueToken,
-        r'${history}': _renderPriorTurns(inputs['priorTurns']),
-        r'${recall}': _renderRecall(inputs['recall']),
-        r'${text}': _stringOf(inputs['text']),
-        r'${open_todo_reminder}': _renderReminder(inputs['open_todo_reminder']),
-      },
+      restore: _buildRestoreMap(inputs),
     );
 
     final settings = registered.settings;
@@ -126,6 +120,42 @@ proc.RouteChainResolver buildRouteChainResolver(CognitionConfig config) {
 
 /// The literal `${tools.catalogue}` marker `SubstrateBridge.run` renders.
 const String _catalogueToken = r'${tools.catalogue}';
+
+/// The input keys that map onto a *purpose-built* block renderer rather than the
+/// generic `${<key>}` → literal-string path: `priorTurns` renders the labelled
+/// `${history}` conversation block, `recall` the `${recall}` memory preamble, and
+/// `open_todo_reminder` the `${open_todo_reminder}` suffix. Every other input key
+/// `k` binds `${k}` to its literal string value (§6 context bindings).
+const Set<String> _speciallyRenderedKeys = {
+  'priorTurns',
+  'recall',
+  'open_todo_reminder',
+};
+
+/// Builds the protected restore map for one prompt's [inputs].
+///
+/// The three [_speciallyRenderedKeys] map onto their own `${…}` tokens through
+/// the block renderers (`priorTurns`→`${history}`, `recall`→`${recall}`,
+/// `open_todo_reminder`→`${open_todo_reminder}`); the `${tools.catalogue}` marker
+/// restores to itself for `SubstrateBridge.run`. Every *other* input key `k`
+/// binds `${k}` to its literal string value, so the §6 thinking bindings
+/// (`${text}` / `${analysis}` / `${sub_reasoning}` / `${draft}` /
+/// `${rejection_context}`) — and any future per-call binding — resolve generically
+/// without a bespoke renderer. All values are restored after resolution, so
+/// user-controlled `${…}` inside them is never re-scanned.
+Map<String, String> _buildRestoreMap(Map<String, Object?> inputs) {
+  final restore = <String, String>{
+    _catalogueToken: _catalogueToken,
+    r'${history}': _renderPriorTurns(inputs['priorTurns']),
+    r'${recall}': _renderRecall(inputs['recall']),
+    r'${open_todo_reminder}': _renderReminder(inputs['open_todo_reminder']),
+  };
+  for (final entry in inputs.entries) {
+    if (_speciallyRenderedKeys.contains(entry.key)) continue;
+    restore['\${${entry.key}}'] = _stringOf(entry.value);
+  }
+  return restore;
+}
 
 /// Expands a prompt's resolved [tools] policy into the `tool.list` wire-shape
 /// descriptor list the loop offers, mirroring `defaultToolCatalogue`'s shape

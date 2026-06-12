@@ -9,6 +9,16 @@
 # the migrated `answer_with_memory_v1` runs — its template assembles the recall
 # context, prior turns, todo discipline, and the live prompt around the
 # `${tools.catalogue}` marker the engine renders from the resolved tool set.
+#
+# The `answer_with_thinking` sub-procedure (`prompt_configuration.md` §9 / §5.3)
+# carries the six prompts the recursive `answer_with_thinking_v1` loop runs: the
+# first-pass `analysis` / `synthesis` and their re-entry variants that fold in the
+# accumulated rejection history, the `sub_think` reasoning pass, and the
+# `critique` gate. Each prompt's `role` / `tools` override the inherited
+# user-facing defaults per §5.3: the reasoning stages run read-only under their
+# own personas, `synthesis` is the tool-enabled "normal prompt" the loop wraps
+# (inherits `assistant_to_user` + `tools: all`), and `critique` is a no-tool
+# `evaluator` verdict.
 
 tools: all
 llm: assistant
@@ -18,3 +28,28 @@ answer_with_memory:
   prompts:
     assembly:
       template: answer_with_memory.assembly.md
+
+answer_with_thinking:
+  prompts:
+    analysis:
+      template: answer_with_thinking.analysis.md
+      tools: readonly
+      role: analyser
+    analysis_reentry:
+      template: answer_with_thinking.analysis_reentry.md
+      tools: readonly
+      role: analyser
+    sub_think:
+      template: answer_with_thinking.sub_think.md
+      tools: readonly
+      role: sub_thinker
+    synthesis:
+      template: answer_with_thinking.synthesis.md
+      tools: all
+    synthesis_reentry:
+      template: answer_with_thinking.synthesis_reentry.md
+      tools: all
+    critique:
+      template: answer_with_thinking.critique.md
+      tools: none
+      role: evaluator
