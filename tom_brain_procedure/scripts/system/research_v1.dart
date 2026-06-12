@@ -10,7 +10,7 @@
 ///   - { name: source, type: String, required: true }
 /// outputs:
 ///   - { name: claimId, type: String }
-/// requires: [ search, fetch, llm, embed, persist, edge, note ]
+/// requires: [ search, fetch, run, runProcedure, embed, persist, edge, note ]
 //
 // research_v1 — the Researcher cognitive agent (memory § 9, the eight dreaming
 // agents; `prototype_implementation_plan_2.md` item 22). It is the one agent
@@ -61,16 +61,18 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final fetched = await sub.fetch(url);
   final body = fetched['text'];
 
-  // 3. Distil one factual Claim from the fetched page. The body supplies only
-  //    the role id and the fetched text as the role-template prompt (PE-7 —
-  //    never a raw wire prompt).
+  // 3. Distil one factual Claim from the fetched page through the registered
+  //    `assist_user.research.claim_extraction` prompt (`prompt_configuration.md`
+  //    §10). `sub.run` resolves the prompt — its template + the `researcher`
+  //    role assemble the wire prompt around the fetched `${body}`; the body
+  //    never hands the substrate a raw wire prompt (PE-7). The result carries
+  //    the distilled claim under `answer`.
   const producer = 'research_v1';
-  final completion = await sub.llm(
-    'Extract one atomic, self-contained factual claim from this fetched '
-    'page: $body',
-    role: 'researcher',
+  final completion = await sub.run(
+    'assist_user.research.claim_extraction',
+    inputs: <String, Object?>{'body': body},
   );
-  final statement = completion['text'];
+  final statement = completion['answer'];
 
   // 4. Record the Source (its title embedded) and the Claim (its statement
   //    embedded), then tie them together.

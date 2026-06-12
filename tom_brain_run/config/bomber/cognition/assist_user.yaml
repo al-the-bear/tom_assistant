@@ -29,6 +29,17 @@ answer_with_memory:
     assembly:
       template: answer_with_memory.assembly.md
 
+# The `research` sub-procedure (`prompt_configuration.md` §10) carries the single
+# `claim_extraction` prompt the migrated `research_v1` runs: it distils the
+# fetched page text (`${body}`) into one atomic factual Claim. It runs read-only
+# (no tools) under the dedicated `researcher` persona.
+research:
+  prompts:
+    claim_extraction:
+      template: research.claim_extraction.md
+      tools: none
+      role: researcher
+
 answer_with_thinking:
   prompts:
     analysis:

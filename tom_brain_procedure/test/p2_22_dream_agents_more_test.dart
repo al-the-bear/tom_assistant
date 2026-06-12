@@ -50,6 +50,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'stub_prompt_resolver.dart';
+
 /// The bootstrap embedding model dimensionality (768, nomic-embed-text).
 const _bootstrapDims = 768;
 
@@ -194,6 +196,12 @@ void main() {
 
   /// Builds an engine that runs the dream procedure named [agentName] under
   /// that agent identity, wired over the real [store] and the [substrate] stub.
+  ///
+  /// The migrated agents (e.g. `research_v1`) reach the substrate through
+  /// `sub.run('<id>')`, which delegates the send loop to the shared
+  /// `tool_loop_v1` script — so both that script and a host `PromptResolver`
+  /// (the [StubPromptResolver]) are wired in. Agents not yet migrated still call
+  /// `sub.llm` directly; the extra wiring is inert for them.
   Future<ProcedureEngine> engineFor({
     required SqliteTomBrainMemory store,
     required TomBrainSubstrateClient substrate,
@@ -202,12 +210,19 @@ void main() {
     final system = await ProcedureResolver.fromStore(
       DiskProcedureStore(systemDir: Directory('scripts/system')),
     );
+    final prompts = StubPromptResolver();
     return ProcedureEngine(
-      resolver:
-          ProcedureResolver(<LoadedProcedure>[system.resolve(agentName)]),
+      resolver: ProcedureResolver(<LoadedProcedure>[
+        system.resolve(agentName),
+        system.resolve('tool_loop_v1'),
+      ]),
       memory: store,
       memoryBridge: MemoryBridge(store, agentName: agentName),
-      substrateBridge: SubstrateBridge(substrate),
+      substrateBridge: SubstrateBridge(
+        substrate,
+        promptResolver: prompts.resolver,
+        routeChainOf: prompts.routeChainOf,
+      ),
       now: () => DateTime.utc(2026, 6, 5, 12, 0, 0),
     );
   }
