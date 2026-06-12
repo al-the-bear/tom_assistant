@@ -17,8 +17,8 @@
 //   * [RouteEntry] + [RouteConditions] — the per-row value class that
 //     a role's `routeChain` is built from; [RouterPolicy.roleRoutes]
 //     composes them per role.
-//   * [NoRouteAvailable], [RoleNotFound], [ContextOverflowError],
-//     [RouteAttempt] — typed router errors.
+//   * [NoRouteAvailable], [RoleNotFound], [EmptyRouteChain],
+//     [ContextOverflowError], [RouteAttempt] — typed router errors.
 //
 // Re-exported from the top-level package barrel (`lib/tom_brain_substrate.dart`)
 // so consumers and downstream tests can bind against the router without a

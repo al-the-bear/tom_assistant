@@ -380,13 +380,23 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     // "the call ended in failure" signal for the buffered path read
     // the exception via `dart:async` zone hooks or wrap the call
     // themselves.
-    final report = await _router.dispatch(
-      roleId: call.roleId,
-      prompt: prompt,
-      options: call.options,
-      budget: call.budget,
-      cancellationToken: call.cancellationToken,
-    );
+    final routeChain = call.routeChain;
+    final report = routeChain == null
+        ? await _router.dispatch(
+            roleId: call.roleId,
+            prompt: prompt,
+            options: call.options,
+            budget: call.budget,
+            cancellationToken: call.cancellationToken,
+          )
+        : await _router.dispatchOverChain(
+            roleId: call.roleId,
+            chain: routeChain,
+            prompt: prompt,
+            options: call.options,
+            budget: call.budget,
+            cancellationToken: call.cancellationToken,
+          );
 
     _enforceAnchorOrThrow(report: report, roleId: call.roleId);
     _recordCallSuccess(report: report, roleId: call.roleId);
@@ -432,13 +442,24 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     WirePrompt prompt,
     String callId,
   ) async* {
-    await for (final event in _router.dispatchStream(
-      roleId: call.roleId,
-      prompt: prompt,
-      options: call.options,
-      budget: call.budget,
-      cancellationToken: call.cancellationToken,
-    )) {
+    final routeChain = call.routeChain;
+    final upstream = routeChain == null
+        ? _router.dispatchStream(
+            roleId: call.roleId,
+            prompt: prompt,
+            options: call.options,
+            budget: call.budget,
+            cancellationToken: call.cancellationToken,
+          )
+        : _router.dispatchStreamOverChain(
+            roleId: call.roleId,
+            chain: routeChain,
+            prompt: prompt,
+            options: call.options,
+            budget: call.budget,
+            cancellationToken: call.cancellationToken,
+          );
+    await for (final event in upstream) {
       var toYield = event;
       if (event is LlmStreamCompleted) {
         _enforceAnchorOrThrow(

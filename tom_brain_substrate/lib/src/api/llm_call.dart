@@ -67,6 +67,7 @@
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget, TurnId;
 
+import '../router/route_entry.dart';
 import 'cancellation.dart';
 
 /// One submission to the substrate's LLM path.
@@ -133,6 +134,22 @@ final class LlmCall {
   /// seq). `null` whenever [turnId] is `null`.
   final int? callSeq;
 
+  /// Optional **explicit** route chain to dispatch over, instead of the
+  /// role-keyed `roleRoutes[roleId]` chain.
+  ///
+  /// This is the cognition-config `llm:` routing seam
+  /// (`prompt_configuration.md` §8): a prompt selects its LLM route **by
+  /// name**, the bridge resolves the name to a chain, and the substrate
+  /// dispatches over that chain. The wire prompt is still assembled from
+  /// [roleId]'s template — persona + assistant-dedication anchor and all — so
+  /// the anchor invariant (Postulate 3) is untouched; only *route selection*
+  /// moves off the role.
+  ///
+  /// `null` (every legacy caller) ⇒ route by [roleId] exactly as before. A
+  /// non-empty list ⇒ route over it. An empty list is a config error and
+  /// surfaces as `EmptyRouteChain` at dispatch.
+  final List<RouteEntry>? routeChain;
+
   const LlmCall({
     required this.roleId,
     required this.inputs,
@@ -141,6 +158,7 @@ final class LlmCall {
     this.cancellationToken = CancellationToken.none,
     this.turnId,
     this.callSeq,
+    this.routeChain,
   });
 }
 

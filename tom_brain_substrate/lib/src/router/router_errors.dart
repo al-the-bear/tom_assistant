@@ -124,6 +124,24 @@ class RoleNotFound implements Exception {
   String toString() => 'RoleNotFound($roleId)';
 }
 
+/// A caller dispatched over an *explicit* route chain (the
+/// `dispatchOverChain` / `dispatchStreamOverChain` path, used by the
+/// cognition-config `llm:` routing) but the chain was empty.
+///
+/// Distinct from [NoRouteAvailable] (a non-empty chain that exhausted) and
+/// from [RoleNotFound] (role-keyed routing with no entry): an empty explicit
+/// chain is a config / caller error — a route name resolved to zero entries.
+class EmptyRouteChain implements Exception {
+  /// Role whose persona/anchor assembled the prompt (provenance only; it did
+  /// not select the chain).
+  final String roleId;
+
+  const EmptyRouteChain(this.roleId);
+
+  @override
+  String toString() => 'EmptyRouteChain(role=$roleId)';
+}
+
 /// Provider reported `context_overflow` (spec § 5.4). Surfaced verbatim;
 /// substrate does not silently compact role prompts.
 class ContextOverflowError implements Exception {

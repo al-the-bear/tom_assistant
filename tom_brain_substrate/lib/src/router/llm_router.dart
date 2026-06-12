@@ -221,10 +221,54 @@ class LlmRouter {
     required Budget budget,
     CancellationToken cancellationToken = CancellationToken.none,
     int? inputTokensHint,
-  }) async {
+  }) {
     final chain = roleRoutes[roleId];
     if (chain == null) throw RoleNotFound(roleId);
+    return _dispatchOverChain(
+      roleId: roleId,
+      chain: chain,
+      prompt: prompt,
+      options: options,
+      budget: budget,
+      cancellationToken: cancellationToken,
+      inputTokensHint: inputTokensHint,
+    );
+  }
 
+  /// Buffered dispatch over an **explicit** route [chain] (the cognition-config
+  /// `llm:` routing path, §8). Companion to [dispatchStreamOverChain]: the wire
+  /// prompt is assembled from [roleId]'s template upstream; this only walks the
+  /// supplied chain. Throws [EmptyRouteChain] if [chain] is empty.
+  Future<LlmCallReport> dispatchOverChain({
+    required String roleId,
+    required List<RouteEntry> chain,
+    required WirePrompt prompt,
+    required LlmOptions options,
+    required Budget budget,
+    CancellationToken cancellationToken = CancellationToken.none,
+    int? inputTokensHint,
+  }) {
+    if (chain.isEmpty) throw EmptyRouteChain(roleId);
+    return _dispatchOverChain(
+      roleId: roleId,
+      chain: chain,
+      prompt: prompt,
+      options: options,
+      budget: budget,
+      cancellationToken: cancellationToken,
+      inputTokensHint: inputTokensHint,
+    );
+  }
+
+  Future<LlmCallReport> _dispatchOverChain({
+    required String roleId,
+    required List<RouteEntry> chain,
+    required WirePrompt prompt,
+    required LlmOptions options,
+    required Budget budget,
+    CancellationToken cancellationToken = CancellationToken.none,
+    int? inputTokensHint,
+  }) async {
     final attempts = <RouteAttempt>[];
     final overallWatch = Stopwatch()..start();
     LlmFailureClass? lastClass;
@@ -390,7 +434,61 @@ class LlmRouter {
   }) async* {
     final chain = roleRoutes[roleId];
     if (chain == null) throw RoleNotFound(roleId);
+    yield* _dispatchStreamOverChain(
+      roleId: roleId,
+      chain: chain,
+      prompt: prompt,
+      options: options,
+      budget: budget,
+      cancellationToken: cancellationToken,
+      inputTokensHint: inputTokensHint,
+    );
+  }
 
+  /// Streaming dispatch over an **explicit** route [chain] instead of the
+  /// role-keyed `roleRoutes[roleId]` chain.
+  ///
+  /// This is the cognition-config `llm:` routing path (§8 of
+  /// `prompt_configuration.md`): a prompt names its route by *name*, the
+  /// bridge resolves the name to a chain, and routing walks that chain. The
+  /// wire prompt is still assembled from [roleId]'s template (persona +
+  /// anchor) upstream in the facade — [roleId] here is for persona/anchor
+  /// provenance and exhaustion attribution only; it does **not** select the
+  /// chain. Failover, cooldown, retry and exhaustion behave identically to
+  /// [dispatchStream] because both share the same private core.
+  ///
+  /// Throws [EmptyRouteChain] if [chain] is empty (a route name that resolved
+  /// to zero entries — a config error).
+  Stream<LlmStreamEvent> dispatchStreamOverChain({
+    required String roleId,
+    required List<RouteEntry> chain,
+    required WirePrompt prompt,
+    required LlmOptions options,
+    required Budget budget,
+    CancellationToken cancellationToken = CancellationToken.none,
+    int? inputTokensHint,
+  }) async* {
+    if (chain.isEmpty) throw EmptyRouteChain(roleId);
+    yield* _dispatchStreamOverChain(
+      roleId: roleId,
+      chain: chain,
+      prompt: prompt,
+      options: options,
+      budget: budget,
+      cancellationToken: cancellationToken,
+      inputTokensHint: inputTokensHint,
+    );
+  }
+
+  Stream<LlmStreamEvent> _dispatchStreamOverChain({
+    required String roleId,
+    required List<RouteEntry> chain,
+    required WirePrompt prompt,
+    required LlmOptions options,
+    required Budget budget,
+    CancellationToken cancellationToken = CancellationToken.none,
+    int? inputTokensHint,
+  }) async* {
     final attempts = <RouteAttempt>[];
     final overallWatch = Stopwatch()..start();
     LlmFailureClass? lastClass;
