@@ -22,7 +22,7 @@
 // and re-checked when `tool.invoke` runs one (step 6): a name the policy does
 // not expose, invoked directly, yields a [ToolDenial] (§ 21.10).
 
-import '../config/prompt_template_config.dart' show ToolPolicyProfile;
+import 'tool_policy_profile.dart' show ToolPolicyProfile;
 import 'brain_tool.dart';
 import 'tool_denied.dart';
 import 'tool_group.dart';

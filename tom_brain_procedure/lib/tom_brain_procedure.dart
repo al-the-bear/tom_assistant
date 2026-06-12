@@ -74,8 +74,9 @@ export 'src/prompts/prompts.dart';
 export 'src/tools/tools.dart';
 // Step 8 — the MCP client (`mcp.servers` / `mcp.list` / `mcp.call`, § 21.3).
 export 'src/mcp/mcp.dart';
-// Step 15 — the Extension-F composition layer (`BrainExtensionConfig` +
-// `BrainEngineExtensions`) the boot assembles and threads onto the engine.
+// The Extension-F composition layer (`BrainExtensionConfig` +
+// `BrainEngineExtensions`) was retired with the scripted `call_llm_v1` loop
+// (increment 9); what survives this barrel is the module's logging taxonomy.
 export 'src/extensions/extensions.dart';
 
 // Extension G, step G.21 — conversation-history compaction. The engine-side

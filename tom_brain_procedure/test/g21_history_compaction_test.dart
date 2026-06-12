@@ -5,7 +5,7 @@
 // access spec § 21.10 places in the engine ("the compaction call and prompt
 // assembly live in the engine"):
 //
-//   • `HistoryCompactor` loads the `compact_history_v1` prompt template,
+//   • `HistoryCompactor` loads the `compact_history_v1` compaction template,
 //     binds the `${history.compacted}` + `${history.batch}` placeholders
 //     (§ 22.4) and hands the assembled scaffolds to a substrate seam (stubbed
 //     here, routed through `sub.llm` at G.23).
@@ -19,8 +19,10 @@
 //     note (§ 22.4).
 //   • The durable record survives every path (Hard principle 6).
 //
-// The shipped `compact_history_v1.yaml` deployment template is parsed and
-// asserted to inject exactly the two history placeholders.
+// Since the retired three-layer LLM config scaffold (`prompt_template/`,
+// increment 9) was removed, the compactor reads a self-contained
+// `HistoryCompactionTemplate` (two scaffolds, no role / model chain). The final
+// group pins that minimal template's parser + loader directly.
 
 import 'dart:io';
 
@@ -30,7 +32,7 @@ import 'package:test/test.dart';
 
 /// Writes a `compact_history_v1.yaml` whose scaffolds inject the two history
 /// placeholders, into a throwaway template directory, and returns a store.
-PromptTemplateStore _templates({
+HistoryCompactionTemplateStore _templates({
   String system = r'Rewrite the running summary so it folds in the new turns. '
       r'Current summary: ${history.compacted}',
   String user = r'New turns to fold in: ${history.batch}',
@@ -39,16 +41,12 @@ PromptTemplateStore _templates({
   addTearDown(() => dir.deleteSync(recursive: true));
   File('${dir.path}${Platform.pathSeparator}compact_history_v1.yaml')
       .writeAsStringSync('''
-id: compact_history_v1
-role: history_compactor
-models:
-  - { config: gemma_4_26b, provider: ollama }
 system: |
   $system
 user: |
   $user
 ''');
-  return PromptTemplateStore(dir);
+  return HistoryCompactionTemplateStore(dir);
 }
 
 ConversationHistory _historyAtThreshold({
@@ -205,18 +203,42 @@ void main() {
     });
   });
 
-  group('G.21-10 the shipped compact_history_v1 template', () {
-    test('the authored deployment artifact loads + injects the placeholders',
-        () async {
-      // Load the real shipped template, not an inline copy, to prove the
-      // authored artifact parses and carries exactly the two placeholders.
-      final store = PromptTemplateStore(Directory('prompt_template'));
-      final template = await store.load('compact_history_v1');
-      expect(template.id, 'compact_history_v1');
-      expect(template.role, 'history_compactor');
+  group('G.21-10 the self-contained compaction template', () {
+    test('fromYamlString reads exactly the two scaffolds, ignoring legacy fields',
+        () {
+      // A document still carrying the retired layer-3 fields (id / role /
+      // models) parses fine — only `system` / `user` are read.
+      final template = HistoryCompactionTemplate.fromYamlString(r'''
+id: compact_history_v1
+role: history_compactor
+models:
+  - { config: gemma_4_26b, provider: ollama }
+system: |
+  Current summary: ${history.compacted}
+user: |
+  New turns: ${history.batch}
+''');
       expect(
         template.system + template.user,
         allOf(contains(r'${history.compacted}'), contains(r'${history.batch}')),
+      );
+    });
+
+    test('a missing scaffold field is a located LlmConfigInvalid', () {
+      expect(
+        () => HistoryCompactionTemplate.fromYamlString('system: only-system\n'),
+        throwsA(isA<LlmConfigInvalid>()),
+      );
+    });
+
+    test('loadFromFile on an absent file throws HistoryCompactionTemplateMissing',
+        () {
+      final dir = Directory.systemTemp.createTempSync('g21_missing_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final store = HistoryCompactionTemplateStore(dir);
+      expect(
+        () => store.load('compact_history_v1'),
+        throwsA(isA<HistoryCompactionTemplateMissing>()),
       );
     });
   });

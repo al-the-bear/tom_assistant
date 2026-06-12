@@ -80,7 +80,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart'
 import '../api/procedure_inputs.dart' show ProcedureInputs;
 import '../api/procedure_result.dart' show ProcedureResult;
 import '../budget/budget_ledger.dart' show BudgetLedger;
-import '../config/provider_config.dart' show ToolProtocol;
+import '../config/tool_protocol.dart' show ToolProtocol;
 import 'bridge_call_recorder.dart';
 import 'llm_call_observation.dart';
 // The `sub.run` host-side seam value types (`ResolvedPrompt`,

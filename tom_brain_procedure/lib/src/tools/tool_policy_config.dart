@@ -17,7 +17,7 @@
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 import '../config/llm_config_errors.dart' show LlmConfigInvalid;
-import '../config/prompt_template_config.dart' show ToolPolicyProfile;
+import 'tool_policy_profile.dart' show ToolPolicyProfile;
 import 'tool_group.dart';
 import 'tool_policy.dart';
 

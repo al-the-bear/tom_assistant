@@ -59,6 +59,10 @@ export 'tool_process_surface.dart'
 export 'tool_input_schema.dart' show validateToolArgs;
 export 'tool_policy.dart' show ToolPolicy;
 export 'tool_policy_config.dart' show ToolPolicyConfig;
+// The tool-permission profile enum, relocated here from the retired layer-3
+// `prompt_template_config.dart` (increment 9): its home is the tools module it
+// serves (`ToolPolicy` / `ToolPolicyConfig` switch on it).
+export 'tool_policy_profile.dart' show ToolPolicyProfile;
 export 'tool_registry.dart' show ToolRegistry;
 export 'substrate_tool_web_surface.dart' show SubstrateToolWebSurface;
 export 'tool_web_surface.dart' show ToolWebSurface;

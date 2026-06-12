@@ -1,120 +1,24 @@
-// LLM-configuration failure types (Extension F, step 2;
-// `tom_brain_procedure_specification.md` § 21.6, § 21.10).
+// LLM-configuration failure types
+// (`tom_brain_procedure_specification.md` § 21.6, § 21.10).
 //
-// The three-layer model configuration (`llm_configuration/`) loads two
-// file layers — `providers.yaml` and `models/<id>.yaml` — through the
-// canonical plain-map loader. Two absent-file conditions and one
-// structural-shape condition each surface as a single typed error, so a
-// boot path can route on the wire code without string-matching the
-// message — the same idiom `EngineConfigInvalid` (C.42) and the
-// placeholder codes (step 1) follow:
+// What survives the retirement of the three-layer LLM config scaffold
+// (`providers.yaml` / `models/<id>.yaml` / `prompt_template/`, removed with the
+// scripted `call_llm_v1` loop in increment 9) is the single structural-shape
+// error every remaining YAML loader in this module funnels a malformed document
+// through, so a boot path can route on its wire code without string-matching the
+// message — the same idiom `EngineConfigInvalid` (C.42) follows:
 //
-//   • `providers.missing`     — the providers.yaml file is absent.
-//   • `model_config.missing`  — a requested models/<id>.yaml is absent.
-//   • `llm.config.invalid`    — a present document has the wrong shape
-//                               (bad enum value, duplicate id, missing
-//                               required field, env-expansion failure).
-//
-// The two "missing" rows mirror the § 21.10 failure table verbatim
-// (`prompt_template.missing` / `model_config.missing` share that row);
-// `llm.config.invalid` is the structural sibling, named here so the
-// loaders never leak a raw `FormatException`, `YamlException`, or
-// placeholder error to their callers.
+//   • `llm.config.invalid` — a present document has the wrong shape (bad enum
+//     value, duplicate id, missing required field, env-expansion failure),
+//     named here so the loaders never leak a raw `FormatException`,
+//     `YamlException`, or placeholder error to their callers.
 
 library;
 
-/// Wire code for an absent `providers.yaml`. Matches the § 21.10
-/// config-loader failure family.
-const String providersMissingCode = 'providers.missing';
-
-/// Wire code for an absent `models/<id>.yaml`. Matches the § 21.10
-/// `model_config.missing` row.
-const String modelConfigMissingCode = 'model_config.missing';
-
-/// Wire code for an absent `prompt_template/<type>.yaml`. Matches the
-/// § 21.10 `prompt_template.missing` row.
-const String promptTemplateMissingCode = 'prompt_template.missing';
-
-/// Wire code for a structurally invalid providers/model document.
+/// Wire code for a structurally invalid configuration document.
 const String llmConfigInvalidCode = 'llm.config.invalid';
 
-/// Thrown when the `providers.yaml` file does not exist.
-///
-/// An absent providers file is a hard error (unlike an absent
-/// `EngineConfig`, which falls back to defaults): without a provider
-/// registry the substrate router has nowhere to connect. Carries the
-/// [path] that was looked up so an operator sees which file is missing.
-final class ProvidersMissing implements Exception {
-  /// Records the absent providers file at [path].
-  const ProvidersMissing(this.path);
-
-  /// The filesystem path that was expected to hold the providers file.
-  final String path;
-
-  /// The wire code carried by every providers-missing failure.
-  String get code => providersMissingCode;
-
-  /// Human-readable explanation, reused by [toString].
-  String get message => 'providers file not found at "$path"';
-
-  @override
-  String toString() => '$code: $message';
-}
-
-/// Thrown when a requested `models/<id>.yaml` does not exist.
-///
-/// Carries the logical [modelId] that was requested and the [path] that
-/// was looked up, so the failure identifies both *which* model is missing
-/// and *where* the loader expected its file.
-final class ModelConfigMissing implements Exception {
-  /// Records the absent model config for [modelId] at [path].
-  const ModelConfigMissing(this.modelId, this.path);
-
-  /// The logical model id whose config file is missing.
-  final String modelId;
-
-  /// The filesystem path that was expected to hold the model config.
-  final String path;
-
-  /// The wire code carried by every model-config-missing failure.
-  String get code => modelConfigMissingCode;
-
-  /// Human-readable explanation, reused by [toString].
-  String get message =>
-      'model config "$modelId" not found at "$path"';
-
-  @override
-  String toString() => '$code: $message';
-}
-
-/// Thrown when a requested `prompt_template/<type>.yaml` does not exist.
-///
-/// Carries the prompt [type] that was requested and the [path] that was
-/// looked up, so the failure identifies both *which* template is missing
-/// and *where* the loader expected its file. Mirrors [ModelConfigMissing]
-/// (the § 21.10 failure table shares the `prompt_template.missing` /
-/// `model_config.missing` row).
-final class PromptTemplateMissing implements Exception {
-  /// Records the absent prompt template for [type] at [path].
-  const PromptTemplateMissing(this.type, this.path);
-
-  /// The prompt type whose template file is missing (the filename stem).
-  final String type;
-
-  /// The filesystem path that was expected to hold the template.
-  final String path;
-
-  /// The wire code carried by every prompt-template-missing failure.
-  String get code => promptTemplateMissingCode;
-
-  /// Human-readable explanation, reused by [toString].
-  String get message => 'prompt template "$type" not found at "$path"';
-
-  @override
-  String toString() => '$code: $message';
-}
-
-/// Thrown when a present providers/model document is structurally invalid.
+/// Thrown when a present configuration document is structurally invalid.
 ///
 /// Carries a human-readable [message] and, when the problem is localised
 /// to one field, the dotted [path] of the offending key (e.g.

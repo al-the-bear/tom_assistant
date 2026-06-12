@@ -71,7 +71,6 @@ import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../budget/budget.dart';
 import '../d4rt_host/d4rt_dcli_host.dart';
-import '../extensions/extensions.dart' show BrainEngineExtensions;
 import '../d4rt_host/procedure_parse_exception.dart';
 import '../preemption/step_deadline.dart';
 import '../primitives_native/emit_primitive.dart';
@@ -168,10 +167,7 @@ final class ProcedureEngine {
   /// [hardDepthCap] bounds the `runProcedure` chain (C.19).
   /// [cancellationTimerFactory] is the injectable timer the external-timeout
   /// path (C.39) arms (tests drive it deterministically). [now] / [newRunId]
-  /// are injectable for deterministic tests. [extensions] is the optional
-  /// Extension-F runtime bundle (the tool registry, MCP client, and LLM-config
-  /// stores) a future `call_llm_v1` reads; the prototype's
-  /// `answer_with_memory_v1` runs without it, so it defaults to `null`.
+  /// are injectable for deterministic tests.
   /// [memoryWriteLimits] is the process-wide, NON-FATAL per-run write backstop
   /// (spec § 5.4): a fresh `MemoryWriteGuard` over these caps is built per run
   /// and threaded into that run's memory bridge, so a runaway write loop is
@@ -183,7 +179,6 @@ final class ProcedureEngine {
     required this.memoryBridge,
     required this.substrateBridge,
     this.validator = SandboxValidator.shared,
-    this.extensions,
     this.toolDreamSurface,
     this.toolProcessSurface = const ProcessRunToolSurface(),
     FileScope? toolFileScope,
@@ -258,14 +253,6 @@ final class ProcedureEngine {
   /// `_runInternal` (E.3.2); the template instance itself is never
   /// dispatched through.
   final SubstrateBridge substrateBridge;
-
-  /// The optional Extension-F runtime bundle the engine holds as a shared,
-  /// run-independent collaborator (Plan step 15; § 13, § 21.5, § 21.6): the
-  /// `ToolRegistry`, the `McpClient`, and the three LLM-config stores a future
-  /// `call_llm_v1` reads to drive the scripted LLM loop. `null` when the boot
-  /// assembled no `BrainExtensionConfig` — the prototype's
-  /// `answer_with_memory_v1` runs without it.
-  final BrainEngineExtensions? extensions;
 
   /// The shared cooperative-preemption state the engine yields against and
   /// the dispatcher's coordinator drives.
@@ -717,10 +704,9 @@ final class ProcedureEngine {
     // `tool.list` / `tool.invoke`). Bound on *every* run so a script that
     // imports the tool library always finds the global — d4rt globals are
     // keyed by import, so a script that never imports it (a dream agent) never
-    // sees it. The registry + policy come from the shared Extension-F bundle
-    // when one was assembled at boot; otherwise the run falls back to a fresh
-    // basic-tool registry under the all-allow default policy, so the prototype
-    // (which boots no `BrainExtensionConfig`) still gets the shipped 15 tools.
+    // sees it. Each run builds a fresh basic-tool registry under the all-allow
+    // default policy, so a script that imports the tool library gets the
+    // shipped 15 tools.
     // The context carries *this* run's ledger so a tool's effecting calls
     // charge the same header budget a scripted `persist` does (PE-8); the run's
     // memory client so memory tools route through the same surface the `mem`
@@ -734,16 +720,9 @@ final class ProcedureEngine {
     // `procedure.<verb>` aliases work; `script.run_d4rt` stays deferred (its
     // nested host is built after this context) and the surface raises
     // `ToolSurfaceUnavailable` for it, which the loop turns into `{ok: false}`.
-    final exts = extensions;
-    final ToolRegistry toolRegistry;
-    if (exts != null) {
-      toolRegistry = exts.tools;
-    } else {
-      toolRegistry = ToolRegistry();
-      registerBasicTools(toolRegistry);
-    }
-    final toolPolicy =
-        (exts?.toolPolicy ?? const ToolPolicyConfig()).policyFor(null);
+    final toolRegistry = ToolRegistry();
+    registerBasicTools(toolRegistry);
+    final toolPolicy = const ToolPolicyConfig().policyFor(null);
     // Per-run tool-access seam (the trail half of "tool calls must be in the
     // trails, especially the live-trail"): when a tool-access sink is bound,
     // wire the run's tool bridge with an `onEvent` that wraps each emitted

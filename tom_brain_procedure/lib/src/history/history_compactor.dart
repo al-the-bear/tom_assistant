@@ -22,8 +22,8 @@
 // stubbed seam here needs no role resolution.
 
 import '../config/history_policy.dart' show defaultHistoryCompactionTemplate;
-import '../config/prompt_template_config.dart';
 import '../primitives_native/trail_note.dart';
+import 'history_compaction_template.dart';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show PlaceholderResolver;
 
@@ -121,7 +121,7 @@ final class HistoryCompactionResult {
 /// via the `compact_history_v1` substrate call (hub § 22.4).
 final class HistoryCompactor {
   /// Loads the compaction prompt template by type.
-  final PromptTemplateStore templates;
+  final HistoryCompactionTemplateStore templates;
 
   /// The substrate completion seam (stubbed in tests, `sub.llm` in production).
   final HistoryCompactionSubstrate substrate;
@@ -201,7 +201,7 @@ final class HistoryCompactor {
   /// Assembles the prompt and issues one substrate call, returning the model
   /// text, or `null` when the call threw (a failed run).
   Future<String?> _run(
-    PromptTemplateConfig template,
+    HistoryCompactionTemplate template,
     ConversationHistory history,
     List<HistoryTurn> batch, {
     required bool tightened,
@@ -216,7 +216,7 @@ final class HistoryCompactor {
 
   /// Binds the two history placeholders and resolves the template scaffolds.
   Future<HistoryCompactionPrompt> _assemble(
-    PromptTemplateConfig template,
+    HistoryCompactionTemplate template,
     ConversationHistory history,
     List<HistoryTurn> batch, {
     required bool tightened,

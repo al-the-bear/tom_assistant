@@ -22,7 +22,7 @@ import 'package:tom_brain_procedure/src/bridges/vscode_scripting_surface.dart' a
 import 'package:tom_brain_procedure/src/budget/budget_ledger.dart' as $tom_brain_procedure_12;
 import 'package:tom_brain_procedure/src/budget/budget_view.dart' as $tom_brain_procedure_13;
 import 'package:tom_brain_procedure/src/budget/memory_write_guard.dart' as $tom_brain_procedure_14;
-import 'package:tom_brain_procedure/src/config/provider_config.dart' as $tom_brain_procedure_15;
+import 'package:tom_brain_procedure/src/config/tool_protocol.dart' as $tom_brain_procedure_15;
 import 'package:tom_brain_procedure/src/mcp/mcp_client.dart' as $tom_brain_procedure_16;
 import 'package:tom_brain_procedure/src/tools/tool_context.dart' as $tom_brain_procedure_17;
 import 'package:tom_brain_procedure/src/tools/tool_event.dart' as $tom_brain_procedure_18;

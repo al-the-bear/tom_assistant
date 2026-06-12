@@ -48,7 +48,7 @@ const _requiredSubfolders = <String>[
   'config', // C.42–C.45 — EngineConfig + observability
   'd4rt_host', // C.16–C.18 — D4rtDcliHost
   'dispatcher', // D.6–D.50 — Dispatcher.accept + coordinator + fallback
-  'extensions', // Ext-F step 15 — BrainEngineExtensions + config (§ 13, § 21.5, § 21.6)
+  'extensions', // Ext-F logging taxonomy — ExtensionLog (§ 13)
   'history', // Ext-G step G.21 — HistoryCompactor + compaction (§ 22.4)
   'mcp', // Ext-F step 8 — McpClient + connection pool (§ 21.3, § 21.10)
   'preemption', // C.34–C.37 — PreemptionState + deadline

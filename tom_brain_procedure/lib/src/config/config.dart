@@ -108,16 +108,7 @@ export 'llm_event.dart'
         LlmLoopTurn,
         ToolTurnDispatched;
 export 'llm_event_bus.dart' show LlmLoopEventBus;
-export 'llm_config_errors.dart'
-    show
-        LlmConfigInvalid,
-        ModelConfigMissing,
-        PromptTemplateMissing,
-        ProvidersMissing,
-        llmConfigInvalidCode,
-        modelConfigMissingCode,
-        promptTemplateMissingCode,
-        providersMissingCode;
+export 'llm_config_errors.dart' show LlmConfigInvalid, llmConfigInvalidCode;
 // Extension H step #31 — the `memory_retrieval/` config family (§ 23.4):
 // the typed catalogue model, its strategy/budget/fusion/diversity/rerank/
 // selection blocks, and the two typed load-failure wire codes.
@@ -135,14 +126,9 @@ export 'memory_retrieval_config_invalid.dart'
         MemoryRetrievalConfigInvalid,
         memoryRetrievalConfigInvalidCode,
         retrievalConfigLlmInMemoryCode;
-export 'model_config.dart' show ModelConfig, ModelConfigStore;
-export 'prompt_template_config.dart'
-    show
-        PromptModelRef,
-        PromptTemplateConfig,
-        PromptTemplateStore,
-        ResolvedPromptModel,
-        ToolPolicyProfile;
-export 'provider_config.dart'
-    show ProviderApiType, ProviderConfig, ProviderRegistry, ToolProtocol;
 export 'sandbox_config.dart' show SandboxConfig;
+// The provider wire tool-call protocol enum, relocated here when the three-layer
+// LLM config scaffold (`provider_config.dart`) was retired with the scripted
+// `call_llm_v1` loop (increment 9). The substrate bridge's `ToolProtocolResolver`
+// switches on it.
+export 'tool_protocol.dart' show ToolProtocol;
