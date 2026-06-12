@@ -16,6 +16,7 @@
 //      slot is busy, surfacing budget-overrun errors, and degrading to its
 //      empty forms when no trail exists.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:tom_brain_access/tom_brain_access.dart'
@@ -50,6 +51,51 @@ IncomingTrailRecord _record({
       text: text,
       rawEnvelope: const {'locale': 'en'},
     );
+
+/// Writes one `llm/<callType>/<turnId>__<callSeq>.raw.json` dump matching the
+/// §5.2 schema `LlmTrailWriter` emits, so the prompt inspector's run summary can
+/// join it back by turnId. Only the fields the summary reads are populated.
+void _writeLlmRaw(
+  Directory root,
+  String turnId, {
+  required int callSeq,
+  required String callType,
+  required int tokensIn,
+  required int tokensOut,
+  required int wallClockMs,
+  required String answer,
+}) {
+  final dir = Directory('${root.path}/llm/$callType')
+    ..createSync(recursive: true);
+  final stem = '${turnId}__${callSeq.toString().padLeft(2, '0')}';
+  File('${dir.path}/$stem.raw.json').writeAsStringSync(jsonEncode(<String, Object?>{
+    'turnId': turnId,
+    'callSeq': callSeq,
+    'callType': callType,
+    'tokensIn': tokensIn,
+    'tokensOut': tokensOut,
+    'wallClockMs': wallClockMs,
+    'answer': answer,
+  }));
+}
+
+/// Writes one `procedures/<procedureId>/<turnId>__<runId>.log` file whose body
+/// ends in [outcome], mirroring `ProcedureTreeWriter`'s rendered shape closely
+/// enough for the per-procedure breakdown's outcome read.
+void _writeProcedureLog(
+  Directory root,
+  String procedureId,
+  String turnId,
+  String runId, {
+  required String outcome,
+}) {
+  final dir = Directory('${root.path}/procedures/$procedureId')
+    ..createSync(recursive: true);
+  File('${dir.path}/${turnId}__$runId.log').writeAsStringSync(
+    'procedure $procedureId  run $runId  turn $turnId\n'
+    '└─ $outcome\n',
+  );
+}
 
 QueueSnapshot _queue({
   bool foregroundRunning = false,
@@ -154,6 +200,105 @@ void main() {
       final inspector = TrailIncomingPromptInspector(trailRoot: root);
       expect(await inspector.recentPrompts(limit: 10, previewLength: 50),
           isEmpty);
+    });
+  });
+
+  group('TrailIncomingPromptInspector — run summary (§ 9.4 Todo 10)', () {
+    test('joins the run\'s LLM calls and procedure runs by turnId', () async {
+      const turnId = '260608-120000.000042';
+      IncomingTrailWriter(root: root).write(_record(
+        turnId: turnId,
+        receivedAt: DateTime.utc(2026, 6, 8, 12),
+        text: 'analyse this',
+      ));
+      // Three LLM calls for the turn: a recaller answer, a tool-deciding
+      // assistant turn (functional dialect → resolves to a tool call), and the
+      // terminal plain answer.
+      _writeLlmRaw(root, turnId,
+          callSeq: 1,
+          callType: 'recaller',
+          tokensIn: 612,
+          tokensOut: 48,
+          wallClockMs: 400,
+          answer: 'recalled context summary');
+      _writeLlmRaw(root, turnId,
+          callSeq: 2,
+          callType: 'assistant_to_user',
+          tokensIn: 1038,
+          tokensOut: 24,
+          wallClockMs: 700,
+          answer: 'call:web.search{query: "today\'s news"}');
+      _writeLlmRaw(root, turnId,
+          callSeq: 3,
+          callType: 'assistant_to_user',
+          tokensIn: 174,
+          tokensOut: 30,
+          wallClockMs: 500,
+          answer: 'Here is the answer.');
+      // A procedure run log for the same turn (its outcome line drives the
+      // per-procedure breakdown).
+      _writeProcedureLog(root, 'answer_with_memory_v1', turnId, 'run_07',
+          outcome: 'outcome accepted (entries=12, 1.6s)');
+
+      final detail = await TrailIncomingPromptInspector(trailRoot: root)
+          .promptDetail(0);
+
+      expect(detail, isNotNull);
+      // The prompt block is still present.
+      expect(detail, contains('Prompt [0]'));
+      expect(detail, contains('analyse this'));
+      // The run summary, joined by turnId.
+      expect(detail, contains('Run summary (turn $turnId):'));
+      expect(detail,
+          contains('LLM calls: 3 (1 tool-deciding, 2 answer-producing)'));
+      expect(detail, contains('Tool invocations: 1'));
+      expect(detail, contains('Tokens: 1824 in / 102 out'));
+      expect(detail, contains('Wall-clock: 1.6s'));
+      // Per-role breakdown (sorted by role).
+      expect(detail, contains('assistant_to_user: 2 calls, 1212→54 tok'));
+      expect(detail, contains('recaller: 1 call, 612→48 tok'));
+      // Per-procedure breakdown.
+      expect(detail, contains('answer_with_memory_v1: accepted'));
+    });
+
+    test('counts multiple tool calls in one answer as multiple invocations',
+        () async {
+      const turnId = '260608-120000.000043';
+      IncomingTrailWriter(root: root).write(_record(
+        turnId: turnId,
+        receivedAt: DateTime.utc(2026, 6, 8, 12),
+      ));
+      _writeLlmRaw(root, turnId,
+          callSeq: 1,
+          callType: 'assistant_to_user',
+          tokensIn: 100,
+          tokensOut: 10,
+          wallClockMs: 200,
+          answer:
+              'call:a{} and call:b{x: 1}'); // two functional calls in one turn
+
+      final detail = await TrailIncomingPromptInspector(trailRoot: root)
+          .promptDetail(0);
+
+      expect(detail,
+          contains('LLM calls: 1 (1 tool-deciding, 0 answer-producing)'));
+      expect(detail, contains('Tool invocations: 2'));
+    });
+
+    test('omits the run summary entirely when the turn has no run activity',
+        () async {
+      IncomingTrailWriter(root: root).write(_record(
+        turnId: '260608-120000.000044',
+        receivedAt: DateTime.utc(2026, 6, 8, 12),
+        text: 'a prompt that never ran',
+      ));
+
+      final detail = await TrailIncomingPromptInspector(trailRoot: root)
+          .promptDetail(0);
+
+      expect(detail, isNotNull);
+      expect(detail, contains('a prompt that never ran'));
+      expect(detail, isNot(contains('Run summary')));
     });
   });
 

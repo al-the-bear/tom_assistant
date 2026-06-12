@@ -22,6 +22,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show parseToolCallsFromText;
 import 'package:tom_brain_access/tom_brain_access.dart'
     show
         QueueSnapshot,
@@ -83,7 +85,10 @@ final class TrailIncomingPromptInspector implements TelegramPromptInspector {
     if (index < 0) return null;
     final records = await _loadNewestFirst();
     if (index >= records.length) return null;
-    return _renderDetail(index, records[index]);
+    final record = records[index];
+    final detail = _renderDetail(index, record);
+    final summary = await _renderRunSummary(record.fields['turnId']);
+    return summary == null ? detail : '$detail\n\n$summary';
   }
 
   /// Loads every recorded prompt, newest-first by `receivedAt`. Best-effort: a
@@ -152,7 +157,203 @@ final class TrailIncomingPromptInspector implements TelegramPromptInspector {
       ..write(fields['text'] ?? '');
     return buffer.toString();
   }
+
+  /// Renders the §9.4 run summary for the prompt's [turnId], or `null` when the
+  /// turn has no recorded run activity (no LLM calls and no procedure runs) or
+  /// the turnId is absent.
+  ///
+  /// Joins two on-disk sources keyed by the same turnId — the §5.2
+  /// `llm/<role>/<turnId>__NN.raw.json` call dumps and the §5.7
+  /// `procedures/<proc>/<turnId>__<runId>.log` run trees — into one aggregate:
+  /// total LLM calls split into tool-deciding (the recorded answer resolved to
+  /// ≥1 tool call) vs answer-producing, the count of tool invocations those
+  /// answers requested, summed tokens and wall-clock, and per-role /
+  /// per-procedure breakdowns. Best-effort: an unreadable file is skipped.
+  Future<String?> _renderRunSummary(Object? turnId) async {
+    if (turnId is! String || turnId.isEmpty) return null;
+    final calls = await _loadLlmCalls(turnId);
+    final runs = await _loadProcedureRuns(turnId);
+    if (calls.isEmpty && runs.isEmpty) return null;
+
+    var toolDeciding = 0;
+    var toolInvocations = 0;
+    var tokensIn = 0;
+    var tokensOut = 0;
+    var wallClockMs = 0;
+    final perRole = <String, _RoleTally>{};
+    for (final call in calls) {
+      if (call.toolCallCount > 0) toolDeciding++;
+      toolInvocations += call.toolCallCount;
+      tokensIn += call.tokensIn;
+      tokensOut += call.tokensOut;
+      wallClockMs += call.wallClockMs;
+      (perRole[call.callType] ??= _RoleTally())
+        ..count += 1
+        ..tokensIn += call.tokensIn
+        ..tokensOut += call.tokensOut;
+    }
+    final answerProducing = calls.length - toolDeciding;
+
+    final buffer = StringBuffer('Run summary (turn $turnId):');
+    if (calls.isNotEmpty) {
+      buffer
+        ..write('\n  LLM calls: ${calls.length} '
+            '($toolDeciding tool-deciding, $answerProducing answer-producing)')
+        ..write('\n  Tool invocations: $toolInvocations')
+        ..write('\n  Tokens: $tokensIn in / $tokensOut out')
+        ..write('\n  Wall-clock: ${_formatMs(wallClockMs)}')
+        ..write('\n  By role:');
+      final roles = perRole.keys.toList()..sort();
+      for (final role in roles) {
+        final tally = perRole[role]!;
+        final noun = tally.count == 1 ? 'call' : 'calls';
+        buffer.write('\n    $role: ${tally.count} $noun, '
+            '${tally.tokensIn}→${tally.tokensOut} tok');
+      }
+    } else {
+      buffer.write('\n  LLM calls: (none recorded)');
+    }
+
+    if (runs.isNotEmpty) {
+      buffer.write('\n  By procedure:');
+      final byProcedure = <String, List<String>>{};
+      for (final run in runs) {
+        (byProcedure[run.procedureId] ??= <String>[])
+            .add(run.outcome ?? '(in progress)');
+      }
+      final procedures = byProcedure.keys.toList()..sort();
+      for (final procedure in procedures) {
+        buffer.write('\n    $procedure: ${byProcedure[procedure]!.join(', ')}');
+      }
+    }
+    return buffer.toString();
+  }
+
+  /// Loads every `llm/<role>/*.raw.json` dump whose `turnId` matches [turnId],
+  /// distilled to the fields the summary aggregates. Best-effort: a missing
+  /// `llm/` tree or an unreadable / malformed dump is skipped.
+  Future<List<_LlmCallSummary>> _loadLlmCalls(String turnId) async {
+    final llmDir = Directory('${trailRoot.path}/llm');
+    if (!await llmDir.exists()) return const <_LlmCallSummary>[];
+
+    final calls = <_LlmCallSummary>[];
+    await for (final entity in llmDir.list(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.raw.json')) continue;
+      try {
+        final decoded = jsonDecode(await entity.readAsString());
+        if (decoded is! Map<String, Object?>) continue;
+        if (decoded['turnId'] != turnId) continue;
+        final answer = decoded['answer'];
+        calls.add(_LlmCallSummary(
+          callType: decoded['callType'] is String
+              ? decoded['callType'] as String
+              : '(unknown)',
+          tokensIn: _asInt(decoded['tokensIn']),
+          tokensOut: _asInt(decoded['tokensOut']),
+          wallClockMs: _asInt(decoded['wallClockMs']),
+          toolCallCount:
+              answer is String ? parseToolCallsFromText(answer).length : 0,
+        ));
+      } catch (_) {
+        // Best-effort: a single unreadable dump never fails the summary.
+      }
+    }
+    return calls;
+  }
+
+  /// Loads the `procedures/<proc>/<turnId>__*.log` run trees for [turnId],
+  /// distilled to the procedureId and the terminal outcome status. Best-effort:
+  /// a missing `procedures/` tree or an unreadable file is skipped.
+  Future<List<_ProcedureRunSummary>> _loadProcedureRuns(String turnId) async {
+    final proceduresDir = Directory('${trailRoot.path}/procedures');
+    if (!await proceduresDir.exists()) return const <_ProcedureRunSummary>[];
+
+    final runs = <_ProcedureRunSummary>[];
+    await for (final entity in proceduresDir.list(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.log')) continue;
+      final name = entity.uri.pathSegments.last;
+      if (!name.startsWith('${turnId}__')) continue;
+      try {
+        final lines = const LineSplitter().convert(await entity.readAsString());
+        runs.add(_ProcedureRunSummary(
+          procedureId: entity.parent.uri.pathSegments
+              .lastWhere((s) => s.isNotEmpty, orElse: () => entity.parent.path),
+          outcome: _outcomeStatusOf(lines),
+        ));
+      } catch (_) {
+        // Best-effort: a single unreadable run log never fails the summary.
+      }
+    }
+    return runs;
+  }
+
+  /// The terminal outcome *status* word (e.g. `accepted`) from a procedure-tree
+  /// log's last `outcome <status> (…)` line, or `null` when none is present
+  /// (the run is still in progress or crashed before writing an outcome).
+  String? _outcomeStatusOf(List<String> lines) {
+    String? status;
+    for (final line in lines) {
+      final stripped = _stripProcedureTreePrefix(line);
+      if (stripped.startsWith('outcome ')) {
+        final rest = stripped.substring('outcome '.length).trimLeft();
+        final end = rest.indexOf(RegExp(r'[\s(]'));
+        status = end == -1 ? rest : rest.substring(0, end);
+      }
+    }
+    return status;
+  }
+
+  int _asInt(Object? value) => value is int
+      ? value
+      : value is num
+          ? value.toInt()
+          : 0;
+
+  /// Human-scale elapsed: `1.6s` at or above a second, `800ms` below.
+  String _formatMs(int ms) =>
+      ms >= 1000 ? '${(ms / 1000).toStringAsFixed(1)}s' : '${ms}ms';
 }
+
+/// One LLM call's distilled facts for the run summary: its [callType] role, the
+/// recorded token counts and wall-clock, and how many tool calls its recorded
+/// answer resolved to (`0` for an answer-producing turn).
+final class _LlmCallSummary {
+  final String callType;
+  final int tokensIn;
+  final int tokensOut;
+  final int wallClockMs;
+  final int toolCallCount;
+
+  _LlmCallSummary({
+    required this.callType,
+    required this.tokensIn,
+    required this.tokensOut,
+    required this.wallClockMs,
+    required this.toolCallCount,
+  });
+}
+
+/// One procedure run's distilled facts for the per-procedure breakdown: its
+/// [procedureId] and terminal outcome status (`null` when none was written).
+final class _ProcedureRunSummary {
+  final String procedureId;
+  final String? outcome;
+
+  _ProcedureRunSummary({required this.procedureId, required this.outcome});
+}
+
+/// A mutable per-role accumulator for the run summary's "By role" breakdown.
+final class _RoleTally {
+  int count = 0;
+  int tokensIn = 0;
+  int tokensOut = 0;
+}
+
+/// Strips the leading box-drawing connector (`├─`, `└─`, `│`, `─`) and
+/// surrounding whitespace from a procedure-tree line, leaving the bare node text
+/// (`outcome accepted (…)`, `error procedure.budget.exceeded: …`).
+String _stripProcedureTreePrefix(String line) =>
+    line.replaceFirst(RegExp(r'^[\s├└│─]+'), '');
 
 /// One parsed `incoming/.../<turnId>.raw.json` record.
 final class _PromptRecord {
@@ -516,11 +717,9 @@ final class TrailStatusInspector implements TelegramStatusInspector {
         : path;
   }
 
-  /// Strips the leading box-drawing connector (`├─`, `└─`, `│`, `─`) and
-  /// surrounding whitespace from a procedure-tree line, leaving the bare node
-  /// text (`outcome accepted (…)`, `error procedure.budget.exceeded: …`).
-  String _stripTree(String line) =>
-      line.replaceFirst(RegExp(r'^[\s├└│─]+'), '');
+  /// Strips the leading box-drawing connector from a procedure-tree line; see
+  /// [_stripProcedureTreePrefix].
+  String _stripTree(String line) => _stripProcedureTreePrefix(line);
 }
 
 /// One procedure-run log file's distilled summary for the status report: its
