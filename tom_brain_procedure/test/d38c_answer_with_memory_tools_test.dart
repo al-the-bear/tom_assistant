@@ -127,6 +127,54 @@ void main() {
     });
   });
 
+  group('D.38c-3 each tool renders its argument schema (§ 9.1)', () {
+    test('todo.add / todo.remove / memory.read show their real arg keys',
+        () async {
+      await runWith(
+        'which tools do you have?',
+        toolCatalogue: defaultToolCatalogue(),
+      );
+
+      final prompt = substrate.lastCall!.inputs['prompt']! as String;
+      // The live trail showed the model guessing `{item: …}` / `{description: …}`
+      // for todo.add instead of the schema's `{text: …}`. The catalogue now
+      // renders the exact key + type + required marker per tool, so the model
+      // can copy the parameter names rather than guess them.
+      expect(prompt, contains('args: {text: string (required)}'));
+      expect(prompt, contains('args: {id: string (required)}'));
+      expect(prompt, contains('args: {text: string (required), k: integer}'));
+    });
+
+    test('a no-argument tool is rendered as taking no arguments', () async {
+      await runWith(
+        'which tools do you have?',
+        toolCatalogue: defaultToolCatalogue(),
+      );
+
+      final prompt = substrate.lastCall!.inputs['prompt']! as String;
+      // todo.list / procedure.list / file.readableRoots carry an empty
+      // properties map — they render with empty `args: {}` braces (matching the
+      // "empty braces" call instruction) rather than leaving the model to invent
+      // some. Pinned to todo.list's full line so it cannot pass by coincidence.
+      expect(prompt, contains('Lists the run-scoped todo entries. args: {}'));
+    });
+
+    test('the worked call example uses a schema-correct parameter key',
+        () async {
+      await runWith(
+        'which tools do you have?',
+        toolCatalogue: defaultToolCatalogue(),
+      );
+
+      final prompt = substrate.lastCall!.inputs['prompt']! as String;
+      // memory.read's schema requires `text`, not `query` — the single
+      // authoritative example must match a real key so the model copies a
+      // valid call.
+      expect(prompt, contains('call:memory.read{text:'));
+      expect(prompt, isNot(contains('call:memory.read{query')));
+    });
+  });
+
   group('D.38c-2 a run with no catalogue carries no tool block (PE-9 guard)',
       () {
     test('with no toolCatalogue the prompt holds no tool block', () async {

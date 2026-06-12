@@ -619,18 +619,31 @@ String _assemblePrompt(
 }
 
 /// Renders the default tool catalogue as a "Tools available to you" block, or
-/// `''` when there is none. Each descriptor is a `{name, group, description}`
-/// map (procedure spec § 21.4); the block names the tools and tells the model
-/// the exact, parseable call format to use.
+/// `''` when there is none. Each descriptor is a
+/// `{name, group, description, input_schema}` map (procedure spec § 21.4 — the
+/// same shape `tool.list()` emits); the block names the tools, renders each
+/// tool's argument schema inline, and tells the model the exact, parseable call
+/// format to use.
 ///
-/// The format instruction is load-bearing: without it a substrate guesses its
-/// own provider's chat-template dialect (the live Gemma-on-oMLX bug emitted
+/// Rendering the per-tool arg schema is load-bearing (§ 9.1): the live trail
+/// showed the model guessing `{item: …}` / `{description: …}` for `todo.add`
+/// instead of the schema's `{text: …}`, because the catalogue only listed tool
+/// names. Each tool now carries an `args: {key: type (required), …}` signature
+/// derived from its `input_schema`, so the model copies the real parameter
+/// names rather than inventing them; a tool with no properties renders `args:
+/// {}` (the empty-braces form the call instruction names).
+///
+/// The format instruction is load-bearing too: without it a substrate guesses
+/// its own provider's chat-template dialect (the live Gemma-on-oMLX bug emitted
 /// `<|tool_call>call:web.search{…}<tool_call|>`), and even though the bridge's
 /// multi-dialect recovery now reads many of those, a single canonical example
 /// makes the model emit a *clean* call far more reliably. The instructed shape
 /// — `call:NAME{arg: value}` on its own — is exactly what
 /// `parseToolCallsFromText` lowers; emitting only the call line (no
-/// surrounding prose) keeps the streamed tool-deciding turn clean.
+/// surrounding prose) keeps the streamed tool-deciding turn clean. The worked
+/// example uses `memory.read{text: …}` — a schema-correct key, not the earlier
+/// wrong `{query: …}` — so the one authoritative sample never contradicts the
+/// rendered schemas.
 String _renderToolCatalogue(Object? toolCatalogue) {
   if (toolCatalogue is! List || toolCatalogue.isEmpty) return '';
   var rendered = '';
@@ -644,16 +657,48 @@ String _renderToolCatalogue(Object? toolCatalogue) {
         (group != null && '$group'.isNotEmpty) ? ' ($group)' : '';
     final descSuffix =
         (description != null && '$description'.isNotEmpty) ? ': $description' : '';
-    rendered += '- $name$groupSuffix$descSuffix\n';
+    final argsSuffix = ' ${_renderArgsSchema(tool['input_schema'])}';
+    rendered += '- $name$groupSuffix$descSuffix$argsSuffix\n';
   }
   if (rendered.isEmpty) return '';
   final howToCall = 'To use a tool, reply with ONLY a single call line and no '
-      'other text, using the exact tool name from the list above:\n'
+      'other text, using the exact tool name and argument keys from the list '
+      'above:\n'
       '  call:TOOL_NAME{arg1: "value", arg2: 123}\n'
       'For a tool with no arguments use empty braces: call:TOOL_NAME{}\n'
-      'Example: call:memory.read{query: "project history"}\n'
+      'Example: call:memory.read{text: "project history"}\n'
       'If you do not need a tool, just answer the user in plain prose.\n';
   return 'Tools available to you:\n$rendered\n$howToCall\n';
+}
+
+/// Renders one tool's `input_schema` as a compact `args: {key: type (required),
+/// …}` signature the model can copy parameter names from (§ 9.1).
+///
+/// The schema is the small JSON-Schema subset the descriptors carry
+/// (`{type: 'object', required: [...], properties: {key: {type}}}`); each
+/// property renders as `key: type`, with ` (required)` appended when the key is
+/// in `required`. A tool with no (or an unreadable) properties map renders
+/// `args: {}` — the empty-braces form the call instruction names — so every
+/// tool line ends with a uniform, parseable `args: {…}`.
+String _renderArgsSchema(Object? schema) {
+  if (schema is! Map) return 'args: {}';
+  final properties = schema['properties'];
+  if (properties is! Map || properties.isEmpty) return 'args: {}';
+  final required = <String>{};
+  final rawRequired = schema['required'];
+  if (rawRequired is List) {
+    for (final entry in rawRequired) {
+      if (entry is String) required.add(entry);
+    }
+  }
+  final parts = <String>[];
+  properties.forEach((key, spec) {
+    final keyName = '$key';
+    final type = (spec is Map && spec['type'] != null) ? '${spec['type']}' : 'value';
+    final requiredSuffix = required.contains(keyName) ? ' (required)' : '';
+    parts.add('$keyName: $type$requiredSuffix');
+  });
+  return 'args: {${parts.join(', ')}}';
 }
 
 /// Renders the prior conversation turns as `User:` / `Assistant:` lines (the
