@@ -16,6 +16,7 @@
 ///   - { name: priorTurns, type: List, required: false }
 /// outputs:
 ///   - { name: answer, type: String }
+///   - { name: incomplete, type: bool }
 /// requires: [ runProcedure, embed, classify, llm, persist, edge, stack.push, note, tool.list, tool.invoke ]
 //
 // answer_with_memory_v1 — the prototype's one real system procedure
@@ -74,9 +75,9 @@
 // the reserved `producedNodeIds` output key; the engine threads that list into
 // the completion and the recorder draws the edge. The reserved key is stripped
 // from the procedure's declared outputs (the engine — `producedNodeIdsOutputKey`),
-// so `answer` stays the only surfaced output. Only the `Conclusion` (the
-// produced answer) is reported — the `Event` records the inbound prompt and is
-// not a "produced result" (and the bootstrap `Event` schema does not carry a
+// so `answer` and `incomplete` stay the surfaced outputs. Only the `Conclusion`
+// (the produced answer) is reported — the `Event` records the inbound prompt and
+// is not a "produced result" (and the bootstrap `Event` schema does not carry a
 // `produced_by` edge); see Q-D.39.1 / Q-D.39.2.
 //
 // ── Write provenance (Q-D.39.3) ─────────────────────────────────────
@@ -206,11 +207,13 @@
 //     stack push + the repetition `automation_candidate` trail note). The list
 //     is a set; order is immaterial (the validator compares membership,
 //     § 7 row 5);
-//   - the only declared output is `answer` (the concatenated LLM answer
-//     text). The body also returns the reserved `producedNodeIds` key, which
-//     the engine consumes (to draw the run's `produced_by` edge) and strips
-//     before surfacing the result — it is a body→engine transport channel,
-//     not a declared output.
+//   - the declared outputs are `answer` (the concatenated LLM answer text) and
+//     `incomplete` (always `false` here — the only non-todo exit, the
+//     wall-clock runaway-stop, is enforced externally by the engine and is not
+//     observable in the body, § 3.3 of the agent-loop completion plan). The body
+//     also returns the reserved `producedNodeIds` key, which the engine consumes
+//     (to draw the run's `produced_by` edge) and strips before surfacing the
+//     result — it is a body→engine transport channel, not a declared output.
 //
 // `ProcedureResult`'s *read* surface is bridged into d4rt as of step #30
 // (`procedure_result_bridge.dart`) so this body can inspect the conductor
@@ -265,41 +268,69 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final toolCatalogue =
       inputs.has('toolCatalogue') ? inputs.get('toolCatalogue') : null;
 
-  // Step 2 — answer the user, running the complete tool-calling loop
-  // (procedure spec § 21.2 / § 11 step 2). The live `tool.list()` surface is
-  // the source of truth for what the model may call: it is policy-narrowed to
-  // exactly the tools this run exposes, so a tool offered to the substrate is a
-  // tool `tool.invoke` will accept. Each turn offers that catalogue; when the
-  // model proposes tool calls we run them through `tool.invoke`, fold the
-  // results back into the running transcript, and re-enter — until the model
-  // answers with no tool call (or the turn cap is hit). The final answer
-  // streams to the live caller through the engine's per-run token sink: under
-  // the OpenAI protocol a tool-deciding turn emits no answer text, so only the
-  // terminal answer reaches the user; the intermediate turns stream nothing.
-  const maxToolTurns = 800;
+  // Step 2 — answer the user, running the complete tool-calling loop with
+  // **todo-based termination** (agent-loop completion plan § 3 / § 5.1;
+  // procedure spec § 21.2 / § 11 step 2). The live `tool.list()` surface is the
+  // source of truth for what the model may call: it is policy-narrowed to
+  // exactly the tools this run exposes (the `todo.*` family among them), so a
+  // tool offered to the substrate is a tool `tool.invoke` will accept. Every
+  // turn offers that catalogue; the model seeds and maintains its own todo list
+  // as it works.
+  //
+  // Termination is **todo-based, not a turn cap** (§ 3.1): the loop is finished
+  // iff the live session todo store reports zero open entries. A tool-deciding
+  // turn never terminates the loop — the model is still working — so its calls
+  // are run, folded back, and the loop re-enters. A plain-answer turn terminates
+  // only when no todo is left open; while open todos remain, the answer is not
+  // final and the loop re-enters with a reminder. There is **no count cap**: the
+  // sole non-todo exit is the wall-clock runaway-stop, enforced externally by
+  // the engine (§ 3.3), so the body itself loops purely on `!finished`.
+  //
+  // The bootstrap "zero-work exit" hazard (§ 3.2) cannot arise here: termination
+  // is only ever evaluated *after* a plain-answer turn, so the loop always runs
+  // at least one answer turn before it can finish — a trivial prompt that seeds
+  // no todos answers once (open == 0) and exits, governed by the answer it just
+  // produced rather than by a pre-seeded placeholder todo.
+  //
+  // The final answer streams to the live caller through the engine's per-run
+  // token sink: under the OpenAI protocol a tool-deciding turn emits no answer
+  // text, so only the terminal answer reaches the user; the intermediate turns
+  // stream nothing.
   final liveTools = await tool.list();
   var transcript = _assemblePrompt(recall, text, priorTurns, toolCatalogue);
-  Map completion = const <String, Object?>{'text': ''};
-  for (var turn = 0; turn < maxToolTurns; turn++) {
-    // On the last allowed turn, withhold the catalogue so the model must
-    // answer — no further round-trip is possible — which also keeps the
-    // streamed terminal answer clean.
-    final offerTools = turn < maxToolTurns - 1;
-    completion = await sub.llm(
+  var answer = '';
+  var finished = false;
+  while (!finished) {
+    final completion = await sub.llm(
       transcript,
       role: 'assistant_to_user',
-      tools: offerTools ? liveTools : null,
+      tools: liveTools,
     );
     final toolCalls = completion['toolCalls'];
-    if (toolCalls is! List || toolCalls.isEmpty) break;
-    // The awaited value is hoisted into its own local before the assignment:
-    // d4rt mis-scopes the assignment target of `x = f(x, await g())` (an
-    // `await` inside the argument list of a call whose result feeds back into
-    // `x`), so the awaited call must settle into a local first.
-    final toolResults = await _runToolCalls(toolCalls);
-    transcript = _appendToolResults(transcript, toolResults);
+    if (toolCalls is List && toolCalls.isNotEmpty) {
+      // A tool-deciding turn: run the calls, fold the results back, re-enter.
+      // The awaited value is hoisted into its own local before the assignment:
+      // d4rt mis-scopes the assignment target of `x = f(x, await g())` (an
+      // `await` inside the argument list of a call whose result feeds back into
+      // `x`), so the awaited call must settle into a local first.
+      final toolResults = await _runToolCalls(toolCalls);
+      transcript = _appendToolResults(transcript, toolResults);
+    } else {
+      // A plain-answer turn: keep the last non-empty answer text, then let the
+      // live session todo store decide termination (§ 3.1).
+      final answerText = completion['text'];
+      if (answerText is String && answerText.isNotEmpty) {
+        answer = answerText;
+      }
+      final open = await _openTodoCount();
+      finished = open == 0;
+      if (!finished) {
+        // Open todos remain, so this draft is not the final answer — remind the
+        // model of its outstanding work and re-enter.
+        transcript = _appendOpenTodoReminder(transcript, open);
+      }
+    }
   }
-  final answer = completion['text'];
 
   // D.39 — persist the exchange. The body has no run id, so its writes carry
   // the procedure id as the producer (Q-D.39.3).
@@ -396,9 +427,13 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 
   // The engine reads `producedNodeIds` to drive the run recorder's
   // `produced_by` edge (Conclusion → ProcedureRun), then strips the key so
-  // `answer` stays the only surfaced output.
+  // `answer` and `incomplete` stay the surfaced outputs. `incomplete` is always
+  // `false` on this path: the only non-todo exit (the wall-clock runaway-stop,
+  // § 3.3) is enforced externally by the engine, not observable here, so a body
+  // that returns at all returns a complete answer.
   return <String, Object?>{
     'answer': answer,
+    'incomplete': false,
     'producedNodeIds': [conclusionId],
   };
 }
@@ -422,6 +457,59 @@ bool _isRepeatPrompt(Map recall, Object? text) {
     }
   }
   return false;
+}
+
+/// Counts the open (`done != true`) entries in the live session todo store via
+/// the `todo.list` tool — the single source of truth the loop terminates on
+/// (§ 3.1). `tool.invoke('todo.list', {})` returns `{ok, result: {todos: […]}}`,
+/// each todo a `{id, text, done}` map. A malformed or failed listing counts as
+/// zero open, so the loop then terminates on the answer already in hand — the
+/// never-silent contract (§ 3.4), never a hang.
+//
+// Keep in sync with answer_with_thinking_v1.
+Future<int> _openTodoCount() async {
+  final Object? listed = await tool.invoke('todo.list', <String, Object?>{});
+  if (listed is! Map) return 0;
+  final result = listed['result'];
+  if (result is! Map) return 0;
+  final todos = result['todos'];
+  if (todos is! List) return 0;
+  var open = 0;
+  for (final entry in todos) {
+    if (entry is Map && entry['done'] != true) open += 1;
+  }
+  return open;
+}
+
+/// The todo-discipline preamble appended to every answering prompt (§ 4 / § 9.1).
+/// It names the `todo.*` tools — the family the loop now terminates on — with a
+/// worked sample the model can copy the exact parameter names from. The live
+/// trail showed the model guessing `{item: …}` / `{description: …}` instead of
+/// the schema's `{text: …}` (§ 9.1), so the sample shows the real keys and the
+/// id-return convention. The closing sentence is the prose form of the
+/// todo-based termination contract: not finished until every todo is done.
+//
+// Keep in sync with answer_with_thinking_v1.
+String _todoDisciplineBlock() {
+  return 'Task tracking — you MUST manage your own todo list with these tools:\n'
+      '  call:todo.add{text: "Read CLAUDE.md"}     -> returns {id: "t1"}\n'
+      '  call:todo.list{}                          -> lists entries with their ids\n'
+      '  call:todo.update{id: "t1", done: true}    -> mark an entry finished\n'
+      '  call:todo.remove{id: "t1"}                -> drop an entry by its id\n'
+      'Always use the id returned by todo.add — never the text — for '
+      'update/remove. Before you start, break the request into todos with '
+      'todo.add. As you complete each step, mark it done with todo.update. You '
+      'are NOT finished until every todo is done; do not claim completion while '
+      'open todos remain.\n\n';
+}
+
+/// Folds an "open todos remain" reminder into the transcript when a plain answer
+/// arrives with work still outstanding (§ 3.1), so the next turn keeps going
+/// rather than treating the draft as the final answer.
+String _appendOpenTodoReminder(String transcript, int open) {
+  return '$transcript\nYou still have $open open todo(s). You are not finished '
+      'until every todo is marked done with todo.update. Continue the work, or '
+      'mark the remaining todos done if they are already complete.\n';
 }
 
 /// Executes each proposed tool call through the live `tool.invoke` surface
@@ -524,7 +612,10 @@ String _assemblePrompt(
     }
   }
   final preamble = context.isEmpty ? '' : 'Relevant recalled memory:\n$context\n';
-  return '$tools$history${preamble}User prompt:\n$text';
+  // The todo-discipline block follows the tool catalogue and precedes the
+  // recalled-memory block (§ 4): it is how the loop now terminates, so every
+  // answering prompt teaches the model the `todo.*` tools and the discipline.
+  return '$tools${_todoDisciplineBlock()}$history${preamble}User prompt:\n$text';
 }
 
 /// Renders the default tool catalogue as a "Tools available to you" block, or
