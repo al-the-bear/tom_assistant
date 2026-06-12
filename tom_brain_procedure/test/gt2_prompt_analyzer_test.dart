@@ -46,6 +46,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'stub_prompt_resolver.dart';
+
 void main() {
   late _RecorderMemory memory;
   late _VerdictSubstrate substrate;
@@ -56,7 +58,20 @@ void main() {
     memory = _RecorderMemory();
     substrate = _VerdictSubstrate();
     memoryBridge = MemoryBridge(memory);
-    substrateBridge = SubstrateBridge(substrate);
+    // The migrated router runs `sub.run('assist_user.prompt_analyzer.
+    // classification')`; the host resolver assembles the wire prompt the
+    // substrate sees. The stub reproduces the classification template under the
+    // `analyser` role so the anchor-guarantee assertions (the user text + the
+    // verdict instruction reach the substrate) still hold.
+    final prompts = StubPromptResolver(
+      role: 'analyser',
+      bodyForId: (id, inputs) => _classificationBody('${inputs['text']}'),
+    );
+    substrateBridge = SubstrateBridge(
+      substrate,
+      promptResolver: prompts.resolver,
+      routeChainOf: prompts.routeChainOf,
+    );
   });
 
   ProcedureEngine engineFor(Iterable<LoadedProcedure> procedures) =>
@@ -211,6 +226,23 @@ void main() {
       expect(outcome.result!.output<String>('verdict'), 'thinking');
     });
   });
+}
+
+/// Reproduces the `prompt_analyzer.classification.md` template the host
+/// resolver assembles for the migrated router — the user [text] plus the
+/// one-token verdict instruction. Mirrors `AnswerParityPrompts`: the suite
+/// asserts the assembled prompt the substrate sees carries the bindings, so the
+/// stub must produce the same text the real template + resolver would.
+String _classificationBody(String text) {
+  return 'Route this user prompt to one of two processing branches.\n'
+      '\n'
+      '- NORMAL: an ordinary request, answered directly from memory.\n'
+      '- THINKING: the user is asking you to deliberate before answering.\n'
+      '\n'
+      'Reply with EXACTLY one word and nothing else: THINKING or NORMAL.\n'
+      '\n'
+      'User prompt:\n'
+      '$text';
 }
 
 // ── A verdict-emitting `TomBrainSubstrateClient` ────────────────────

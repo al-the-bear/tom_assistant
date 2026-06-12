@@ -17,7 +17,7 @@
 ///   - { name: branch, type: String }
 ///   - { name: target, type: String }
 ///   - { name: verdict, type: String }
-/// requires: [ llm ]
+/// requires: [ run, runProcedure ]
 //
 // prompt_analyzer_v1 — the thinking subsystem's entry router
 // (`thinking_specification.md` § 4.0, G-T2; `tom_brain_completion_plan.md`
@@ -84,7 +84,7 @@
 //
 // Only the two host-injected libraries this body touches: `procedure_inputs`
 // (so `inputs.get('text')` dispatches onto the native bag) and `substrate_
-// bridge` (so `sub.llm(...)` resolves). The SandboxValidator allow-lists
+// bridge` (so `sub.run(...)` resolves). The SandboxValidator allow-lists
 // exactly these and rejects every other import (PE-1).
 import 'package:tom_brain_procedure/src/api/procedure_inputs.dart';
 import 'package:tom_brain_procedure/src/bridges/substrate_bridge.dart';
@@ -105,10 +105,16 @@ const String _targetThinking = 'answer_with_thinking_v1';
 Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final text = inputs.get('text');
 
-  // One `analyser`-role classification call. The prompt is the role-template
-  // input (anchor prepended at assembly), and asks for a single verdict token.
-  final completion = await sub.llm(_classificationPrompt(text), role: 'analyser');
-  final verdictText = completion['text'];
+  // One `analyser`-role classification call through the registered
+  // `assist_user.prompt_analyzer.classification` prompt (`prompt_configuration.md`
+  // §10). `sub.run` resolves the prompt — its template + the `analyser` role
+  // assemble the wire prompt around the user `${text}` (anchor prepended at
+  // assembly); the verdict token arrives under `answer`.
+  final completion = await sub.run(
+    'assist_user.prompt_analyzer.classification',
+    inputs: <String, Object?>{'text': text},
+  );
+  final verdictText = completion['answer'];
 
   final branch = _branchFromCompletion(verdictText is String ? verdictText : '');
   final target = branch == _branchThinking ? _targetThinking : _targetNormal;
@@ -120,28 +126,6 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     'target': target,
     'verdict': branch,
   };
-}
-
-/// Builds the `analyser`-role classification prompt. The cues are a starting
-/// heuristic the model reasons over (§ 4.0), not a strict keyword match. The
-/// model is asked to answer with exactly one verdict token so the completion
-/// parses deterministically.
-String _classificationPrompt(Object? text) {
-  return 'Route this user prompt to one of two processing branches.\n'
-      '\n'
-      '- NORMAL: an ordinary request, answered directly from memory.\n'
-      '- THINKING: the user is asking you to deliberate before answering.\n'
-      '\n'
-      'Deliberation cues (a guide, not a strict keyword match): "think '
-      'about", "ponder", "research", "reason about", "work through", '
-      '"deliberate", "mull over", "reflect on", "figure out", "consider '
-      'carefully". Judge intent — a prompt that merely mentions one of '
-      'these words in passing is not necessarily a request to deliberate.\n'
-      '\n'
-      'Reply with EXACTLY one word and nothing else: THINKING or NORMAL.\n'
-      '\n'
-      'User prompt:\n'
-      '$text';
 }
 
 /// Reads the branch out of the classification completion. Case-insensitive;

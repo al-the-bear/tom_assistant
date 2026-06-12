@@ -24,6 +24,18 @@ tools: all
 llm: assistant
 role: assistant_to_user
 
+# The `prompt_analyzer` sub-procedure (`prompt_configuration.md` §10) carries the
+# single `classification` prompt the migrated `prompt_analyzer_v1` entry router
+# runs: it routes a user prompt (`${text}`) to the normal or thinking branch. It
+# runs read-only (no tools) under the `analyser` persona and asks for one verdict
+# token.
+prompt_analyzer:
+  prompts:
+    classification:
+      template: prompt_analyzer.classification.md
+      tools: none
+      role: analyser
+
 answer_with_memory:
   prompts:
     assembly:

@@ -37,6 +37,7 @@ class StubPromptResolver {
     this.role = 'assistant_to_user',
     this.tools = const <Object?>[],
     this.roleForId,
+    this.bodyForId,
   });
 
   /// The role every resolved prompt assumes unless [roleForId] overrides it.
@@ -52,6 +53,12 @@ class StubPromptResolver {
   /// distinguish the stages.
   String Function(String id)? roleForId;
 
+  /// An optional per-id template-body builder: a suite that asserts on the
+  /// *assembled prompt* the substrate sees (e.g. the prompt_analyzer anchor
+  /// guarantee) reproduces its real template text here, mirroring
+  /// `AnswerParityPrompts`. When unset, the body echoes the inputs.
+  String Function(String id, Map<String, Object?> inputs)? bodyForId;
+
   /// Every `(id, inputs)` pair the resolver was asked for, in dispatch order.
   final List<({String id, Map<String, Object?> inputs})> requests =
       <({String id, Map<String, Object?> inputs})>[];
@@ -63,7 +70,7 @@ class StubPromptResolver {
         return ResolvedPrompt(
           role: roleForId?.call(promptId) ?? role,
           llmRoute: 'stub',
-          templateBody: _echo(inputs),
+          templateBody: bodyForId?.call(promptId, inputs) ?? _echo(inputs),
           tools: tools,
           maxToolLoops: 8,
         );
