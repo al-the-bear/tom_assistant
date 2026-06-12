@@ -279,13 +279,22 @@ void main() {
       expect(library.knows(targetId), isTrue);
       final plan = library.resolve(targetId);
       expect(plan.header.version, 1);
-      // The real loop touches the planning primitive set (recall / llm / embed
-      // / persist / edge / note) — never the `notImplemented` clear-error
-      // primitive (Todo 8).
+      // The real loop touches the planning primitive set (recall / run /
+      // runProcedure / embed / persist / edge / note) — never the
+      // `notImplemented` clear-error primitive (Todo 8). The LLM stages run
+      // through `sub.run('assist_user.plan.*')`, so the surface declares
+      // `run` + `runProcedure` rather than the pre-§12.8 `llm` primitive.
       expect(plan.header.requires, isNot(contains('notImplemented')),
           reason: 'plan_v1 is the real planning loop, not a clear-error stub');
-      expect(plan.header.requires.toSet(),
-          <String>{'recall', 'llm', 'embed', 'persist', 'edge', 'note'});
+      expect(plan.header.requires.toSet(), <String>{
+        'recall',
+        'run',
+        'runProcedure',
+        'embed',
+        'persist',
+        'edge',
+        'note',
+      });
     });
   });
 }

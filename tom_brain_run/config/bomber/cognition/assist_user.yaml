@@ -52,6 +52,79 @@ research:
       tools: none
       role: researcher
 
+# The `plan` sub-procedure (`prompt_configuration.md` §10) carries the five
+# prompts the migrated `plan_v1` planning loop runs: `classify` frames the goal
+# (`planner`), `decompose` breaks it into steps (`decomposer`), `order` sequences
+# them (`estimator`), `evaluate` critiques the graph (`plan_evaluator`), and
+# `replan` proposes surgical replacements against a live plan (`re_planner`).
+# Each runs read-only under its own planning persona.
+plan:
+  prompts:
+    classify:
+      template: plan.classify.md
+      tools: none
+      role: planner
+    decompose:
+      template: plan.decompose.md
+      tools: none
+      role: decomposer
+    order:
+      template: plan.order.md
+      tools: none
+      role: estimator
+    evaluate:
+      template: plan.evaluate.md
+      tools: none
+      role: plan_evaluator
+    replan:
+      template: plan.replan.md
+      tools: none
+      role: re_planner
+
+# The `create` sub-procedure (`prompt_configuration.md` §10) carries the three
+# prompts the migrated `create_v1` creation loop runs: `test_first` drafts the
+# success-check before the artifact exists (`tester`), `draft` composes the
+# artifact (`creator`), and `review` critiques it against the success criterion
+# and the automated check (`reviewer`). The dynamic re-entry preamble, the
+# test-first note, the recalled-memory block, and the check result are assembled
+# in-script and folded into the templates' `${revision}` / `${extras}` /
+# `${check}` slots (the `revision_context` fragment, §10). Each runs read-only.
+create:
+  prompts:
+    test_first:
+      template: create.test_first.md
+      tools: none
+      role: tester
+    draft:
+      template: create.draft.md
+      tools: none
+      role: creator
+    review:
+      template: create.review.md
+      tools: none
+      role: reviewer
+
+# The `author` sub-procedure (`prompt_configuration.md` §10) carries the three
+# prompts the migrated `author_new_procedure_v1` authoring loop runs: `draft`
+# composes the candidate d4rt source (`procedure_author`), `fix_validation`
+# re-drafts against the deterministic validator findings (`procedure_author`),
+# and `critique` judges the valid draft against the intent (`procedure_critic`).
+# Each runs read-only.
+author:
+  prompts:
+    draft:
+      template: author.draft.md
+      tools: none
+      role: procedure_author
+    fix_validation:
+      template: author.fix_validation.md
+      tools: none
+      role: procedure_author
+    critique:
+      template: author.critique.md
+      tools: none
+      role: procedure_critic
+
 answer_with_thinking:
   prompts:
     analysis:

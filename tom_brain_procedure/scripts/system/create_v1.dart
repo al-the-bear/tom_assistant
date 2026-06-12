@@ -32,7 +32,7 @@
 ///   - { name: written, type: bool }
 ///   - { name: target, type: String }
 ///   - { name: incomplete, type: bool }
-/// requires: [ recall, embed, llm, persist, edge, note, tool.invoke ]
+/// requires: [ recall, embed, run, runProcedure, persist, edge, note, tool.invoke ]
 //
 // create_v1 — the creation branch (`creation_specification.md` § 4, § 5, § 7,
 // § 9, § 10; `tom_brain_completion_plan_2.md` item 2). The Todo-9 skeleton
@@ -72,17 +72,17 @@
 //
 // One pass through the `while` is one creation iteration:
 //
-//   draft     — `sub.llm(role: 'creator')` composes the artifact from the
-//               intent, kind, success criterion, context, constraints, recalled
-//               memory, the test (if any), and (on a re-entry) the prior
-//               rejected draft + its critique + check.
+//   draft     — `sub.run('assist_user.create.draft')` (creator role) composes
+//               the artifact from the intent, kind, success criterion, context,
+//               constraints, recalled memory, the test (if any), and (on a
+//               re-entry) the prior rejected draft + its critique + check.
 //   write     — the draft is written to `target` (§ 4.4: "There is no in-memory
 //               draft we never wrote. Writes are observable.").
 //   re-observe+check — for code the written file is re-observed by running the
 //               allow-listed `analyze.dart` check tool against it (§ 4.5); the
 //               check is satisfied when the analyzer exits clean. Non-code kinds
 //               carry no analyzer check, so the check is trivially satisfied.
-//   critique  — `sub.llm(role: 'reviewer')` judges the draft against the success
+//   critique  — `sub.run('assist_user.create.review')` (reviewer role) judges the draft against the success
 //               criterion *and* the check result and returns a verdict
 //               (`accept | revise`); `_isAccept` parses it.
 //   accept / rollback — the write is kept only when the reviewer accepts AND the
@@ -120,15 +120,15 @@
 // Only the host-injected libraries this body touches are imported, and the
 // SandboxValidator allow-lists exactly these: `procedure_inputs`
 // (`inputs.getOrNull(...)`), `memory_bridge` (`mem.recall` / `mem.persist` /
-// `mem.edge`), `substrate_bridge` (`sub.llm` / `sub.embed`), `tool_bridge` (the
+// `mem.edge`), `substrate_bridge` (`sub.run` / `sub.embed`), `tool_bridge` (the
 // `tool.invoke(...)` write / delete / check), and `primitives_native` (the
 // engine-native `note`). The `analyze.*` / `test.*` / `file.*` tools are reached
 // through the single `tool.invoke` primitive, so they add no new bridge to the
 // declared capability surface — the check has no general-shell reach (§ 5.4: the
 // allow-listed `ToolProcessSurface`, not this body, runs the executable). Every
-// completion names a `role` and supplies the prompt as that role template's
-// *input*, so the assistant-dedication anchor is always prepended at substrate
-// assembly time.
+// completion is a `sub.run('<id>')` whose host-resolved prompt carries the
+// stage role + template, so the assistant-dedication anchor is always prepended
+// at substrate assembly time.
 import 'package:tom_brain_procedure/src/api/procedure_inputs.dart';
 import 'package:tom_brain_procedure/src/bridges/memory_bridge.dart';
 import 'package:tom_brain_procedure/src/bridges/substrate_bridge.dart';
@@ -194,11 +194,16 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final testTarget = testFirst ? _deriveTestTarget(target) : '';
   var testStaged = false;
   if (testFirst) {
-    final testCompletion = await sub.llm(
-      _testPrompt(intent, successCriterion, kind, context, constraints, recall),
-      role: 'tester',
+    final testCompletion = await sub.run(
+      'assist_user.create.test_first',
+      inputs: {
+        'kind': kind,
+        'intent': intent,
+        'successCriterion': successCriterion,
+        'extras': _extras(context, constraints, recall),
+      },
     );
-    final testDraft = (testCompletion['text'] ?? '').toString();
+    final testDraft = (testCompletion['answer'] ?? '').toString();
     if (testDraft.trim().isNotEmpty) {
       await tool.invoke('file.write', <String, Object?>{
         'path': testTarget,
@@ -235,13 +240,24 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     iteration++;
 
     // Draft the artifact (creator role). No `tools`: the draft is pure
-    // composition; the write is the explicit step that follows.
-    final draftCompletion = await sub.llm(
-      _draftPrompt(intent, kind, successCriterion, context, constraints, recall,
-          testFirst, revisionContext),
-      role: 'creator',
+    // composition; the write is the explicit step that follows. The re-entry
+    // preamble and the test-first note are assembled in-script and folded into
+    // the template's `${revision}` slot; the recalled-memory / context /
+    // constraints block goes into `${extras}`.
+    final testNote = testFirst
+        ? 'A test was written first and must pass once the artifact exists.\n\n'
+        : '';
+    final draftCompletion = await sub.run(
+      'assist_user.create.draft',
+      inputs: {
+        'revision': revisionContext + testNote,
+        'kind': kind,
+        'intent': intent,
+        'successCriterion': successCriterion,
+        'extras': _extras(context, constraints, recall),
+      },
     );
-    draft = draftCompletion['text'];
+    draft = draftCompletion['answer'];
 
     // Write the draft (§ 4.4: writes are observable — no in-memory-only draft).
     // `file.write` resolves `target` under the run's file-scope root and raises
@@ -265,12 +281,21 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     }
 
     // Self-critique against the success criterion AND the check (reviewer role;
-    // verdict alphabet `accept | revise`).
-    final critiqueCompletion = await sub.llm(
-      _critiquePrompt(intent, successCriterion, draft, checks, checkResult),
-      role: 'reviewer',
+    // verdict alphabet `accept | revise`). The automated-check block is assembled
+    // in-script and folded into the template's `${check}` slot.
+    final checkBlock = checks
+        ? 'Automated check result:\n' + _renderCheck(checkResult) + '\n\n'
+        : '';
+    final critiqueCompletion = await sub.run(
+      'assist_user.create.review',
+      inputs: {
+        'intent': intent,
+        'successCriterion': successCriterion,
+        'check': checkBlock,
+        'draft': draft,
+      },
     );
-    final verdict = critiqueCompletion['text'];
+    final verdict = critiqueCompletion['answer'];
 
     // Accept requires the reviewer's ACCEPT *and* a satisfied check (§ 4.6:
     // `accept requires successSatisfied`). Otherwise roll the write back
@@ -378,87 +403,15 @@ bool _isAccept(Object? verdict) {
   return verdict.toUpperCase().contains('ACCEPT');
 }
 
-/// Builds the `tester`-role test-first prompt (§ 4.3). Asks for an executable
-/// success-check that fails before the artifact exists. Emits only the test
-/// content — the surrounding loop writes and runs it.
-String _testPrompt(
-  String intent,
-  String successCriterion,
-  String kind,
-  String context,
-  String constraints,
-  Map recall,
-) {
+/// Assembles the shared "Context / Constraints / recalled memory" block fed into
+/// the `${extras}` slot of both the `test_first` and `draft` templates. Each
+/// sub-block is omitted when its source is empty, mirroring the original inline
+/// prompt assembly (the static instruction text now lives in the templates).
+String _extras(String context, String constraints, Map recall) {
   final memory = _renderRecall(recall);
   final ctx = context.isEmpty ? '' : 'Context:\n$context\n\n';
   final cons = constraints.isEmpty ? '' : 'Constraints:\n$constraints\n\n';
-  return 'Write a single $kind test that checks the success criterion below '
-      'before the artifact exists. The test must fail (or skip with a clear '
-      'reason) until the artifact is created. Output only the test content — no '
-      'commentary, no code fences.\n'
-      '\n'
-      'Intent:\n$intent\n'
-      '\n'
-      'Success criterion:\n$successCriterion\n'
-      '\n'
-      '$ctx$cons$memory';
-}
-
-/// Builds the `creator`-role draft prompt. Folds the intent, kind, success
-/// criterion, caller context, constraints, recalled memory, the test-first note,
-/// and (on a re-entry) the prior rejection into one composition instruction.
-/// Emits *only* the artifact content — the surrounding loop critiques, writes,
-/// and records it.
-String _draftPrompt(
-  String intent,
-  String kind,
-  String successCriterion,
-  String context,
-  String constraints,
-  Map recall,
-  bool testFirst,
-  String revisionContext,
-) {
-  final memory = _renderRecall(recall);
-  final ctx = context.isEmpty ? '' : 'Context:\n$context\n\n';
-  final cons = constraints.isEmpty ? '' : 'Constraints:\n$constraints\n\n';
-  final test = testFirst
-      ? 'A test was written first and must pass once the artifact exists.\n\n'
-      : '';
-  return '$revisionContext${test}Produce a single $kind artifact that satisfies '
-      'the intent and meets the success criterion exactly. Output only the '
-      'artifact content — no commentary, no code fences.\n'
-      '\n'
-      'Intent:\n$intent\n'
-      '\n'
-      'Success criterion:\n$successCriterion\n'
-      '\n'
-      '$ctx$cons$memory';
-}
-
-/// Builds the `reviewer`-role critique prompt. Asks for a verdict the body can
-/// parse: a leading ACCEPT or REVISE judged against the success criterion and
-/// (when one ran) the automated check result.
-String _critiquePrompt(
-  String intent,
-  String successCriterion,
-  String draft,
-  bool checks,
-  Object? checkResult,
-) {
-  final check = checks ? 'Automated check result:\n${_renderCheck(checkResult)}\n\n' : '';
-  return 'Review the draft artifact below against the intent and its success '
-      'criterion. Decide whether it meets the criterion and is fit to keep.\n'
-      '\n'
-      'Reply with ACCEPT or REVISE on the first line, then a one-line reason. '
-      'Use REVISE if the draft misses the criterion, is incomplete, is wrong, or '
-      'the automated check did not pass.\n'
-      '\n'
-      'Intent:\n$intent\n'
-      '\n'
-      'Success criterion:\n$successCriterion\n'
-      '\n'
-      '${check}Draft artifact:\n$draft';
+  return '$ctx$cons$memory';
 }
 
 /// Renders the rejected draft + its critique (+ the failed check, if any) as a

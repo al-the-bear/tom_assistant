@@ -84,6 +84,17 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'stub_prompt_resolver.dart';
+
+/// Maps each migrated `assist_user.create.*` prompt id to the creation role its
+/// stage runs under, so the role-keyed `_RoleAwareSubstrate` still distinguishes
+/// the three stages now that the procedure resolves prompts through `sub.run`.
+const Map<String, String> _createRoleById = <String, String>{
+  'assist_user.create.test_first': 'tester',
+  'assist_user.create.draft': 'creator',
+  'assist_user.create.review': 'reviewer',
+};
+
 void main() {
   late _BrainMemory memory;
   late _RoleAwareSubstrate substrate;
@@ -95,7 +106,14 @@ void main() {
     memory = _BrainMemory();
     substrate = _RoleAwareSubstrate();
     memoryBridge = MemoryBridge(memory);
-    substrateBridge = SubstrateBridge(substrate);
+    final prompts = StubPromptResolver(
+      roleForId: (id) => _createRoleById[id] ?? 'assistant_to_user',
+    );
+    substrateBridge = SubstrateBridge(
+      substrate,
+      promptResolver: prompts.resolver,
+      routeChainOf: prompts.routeChainOf,
+    );
     root = Directory.systemTemp.createTempSync('f_create_');
   });
 
@@ -312,7 +330,8 @@ void main() {
         <String>[
           'recall',
           'embed',
-          'llm',
+          'run',
+          'runProcedure',
           'persist',
           'edge',
           'note',

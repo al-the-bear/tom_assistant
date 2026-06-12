@@ -14,7 +14,7 @@
 /// outputs:
 ///   - { name: procedure, type: String }
 ///   - { name: status, type: String }
-/// requires: [ recall, llm, embed, validate, persist, edge, note ]
+/// requires: [ recall, run, runProcedure, embed, validate, persist, edge, note ]
 //
 // author_new_procedure_v1 — the authoring loop (the brain writing its own
 // procedures), itself a fixed root procedure (`procedure_specification.md`
@@ -70,20 +70,21 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 
   // 2. Draft. The procedure_author role's prompt carries the authoring brief;
   //    its returned text is the candidate procedure's d4rt source.
-  var draft = await sub.llm(
-    'Draft a procedure for: $intent',
-    role: 'procedure_author',
+  var draft = await sub.run(
+    'assist_user.author.draft',
+    inputs: {'intent': intent},
   );
-  var source = draft['text'];
+  var source = draft['answer'];
 
   // 3. Deterministic, LLM-free validation. Re-draft once against the findings.
   var validation = await validate(source);
   if (validation['ok'] != true) {
-    draft = await sub.llm(
-      'Fix these validation findings: ${validation['findings']}',
-      role: 'procedure_author',
+    final findings = '${validation['findings']}';
+    draft = await sub.run(
+      'assist_user.author.fix_validation',
+      inputs: {'findings': findings},
     );
-    source = draft['text'];
+    source = draft['answer'];
     validation = await validate(source);
   }
 
@@ -104,11 +105,11 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   //    other verdict records it at `authored` (not yet trusted to run).
   var status = 'authored';
   if (valid) {
-    final critique = await sub.llm(
-      'Critique this procedure draft against the intent: $intent',
-      role: 'procedure_critic',
+    final critique = await sub.run(
+      'assist_user.author.critique',
+      inputs: {'intent': intent},
     );
-    final verdict = critique['text'];
+    final verdict = critique['answer'];
     final lower = verdict is String ? verdict.toLowerCase() : '';
     final accepted = lower.contains('accept') && !lower.contains('revise');
     status = accepted ? 'draft' : 'authored';

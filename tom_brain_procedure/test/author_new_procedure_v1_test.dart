@@ -37,6 +37,18 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'stub_prompt_resolver.dart';
+
+/// Maps each migrated `assist_user.author.*` prompt id to the authoring role its
+/// stage runs under, so the role-keyed `_ScriptedSubstrate` still distinguishes
+/// the author / critic stages now that the procedure resolves prompts through
+/// `sub.run`.
+const Map<String, String> _authorRoleById = <String, String>{
+  'assist_user.author.draft': 'procedure_author',
+  'assist_user.author.fix_validation': 'procedure_author',
+  'assist_user.author.critique': 'procedure_critic',
+};
+
 void main() {
   late _CapturingMemory memory;
   late _ScriptedSubstrate substrate;
@@ -47,7 +59,14 @@ void main() {
     memory = _CapturingMemory();
     substrate = _ScriptedSubstrate();
     memoryBridge = MemoryBridge(memory);
-    substrateBridge = SubstrateBridge(substrate);
+    final prompts = StubPromptResolver(
+      roleForId: (id) => _authorRoleById[id] ?? 'assistant_to_user',
+    );
+    substrateBridge = SubstrateBridge(
+      substrate,
+      promptResolver: prompts.resolver,
+      routeChainOf: prompts.routeChainOf,
+    );
   });
 
   ProcedureEngine engineFor(Iterable<LoadedProcedure> procedures) =>

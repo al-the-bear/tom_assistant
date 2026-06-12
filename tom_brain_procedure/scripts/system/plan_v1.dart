@@ -18,7 +18,7 @@
 /// outputs:
 ///   - { name: plan, type: String }
 ///   - { name: status, type: String }
-/// requires: [ recall, llm, embed, persist, edge, note ]
+/// requires: [ recall, run, runProcedure, embed, persist, edge, note ]
 //
 // plan_v1 — planning as a procedure, not a project (Todo 8 / G-P1…G-P6;
 // `planning_specification.md` § 4.1 the loop, § 4.7 re-planning, § 5.3 the edge
@@ -82,11 +82,11 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 
   // ── Re-planning branch (§ 4.7): an observation against a live plan ──
   if (observation != null && planArg != null) {
-    final replanOut = await sub.llm(
-      'Re-plan. Goal: ' + goalText + ' Observation: ' + observation.toString(),
-      role: 're_planner',
+    final replanOut = await sub.run(
+      'assist_user.plan.replan',
+      inputs: {'goal': goalText, 'observation': observation.toString()},
     );
-    final replanRaw = replanOut['text'];
+    final replanRaw = replanOut['answer'];
     final replanText = replanRaw is String ? replanRaw : '';
     final supersedes = _parseSupersedes(replanText);
     final steps = _parseSteps(_stripSupersedesLine(replanText));
@@ -141,24 +141,26 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // referenced in an argument evaluated *after* a preceding awaited argument in
   // the same call, so the await and the local read never share an expression.
   for (var iter = 0; iter < maxIterations; iter++) {
-    final classifyOut = await sub.llm(
-      'Classify and frame this goal: ' + goalText,
-      role: 'planner',
+    final classifyOut = await sub.run(
+      'assist_user.plan.classify',
+      inputs: {'goal': goalText},
     );
-    final kind = _parseKind(classifyOut['text']);
+    final kind = _parseKind(classifyOut['answer']);
     note('planning.goal-classified', {'planKind': kind});
 
-    final decomposeOut = await sub.llm(
-      'Decompose this goal into steps: ' + goalText,
-      role: 'decomposer',
+    final decomposeOut = await sub.run(
+      'assist_user.plan.decompose',
+      inputs: {'goal': goalText},
     );
-    final steps = _parseSteps(decomposeOut['text']);
+    final steps = _parseSteps(decomposeOut['answer']);
     note('planning.steps-decomposed', {'stepCount': steps.length});
 
     final rendered = _renderSteps(steps);
-    final estimateOut =
-        await sub.llm('Order these steps: ' + rendered, role: 'estimator');
-    final order = _parseOrder(estimateOut['text'], steps.length);
+    final estimateOut = await sub.run(
+      'assist_user.plan.order',
+      inputs: {'steps': rendered},
+    );
+    final order = _parseOrder(estimateOut['answer'], steps.length);
     if (order == null) {
       note('planning.critique-produced', {'accepted': false, 'iteration': iter});
       note('planning.rejected', {'iteration': iter, 'reason': 'unorderable'});
@@ -172,11 +174,11 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     note('planning.graph-estimated',
         {'stepCount': steps.length, 'edgeCount': _edgeCount(steps)});
 
-    final evaluateOut = await sub.llm(
-      'Evaluate this plan for goal: ' + goalText,
-      role: 'plan_evaluator',
+    final evaluateOut = await sub.run(
+      'assist_user.plan.evaluate',
+      inputs: {'goal': goalText},
     );
-    final accepted = _accepted(evaluateOut['text']);
+    final accepted = _accepted(evaluateOut['answer']);
     note('planning.critique-produced', {'accepted': accepted, 'iteration': iter});
     if (accepted) {
       commit = true;

@@ -44,6 +44,19 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'stub_prompt_resolver.dart';
+
+/// Maps each migrated `assist_user.plan.*` prompt id to the planning role its
+/// stage runs under, so the role-keyed `_ScriptedSubstrate` still distinguishes
+/// the five stages now that the procedure resolves prompts through `sub.run`.
+const Map<String, String> _planRoleById = <String, String>{
+  'assist_user.plan.classify': 'planner',
+  'assist_user.plan.decompose': 'decomposer',
+  'assist_user.plan.order': 'estimator',
+  'assist_user.plan.evaluate': 'plan_evaluator',
+  'assist_user.plan.replan': 're_planner',
+};
+
 void main() {
   late _CapturingMemory memory;
   late _ScriptedSubstrate substrate;
@@ -54,7 +67,14 @@ void main() {
     memory = _CapturingMemory();
     substrate = _ScriptedSubstrate();
     memoryBridge = MemoryBridge(memory);
-    substrateBridge = SubstrateBridge(substrate);
+    final prompts = StubPromptResolver(
+      roleForId: (id) => _planRoleById[id] ?? 'assistant_to_user',
+    );
+    substrateBridge = SubstrateBridge(
+      substrate,
+      promptResolver: prompts.resolver,
+      routeChainOf: prompts.routeChainOf,
+    );
   });
 
   ProcedureEngine engineFor(Iterable<LoadedProcedure> procedures) =>
@@ -268,13 +288,21 @@ void main() {
       expect(source, contains("'$dependsOnEdgeKind'"));
     });
 
-    test('the header declares the six primitives the loop uses', () async {
+    test('the header declares the seven primitives the loop uses', () async {
       final store = DiskProcedureStore(systemDir: Directory('scripts/system'));
       final resolver = await ProcedureResolver.fromStore(store);
       final loaded = resolver.resolve('plan_v1');
       expect(
         loaded.header.requires.toSet(),
-        <String>{'recall', 'llm', 'embed', 'persist', 'edge', 'note'},
+        <String>{
+          'recall',
+          'run',
+          'runProcedure',
+          'embed',
+          'persist',
+          'edge',
+          'note',
+        },
       );
     });
   });
