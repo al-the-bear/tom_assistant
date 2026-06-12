@@ -1,0 +1,10 @@
+# The `assistant` LLM route (`prompt_configuration.md` §8 / §8.1).
+#
+# The default route every `assist_user` prompt dispatches over. One reachable
+# provider+model entry — the bomber omlx substrate hosting Gemma — mirroring the
+# `roleRoutes.assistant_to_user` chain in `brain_run.yaml`. Add further entries
+# to make the route a rotation/failover chain (first reachable wins).
+
+route:
+  - provider: omlx
+    model: gemma-4-26b-a4b-it-4bit

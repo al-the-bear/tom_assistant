@@ -64,6 +64,8 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         MemoryAccessSink,
         MemoryProvisioningConfig,
         ProcedureTreeSink,
+        PromptResolver,
+        RouteChainResolver,
         ToolAccessRecord,
         ToolAccessSink,
         TurnSummary,
@@ -75,6 +77,10 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
 
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
+import 'builtin_bindings.dart' show BrainBuiltins;
+import 'cognition_config_loader.dart' show CognitionConfigLoader;
+import 'cognition_prompt_resolver.dart'
+    show buildPromptResolver, buildRouteChainResolver;
 import 'dream_cadence_wiring.dart' show dreamCadenceDriverOverScheduler;
 import 'dream_config.dart' show DreamConfig;
 import 'dream_controller.dart' show DreamController;
@@ -158,6 +164,14 @@ import 'trail_janitor.dart' show TrailJanitor;
 /// top-level (or turn-less dream) run. `null` (the default) boots with no
 /// per-procedure tree; [standUpBrainProcessFromConfig] binds a
 /// `ProcedureTreeWriter.write` in full-trail mode.
+///
+/// [promptResolver] + [routeChainOf] are the two `sub.run` seams
+/// (`prompt_configuration.md` §7.4 / §8): a named prompt → loaded,
+/// placeholder-resolved `ResolvedPrompt`, and a named LLM route → its ordered
+/// failover chain. Both `null` (the default) boots with no registered prompts,
+/// so any `sub.run` raises `UnregisteredPromptException` (the pre-migration
+/// prototype default); [standUpBrainProcessFromConfig] builds both from the
+/// `cognition:` config tree when the block is present.
 Future<ProvisionedBrain> provisionBrain({
   required TomBrainSubstrateClient substrate,
   required MemoryConfig memoryConfig,
@@ -173,6 +187,8 @@ Future<ProvisionedBrain> provisionBrain({
   ToolAccessSink? toolAccessSink,
   ProcedureTreeSink? procedureTreeSink,
   DreamConfig? dream,
+  PromptResolver? promptResolver,
+  RouteChainResolver? routeChainOf,
 }) async {
   final Directory scriptsDir =
       systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
@@ -208,6 +224,8 @@ Future<ProvisionedBrain> provisionBrain({
       toolAccessSink: toolAccessSink,
       procedureTreeSink: procedureTreeSink,
       toolDreamSurface: dreamHolder,
+      promptResolver: promptResolver,
+      routeChainOf: routeChainOf,
     ),
   );
 
@@ -376,6 +394,8 @@ Future<BrainProcess> standUpBrainProcess({
   ToolAccessSink? toolAccessSink,
   ProcedureTreeSink? procedureTreeSink,
   DreamConfig? dream,
+  PromptResolver? promptResolver,
+  RouteChainResolver? routeChainOf,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -392,6 +412,8 @@ Future<BrainProcess> standUpBrainProcess({
     toolAccessSink: toolAccessSink,
     procedureTreeSink: procedureTreeSink,
     dream: dream,
+    promptResolver: promptResolver,
+    routeChainOf: routeChainOf,
   );
 
   final BrainAccessProcess process;
@@ -476,6 +498,15 @@ TelegramInspectors _telegramInspectorsFor({
 /// `runConfig.access.openAiPort` (production); a test injects a seam that binds
 /// an ephemeral port. A caller that needs to override the role registry or wire
 /// real web tools calls [buildSubstrate] + [standUpBrainProcess] directly.
+///
+/// When `runConfig.cognition` is present, the two `sub.run` seams
+/// (`prompt_configuration.md` §7.4 / §8) are built from the named cognition
+/// config tree: [CognitionConfigLoader.loadFromDir] parses `registry.yaml` +
+/// the per-procedure configs + the `llm/` routes, [buildPromptResolver] backs
+/// the named-prompt seam over those (seeded with the §6 built-ins), and
+/// [buildRouteChainResolver] backs the named-route seam. Absent → no resolvers
+/// (any `sub.run` raises `UnregisteredPromptException`, the pre-migration
+/// default).
 Future<BrainProcess> standUpBrainProcessFromConfig(
   BrainRunConfig runConfig, {
   Directory? systemScriptsDir,
@@ -483,8 +514,36 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
   String? isolateLogRootPath,
-}) {
+}) async {
   final TomBrainSubstrateClient substrate = buildSubstrate(runConfig.substrate);
+  // Resolve the scripts dir once so the boot's procedure store and the §6
+  // `${scripts_folder}` built-in the prompt resolver carries agree on the same
+  // directory.
+  final Directory scriptsDir =
+      systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
+
+  // Build the two `sub.run` seams from the `cognition:` config tree (§7.4 /
+  // §8) when the block is present.
+  PromptResolver? promptResolver;
+  RouteChainResolver? routeChainOf;
+  final cognition = runConfig.cognition;
+  if (cognition != null) {
+    final Map<String, String> environment = Platform.environment;
+    final cognitionConfig =
+        CognitionConfigLoader.loadFromDir(cognition.root, env: environment);
+    final builtins = BrainBuiltins.fromRunConfig(
+      runConfig,
+      configFolder: cognition.root,
+      scriptsFolder: scriptsDir.path,
+    );
+    promptResolver = buildPromptResolver(
+      cognitionConfig,
+      builtins,
+      environment: environment,
+    );
+    routeChainOf = buildRouteChainResolver(cognitionConfig);
+  }
+
   // Boot-time trail sweep (§8 / §10 step #10): write the §7 `.gitignore` and
   // enforce the raw-tier count / aggregate-size caps before any writer appends
   // a new file this run. Full-trail mode only — unconfigured mode writes no raw
@@ -497,7 +556,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     substrate: substrate,
     memoryConfig: runConfig.memory,
     substrateConfig: runConfig.substrate,
-    systemScriptsDir: systemScriptsDir,
+    systemScriptsDir: scriptsDir,
     serve: serve,
     classifyFallback: classifyFallback,
     foregroundQueueDepth: foregroundQueueDepth,
@@ -511,6 +570,8 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     toolAccessSink: sinks.toolAccessSink,
     procedureTreeSink: sinks.procedureTreeSink,
     dream: runConfig.dream,
+    promptResolver: promptResolver,
+    routeChainOf: routeChainOf,
   );
 }
 

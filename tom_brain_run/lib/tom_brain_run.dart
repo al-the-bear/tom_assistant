@@ -36,6 +36,9 @@ library;
 
 export 'src/brain_run_config.dart' show BrainRunConfig;
 export 'src/builtin_bindings.dart' show BrainBuiltins;
+export 'src/cognition_run_config.dart'
+    show CognitionRunConfig, CognitionRunConfigException;
+export 'src/cognition_run_config_loader.dart' show CognitionRunConfigLoader;
 export 'src/cognition_config.dart'
     show
         CognitionConfig,
@@ -52,6 +55,8 @@ export 'src/cognition_config.dart'
         ToolsSetting,
         UnregisteredPromptException;
 export 'src/cognition_config_loader.dart' show CognitionConfigLoader;
+export 'src/cognition_prompt_resolver.dart'
+    show buildPromptResolver, buildRouteChainResolver;
 export 'src/llm_route_config.dart' show LlmRouteConfig, UnknownLlmRouteException;
 export 'src/brain_run_config_loader.dart'
     show BrainRunConfigException, BrainRunConfigLoader;

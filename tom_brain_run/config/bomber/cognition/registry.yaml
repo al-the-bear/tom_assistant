@@ -1,0 +1,22 @@
+# Cognition config root index (`prompt_configuration.md` §4).
+#
+# The registry names every main procedure (its settings file + its
+# config/template folder, both relative to this cognition root), the shared
+# `roles/` persona folder, and the `llm/` route-config folder with the route a
+# prompt inherits when it sets no `llm:` of its own.
+#
+# Increment 6 ships exactly one main procedure — `assist_user` — whose
+# `answer_with_memory` sub-procedure owns the `assembly` prompt the migrated
+# `answer_with_memory_v1` runs via `sub.run('assist_user.answer_with_memory.assembly')`.
+
+procedures:
+  assist_user:
+    config: assist_user.yaml
+    folder: assist_user
+
+roles:
+  folder: roles
+
+llm:
+  folder: llm
+  default: assistant

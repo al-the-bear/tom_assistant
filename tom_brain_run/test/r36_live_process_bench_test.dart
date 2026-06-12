@@ -208,11 +208,21 @@ _LiveEndpoint _ollama() => _LiveEndpoint.resolve(
 /// Builds the whole-process YAML for the live run: the real oMLX + Ollama
 /// substrate, the on-disk memory rooted at [memoryRoot] (vec0 from
 /// [binariesRoot]), and a permissive single-bearer access config. Mirrors r32.
+/// The version-controlled cognition config tree (`config/bomber/cognition`)
+/// the live run wires the `sub.run` prompt / route resolvers from
+/// (`prompt_configuration.md` §7.4). `Directory.current` is the package root
+/// under `dart test` / testkit.
+String _cognitionConfigRoot() => Directory(
+      '${Directory.current.absolute.path}${Platform.pathSeparator}config'
+      '${Platform.pathSeparator}bomber${Platform.pathSeparator}cognition',
+    ).absolute.path;
+
 String _liveRunYaml({
   required _LiveEndpoint omlx,
   required _LiveEndpoint ollama,
   required String memoryRoot,
   required String binariesRoot,
+  required String cognitionRoot,
 }) =>
     '''
 substrate:
@@ -255,6 +265,8 @@ access:
     refillPeriodSeconds: 1
   quota:
     dailyCap: 1000000
+cognition:
+  root: "$cognitionRoot"
 ''';
 
 /// Reads a positive-int env override, falling back to [fallback] when absent or
@@ -290,6 +302,7 @@ Future<Duration> _measureFreshSample({
       ollama: ollama,
       memoryRoot: memoryRoot.path,
       binariesRoot: binariesRoot,
+      cognitionRoot: _cognitionConfigRoot(),
     ),
   );
   final BrainProcess process = await standUpBrainProcessFromConfig(

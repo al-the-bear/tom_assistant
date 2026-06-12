@@ -829,6 +829,24 @@ trail:
       expect(() => AccessConfigLoader.parse(doc), returnsNormally);
     });
 
+    // The whole-process document also carries the run package's `dream:` and
+    // `cognition:` sections (owned by `DreamConfigLoader` / the cognition
+    // loader; memory-spec § 9.7 / `prompt_configuration.md` §7.4). The access
+    // loader tolerates both as siblings so the single file feeds every loader.
+    test('tolerates sibling dream: and cognition: sections', () {
+      const doc = '''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+dream:
+  enabled: false
+cognition:
+  root: /srv/brain/cognition
+''';
+      expect(() => AccessConfigLoader.parse(doc), returnsNormally);
+    });
+
     test('rejects an unknown key within access:', () {
       const doc = '''
 access:

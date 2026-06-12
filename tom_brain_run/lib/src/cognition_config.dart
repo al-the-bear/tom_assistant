@@ -155,18 +155,27 @@ final class PromptSettings {
   /// default).
   final String? llm;
 
+  /// The substrate role whose persona/objective wrap the prompt and whose
+  /// assistant-dedication anchor is enforced on every call (§5.4). Selects
+  /// persona + anchor + provenance only, *not* the LLM route (that is [llm],
+  /// §8). Always resolves: falls back to `assistant_to_user` when unset anywhere
+  /// in the inheritance chain (principle 5 / Postulate 3).
+  final String role;
+
   /// Optional structured-output schema (maps to `LlmOptions.responseFormat`).
   final Map<String, Object?>? responseFormat;
 
   /// Optional generation stop sequences.
   final List<String>? stopSequences;
 
-  /// Binds the resolved settings.
+  /// Binds the resolved settings. [role] defaults to `assistant_to_user` (the
+  /// §5.4 chain fallback).
   const PromptSettings({
     this.temperature,
     this.maxToolLoops,
     this.tools,
     this.llm,
+    this.role = 'assistant_to_user',
     this.responseFormat,
     this.stopSequences,
   });

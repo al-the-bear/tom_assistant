@@ -1,0 +1,20 @@
+# The `assist_user` main procedure (`prompt_configuration.md` §5 / §5.4).
+#
+# Main-level settings are inherited by every sub-procedure and prompt beneath
+# unless overridden: the full tool catalogue, the user-facing
+# `assistant_to_user` role (persona + assistant-dedication anchor), and the
+# `assistant` LLM route.
+#
+# The `answer_with_memory` sub-procedure carries the single `assembly` prompt
+# the migrated `answer_with_memory_v1` runs — its template assembles the recall
+# context, prior turns, todo discipline, and the live prompt around the
+# `${tools.catalogue}` marker the engine renders from the resolved tool set.
+
+tools: all
+llm: assistant
+role: assistant_to_user
+
+answer_with_memory:
+  prompts:
+    assembly:
+      template: answer_with_memory.assembly.md

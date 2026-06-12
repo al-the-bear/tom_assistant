@@ -28,6 +28,7 @@ import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryConfig;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig;
 
+import 'cognition_run_config.dart';
 import 'dream_config.dart';
 import 'tools_config.dart';
 import 'trail_config.dart';
@@ -73,12 +74,21 @@ final class BrainRunConfig {
   /// in which case the run assembly stands up no dream loop at all.
   final DreamConfig? dream;
 
+  /// The optional `cognition:` section (`prompt_configuration.md` §7.4) — the
+  /// cognition config tree the run assembly turns into the two `sub.run` seams
+  /// (the `PromptResolver` + `RouteChainResolver`). `null` when the document
+  /// carries no `cognition:` block, in which case no resolvers are wired and any
+  /// `sub.run` raises `UnregisteredPromptException` (the pre-migration
+  /// prototype behaviour).
+  final CognitionRunConfig? cognition;
+
   /// Assembles the parsed sections into the run configuration.
   ///
-  /// [trail], [tools] and [dream] are optional: an absent `trail:` block leaves
-  /// [trail] `null` (unconfigured mode); an absent `tools:` block leaves [tools]
-  /// `null` (the engine's placeholder file-scope root); an absent `dream:` block
-  /// leaves [dream] `null` (no dream loop at boot).
+  /// [trail], [tools], [dream] and [cognition] are optional: an absent `trail:`
+  /// block leaves [trail] `null` (unconfigured mode); an absent `tools:` block
+  /// leaves [tools] `null` (the engine's placeholder file-scope root); an absent
+  /// `dream:` block leaves [dream] `null` (no dream loop at boot); an absent
+  /// `cognition:` block leaves [cognition] `null` (no prompt / route resolvers).
   const BrainRunConfig({
     required this.substrate,
     required this.memory,
@@ -86,6 +96,7 @@ final class BrainRunConfig {
     this.trail,
     this.tools,
     this.dream,
+    this.cognition,
   });
 
   /// The active trail mode, derived from whether a `trail:` block was

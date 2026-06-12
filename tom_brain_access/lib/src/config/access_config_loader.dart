@@ -64,10 +64,12 @@ abstract final class AccessConfigLoader {
   /// The top-level sections the whole-process document may carry. This
   /// loader owns [_accessKey]; the others are owned by their own loaders
   /// (substrate / memory / engine / dispatcher, the run package's
-  /// `TrailConfigLoader` for `trail:` — `tom_brain_logging.md` §8 — and its
-  /// `ToolsConfigLoader` for `tools:` — the file-scope roots) and are
-  /// tolerated here so the single file feeds every section loader. Any other
-  /// root key is rejected (AC-12).
+  /// `TrailConfigLoader` for `trail:` — `tom_brain_logging.md` §8 — its
+  /// `ToolsConfigLoader` for `tools:` — the file-scope roots — its
+  /// `DreamConfigLoader` for `dream:` (memory-spec § 9.7), and its cognition
+  /// loader for `cognition:` — `prompt_configuration.md` §7.4, the prompt /
+  /// route resolver root) and are tolerated here so the single file feeds
+  /// every section loader. Any other root key is rejected (AC-12).
   static const Set<String> _allowedTopLevelKeys = <String>{
     'substrate',
     'memory',
@@ -75,6 +77,8 @@ abstract final class AccessConfigLoader {
     'dispatcher',
     'trail',
     'tools',
+    'dream',
+    'cognition',
     _accessKey,
   };
 

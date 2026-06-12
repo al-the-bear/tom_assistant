@@ -218,3 +218,11 @@ tools:
   # inspect it for context but must never write or delete inside it.
   readScope:
     - /srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container
+# The cognition config tree (`prompt_configuration.md` §7.4): the directory
+# holding `registry.yaml`, the per-procedure config/template folders, and the
+# `llm/` route folder. The run assembly turns this tree into the two `sub.run`
+# seams every procedure consults — the named-prompt resolver (the migrated
+# `answer_with_memory_v1` runs `assist_user.answer_with_memory.assembly` from
+# here) and the named-route resolver. Version-controlled alongside this config.
+cognition:
+  root: /srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_assistant/tom_brain_run/config/bomber/cognition

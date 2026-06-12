@@ -53,6 +53,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, SubstrateConfigLoader;
 
 import 'brain_run_config.dart';
+import 'cognition_run_config.dart';
+import 'cognition_run_config_loader.dart';
 import 'dream_config.dart';
 import 'dream_config_loader.dart';
 import 'tools_config.dart';
@@ -96,6 +98,8 @@ abstract final class BrainRunConfigLoader {
         ToolsConfigLoader.parse(content, envVars: envVars);
     final DreamConfig? dream =
         DreamConfigLoader.parse(content, envVars: envVars);
+    final CognitionRunConfig? cognition =
+        CognitionRunConfigLoader.parse(content, envVars: envVars);
     return BrainRunConfig(
       substrate: substrate,
       memory: memory,
@@ -103,6 +107,7 @@ abstract final class BrainRunConfigLoader {
       trail: trail,
       tools: tools,
       dream: dream,
+      cognition: cognition,
     );
   }
 

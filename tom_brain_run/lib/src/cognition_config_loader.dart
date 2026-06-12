@@ -43,6 +43,7 @@ abstract final class CognitionConfigLoader {
     'max_tool_loops',
     'tools',
     'llm',
+    'role',
     'response_format',
     'stop_sequences',
   };
@@ -53,6 +54,7 @@ abstract final class CognitionConfigLoader {
     'max_tool_loops',
     'tools',
     'llm',
+    'role',
     'response_format',
     'stop_sequences',
     'prompts',
@@ -64,6 +66,7 @@ abstract final class CognitionConfigLoader {
     'max_tool_loops',
     'tools',
     'llm',
+    'role',
     'response_format',
     'stop_sequences',
     'template',
@@ -276,6 +279,7 @@ abstract final class CognitionConfigLoader {
             maxToolLoops: merged.maxToolLoops,
             tools: merged.tools,
             llm: merged.llm ?? registry.llmDefault,
+            role: merged.role ?? 'assistant_to_user',
             responseFormat: merged.responseFormat,
             stopSequences: merged.stopSequences,
           ),
@@ -296,6 +300,7 @@ abstract final class CognitionConfigLoader {
         maxToolLoops: _readInt(map, 'max_tool_loops', '$path.max_tool_loops'),
         tools: _parseTools(map['tools'], '$path.tools', envReader),
         llm: _readString(map, 'llm', '$path.llm', envReader),
+        role: _readString(map, 'role', '$path.role', envReader),
         responseFormat: _readResponseFormat(map, '$path.response_format'),
         stopSequences:
             _readStringList(map, 'stop_sequences', '$path.stop_sequences',
@@ -308,6 +313,7 @@ abstract final class CognitionConfigLoader {
         maxToolLoops: override.maxToolLoops ?? base.maxToolLoops,
         tools: override.tools ?? base.tools,
         llm: override.llm ?? base.llm,
+        role: override.role ?? base.role,
         responseFormat: override.responseFormat ?? base.responseFormat,
         stopSequences: override.stopSequences ?? base.stopSequences,
       );
@@ -560,6 +566,7 @@ final class _SettingsLayer {
   final int? maxToolLoops;
   final ToolsSetting? tools;
   final String? llm;
+  final String? role;
   final Map<String, Object?>? responseFormat;
   final List<String>? stopSequences;
 
@@ -568,6 +575,7 @@ final class _SettingsLayer {
     this.maxToolLoops,
     this.tools,
     this.llm,
+    this.role,
     this.responseFormat,
     this.stopSequences,
   });
