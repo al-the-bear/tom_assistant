@@ -5,12 +5,12 @@
 ///   self-critique, and re-enter until every session todo is done and the
 ///   critique accepts (todo-based termination), then persist the exchange.
 /// successCriterion: a deliberation-cued prompt is answered through the
-///   recursive loop — the loop dispatches its analyse/sub-think sub-prompts,
-///   runs an `evaluator` critique each pass (the investigation of the last
-///   answer), pushes the critique's missing pieces as session todos on REJECT,
-///   and terminates only once every session todo is done AND the critique
-///   accepts; an Event + Conclusion (+ derived_from edges to the cited recalled
-///   nodes) are persisted on exit.
+///   recursive loop — the loop dispatches its analyse/sub-think sub-prompts via
+///   `sub.run`, runs an `evaluator` critique each pass (the investigation of the
+///   last answer), pushes the critique's missing pieces as session todos on
+///   REJECT, and terminates only once every session todo is done AND the
+///   critique accepts; an Event + Conclusion (+ derived_from edges to the cited
+///   recalled nodes) are persisted on exit.
 /// budget: { wallClockMs: 14400000 }
 /// # Only a wall-clock deadline (§ 5.4): a foreground user prompt is virtually
 /// # unlimited on every count dimension, exactly as `answer_with_memory_v1`.
@@ -26,58 +26,70 @@
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: incomplete, type: bool }
-/// requires: [ runProcedure, embed, llm, persist, edge, tool.list, tool.invoke ]
+/// requires: [ runProcedure, run, embed, persist, edge, tool.invoke ]
 //
 // answer_with_thinking_v1 — the thinking branch of the entry router
 // (`tom_brain_completion_plan.md` Todo 6, gaps G-T1 / G-T4 / C-2;
-// `thinking_specification.md` § 4.1–4.7). It supersedes the `think_v1` no-op
-// stub: the router's `thinking` verdict now reaches a real recursive loop.
+// `thinking_specification.md` § 4.1–4.7; `prompt_configuration.md` §9 /
+// increment 7). It supersedes the `think_v1` no-op stub: the router's `thinking`
+// verdict now reaches a real recursive loop.
 //
-// ── How it is reached (§ 4.0.1, route-flip option b) ────────────────────
+// ── What increment 7 changed (the thinking-path restructure, §9) ─────────
 //
-// This procedure is never selected directly. The dispatcher routes every
-// `user_prompt` to the entry router `prompt_analyzer_v1`, reads its `target`
-// output, and — when that target is `answer_with_thinking_v1` — launches *this*
-// procedure as the top-level streaming run (its own foreground admission). The
-// `normal` verdict reaches `answer_with_memory_v1` instead; the two branches
-// are reachable only through the router's two-phase dispatch.
+// Before increment 7 each of the four deliberation stages built its own prompt
+// with an inline string builder (`_analysisPrompt` / `_subThinkPrompt` /
+// `_synthesisPrompt` / `_critiquePrompt`) and called `sub.llm(role:)` with the
+// pre-assembled wire prompt. Increment 7 deletes every one of those builders and
+// runs each stage through a **registered prompt** instead:
+// `sub.run('assist_user.answer_with_thinking.<stage>', inputs:)`. The prompt's
+// template + the injected `PromptResolver` own the assembly (`${recall}` /
+// `${analysis}` / `${sub_reasoning}` / `${rejection_context}` / `${history}` /
+// `${text}`); the engine renders `${tools.catalogue}` from the prompt's resolved
+// tool set, and the shared `tool_loop_v1` script owns the inner tool loop (§7).
+// The migration is total (principle 1 / PE-9): there is no inline fallback.
 //
-// ── The recursive loop (§ 4.1) ──────────────────────────────────────────
+// The §9 restructure makes the synthesis stage an **ordinary tool-enabled
+// prompt** — the "normal prompt" the thinking loop wraps. `synthesis` carries
+// `tools: all` and the same `${tools.catalogue}` rendering as
+// `answer_with_memory.assembly`, so the draft can recall/inspect through the
+// real tool loop exactly as the normal branch does. The thinking procedure owns
+// only the **outer** critique / re-entry loop; the inner send→parse→execute→
+// re-send cycle lives in `tool_loop_v1` (§7.2).
+//
+// ── The recursive loop (§9 / § 4.1) ──────────────────────────────────────
 //
 // A single forward pass is a reflex, not a thought (the quest's core belief).
-// This body is the engineered process: it wraps the same substrate the normal
-// branch uses in an analyse → sub-reason → synthesise → self-critique →
-// re-enter loop terminated by the **todo-based contract** (agent-loop
-// completion plan § 3), not a count cap. One pass through the `while` is one
-// deliberation iteration:
+// One pass through the `while` is one deliberation iteration:
 //
-//   A  analyse    — `sub.llm(role: 'analyser')` reads the prompt (and, on a
-//                    re-entry, the prior rejected draft + its critique) and
-//                    states what the answer must address.
-//   B  sub-reason — `sub.llm(role: 'sub_thinker')` works the sub-questions the
-//                    analysis surfaced. Memory recall (the other half of stage
-//                    B, § 4.2) is dispatched *once* before the loop via the
+//   A  analyse    — `sub.run('…analysis' | '…analysis_reentry')` reads the
+//                    prompt (and, on a re-entry, the accumulated rejection
+//                    history) and states what the answer must address. The
+//                    re-entry template is selected once `iteration > 0`.
+//   B  sub-reason — `sub.run('…sub_think')` works the sub-questions the analysis
+//                    surfaced. Memory recall (the other half of stage B, § 4.2)
+//                    is dispatched *once* before the loop via the
 //                    `retrieve_for_prompt_v1` conductor: the recalled context is
 //                    stable across iterations; only the draft and the critique
 //                    change, so re-recalling each pass would spend budget for an
 //                    identical result.
-//   C  synthesise — `sub.llm(role: 'assistant_to_user')` drafts the answer from
-//                    the recall + analysis + sub-reasoning (+ the rejection
-//                    context on a re-entry). Deliberately *no* `tools` argument:
-//                    the synthesis is pure composition, and withholding the tool
-//                    catalogue keeps the streamed terminal answer clean (§ 4.4).
-//                    The loop body — not this stage — owns the `todo.*` calls.
-//   D  critique   — `sub.llm(role: 'evaluator')` judges the draft and returns a
+//   C  synthesise — `sub.run('…synthesis' | '…synthesis_reentry')` drafts the
+//                    answer from the recall + analysis + sub-reasoning (+ the
+//                    accumulated rejection history on a re-entry). This is the
+//                    tool-enabled "normal prompt"; the re-entry template folds in
+//                    the increasing history and is selected once `iteration > 0`.
+//   D  critique   — `sub.run('…critique')` judges the draft and returns a
 //                    verdict; `_isAccept` parses ACCEPT vs REJECT. This critique
 //                    IS the "investigate the last answer" gate (§ 3 / § 5.2):
 //                    its verdict feeds the todo-based termination, and on REJECT
 //                    its missing pieces become concrete session todos.
-//   E  re-enter   — on REJECT the rejected draft + critique are carried forward
-//                    as `rejectionContext` AND pushed as a new session todo
-//                    (`tool.invoke('todo.add', …)`) so there is tracked open
-//                    work; on ACCEPT the loop marks the todos *it* pushed done
-//                    (the accepted draft resolved them). The loop re-enters
-//                    while any session todo is open or the critique rejected.
+//   E  re-enter   — on REJECT the rejected draft + critique are **appended** to
+//                    the accumulating `rejectionHistory` (the increasing history
+//                    the re-entry templates fold in via `${rejection_context}`)
+//                    AND pushed as a new session todo (`tool.invoke('todo.add')`)
+//                    so there is tracked open work; on ACCEPT the loop marks the
+//                    todos *it* pushed done (the accepted draft resolved them).
+//                    The loop re-enters while any session todo is open or the
+//                    critique rejected.
 //
 // ── Todo-based termination + the never-silent contract (§ 3, gap-hunt § 6.5) ─
 //
@@ -117,16 +129,13 @@
 // SandboxValidator allow-lists exactly these: `procedure_inputs` (so
 // `inputs.get(...)` dispatches onto the native bag), `procedure_result` (so the
 // recall conductor's `retrieval.output('recall')` resolves), `memory_bridge`
-// (`mem.persist` / `mem.edge`), `substrate_bridge` (`sub.llm` / `sub.embed`),
-// `tool_bridge` (`tool.list` / `tool.invoke` — the `todo.*` family the
-// todo-based termination reads and writes; the engine binds the per-run `tool`
-// global on every run), and `primitives_native` (the engine-native
-// `runProcedure`). The synthesis stage still forbids tools — it passes no
-// `tools:` argument to `sub.llm` — so the catalogue is never offered to the
-// model; the loop *body* owns the `todo.*` calls directly. Every completion is
-// an `sub.llm` call that names a `role` and supplies the prompt as the role
-// template's *input* — never a pre-assembled wire prompt — so the
-// assistant-dedication anchor is always prepended at substrate assembly time.
+// (`mem.persist` / `mem.edge`), `substrate_bridge` (`sub.run` / `sub.embed`),
+// `tool_bridge` (`tool.invoke` — the `todo.*` family the todo-based termination
+// reads and writes; the engine binds the per-run `tool` global on every run),
+// and `primitives_native` (the engine-native `runProcedure`). Every completion
+// is a `sub.run` call that names a registered prompt whose role assembles
+// persona + the assistant-dedication anchor at the substrate's assembly time —
+// it can never hand the substrate a pre-assembled wire prompt (principle 5).
 import 'package:tom_brain_procedure/src/api/procedure_inputs.dart';
 import 'package:tom_brain_procedure/src/api/procedure_result.dart';
 import 'package:tom_brain_procedure/src/bridges/memory_bridge.dart';
@@ -134,9 +143,15 @@ import 'package:tom_brain_procedure/src/bridges/substrate_bridge.dart';
 import 'package:tom_brain_procedure/src/bridges/tool_bridge.dart';
 import 'package:tom_brain_procedure/src/primitives_native/primitives_native.dart';
 
+/// The registered-prompt id prefix for the thinking stages (§5.1). Each stage
+/// appends its `<prompt_name>` — `analysis` / `analysis_reentry` / `sub_think` /
+/// `synthesis` / `synthesis_reentry` / `critique`.
+const String _thinkingBase = 'assist_user.answer_with_thinking';
+
 Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final text = inputs.get('text');
   final priorTurns = inputs.has('priorTurns') ? inputs.get('priorTurns') : null;
+  final priorTurnsList = priorTurns is List ? priorTurns : const <Object?>[];
 
   // Stage B (memory half) — recall once before the loop via the retrieval
   // conductor (§ 4.2; Extension-H step #30). The recalled context is stable
@@ -151,8 +166,13 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // pieces) are tracked so an eventual ACCEPT can mark exactly those done — never
   // any pre-existing session todo the act stage owns.
   var draft = '';
-  var rejectionContext = '';
+  // The increasing rejection history (§9): each REJECT appends the rejected
+  // draft + its critique here, and the re-entry templates fold it in via
+  // `${rejection_context}`. This is loop *data*, not a prompt builder — the
+  // instructional prose lives in the `*_reentry` templates.
+  var rejectionHistory = '';
   final pushedTodoIds = <String>[];
+  var iteration = 0;
   var finished = false;
 
   // The exit condition is folded into the loop guard rather than using `break`:
@@ -160,37 +180,57 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // surfaces "Break statement outside of a loop"), so the loop runs while not
   // `finished`.
   while (!finished) {
-    // Stage A — analyse the prompt (carrying the prior rejection on a re-entry).
-    final analysisCompletion = await sub.llm(
-      _analysisPrompt(text, recall, rejectionContext),
-      role: 'analyser',
+    final reentry = iteration > 0;
+
+    // Stage A — analyse the prompt. The re-entry template (selected once
+    // `iteration > 0`) folds in the accumulated rejection history.
+    final analysisId = reentry ? 'analysis_reentry' : 'analysis';
+    final analysisCompletion = await sub.run(
+      '$_thinkingBase.$analysisId',
+      inputs: <String, Object?>{
+        'text': text,
+        'recall': recall,
+        'priorTurns': List<Object?>.of(priorTurnsList),
+        'rejection_context': rejectionHistory,
+      },
     );
-    final analysis = analysisCompletion['text'];
+    final analysis = analysisCompletion['answer'];
 
     // Stage B (reasoning half) — work the sub-questions the analysis surfaced.
-    final subCompletion = await sub.llm(
-      _subThinkPrompt(text, analysis),
-      role: 'sub_thinker',
+    final subCompletion = await sub.run(
+      '$_thinkingBase.sub_think',
+      inputs: <String, Object?>{'text': text, 'analysis': analysis},
     );
-    final subReasoning = subCompletion['text'];
+    final subReasoning = subCompletion['answer'];
 
-    // Stage C — synthesise the draft answer. No `tools`: synthesis is pure
-    // composition (§ 4.4), and withholding the catalogue keeps the streamed
-    // terminal answer clean.
-    final draftCompletion = await sub.llm(
-      _synthesisPrompt(
-        text, recall, analysis, subReasoning, priorTurns, rejectionContext),
-      role: 'assistant_to_user',
+    // Stage C — synthesise the draft answer. The synthesis prompt is the
+    // tool-enabled "normal prompt" (§9): it carries `tools: all`, so the draft
+    // runs through the shared tool loop exactly as the normal branch does. The
+    // re-entry template folds in the increasing history.
+    final synthesisId = reentry ? 'synthesis_reentry' : 'synthesis';
+    final draftCompletion = await sub.run(
+      '$_thinkingBase.$synthesisId',
+      inputs: <String, Object?>{
+        'text': text,
+        'recall': recall,
+        'priorTurns': List<Object?>.of(priorTurnsList),
+        'rejection_context': rejectionHistory,
+        'analysis': analysis,
+        'sub_reasoning': subReasoning,
+      },
     );
-    draft = draftCompletion['text'];
+    final draftText = draftCompletion['answer'];
+    if (draftText is String && draftText.isNotEmpty) {
+      draft = draftText;
+    }
 
     // Stage D — self-critique: the investigation of the last answer. Its verdict
     // drives accept/re-enter and feeds the todo-based termination.
-    final critiqueCompletion = await sub.llm(
-      _critiquePrompt(text, draft),
-      role: 'evaluator',
+    final critiqueCompletion = await sub.run(
+      '$_thinkingBase.critique',
+      inputs: <String, Object?>{'text': text, 'draft': draft},
     );
-    final verdict = critiqueCompletion['text'];
+    final verdict = critiqueCompletion['answer'];
     final accepted = _isAccept(verdict);
 
     if (accepted) {
@@ -201,15 +241,17 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       // position, to stay clear of d4rt's `x = f(await g())` mis-scoping.
       for (final id in pushedTodoIds) {
         await tool.invoke(
-          'todo.update', <String, Object?>{'id': id, 'done': true});
+            'todo.update', <String, Object?>{'id': id, 'done': true});
       }
     } else {
-      // Stage E — re-entry: carry the rejected draft + its critique forward so
-      // the next analysis knows what to fix, AND push the critique's missing
-      // pieces as a concrete session todo so termination cannot fire until that
-      // work is cleared. This is how "investigate the last answer" feeds the
-      // todo-based termination (§ 5.2).
-      rejectionContext = _rejectionContext(draft, verdict);
+      // Stage E — re-entry: append the rejected draft + its critique to the
+      // accumulating rejection history so the next pass's re-entry template
+      // knows what to fix, AND push the critique's missing pieces as a concrete
+      // session todo so termination cannot fire until that work is cleared. This
+      // is how "investigate the last answer" feeds the todo-based termination
+      // (§ 5.2).
+      rejectionHistory = _appendRejection(
+          rejectionHistory, iteration + 1, draft, verdict);
       final pushedId = await _pushMissingPieceTodo(verdict);
       if (pushedId.isNotEmpty) {
         pushedTodoIds.add(pushedId);
@@ -221,6 +263,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     // non-todo exit and is enforced externally — not observable here.
     final open = await _openTodoCount();
     finished = open == 0 && accepted;
+    iteration = iteration + 1;
   }
 
   // The body only exits when finished — a critique-accepted, todo-clear answer.
@@ -285,6 +328,16 @@ bool _isAccept(Object? verdict) {
   return verdict.toUpperCase().contains('ACCEPT');
 }
 
+/// Appends one rejected attempt (its [draft] and the evaluator [verdict]) to the
+/// accumulating rejection [history] — the increasing history the `*_reentry`
+/// templates fold in via `${rejection_context}` (§9). Pure data formatting (no
+/// prompt instructions; those live in the templates), so the inline prompt
+/// builders the migration deletes do not creep back in.
+String _appendRejection(
+    String history, int attempt, String draft, Object? verdict) {
+  return '${history}Attempt $attempt:\nDraft:\n$draft\nCritique:\n$verdict\n\n';
+}
+
 /// Counts the open (`done != true`) entries in the live session todo store via
 /// the `todo.list` tool — the source of truth the loop terminates on (§ 3.1).
 /// `tool.invoke('todo.list', {})` returns `{ok, result: {todos: […]}}`, each
@@ -313,7 +366,7 @@ Future<int> _openTodoCount() async {
 /// clear before it can finish.
 Future<String> _pushMissingPieceTodo(Object? verdict) async {
   final Object? added = await tool.invoke(
-    'todo.add', <String, Object?>{'text': _missingPieceText(verdict)});
+      'todo.add', <String, Object?>{'text': _missingPieceText(verdict)});
   if (added is! Map) return '';
   final result = added['result'];
   if (result is! Map) return '';
@@ -344,119 +397,11 @@ String _missingPieceText(Object? verdict) {
   return 'Fix rejected draft: $detail';
 }
 
-/// Builds the `analyser`-role prompt (stage A). On a re-entry the prior
-/// rejection context is folded in so the analysis targets what the critique
-/// faulted.
-String _analysisPrompt(Object? text, Map recall, String rejectionContext) {
-  final context = _renderRecall(recall);
-  return '${rejectionContext}Analyse what a complete, correct answer to the '
-      'user prompt below must address. List the key sub-questions and the '
-      'facts the answer depends on. Be concise.\n'
-      '\n'
-      '${context}User prompt:\n$text';
-}
-
-/// Builds the `sub_thinker`-role prompt (stage B reasoning half): work the
-/// sub-questions the analysis surfaced.
-String _subThinkPrompt(Object? text, Object? analysis) {
-  return 'Reason through the sub-questions below to gather what the final '
-      'answer needs. Think step by step; do not write the final answer yet.\n'
-      '\n'
-      'Analysis:\n$analysis\n'
-      '\n'
-      'User prompt:\n$text';
-}
-
-/// Builds the `assistant_to_user`-role synthesis prompt (stage C). Folds the
-/// prior turns, the recalled memory, the analysis, the sub-reasoning, and (on a
-/// re-entry) the rejection context into one composition instruction.
-String _synthesisPrompt(
-  Object? text,
-  Map recall,
-  Object? analysis,
-  Object? subReasoning,
-  Object? priorTurns,
-  String rejectionContext,
-) {
-  final history = _renderPriorTurns(priorTurns);
-  final context = _renderRecall(recall);
-  return '$rejectionContext${history}Write the best possible answer to the '
-      'user prompt, using your analysis and sub-reasoning and the recalled '
-      'memory. Answer in plain prose.\n'
-      '\n'
-      'Analysis:\n$analysis\n'
-      '\n'
-      'Sub-reasoning:\n$subReasoning\n'
-      '\n'
-      '${context}User prompt:\n$text';
-}
-
-/// Builds the `evaluator`-role critique prompt (stage D). Asks for a verdict
-/// the body can parse: a leading ACCEPT or REJECT.
-String _critiquePrompt(Object? text, String draft) {
-  return 'Critique the draft answer below against the user prompt. Decide '
-      'whether it is complete and correct enough to send.\n'
-      '\n'
-      'Reply with ACCEPT or REJECT on the first line, then a one-line reason. '
-      'Use REJECT if the draft is incomplete, wrong, or evasive.\n'
-      '\n'
-      'User prompt:\n$text\n'
-      '\n'
-      'Draft answer:\n$draft';
-}
-
-/// Renders the rejected draft + its critique as a re-entry preamble (stage E),
-/// or `''` when there is no prior rejection (the first pass).
-String _rejectionContext(String draft, Object? verdict) {
-  return 'A previous attempt was rejected by self-critique. Address the '
-      'critique; do not repeat the same mistakes.\n'
-      'Previous draft:\n$draft\n'
-      'Critique:\n$verdict\n'
-      '\n';
-}
-
-/// Renders the recalled nodes' `text` values as a "Relevant recalled memory"
-/// block, or `''` when the recall is empty (mirrors `answer_with_memory_v1`).
-String _renderRecall(Map recall) {
-  var context = '';
-  final nodes = recall['nodes'];
-  if (nodes is List) {
-    for (final node in nodes) {
-      if (node is Map) {
-        final values = node['values'];
-        if (values is Map && values['text'] != null) {
-          context += '- ${values['text']}\n';
-        }
-      }
-    }
-  }
-  return context.isEmpty ? '' : 'Relevant recalled memory:\n$context\n';
-}
-
-/// Renders the prior conversation turns as `User:` / `Assistant:` lines, or
-/// `''` when there are none (the § 22.4 history convention; mirrors
-/// `answer_with_memory_v1`).
-String _renderPriorTurns(Object? priorTurns) {
-  if (priorTurns is! List || priorTurns.isEmpty) return '';
-  var rendered = '';
-  for (final turn in priorTurns) {
-    if (turn is! Map) continue;
-    final user = turn['user'];
-    final assistant = turn['assistant'];
-    if (user != null && '$user'.isNotEmpty) {
-      rendered += 'User: $user\n';
-    }
-    if (assistant != null && '$assistant'.isNotEmpty) {
-      rendered += 'Assistant: $assistant\n';
-    }
-  }
-  return rendered.isEmpty ? '' : 'Conversation so far:\n$rendered\n';
-}
-
 /// Collects the ids of the recalled nodes that fed the answer — the nodes the
 /// Conclusion is `derived_from` (mirrors `answer_with_memory_v1`).
-List<String> _citedNodeIds(Map recall) {
+List<String> _citedNodeIds(Object? recall) {
   final ids = <String>[];
+  if (recall is! Map) return ids;
   final nodes = recall['nodes'];
   if (nodes is List) {
     for (final node in nodes) {

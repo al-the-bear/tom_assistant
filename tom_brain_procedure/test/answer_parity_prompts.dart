@@ -64,26 +64,62 @@ class AnswerParityPrompts {
   /// The optional decoding temperature threaded onto the resolved prompt.
   double? temperature;
 
+  /// Every `(id, inputs)` pair the resolver was asked for, in dispatch order.
+  /// The thinking suites assert against this to prove the re-entry templates
+  /// (`*_reentry`) are selected on pass ≥2 and that the accumulated rejection
+  /// history flows into them via `${rejection_context}` (§9).
+  final List<({String id, Map<String, Object?> inputs})> requests =
+      <({String id, Map<String, Object?> inputs})>[];
+
   /// The `PromptResolver` seam: resolves any id to the parity answer prompt.
   ///
-  /// The suites register a single answer prompt, so the id is not branched on —
-  /// every id yields the same assembled template. The inputs are the §6
-  /// placeholder bindings `answer_with_memory_v1` passes (`text` / `recall` /
-  /// `priorTurns` / `open_todo_reminder`).
+  /// The id selects the **role** (and tool set) the way the real config-backed
+  /// resolver does — the thinking stages route to `analyser` / `sub_thinker` /
+  /// `evaluator`, everything else (the `synthesis*` drafts and the
+  /// `answer_with_memory.assembly`) to the user-facing [role]. The body is the
+  /// same parity transcript for every id (the substrate doubles key off the role
+  /// and return canned text, so the body is not asserted on for the thinking
+  /// stages). The inputs are the §6 placeholder bindings the procedures pass.
   PromptResolver get resolver => (String promptId, Map<String, Object?> inputs) async {
+        requests.add((id: promptId, inputs: Map<String, Object?>.of(inputs)));
         final text = inputs['text'];
         final recall = inputs['recall'];
         final priorTurns = inputs['priorTurns'];
         final reminder = inputs['open_todo_reminder'];
         return ResolvedPrompt(
-          role: role,
+          role: _roleForId(promptId),
           llmRoute: route,
           templateBody: _assemble(recall, text, priorTurns, reminder),
-          tools: tools,
+          tools: _toolsForId(promptId),
           maxToolLoops: maxToolLoops,
           temperature: temperature,
         );
       };
+
+  /// Maps a thinking-stage prompt id onto the substrate role its config assigns
+  /// (`prompt_configuration.md` §5.3): the analysis stages run as `analyser`,
+  /// the sub-reasoning stage as `sub_thinker`, the critique as `evaluator`, and
+  /// everything else — the tool-enabled `synthesis` / `synthesis_reentry` drafts
+  /// and the `answer_with_memory.assembly` prompt — inherits the user-facing
+  /// [role].
+  String _roleForId(String promptId) {
+    if (promptId.endsWith('.analysis') ||
+        promptId.endsWith('.analysis_reentry')) {
+      return 'analyser';
+    }
+    if (promptId.endsWith('.sub_think')) return 'sub_thinker';
+    if (promptId.endsWith('.critique')) return 'evaluator';
+    return role;
+  }
+
+  /// Maps a thinking-stage prompt id onto its resolved tool set: the `critique`
+  /// is a no-tool `evaluator` verdict (empty catalogue), every other stage
+  /// surfaces the configured [tools] (the synthesis stages run `tools: all`; the
+  /// readonly reasoning stages still carry a non-empty catalogue in production).
+  List<Object?> _toolsForId(String promptId) {
+    if (promptId.endsWith('.critique')) return const <Object?>[];
+    return tools;
+  }
 
   /// The `RouteChainResolver` seam: every route resolves to an empty chain —
   /// the substrate doubles route over their own canned stream regardless.

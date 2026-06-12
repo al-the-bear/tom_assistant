@@ -242,6 +242,63 @@ void main() {
       expect(outcome.result!.output<bool>('incomplete'), isFalse);
     });
   });
+
+  group('GT1-6 tool-enabled synthesis (§9 — the "normal prompt")', () {
+    test('the synthesis draft is offered the tool catalogue; the critique is '
+        'not', () async {
+      seedRecall();
+      // `tools: all` resolves to a non-empty catalogue; the parity resolver
+      // surfaces it for every stage except the `tools: none` critique.
+      parity.tools = defaultToolCatalogue();
+      substrate.evaluatorVerdicts = <String>['ACCEPT'];
+
+      await thinkAbout('synthesise with tools available');
+
+      // The synthesis draft (the user-facing role) saw the catalogue; the
+      // evaluator critique never did (§9 — critique is `tools: none`).
+      expect(substrate.rolesWithTools, contains('assistant_to_user'));
+      expect(substrate.rolesWithTools, isNot(contains('evaluator')));
+    });
+  });
+
+  group('GT1-7 re-entry templates on pass ≥2 (§9)', () {
+    test('the first pass selects the base templates; the re-entry pass selects '
+        'the *_reentry templates', () async {
+      seedRecall();
+      substrate.evaluatorVerdicts = <String>['REJECT', 'ACCEPT'];
+
+      await thinkAbout('re-enter the loop once');
+
+      final ids = parity.requests.map((r) => r.id).toList();
+      // First pass: the base analysis + synthesis templates.
+      expect(ids, contains('assist_user.answer_with_thinking.analysis'));
+      expect(ids, contains('assist_user.answer_with_thinking.synthesis'));
+      // Second pass (after the REJECT): the re-entry variants.
+      expect(ids, contains('assist_user.answer_with_thinking.analysis_reentry'));
+      expect(
+          ids, contains('assist_user.answer_with_thinking.synthesis_reentry'));
+    });
+  });
+
+  group('GT1-8 history accumulation into the re-entry prompt (§9)', () {
+    test('the rejected draft + its critique flow into the re-entry synthesis '
+        'via \${rejection_context}', () async {
+      seedRecall();
+      substrate.evaluatorVerdicts = <String>['REJECT', 'ACCEPT'];
+
+      await thinkAbout('accumulate the rejection history');
+
+      // The synthesis_reentry request carries the accumulated rejection history,
+      // which includes the first rejected draft (`draft #1`).
+      final reentry = parity.requests.firstWhere(
+        (r) => r.id == 'assist_user.answer_with_thinking.synthesis_reentry',
+      );
+      final context = reentry.inputs['rejection_context'];
+      expect(context, isA<String>());
+      expect(context as String, isNotEmpty);
+      expect(context, contains(substrate.draftFor(1)));
+    });
+  });
 }
 
 // ── A role-aware `TomBrainSubstrateClient` ──────────────────────────
@@ -267,6 +324,11 @@ class _RoleAwareSubstrate implements TomBrainSubstrateClient {
 
   int _evaluatorCalls = 0;
 
+  /// The set of roles whose completion was offered a non-empty tool catalogue —
+  /// the proof that `tools: all` reaches the substrate for the synthesis draft
+  /// while `tools: none` keeps the critique tool-free (§9).
+  final Set<String> rolesWithTools = <String>{};
+
   /// How many times [roleId] was called.
   int countOf(String roleId) => _byRole[roleId] ?? 0;
 
@@ -278,6 +340,9 @@ class _RoleAwareSubstrate implements TomBrainSubstrateClient {
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
     final role = call.roleId;
     _byRole[role] = (_byRole[role] ?? 0) + 1;
+    if (call.options.toolCatalogue.isNotEmpty) {
+      rolesWithTools.add(role);
+    }
     final text = _textFor(role);
     return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
       LlmStreamChunk(callId: 'c', text: text),
