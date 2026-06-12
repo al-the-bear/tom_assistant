@@ -1,0 +1,1 @@
+Read the procedure draft and the intent it claims to serve. Decide between `accept` (the procedure is sound and fit for the intent) and `revise` (it is close but needs another authoring pass). Name the specific weakness that drove a `revise`; do not invent faults the draft does not exhibit.

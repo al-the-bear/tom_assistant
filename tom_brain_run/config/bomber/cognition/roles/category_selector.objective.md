@@ -1,0 +1,1 @@
+Given the prompt and a candidate list of node-types, edge-types, and Concept names, select the subset relevant to the prompt. Pick only from the candidates offered; do not invent new types or names. The selection seeds the semantic graph-walk path.

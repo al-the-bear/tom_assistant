@@ -1,0 +1,1 @@
+Read the decomposed steps and produce their execution order as the comma-separated 1-based line numbers, dependencies first. Add any dependency the decomposition missed and flag a cycle if the steps cannot be ordered. Do not invent new steps or drop existing ones — order only what you are given.

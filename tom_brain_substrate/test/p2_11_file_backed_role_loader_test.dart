@@ -1,32 +1,36 @@
-// Plan-2 item 11 — file-backed role loader.
+// File-backed role loader (`prompt_configuration.md` §7.1 / §10 / §11,
+// increment 8).
 //
-// `loadFileBackedRoleRegistry({promptsDir})` loads the six core
-// roles (`assistant_to_user`, `analyser`, `sub_thinker`, `recaller`,
-// `evaluator`, `researcher`) from `<promptsDir>/<role>.system.md`,
-// falling back to the
-// in-code `bootstrapRoleRegistry()` template whenever a file is absent
-// (or blank). The on-disk file overrides only the role's `personaText`
-// (its voice); the structured policy — objective, allowed / forbidden
+// `loadFileBackedRoleRegistry({base, rolesDir})` overlays each role's
+// prose onto an arbitrary base roster: `personaText` from
+// `<rolesDir>/<role>.persona.md` and `objective` from
+// `<rolesDir>/<role>.objective.md`, falling back to the in-code template
+// for any role (or half) whose file is absent or blank. The on-disk files
+// override only the prose; the capability surface — allowed / forbidden
 // actions, output schema, budget defaults — is always retained from the
-// in-code bootstrap so a markdown file can never widen a role's
-// capability surface.
+// in-code base so a markdown file can never widen a role's capability
+// surface.
 //
 // The `AssistantDedicationAnchor` stays injected unconditionally: a
 // file-loaded role assembles a prompt through the same
-// `RoleTemplate.assemble` path as a bootstrap role, so every emitted
+// `RoleTemplate.assemble` path as an in-code role, so every emitted
 // `WirePrompt` still starts with the anchor text and records
 // `AnchorRegistry.currentHash`.
 //
-// Scope of this file (matching the plan's *Test* line):
+// Scope of this file:
 //
-//   - loads-from-file: a present `<role>.system.md` overrides the
-//     persona; the override flows into the assembled prompt body.
-//   - falls-back-when-missing: an absent file yields the bootstrap
-//     persona verbatim; the role still works.
-//   - anchor-always-present: every assembled prompt (file-loaded or
-//     fallback) starts with `AssistantDedicationAnchor.text`.
-//   - anchorHash-recorded: every assembled prompt's `anchorHash` equals
-//     `AnchorRegistry.currentHash`.
+//   - roster: the loader preserves the base roster (same ids, same order).
+//   - loads-persona: a present `<role>.persona.md` overrides the persona;
+//     the override flows into the assembled prompt body.
+//   - loads-objective: a present `<role>.objective.md` overrides the
+//     objective while leaving the persona on the in-code fallback.
+//   - falls-back-when-missing: an absent file (or half) keeps the in-code
+//     value; the role still works.
+//   - capability-surface-retained: a prose file never changes the
+//     allowed / forbidden actions, output schema, or budgets.
+//   - anchor-always-present / anchorHash-recorded: every assembled prompt
+//     (file-loaded or fallback) starts with `AssistantDedicationAnchor.text`
+//     and records `AnchorRegistry.currentHash`.
 
 import 'dart:io';
 
@@ -36,36 +40,46 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 void main() {
-  late Directory promptsDir;
+  late Directory rolesDir;
 
   setUp(() {
-    promptsDir = Directory.systemTemp.createTempSync('p2_11_prompts_');
+    rolesDir = Directory.systemTemp.createTempSync('p2_11_roles_');
   });
 
   tearDown(() {
-    if (promptsDir.existsSync()) {
-      promptsDir.deleteSync(recursive: true);
+    if (rolesDir.existsSync()) {
+      rolesDir.deleteSync(recursive: true);
     }
   });
 
-  void writeRoleFile(String roleId, String text) {
-    File('${promptsDir.path}/$roleId.system.md').writeAsStringSync(text);
+  void writePersona(String roleId, String text) {
+    File('${rolesDir.path}/$roleId.persona.md').writeAsStringSync(text);
   }
 
-  group('P2.11 / loadFileBackedRoleRegistry — roster', () {
-    test('returns all bootstrap roles (the prototype five plus researcher, '
+  void writeObjective(String roleId, String text) {
+    File('${rolesDir.path}/$roleId.objective.md').writeAsStringSync(text);
+  }
+
+  group('loadFileBackedRoleRegistry — roster', () {
+    test('preserves the base roster (the prototype five plus researcher, '
         '§ 6.2b) in canonical order', () {
-      final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
       expect(registry.ids.toList(), equals(prototypeRoleIds));
       expect(registry.length, equals(6));
     });
   });
 
-  group('P2.11 / loads-from-file', () {
-    test('a present <role>.system.md overrides the persona text', () {
-      writeRoleFile('analyser', 'CUSTOM ANALYSER VOICE FROM DISK');
+  group('loadFileBackedRoleRegistry — loads-persona', () {
+    test('a present <role>.persona.md overrides the persona text', () {
+      writePersona('analyser', 'CUSTOM ANALYSER VOICE FROM DISK');
 
-      final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
 
       expect(
         registry.get('analyser').personaText,
@@ -73,19 +87,25 @@ void main() {
       );
     });
 
-    test('the file override flows into the assembled prompt body', () {
-      writeRoleFile('assistant_to_user', 'I am the on-disk assistant voice.');
+    test('the persona override flows into the assembled prompt body', () {
+      writePersona('assistant_to_user', 'I am the on-disk assistant voice.');
 
-      final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
       final prompt = registry.get('assistant_to_user').assemble();
 
       expect(prompt.body, contains('I am the on-disk assistant voice.'));
     });
 
     test('file content is trimmed of surrounding whitespace', () {
-      writeRoleFile('recaller', '\n\n  trimmed recaller voice  \n\n');
+      writePersona('recaller', '\n\n  trimmed recaller voice  \n\n');
 
-      final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
 
       expect(
         registry.get('recaller').personaText,
@@ -94,13 +114,16 @@ void main() {
     });
 
     test('only the targeted role is overridden; others fall back', () {
-      writeRoleFile('analyser', 'just the analyser');
+      writePersona('analyser', 'just the analyser');
 
-      final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
       final bootstrap = bootstrapRoleRegistry();
 
       expect(registry.get('analyser').personaText, equals('just the analyser'));
-      // Every other role keeps its bootstrap persona.
+      // Every other role keeps its in-code persona.
       for (final id in prototypeRoleIds.where((r) => r != 'analyser')) {
         expect(
           registry.get(id).personaText,
@@ -108,19 +131,71 @@ void main() {
         );
       }
     });
+  });
 
-    test('a file-loaded role retains the bootstrap structured policy', () {
-      writeRoleFile('evaluator', 'on-disk evaluator voice');
+  group('loadFileBackedRoleRegistry — loads-objective', () {
+    test('a present <role>.objective.md overrides the objective text', () {
+      writeObjective('analyser', 'CUSTOM ANALYSER OBJECTIVE FROM DISK');
 
-      final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
+
+      expect(
+        registry.get('analyser').objective,
+        equals('CUSTOM ANALYSER OBJECTIVE FROM DISK'),
+      );
+    });
+
+    test('the objective half can be overridden while the persona falls back',
+        () {
+      writeObjective('evaluator', 'on-disk evaluator objective');
+
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
       final base = bootstrapRoleRegistry().get('evaluator');
       final loaded = registry.get('evaluator');
 
-      // Persona changed…
+      expect(loaded.objective, equals('on-disk evaluator objective'));
+      // Persona was not written → in-code fallback.
+      expect(loaded.personaText, equals(base.personaText));
+    });
+
+    test('persona and objective can both be sourced from disk together', () {
+      writePersona('sub_thinker', 'on-disk sub_thinker voice');
+      writeObjective('sub_thinker', 'on-disk sub_thinker objective');
+
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
+      final loaded = registry.get('sub_thinker');
+
+      expect(loaded.personaText, equals('on-disk sub_thinker voice'));
+      expect(loaded.objective, equals('on-disk sub_thinker objective'));
+    });
+  });
+
+  group('loadFileBackedRoleRegistry — capability-surface-retained', () {
+    test('a file-loaded role retains the in-code capability surface', () {
+      writePersona('evaluator', 'on-disk evaluator voice');
+      writeObjective('evaluator', 'on-disk evaluator objective');
+
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
+      final base = bootstrapRoleRegistry().get('evaluator');
+      final loaded = registry.get('evaluator');
+
+      // Prose changed…
       expect(loaded.personaText, equals('on-disk evaluator voice'));
-      // …but the contract did not: objective, action policy, output
-      // schema and budgets are still the in-code authority.
-      expect(loaded.objective, equals(base.objective));
+      expect(loaded.objective, equals('on-disk evaluator objective'));
+      // …but the capability surface did not: action policy, output schema
+      // and budgets are still the in-code authority.
       expect(loaded.allowedActions, equals(base.allowedActions));
       expect(loaded.forbiddenActions, equals(base.forbiddenActions));
       expect(loaded.outputSchema, equals(base.outputSchema));
@@ -128,25 +203,34 @@ void main() {
     });
   });
 
-  group('P2.11 / falls-back-when-missing', () {
-    test('an absent file yields the bootstrap persona verbatim', () {
+  group('loadFileBackedRoleRegistry — falls-back-when-missing', () {
+    test('an absent file yields the in-code prose verbatim', () {
       // No files written at all.
-      final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
       final bootstrap = bootstrapRoleRegistry();
 
       for (final id in prototypeRoleIds) {
         expect(
           registry.get(id).personaText,
           equals(bootstrap.get(id).personaText),
-          reason: '$id should fall back to its bootstrap persona',
+          reason: '$id should fall back to its in-code persona',
+        );
+        expect(
+          registry.get(id).objective,
+          equals(bootstrap.get(id).objective),
+          reason: '$id should fall back to its in-code objective',
         );
       }
     });
 
     test('a deliberately missing file still yields a working role', () {
-      // Verify line: a missing file must still produce an assemble-able
-      // role via bootstrap.
-      final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
       final prompt = registry.get('sub_thinker').assemble(
         inputs: const <String, Object?>{'sub_question': 'what is x?'},
       );
@@ -154,24 +238,35 @@ void main() {
       expect(prompt.body, isNotEmpty);
     });
 
-    test('a blank / whitespace-only file falls back to bootstrap', () {
-      writeRoleFile('recaller', '   \n\t  \n');
+    test('a blank / whitespace-only file falls back to the in-code value', () {
+      writePersona('recaller', '   \n\t  \n');
+      writeObjective('recaller', '   \n\t  \n');
 
-      final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
       final bootstrap = bootstrapRoleRegistry();
 
       expect(
         registry.get('recaller').personaText,
         equals(bootstrap.get('recaller').personaText),
       );
+      expect(
+        registry.get('recaller').objective,
+        equals(bootstrap.get('recaller').objective),
+      );
     });
 
-    test('a non-existent prompts directory yields the full bootstrap roster',
+    test('a non-existent roles directory yields a registry identical to base',
         () {
-      final missingDir = Directory('${promptsDir.path}/does/not/exist');
+      final missingDir = Directory('${rolesDir.path}/does/not/exist');
       expect(missingDir.existsSync(), isFalse);
 
-      final registry = loadFileBackedRoleRegistry(promptsDir: missingDir);
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: missingDir,
+      );
       final bootstrap = bootstrapRoleRegistry();
 
       expect(registry.ids.toList(), equals(prototypeRoleIds));
@@ -180,19 +275,36 @@ void main() {
           registry.get(id).personaText,
           equals(bootstrap.get(id).personaText),
         );
-        // Still assemble-able.
         expect(registry.get(id).assemble().body, isNotEmpty);
+      }
+    });
+
+    test('the full live roster is preserved when overlaid file-backed', () {
+      // The run wires the loader over the full thirty-role roster; an
+      // empty roles dir must leave every role intact and assemble-able.
+      final base = bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream();
+      final registry = loadFileBackedRoleRegistry(base: base, rolesDir: rolesDir);
+
+      expect(registry.ids.toList(), equals(base.ids.toList()));
+      for (final id in base.ids) {
+        expect(
+          registry.get(id).personaText,
+          equals(base.get(id).personaText),
+        );
       }
     });
   });
 
-  group('P2.11 / anchor-always-present + anchorHash-recorded', () {
+  group('loadFileBackedRoleRegistry — anchor', () {
     test('file-loaded roles still inject the anchor + record the hash', () {
       for (final id in prototypeRoleIds) {
-        writeRoleFile(id, 'on-disk voice for $id');
+        writePersona(id, 'on-disk voice for $id');
       }
 
-      final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
 
       for (final id in prototypeRoleIds) {
         final prompt = registry.get(id).assemble();
@@ -208,8 +320,11 @@ void main() {
     });
 
     test('fallback roles also inject the anchor + record the hash', () {
-      // No files written: every role is a bootstrap fallback.
-      final registry = loadFileBackedRoleRegistry(promptsDir: promptsDir);
+      // No files written: every role is an in-code fallback.
+      final registry = loadFileBackedRoleRegistry(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
 
       for (final id in prototypeRoleIds) {
         final prompt = registry.get(id).assemble(
@@ -221,11 +336,10 @@ void main() {
     });
   });
 
-  group('P2.11 / barrel surface', () {
+  group('loadFileBackedRoleRegistry — barrel surface', () {
     test('loader is reachable from the top-level package barrel', () {
       // Compile-time reachability: referencing the symbol here proves it
-      // is exported. A direct `package:.../src/...` import would violate
-      // the lints/recommended rule.
+      // is exported.
       expect(loadFileBackedRoleRegistry, isNotNull);
     });
   });

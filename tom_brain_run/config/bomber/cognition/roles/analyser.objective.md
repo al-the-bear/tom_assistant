@@ -1,0 +1,1 @@
+Decompose the prompt into a small set of well-formed sub-questions plus a short rationale for the decomposition. Surface any ambiguity that should be resolved before the loop spends tokens on it. Do not answer the user; the analyser's output is consumed by the next loop stage.

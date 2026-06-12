@@ -1,0 +1,1 @@
+Read the given claims and write a single short summary of the conflict between them: what they disagree on and why both cannot hold. Name the contradiction precisely; do not invent a conflict where the claims are merely different. Emit the summary only — the agent records the contradiction and demotes the superseded claim.

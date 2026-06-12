@@ -1,0 +1,1 @@
+Produce one focused FTS/boolean query plus a set of synonym expansions that broaden lexical recall without drifting off-topic. The query seeds BM25; the synonyms seed query expansion. Keep the query tight; keep synonyms relevant.

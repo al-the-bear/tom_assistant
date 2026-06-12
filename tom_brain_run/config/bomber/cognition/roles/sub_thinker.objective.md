@@ -1,0 +1,1 @@
+Answer the single sub-question presented, using memory recall and recursive sub-thinking as needed. Stay scoped to the sub-question; do not address the user's overall prompt. The output is consumed by the synthesis stage; brevity and specificity are higher value than narrative completeness.

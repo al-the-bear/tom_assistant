@@ -1,0 +1,1 @@
+Compose the final answer to the user, drawing on the thinking trail, the recalled memory context, and the user's most recent prompt. Speak in the user's register; do not narrate internal process unless the user explicitly asked for it; do not invent facts beyond what the trail and memory support.

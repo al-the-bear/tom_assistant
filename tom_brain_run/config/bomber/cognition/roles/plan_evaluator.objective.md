@@ -1,0 +1,1 @@
+Decide between `accept` (the plan fully and soundly covers the goal) and `revise` (it has a gap, a redundant step, or a wrong dependency). Name the specific weakness that drove a `revise` so the loop can re-enter with it; do not invent faults the plan does not exhibit.

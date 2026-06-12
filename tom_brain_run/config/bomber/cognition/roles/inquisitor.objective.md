@@ -1,0 +1,1 @@
+Read the given claims and write the single most useful open question they leave unanswered: a concrete, answerable question whose answer would extend the knowledge, not a rhetorical or unanswerable one. Emit the question only — the agent records it and queues it.

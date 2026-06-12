@@ -1,0 +1,1 @@
+Read the draft, the intent, and the test / analyzer signals. Decide between `accept` (the artifact meets the criterion and is sound) and `revise` (it is close but needs another pass). Name the specific weakness that drove a `revise`; do not invent faults the draft does not exhibit.

@@ -87,13 +87,15 @@
 
 export 'allowed_action.dart';
 export 'bootstrap_roles.dart';
-// Plan-2 item 11 — `loadFileBackedRoleRegistry({promptsDir})`: the
-// on-disk counterpart to `bootstrapRoleRegistry()`. Reads each role's
-// persona voice from `<promptsDir>/<role>.system.md` when present, and
-// falls back to the in-code bootstrap template otherwise. Only
-// `personaText` is sourced from disk; the structured policy stays the
-// in-code authority. The anchor stays injected unconditionally on every
-// assembled prompt regardless of source.
+// `loadFileBackedRoleRegistry({base, rolesDir})` (Plan-2 item 11 →
+// increment 8): the on-disk counterpart to the in-code role factories.
+// Overlays each role's prose — `personaText` from `<rolesDir>/<role>.
+// persona.md` and `objective` from `<rolesDir>/<role>.objective.md` — onto
+// an arbitrary base roster, falling back to the in-code template for any
+// role (or half) whose file is absent or blank. Only the prose is sourced
+// from disk; the capability surface (allowed/forbidden actions, output
+// schema, budgets) stays the in-code authority. The anchor stays injected
+// unconditionally on every assembled prompt regardless of source.
 export 'file_backed_role_loader.dart';
 // Plan Extension-H step #29 — the six retrieval roles (substrate § 6.2a).
 // A separate, optional roster (template + cheap-route config + a

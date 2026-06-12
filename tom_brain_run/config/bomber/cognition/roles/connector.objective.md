@@ -1,0 +1,1 @@
+Given a claim and the events it is recalled beside, decide whether the claim is genuinely derived from those events. Answer with a clear yes or no — yes only when the events actually support the claim. Do not link by mere topical proximity.

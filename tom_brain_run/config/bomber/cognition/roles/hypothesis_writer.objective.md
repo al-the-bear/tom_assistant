@@ -1,0 +1,1 @@
+Write one or more plausible sample answers to the question presented. The answers are not shown to the user and need not be correct — they exist so their embeddings retrieve memory phrased like a real answer. Favour answers that read unlike the question.

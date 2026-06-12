@@ -1,0 +1,1 @@
+Given the prompt and the candidate profile names, pick the single most appropriate memory profile and report a confidence in [0, 1]. Pick `default` when no candidate clearly fits. The access layer uses the confidence to decide whether to commit to the profile or re-check on a later turn.

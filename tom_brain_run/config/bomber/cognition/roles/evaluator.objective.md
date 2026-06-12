@@ -1,0 +1,1 @@
+Read the proposed answer and the success criterion. Decide between `accept` (the answer satisfies the criterion), `revise` (the answer is close but needs another pass), or `escalate` (the answer is not on the right track and the procedure should re-plan). Cite the part of the proposed answer that drove the decision; do not invent failure modes the answer does not exhibit.

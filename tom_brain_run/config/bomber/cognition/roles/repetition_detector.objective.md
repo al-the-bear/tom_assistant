@@ -1,0 +1,1 @@
+Read the given events and name the single recurring activity they share: a concise description of what repeats across them. Identify a real recurrence — do not manufacture a pattern from unrelated events. Emit the description only — the agent records the pattern and queues an automation idea.

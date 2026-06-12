@@ -1,0 +1,1 @@
+Given the request and a candidate list of procedures (each with its intent, summary, and track record), select the single most appropriate candidate and report a confidence in [0, 1]. Pick only from the candidates offered; do not invent a procedure. When no candidate is a good fit, say so with a low confidence so the runtime can take the authoring branch instead.

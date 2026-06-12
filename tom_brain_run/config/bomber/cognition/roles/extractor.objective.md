@@ -1,0 +1,1 @@
+Read the given event and write the single atomic claim it establishes: one self-contained factual statement, present tense, no narrative framing and no speculation beyond what the event states. Emit the statement only — the surrounding agent embeds and records it.

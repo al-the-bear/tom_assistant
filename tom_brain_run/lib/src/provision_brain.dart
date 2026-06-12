@@ -73,7 +73,12 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show TomBrainMemoryClient;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
-    show SubstrateConfig, TomBrainSubstrateClient;
+    show
+        RoleRegistry,
+        SubstrateConfig,
+        TomBrainSubstrateClient,
+        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream,
+        loadFileBackedRoleRegistry;
 
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
@@ -515,22 +520,34 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   int foregroundQueueDepth = 4,
   String? isolateLogRootPath,
 }) async {
-  final TomBrainSubstrateClient substrate = buildSubstrate(runConfig.substrate);
   // Resolve the scripts dir once so the boot's procedure store and the §6
   // `${scripts_folder}` built-in the prompt resolver carries agree on the same
   // directory.
   final Directory scriptsDir =
       systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
 
-  // Build the two `sub.run` seams from the `cognition:` config tree (§7.4 /
-  // §8) when the block is present.
+  // Build the two `sub.run` seams + the file-backed role registry from the
+  // `cognition:` config tree (§7.1 / §7.4 / §8) when the block is present.
   PromptResolver? promptResolver;
   RouteChainResolver? routeChainOf;
+  RoleRegistry? roleRegistry;
   final cognition = runConfig.cognition;
+  final Map<String, String> environment = Platform.environment;
   if (cognition != null) {
-    final Map<String, String> environment = Platform.environment;
     final cognitionConfig =
         CognitionConfigLoader.loadFromDir(cognition.root, env: environment);
+    // §7.1 / §11: role prose (persona + objective) is sourced from
+    // `cognition/<rolesFolder>/<role>.persona.md` + `<role>.objective.md`,
+    // overlaid on the full live roster. The in-code roster supplies the
+    // capability surface and the fallback for any role (or half) whose file
+    // is absent or blank.
+    roleRegistry = loadFileBackedRoleRegistry(
+      base:
+          bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream(),
+      rolesDir: Directory(
+        '${cognition.root}/${cognitionConfig.registry.rolesFolder}',
+      ),
+    );
     final builtins = BrainBuiltins.fromRunConfig(
       runConfig,
       configFolder: cognition.root,
@@ -543,6 +560,11 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     );
     routeChainOf = buildRouteChainResolver(cognitionConfig);
   }
+
+  // The substrate uses the file-backed registry when a cognition tree was
+  // loaded; otherwise `buildSubstrate` falls back to its in-code full roster.
+  final TomBrainSubstrateClient substrate =
+      buildSubstrate(runConfig.substrate, roleRegistry: roleRegistry);
 
   // Boot-time trail sweep (§8 / §10 step #10): write the §7 `.gitignore` and
   // enforce the raw-tier count / aggregate-size caps before any writer appends

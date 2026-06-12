@@ -176,17 +176,18 @@ export 'src/router/router_barrel.dart';
 // currentHash` off this barrel and raises `AnchorViolation`
 // (exported via the `src/llm/llm_barrel.dart` surface) on mismatch.
 //
-// Plan-2 item 11: `loadFileBackedRoleRegistry({promptsDir})` — the
-// on-disk counterpart to `bootstrapRoleRegistry`. For each prototype
-// role it reads `<promptsDir>/<role>.system.md` and, when present and
-// non-blank, substitutes the file content for the role's `personaText`;
-// an absent or blank file falls back to the in-code bootstrap template.
-// Only the persona voice is sourced from disk — `objective`, the
-// allowed / forbidden action sets, the output schema, and the budget
-// defaults remain the in-code authority, so a markdown file can never
-// widen a role's capability surface. Every assembled prompt still goes
-// through the same `RoleTemplate.assemble` path, so the anchor stays
-// injected unconditionally and `anchorHash` still records
+// `loadFileBackedRoleRegistry({base, rolesDir})` (increment 8) — the
+// on-disk counterpart to the in-code role factories. For each role in
+// `base` it reads `<rolesDir>/<role>.persona.md` and
+// `<rolesDir>/<role>.objective.md` and, when present and non-blank,
+// substitutes the file content for the role's `personaText` / `objective`;
+// an absent or blank file (or half) falls back to the in-code template.
+// Only the prose is sourced from disk — the allowed / forbidden action
+// sets, the output schema, and the budget defaults remain the in-code
+// authority, so a markdown file can never widen a role's capability
+// surface. Every assembled prompt still goes through the same
+// `RoleTemplate.assemble` path, so the anchor stays injected
+// unconditionally and `anchorHash` still records
 // `AnchorRegistry.currentHash`. `WirePrompt.templateSha` stays null.
 //
 // Still pending at B.23: the `templateRef` git-sha field (lands with

@@ -1,0 +1,1 @@
+Re-rank the recalled items by relevance to the current thinking trail, drop low-signal items, and compose a concise recall summary the answer stage can quote from. Do not add facts beyond what the recalled items support; preserve every citation back to the source node so the trail layer can attribute the answer.

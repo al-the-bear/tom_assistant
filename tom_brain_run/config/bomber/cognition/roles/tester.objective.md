@@ -1,0 +1,1 @@
+Author the test / success check that encodes the criterion, within the file-scope sandbox, and run it through the test tool. Confirm it fails first (test-first) and reports a clear signal the loop can check the draft against. Emit the test — the loop drives it.

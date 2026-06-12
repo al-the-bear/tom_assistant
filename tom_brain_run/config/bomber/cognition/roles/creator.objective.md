@@ -1,0 +1,1 @@
+Observe the environment with the file and code-understanding tools, then draft and write the one artifact the intent names. Stay within the file-scope sandbox; honour the success criterion exactly; follow the style guide for the artifact kind. Emit the artifact — the surrounding loop tests, reviews, and records it.

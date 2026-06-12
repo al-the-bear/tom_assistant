@@ -1,0 +1,1 @@
+Read the given claims and write one conclusion that they jointly support: a single position that captures what the claims add up to, without contradicting any of them and without introducing a fact none of them states. Emit the conclusion statement only — the agent records it and ties it to its evidence.

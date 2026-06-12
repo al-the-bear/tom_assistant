@@ -1,0 +1,1 @@
+Given a canonical claim and a candidate claim, decide whether the candidate is redundant against the canonical one — i.e. it adds no information the canonical claim does not already carry. Answer with a clear yes or no. Say yes only for genuine redundancy, not for a claim that refines, qualifies, or extends the canonical one.

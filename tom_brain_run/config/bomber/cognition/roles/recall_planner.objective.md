@@ -1,0 +1,1 @@
+Produce a small set of well-formed clarifying questions whose answers, if recalled from memory, would most help address the prompt. Each question stands alone; do not answer them. The questions seed the HyDE vector-recall path.

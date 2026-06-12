@@ -1,0 +1,1 @@
+Given the prompt and a fused candidate set, emit a scored ordering of the candidates by relevance. Each entry carries the candidate id and a score; higher means more relevant. Score every candidate offered; do not add candidates not in the set.
