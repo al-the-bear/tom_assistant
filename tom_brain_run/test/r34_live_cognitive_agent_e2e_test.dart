@@ -546,13 +546,43 @@ void main() {
         final ProcedureResolver system = await ProcedureResolver.fromStore(
           DiskProcedureStore(systemDir: scriptsDir),
         );
+        // The migrated Extractor (§12 increment 8) reaches the substrate through
+        // `sub.run('dreaming.extract.claim')`, which delegates the send loop to
+        // the shared `tool_loop_v1` script and resolves its prompt through the
+        // host `PromptResolver` + `RouteChainResolver` built from the live
+        // cognition config tree — the same two seams the real provisioner wires
+        // (`standUpBrainProcessFromConfig`). Build them here so the
+        // hand-assembled dream engine resolves `dreaming.extract.claim` for
+        // real: its `extractor` role + the `assistant` route both resolve to the
+        // same live omlx endpoint this substrate is built over.
+        final CognitionConfig cognitionConfig =
+            CognitionConfigLoader.loadFromDir(
+          config.cognition!.root,
+          env: Platform.environment,
+        );
+        final BrainBuiltins builtins = BrainBuiltins.fromRunConfig(
+          config,
+          configFolder: config.cognition!.root,
+          scriptsFolder: scriptsDir.path,
+        );
         final ProcedureEngine engine = ProcedureEngine(
           resolver: ProcedureResolver(
-            <LoadedProcedure>[system.resolve(_extractorId)],
+            <LoadedProcedure>[
+              system.resolve(_extractorId),
+              system.resolve('tool_loop_v1'),
+            ],
           ),
           memory: store,
           memoryBridge: MemoryBridge(store, agentName: _extractorId),
-          substrateBridge: SubstrateBridge(substrate),
+          substrateBridge: SubstrateBridge(
+            substrate,
+            promptResolver: buildPromptResolver(
+              cognitionConfig,
+              builtins,
+              environment: Platform.environment,
+            ),
+            routeChainOf: buildRouteChainResolver(cognitionConfig),
+          ),
         );
         final FreeTimeScheduler scheduler = FreeTimeScheduler(
           coordinator: RunCoordinator(),

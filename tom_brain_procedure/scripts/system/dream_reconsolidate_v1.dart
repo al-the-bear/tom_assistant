@@ -10,7 +10,7 @@
 ///   - { name: source, type: String, required: true }
 /// outputs:
 ///   - { name: contradictionId, type: String }
-/// requires: [ recall, llm, embed, persist, edge, demote, note ]
+/// requires: [ recall, run, runProcedure, embed, persist, edge, demote, note ]
 //
 // dream_reconsolidate_v1 — the Reconsolidator cognitive agent (memory § 9, the
 // eight dreaming agents; `prototype_implementation_plan_2.md` item 22).
@@ -71,15 +71,17 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     return <String, Object?>{'contradictionId': null};
   }
 
-  // 2. Name the conflict. The body supplies only the role id and the joined
-  //    statements as the role-template prompt (PE-7 — never a raw wire prompt).
+  // 2. Name the conflict through the registered
+  //    `dreaming.reconsolidate.contradiction` prompt (`prompt_configuration.md`
+  //    §10) — its template + `reconsolidator` role assemble the wire prompt
+  //    around the joined `${statements}` (PE-7 — never a raw wire prompt); the
+  //    contradiction summary arrives under `answer`.
   const producer = 'dream_reconsolidate_v1';
-  final completion = await sub.llm(
-    'These recorded claims may conflict. Summarise the contradiction between '
-    'them: ${statements.join(" | ")}',
-    role: 'reconsolidator',
+  final completion = await sub.run(
+    'dreaming.reconsolidate.contradiction',
+    inputs: <String, Object?>{'statements': statements.join(' | ')},
   );
-  final summary = completion['text'];
+  final summary = completion['answer'];
   final embedding = await sub.embed('$summary');
   final contradictionId = await mem.persist(
     'Contradiction',

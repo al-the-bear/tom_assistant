@@ -10,7 +10,7 @@
 ///   - { name: source, type: String, required: true }
 /// outputs:
 ///   - { name: conclusionId, type: String }
-/// requires: [ recall, llm, embed, persist, edge, note ]
+/// requires: [ recall, run, runProcedure, embed, persist, edge, note ]
 //
 // dream_synthesise_v1 — the Synthesiser cognitive agent (memory § 9, the eight
 // dreaming agents; `prototype_implementation_plan_2.md` item 22).
@@ -71,16 +71,17 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     return <String, Object?>{'conclusionId': null};
   }
 
-  // 2. Fold the recalled statements into one synthesised Conclusion. The body
-  //    supplies only the role id and the joined statements as the role-template
-  //    prompt (PE-7 — never a raw wire prompt).
+  // 2. Fold the recalled statements into one synthesised Conclusion through the
+  //    registered `dreaming.synthesise.conclusion` prompt
+  //    (`prompt_configuration.md` §10) — its template + `synthesiser` role
+  //    assemble the wire prompt around the joined `${statements}` (PE-7 — never
+  //    a raw wire prompt); the conclusion arrives under `answer`.
   const producer = 'dream_synthesise_v1';
-  final completion = await sub.llm(
-    'Synthesise these recorded claims into one conclusion: '
-    '${statements.join(" | ")}',
-    role: 'synthesiser',
+  final completion = await sub.run(
+    'dreaming.synthesise.conclusion',
+    inputs: <String, Object?>{'statements': statements.join(' | ')},
   );
-  final statement = completion['text'];
+  final statement = completion['answer'];
   final rationale = 'Synthesised from ${claimIds.length} recalled claim(s).';
   final embedding = await sub.embed('$statement $rationale');
   final conclusionId = await mem.persist(

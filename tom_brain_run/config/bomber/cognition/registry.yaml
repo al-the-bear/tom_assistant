@@ -13,6 +13,9 @@ procedures:
   assist_user:
     config: assist_user.yaml
     folder: assist_user
+  dreaming:
+    config: dreaming.yaml
+    folder: dreaming
 
 roles:
   folder: roles

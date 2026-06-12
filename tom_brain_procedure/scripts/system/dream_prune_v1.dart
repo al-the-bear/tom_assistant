@@ -10,7 +10,7 @@
 ///   - { name: source, type: String, required: true }
 /// outputs:
 ///   - { name: demotedIds, type: List }
-/// requires: [ recall, llm, demote, note ]
+/// requires: [ recall, run, runProcedure, demote, note ]
 //
 // dream_prune_v1 — the Pruner cognitive agent (memory § 9.5, the eight dreaming
 // agents; `prototype_implementation_plan_2.md` item 22).
@@ -52,8 +52,10 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 
   // 2. Keep the first Claim as canonical; judge each subsequent Claim against
   //    the canonical statement and demote the redundant ones. The substrate is
-  //    consulted per Claim under the `pruner` role; the body supplies only the
-  //    role id and the claim text (PE-7 — never a raw wire prompt).
+  //    consulted per Claim through the registered `dreaming.prune.redundancy`
+  //    prompt (`prompt_configuration.md` §10) — its template + `pruner` role
+  //    assemble the wire prompt around `${canonical}` + `${statement}` (PE-7 —
+  //    never a raw wire prompt); the yes/no verdict arrives under `answer`.
   const producer = 'dream_prune_v1';
   final demotedIds = <String>[];
   if (claims.isNotEmpty) {
@@ -64,12 +66,14 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       final claimId = claims[i]['id'];
       final values = claims[i]['values'];
       final statement = values is Map ? values['statement'] : '';
-      final judgement = await sub.llm(
-        'Is this claim redundant against the canonical claim? Answer yes or '
-        'no. Canonical: $canonical Claim: $statement',
-        role: 'pruner',
+      final judgement = await sub.run(
+        'dreaming.prune.redundancy',
+        inputs: <String, Object?>{
+          'canonical': canonical,
+          'statement': statement,
+        },
       );
-      final verdict = judgement['text'];
+      final verdict = judgement['answer'];
       final redundant = verdict is String &&
           (verdict.toLowerCase().contains('redundant') ||
               verdict.toLowerCase().contains('yes'));

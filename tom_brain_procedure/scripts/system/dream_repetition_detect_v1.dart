@@ -11,7 +11,7 @@
 /// outputs:
 ///   - { name: patternId, type: String }
 ///   - { name: ideaId, type: String }
-/// requires: [ recall, llm, embed, persist, stack.push, note ]
+/// requires: [ recall, run, runProcedure, embed, persist, stack.push, note ]
 //
 // dream_repetition_detect_v1 — the Repetition-detector cognitive agent (memory
 // § 9, the eight dreaming agents; `prototype_implementation_plan_2.md` item
@@ -69,16 +69,17 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     return <String, Object?>{'patternId': null, 'ideaId': null};
   }
 
-  // 2. Name the recurring activity. The body supplies only the role id and the
-  //    joined summaries as the role-template prompt (PE-7 — never a raw wire
-  //    prompt).
+  // 2. Name the recurring activity through the registered
+  //    `dreaming.repetition_detect.pattern` prompt (`prompt_configuration.md`
+  //    §10) — its template + `repetition_detector` role assemble the wire
+  //    prompt around the joined `${summaries}` (PE-7 — never a raw wire
+  //    prompt); the pattern name arrives under `answer`.
   const producer = 'dream_repetition_detect_v1';
-  final completion = await sub.llm(
-    'These recorded events may describe a recurring activity. Name the '
-    'repeating pattern: ${summaries.join(" | ")}',
-    role: 'repetition_detector',
+  final completion = await sub.run(
+    'dreaming.repetition_detect.pattern',
+    inputs: <String, Object?>{'summaries': summaries.join(' | ')},
   );
-  final description = completion['text'];
+  final description = completion['answer'];
 
   // 3. Record the Pattern (embedded).
   final patternEmbedding = await sub.embed('$source $description');

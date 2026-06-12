@@ -9,7 +9,7 @@
 ///   - { name: source, type: String, required: true }
 /// outputs:
 ///   - { name: claimIds, type: List }
-/// requires: [ recall, llm, embed, persist, note, yield_if_foreground_waiting ]
+/// requires: [ recall, run, runProcedure, embed, persist, note, yield_if_foreground_waiting ]
 //
 // dream_extract_v1 — the Extractor cognitive agent (memory § 9, the eight
 // dreaming agents; `prototype_implementation_plan_2.md` item 21).
@@ -41,11 +41,12 @@
 //
 // ── How the substrate is used (extraction) ──────────────────────────
 //
-// Each event summary is handed to the substrate under the `extractor` role,
-// which returns the atomic claim text. The body supplies only the role id and
-// the event text as the role-template `prompt` input — it never assembles a
-// raw wire prompt, so the assistant-dedication anchor (PE-7) is always
-// prepended at the substrate. The returned text becomes the claim statement.
+// Each event summary is handed to the substrate through the registered
+// `dreaming.extract.claim` prompt (`prompt_configuration.md` §10), whose
+// template + `extractor` role assemble the wire prompt around the event
+// `${summary}` — the body never builds a raw wire prompt, so the
+// assistant-dedication anchor (PE-7) is always prepended at the substrate. The
+// returned text (under `answer`) becomes the claim statement.
 import 'package:tom_brain_procedure/src/api/procedure_inputs.dart';
 import 'package:tom_brain_procedure/src/bridges/memory_bridge.dart';
 import 'package:tom_brain_procedure/src/bridges/substrate_bridge.dart';
@@ -76,12 +77,11 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
         final values = node['values'];
         if (values is Map) {
           final summary = values['summary'];
-          final completion = await sub.llm(
-            'Extract one atomic, self-contained factual claim from this '
-            'recorded event: $summary',
-            role: 'extractor',
+          final completion = await sub.run(
+            'dreaming.extract.claim',
+            inputs: <String, Object?>{'summary': summary},
           );
-          final statement = completion['text'];
+          final statement = completion['answer'];
           final embedding = await sub.embed(statement);
           final claimId = await mem.persist(
             'Claim',

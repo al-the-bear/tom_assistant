@@ -10,7 +10,7 @@
 ///   - { name: source, type: String, required: true }
 /// outputs:
 ///   - { name: questionIds, type: List }
-/// requires: [ recall, llm, embed, persist, stack.push, note ]
+/// requires: [ recall, run, runProcedure, embed, persist, stack.push, note ]
 //
 // dream_inquisitor_v1 — the Inquisitor cognitive agent (memory § 9, the eight
 // dreaming agents; `prototype_implementation_plan_2.md` item 22).
@@ -68,16 +68,17 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     return <String, Object?>{'questionIds': <String>[]};
   }
 
-  // 2. Ask the substrate (role `inquisitor`) for the open question these Claims
-  //    leave unanswered. The body supplies only the role id and the joined
-  //    statements as the role-template prompt (PE-7 — never a raw wire prompt).
+  // 2. Ask the substrate for the open question these Claims leave unanswered,
+  //    through the registered `dreaming.inquisitor.open_question` prompt
+  //    (`prompt_configuration.md` §10) — its template + `inquisitor` role
+  //    assemble the wire prompt around the joined `${statements}` (PE-7 — never
+  //    a raw wire prompt); the question arrives under `answer`.
   const producer = 'dream_inquisitor_v1';
-  final completion = await sub.llm(
-    'Given these recorded claims, what open question do they leave '
-    'unanswered? ${statements.join(" | ")}',
-    role: 'inquisitor',
+  final completion = await sub.run(
+    'dreaming.inquisitor.open_question',
+    inputs: <String, Object?>{'statements': statements.join(' | ')},
   );
-  final text = completion['text'];
+  final text = completion['answer'];
 
   // 3. Persist the Question (embedded) and queue it on questions_open.
   final embedding = await sub.embed('$text');

@@ -10,7 +10,7 @@
 ///   - { name: source, type: String, required: true }
 /// outputs:
 ///   - { name: edgeIds, type: List }
-/// requires: [ recall, llm, edge, note ]
+/// requires: [ recall, run, runProcedure, edge, note ]
 //
 // dream_connect_v1 — the Connector cognitive agent (memory § 9, the eight
 // dreaming agents; `prototype_implementation_plan_2.md` item 21).
@@ -68,18 +68,19 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 
   // 2. derived_from: each Claim the substrate affirms is linked back to the
   //    episodic Events recalled alongside it. The substrate is consulted per
-  //    Claim under the `connector` role; the body supplies only the role id
-  //    and the claim text (PE-7 — never a raw wire prompt).
+  //    Claim through the registered `dreaming.connect.affirm_derivation` prompt
+  //    (`prompt_configuration.md` §10) — its template + `connector` role
+  //    assemble the wire prompt around the claim `${statement}` (PE-7 — never a
+  //    raw wire prompt); the yes/no verdict arrives under `answer`.
   for (final claim in claims) {
     final claimId = claim['id'];
     final values = claim['values'];
     final statement = values is Map ? values['statement'] : '';
-    final judgement = await sub.llm(
-      'Does this claim derive from a recorded episode? Answer yes or no. '
-      'Claim: $statement',
-      role: 'connector',
+    final judgement = await sub.run(
+      'dreaming.connect.affirm_derivation',
+      inputs: <String, Object?>{'statement': statement},
     );
-    final verdict = judgement['text'];
+    final verdict = judgement['answer'];
     final affirmed =
         verdict is String && verdict.toLowerCase().contains('yes');
     if (claimId is String && affirmed) {

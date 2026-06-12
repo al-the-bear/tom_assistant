@@ -1,0 +1,87 @@
+# The `dreaming` main procedure (`prompt_configuration.md` §5 / §10).
+#
+# `dreaming` groups the seven cognitive (dream) agents that run on the
+# consolidation cadence rather than in response to a user prompt. Each agent is
+# its own d4rt script (`scripts/system/dream_*_v1.dart`); after the §12
+# increment-8 migration each one resolves its single LLM prompt through the host
+# `PromptResolver` via `sub.run('dreaming.<sub>.<prompt>')` instead of an inline
+# `sub.llm(text, role:)` builder.
+#
+# Main-level defaults are the never-reached fallbacks: every dream prompt
+# overrides `role` with its agent-specific persona and runs `tools: none` (the
+# agents reach memory through the bridged `mem.*` primitives, not the substrate
+# tool catalogue). The agents are background work, so they inherit the same
+# `assistant` route as the foreground procedures — substrate routing, not the
+# anchor, is what differs from `assist_user`.
+
+tools: none
+llm: assistant
+role: assistant_to_user
+
+# extract — the Extractor (`dream_extract_v1`): distil one atomic Claim from a
+# recorded Event summary (`${summary}`). Runs under the `extractor` persona.
+extract:
+  prompts:
+    claim:
+      template: extract.claim.md
+      tools: none
+      role: extractor
+
+# connect — the Connector (`dream_connect_v1`): judge whether a Claim
+# (`${statement}`) derives from a recorded episode, returning a yes/no verdict.
+# Runs under the `connector` persona.
+connect:
+  prompts:
+    affirm_derivation:
+      template: connect.affirm_derivation.md
+      tools: none
+      role: connector
+
+# inquisitor — the Inquisitor (`dream_inquisitor_v1`): surface the open question
+# the recalled Claims (`${statements}`) leave unanswered. Runs under the
+# `inquisitor` persona.
+inquisitor:
+  prompts:
+    open_question:
+      template: inquisitor.open_question.md
+      tools: none
+      role: inquisitor
+
+# prune — the Pruner (`dream_prune_v1`): judge whether a Claim (`${statement}`)
+# is redundant against the canonical Claim (`${canonical}`). Runs under the
+# `pruner` persona.
+prune:
+  prompts:
+    redundancy:
+      template: prune.redundancy.md
+      tools: none
+      role: pruner
+
+# reconsolidate — the Reconsolidator (`dream_reconsolidate_v1`): name the
+# contradiction between conflicting Claims (`${statements}`). Runs under the
+# `reconsolidator` persona.
+reconsolidate:
+  prompts:
+    contradiction:
+      template: reconsolidate.contradiction.md
+      tools: none
+      role: reconsolidator
+
+# synthesise — the Synthesiser (`dream_synthesise_v1`): fold the recalled Claims
+# (`${statements}`) into one Conclusion. Runs under the `synthesiser` persona.
+synthesise:
+  prompts:
+    conclusion:
+      template: synthesise.conclusion.md
+      tools: none
+      role: synthesiser
+
+# repetition_detect — the Repetition-detector (`dream_repetition_detect_v1`):
+# name the recurring activity across recalled Event summaries (`${summaries}`).
+# Runs under the `repetition_detector` persona.
+repetition_detect:
+  prompts:
+    pattern:
+      template: repetition_detect.pattern.md
+      tools: none
+      role: repetition_detector

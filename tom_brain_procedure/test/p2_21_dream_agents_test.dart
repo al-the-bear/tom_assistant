@@ -53,6 +53,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'stub_prompt_resolver.dart';
+
 /// The bootstrap embedding model dimensionality (768, nomic-embed-text).
 const _bootstrapDims = 768;
 
@@ -196,11 +198,24 @@ void main() {
     final system = await ProcedureResolver.fromStore(
       DiskProcedureStore(systemDir: Directory('scripts/system')),
     );
+    // Each migrated dream agent reaches the substrate through `sub.run`, which
+    // delegates the send loop to the shared `tool_loop_v1` script via
+    // `runProcedure` and resolves its prompt through the host `PromptResolver`
+    // (the [StubPromptResolver], `tools: none` → one send returns the canned
+    // text). Both that script and the resolver must be wired in.
+    final prompts = StubPromptResolver();
     return ProcedureEngine(
-      resolver: ProcedureResolver(<LoadedProcedure>[system.resolve(agentName)]),
+      resolver: ProcedureResolver(<LoadedProcedure>[
+        system.resolve(agentName),
+        system.resolve('tool_loop_v1'),
+      ]),
       memory: store,
       memoryBridge: MemoryBridge(store, agentName: agentName),
-      substrateBridge: SubstrateBridge(substrate),
+      substrateBridge: SubstrateBridge(
+        substrate,
+        promptResolver: prompts.resolver,
+        routeChainOf: prompts.routeChainOf,
+      ),
       now: () => DateTime.utc(2026, 6, 5, 12, 0, 0),
     );
   }
