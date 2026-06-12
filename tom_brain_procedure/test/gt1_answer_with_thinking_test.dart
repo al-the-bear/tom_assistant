@@ -9,6 +9,23 @@
 // not silently truncate a foreground user prompt without an answer, and the
 // evaluator-reject → re-enter path is exercised.
 //
+// ── Termination contract migrated to todo-based (agent-loop completion plan
+//    § 3 / § 5.2, Todo #3) ──────────────────────────────────────────────────
+//
+// The loop no longer terminates on an iteration cap. It re-enters until every
+// session todo is done AND the critique accepts; the only non-todo exit is the
+// wall-clock runaway-stop, enforced externally by the engine and not observable
+// in the body. The original GT1-4 / GT1-5 pinned the *iteration-cap exhaustion*
+// behaviour (`maxIterations`, best-effort draft, `incomplete = true`) — a
+// contract this migration removes (`maxIterations` is gone). Those two tests
+// were therefore dropped: the "never silent on a hung run" guarantee they
+// guarded is now the wall-clock runaway-stop, covered by
+// `agent_loop_termination_test.dart` test T5 (skipped pending a body-readable
+// deadline primitive — `open_topics.tom_brain.md`). The accept / re-entry /
+// dispatch behaviours (GT1-1…GT1-3) are unchanged and remain pinned here; the
+// todo-based termination itself is proven in `agent_loop_termination_test.dart`
+// (T2 / T4).
+//
 // This is the *procedure-side* proof of the recursive loop. It drives the
 // shipped `scripts/system/answer_with_thinking_v1.dart` through the engine
 // with:
@@ -31,12 +48,9 @@
 //   GT1-3  re-entry on rejection — a REJECT then an ACCEPT yields two drafts
 //          and two critiques; the *accepted* (second) draft is returned and
 //          `incomplete` is false.
-//   GT1-4  budget exhaustion — an evaluator that always rejects exhausts the
-//          re-entry budget (default 3); the loop returns the best-effort
-//          (last) draft, sets `incomplete` true, and STILL persists the trail.
-//   GT1-5  never silent (gap-hunt § 6.5) — even a budget-exhausted run returns
-//          a non-empty answer, so a foreground prompt is never answered with
-//          silence.
+//
+// (The former GT1-4 / GT1-5 iteration-cap exhaustion tests were dropped with the
+// migration to todo-based termination — see the contract note above.)
 //
 // The procedure is loaded from the real `scripts/system/` store+resolver path
 // so the test exercises the shipped artifact, not an inline copy (mirrors
@@ -82,7 +96,7 @@ void main() {
     return ProcedureResolver.fromStore(store);
   }
 
-  Future<ProcedureOutcome> thinkAbout(String text, {int? maxIterations}) async {
+  Future<ProcedureOutcome> thinkAbout(String text) async {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
@@ -90,7 +104,6 @@ void main() {
           procedureId: 'answer_with_thinking_v1',
           arguments: <String, Object?>{
             'text': text,
-            'maxIterations': ?maxIterations,
           },
         ))
         .outcome;
@@ -219,56 +232,6 @@ void main() {
       // The second (accepted) draft is the returned answer.
       expect(outcome.result!.output<String>('answer'), substrate.draftFor(2));
       expect(outcome.result!.output<bool>('incomplete'), isFalse);
-    });
-  });
-
-  group('GT1-4 budget exhaustion (bounded re-entry, § 4.1)', () {
-    test('an always-rejecting evaluator exhausts the budget; best-effort draft '
-        'is returned with incomplete=true and the trail is still persisted',
-        () async {
-      seedRecall();
-      // No ACCEPT ever: the queue is empty so every verdict defaults to REJECT.
-      substrate.evaluatorVerdicts = <String>[];
-      substrate.defaultVerdict = 'REJECT';
-
-      // The re-entry budget is caller-overridable (§ 4.1); pin it small here
-      // so an always-rejecting evaluator exhausts it in a bounded, observable
-      // number of passes rather than the very-high production default.
-      final outcome = await thinkAbout(
-        'ponder the nature of consciousness',
-        maxIterations: 3,
-      );
-
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      // The re-entry budget is 3 here: three drafts, three critiques.
-      expect(substrate.countOf('assistant_to_user'), 3);
-      expect(substrate.countOf('evaluator'), 3);
-      // Best-effort = the last (most-informed) draft; the run is flagged
-      // incomplete so the dreaming process can revisit the question.
-      expect(outcome.result!.output<String>('answer'), substrate.draftFor(3));
-      expect(outcome.result!.output<bool>('incomplete'), isTrue);
-
-      // Even an unaccepted run persists the trail (§ 4.1 termination contract).
-      expect(memory.persistedOfType('Event'), hasLength(1));
-      expect(memory.persistedOfType('Conclusion'), hasLength(1));
-    });
-  });
-
-  group('GT1-5 a foreground prompt is never answered with silence '
-      '(gap-hunt § 6.5)', () {
-    test('a budget-exhausted run still returns a non-empty answer', () async {
-      seedRecall();
-      substrate.evaluatorVerdicts = <String>[];
-      substrate.defaultVerdict = 'REJECT';
-
-      final outcome = await thinkAbout(
-        'deliberate on an unanswerable question',
-        maxIterations: 3,
-      );
-
-      final answer = outcome.result!.output<String>('answer');
-      expect(answer, isNotNull);
-      expect(answer!.isNotEmpty, isTrue);
     });
   });
 }

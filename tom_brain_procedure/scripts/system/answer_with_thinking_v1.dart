@@ -2,32 +2,31 @@
 /// id: answer_with_thinking_v1
 /// version: 1
 /// summary: The recursive thinking branch — analyse, sub-reason, synthesise,
-///   self-critique, and re-enter on rejection within a bounded budget, then
-///   persist the exchange.
+///   self-critique, and re-enter until every session todo is done and the
+///   critique accepts (todo-based termination), then persist the exchange.
 /// successCriterion: a deliberation-cued prompt is answered through the
 ///   recursive loop — the loop dispatches its analyse/sub-think sub-prompts,
-///   runs an `evaluator` critique each pass, re-enters on REJECT, and
-///   terminates on the first ACCEPT or on budget exhaustion; on exhaustion the
-///   best-effort (last) draft is returned with `incomplete = true` rather than
-///   silence, and an Event + Conclusion (+ derived_from edges to the cited
-///   recalled nodes) are persisted either way.
+///   runs an `evaluator` critique each pass (the investigation of the last
+///   answer), pushes the critique's missing pieces as session todos on REJECT,
+///   and terminates only once every session todo is done AND the critique
+///   accepts; an Event + Conclusion (+ derived_from edges to the cited recalled
+///   nodes) are persisted on exit.
 /// budget: { wallClockMs: 14400000 }
 /// # Only a wall-clock deadline (§ 5.4): a foreground user prompt is virtually
 /// # unlimited on every count dimension, exactly as `answer_with_memory_v1`.
-/// # 14400000 ms (240 min) is the spec's external default — a runaway-stop for
-/// # a genuinely hung run, not a throttle. The recursive re-entry is bounded
-/// # separately by `maxIterations` (a caller override defaulting very high in the
-/// # body, § 4.1), so the loop terminates long before the wall clock fires; the
-/// # deadline is the orthogonal backstop for a single hung substrate call
-/// # (gap-hunt § 6.5).
+/// # 14400000 ms (240 min) is the spec's external default — the **only** non-todo
+/// # exit, a runaway-stop for a genuinely hung run, enforced externally by the
+/// # engine (the body cannot read the clock; agent-loop completion plan § 3.3).
+/// # Re-entry is bounded by the todo-based termination contract, not a count cap:
+/// # the loop re-enters until the session todo store is empty and the critique
+/// # accepts.
 /// inputs:
 ///   - { name: text, type: String, required: true }
 ///   - { name: priorTurns, type: List, required: false }
-///   - { name: maxIterations, type: int, required: false }
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: incomplete, type: bool }
-/// requires: [ runProcedure, embed, llm, persist, edge ]
+/// requires: [ runProcedure, embed, llm, persist, edge, tool.list, tool.invoke ]
 //
 // answer_with_thinking_v1 — the thinking branch of the entry router
 // (`tom_brain_completion_plan.md` Todo 6, gaps G-T1 / G-T4 / C-2;
@@ -47,8 +46,10 @@
 //
 // A single forward pass is a reflex, not a thought (the quest's core belief).
 // This body is the engineered process: it wraps the same substrate the normal
-// branch uses in a bounded analyse → sub-reason → synthesise → self-critique →
-// re-enter loop. One pass through the `while` is one deliberation iteration:
+// branch uses in an analyse → sub-reason → synthesise → self-critique →
+// re-enter loop terminated by the **todo-based contract** (agent-loop
+// completion plan § 3), not a count cap. One pass through the `while` is one
+// deliberation iteration:
 //
 //   A  analyse    — `sub.llm(role: 'analyser')` reads the prompt (and, on a
 //                    re-entry, the prior rejected draft + its critique) and
@@ -65,31 +66,37 @@
 //                    context on a re-entry). Deliberately *no* `tools` argument:
 //                    the synthesis is pure composition, and withholding the tool
 //                    catalogue keeps the streamed terminal answer clean (§ 4.4).
+//                    The loop body — not this stage — owns the `todo.*` calls.
 //   D  critique   — `sub.llm(role: 'evaluator')` judges the draft and returns a
-//                    verdict; `_isAccept` parses ACCEPT vs REJECT.
+//                    verdict; `_isAccept` parses ACCEPT vs REJECT. This critique
+//                    IS the "investigate the last answer" gate (§ 3 / § 5.2):
+//                    its verdict feeds the todo-based termination, and on REJECT
+//                    its missing pieces become concrete session todos.
 //   E  re-enter   — on REJECT the rejected draft + critique are carried forward
-//                    as `rejectionContext` and the loop re-enters stage A; on
-//                    ACCEPT the loop exits with the accepted draft.
+//                    as `rejectionContext` AND pushed as a new session todo
+//                    (`tool.invoke('todo.add', …)`) so there is tracked open
+//                    work; on ACCEPT the loop marks the todos *it* pushed done
+//                    (the accepted draft resolved them). The loop re-enters
+//                    while any session todo is open or the critique rejected.
 //
-// ── Bounded re-entry + the never-silent contract (§ 4.1, gap-hunt § 6.5) ─
+// ── Todo-based termination + the never-silent contract (§ 3, gap-hunt § 6.5) ─
 //
-// The loop runs at most `maxIterations` passes — a caller override defaulting
-// very high (effectively unlimited) so a real prompt is never artificially
-// cut short; a caller (or test) may pass a small `maxIterations` to bound it.
-// The bound is resolved inline here, not an import: a d4rt body cannot import
-// `tom_core_agentic`, so the
-// domain-free re-entry/budget vocabulary lives there for the *native* callers
-// while the loop itself enforces the cap inline. Termination is one of two:
+// There is **no iteration cap**. Each pass computes, after the critique,
+// `open = _openTodoCount()` (the live session todo store via `tool.invoke`) and
+// `accepted = _isAccept(verdict)`, and the loop is finished iff
+// `open == 0 && accepted` — every tracked piece of work is done AND the
+// investigation accepts the draft. The single non-todo exit is the wall-clock
+// runaway-stop (§ 3.3), enforced externally by the engine: the body cannot read
+// the clock, so it loops purely on `!finished`. Because the session todo store
+// is the source of truth, a REJECT that pushes a missing-piece todo cannot be
+// "accepted away" until that work is cleared — investigation feeds termination.
 //
-//   • ACCEPT — the loop exits the moment a critique accepts; `incomplete` is
-//     false and the accepted draft is the answer.
-//   • exhaustion — every pass rejected. The loop stops at the cap and returns
-//     the *last* (most-informed) draft as the best-effort answer with
-//     `incomplete = true`. A foreground prompt is therefore NEVER answered with
-//     silence (gap-hunt § 6.5): the `incomplete` flag tells the consumer (and
-//     the dreaming process) the question is still open, but an answer is always
-//     produced. The wall-clock budget is the orthogonal backstop for a single
-//     hung substrate call; the iteration cap is what bounds the deliberation.
+// The body always exits with a critique-accepted, todo-clear answer, so
+// `incomplete` is always `false` here (the only `incomplete = true` source is
+// the external wall-clock runaway-stop, which is not observable in the body —
+// agent-loop plan § 3.4). A foreground prompt is therefore never answered with
+// silence: an answer is always produced, jointly authored by the run and the
+// recalled memory.
 //
 // ── Persisting the exchange (§ 4.1, mirrors `answer_with_memory_v1`) ─────
 //
@@ -111,8 +118,12 @@
 // `inputs.get(...)` dispatches onto the native bag), `procedure_result` (so the
 // recall conductor's `retrieval.output('recall')` resolves), `memory_bridge`
 // (`mem.persist` / `mem.edge`), `substrate_bridge` (`sub.llm` / `sub.embed`),
-// and `primitives_native` (the engine-native `runProcedure`). There is no
-// `tool_bridge` import: the synthesis stage forbids tools. Every completion is
+// `tool_bridge` (`tool.list` / `tool.invoke` — the `todo.*` family the
+// todo-based termination reads and writes; the engine binds the per-run `tool`
+// global on every run), and `primitives_native` (the engine-native
+// `runProcedure`). The synthesis stage still forbids tools — it passes no
+// `tools:` argument to `sub.llm` — so the catalogue is never offered to the
+// model; the loop *body* owns the `todo.*` calls directly. Every completion is
 // an `sub.llm` call that names a `role` and supplies the prompt as the role
 // template's *input* — never a pre-assembled wire prompt — so the
 // assistant-dedication anchor is always prepended at substrate assembly time.
@@ -120,6 +131,7 @@ import 'package:tom_brain_procedure/src/api/procedure_inputs.dart';
 import 'package:tom_brain_procedure/src/api/procedure_result.dart';
 import 'package:tom_brain_procedure/src/bridges/memory_bridge.dart';
 import 'package:tom_brain_procedure/src/bridges/substrate_bridge.dart';
+import 'package:tom_brain_procedure/src/bridges/tool_bridge.dart';
 import 'package:tom_brain_procedure/src/primitives_native/primitives_native.dart';
 
 Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
@@ -133,26 +145,21 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final retrieval = await runProcedure('retrieve_for_prompt_v1', inputs);
   final recall = retrieval.output('recall');
 
-  // Bounded re-entry (§ 4.1): a caller-overridable deliberation cap. The default
-  // is set very high so a foreground prompt is effectively unbounded on the
-  // re-entry count (only the wall-clock deadline backstops a genuinely hung
-  // run); a caller (or test) may pass `maxIterations` to bound it. A d4rt body
-  // cannot import the domain-free `tom_core_agentic` re-entry vocabulary, so the
-  // loop enforces the cap inline.
-  final maxArg = inputs.getOrNull('maxIterations');
-  final maxIterations = maxArg is int ? maxArg : 800;
-  var iteration = 0;
-  var accepted = false;
+  // Todo-based termination (§ 3): no iteration cap. The loop re-enters until the
+  // live session todo store is empty AND the critique accepts the draft. The ids
+  // of the todos this loop pushed (one per REJECT, holding the critique's missing
+  // pieces) are tracked so an eventual ACCEPT can mark exactly those done — never
+  // any pre-existing session todo the act stage owns.
   var draft = '';
   var rejectionContext = '';
+  final pushedTodoIds = <String>[];
+  var finished = false;
 
-  // The exit condition folds the accept test into the loop guard rather than
-  // using `break`: the d4rt interpreter does not honour a `break` inside this
-  // async `while` (it surfaces "Break statement outside of a loop"), so the
-  // loop runs while there is budget left AND no draft has been accepted.
-  while (iteration < maxIterations && !accepted) {
-    iteration++;
-
+  // The exit condition is folded into the loop guard rather than using `break`:
+  // the d4rt interpreter does not honour a `break` inside this async `while` (it
+  // surfaces "Break statement outside of a loop"), so the loop runs while not
+  // `finished`.
+  while (!finished) {
     // Stage A — analyse the prompt (carrying the prior rejection on a re-entry).
     final analysisCompletion = await sub.llm(
       _analysisPrompt(text, recall, rejectionContext),
@@ -177,27 +184,51 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     );
     draft = draftCompletion['text'];
 
-    // Stage D — self-critique. The verdict drives accept/re-enter.
+    // Stage D — self-critique: the investigation of the last answer. Its verdict
+    // drives accept/re-enter and feeds the todo-based termination.
     final critiqueCompletion = await sub.llm(
       _critiquePrompt(text, draft),
       role: 'evaluator',
     );
     final verdict = critiqueCompletion['text'];
+    final accepted = _isAccept(verdict);
 
-    if (_isAccept(verdict)) {
-      // Accepted: the loop guard (`!accepted`) exits before the next pass.
-      accepted = true;
+    if (accepted) {
+      // The accepted draft resolved the missing pieces this loop pushed — mark
+      // exactly those done so the todo-based termination can fire. (Any other
+      // open session todo, owned by the act stage, still blocks termination.)
+      // The awaited update is hoisted into the loop body, not an argument
+      // position, to stay clear of d4rt's `x = f(await g())` mis-scoping.
+      for (final id in pushedTodoIds) {
+        await tool.invoke(
+          'todo.update', <String, Object?>{'id': id, 'done': true});
+      }
     } else {
       // Stage E — re-entry: carry the rejected draft + its critique forward so
-      // the next analysis knows what to fix.
+      // the next analysis knows what to fix, AND push the critique's missing
+      // pieces as a concrete session todo so termination cannot fire until that
+      // work is cleared. This is how "investigate the last answer" feeds the
+      // todo-based termination (§ 5.2).
       rejectionContext = _rejectionContext(draft, verdict);
+      final pushedId = await _pushMissingPieceTodo(verdict);
+      if (pushedId.isNotEmpty) {
+        pushedTodoIds.add(pushedId);
+      }
     }
+
+    // Termination: finished iff no session todo is open AND the investigation
+    // accepted the draft. The wall-clock runaway-stop (§ 3.3) is the only
+    // non-todo exit and is enforced externally — not observable here.
+    final open = await _openTodoCount();
+    finished = open == 0 && accepted;
   }
 
-  // Best-effort termination: the accepted draft, or (on exhaustion) the last,
-  // most-informed draft. Never silence (gap-hunt § 6.5).
+  // The body only exits when finished — a critique-accepted, todo-clear answer.
+  // `incomplete` is therefore always false here; the only `incomplete = true`
+  // source is the external wall-clock runaway-stop (§ 3.4), not observable in
+  // the body. Never silence (gap-hunt § 6.5).
   final answer = draft;
-  final incomplete = !accepted;
+  const incomplete = false;
 
   // Persist the exchange (§ 4.1). The body has no run id, so writes carry the
   // procedure id as the producer (Q-D.39.3).
@@ -219,10 +250,8 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     'Conclusion',
     {
       'statement': answer,
-      'rationale': incomplete
-          ? 'Best-effort answer; the recursive loop exhausted its re-entry '
-              'budget without the evaluator accepting (incomplete).'
-          : 'Answered through the recursive thinking loop.',
+      'rationale': 'Answered through the recursive thinking loop — every '
+          'session todo done and the self-critique accepted the draft.',
     },
     producer: producer,
     embedding: answerEmbedding['vec'],
@@ -254,6 +283,65 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 bool _isAccept(Object? verdict) {
   if (verdict is! String) return false;
   return verdict.toUpperCase().contains('ACCEPT');
+}
+
+/// Counts the open (`done != true`) entries in the live session todo store via
+/// the `todo.list` tool — the source of truth the loop terminates on (§ 3.1).
+/// `tool.invoke('todo.list', {})` returns `{ok, result: {todos: […]}}`, each
+/// todo a `{id, text, done}` map. A malformed or failed listing counts as zero
+/// open (never a hang); the loop then terminates on the accepted draft in hand.
+//
+// Keep in sync with answer_with_memory_v1.
+Future<int> _openTodoCount() async {
+  final Object? listed = await tool.invoke('todo.list', <String, Object?>{});
+  if (listed is! Map) return 0;
+  final result = listed['result'];
+  if (result is! Map) return 0;
+  final todos = result['todos'];
+  if (todos is! List) return 0;
+  var open = 0;
+  for (final entry in todos) {
+    if (entry is Map && entry['done'] != true) open += 1;
+  }
+  return open;
+}
+
+/// Pushes the critique's "missing pieces" as one session todo (`todo.add`) and
+/// returns its store-assigned id (or `''` on a malformed result). This is the
+/// mechanism by which "investigate the last answer" feeds the todo-based
+/// termination (§ 5.2): a REJECT records concrete open work that the loop must
+/// clear before it can finish.
+Future<String> _pushMissingPieceTodo(Object? verdict) async {
+  final Object? added = await tool.invoke(
+    'todo.add', <String, Object?>{'text': _missingPieceText(verdict)});
+  if (added is! Map) return '';
+  final result = added['result'];
+  if (result is! Map) return '';
+  final id = result['id'];
+  return id is String ? id : '';
+}
+
+/// Renders the evaluator verdict as a todo title: strips the leading
+/// ACCEPT/REJECT token (and any separator after it) so the todo reads as the
+/// concrete missing piece, falling back to a generic title when the critique
+/// gave no detail. Plain string ops only (no RegExp) to stay d4rt-safe.
+String _missingPieceText(Object? verdict) {
+  var detail = verdict is String ? verdict.trim() : '';
+  final upper = detail.toUpperCase();
+  // 'REJECT' and 'ACCEPT' are both 6 characters.
+  if (upper.startsWith('REJECT') || upper.startsWith('ACCEPT')) {
+    detail = detail.substring(6).trim();
+  }
+  while (detail.isNotEmpty &&
+      (detail.startsWith(':') ||
+          detail.startsWith('-') ||
+          detail.startsWith('.'))) {
+    detail = detail.substring(1).trim();
+  }
+  if (detail.isEmpty) {
+    detail = 'address the self-critique on the last draft';
+  }
+  return 'Fix rejected draft: $detail';
 }
 
 /// Builds the `analyser`-role prompt (stage A). On a re-entry the prior
@@ -292,7 +380,7 @@ String _synthesisPrompt(
 ) {
   final history = _renderPriorTurns(priorTurns);
   final context = _renderRecall(recall);
-  return '${rejectionContext}${history}Write the best possible answer to the '
+  return '$rejectionContext${history}Write the best possible answer to the '
       'user prompt, using your analysis and sub-reasoning and the recalled '
       'memory. Answer in plain prose.\n'
       '\n'
