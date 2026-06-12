@@ -51,8 +51,15 @@ final class BridgedPrimitiveCatalog {
   };
 
   /// Substrate primitives (C.13), re-exposed by `SubstrateBridge`.
+  ///
+  /// `send` (prompt_configuration.md §7.4) is the low-level explicit-route
+  /// completion: where `llm` routes by the role's chain, `send` routes over the
+  /// chain a named route resolves to. The role still assembles the wire prompt,
+  /// so `send` is a substrate method on the `sub` global (`sub.send`) and a
+  /// procedure that calls it declares `send` in `requires`.
   static const Set<String> substrate = {
     'llm',
+    'send',
     'embed',
     'search',
     'fetch',

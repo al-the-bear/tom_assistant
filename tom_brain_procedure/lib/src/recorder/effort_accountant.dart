@@ -15,9 +15,12 @@
 //
 // ── Classification (definition § 7.4) ───────────────────────────────
 //
-//   - `llm`                       → +1 llmCall, +tokensIn inputTokens,
+//   - `llm` / `send`              → +1 llmCall, +tokensIn inputTokens,
 //                                    +tokensOut outputTokens (read from
-//                                    the call's `report`).
+//                                    the call's `report`). `send` is the
+//                                    explicit-route low-level completion
+//                                    (§7.4): an LLM call routed by name, so
+//                                    it is charged identically to `llm`.
 //   - `embed` / `search` / `fetch`→ +1 toolCall (substrate tool callouts
 //                                    other than `llm`).
 //   - `recall` / `classify` /
@@ -142,7 +145,13 @@ final class EffortAccountant {
     String primitive, {
     Map<String, Object?> result = const <String, Object?>{},
   }) {
-    if (primitive == 'llm') {
+    // `send` (the explicit-route low-level completion, §7.4) is an LLM call
+    // routed by name rather than by role — it consumes tokens exactly like
+    // `llm`, so it charges the same llmCall + token delta and is gated by the
+    // same `tokenSpend` cap. Classifying both here keeps the budget gate and
+    // the effort tally on one rule (the ledger keys its token gate on
+    // `unit.llmCalls > 0`).
+    if (primitive == 'llm' || primitive == 'send') {
       return EffortMetrics(
         llmCalls: 1,
         inputTokens: _reportToken(result, 'tokensIn'),

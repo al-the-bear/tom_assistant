@@ -622,6 +622,10 @@ final class ProcedureEngine {
       onToken: tokenSink,
       onThinking: thinkingSink,
       budget: runBudget,
+      // Carry the §7.4 routing seam from the template bridge onto the per-run
+      // bridge: without it every `sub.send` on a run would throw "no
+      // RouteChainResolver bound" (it is the only seam `send` cannot default).
+      routeChainOf: substrateBridge.routeChainOf,
       turn: turn,
       onLlmTrail: (llmTrailSink == null && !buildTree)
           ? null

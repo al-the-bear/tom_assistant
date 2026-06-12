@@ -158,6 +158,15 @@ class SubstrateBridge {
   /// script never selects a protocol; the substrate hides it (Q-F.4).
   final ToolProtocolResolver? _toolProtocolOf;
 
+  /// Resolves an LLM route *name* to the `List<RouteEntry>` chain [send]
+  /// dispatches over (§7.4 / §8). `null` ⇒ [send] cannot route and throws a
+  /// [StateError]; [llm] is unaffected (it routes by role). The host binds a
+  /// resolver backed by the cognition config's `llm:` route table at boot
+  /// wiring (increment 5 step 5d); this constructor hook is only the seam, the
+  /// `ToolProtocolResolver` pattern applied to route selection. Not part of the
+  /// d4rt-facing surface — a procedure script names a route, never a chain.
+  final RouteChainResolver? _routeChainOf;
+
   /// Per-run turn-correlation context (logging-spec §3 / §9 — the "→ substrate"
   /// end of the `turnId` thread-through). `null` on the shared template bridge
   /// and on every internal / free-time / dream run — those issue completions
@@ -193,7 +202,9 @@ class SubstrateBridge {
   /// supplied, receives the low-level tool-protocol diagnostics
   /// (`llm.toolcall.parse.failed`); [toolProtocolOf], when supplied, selects a
   /// provider's wire tool protocol (defaulting to [ToolProtocol.openai]) —
-  /// both Extension F step 10. [turn], when supplied, stamps the turn's
+  /// both Extension F step 10. [routeChainOf], when supplied, resolves an LLM
+  /// route name to the chain [send] dispatches over (§7.4); without it [send]
+  /// throws and [llm] is unaffected. [turn], when supplied, stamps the turn's
   /// `turnId` and an incrementing `callSeq` onto every [llm] call (logging-spec
   /// §3 / §9). [onLlmTrail], when supplied, receives one [LlmCallObservation]
   /// per completed [llm] call (wire body + answer + report) so a downstream
@@ -207,6 +218,7 @@ class SubstrateBridge {
     SubstrateNoteSink? onNote,
     SubstrateThinkingSink? onThinking,
     ToolProtocolResolver? toolProtocolOf,
+    RouteChainResolver? routeChainOf,
     TurnContext? turn,
     LlmTrailObserver? onLlmTrail,
   })  : _onCall = onCall,
@@ -215,8 +227,19 @@ class SubstrateBridge {
         _onNote = onNote,
         _onThinking = onThinking,
         _toolProtocolOf = toolProtocolOf,
+        _routeChainOf = routeChainOf,
         _turn = turn,
         _onLlmTrail = onLlmTrail;
+
+  /// The injected route-chain resolver this bridge was built with, or `null`.
+  ///
+  /// The engine rebuilds a fresh [SubstrateBridge] per run (binding that run's
+  /// recorder / token sink / budget / turn), and reads this off the template
+  /// bridge to carry the §7.4 routing seam onto the per-run bridge — without it
+  /// every per-run [send] would throw "no RouteChainResolver bound". Returns the
+  /// raw resolver closure; it is a host-side wiring detail, never called from a
+  /// procedure script (a script names a route, never a chain).
+  RouteChainResolver? get routeChainOf => _routeChainOf;
 
   /// Delegates to [body], gating it through the budget ledger and recording
   /// it on the run trail when those hooks are wired.
@@ -333,11 +356,113 @@ class SubstrateBridge {
     Map<String, Object?>? budget,
     String? channel,
   }) =>
+      _completeOnce(
+        primitive: 'llm',
+        recordInput: <String, Object?>{'prompt': prompt, 'role': role},
+        prompt: prompt,
+        role: role,
+        options: LlmOptions(toolCatalogue: _buildToolCatalogue(tools)),
+        budget: budget,
+        channel: channel,
+      );
+
+  // ── send ──────────────────────────────────────────────────────────
+
+  /// Runs one completion over an **explicitly named LLM route** (§7.4) and
+  /// returns the same `{text, toolCalls, unresolvedToolCall, report}` shape as
+  /// [llm].
+  ///
+  /// This is the low-level half of the prompt-configuration routing seam: the
+  /// `llm:` setting selects an LLM route by *name* (§8), and `send` dispatches
+  /// over that route's chain instead of the role-keyed chain [llm] uses.
+  /// [llmRoute] is resolved to a `List<RouteEntry>` by the injected
+  /// [RouteChainResolver] ([_routeChainOf]); the resolved chain rides onto
+  /// [LlmCall.routeChain] so the substrate routes over it (substrate §7.4
+  /// seam). The [role] still assembles the wire prompt — persona + anchor +
+  /// provenance — exactly as for [llm]; only *route selection* moves off the
+  /// role, so the anchor invariant (PE-7) is preserved unchanged.
+  ///
+  /// [transcript] is the prompt body (the role template's `prompt` input).
+  /// [tools] is the optional tool catalogue (same `tool.list` wire shape as
+  /// [llm]). [temperature] / [maxOutputTokens] / [responseFormat] ride onto
+  /// [LlmOptions] — `send` is where a procedure pins decoding knobs a plain
+  /// `llm` answer leaves at provider/role defaults.
+  ///
+  /// Throws [StateError] when no [RouteChainResolver] is bound (a wiring bug —
+  /// `send` cannot route without one). A resolver that does not know [llmRoute]
+  /// throws its own error; an empty resolved chain surfaces the substrate's
+  /// `EmptyRouteChain`.
+  Future<Map<String, Object?>> send(
+    String transcript, {
+    required String llmRoute,
+    String role = defaultRole,
+    List<Object?>? tools,
+    double? temperature,
+    int? maxOutputTokens,
+    Map<String, Object?>? responseFormat,
+  }) {
+    final resolver = _routeChainOf;
+    if (resolver == null) {
+      throw StateError(
+        'sub.send requires a RouteChainResolver but none was bound on the '
+        'SubstrateBridge (route "$llmRoute").',
+      );
+    }
+    final chain = resolver(llmRoute);
+    return _completeOnce(
+      primitive: 'send',
+      recordInput: <String, Object?>{
+        'prompt': transcript,
+        'role': role,
+        'route': llmRoute,
+      },
+      prompt: transcript,
+      role: role,
+      options: LlmOptions(
+        toolCatalogue: _buildToolCatalogue(tools),
+        temperature: temperature,
+        maxOutputTokens: maxOutputTokens,
+        responseFormat: responseFormat,
+      ),
+      routeChain: chain,
+    );
+  }
+
+  // ── shared completion core ─────────────────────────────────────────
+
+  /// The build-and-drain core shared by [llm] and [send].
+  ///
+  /// Both primitives issue exactly one substrate completion and return the
+  /// uniform `{text, toolCalls, unresolvedToolCall, report}` map; they differ
+  /// only in *how the route is chosen*. [llm] routes by [role] (leaving
+  /// [routeChain] null so the substrate consults `roleRoutes[role]`); [send]
+  /// routes over the explicit [routeChain] resolved from a route name. Every
+  /// other concern — anchor-preserving role assembly, the budget gate / trail
+  /// record (via [_record]), per-call channel routing (§9.2), tool-call
+  /// resolution (§9.1), turn correlation, and the raw-LLM-trail observation —
+  /// is identical, so it lives here once rather than duplicated across the two.
+  ///
+  /// [primitive] is the recorder/ledger name (`'llm'` or `'send'` — both
+  /// charged as llm calls, §8 accountant). [recordInput] is the argument map
+  /// the trail records. [options] is the fully built [LlmOptions] (its
+  /// `toolCatalogue` is read back for the tool-call resolve step). [budget] is
+  /// the optional primitive budget map; [channel] forces the stream channel
+  /// (`null` ⇒ defaults by [role]).
+  Future<Map<String, Object?>> _completeOnce({
+    required String primitive,
+    required Map<String, Object?> recordInput,
+    required String prompt,
+    required String role,
+    required LlmOptions options,
+    List<RouteEntry>? routeChain,
+    Map<String, Object?>? budget,
+    String? channel,
+  }) =>
       _record<Map<String, Object?>>(
-        'llm',
-        <String, Object?>{'prompt': prompt, 'role': role},
+        primitive,
+        recordInput,
         () async {
-          final catalogue = _buildToolCatalogue(tools);
+          final catalogue = options.toolCatalogue;
           // Per-call stream routing (§ 9.2 Todo 6). The resolved channel says
           // where this completion's text streams: the **answer** channel the
           // user reads, or the out-of-band **thinking** channel. Explicit
@@ -366,10 +491,12 @@ class SubstrateBridge {
           final call = LlmCall(
             roleId: role,
             inputs: <String, Object?>{'prompt': prompt},
-            options: LlmOptions(toolCatalogue: catalogue),
+            options: options,
             budget: _buildBudget(budget),
             turnId: turn?.turnId,
             callSeq: callSeq,
+            // null for `llm` (route by role); the explicit chain for `send`.
+            routeChain: routeChain,
           );
 
           // Raw-trail provenance (§5.2): when the engine bound a trail observer,
@@ -1016,6 +1143,18 @@ typedef SubstrateThinkingSink = void Function(String text);
 /// resolver at boot wiring (plan step 15); an unbound resolver treats every
 /// provider as [ToolProtocol.openai].
 typedef ToolProtocolResolver = ToolProtocol Function(String providerId);
+
+/// Resolves an LLM route *name* to the `List<RouteEntry>` chain
+/// [SubstrateBridge.send] dispatches over (§7.4 / §8).
+///
+/// The cognition config's `llm:` block names routes (e.g. `fast`, `deep`); a
+/// prompt selects one by name and `send` routes over its chain instead of the
+/// role-keyed chain `llm` uses. The host binds a resolver backed by that route
+/// table at boot wiring (increment 5 step 5d); the bridge stays config-unaware
+/// — it is handed the name→chain function, the `ToolProtocolResolver` pattern
+/// applied to route selection. A resolver that does not know the name should
+/// throw (an unknown route is a config error, not a silent fallback).
+typedef RouteChainResolver = List<RouteEntry> Function(String routeName);
 
 /// Thrown by [SubstrateBridge.llm] when the substrate stream terminates
 /// with [LlmStreamFailed].

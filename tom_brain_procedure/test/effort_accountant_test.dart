@@ -60,6 +60,30 @@ void main() {
       });
     });
 
+    group('send (explicit-route completion, §7.4)', () {
+      test('counts one llm call and reads tokens, exactly like llm', () {
+        final delta = accountant.classify('send', result: <String, Object?>{
+          'text': 'an answer',
+          'report': <String, Object?>{'tokensIn': 30, 'tokensOut': 12},
+        });
+        expect(delta.llmCalls, 1);
+        expect(delta.inputTokens, 30);
+        expect(delta.outputTokens, 12);
+        expect(delta.estimatedTokens, 42);
+        // Not a tool call / read / write — it is a completion.
+        expect(delta.toolCalls, 0);
+        expect(delta.memoryReads, 0);
+        expect(delta.memoryWrites, 0);
+      });
+
+      test('counts the call but zero tokens when the report is absent', () {
+        final delta = accountant.classify('send');
+        expect(delta.llmCalls, 1);
+        expect(delta.inputTokens, 0);
+        expect(delta.outputTokens, 0);
+      });
+    });
+
     group('substrate tool calls', () {
       for (final primitive in <String>['embed', 'search', 'fetch']) {
         test('$primitive contributes one toolCall', () {
