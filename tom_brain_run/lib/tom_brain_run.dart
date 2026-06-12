@@ -36,6 +36,22 @@ library;
 
 export 'src/brain_run_config.dart' show BrainRunConfig;
 export 'src/builtin_bindings.dart' show BrainBuiltins;
+export 'src/cognition_config.dart'
+    show
+        CognitionConfig,
+        CognitionConfigException,
+        CognitionRegistry,
+        PromptKind,
+        PromptSettings,
+        RegisteredProcedure,
+        ResolvedPrompt,
+        ToolsAll,
+        ToolsExplicit,
+        ToolsNone,
+        ToolsReadonly,
+        ToolsSetting,
+        UnregisteredPromptException;
+export 'src/cognition_config_loader.dart' show CognitionConfigLoader;
 export 'src/brain_run_config_loader.dart'
     show BrainRunConfigException, BrainRunConfigLoader;
 export 'src/brain_substrate_builder.dart'
