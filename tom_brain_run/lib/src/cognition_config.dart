@@ -12,6 +12,8 @@
 //
 // Pure data: no I/O, no YAML node types. `CognitionConfigLoader` owns the parse.
 
+import 'llm_route_config.dart';
+
 /// Whether a registered template is a full prompt (sent on its own) or a
 /// reusable fragment (rendered and injected via a placeholder).
 enum PromptKind {
@@ -214,14 +216,22 @@ final class CognitionConfig {
   /// Every registered prompt, keyed by full `<main>.<sub>.<prompt>` ID.
   final Map<String, ResolvedPrompt> prompts;
 
+  /// The named LLM route configs loaded from `cognition/llm/`, keyed by route
+  /// name (§8 / §8.1). Empty when no `llm/` folder was loaded.
+  final Map<String, LlmRouteConfig> llmRoutes;
+
   /// Binds the parsed config.
   const CognitionConfig({
     required this.registry,
     required this.prompts,
+    required this.llmRoutes,
   });
 
   /// Every registered prompt ID.
   List<String> get promptIds => prompts.keys.toList();
+
+  /// Every loaded LLM route name.
+  List<String> get llmRouteNames => llmRoutes.keys.toList();
 
   /// Resolves [id] to its [ResolvedPrompt].
   ///
@@ -231,6 +241,27 @@ final class CognitionConfig {
     final prompt = prompts[id];
     if (prompt == null) throw UnregisteredPromptException(id);
     return prompt;
+  }
+
+  /// Resolves a route [name] to its [LlmRouteConfig].
+  ///
+  /// Throws [UnknownLlmRouteException] when [name] is not among [llmRoutes]
+  /// (§8.1 — a prompt may only reference a loaded route).
+  LlmRouteConfig route(String name) {
+    final r = llmRoutes[name];
+    if (r == null) throw UnknownLlmRouteException(name);
+    return r;
+  }
+
+  /// The route a [prompt] uses — its inherited `llm:` setting (§5.4) resolved to
+  /// a route config. Throws [UnknownLlmRouteException] when the prompt carries no
+  /// `llm:` or references a route that was not loaded.
+  LlmRouteConfig routeForPrompt(ResolvedPrompt prompt) {
+    final name = prompt.settings.llm;
+    if (name == null) {
+      throw UnknownLlmRouteException('<unset on ${prompt.id}>');
+    }
+    return route(name);
   }
 }
 

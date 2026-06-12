@@ -18,10 +18,13 @@
 
 import 'dart:io';
 
+import 'package:tom_brain_substrate/tom_brain_substrate.dart'
+    show RoleRouteEntryConfig, RouteConditionsConfig;
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show MapFieldReader, YamlConfigReader, loadYamlAsMap;
 
 import 'cognition_config.dart';
+import 'llm_route_config.dart';
 
 /// Parses the cognition config root into a [CognitionConfig] (§12 step 3).
 ///
@@ -77,6 +80,7 @@ abstract final class CognitionConfigLoader {
   static CognitionConfig parse({
     required String registryYaml,
     required Map<String, String> procedureConfigs,
+    Map<String, String> llmRouteConfigs = const {},
     Map<String, String> env = const {},
   }) {
     final YamlConfigReader envReader =
@@ -95,7 +99,17 @@ abstract final class CognitionConfigLoader {
       _parseProcedure(proc, content, registry, envReader, prompts);
     }
 
-    return CognitionConfig(registry: registry, prompts: prompts);
+    final Map<String, LlmRouteConfig> llmRoutes = <String, LlmRouteConfig>{};
+    for (final entry in llmRouteConfigs.entries) {
+      llmRoutes[entry.key] = _parseRoute(entry.key, entry.value, envReader);
+    }
+    _validateRoutes(registry, prompts, llmRoutes);
+
+    return CognitionConfig(
+      registry: registry,
+      prompts: prompts,
+      llmRoutes: llmRoutes,
+    );
   }
 
   /// Reads `registry.yaml` plus every referenced main-procedure config off disk
@@ -130,9 +144,24 @@ abstract final class CognitionConfigLoader {
       configs[proc.configFile] = file.readAsStringSync();
     }
 
+    // The `llm/` folder: every `<name>.yaml` becomes a route config keyed by its
+    // filename stem (the name a prompt's `llm:` references). An absent folder
+    // yields no routes (route resolution then throws on demand).
+    final Map<String, String> routeConfigs = <String, String>{};
+    final Directory llmDir =
+        Directory('$cognitionRootDir/${registry.llmFolder}');
+    if (llmDir.existsSync()) {
+      for (final entity in llmDir.listSync()) {
+        if (entity is File && entity.path.endsWith('.yaml')) {
+          routeConfigs[_stemOf(entity.path)] = entity.readAsStringSync();
+        }
+      }
+    }
+
     return parse(
       registryYaml: registryYaml,
       procedureConfigs: configs,
+      llmRouteConfigs: routeConfigs,
       env: env,
     );
   }
@@ -381,6 +410,105 @@ abstract final class CognitionConfigLoader {
     }
   }
 
+  // ── llm/<name>.yaml route configs (§8 / §8.1) ───────────────────────
+
+  /// Parses one `cognition/llm/<name>.yaml` into an [LlmRouteConfig].
+  ///
+  /// The `route:` list order is the rotation order, preserved verbatim. Each row
+  /// is `{provider, model, conditions?}` (the substrate [RoleRouteEntryConfig]
+  /// shape). A missing `provider`/`model`, an unknown row key, or an empty list
+  /// is a located [CognitionConfigException].
+  static LlmRouteConfig _parseRoute(
+    String name,
+    String content,
+    YamlConfigReader envReader,
+  ) {
+    final String rootPath = 'llm.$name';
+    final Map<String, Object?> doc = _loadMap(content, rootPath);
+    _rejectUnknownKeys(doc, const <String>{'route'}, rootPath);
+
+    final List<Object?> rows =
+        _reader.optionalList(doc, 'route', '$rootPath.route') ?? const [];
+    if (rows.isEmpty) {
+      throw CognitionConfigException(
+        '$rootPath.route: a route config must list at least one '
+        '{provider, model} entry.',
+      );
+    }
+
+    final List<RoleRouteEntryConfig> entries = <RoleRouteEntryConfig>[];
+    for (var i = 0; i < rows.length; i++) {
+      final String path = '$rootPath.route[$i]';
+      final Map<Object?, Object?> row = _reader.mapValue(rows[i], path)!;
+      _rejectUnknownKeys(
+        row,
+        const <String>{'provider', 'model', 'conditions'},
+        path,
+      );
+      final String provider = envReader.expandEnv(
+        _reader.requireString(row, 'provider', '$path.provider'),
+        '$path.provider',
+      );
+      final String model = envReader.expandEnv(
+        _reader.requireString(row, 'model', '$path.model'),
+        '$path.model',
+      );
+
+      RouteConditionsConfig? conditions;
+      final Map<Object?, Object?>? cond =
+          _reader.optionalMap(row, 'conditions', '$path.conditions');
+      if (cond != null) {
+        _rejectUnknownKeys(
+            cond, const <String>{'maxInputTokens'}, '$path.conditions');
+        conditions = RouteConditionsConfig(
+          maxInputTokens: _readInt(
+              cond, 'maxInputTokens', '$path.conditions.maxInputTokens'),
+        );
+      }
+
+      entries.add(RoleRouteEntryConfig(
+        providerId: provider,
+        model: model,
+        conditions: conditions,
+      ));
+    }
+
+    return LlmRouteConfig(
+      name: name,
+      route: List<RoleRouteEntryConfig>.unmodifiable(entries),
+    );
+  }
+
+  /// Cross-checks the loaded [llmRoutes] against the references (§8.1).
+  ///
+  /// When at least one route config is loaded, fail-fast: the registry's
+  /// `llm.default` must be among them, and every prompt's resolved `llm` route
+  /// name must resolve. With no route configs loaded (a pure registry+procedure
+  /// `parse`, or an absent `llm/` folder) there is nothing to cross-check —
+  /// route resolution then throws on demand via [CognitionConfig.route].
+  static void _validateRoutes(
+    CognitionRegistry registry,
+    Map<String, ResolvedPrompt> prompts,
+    Map<String, LlmRouteConfig> llmRoutes,
+  ) {
+    if (llmRoutes.isEmpty) return;
+    if (!llmRoutes.containsKey(registry.llmDefault)) {
+      throw CognitionConfigException(
+        'registry.llm.default: "${registry.llmDefault}" is not among the '
+        'loaded llm/ route configs ${llmRoutes.keys.toList()}.',
+      );
+    }
+    for (final prompt in prompts.values) {
+      final String? name = prompt.settings.llm;
+      if (name != null && !llmRoutes.containsKey(name)) {
+        throw CognitionConfigException(
+          'prompt "${prompt.id}": llm route "$name" is not among the loaded '
+          'llm/ route configs ${llmRoutes.keys.toList()}.',
+        );
+      }
+    }
+  }
+
   // ── shared helpers ──────────────────────────────────────────────────
 
   /// Loads [content] as a plain map, rewrapping a `loadYaml` parse / duplicate-
@@ -400,6 +528,13 @@ abstract final class CognitionConfigLoader {
         '$rootPath: malformed YAML (${e.message}).',
       );
     }
+  }
+
+  /// The filename stem (`default` for `…/default.yaml`).
+  static String _stemOf(String path) {
+    final String name = path.split(Platform.pathSeparator).last;
+    final int dot = name.lastIndexOf('.');
+    return dot < 0 ? name : name.substring(0, dot);
   }
 
   static void _rejectUnknownKeys(

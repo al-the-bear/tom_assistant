@@ -52,6 +52,7 @@ export 'src/cognition_config.dart'
         ToolsSetting,
         UnregisteredPromptException;
 export 'src/cognition_config_loader.dart' show CognitionConfigLoader;
+export 'src/llm_route_config.dart' show LlmRouteConfig, UnknownLlmRouteException;
 export 'src/brain_run_config_loader.dart'
     show BrainRunConfigException, BrainRunConfigLoader;
 export 'src/brain_substrate_builder.dart'
