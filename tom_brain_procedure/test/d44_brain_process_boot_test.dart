@@ -50,13 +50,17 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 void main() {
   late _BootMemory memory;
   late _AnsweringSubstrate substrate;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _BootMemory();
     substrate = _AnsweringSubstrate();
+    parity = AnswerParityPrompts();
   });
 
   BrainProcessConfig configWith({
@@ -73,6 +77,12 @@ void main() {
         ),
         installAccessLayer: installAccessLayer,
         toolFileScope: toolFileScope,
+        // Increment 6 (§6): the booted `answer_with_memory_v1` resolves its
+        // prompt through the host `PromptResolver`. Boot threads these seams onto
+        // the engine's `SubstrateBridge`; the parity fake reproduces the
+        // pre-migration assembled prompt so the substrate sees identical text.
+        promptResolver: parity.resolver,
+        routeChainOf: parity.routeChainOf,
       );
 
   Access userPrompt(String text) => Access(
@@ -215,21 +225,23 @@ void main() {
 
       // The substrate answer deltas arrived as non-final chunks, in order.
       // Tool-call notices ride the same stream as separate non-final chunks
-      // (`OutboundChunk.notice`, P2) — `answer_with_memory_v1` opens with a
-      // `tool.list()` — so the answer deltas are the non-final chunks that
-      // carry no notice.
+      // (`OutboundChunk.notice`, P2) — so the answer deltas are the non-final
+      // chunks that carry no notice.
       final answerDeltas =
           delivered.where((c) => !c.isFinal && c.notice == null).toList();
       expect(answerDeltas.map((c) => c.textDelta).toList(),
           <String>['Hello, ', 'world.']);
 
-      // The `tool.list()` the procedure opens with surfaced as an out-of-band
-      // notice chunk (no answer text), proving the route → engine → tool-event
-      // notice wiring is live end-to-end.
+      // Increment 6 (§6) migrated the answer step onto `sub.run`: the procedure
+      // no longer opens with a bare `tool.list()`. Its outer-loop termination
+      // probe `tool.invoke('todo.list', {})` is now the tool event that surfaces
+      // as an out-of-band notice chunk (no answer text), proving the
+      // route → engine → tool-event notice wiring is still live end-to-end
+      // through the nested `tool_loop_v1` run.
       final notices = delivered.where((c) => c.notice != null).toList();
       expect(notices, isNotEmpty);
       expect(notices.first.textDelta, isEmpty);
-      expect(notices.first.notice, startsWith('🔧 listed'));
+      expect(notices.first.notice, startsWith('🔧 tool todo.list'));
 
       // The stream was terminated by exactly one empty final marker — the
       // deltas already carried the text, so the terminator re-sends nothing.

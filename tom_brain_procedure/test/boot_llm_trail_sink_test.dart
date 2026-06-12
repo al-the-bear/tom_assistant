@@ -36,13 +36,17 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 void main() {
   late _BootMemory memory;
   late _AnsweringSubstrate substrate;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _BootMemory();
     substrate = _AnsweringSubstrate();
+    parity = AnswerParityPrompts();
   });
 
   BrainProcessConfig configWith({LlmTrailSink? llmTrailSink}) =>
@@ -53,6 +57,11 @@ void main() {
           memoryConfig: MemoryConfig.forTesting(root: 'ztmp/boot_trail_sink'),
         ),
         llmTrailSink: llmTrailSink,
+        // Increment 6 (§6): the booted answer step resolves its prompt through
+        // the host `PromptResolver`; the parity fake reproduces the pre-migration
+        // assembled prompt so the `sub.send` still fires the llm-trail records.
+        promptResolver: parity.resolver,
+        routeChainOf: parity.routeChainOf,
       );
 
   Access userPrompt(String text) => Access(

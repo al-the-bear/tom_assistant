@@ -91,13 +91,17 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 void main() {
   late _StubMemory memory;
   late _StubSubstrate substrate;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _StubMemory();
     substrate = _StubSubstrate();
+    parity = AnswerParityPrompts();
   });
 
   /// Boots the prototype process over the stub memory + stub substrate, in the
@@ -112,6 +116,12 @@ void main() {
           client: memory,
           memoryConfig: MemoryConfig.forTesting(root: memoryRoot),
         ),
+        // Increment 6 (§6): the booted `answer_with_memory_v1` resolves its
+        // prompt through the host `PromptResolver`; the parity fake reproduces
+        // the pre-migration assembled prompt so the script's post-conditions
+        // (Event/Conclusion/edges) still hold against the stub substrate.
+        promptResolver: parity.resolver,
+        routeChainOf: parity.routeChainOf,
       ),
     );
     addTearDown(booted.shutdown);

@@ -39,17 +39,31 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 void main() {
   late _RecallCapturingMemory memory;
   late _ToolThenAnswerSubstrate substrate;
   late MemoryBridge memoryBridge;
   late SubstrateBridge substrateBridge;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _RecallCapturingMemory();
     substrate = _ToolThenAnswerSubstrate();
     memoryBridge = MemoryBridge(memory);
-    substrateBridge = SubstrateBridge(substrate);
+    parity = AnswerParityPrompts();
+    // Increment 6 (§7.4): the answer prompt's tool set is resolved from its tool
+    // policy, not a procedure input. The shipped `defaultToolCatalogue()` is the
+    // production set `tool.list()` exposes, so the substrate's answer-step calls
+    // carry tools (gating its `proposeReadFor` branch) and a proposed
+    // `memory.read{…}` resolves against it — exactly the pre-migration behaviour.
+    parity.tools = defaultToolCatalogue();
+    substrateBridge = SubstrateBridge(
+      substrate,
+      promptResolver: parity.resolver,
+      routeChainOf: parity.routeChainOf,
+    );
   });
 
   ProcedureEngine engineFor(Iterable<LoadedProcedure> procedures) =>

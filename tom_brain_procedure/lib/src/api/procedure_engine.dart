@@ -629,6 +629,50 @@ final class ProcedureEngine {
     // run's `llm` primitive-call entries, so the observer also captures it when
     // a tree is built — even if no raw-trail writer is bound.
     final llmTrailSink = _llmTrailSink;
+
+    final runPrimitive = RunProcedurePrimitive(
+      // Capture the parent's trail length *synchronously* at the call site so
+      // the nested run's sub-record can later be spliced in at exactly this
+      // position (§5.7): the assembly flushes any child whose `position`
+      // equals the parent entry index it is about to process. `onTree` is the
+      // nested run's "splice me here" bubble — wired only when a tree is built.
+      executor: (call) {
+        final position = recorder.entries.length;
+        return _executeNested(
+          call,
+          parentRunId: runId,
+          turn: turn,
+          profile: profile,
+          sessionId: sessionId,
+          // Stream-sink inheritance (§9.2 + increment-6 migration). A nested
+          // `runProcedure` does *not* re-stream by default — the answer is the
+          // top-level body's to deliver. The one exception is the shared
+          // `tool_loop_v1` the migrated answer path delegates its user-facing
+          // completion to (via `sub.run`): the user-facing tokens now arise
+          // *inside* that nested loop, so it must inherit this frame's outbound
+          // sinks to stream the answer / thinking channels exactly as the
+          // pre-migration inline loop did. Every other nested run (the recall
+          // conductor, the `recall_*` strategies, a scripted sub-procedure)
+          // stays sink-less.
+          tokenSink: call.id == SubstrateBridge.toolLoopProcedureId
+              ? tokenSink
+              : null,
+          thinkingSink: call.id == SubstrateBridge.toolLoopProcedureId
+              ? thinkingSink
+              : null,
+          noticeSink: call.id == SubstrateBridge.toolLoopProcedureId
+              ? noticeSink
+              : null,
+          onTree: buildTree
+              ? (childTree) =>
+                  childTrees.add(_PositionedChildTree(position, childTree))
+              : null,
+        );
+      },
+      hardDepthCap: _hardDepthCap,
+      startDepth: depth,
+    );
+
     final runSubstrateBridge = SubstrateBridge(
       substrateBridge.client,
       onCall: recordCall,
@@ -639,6 +683,17 @@ final class ProcedureEngine {
       // bridge: without it every `sub.send` on a run would throw "no
       // RouteChainResolver bound" (it is the only seam `send` cannot default).
       routeChainOf: substrateBridge.routeChainOf,
+      // Carry the §7.1/§7.4 prompt-resolution seam (`sub.run`) the same way: it
+      // is config-backed and run-independent, so the template bridge's resolver
+      // is the per-run resolver. Without it every `sub.run` would throw "no
+      // PromptResolver bound".
+      promptResolver: substrateBridge.promptResolver,
+      // The `ProcedureRunner` `sub.run` delegates its tool-loop to is *this*
+      // run's depth-capped `RunProcedurePrimitive` (not a seam copied from the
+      // template bridge): the delegated `tool_loop_v1` run must inherit this
+      // frame's depth bookkeeping and trail, exactly as a scripted nested
+      // `runProcedure` does (substrate_bridge.dart `ProcedureRunner`).
+      runProcedure: runPrimitive.runProcedure,
       turn: turn,
       onLlmTrail: (llmTrailSink == null && !buildTree)
           ? null
@@ -656,30 +711,6 @@ final class ProcedureEngine {
                 }
               }
             },
-    );
-
-    final runPrimitive = RunProcedurePrimitive(
-      // Capture the parent's trail length *synchronously* at the call site so
-      // the nested run's sub-record can later be spliced in at exactly this
-      // position (§5.7): the assembly flushes any child whose `position`
-      // equals the parent entry index it is about to process. `onTree` is the
-      // nested run's "splice me here" bubble — wired only when a tree is built.
-      executor: (call) {
-        final position = recorder.entries.length;
-        return _executeNested(
-          call,
-          parentRunId: runId,
-          turn: turn,
-          profile: profile,
-          sessionId: sessionId,
-          onTree: buildTree
-              ? (childTree) =>
-                  childTrees.add(_PositionedChildTree(position, childTree))
-              : null,
-        );
-      },
-      hardDepthCap: _hardDepthCap,
-      startDepth: depth,
     );
     // Per-run tool surface (Extension F step 6; § 21.2): the `tool` global a
     // procedure reaches for the tool-calling loop (`answer_with_memory_v1`'s
@@ -1063,6 +1094,9 @@ final class ProcedureEngine {
     TurnContext? turn,
     String? profile,
     String? sessionId,
+    OutboundDeltaSink? tokenSink,
+    ToolNoticeSink? noticeSink,
+    SubstrateThinkingSink? thinkingSink,
     void Function(ProcedureTreeRecord tree)? onTree,
   }) async {
     final outcome = await _runInternal(
@@ -1073,6 +1107,12 @@ final class ProcedureEngine {
       arguments: call.inputs.toMap(),
       parentRunId: parentRunId,
       depth: call.depth,
+      // Non-null only for the `tool_loop_v1` delegation (the caller gates this);
+      // every other nested run is sink-less, preserving "a nested run does not
+      // re-stream the answer".
+      tokenSink: tokenSink,
+      noticeSink: noticeSink,
+      thinkingSink: thinkingSink,
       turn: turn,
       profile: profile,
       sessionId: sessionId,

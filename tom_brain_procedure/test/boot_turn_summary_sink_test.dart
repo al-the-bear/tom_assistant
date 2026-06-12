@@ -38,13 +38,17 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 void main() {
   late _BootMemory memory;
   late _AnsweringSubstrate substrate;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _BootMemory();
     substrate = _AnsweringSubstrate();
+    parity = AnswerParityPrompts();
   });
 
   BrainProcessConfig configWith({TurnSummarySink? turnSummarySink}) =>
@@ -55,6 +59,11 @@ void main() {
           memoryConfig: MemoryConfig.forTesting(root: 'ztmp/boot_turn_sink'),
         ),
         turnSummarySink: turnSummarySink,
+        // Increment 6 (§6): the booted answer step resolves its prompt through
+        // the host `PromptResolver`; the parity fake supplies the assembled
+        // prompt so the turn runs to completion and the summary sink fires.
+        promptResolver: parity.resolver,
+        routeChainOf: parity.routeChainOf,
       );
 
   Access userPrompt(String text, {TurnId? turnId}) => Access(

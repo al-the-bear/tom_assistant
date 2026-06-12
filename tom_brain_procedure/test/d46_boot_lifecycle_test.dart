@@ -50,6 +50,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 /// Yields the event loop so pending microtasks / timers settle before an
 /// assertion observes state.
 Future<void> _tick() => Future<void>.delayed(const Duration(milliseconds: 1));
@@ -63,10 +65,12 @@ Future<TomBrainMemory> crashingMemoryFactory() async =>
 void main() {
   late _LifecycleMemory memory;
   late _FakeSubstrate substrate;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _LifecycleMemory();
     substrate = _FakeSubstrate();
+    parity = AnswerParityPrompts();
   });
 
   BrainProcessConfig inProcessConfig({SubstrateConfig? substrateConfig}) =>
@@ -77,6 +81,11 @@ void main() {
           client: memory,
           memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d46_boot'),
         ),
+        // Increment 6 (§6): the booted answer step resolves its prompt through
+        // the host `PromptResolver`; the parity fake supplies the assembled
+        // prompt so the end-to-end run persists its Event + Conclusion.
+        promptResolver: parity.resolver,
+        routeChainOf: parity.routeChainOf,
       );
 
   Access userPrompt(String text) => Access(

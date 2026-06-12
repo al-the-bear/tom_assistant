@@ -41,6 +41,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 /// Yields the event loop so pending microtasks / timers settle before an
 /// assertion observes state.
 Future<void> _tick() => Future<void>.delayed(const Duration(milliseconds: 1));
@@ -165,10 +167,12 @@ void main() {
   group('D.45-2 BootedBrain.shutdown drains before closing memory', () {
     late _DrainMemory memory;
     late _GatedSubstrate substrate;
+    late AnswerParityPrompts parity;
 
     setUp(() {
       memory = _DrainMemory();
       substrate = _GatedSubstrate();
+      parity = AnswerParityPrompts();
     });
 
     BrainProcessConfig config() => BrainProcessConfig(
@@ -177,6 +181,11 @@ void main() {
             client: memory,
             memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d45_drain'),
           ),
+          // Increment 6 (§6): the booted answer step resolves its prompt through
+          // the host `PromptResolver`; the parity fake supplies it so the gated
+          // run reaches its answer `sub.send` after the gate releases.
+          promptResolver: parity.resolver,
+          routeChainOf: parity.routeChainOf,
         );
 
     Access userPrompt(String text) => Access(

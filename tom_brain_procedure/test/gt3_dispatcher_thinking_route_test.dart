@@ -45,13 +45,17 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 void main() {
   late _BootMemory memory;
   late _RoleAwareSubstrate substrate;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _BootMemory();
     substrate = _RoleAwareSubstrate();
+    parity = AnswerParityPrompts();
   });
 
   BrainProcessConfig config() => BrainProcessConfig(
@@ -60,6 +64,12 @@ void main() {
           client: memory,
           memoryConfig: MemoryConfig.forTesting(root: 'ztmp/gt3_dispatcher'),
         ),
+        // Increment 6 (§6): the normal branch's `answer_with_memory_v1` resolves
+        // its prompt through the host `PromptResolver`. The thinking + router
+        // branches call `sub.llm`/`sub.send` directly and never consult it; the
+        // parity fake supplies the normal branch's assembled prompt.
+        promptResolver: parity.resolver,
+        routeChainOf: parity.routeChainOf,
       );
 
   /// A live user prompt as the channel delivers it — un-hinted, so the

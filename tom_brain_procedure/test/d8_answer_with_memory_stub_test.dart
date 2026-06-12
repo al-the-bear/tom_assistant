@@ -42,17 +42,25 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 void main() {
   late _StatefulMemory memory;
   late _InertSubstrate substrate;
   late MemoryBridge memoryBridge;
   late SubstrateBridge substrateBridge;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _StatefulMemory();
     substrate = _InertSubstrate();
     memoryBridge = MemoryBridge(memory);
-    substrateBridge = SubstrateBridge(substrate);
+    parity = AnswerParityPrompts();
+    substrateBridge = SubstrateBridge(
+      substrate,
+      promptResolver: parity.resolver,
+      routeChainOf: parity.routeChainOf,
+    );
   });
 
   ProcedureEngine engineFor(Iterable<LoadedProcedure> procedures) =>
@@ -87,25 +95,26 @@ void main() {
       final loaded = resolver.resolve('answer_with_memory_v1');
       expect(loaded.header.id, 'answer_with_memory_v1');
       expect(loaded.header.version, 1);
-      // D.37–D.41 / Extension-H step #30 — step-1 recall now runs through the
-      // `retrieve_for_prompt_v1` conductor (`runProcedure`), not a direct
-      // `recall`; the body still calls the cold-path `embed` + `classify`,
-      // `llm`, `persist`/`edge`, the cold-path `stack.push`, then the
-      // repetition `note`. D.43 added the tool-calling loop, so the answer step
-      // now also enumerates (`tool.list`) and runs (`tool.invoke`) tools — the
-      // header declares exactly those primitives.
+      // D.37–D.41 / Extension-H step #30 — step-1 recall runs through the
+      // `retrieve_for_prompt_v1` conductor (`runProcedure`); the body still
+      // calls the cold-path `embed` + `classify`, `persist`/`edge`, the
+      // cold-path `stack.push`, then the repetition `note`. Increment 6
+      // (`prompt_configuration.md` §6) migrated the normal path onto `sub.run`:
+      // the inline prompt assembly + send/`tool.list` loop are gone — the answer
+      // step now names the registered prompt via `run` and delegates the inner
+      // tool loop (which still resolves `tool.invoke`) to `tool_loop_v1`. So the
+      // header drops `llm` + `tool.list` and adds `run`.
       expect(
           loaded.header.requires,
           <String>[
             'runProcedure',
+            'run',
             'embed',
             'classify',
-            'llm',
             'persist',
             'edge',
             'stack.push',
             'note',
-            'tool.list',
             'tool.invoke',
           ]);
       // The only declared cap is the wall-clock deadline (§ 5.4): the
@@ -140,9 +149,12 @@ void main() {
       // answer run plus the conductor and its four `recall_*` sub-procedures
       // (Extension-H step #30) — each nested run records its own ProcedureRun
       // (the recorder is the sole writer for every run, top-level and nested,
-      // spec § 8), so the single prompt produces six recorded runs.
+      // spec § 8). Increment 6 (`prompt_configuration.md` §6) added one more:
+      // the answer step's `sub.run` delegates its inner tool loop to a nested
+      // `tool_loop_v1` run (§7.2), so the single prompt now produces seven
+      // recorded runs.
       final recent = await memory.stacks.peek(recentRunsStackName);
-      expect(recent, hasLength(6));
+      expect(recent, hasLength(7));
     });
   });
 

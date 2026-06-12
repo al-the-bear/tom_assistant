@@ -42,13 +42,17 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 void main() {
   late _BootMemory memory;
   late _PromptCapturingSubstrate substrate;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _BootMemory();
     substrate = _PromptCapturingSubstrate();
+    parity = AnswerParityPrompts();
   });
 
   BrainProcessConfig config() => BrainProcessConfig(
@@ -57,6 +61,12 @@ void main() {
           client: memory,
           memoryConfig: MemoryConfig.forTesting(root: 'ztmp/boot_history_inj'),
         ),
+        // Increment 6 (§6): the booted answer step resolves its prompt — including
+        // the rendered prior-turn history — through the host `PromptResolver`. The
+        // parity fake reproduces the pre-migration assembled transcript so the
+        // captured substrate prompt still carries the history this suite asserts.
+        promptResolver: parity.resolver,
+        routeChainOf: parity.routeChainOf,
       );
 
   /// An `Access` carrying [history], shaped as the assembler builds it: the

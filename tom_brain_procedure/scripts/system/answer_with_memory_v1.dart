@@ -1,10 +1,11 @@
 /// @procedure
 /// id: answer_with_memory_v1
 /// version: 1
-/// summary: Recall relevant memory, answer the user, persist the exchange.
+/// summary: Recall relevant memory, answer the user via the registered prompt,
+///   persist the exchange.
 /// successCriterion: A streamed answer is delivered and an Event + Conclusion
 ///   + edges are persisted (the recall → answer → persist loop; the body is
-///   built across D.37–D.42).
+///   built across D.37–D.42 and migrated onto `sub.run` in increment 6).
 /// budget: { wallClockMs: 14400000 }
 /// # Only a wall-clock deadline (§ 5.4): a user request is virtually unlimited
 /// # on every count dimension. 14400000 ms (240 min) is the spec's external
@@ -17,218 +18,112 @@
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: incomplete, type: bool }
-/// requires: [ runProcedure, embed, classify, llm, persist, edge, stack.push, note, tool.list, tool.invoke ]
+/// requires: [ runProcedure, run, embed, classify, persist, edge, stack.push, note, tool.invoke ]
 //
 // answer_with_memory_v1 — the prototype's one real system procedure
 // (`prototype_implementation_plan.md` D.10 / D.36–D.42;
-// `tom_brain_procedure_specification.md` § 4.4, § 11).
+// `tom_brain_procedure_specification.md` § 4.4, § 11;
+// `prompt_configuration.md` increment 6).
 //
-// D.37 (plan): "Step 1 — recall." As of Extension-H step #30 this no longer
-// calls `mem.recall` directly: it dispatches the `retrieve_for_prompt_v1`
-// conductor (spec § 23.2), which runs the cheap non-LLM pass plus the LLM
-// `recall_*` strategies within budget and fuses every seed into one
-// `recall.multi`. The conductor returns the same `{nodes, report, provenance}`
-// shape the old direct recall produced, so steps 2–5 are unchanged. The
-// migration is total (PE-9) — the direct `mem.recall` call is gone, not shimmed.
-// D.38 (plan): "Step 2 — answer: `llm(prompt: assembled-from-recall +
-// access.envelope.text, role: 'assistant_to_user')`. Stream tokens back via
-// the `Access.deliver` callback."
-// D.39 (plan): "Persist the exchange: an `Event` node for the inbound prompt;
-// a `Conclusion` node for the answer; a `produced_by` edge to the
-// `ProcedureRun`; a `derived_from` edge from the conclusion to each recalled
-// node it cited." This is the third body step: after the answer is produced,
-// the body persists the exchange as two memory nodes (the inbound prompt as an
-// `Event`, the answer as a `Conclusion`), draws a `derived_from` edge from the
-// `Conclusion` to every recalled node that fed the prompt, and reports the
-// `Conclusion` id back to the engine so the run recorder draws the
-// `produced_by` edge to the run record.
-// D.40 (plan): "Push an `InterestItem` to `interests` if the prompt embedding
-// lands far from any existing centroid (cold-classification path)." This is
-// the fourth body step, and it implements the plan literally: the body embeds
-// the prompt (`sub.embed`) and classifies that vector against memory's node-
-// type centroids (`mem.classify`). A `decision == 'unknown'` is memory's own
-// signal that the embedding sits below `minConfidence` from every centroid —
-// or that no centroid exists yet (cold start) — i.e. the prompt is genuinely
-// far from anything memory already knows. The brain is curious about a topic
-// it has no memory of, so the body records an `InterestItem` and pushes it
-// onto the `interests` bootstrap stack.
-// D.41 (plan): "Emit a `note('automation_candidate', …)` if the prompt matches
-// a recent identical-shape prompt (cheap repetition check)." This is the fifth
-// body step: step 3 persists every inbound prompt as an `Event` whose
-// `summary` is the prompt text, so when the user asks the *same* thing again
-// the four-mode recall (step 1) surfaces that prior `Event`. The body reads
-// that off the recall it already ran and, on a match, emits an
-// `automation_candidate` note on the run trail — the wire the dispatcher's
-// harvester (D.31) keys on to consider turning a repeated prompt into a
-// procedure. D.42 then proves the whole body composes end-to-end (the
-// consolidated post-condition bundle, `d42_answer_with_memory_consolidated_test.dart`).
+// ── What increment 6 changed (the normal-path migration) ────────────
+//
+// Before increment 6 step 2 hand-wrote its own prompt assembly (recall /
+// history / tool-catalogue / todo-discipline rendering) and its own
+// send→parse→execute→re-send `while` loop. Increment 6 deletes all of that:
+//   - the prompt assembly moves into the registered prompt
+//     `assist_user.answer_with_memory.assembly` (its template + the injected
+//     `PromptResolver` resolve `${recall}` / `${history}` / `${text}` /
+//     `${open_todo_reminder}`; the engine renders `${tools.catalogue}` from the
+//     prompt's resolved tool set, § 7.4); and
+//   - the inner tool loop moves into the shared `tool_loop_v1.dart` script,
+//     which `sub.run` delegates to (§ 7.2).
+// The body now calls `sub.run(promptId, inputs:)` once per outer iteration; the
+// inline `_assemblePrompt` / `_renderToolCatalogue` / `_renderArgsSchema` /
+// `_renderPriorTurns` / `_todoDisciplineBlock` / `_runToolCalls` /
+// `_appendToolResults` / `_appendToolCallError` builders are gone (§ 11). The
+// migration is total (principle 1 / PE-9): there is no inline fallback.
+//
+// ── What stays with this procedure (the outer orchestration, § 7.2) ──
+//
+// `tool_loop_v1` owns only the mechanical inner cycle bounded by
+// `max_tool_loops`. The **outer** orchestration — todo-based termination —
+// stays here, exactly as § 7.2 prescribes ("the outer orchestration
+// (todo-based termination, thinking critique/re-entry) stays in each calling
+// procedure"). Each outer iteration runs `sub.run` to completion (a plain
+// answer, or `max_tool_loops` exhaustion); the body then consults the live
+// session todo store and, while open todos remain, re-enters `sub.run` with an
+// `open_todo_reminder` folded into the prompt and the accumulating answer
+// carried forward so the next pass sees what was already drafted. The sole
+// non-todo exit is the wall-clock runaway-stop, enforced externally by the
+// engine (§ 3.3), so the body itself loops purely on `!finished`.
+//
+// The bootstrap "zero-work exit" hazard (§ 3.2) cannot arise: termination is
+// only evaluated *after* a completed `sub.run` answer, so the loop always
+// produces at least one answer before it can finish — a trivial prompt that
+// seeds no todos answers once (open == 0) and exits.
+//
+// ── The persist / classify / note steps are unchanged ───────────────
+//
+// D.39 (persist the exchange), D.40 (cold-classification interest push) and
+// D.41 (automation-candidate note) are pure side-effects over the recall +
+// answer the body already holds; the migration does not touch them. Their
+// rationale, the `produced_by`-edge ownership split (the engine draws it from
+// `producedNodeIds`), the write-provenance note (Q-D.39.3), the cold-path
+// centroid-distance detection (Q-D.40.1) and the cheap identical-shape
+// repetition check (Q-D.41.1) all carry over verbatim from the pre-migration
+// body and are summarised inline at each step below.
 //
 // ── Why the `produced_by` edge is the engine's job, not the body's ──
 //
 // The plan asks for a `produced_by` edge from the answer to the `ProcedureRun`
 // node, but the body cannot draw it: the authoritative final `ProcedureRun`
 // node does not exist yet — the `RunRecorder` persists it at `complete()`,
-// *after* the body returns (the two-node split, recorder Q-C.31.1). The
-// recorder already owns the mechanism: every node id in a run's
-// `RunCompletion.producedNodeIds` receives a `produced_by` edge to the run
-// record. So the body persists the nodes and reports the `Conclusion` id under
-// the reserved `producedNodeIds` output key; the engine threads that list into
-// the completion and the recorder draws the edge. The reserved key is stripped
-// from the procedure's declared outputs (the engine — `producedNodeIdsOutputKey`),
-// so `answer` and `incomplete` stay the surfaced outputs. Only the `Conclusion`
-// (the produced answer) is reported — the `Event` records the inbound prompt and
-// is not a "produced result" (and the bootstrap `Event` schema does not carry a
-// `produced_by` edge); see Q-D.39.1 / Q-D.39.2.
-//
-// ── Write provenance (Q-D.39.3) ─────────────────────────────────────
-//
-// The body has no run id (no `runId` global is injected into a script — it
-// only ever sees `inputs` / `mem` / `sub`), so its `persist` / `edge` writes
-// carry the procedure id as the producer. The run linkage is still recorded:
-// the recorder's `produced_by` edge ties the `Conclusion` to the run, and the
-// recorder's own writes carry the full `engine:<procedureId>:<runId>`
-// provenance.
-//
-// ── How the cold-classification path is detected (Q-D.40.1) ─────────
-//
-// The plan phrases the trigger as "the prompt embedding lands far from any
-// existing centroid (cold-classification path)", and the body implements
-// exactly that — it does **not** infer the cold signal from an empty recall.
-// Step 4 embeds the prompt with `sub.embed` and hands the resulting vector to
-// `mem.classify(embedding, target: 'nodeType')`, the LLM-free centroid-
-// distance classifier (memory § 7.2). The classifier returns one of three
-// decisions; `'unknown'` is precisely "the input is below `minConfidence`
-// against every centroid, or no centroid for the target exists yet (cold
-// start)" — the spec's literal "far from any existing centroid". On that
-// decision the body persists an `InterestItem` (`topic` = the prompt, `why`
-// = the cold-path reason) and pushes it onto the `interests` bootstrap stack.
-//
-// This is the centroid-distance mechanism the spec calls for, not the earlier
-// empty-recall proxy: an empty recall and a cold classification are different
-// facts (a prompt can recall neighbours by BM25/vector yet still sit far from
-// every *centroid*, and vice-versa). `embed` (a substrate tool callout) and
-// `classify` (a memory read) are therefore in this procedure's `requires`
-// header (§ 4.4) and on the bridged primitive surface
-// (`BridgedPrimitiveCatalog`). See Q-D.40.1.
-//
-// ── Why the `InterestItem` is not reported in `producedNodeIds` (Q-D.40.2) ──
-//
-// Unlike the `Conclusion`, the `InterestItem` is *not* added to the reserved
-// `producedNodeIds` channel: the bootstrap `InterestItem` schema's
-// `allowed_incoming` is `[satisfied_by, mentions, derived_from]` — it does not
-// permit `produced_by`, so asking the recorder to draw a `produced_by` edge to
-// it would be rejected by the edge-permission table. The interest is recorded
-// and stacked; its run linkage is the trail, not a `produced_by` edge.
-//
-// ── How the identical-shape repetition is detected (Q-D.41.1) ───────
-//
-// The plan asks for the note "if the prompt matches a recent identical-shape
-// prompt (cheap repetition check)". Step 3 already persists every inbound
-// prompt as an immutable `Event` whose `summary` is the prompt text. So the
-// cheapest possible identical-shape signal is: did the four-mode recall in
-// step 1 surface a prior `Event` whose `summary` equals *this* prompt? That
-// is exactly an earlier turn where the user asked the same thing. The body
-// reads it off the recall it already holds — `_isRepeatPrompt(recall, text)`
-// scans the recalled nodes for an `Event` with a matching `summary` — so no
-// second memory query is spent (the "cheap" in the spec). The new `Event` for
-// *this* turn is persisted in step 3, which runs *after* recall, so it can
-// never be the node that matches (no self-match). When a match is found the
-// body emits `note('automation_candidate', {why, signature})`; the dispatcher
-// harvester (D.31) reads that category off the trail. See Q-D.41.1.
-//
-// Cold path and repeat path read independent signals: the cold-path interest
-// (D.40) fires on a centroid-distance `classify` decision of `'unknown'`,
-// while a repeat (D.41) fires when recall surfaced a prior `Event` with this
-// exact `summary`. They are not coupled — a prompt could in principle classify
-// `'unknown'` yet also recall a prior identical `Event` (e.g. before any
-// centroid was learned) — and the body evaluates each on its own merits.
+// *after* the body returns (the two-node split, recorder Q-C.31.1). So the body
+// persists the nodes and reports the `Conclusion` id under the reserved
+// `producedNodeIds` output key; the engine threads that list into the
+// completion and the recorder draws the edge. Only the `Conclusion` is
+// reported — the `Event` records the inbound prompt and is not a "produced
+// result" (Q-D.39.1 / Q-D.39.2).
 //
 // ── Token streaming and `Access.deliver` (Q-D.38.1; P1.3 #8) ────────
 //
-// This body does not change to stream — it streams *automatically*. The
-// engine binds a per-run token sink to the substrate bridge's `onToken`
-// (`engine.invoke(tokenSink: …)`, threaded by the dispatcher route from
-// `Access.deliver`), so each substrate chunk this body's `sub.llm(...)` call
-// pulls is forwarded to the live caller as it arrives — while `sub.llm` still
-// returns the *concatenated* `answer` text (Q-C.13.1) the body hands back as
-// its `answer` output. On the external/user path the route streams those
-// deltas and closes with an empty final marker; on an internal / free-time
-// run no sink is bound and `sub.llm` falls back to buffer-only. A body that
-// needs to stream text it authors *outside* an `sub.llm` call uses the `emit`
-// primitive, which shares the same per-run sink; this body has no such text.
+// This body does not change to stream — it streams *automatically*. The engine
+// binds a per-run token sink to the substrate bridge's `onToken`, threaded by
+// the dispatcher route from `Access.deliver`, so each substrate chunk
+// `tool_loop_v1`'s `sub.send` pulls is forwarded to the live caller as it
+// arrives. The per-call stream routing (§ 9.2) sends a tool-deciding turn's
+// `call:NAME{…}` text to the **thinking** channel and a plain-answer turn's
+// tokens to the **answer** channel, so the user reads only the final answer.
 //
 // ── How the body reaches its inputs and the bridges ─────────────────
 //
 // The engine hands the entry point a native `ProcedureInputs` and binds the
-// memory + substrate bridges as the `mem` / `sub` globals keyed to the bridge
-// library URIs (`D4rtDcliHost`). A d4rt script reaches each by importing the
-// library it is registered under:
-//   - `…/src/api/procedure_inputs.dart` names the `ProcedureInputs` type so
-//     `inputs.get('text')` dispatches onto the native bag
-//     (`procedure_inputs_bridge.dart`, D.37);
-//   - `…/src/api/procedure_result.dart` names the `ProcedureResult` type the
-//     conductor dispatch returns so `retrieval.output('recall')` resolves
-//     (`procedure_result_bridge.dart`, step #30);
-//   - `…/src/bridges/memory_bridge.dart` brings the `mem` global into scope
-//     so `mem.persist(...)` / `mem.edge(...)` / `mem.classify(...)` /
-//     `mem.stackPush(...)` resolve (generated `BrainBridges.register`,
-//     `dartscript.b.dart`);
-//   - `…/src/bridges/substrate_bridge.dart` brings the `sub` global into
-//     scope so `sub.llm(...)` / `sub.embed(...)` resolve (D.38).
+// memory + substrate + tool bridges + engine-native primitives as globals keyed
+// to the library each is registered under. A d4rt script reaches each by
+// importing that library:
+//   - `…/src/api/procedure_inputs.dart` names `ProcedureInputs` so
+//     `inputs.get('text')` dispatches onto the native bag (D.37);
+//   - `…/src/api/procedure_result.dart` names `ProcedureResult` so the recall
+//     conductor's `retrieval.output('recall')` resolves (step #30);
+//   - `…/src/bridges/memory_bridge.dart` brings `mem` into scope so
+//     `mem.persist` / `mem.edge` / `mem.classify` / `mem.stackPush` resolve;
+//   - `…/src/bridges/substrate_bridge.dart` brings `sub` into scope so
+//     `sub.run(...)` (the answering entry point) and `sub.embed(...)` (the
+//     persist/classify embeddings) resolve;
+//   - `…/src/bridges/tool_bridge.dart` brings `tool` into scope so the
+//     outer-loop termination probe `tool.invoke('todo.list', …)` resolves;
 //   - `…/src/primitives_native/primitives_native.dart` brings the bare
-//     engine-native `runProcedure(...)` global into scope so step 1's conductor
-//     dispatch resolves (step #30), and the `note(...)` global so
-//     `note('automation_candidate', …)` resolves (D.41). Both are registered as
-//     top-level functions, not bridge methods, so they are reached by import,
-//     not via a `mem.`/`sub.` receiver (`native_primitives_installer.dart`).
-// These imports are the only surface this body touches; everything else is
-// denied (PE-1). The static `SandboxValidator` allow-lists exactly these
-// host-injected library URIs and rejects every other `import` (plus `export`
-// and the SDK-gateway identifiers); the engine runs that gate on every
-// resolved procedure before the host is built (E.3.5 reconciled the old
-// blanket import ban with this import-to-reach-`mem`/`sub` convention,
-// Q-D.37.1). So this body passes the gate precisely because its imports are
-// the allow-listed ones.
+//     `runProcedure(...)` global (step 1's conductor dispatch) and the bare
+//     `note(...)` global (D.41) into scope.
+// These imports are the only surface this body touches; the static
+// `SandboxValidator` allow-lists exactly these host-injected library URIs and
+// rejects every other import (PE-1).
 //
-// ── Header fields tracked to the body ───────────────────────────────
-//
-// The machine-validated header fields track the body, not the summary, so
-// the artifact stays internally coherent (`ContractValidator`, § 7 rows
-// 4–5 — `requires` must match the body's actual calls). As of D.41:
-//   - `text` is `required: true` — step 1 forwards it (via `inputs`) to the
-//     retrieval conductor, step 2 folds it into the assembled prompt, step 3
-//     persists it as the `Event`, step 4 embeds it (`sub.embed`) to classify it
-//     and records it as the `InterestItem.topic` on the cold path, step 5 uses
-//     it as the identical-shape repetition key and the note signature;
-//   - `requires` is `[runProcedure, embed, classify, llm, persist, edge,
-//     stack.push, note]` — the bridged primitives the body calls (the retrieval
-//     conductor dispatch + the cold-path embed/classify pair + substrate
-//     completion + node persist + edge creation + the cold-path `interests`
-//     stack push + the repetition `automation_candidate` trail note). The list
-//     is a set; order is immaterial (the validator compares membership,
-//     § 7 row 5);
-//   - the declared outputs are `answer` (the concatenated LLM answer text) and
-//     `incomplete` (always `false` here — the only non-todo exit, the
-//     wall-clock runaway-stop, is enforced externally by the engine and is not
-//     observable in the body, § 3.3 of the agent-loop completion plan). The body
-//     also returns the reserved `producedNodeIds` key, which the engine consumes
-//     (to draw the run's `produced_by` edge) and strips before surfacing the
-//     result — it is a body→engine transport channel, not a declared output.
-//
-// `ProcedureResult`'s *read* surface is bridged into d4rt as of step #30
-// (`procedure_result_bridge.dart`) so this body can inspect the conductor
-// dispatch's result (`retrieval.output('recall')`); the result *construction*
-// is still the engine's job, so the entry point returns a plain `Map` the
-// engine coerces into a succeeded result. The strict
-// `Future<ProcedureResult> run(ProcedureInputs inputs) async` entry shape
-// arrives once the engine coerces a returned result wrapper.
-//
-// The anchor invariant (PE-7) holds structurally: `sub.llm` is the only
-// completion path and it names a `role` + supplies `inputs` — it can never
-// hand the substrate a pre-assembled wire prompt, so the assistant-dedication
-// anchor is always prepended at the substrate's assembly time. The prompt
-// this body builds is the role template's `prompt` *input*, not the wire
-// prompt.
+// The anchor invariant (PE-7 / principle 5) holds structurally: `sub.run` names
+// a registered prompt whose role assembles persona + the assistant-dedication
+// anchor at the substrate's assembly time — it can never hand the substrate a
+// pre-assembled wire prompt. The transcript `tool_loop_v1` builds is supplied
+// as the role template's `prompt` *input*, never as the wire prompt.
 import 'package:tom_brain_procedure/src/api/procedure_inputs.dart';
 import 'package:tom_brain_procedure/src/api/procedure_result.dart';
 import 'package:tom_brain_procedure/src/bridges/memory_bridge.dart';
@@ -236,113 +131,70 @@ import 'package:tom_brain_procedure/src/bridges/substrate_bridge.dart';
 import 'package:tom_brain_procedure/src/bridges/tool_bridge.dart';
 import 'package:tom_brain_procedure/src/primitives_native/primitives_native.dart';
 
+/// The registered prompt the answering step runs (§ 7.4). Resolving it yields
+/// the role + LLM route + tool set + `max_tool_loops` and the loaded,
+/// placeholder-resolved template body; `sub.run` renders `${tools.catalogue}`
+/// and delegates the tool loop to `tool_loop_v1`.
+const String _answerPromptId = 'assist_user.answer_with_memory.assembly';
+
 Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final text = inputs.get('text');
 
   // Step 1 — recall via the retrieval conductor (Extension-H step #30, spec
   // § 23.2). The conductor runs the cheap non-LLM pass plus the LLM `recall_*`
   // strategies within budget and fuses every seed into one `recall.multi`,
-  // returning `{nodes, report, provenance}` — the same shape `mem.recall` used
-  // to return, so the downstream prompt assembly / citation / repeat checks are
-  // unchanged. The migration is total (PE-9): the old direct `mem.recall` call
-  // is gone, not shimmed. The conductor is dispatched as its own sub-procedure
-  // (its own ProcedureRun, depth budget, effort budget), and `inputs` is
-  // forwarded straight through (it already carries `text`).
+  // returning `{nodes, report, provenance}`. `inputs` is forwarded straight
+  // through (it already carries `text`).
   final retrieval = await runProcedure('retrieve_for_prompt_v1', inputs);
   final recall = retrieval.output('recall');
 
-  // Step 2 (local-history slice) — the dispatcher route threads the answering
-  // session's earlier turns in under `priorTurns` (access spec § 7.2 / § 21.5),
-  // each a `{user, assistant}` map. Absent on a cold first turn, so default to
-  // empty — the prompt is then exactly what it was before (PE-9). This is the
-  // minimal local-history assembly the prototype owns until `call_llm_v1`
-  // (§ 21.5) takes over the full assembler.
+  // The dispatcher route threads the answering session's earlier turns under
+  // `priorTurns` (access spec § 7.2 / § 21.5), each a `{user, assistant}` map.
+  // Absent on a cold first turn, so default to empty.
   final priorTurns = inputs.has('priorTurns') ? inputs.get('priorTurns') : null;
-  // The dispatcher route threads the default tool catalogue in under
-  // `toolCatalogue` (procedure spec § 21.4) so a memoryless substrate can name
-  // the tools it has in the *awareness* block of the assembled prompt. The
-  // block is prose only — what the model may actually *call* comes from the
-  // live `tool.list()` surface below (the engine binds the `tool` global on
-  // every run). Absent on hosts that pass no catalogue, so default to empty
-  // (PE-9: the awareness block is then unchanged from before).
-  final toolCatalogue =
-      inputs.has('toolCatalogue') ? inputs.get('toolCatalogue') : null;
 
-  // Step 2 — answer the user, running the complete tool-calling loop with
-  // **todo-based termination** (agent-loop completion plan § 3 / § 5.1;
-  // procedure spec § 21.2 / § 11 step 2). The live `tool.list()` surface is the
-  // source of truth for what the model may call: it is policy-narrowed to
-  // exactly the tools this run exposes (the `todo.*` family among them), so a
-  // tool offered to the substrate is a tool `tool.invoke` will accept. Every
-  // turn offers that catalogue; the model seeds and maintains its own todo list
-  // as it works.
+  // Step 2 — answer the user through the registered prompt, running the inner
+  // tool-calling loop (`tool_loop_v1`, delegated by `sub.run`) under
+  // **todo-based termination** as the outer loop (§ 7.2 / agent-loop completion
+  // plan § 3). Each `sub.run` resolves the prompt afresh: the template renders
+  // the recall, the prior turns, the user prompt and — on a re-entry — the
+  // open-todo reminder, then the inner loop runs to a plain answer (or
+  // `max_tool_loops` exhaustion). Termination is decided here, *after* the
+  // answer, against the live session todo store: finished iff zero open todos.
   //
-  // Termination is **todo-based, not a turn cap** (§ 3.1): the loop is finished
-  // iff the live session todo store reports zero open entries. A tool-deciding
-  // turn never terminates the loop — the model is still working — so its calls
-  // are run, folded back, and the loop re-enters. A plain-answer turn terminates
-  // only when no todo is left open; while open todos remain, the answer is not
-  // final and the loop re-enters with a reminder. There is **no count cap**: the
-  // sole non-todo exit is the wall-clock runaway-stop, enforced externally by
-  // the engine (§ 3.3), so the body itself loops purely on `!finished`.
-  //
-  // The bootstrap "zero-work exit" hazard (§ 3.2) cannot arise here: termination
-  // is only ever evaluated *after* a plain-answer turn, so the loop always runs
-  // at least one answer turn before it can finish — a trivial prompt that seeds
-  // no todos answers once (open == 0) and exits, governed by the answer it just
-  // produced rather than by a pre-seeded placeholder todo.
-  //
-  // Per-call stream routing (§ 9.2 Todo 6). The loop offers tools every turn,
-  // so each `sub.llm` call is an agentic decision turn. The substrate buffers
-  // each turn and routes it once at completion: a tool-deciding turn's text —
-  // the `call:NAME{…}` the model writes under the text tool protocol — goes to
-  // the **thinking** channel, never to the **answer** channel the user reads,
-  // while a plain-answer turn's tokens are replayed to the **answer** channel
-  // in their original chunk boundaries (so the answer still streams). The body
-  // therefore delivers nothing itself — the terminal answer reaches the wire as
-  // the substrate replays the last plain turn — and the loop's `answer` local is
-  // kept only as the returned output for the dispatcher's history back-fill.
-  final liveTools = await tool.list();
-  var transcript = _assemblePrompt(recall, text, priorTurns, toolCatalogue);
+  // `history` accumulates the drafts across outer iterations so a re-entry sees
+  // what was already said (the "accumulating iteration history" of § 6); it
+  // starts as the dispatcher-threaded `priorTurns` and grows by one
+  // `{user, assistant}` turn per pass.
+  final history = <Object?>[];
+  if (priorTurns is List) history.addAll(priorTurns);
+
   var answer = '';
   var finished = false;
+  var reminder = '';
   while (!finished) {
-    final completion = await sub.llm(
-      transcript,
-      role: 'assistant_to_user',
-      tools: liveTools,
+    final completion = await sub.run(
+      _answerPromptId,
+      inputs: <String, Object?>{
+        'text': text,
+        'recall': recall,
+        'priorTurns': List<Object?>.of(history),
+        'open_todo_reminder': reminder,
+      },
     );
-    final toolCalls = completion['toolCalls'];
-    if (toolCalls is List && toolCalls.isNotEmpty) {
-      // A tool-deciding turn: run the calls, fold the results back, re-enter.
-      // The awaited value is hoisted into its own local before the assignment:
-      // d4rt mis-scopes the assignment target of `x = f(x, await g())` (an
-      // `await` inside the argument list of a call whose result feeds back into
-      // `x`), so the awaited call must settle into a local first.
-      final toolResults = await _runToolCalls(toolCalls);
-      transcript = _appendToolResults(transcript, toolResults);
-    } else if (completion['unresolvedToolCall'] == true) {
-      // The completion looked like a tool call but resolved to zero executable
-      // calls — a tool name not on offer, or args that failed every parse
-      // (§ 9.1 Todo 8). The raw `call:NAME{…}` text is the model *failing to
-      // work*, not an answer, so it must never become the user's answer. Feed
-      // an error turn back naming the available tools and re-enter; do not
-      // evaluate termination on this turn (the model has produced no answer).
-      transcript = _appendToolCallError(transcript, liveTools);
-    } else {
-      // A plain-answer turn: keep the last non-empty answer text, then let the
-      // live session todo store decide termination (§ 3.1).
-      final answerText = completion['text'];
-      if (answerText is String && answerText.isNotEmpty) {
-        answer = answerText;
-      }
-      final open = await _openTodoCount();
-      finished = open == 0;
-      if (!finished) {
-        // Open todos remain, so this draft is not the final answer — remind the
-        // model of its outstanding work and re-enter.
-        transcript = _appendOpenTodoReminder(transcript, open);
-      }
+    final answerText = completion['answer'];
+    if (answerText is String && answerText.isNotEmpty) {
+      answer = answerText;
+    }
+
+    final open = await _openTodoCount();
+    finished = open == 0;
+    if (!finished) {
+      // Open todos remain — this draft is not final. Carry the draft into the
+      // accumulating history and fold an "open todos remain" reminder into the
+      // next pass's prompt, then re-enter (§ 3.1).
+      history.add(<String, Object?>{'user': text, 'assistant': answer});
+      reminder = _openTodoReminderText(open);
     }
   }
 
@@ -350,20 +202,16 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // the procedure id as the producer (Q-D.39.3).
   final producer = 'answer_with_memory_v1';
 
-  // The real memory store does not embed lazily (#24; node_persister.dart
-  // EmbeddingPolicyViolation.missingEmbedding) — every node type that declares
+  // The real memory store does not embed lazily — every node type that declares
   // an embedding policy requires the *writer* to supply a dimension-correct
-  // vector. Event, Conclusion and InterestItem all declare one, so the body
-  // embeds before each persist. The prompt is embedded once here and reused
-  // for the Event (whose `summary` is the prompt), the cold-path
-  // classification (step 4) and the cold-path InterestItem (whose `topic` is
-  // the prompt); only the Conclusion needs its own embedding (over the answer).
+  // vector. The prompt is embedded once here and reused for the Event (whose
+  // `summary` is the prompt), the cold-path classification (step 4) and the
+  // cold-path InterestItem (whose `topic` is the prompt); only the Conclusion
+  // needs its own embedding (over the answer).
   final promptEmbedding = await sub.embed(text);
 
-  // The inbound prompt becomes an immutable Event. `payload` is empty for a
-  // bare prompt; `occurred_at` is omitted — the cognition layer has no clock
-  // primitive, so the store's `createdAt` stamp carries the wall-clock (the
-  // bootstrap `Event.occurred_at` is nullable for exactly this reason).
+  // The inbound prompt becomes an immutable Event. `occurred_at` is omitted —
+  // the store's `createdAt` stamp carries the wall-clock.
   await mem.persist(
     'Event',
     {'summary': text, 'payload': <String, Object?>{}},
@@ -381,14 +229,6 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   );
 
   // derived_from: the Conclusion was derived from each recalled node it cited.
-  // This procedure declares no count caps in its header budget (spec § 5.4): a
-  // user request runs virtually unlimited, so the successCriterion ("an Event +
-  // Conclusion + edges are persisted") is never refused by the fatal
-  // `BudgetLedger`. The non-fatal `MemoryWriteGuard` is the only backstop — it
-  // dedups a repeated edge and caps a runaway loop, skipping (never failing) the
-  // excess. The answer was already produced and streamed above (Q-D.39), so a
-  // partial write never silences it.
-  //
   // A skipped Conclusion persist returns the empty-id sentinel; drawing edges
   // from it would be meaningless, so the loop is gated on a real id.
   if (conclusionId.isNotEmpty) {
@@ -398,14 +238,13 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     }
   }
 
-  // D.40 — cold-classification interest push. Embed the prompt and classify
-  // the vector against memory's node-type centroids. A `'unknown'` decision
-  // means the embedding is below `minConfidence` from every centroid (or no
-  // centroid exists yet) — the prompt landed far from anything memory already
-  // knows. The brain is curious about a topic it knows nothing about, so it
-  // records an InterestItem and pushes it onto the `interests` bootstrap
-  // stack. The InterestItem is intentionally not added to `producedNodeIds` —
-  // its schema does not permit an incoming `produced_by` edge (Q-D.40.2).
+  // D.40 — cold-classification interest push. Classify the prompt vector
+  // against memory's node-type centroids. A `'unknown'` decision means the
+  // embedding is below `minConfidence` from every centroid (or no centroid
+  // exists yet) — the prompt landed far from anything memory already knows, so
+  // it records an InterestItem and pushes it onto the `interests` stack. The
+  // InterestItem is intentionally not added to `producedNodeIds` — its schema
+  // does not permit an incoming `produced_by` edge (Q-D.40.2).
   final classification =
       await mem.classify(promptEmbedding['vec'], target: 'nodeType');
   if (classification['decision'] == 'unknown') {
@@ -422,15 +261,11 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     await mem.stackPush('interests', interestId, producer: producer);
   }
 
-  // D.41 — automation-candidate note. The recall in step 1 already ran the
-  // four-mode pipeline; if it surfaced a prior `Event` whose `summary` is
-  // *identical* to this prompt, the user has asked this exact thing before —
-  // an "identical-shape" repetition the dreaming/harvester layer may want to
-  // turn into a procedure. The body surfaces that signal with a
-  // `note('automation_candidate', …)` on the run trail (the wire the
-  // dispatcher's harvester keys on, spec § 5.1 / § 11 step 5). This is a
-  // cheap repetition check — it reads the recall in hand, it does not
-  // re-query memory (Q-D.41.1).
+  // D.41 — automation-candidate note. If step 1's recall surfaced a prior
+  // `Event` whose `summary` is *identical* to this prompt, the user has asked
+  // this exact thing before — an "identical-shape" repetition the dreaming
+  // layer may want to automate. This is a cheap repetition check — it reads the
+  // recall in hand, it does not re-query memory (Q-D.41.1).
   if (_isRepeatPrompt(recall, text)) {
     note('automation_candidate', {
       'why': 'The inbound prompt is identical to a prior prompt already in '
@@ -443,8 +278,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // `produced_by` edge (Conclusion → ProcedureRun), then strips the key so
   // `answer` and `incomplete` stay the surfaced outputs. `incomplete` is always
   // `false` on this path: the only non-todo exit (the wall-clock runaway-stop,
-  // § 3.3) is enforced externally by the engine, not observable here, so a body
-  // that returns at all returns a complete answer.
+  // § 3.3) is enforced externally by the engine, not observable here.
   return <String, Object?>{
     'answer': answer,
     'incomplete': false,
@@ -452,13 +286,14 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   };
 }
 
-/// Whether the recall surfaced a prior `Event` carrying *exactly* this
-/// prompt — the cheap "identical-shape repetition" check (D.41). Step 3
-/// persists every inbound prompt as an `Event` whose `summary` is the prompt
-/// text, so an earlier identical prompt resurfaces here as a recalled `Event`
-/// node with a matching `summary`. Reading it off the recall already in hand
-/// keeps the check cheap — no second memory query (Q-D.41.1).
-bool _isRepeatPrompt(Map recall, Object? text) {
+/// Whether the recall surfaced a prior `Event` carrying *exactly* this prompt —
+/// the cheap "identical-shape repetition" check (D.41). Step 3 persists every
+/// inbound prompt as an `Event` whose `summary` is the prompt text, so an
+/// earlier identical prompt resurfaces here as a recalled `Event` node with a
+/// matching `summary`. Reading it off the recall already in hand keeps the
+/// check cheap — no second memory query (Q-D.41.1).
+bool _isRepeatPrompt(Object? recall, Object? text) {
+  if (recall is! Map) return false;
   final nodes = recall['nodes'];
   if (nodes is List) {
     for (final node in nodes) {
@@ -474,11 +309,12 @@ bool _isRepeatPrompt(Map recall, Object? text) {
 }
 
 /// Counts the open (`done != true`) entries in the live session todo store via
-/// the `todo.list` tool — the single source of truth the loop terminates on
-/// (§ 3.1). `tool.invoke('todo.list', {})` returns `{ok, result: {todos: […]}}`,
-/// each todo a `{id, text, done}` map. A malformed or failed listing counts as
-/// zero open, so the loop then terminates on the answer already in hand — the
-/// never-silent contract (§ 3.4), never a hang.
+/// the `todo.list` tool — the single source of truth the outer loop terminates
+/// on (§ 3.1). `tool.invoke('todo.list', {})` returns
+/// `{ok, result: {todos: […]}}`, each todo a `{id, text, done}` map. A
+/// malformed or failed listing counts as zero open, so the loop then terminates
+/// on the answer already in hand — the never-silent contract (§ 3.4), never a
+/// hang.
 //
 // Keep in sync with answer_with_thinking_v1.
 Future<int> _openTodoCount() async {
@@ -495,119 +331,21 @@ Future<int> _openTodoCount() async {
   return open;
 }
 
-/// The todo-discipline preamble appended to every answering prompt (§ 4 / § 9.1).
-/// It names the `todo.*` tools — the family the loop now terminates on — with a
-/// worked sample the model can copy the exact parameter names from. The live
-/// trail showed the model guessing `{item: …}` / `{description: …}` instead of
-/// the schema's `{text: …}` (§ 9.1), so the sample shows the real keys and the
-/// id-return convention. The closing sentence is the prose form of the
-/// todo-based termination contract: not finished until every todo is done.
-//
-// Keep in sync with answer_with_thinking_v1.
-String _todoDisciplineBlock() {
-  return 'Task tracking — you MUST manage your own todo list with these tools:\n'
-      '  call:todo.add{text: "Read CLAUDE.md"}     -> returns {id: "t1"}\n'
-      '  call:todo.list{}                          -> lists entries with their ids\n'
-      '  call:todo.update{id: "t1", done: true}    -> mark an entry finished\n'
-      '  call:todo.remove{id: "t1"}                -> drop an entry by its id\n'
-      'Always use the id returned by todo.add — never the text — for '
-      'update/remove. Before you start, break the request into todos with '
-      'todo.add. As you complete each step, mark it done with todo.update. You '
-      'are NOT finished until every todo is done; do not claim completion while '
-      'open todos remain.\n\n';
-}
-
-/// Folds an "open todos remain" reminder into the transcript when a plain answer
-/// arrives with work still outstanding (§ 3.1), so the next turn keeps going
+/// The "open todos remain" reminder folded into the next pass's prompt (via the
+/// `open_todo_reminder` template binding) when a completed `sub.run` answer
+/// arrives with work still outstanding (§ 3.1), so the next pass keeps going
 /// rather than treating the draft as the final answer.
-String _appendOpenTodoReminder(String transcript, int open) {
-  return '$transcript\nYou still have $open open todo(s). You are not finished '
-      'until every todo is marked done with todo.update. Continue the work, or '
-      'mark the remaining todos done if they are already complete.\n';
-}
-
-/// Folds an "invalid tool call" error turn into the transcript when a
-/// completion looked like a tool-call attempt but resolved to zero executable
-/// calls (§ 9.1 Todo 8). It names the live catalogue so the model can correct
-/// itself — issue a valid `call:NAME{…}` or just answer in plain prose — and
-/// re-enter, rather than the unusable `call:…` text leaking as the answer. The
-/// tool names come from the same `tool.list()` catalogue offered every turn, so
-/// the listed names are exactly the ones `tool.invoke` accepts.
-String _appendToolCallError(String transcript, List liveTools) {
-  final names = <String>[];
-  for (final tool in liveTools) {
-    if (tool is Map) {
-      final name = tool['name'];
-      if (name is String && name.isNotEmpty) names.add(name);
-    }
-  }
-  final available = names.isEmpty ? '(none)' : names.join(', ');
-  return '$transcript\nThat was not a valid tool call: it named no available '
-      'tool, or its arguments could not be read. Available tools: $available. '
-      'Reply with a valid call (call:NAME{arg: value}) or a plain answer.\n';
-}
-
-/// Executes each proposed tool call through the live `tool.invoke` surface
-/// and returns one record per call for folding back into the transcript.
-///
-/// `tool.invoke` already returns its own `{ok: false, error}` for the three
-/// pre-flight failures (unknown tool, policy-denied, args fail the input
-/// schema), so those never throw here. A tool that *throws while running*
-/// (e.g. an unavailable downstream surface) is caught and turned into the same
-/// `{ok: false, error}` shape so one failing tool never aborts the whole
-/// answer — the model sees the error and can recover on the next turn. The
-/// broad catch is safe: this procedure declares no count caps (§ 5.4), so
-/// `tool.invoke`'s pre-charge can never raise `ProcedureBudgetExceeded`; the
-/// only thing reaching the catch is a genuine tool-run failure.
-///
-/// Each `toolCalls` entry is `{id, name, arguments}` (substrate bridge wire
-/// shape); a non-map entry or one with a non-String `name` is skipped (PE-1:
-/// the proposal came across an untrusted boundary).
-Future<List> _runToolCalls(List toolCalls) async {
-  final results = [];
-  for (final call in toolCalls) {
-    if (call is! Map) continue;
-    final name = call['name'];
-    if (name is! String) continue;
-    final args = <String, Object?>{};
-    final rawArgs = call['arguments'];
-    if (rawArgs is Map) {
-      rawArgs.forEach((key, value) => args['$key'] = value);
-    }
-    Object? outcome;
-    try {
-      outcome = await tool.invoke(name, args);
-    } catch (e) {
-      outcome = <String, Object?>{'ok': false, 'error': '$e'};
-    }
-    results.add(<String, Object?>{
-      'name': name,
-      'args': args,
-      'outcome': outcome,
-    });
-  }
-  return results;
-}
-
-/// Folds a turn's tool results back into the running transcript as a "Tool
-/// results" block so the next completion can answer (or call again). An empty
-/// result list leaves the transcript unchanged (the loop would not have called
-/// this without at least one proposed call, but the guard keeps the function
-/// total).
-String _appendToolResults(String transcript, List results) {
-  if (results.isEmpty) return transcript;
-  var block = 'Tool results:\n';
-  for (final record in results) {
-    if (record is! Map) continue;
-    block += '- ${record['name']}(${record['args']}) → ${record['outcome']}\n';
-  }
-  return '$transcript\n$block';
+String _openTodoReminderText(int open) {
+  return 'You still have $open open todo(s). You are not finished until every '
+      'todo is marked done with todo.update. Continue the work, or mark the '
+      'remaining todos done if they are already complete.';
 }
 
 /// Collects the ids of the recalled nodes that fed the answer prompt — the
 /// nodes the Conclusion is `derived_from`.
-List<String> _citedNodeIds(Map recall) {
+List<String> _citedNodeIds(Object? recall) {
   final ids = <String>[];
+  if (recall is! Map) return ids;
   final nodes = recall['nodes'];
   if (nodes is List) {
     for (final node in nodes) {
@@ -620,139 +358,4 @@ List<String> _citedNodeIds(Map recall) {
     }
   }
   return ids;
-}
-
-/// Builds the role-template `prompt` input from the prior conversation turns,
-/// the recalled memory, and the inbound prompt. The earlier turns of this
-/// conversation (`priorTurns`, access spec § 7.2 / § 21.5) are rendered first
-/// as `User:` / `Assistant:` lines so the substrate sees what was already said;
-/// then each recalled node's `text` value becomes a context line; then the
-/// user's live prompt. An empty / absent history and an empty recall each drop
-/// their block, so a cold first turn sends only the user prompt (PE-9).
-String _assemblePrompt(
-    Map recall, Object? text, Object? priorTurns, Object? toolCatalogue) {
-  final tools = _renderToolCatalogue(toolCatalogue);
-  final history = _renderPriorTurns(priorTurns);
-
-  var context = '';
-  final nodes = recall['nodes'];
-  if (nodes is List) {
-    for (final node in nodes) {
-      if (node is Map) {
-        final values = node['values'];
-        if (values is Map && values['text'] != null) {
-          context += '- ${values['text']}\n';
-        }
-      }
-    }
-  }
-  final preamble = context.isEmpty ? '' : 'Relevant recalled memory:\n$context\n';
-  // The todo-discipline block follows the tool catalogue and precedes the
-  // recalled-memory block (§ 4): it is how the loop now terminates, so every
-  // answering prompt teaches the model the `todo.*` tools and the discipline.
-  return '$tools${_todoDisciplineBlock()}$history${preamble}User prompt:\n$text';
-}
-
-/// Renders the default tool catalogue as a "Tools available to you" block, or
-/// `''` when there is none. Each descriptor is a
-/// `{name, group, description, input_schema}` map (procedure spec § 21.4 — the
-/// same shape `tool.list()` emits); the block names the tools, renders each
-/// tool's argument schema inline, and tells the model the exact, parseable call
-/// format to use.
-///
-/// Rendering the per-tool arg schema is load-bearing (§ 9.1): the live trail
-/// showed the model guessing `{item: …}` / `{description: …}` for `todo.add`
-/// instead of the schema's `{text: …}`, because the catalogue only listed tool
-/// names. Each tool now carries an `args: {key: type (required), …}` signature
-/// derived from its `input_schema`, so the model copies the real parameter
-/// names rather than inventing them; a tool with no properties renders `args:
-/// {}` (the empty-braces form the call instruction names).
-///
-/// The format instruction is load-bearing too: without it a substrate guesses
-/// its own provider's chat-template dialect (the live Gemma-on-oMLX bug emitted
-/// `<|tool_call>call:web.search{…}<tool_call|>`), and even though the bridge's
-/// multi-dialect recovery now reads many of those, a single canonical example
-/// makes the model emit a *clean* call far more reliably. The instructed shape
-/// — `call:NAME{arg: value}` on its own — is exactly what
-/// `parseToolCallsFromText` lowers; emitting only the call line (no
-/// surrounding prose) keeps the streamed tool-deciding turn clean. The worked
-/// example uses `memory.read{text: …}` — a schema-correct key, not the earlier
-/// wrong `{query: …}` — so the one authoritative sample never contradicts the
-/// rendered schemas.
-String _renderToolCatalogue(Object? toolCatalogue) {
-  if (toolCatalogue is! List || toolCatalogue.isEmpty) return '';
-  var rendered = '';
-  for (final tool in toolCatalogue) {
-    if (tool is! Map) continue;
-    final name = tool['name'];
-    if (name == null || '$name'.isEmpty) continue;
-    final group = tool['group'];
-    final description = tool['description'];
-    final groupSuffix =
-        (group != null && '$group'.isNotEmpty) ? ' ($group)' : '';
-    final descSuffix =
-        (description != null && '$description'.isNotEmpty) ? ': $description' : '';
-    final argsSuffix = ' ${_renderArgsSchema(tool['input_schema'])}';
-    rendered += '- $name$groupSuffix$descSuffix$argsSuffix\n';
-  }
-  if (rendered.isEmpty) return '';
-  final howToCall = 'To use a tool, reply with ONLY a single call line and no '
-      'other text, using the exact tool name and argument keys from the list '
-      'above:\n'
-      '  call:TOOL_NAME{arg1: "value", arg2: 123}\n'
-      'For a tool with no arguments use empty braces: call:TOOL_NAME{}\n'
-      'Example: call:memory.read{text: "project history"}\n'
-      'If you do not need a tool, just answer the user in plain prose.\n';
-  return 'Tools available to you:\n$rendered\n$howToCall\n';
-}
-
-/// Renders one tool's `input_schema` as a compact `args: {key: type (required),
-/// …}` signature the model can copy parameter names from (§ 9.1).
-///
-/// The schema is the small JSON-Schema subset the descriptors carry
-/// (`{type: 'object', required: [...], properties: {key: {type}}}`); each
-/// property renders as `key: type`, with ` (required)` appended when the key is
-/// in `required`. A tool with no (or an unreadable) properties map renders
-/// `args: {}` — the empty-braces form the call instruction names — so every
-/// tool line ends with a uniform, parseable `args: {…}`.
-String _renderArgsSchema(Object? schema) {
-  if (schema is! Map) return 'args: {}';
-  final properties = schema['properties'];
-  if (properties is! Map || properties.isEmpty) return 'args: {}';
-  final required = <String>{};
-  final rawRequired = schema['required'];
-  if (rawRequired is List) {
-    for (final entry in rawRequired) {
-      if (entry is String) required.add(entry);
-    }
-  }
-  final parts = <String>[];
-  properties.forEach((key, spec) {
-    final keyName = '$key';
-    final type = (spec is Map && spec['type'] != null) ? '${spec['type']}' : 'value';
-    final requiredSuffix = required.contains(keyName) ? ' (required)' : '';
-    parts.add('$keyName: $type$requiredSuffix');
-  });
-  return 'args: {${parts.join(', ')}}';
-}
-
-/// Renders the prior conversation turns as `User:` / `Assistant:` lines (the
-/// § 22.4 history-compactor convention), or `''` when there are none. Each
-/// turn is a `{user, assistant}` map; a turn with no answer yet (the live turn,
-/// should it ever be included) renders user-only.
-String _renderPriorTurns(Object? priorTurns) {
-  if (priorTurns is! List || priorTurns.isEmpty) return '';
-  var rendered = '';
-  for (final turn in priorTurns) {
-    if (turn is! Map) continue;
-    final user = turn['user'];
-    final assistant = turn['assistant'];
-    if (user != null && '$user'.isNotEmpty) {
-      rendered += 'User: $user\n';
-    }
-    if (assistant != null && '$assistant'.isNotEmpty) {
-      rendered += 'Assistant: $assistant\n';
-    }
-  }
-  return rendered.isEmpty ? '' : 'Conversation so far:\n$rendered\n';
 }

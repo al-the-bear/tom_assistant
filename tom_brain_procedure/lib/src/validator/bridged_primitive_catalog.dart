@@ -57,9 +57,18 @@ final class BridgedPrimitiveCatalog {
   /// chain a named route resolves to. The role still assembles the wire prompt,
   /// so `send` is a substrate method on the `sub` global (`sub.send`) and a
   /// procedure that calls it declares `send` in `requires`.
+  ///
+  /// `run` (prompt_configuration.md §7.1 / §7.4) is the high-level, ID-driven
+  /// entry point: it resolves a registered prompt by id (settings + loaded,
+  /// placeholder-resolved template), renders `${tools.catalogue}`, assembles the
+  /// transcript, and delegates the send→parse→execute→re-send loop to
+  /// `tool_loop_v1`. A procedure that calls `sub.run(...)` declares `run` in
+  /// `requires`. It is distinct from the engine-native `runProcedure`: `run`
+  /// resolves a *prompt*, `runProcedure` resolves a *procedure*.
   static const Set<String> substrate = {
     'llm',
     'send',
+    'run',
     'embed',
     'search',
     'fetch',

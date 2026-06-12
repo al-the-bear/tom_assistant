@@ -37,17 +37,25 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 void main() {
   late _RecallCapturingMemory memory;
   late _AnsweringSubstrate substrate;
   late MemoryBridge memoryBridge;
   late SubstrateBridge substrateBridge;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _RecallCapturingMemory();
     substrate = _AnsweringSubstrate();
     memoryBridge = MemoryBridge(memory);
-    substrateBridge = SubstrateBridge(substrate);
+    parity = AnswerParityPrompts();
+    substrateBridge = SubstrateBridge(
+      substrate,
+      promptResolver: parity.resolver,
+      routeChainOf: parity.routeChainOf,
+    );
   });
 
   ProcedureEngine engineFor(Iterable<LoadedProcedure> procedures) =>
@@ -68,15 +76,17 @@ void main() {
     String text, {
     List<Map<String, Object?>>? toolCatalogue,
   }) async {
+    // Increment 6 (§7.4): the tool set is no longer a procedure input — it is
+    // resolved from the answer prompt's tool policy. The parity resolver
+    // surfaces whatever [AnswerParityPrompts.tools] holds, so a suite that wants
+    // the substrate to see a catalogue sets it here.
+    if (toolCatalogue != null) parity.tools = toolCatalogue;
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
         .invoke(ProcedureInvocation(
           procedureId: 'answer_with_memory_v1',
-          arguments: <String, Object?>{
-            'text': text,
-            'toolCatalogue': ?toolCatalogue,
-          },
+          arguments: <String, Object?>{'text': text},
         ))
         .outcome;
   }

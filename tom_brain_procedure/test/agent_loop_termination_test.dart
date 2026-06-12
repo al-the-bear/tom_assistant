@@ -60,17 +60,33 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 void main() {
   late _BrainMemory memory;
   late _ScriptedSubstrate substrate;
   late MemoryBridge memoryBridge;
   late SubstrateBridge substrateBridge;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _BrainMemory();
     substrate = _ScriptedSubstrate();
     memoryBridge = MemoryBridge(memory);
-    substrateBridge = SubstrateBridge(substrate);
+    parity = AnswerParityPrompts();
+    // Increment 6 (§7.4): the answer prompt's tool set is resolved from its tool
+    // policy, not a runtime input. The shipped `defaultToolCatalogue()` is what
+    // `tool.list()` exposes, so the memory-path answer turns carry tools — the
+    // gate the scripted substrate uses to consume its tool-proposing answer
+    // turns (T1) and to capture the tools-bearing prompt (T6). Thinking-mode
+    // turns ignore the catalogue (`!thinkingMode && hasTools`), so T2/T4 are
+    // unaffected.
+    parity.tools = defaultToolCatalogue();
+    substrateBridge = SubstrateBridge(
+      substrate,
+      promptResolver: parity.resolver,
+      routeChainOf: parity.routeChainOf,
+    );
   });
 
   ProcedureEngine engineFor(Iterable<LoadedProcedure> procedures) =>

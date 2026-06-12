@@ -361,6 +361,21 @@ final class BrainProcessConfig {
   /// closure. Best-effort and non-blocking (§9).
   final TurnSummarySink? turnSummarySink;
 
+  /// The named-prompt resolver every run's `sub.run` consults to turn a prompt
+  /// id into a loaded, placeholder-resolved [ResolvedPrompt] (§7.4), or `null`
+  /// for the prototype default (no registered prompts, so any `sub.run` raises
+  /// [UnregisteredPromptException]). When non-null, boot threads it onto the
+  /// [SubstrateBridge] so `answer_with_memory_v1` and its peers can name a
+  /// prompt instead of inlining its assembly. Production binds a
+  /// CognitionConfig-backed resolver; tests pass a parity fake.
+  final PromptResolver? promptResolver;
+
+  /// The route-chain resolver every run's `sub.run` consults to expand a named
+  /// LLM route into its ordered failover [RouteEntry] chain (§8), or `null` for
+  /// the prototype default. Supplied together with [promptResolver]: a resolver
+  /// that yields a prompt naming a route the host cannot expand cannot dispatch.
+  final RouteChainResolver? routeChainOf;
+
   /// Builds a boot config.
   ///
   /// [extensions] + [mcpConnector] must be supplied together: an [extensions]
@@ -384,6 +399,8 @@ final class BrainProcessConfig {
     this.toolAccessSink,
     this.procedureTreeSink,
     this.turnSummarySink,
+    this.promptResolver,
+    this.routeChainOf,
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
 }
 
@@ -614,6 +631,8 @@ abstract final class BrainProcessBoot {
       memoryWriteLimits: config.memoryWriteLimits,
       toolFileScope: config.toolFileScope,
       toolDreamSurface: config.toolDreamSurface,
+      promptResolver: config.promptResolver,
+      routeChainOf: config.routeChainOf,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
     final dispatcher = _wireDispatcher(
@@ -680,12 +699,18 @@ abstract final class BrainProcessBoot {
     required MemoryWriteLimits memoryWriteLimits,
     required FileScope? toolFileScope,
     required ToolDreamSurface? toolDreamSurface,
+    required PromptResolver? promptResolver,
+    required RouteChainResolver? routeChainOf,
   }) =>
       ProcedureEngine(
         resolver: resolver,
         memory: memory.client,
         memoryBridge: MemoryBridge(memory.client),
-        substrateBridge: SubstrateBridge(substrate),
+        substrateBridge: SubstrateBridge(
+          substrate,
+          promptResolver: promptResolver,
+          routeChainOf: routeChainOf,
+        ),
         preemptionState: preemption,
         extensions: extensions,
         llmTrailSink: llmTrailSink,

@@ -83,6 +83,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     hide ProcedureStatus;
 
+import 'answer_parity_prompts.dart';
+
 // ─── Top-level probe memory + factory (top-level so it is sendable across
 //     the isolate boundary; see d43_memory_provisioning_test.dart) ────────
 
@@ -502,14 +504,22 @@ BrainProcessConfig _bootConfig({
   required TomBrainMemoryClient memory,
   required TomBrainSubstrateClient substrate,
   required String memoryRoot,
-}) =>
-    BrainProcessConfig(
-      substrate: substrate,
-      memoryProvisioning: MemoryProvisioningConfig.inProcess(
-        client: memory,
-        memoryConfig: MemoryConfig.forTesting(root: memoryRoot),
-      ),
-    );
+}) {
+  // Increment 6 (§6): the booted `answer_with_memory_v1` resolves its prompt
+  // through the host `PromptResolver`. A fresh stateless parity fake supplies
+  // the pre-migration assembled prompt so each conformance boot runs to a real
+  // persisted post-state.
+  final parity = AnswerParityPrompts();
+  return BrainProcessConfig(
+    substrate: substrate,
+    memoryProvisioning: MemoryProvisioningConfig.inProcess(
+      client: memory,
+      memoryConfig: MemoryConfig.forTesting(root: memoryRoot),
+    ),
+    promptResolver: parity.resolver,
+    routeChainOf: parity.routeChainOf,
+  );
+}
 
 void main() {
   group('D.53-1 success — an accepted user_prompt runs end-to-end', () {
@@ -755,12 +765,18 @@ void main() {
         memoryRoot: 'ztmp/d53_parity_in',
       ));
       // Isolate: the same probe memory constructed in the spawned worker.
+      final isoParity = AnswerParityPrompts();
       final iso = await BrainProcessBoot.boot(BrainProcessConfig(
         substrate: _AnsweringSubstrate(),
         memoryProvisioning: MemoryProvisioningConfig.isolate(
           factory: spawnProbeMemory,
           memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d53_parity_iso'),
         ),
+        // Increment 6 (§6): same host `PromptResolver` wiring as the in-process
+        // boot — the isolate transport does not change how the answer step
+        // resolves its prompt (the PE-10 parity claim under test).
+        promptResolver: isoParity.resolver,
+        routeChainOf: isoParity.routeChainOf,
       ));
       try {
         // The same synthetic prompt through each booted dispatcher.

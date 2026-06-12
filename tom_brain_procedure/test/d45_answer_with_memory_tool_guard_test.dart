@@ -38,17 +38,31 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 void main() {
   late _RecallCapturingMemory memory;
   late _UnknownToolThenAnswerSubstrate substrate;
   late MemoryBridge memoryBridge;
   late SubstrateBridge substrateBridge;
+  late AnswerParityPrompts parity;
 
   setUp(() {
     memory = _RecallCapturingMemory();
     substrate = _UnknownToolThenAnswerSubstrate();
     memoryBridge = MemoryBridge(memory);
-    substrateBridge = SubstrateBridge(substrate);
+    parity = AnswerParityPrompts();
+    // Increment 6 (§7.4): the answer prompt's tool set is resolved from its tool
+    // policy. The shipped `defaultToolCatalogue()` matches `tool.list()`, so the
+    // answer-step calls carry tools (gating the substrate's bogus-call branch)
+    // and the bogus `call:totally.bogus{…}` resolves to zero executable calls
+    // against it — the unresolved-attempt path this suite guards.
+    parity.tools = defaultToolCatalogue();
+    substrateBridge = SubstrateBridge(
+      substrate,
+      promptResolver: parity.resolver,
+      routeChainOf: parity.routeChainOf,
+    );
   });
 
   ProcedureEngine engineFor(Iterable<LoadedProcedure> procedures) =>

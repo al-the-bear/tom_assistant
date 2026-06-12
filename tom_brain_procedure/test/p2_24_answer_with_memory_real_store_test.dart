@@ -42,6 +42,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
+import 'answer_parity_prompts.dart';
+
 /// The bootstrap embedding model dimensionality (768, nomic-embed-text). Every
 /// embedding the stub substrate returns carries this dimension so the store's
 /// embedding-policy check accepts the persisted Event / Conclusion /
@@ -120,6 +122,11 @@ void main() {
     final system = await ProcedureResolver.fromStore(
       DiskProcedureStore(systemDir: Directory('scripts/system')),
     );
+    // Increment 6 (§6/§7.4): the answer step runs through `sub.run`, so the
+    // bridge needs a `PromptResolver` + `RouteChainResolver`. The parity stand-in
+    // reproduces the pre-migration assembled prompt; this suite pins persistence,
+    // not tool use, so the tool set is left empty (the `none` profile).
+    final parity = AnswerParityPrompts();
     return ProcedureEngine(
       // Load the full system set: `answer_with_memory_v1` step-1 recall now
       // dispatches the `retrieve_for_prompt_v1` conductor and its five
@@ -130,7 +137,11 @@ void main() {
       ),
       memory: store,
       memoryBridge: MemoryBridge(store),
-      substrateBridge: SubstrateBridge(substrate),
+      substrateBridge: SubstrateBridge(
+        substrate,
+        promptResolver: parity.resolver,
+        routeChainOf: parity.routeChainOf,
+      ),
       now: () => DateTime.utc(2026, 6, 5, 12, 0, 0),
     );
   }
