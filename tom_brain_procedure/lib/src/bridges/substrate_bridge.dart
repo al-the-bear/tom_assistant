@@ -452,7 +452,12 @@ class SubstrateBridge {
                 //     still streams to the user.
                 if (!liveAnswer) {
                   if (toolCalls.isNotEmpty || toThinking) {
-                    _onThinking?.call(answer);
+                    // Label the streamed stage (§ 9.2 Todo 7): prefix the notice
+                    // with a short, role-keyed stage marker so the user can
+                    // follow the live process (`🧠 analysing… …`). The label
+                    // rides only on the notice — `answer` (returned to the body
+                    // for persist / transcript) stays unlabeled.
+                    _onThinking?.call(_labelThinkingStage(role, answer));
                   } else if (onToken != null && bufferedDeltas != null) {
                     for (final delta in bufferedDeltas) {
                       await onToken(delta);
@@ -594,6 +599,30 @@ class SubstrateBridge {
   static bool _resolvesToThinking(String? channel, String role) {
     if (channel != null) return channel == 'thinking';
     return _thinkingRoles.contains(role);
+  }
+
+  /// Short, role-keyed stage labels for the streamed thinking notice (§ 9.2
+  /// Todo 7). Each labels *which* cognitive stage is running so the user can
+  /// follow the live process. A role with no entry — including a tool-deciding
+  /// `assistant_to_user` turn routed here because its text was a `call:NAME{…}`
+  /// — uses [_fallbackStageLabel].
+  static const Map<String, String> _stageLabels = <String, String>{
+    'analyser': '🧠 analysing…',
+    'sub_thinker': '🧩 reasoning…',
+    'recaller': '📚 recalling…',
+    'synthesiser': '✍️ drafting…',
+    'evaluator': '🔎 critiquing…',
+  };
+
+  /// The generic label for thinking text whose role names no specific stage.
+  static const String _fallbackStageLabel = '🤔 thinking…';
+
+  /// Prefixes [text] with [role]'s stage label so the thinking notice reads as
+  /// `🧠 analysing… <text>` (§ 9.2 Todo 7). The label lives only on the notice;
+  /// the unlabeled [text] is what the bridge returns to the procedure.
+  static String _labelThinkingStage(String role, String text) {
+    final label = _stageLabels[role] ?? _fallbackStageLabel;
+    return text.isEmpty ? label : '$label $text';
   }
 
   /// Builds a [ToolCatalogue] from the d4rt-supplied [tools] list (each entry

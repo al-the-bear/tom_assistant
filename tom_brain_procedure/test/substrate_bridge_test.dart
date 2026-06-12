@@ -265,6 +265,74 @@ void main() {
     });
   });
 
+  group('C.13 SubstrateBridge.llm — labeled thinking stages (§ 9.2 Todo 7)', () {
+    // When a deliberation turn streams on the thinking channel, the notice the
+    // user follows is prefixed with a short stage label keyed on the turn's
+    // role, so the live process reads as `🧠 analysing… <text>` rather than a
+    // bare text dump. The label rides only on the *notice* — the text the
+    // bridge returns to the procedure (which feeds persist / transcript) stays
+    // unlabeled.
+
+    test('an analyser turn is labeled 🧠 analysing…', () async {
+      final notices = <String>[];
+      final thinking =
+          SubstrateBridge(client, onThinking: (text) => notices.add(text));
+      client.streamEvents = _completedStream('the analysis');
+
+      final out = await thinking.llm('q', role: 'analyser');
+
+      expect(notices, hasLength(1));
+      expect(notices.single, startsWith('🧠 analysing…'));
+      expect(notices.single, contains('the analysis'));
+      // The procedure-facing text carries no label.
+      expect(out['text'], 'the analysis');
+    });
+
+    test('a sub_thinker turn is labeled 🧩 reasoning…', () async {
+      final notices = <String>[];
+      final thinking =
+          SubstrateBridge(client, onThinking: (text) => notices.add(text));
+      client.streamEvents = _completedStream('a sub-answer');
+
+      await thinking.llm('q', role: 'sub_thinker');
+
+      expect(notices.single, startsWith('🧩 reasoning…'));
+      expect(notices.single, contains('a sub-answer'));
+    });
+
+    test('an evaluator turn is labeled 🔎 critiquing…', () async {
+      final notices = <String>[];
+      final thinking =
+          SubstrateBridge(client, onThinking: (text) => notices.add(text));
+      client.streamEvents = _completedStream('the critique');
+
+      await thinking.llm('q', role: 'evaluator');
+
+      expect(notices.single, startsWith('🔎 critiquing…'));
+      expect(notices.single, contains('the critique'));
+    });
+
+    test('a thinking-channel turn with no stage role falls back to 🤔 thinking…',
+        () async {
+      final notices = <String>[];
+      final thinking =
+          SubstrateBridge(client, onThinking: (text) => notices.add(text));
+      client.streamEvents = _completedStream('working it out');
+
+      // `assistant_to_user` is not a deliberation stage; routed to thinking by
+      // an explicit channel, it gets the generic fallback label.
+      final out = await thinking.llm(
+        'q',
+        role: 'assistant_to_user',
+        channel: 'thinking',
+      );
+
+      expect(notices.single, startsWith('🤔 thinking…'));
+      expect(notices.single, contains('working it out'));
+      expect(out['text'], 'working it out');
+    });
+  });
+
   group('C.13 SubstrateBridge.embed', () {
     test('flattens the vector + model identity', () async {
       client.embedResult = EmbeddingResult(
