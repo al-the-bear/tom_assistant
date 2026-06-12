@@ -49,6 +49,11 @@ export 'bridge_call_recorder.dart' show BridgeCallRecorder;
 export 'llm_call_observation.dart' show LlmCallObservation, LlmTrailObserver;
 export 'memory_bridge.dart';
 export 'substrate_bridge.dart';
+// The `sub.run` host-side seam value types (`ResolvedPrompt`,
+// `UnregisteredPromptException`). Exported here (a module barrel, not a
+// `build.yaml` barrelFile) so consumers keep them on the public surface while
+// the d4rt bridge generator does not bridge them (principle 7).
+export 'substrate_run_seams.dart';
 // Extension F step 6 — the `tool.list` / `tool.invoke` bridged primitive
 // pair over the tool-calling core (`src/tools/`).
 export 'tool_bridge.dart';

@@ -23,7 +23,7 @@
 //  2. **Bridge-surface signature guard.** The generated `BridgedClass`
 //     carries a `methodSignatures` string per bridged method — the exact
 //     d4rt-facing contract a procedure script binds to. This audit pins
-//     all 22 of them (17 memory + 5 substrate, the § 5.1 surface) to
+//     all 24 of them (17 memory + 7 substrate, the § 5.1 surface) to
 //     literal expected strings. Any edit to a bridge method's d4rt-facing
 //     signature (a param added, removed, retyped, or re-defaulted, then
 //     re-reflected into the `*.b.dart`) drifts the generated string away
@@ -113,11 +113,18 @@ const Map<String, String> _expectedMemorySignatures = <String, String>{
       'Future<List<String>> findUncertain(String forKey, {required double low, required double high, int limit = 200})',
 };
 
-/// The authoritative substrate surface: five rows — `llm`, the Extension-H
+/// The authoritative substrate surface: seven rows — `llm` (with the
+/// `prompt_configuration.md` §7.4 `channel` knob), the increment-5 routing
+/// seam pair `send` (low-level: one completion over a named route) and `run`
+/// (high-level: ID-driven prompt → `tool_loop_v1` delegation), the Extension-H
 /// `retrievalRole` (§ 6.2a), `embed`, `search`, `fetch`.
 const Map<String, String> _expectedSubstrateSignatures = <String, String>{
   'llm':
-      'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, List<Object?>? tools, Map<String, Object?>? budget})',
+      'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, List<Object?>? tools, Map<String, Object?>? budget, String? channel})',
+  'send':
+      'Future<Map<String, Object?>> send(String transcript, {required String llmRoute, String role = defaultRole, List<Object?>? tools, double? temperature, int? maxOutputTokens, Map<String, Object?>? responseFormat})',
+  'run':
+      'Future<Map<String, Object?>> run(String promptId, {Map<String, Object?> inputs = const <String, Object?>{}})',
   'retrievalRole':
       'Future<Map<String, Object?>> retrievalRole(String roleId, String prompt, {Map<String, Object?>? budget})',
   'embed': 'Future<Map<String, Object?>> embed(String text)',
@@ -139,7 +146,29 @@ void main() {
     memoryClient = _AuditMemoryClient(stacks);
     substrateClient = _AuditSubstrateClient();
     memoryBridge = MemoryBridge(memoryClient);
-    substrateBridge = SubstrateBridge(substrateClient);
+    // The increment-5 routing seams (§7.4): `send` resolves a route name to a
+    // chain via `routeChainOf`; `run` resolves a prompt id via `promptResolver`
+    // and delegates the loop via `runProcedure`. All three are bound here so the
+    // two new bridged methods roundtrip end-to-end like the rest.
+    substrateBridge = SubstrateBridge(
+      substrateClient,
+      routeChainOf: (routeName) =>
+          const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+      promptResolver: (id, inputs) async => const ResolvedPrompt(
+        role: 'assistant_to_user',
+        llmRoute: 'fast',
+        templateBody: 'body',
+      ),
+      runProcedure: (procedureId, inputs) async {
+        substrateClient.called.add('run');
+        return ProcedureResult.succeeded(
+          outputs: const <String, Object?>{
+            'answer': 'ok',
+            'toolLoopExhausted': false,
+          },
+        );
+      },
+    );
     interpreter = D4rt();
     BrainBridges.register(interpreter);
   });
@@ -168,7 +197,7 @@ void main() {
       );
     });
 
-    test('SubstrateBridge registers exactly the 5 audited substrate methods',
+    test('SubstrateBridge registers exactly the 7 audited substrate methods',
         () {
       final registered =
           bridgeClassNamed('SubstrateBridge').methods.keys.toSet();
@@ -210,7 +239,7 @@ void main() {
 
   group('C.47 bridge audit — every bridged method roundtrips end-to-end', () {
     test(
-        'each of the 22 methods runs through the interpreter and is recorded',
+        'each of the 24 methods runs through the interpreter and is recorded',
         () async {
       // Seed canned domain results so every outbound flattening leg has
       // something to read. Inbound legs are observed via the doubles'
@@ -290,6 +319,8 @@ void main() {
       };
       const substrateBodies = <String, String>{
         'llm': "await sub.llm('q');",
+        'send': "await sub.send('q', llmRoute: 'fast');",
+        'run': "await sub.run('assist_user.answer_with_memory.assembly');",
         'retrievalRole': "await sub.retrievalRole('recall_planner', 'q');",
         'embed': "await sub.embed('t');",
         'search': "await sub.search('q');",
@@ -559,7 +590,15 @@ class _AuditSubstrateClient implements TomBrainSubstrateClient {
 
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    called.add(_retrievalRoles.contains(call.roleId) ? 'retrievalRole' : 'llm');
+    // `send` is the only completion that carries a resolved `routeChain` (§7.4 —
+    // route selection moves off the role onto the chain); plain `llm` and the
+    // composite `retrievalRole` leave it null. `run` never reaches here — it
+    // delegates the loop to the `ProcedureRunner` double, which records 'run'.
+    called.add(call.routeChain != null
+        ? 'send'
+        : _retrievalRoles.contains(call.roleId)
+            ? 'retrievalRole'
+            : 'llm');
     return Stream<LlmStreamEvent>.fromIterable(streamEvents);
   }
 

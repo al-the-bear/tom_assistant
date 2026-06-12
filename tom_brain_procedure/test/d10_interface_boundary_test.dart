@@ -78,6 +78,27 @@ const Set<String> _allowedGeneratedReachIns = {
   'package:tom_brain_substrate/src/api/tom_brain_substrate_client.dart',
 };
 
+/// Pure value-type `lib/src/` reach-ins a bridged constructor *seam*
+/// legitimately drags in — distinct from the interface-client decls above.
+///
+/// `prompt_configuration.md` §7.4 defines the `sub.send` routing seam
+/// `RouteChainResolver = List<RouteEntry> Function(String routeName)`,
+/// modelled on the pre-existing `toolProtocolOf` seam. The generator bridges
+/// the `SubstrateBridge` constructor (so the host can wire those seams), and
+/// resolving the `routeChainOf` param's `List<RouteEntry>` type forces a
+/// generated import of `RouteEntry`'s declaring library.
+///
+/// `RouteEntry` (`tom_brain_substrate/src/router/route_entry.dart`) is a pure
+/// value class — `providerId` / `model` / optional `conditions`, no behaviour —
+/// not a concrete store / facade / router-engine. It is therefore audited the
+/// same way the test already tolerates the shared value-type reach-ins
+/// `src/budget/budget.dart` and `src/correlation/turn_context.dart` (which
+/// [_reachesIntoSrc] does not flag): a value-type seam dependency, not a
+/// coupling to a substrate implementation.
+const Set<String> _allowedValueTypeSeamReachIns = {
+  'package:tom_brain_substrate/src/router/route_entry.dart',
+};
+
 /// A single `import`/`export` directive lifted from a source file.
 class _Directive {
   _Directive(this.file, this.uri, this.isGenerated);
@@ -214,24 +235,31 @@ void main() {
       );
     });
 
-    test('generated reach-ins target only the interface-client decls', () {
+    test(
+        'generated reach-ins target only the interface-client decls and '
+        'audited value-type seams', () {
       final reachIns =
           generated.where((d) => _reachesIntoSrc(d.uri)).toList();
       // The bridge does reach in (generator artifact) — prove it does so
-      // only to the two interface-client declaration files, never a
-      // concrete store / facade / isolate-adapter implementation.
+      // only to the two interface-client declaration files (never a
+      // concrete store / facade / isolate-adapter implementation) plus the
+      // audited pure value-type constructor-seam reach-ins (§7.4
+      // `RouteChainResolver` → `RouteEntry`).
       expect(reachIns, isNotEmpty,
           reason: 'the generated bridge is expected to import the two '
               'interface-client declaration files');
       final offenders = reachIns
-          .where((d) => !_allowedGeneratedReachIns.contains(d.uri))
+          .where((d) =>
+              !_allowedGeneratedReachIns.contains(d.uri) &&
+              !_allowedValueTypeSeamReachIns.contains(d.uri))
           .toList();
       expect(
         offenders,
         isEmpty,
         reason: 'generated bridges may reach lib/src/ only for the two '
-            'interface-client declarations '
-            '($_allowedGeneratedReachIns); these reach a concrete impl: '
+            'interface-client declarations ($_allowedGeneratedReachIns) or an '
+            'audited value-type seam ($_allowedValueTypeSeamReachIns); these '
+            'reach a concrete impl: '
             '${offenders.map((o) => "${o.file} -> ${o.uri}").join("; ")}',
       );
     });

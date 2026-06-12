@@ -83,6 +83,10 @@ import '../budget/budget_ledger.dart' show BudgetLedger;
 import '../config/provider_config.dart' show ToolProtocol;
 import 'bridge_call_recorder.dart';
 import 'llm_call_observation.dart';
+// The `sub.run` host-side seam value types (`ResolvedPrompt`,
+// `UnregisteredPromptException`). Defined outside this barrelFile so the d4rt
+// bridge generator does not bridge them (principle 7) — see that file's header.
+import 'substrate_run_seams.dart';
 
 /// Re-exposes the substrate primitive set to d4rt procedure scripts.
 ///
@@ -395,13 +399,17 @@ class SubstrateBridge {
   /// (§ 9.1 Todo 8 — the answer loop's signal to feed an error turn back), and
   /// the report mirrors [LlmCallReport]. Throws [LlmCompletionFailure] when the
   /// stream terminates with [LlmStreamFailed].
+  // `async` so a synchronous validation throw from `_buildToolCatalogue`
+  // (e.g. a tool entry missing its `name`) surfaces as a Future rejection
+  // rather than escaping the call synchronously — the d4rt bridge invokes and
+  // awaits this method, so its error contract is "the returned Future fails".
   Future<Map<String, Object?>> llm(
     String prompt, {
     String role = defaultRole,
     List<Object?>? tools,
     Map<String, Object?>? budget,
     String? channel,
-  }) =>
+  }) async =>
       _completeOnce(
         primitive: 'llm',
         recordInput: <String, Object?>{'prompt': prompt, 'role': role},
@@ -438,6 +446,10 @@ class SubstrateBridge {
   /// `send` cannot route without one). A resolver that does not know [llmRoute]
   /// throws its own error; an empty resolved chain surfaces the substrate's
   /// `EmptyRouteChain`.
+  // `async` for the same reason as [llm]: a synchronous validation throw (an
+  // unbound `RouteChainResolver`, or a malformed tool entry from
+  // `_buildToolCatalogue`) must surface as a Future rejection, since the d4rt
+  // bridge awaits this method.
   Future<Map<String, Object?>> send(
     String transcript, {
     required String llmRoute,
@@ -446,7 +458,7 @@ class SubstrateBridge {
     double? temperature,
     int? maxOutputTokens,
     Map<String, Object?>? responseFormat,
-  }) {
+  }) async {
     final resolver = _routeChainOf;
     if (resolver == null) {
       throw StateError(
@@ -1363,54 +1375,6 @@ typedef ToolProtocolResolver = ToolProtocol Function(String providerId);
 /// throw (an unknown route is a config error, not a silent fallback).
 typedef RouteChainResolver = List<RouteEntry> Function(String routeName);
 
-/// The inherited settings + loaded, placeholder-resolved template a
-/// [PromptResolver] yields for a registered prompt id (§7.1 / §7.4).
-///
-/// Every placeholder in [templateBody] is already resolved **except**
-/// `${tools.catalogue}`, which [SubstrateBridge.run] renders from [tools] (it
-/// alone depends on the tool set `run` resolves). [tools] is the prompt's
-/// resolved tool descriptor list (the `tool.list` wire shape) — already expanded
-/// from the prompt's tool policy (`all` / `readonly` / explicit / `none`) by the
-/// resolver, which is where the tool registry lives — and is empty for the
-/// `none` profile.
-final class ResolvedPrompt {
-  /// Builds a resolved prompt. [maxToolLoops] defaults to 6 (the §5 inherited
-  /// default); [tools] defaults to empty (the `none` profile).
-  const ResolvedPrompt({
-    required this.role,
-    required this.llmRoute,
-    required this.templateBody,
-    this.tools = const <Object?>[],
-    this.maxToolLoops = 6,
-    this.temperature,
-    this.responseFormat,
-  });
-
-  /// The role the prompt assumes — assembles persona + the assistant-dedication
-  /// anchor on every `sub.send` the loop issues.
-  final String role;
-
-  /// The named LLM route the loop's `sub.send` dispatches over (§8).
-  final String llmRoute;
-
-  /// The loaded template body, all placeholders resolved except
-  /// `${tools.catalogue}` (which `run` renders).
-  final String templateBody;
-
-  /// The resolved tool descriptor list (`tool.list` wire shape); empty for the
-  /// `none` profile.
-  final List<Object?> tools;
-
-  /// The cap on the loop's tool iterations (§7.2) — the §5 `max_tool_loops`.
-  final int maxToolLoops;
-
-  /// The decoding temperature, or `null` to leave it at provider/role default.
-  final double? temperature;
-
-  /// The structured-output `response_format`, or `null` for free-form text.
-  final Map<String, Object?>? responseFormat;
-}
-
 /// Resolves a registered prompt *id* to its [ResolvedPrompt] (§7.1 / §7.4).
 ///
 /// The host backs it with the cognition config's prompt registry: the seam
@@ -1437,24 +1401,6 @@ typedef ProcedureRunner = Future<ProcedureResult> Function(
   String procedureId,
   ProcedureInputs inputs,
 );
-
-/// Thrown by [SubstrateBridge.run] when its [promptId] is not registered
-/// (§7.3 — fatal to the run).
-///
-/// A run names a prompt by id; an id with no registered prompt is a contract
-/// error at the call site, not a recoverable miss, so it surfaces loudly rather
-/// than running an empty or guessed prompt.
-final class UnregisteredPromptException implements Exception {
-  /// Records that no prompt is registered under [promptId].
-  const UnregisteredPromptException(this.promptId);
-
-  /// The unregistered prompt id `run` was asked for.
-  final String promptId;
-
-  @override
-  String toString() =>
-      'UnregisteredPromptException: no prompt registered for id "$promptId"';
-}
 
 /// Thrown by [SubstrateBridge.llm] when the substrate stream terminates
 /// with [LlmStreamFailed].
