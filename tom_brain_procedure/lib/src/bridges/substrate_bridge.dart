@@ -77,6 +77,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show MapFieldReader, looksLikeToolCallAttempt, parseToolCallsFromText;
 
+import '../api/procedure_inputs.dart' show ProcedureInputs;
+import '../api/procedure_result.dart' show ProcedureResult;
 import '../budget/budget_ledger.dart' show BudgetLedger;
 import '../config/provider_config.dart' show ToolProtocol;
 import 'bridge_call_recorder.dart';
@@ -167,6 +169,28 @@ class SubstrateBridge {
   /// d4rt-facing surface — a procedure script names a route, never a chain.
   final RouteChainResolver? _routeChainOf;
 
+  /// Resolves a registered prompt *id* to its inherited settings + loaded,
+  /// placeholder-resolved template body (§7.4 / §7.1). `null` ⇒ [run] cannot
+  /// resolve a prompt and throws a [StateError]; [llm] / [send] are unaffected
+  /// (they take an already-assembled transcript, not an id). The host binds a
+  /// resolver backed by the cognition config's prompt registry at boot wiring
+  /// (increment 5 step 5d); this constructor hook is only the seam, the
+  /// `RouteChainResolver` pattern applied to prompt resolution. Not part of the
+  /// d4rt-facing surface — a procedure script names a prompt id, never resolves
+  /// it itself.
+  final PromptResolver? _promptResolver;
+
+  /// Runs another procedure by id, for [run] to delegate the send→parse→
+  /// execute→re-send loop to the shared `tool_loop_v1` d4rt script (§7.2 /
+  /// §7.4). `null` ⇒ [run] cannot delegate and throws a [StateError]. The
+  /// engine binds it per run over that run's depth-capped `RunProcedurePrimitive`
+  /// (so the nested loop run gets the right depth bookkeeping and its own trail),
+  /// exactly as the `runProcedure` native primitive does for a scripted nested
+  /// call. Not part of the d4rt-facing surface — a procedure script reaches
+  /// nested procedures through the native `runProcedure`, never through the
+  /// substrate bridge.
+  final ProcedureRunner? _runProcedure;
+
   /// Per-run turn-correlation context (logging-spec §3 / §9 — the "→ substrate"
   /// end of the `turnId` thread-through). `null` on the shared template bridge
   /// and on every internal / free-time / dream run — those issue completions
@@ -219,6 +243,8 @@ class SubstrateBridge {
     SubstrateThinkingSink? onThinking,
     ToolProtocolResolver? toolProtocolOf,
     RouteChainResolver? routeChainOf,
+    PromptResolver? promptResolver,
+    ProcedureRunner? runProcedure,
     TurnContext? turn,
     LlmTrailObserver? onLlmTrail,
   })  : _onCall = onCall,
@@ -228,6 +254,8 @@ class SubstrateBridge {
         _onThinking = onThinking,
         _toolProtocolOf = toolProtocolOf,
         _routeChainOf = routeChainOf,
+        _promptResolver = promptResolver,
+        _runProcedure = runProcedure,
         _turn = turn,
         _onLlmTrail = onLlmTrail;
 
@@ -240,6 +268,24 @@ class SubstrateBridge {
   /// raw resolver closure; it is a host-side wiring detail, never called from a
   /// procedure script (a script names a route, never a chain).
   RouteChainResolver? get routeChainOf => _routeChainOf;
+
+  /// The injected prompt resolver this bridge was built with, or `null`.
+  ///
+  /// Read off the template bridge by the engine when it rebuilds a fresh
+  /// [SubstrateBridge] per run, so [run]'s id→settings resolution seam is
+  /// carried onto the per-run bridge (mirrors [routeChainOf]). A host-side
+  /// wiring detail, never called from a procedure script.
+  PromptResolver? get promptResolver => _promptResolver;
+
+  /// The injected nested-procedure runner this bridge was built with, or
+  /// `null`.
+  ///
+  /// The engine binds a *fresh* runner per run (over that run's depth-capped
+  /// `RunProcedurePrimitive`), so unlike [routeChainOf] / [promptResolver] this
+  /// is not carried from the template bridge — it is rebound each run. The
+  /// getter exists for symmetry and test introspection. A host-side wiring
+  /// detail, never called from a procedure script.
+  ProcedureRunner? get procedureRunner => _runProcedure;
 
   /// Delegates to [body], gating it through the budget ledger and recording
   /// it on the run trail when those hooks are wired.
@@ -426,6 +472,167 @@ class SubstrateBridge {
       ),
       routeChain: chain,
     );
+  }
+
+  // ── run ───────────────────────────────────────────────────────────
+
+  /// Runs a **registered prompt by id** (§7.1 / §7.4): resolves the prompt's
+  /// inherited settings + loaded, placeholder-resolved template via the injected
+  /// [PromptResolver], renders the one placeholder it owns (`${tools.catalogue}`)
+  /// from the resolved tool set, assembles the initial transcript, then
+  /// **delegates the send→parse→execute→re-send loop** to the shared
+  /// `scripts/system/tool_loop_v1.dart` d4rt script via the injected
+  /// [ProcedureRunner] (the engine's `runProcedure` primitive). `run` does
+  /// **not** implement the loop — it owns only the Dart-side resolution.
+  ///
+  /// [promptId] names the registered prompt (e.g.
+  /// `assist_user.answer_with_memory.assembly`); [inputs] are the placeholder
+  /// bindings the resolver resolves the template against (plus the §6 built-ins
+  /// the resolver injects). Returns the loop's `{answer, toolLoopExhausted}`.
+  ///
+  /// Throws [UnregisteredPromptException] when [promptId] is not registered
+  /// (the resolver returns `null`), and [StateError] when no [PromptResolver] /
+  /// [ProcedureRunner] is bound (a wiring bug — `run` cannot resolve or
+  /// delegate without them).
+  ///
+  /// The anchor invariant (PE-7 / principle 5) is preserved exactly as for
+  /// [send]: `run` never hands the substrate a wire prompt — it builds the
+  /// transcript that `tool_loop_v1` passes to `sub.send` as the role template's
+  /// `prompt` input, so the role still prepends persona + the assistant-
+  /// dedication anchor at the substrate's assembly time.
+  Future<Map<String, Object?>> run(
+    String promptId, {
+    Map<String, Object?> inputs = const <String, Object?>{},
+  }) async {
+    final resolver = _promptResolver;
+    if (resolver == null) {
+      throw StateError(
+        'sub.run requires a PromptResolver but none was bound on the '
+        'SubstrateBridge (prompt "$promptId").',
+      );
+    }
+    final runner = _runProcedure;
+    if (runner == null) {
+      throw StateError(
+        'sub.run requires a ProcedureRunner but none was bound on the '
+        'SubstrateBridge (prompt "$promptId").',
+      );
+    }
+
+    final resolved = await resolver(promptId, inputs);
+    if (resolved == null) {
+      throw UnregisteredPromptException(promptId);
+    }
+
+    // Render the one placeholder `run` owns — `${tools.catalogue}` — from the
+    // resolved tool set (§7.4). Every other placeholder was already resolved by
+    // the [PromptResolver] against `inputs` + the §6 built-ins; the catalogue is
+    // the exception because it depends on the tool list `run` resolves here.
+    final transcript = _renderToolCataloguePlaceholder(
+      resolved.templateBody,
+      resolved.tools,
+    );
+
+    // Delegate the loop to the shared `tool_loop_v1` script. Per-prompt
+    // variation rides entirely in these inputs (§7.2): the same loop body serves
+    // every prompt. The script returns `{answer, toolLoopExhausted}`.
+    final loopInputs = ProcedureInputs(<String, Object?>{
+      'transcript': transcript,
+      'route': resolved.llmRoute,
+      'role': resolved.role,
+      'tools': resolved.tools,
+      'maxToolLoops': resolved.maxToolLoops,
+      if (resolved.temperature != null) 'temperature': resolved.temperature,
+    });
+    final result = await runner(toolLoopProcedureId, loopInputs);
+
+    final answer = result.output<String>('answer') ?? '';
+    final exhausted = result.output<bool>('toolLoopExhausted') ?? false;
+    return <String, Object?>{
+      'answer': answer,
+      'toolLoopExhausted': exhausted,
+    };
+  }
+
+  /// The id of the shared tool-loop procedure [run] delegates to (§7.2).
+  static const String toolLoopProcedureId = 'tool_loop_v1';
+
+  /// Replaces the literal `${tools.catalogue}` marker in [template] with a
+  /// rendered "Tools available to you" block built from [tools] (§7.4). A
+  /// template without the marker is returned unchanged; an empty [tools] set
+  /// (the `none` profile) renders the marker away to the empty string.
+  ///
+  /// Each descriptor is a `{name, description?, group?, input_schema?}` map (the
+  /// `tool.list` wire shape); the block names each tool, renders its argument
+  /// schema inline, and states the canonical `call:NAME{…}` format the substrate
+  /// must emit — the same rendering discipline `answer_with_memory_v1` applies,
+  /// so a prompt migrated onto `run` (increment 6) sees an identical catalogue.
+  static String _renderToolCataloguePlaceholder(
+    String template,
+    List<Object?> tools,
+  ) {
+    const marker = r'${tools.catalogue}';
+    if (!template.contains(marker)) return template;
+    return template.replaceAll(marker, _renderToolCatalogue(tools));
+  }
+
+  /// Renders [tools] as a "Tools available to you" block, or `''` when there is
+  /// none. Mirrors `answer_with_memory_v1._renderToolCatalogue` (§9.1): each
+  /// tool line carries its `args: {…}` schema and the block closes with the
+  /// canonical call-format instruction, so a memoryless substrate emits a clean,
+  /// parseable `call:NAME{…}`.
+  static String _renderToolCatalogue(List<Object?> tools) {
+    if (tools.isEmpty) return '';
+    var rendered = '';
+    for (final tool in tools) {
+      if (tool is! Map) continue;
+      final name = tool['name'];
+      if (name == null || '$name'.isEmpty) continue;
+      final group = tool['group'];
+      final description = tool['description'];
+      final groupSuffix =
+          (group != null && '$group'.isNotEmpty) ? ' ($group)' : '';
+      final descSuffix = (description != null && '$description'.isNotEmpty)
+          ? ': $description'
+          : '';
+      final argsSuffix = ' ${_renderArgsSchema(tool['input_schema'])}';
+      rendered += '- $name$groupSuffix$descSuffix$argsSuffix\n';
+    }
+    if (rendered.isEmpty) return '';
+    final howToCall = 'To use a tool, reply with ONLY a single call line and no '
+        'other text, using the exact tool name and argument keys from the list '
+        'above:\n'
+        '  call:TOOL_NAME{arg1: "value", arg2: 123}\n'
+        'For a tool with no arguments use empty braces: call:TOOL_NAME{}\n'
+        'Example: call:memory.read{text: "project history"}\n'
+        'If you do not need a tool, just answer the user in plain prose.\n';
+    return 'Tools available to you:\n$rendered\n$howToCall\n';
+  }
+
+  /// Renders one tool's `input_schema` as a compact `args: {key: type
+  /// (required), …}` signature (§9.1). Mirrors
+  /// `answer_with_memory_v1._renderArgsSchema`. A tool with no readable
+  /// properties renders `args: {}`.
+  static String _renderArgsSchema(Object? schema) {
+    if (schema is! Map) return 'args: {}';
+    final properties = schema['properties'];
+    if (properties is! Map || properties.isEmpty) return 'args: {}';
+    final required = <String>{};
+    final rawRequired = schema['required'];
+    if (rawRequired is List) {
+      for (final entry in rawRequired) {
+        if (entry is String) required.add(entry);
+      }
+    }
+    final parts = <String>[];
+    properties.forEach((key, spec) {
+      final keyName = '$key';
+      final type =
+          (spec is Map && spec['type'] != null) ? '${spec['type']}' : 'value';
+      final requiredSuffix = required.contains(keyName) ? ' (required)' : '';
+      parts.add('$keyName: $type$requiredSuffix');
+    });
+    return 'args: {${parts.join(', ')}}';
   }
 
   // ── shared completion core ─────────────────────────────────────────
@@ -1155,6 +1362,99 @@ typedef ToolProtocolResolver = ToolProtocol Function(String providerId);
 /// applied to route selection. A resolver that does not know the name should
 /// throw (an unknown route is a config error, not a silent fallback).
 typedef RouteChainResolver = List<RouteEntry> Function(String routeName);
+
+/// The inherited settings + loaded, placeholder-resolved template a
+/// [PromptResolver] yields for a registered prompt id (§7.1 / §7.4).
+///
+/// Every placeholder in [templateBody] is already resolved **except**
+/// `${tools.catalogue}`, which [SubstrateBridge.run] renders from [tools] (it
+/// alone depends on the tool set `run` resolves). [tools] is the prompt's
+/// resolved tool descriptor list (the `tool.list` wire shape) — already expanded
+/// from the prompt's tool policy (`all` / `readonly` / explicit / `none`) by the
+/// resolver, which is where the tool registry lives — and is empty for the
+/// `none` profile.
+final class ResolvedPrompt {
+  /// Builds a resolved prompt. [maxToolLoops] defaults to 6 (the §5 inherited
+  /// default); [tools] defaults to empty (the `none` profile).
+  const ResolvedPrompt({
+    required this.role,
+    required this.llmRoute,
+    required this.templateBody,
+    this.tools = const <Object?>[],
+    this.maxToolLoops = 6,
+    this.temperature,
+    this.responseFormat,
+  });
+
+  /// The role the prompt assumes — assembles persona + the assistant-dedication
+  /// anchor on every `sub.send` the loop issues.
+  final String role;
+
+  /// The named LLM route the loop's `sub.send` dispatches over (§8).
+  final String llmRoute;
+
+  /// The loaded template body, all placeholders resolved except
+  /// `${tools.catalogue}` (which `run` renders).
+  final String templateBody;
+
+  /// The resolved tool descriptor list (`tool.list` wire shape); empty for the
+  /// `none` profile.
+  final List<Object?> tools;
+
+  /// The cap on the loop's tool iterations (§7.2) — the §5 `max_tool_loops`.
+  final int maxToolLoops;
+
+  /// The decoding temperature, or `null` to leave it at provider/role default.
+  final double? temperature;
+
+  /// The structured-output `response_format`, or `null` for free-form text.
+  final Map<String, Object?>? responseFormat;
+}
+
+/// Resolves a registered prompt *id* to its [ResolvedPrompt] (§7.1 / §7.4).
+///
+/// The host backs it with the cognition config's prompt registry: the seam
+/// performs the registry lookup, inheritance resolution, template load, and
+/// placeholder resolution (against [inputs] + the §6 built-ins), and yields the
+/// inherited settings + resolved template body. Returns `null` when [promptId]
+/// is not registered — [SubstrateBridge.run] turns that into an
+/// [UnregisteredPromptException]. The bridge stays config-unaware — it is handed
+/// the id→settings function, the [RouteChainResolver] pattern applied to prompt
+/// resolution.
+typedef PromptResolver = Future<ResolvedPrompt?> Function(
+  String promptId,
+  Map<String, Object?> inputs,
+);
+
+/// Runs another procedure by id on behalf of [SubstrateBridge.run] (§7.2).
+///
+/// The engine binds it per run over that run's depth-capped
+/// `RunProcedurePrimitive`, so the delegated `tool_loop_v1` run gets correct
+/// depth bookkeeping and its own trail — exactly the path a scripted nested
+/// `runProcedure` takes. `run` is the only caller; it always targets the latest
+/// version, so the seam takes no `version`.
+typedef ProcedureRunner = Future<ProcedureResult> Function(
+  String procedureId,
+  ProcedureInputs inputs,
+);
+
+/// Thrown by [SubstrateBridge.run] when its [promptId] is not registered
+/// (§7.3 — fatal to the run).
+///
+/// A run names a prompt by id; an id with no registered prompt is a contract
+/// error at the call site, not a recoverable miss, so it surfaces loudly rather
+/// than running an empty or guessed prompt.
+final class UnregisteredPromptException implements Exception {
+  /// Records that no prompt is registered under [promptId].
+  const UnregisteredPromptException(this.promptId);
+
+  /// The unregistered prompt id `run` was asked for.
+  final String promptId;
+
+  @override
+  String toString() =>
+      'UnregisteredPromptException: no prompt registered for id "$promptId"';
+}
 
 /// Thrown by [SubstrateBridge.llm] when the substrate stream terminates
 /// with [LlmStreamFailed].

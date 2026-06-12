@@ -15,6 +15,7 @@
 //     stepping the version chain.
 
 export 'budget_ledger.dart' show BudgetLedger;
+export 'budget_view.dart' show BudgetView;
 export 'memory_write_guard.dart'
     show
         MemoryWriteGuard,

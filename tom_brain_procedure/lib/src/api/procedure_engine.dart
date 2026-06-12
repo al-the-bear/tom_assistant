@@ -536,6 +536,19 @@ final class ProcedureEngine {
     final ledger = BudgetLedger(loaded.header.budget);
     final runBudget = ledger.enforces ? ledger : null;
 
+    // The read-only budget view a procedure reaches as the `budget` global
+    // (§ 5.4.2): the header limit and live remaining for the token / wall-clock
+    // / tool-call dimensions. Built over *this* run's ledger (token / tool-call
+    // remaining read its `consumed`, the same source the fatal gate reads) and
+    // an elapsed clock armed now (wall-clock remaining, which the ledger does
+    // not track). Bound on every run — uncapped dimensions report `null`, so a
+    // wall-clock-only header (the answer budget) still exposes its time budget.
+    final runStartedAt = _now();
+    final budgetView = BudgetView(
+      ledger: ledger,
+      elapsed: () => _now().difference(runStartedAt),
+    );
+
     // The per-run bridge preserves the template bridge's agent identity
     // (PE-10 / memory § 9): when the engine is wired for a cognitive-agent
     // run (a dream/maintenance procedure), `memoryBridge.agentName` names the
@@ -769,6 +782,7 @@ final class ProcedureEngine {
       memoryBridge: runMemoryBridge,
       substrateBridge: runSubstrateBridge,
       toolBridge: runToolBridge,
+      budgetView: budgetView,
       installNativePrimitives: nativePrimitivesInstaller(
         runProcedurePrimitive: runPrimitive,
         notePrimitive: NotePrimitive(sink: recorder.noteSink, now: _now),

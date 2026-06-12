@@ -83,6 +83,7 @@ import '../bridges/mcp_bridge.dart';
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../bridges/tool_bridge.dart';
+import '../budget/budget_view.dart';
 import '../config/sandbox_config.dart';
 import 'procedure_parse_exception.dart';
 
@@ -141,6 +142,7 @@ final class D4rtDcliHost {
     required this.substrateBridge,
     this.toolBridge,
     this.mcpBridge,
+    this.budgetView,
     String dataDirectory = _defaultDataDirectory,
     NativePrimitiveInstaller? installNativePrimitives,
     this.sandbox = const SandboxConfig.locked(),
@@ -178,6 +180,14 @@ final class D4rtDcliHost {
   /// here while the installer that uses it lives in `vscode_scripting_install`.
   static const String vsCodeScriptingGlobal = 'vscode';
 
+  /// The d4rt global name the [BudgetView] instance is bound to, when one is
+  /// supplied (§ 5.4.2). A script that imports the budget library reads
+  /// `budget.tokenBudget` / `budget.remainingTokenBudget` (and the time /
+  /// tool-call pairs) to adapt to its own per-prompt budget. Optional — a host
+  /// without an enforcing ledger (a wall-clock-only run, or the bare prototype)
+  /// can run without it.
+  static const String budgetGlobal = 'budget';
+
   /// Tool label the composed [D4rtCliApi] reports (`toolName`).
   static const String _hostToolName = 'TomBrainEngine';
 
@@ -205,6 +215,11 @@ final class D4rtDcliHost {
   /// `answer_with_memory_v1` reaches memory + substrate only; a host whose
   /// procedures call out to MCP servers supplies one.
   final McpBridge? mcpBridge;
+
+  /// The budget view injected as the [budgetGlobal] global, or `null` when the
+  /// host runs without it (§ 5.4.2). The engine builds one per run over that
+  /// run's `BudgetLedger` so a procedure can read its own limit / remaining.
+  final BudgetView? budgetView;
 
   /// The sandbox switches this host booted under (C.17). Defaults to
   /// [SandboxConfig.locked] — the prototype's only configuration.
@@ -272,6 +287,19 @@ final class D4rtDcliHost {
         mcpGlobal,
         mcp,
         BridgeLibraries.mcpLibrary,
+      );
+    }
+
+    // 2d. The budget view, when the engine builds one for the run (§ 5.4.2).
+    //     Injected under its library URI so a script that imports the budget
+    //     library sees the `budget` global and reads its own limit / remaining.
+    //     Optional — a host without an enforcing ledger runs without it.
+    final budget = budgetView;
+    if (budget != null) {
+      _interpreter.registerGlobalVariable(
+        budgetGlobal,
+        budget,
+        BridgeLibraries.budgetLibrary,
       );
     }
 

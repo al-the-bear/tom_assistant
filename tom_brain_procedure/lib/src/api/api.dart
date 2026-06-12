@@ -42,4 +42,5 @@ export 'procedure_invocation.dart';
 export 'procedure_outcome.dart';
 export 'procedure_result.dart';
 export 'procedure_run.dart';
+export 'prompt_resolution.dart';
 export 'run_cancellation.dart';

@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Dartscript registration for tom_brain_procedure
-// Generated: 2026-06-12T14:17:32.737589
+// Generated: 2026-06-12T14:49:26.921482
 
 /// D4rt Bridge Registration for tom_brain_procedure
 library;
@@ -34,6 +34,10 @@ class BrainBridges {
     all_bridges.AllBridge.registerBridges(
       d4rt,
       'package:tom_brain_procedure/src/bridges/vscode_scripting_bridge.dart',
+    );
+    all_bridges.AllBridge.registerBridges(
+      d4rt,
+      'package:tom_brain_procedure/src/budget/budget_view.dart',
     );
     // Register under sub-package barrels for direct imports
     for (final barrel in all_bridges.AllBridge.subPackageBarrels()) {

@@ -75,6 +75,7 @@ targets:
                 - package:tom_brain_procedure/src/bridges/tool_bridge.dart
                 - package:tom_brain_procedure/src/bridges/mcp_bridge.dart
                 - package:tom_brain_procedure/src/bridges/vscode_scripting_bridge.dart
+                - package:tom_brain_procedure/src/budget/budget_view.dart
               outputPath: lib/src/bridges/brain_bridges.b.dart
           # Keep every generated artifact inside the existing `bridges/`
           # folder. The builder always runs the per-package orchestrator,

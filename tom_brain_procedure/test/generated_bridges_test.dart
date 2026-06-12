@@ -85,7 +85,7 @@ void main() {
   });
 
   group('C.14 generated bridge output — structure', () {
-    test('AllBridge exposes exactly the six authored bridged classes', () {
+    test('AllBridge exposes exactly the seven authored bridged classes', () {
       final names = AllBridge.bridgeClasses().map((b) => b.name).toSet();
       expect(
         names,
@@ -96,11 +96,13 @@ void main() {
           'ToolBridge',
           'McpBridge',
           'VsCodeScriptingBridge',
+          'BudgetView',
         }),
         reason: 'C.12 MemoryBridge + C.13 SubstrateBridge (and its '
             'LlmCompletionFailure carrier) + Extension F step 6 ToolBridge + '
             'Extension F step 8 McpBridge + Extension F step 14 '
-            'VsCodeScriptingBridge must all be bridged.',
+            'VsCodeScriptingBridge + § 5.4.2 BudgetView (the read-only '
+            'budget window) must all be bridged.',
       );
     });
 
@@ -130,6 +132,10 @@ void main() {
         uris['VsCodeScriptingBridge'],
         'package:tom_brain_procedure/src/bridges/'
             'vscode_scripting_bridge.dart',
+      );
+      expect(
+        uris['BudgetView'],
+        'package:tom_brain_procedure/src/budget/budget_view.dart',
       );
     });
 

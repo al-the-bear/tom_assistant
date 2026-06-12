@@ -54,4 +54,12 @@ final class BridgeLibraries {
   static const String vscodeScriptingLibrary =
       'package:tom_brain_procedure/src/bridges/'
       'vscode_scripting_bridge.dart';
+
+  /// URI under which the read-only budget view is importable from a d4rt
+  /// script (§ 5.4.2 — the `budget` global's limit/remaining getters). It
+  /// lives under `budget/` (not `bridges/`) because it is a view over the
+  /// run's `BudgetLedger`, not an effect surface; the generator still
+  /// registers it from the barrel file listed in `build.yaml`.
+  static const String budgetLibrary =
+      'package:tom_brain_procedure/src/budget/budget_view.dart';
 }

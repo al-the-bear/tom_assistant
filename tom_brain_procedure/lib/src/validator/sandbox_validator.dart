@@ -96,14 +96,20 @@ final class SandboxValidator {
   /// `…toolLibrary` brings the `tool` global into scope so a procedure that
   /// runs the tool-calling loop (e.g. `answer_with_memory_v1`'s `tool.list` /
   /// `tool.invoke`) clears the gate; the engine binds a per-run `ToolBridge`
-  /// on every run, so the global is always present. `BridgeLibraries.mcpLibrary`
-  /// is deliberately *not* listed: the engine does not yet bind the `mcp`
-  /// global, so allow-listing its import would pass the static gate only to
-  /// fail at runtime — it is added here the day the engine wires `McpBridge`.
+  /// on every run, so the global is always present. `…budgetLibrary` brings the
+  /// read-only `budget` global into scope (§ 5.4.2) — the engine binds a
+  /// per-run `BudgetView` on every run, so it too is always present. The
+  /// `budget` getters are *property reads*, not calls, so they are gated by
+  /// this import allow-list only (the call-based `requires` scan, § 7, never
+  /// sees a getter). `BridgeLibraries.mcpLibrary` is deliberately *not* listed:
+  /// the engine does not yet bind the `mcp` global, so allow-listing its import
+  /// would pass the static gate only to fail at runtime — it is added here the
+  /// day the engine wires `McpBridge`.
   static const Set<String> defaultAllowedImportUris = {
     BridgeLibraries.memoryLibrary,
     BridgeLibraries.substrateLibrary,
     BridgeLibraries.toolLibrary,
+    BridgeLibraries.budgetLibrary,
     engineNativeLibrary,
     procedureInputsLibrary,
     procedureResultLibrary,

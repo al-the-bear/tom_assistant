@@ -4,16 +4,16 @@
 
 **Substrate:** real `OpenAiPassthroughProvider` → oMLX (`gemma-4-26b-a4b-it-4bit`) for chat, `OllamaEmbeddingService` for embeddings; **memory:** real on-disk isolate-hosted `SqliteTomBrainMemory`.
 
-**Generated:** 2026-06-12T09:11:38.019500Z
+**Generated:** 2026-06-12T11:28:26.527923Z
 
 | Metric | Value |
 | --- | --- |
 | samples | 8 |
 | warm-up (discarded) | 1 |
-| min | 2213.13 ms |
-| p50 | 3555.25 ms |
-| p95 | 4544.79 ms |
-| max | 4544.79 ms |
+| min | 2240.38 ms |
+| p50 | 2700.88 ms |
+| p95 | 5085.86 ms |
+| max | 5085.86 ms |
 
 ## Comparison to the E.58 stub bench
 
@@ -23,5 +23,5 @@ This live bench measures the identical edge over the real stack. The live latenc
 
 > framework overhead (bounded by E.58, p95 ≤ 250.00 ms) + real oMLX token-generation latency.
 
-The live p95 (4544.79 ms) is therefore expected to sit well above the E.58 stub target — the difference is the real-LLM generation cost, not a framework regression. The framework overhead component is unchanged from E.58 (same code path; only the substrate + store are real here).
+The live p95 (5085.86 ms) is therefore expected to sit well above the E.58 stub target — the difference is the real-LLM generation cost, not a framework regression. The framework overhead component is unchanged from E.58 (same code path; only the substrate + store are real here).
 

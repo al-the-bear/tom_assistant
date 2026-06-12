@@ -161,6 +161,12 @@ Future<Object?> run(inputs) async => 1;
           // run, so the import always resolves. `BridgeLibraries.mcpLibrary` stays
           // off the list until the engine wires the `mcp` global.
           BridgeLibraries.toolLibrary,
+          // § 5.4.2 — the budget library brings the read-only `budget` global
+          // into scope; the engine binds a per-run `BudgetView` on every run,
+          // so the import always resolves. Its getters are property reads, so
+          // they are gated by this allow-list, never the call-based requires
+          // scan (a getter has no `(` for the scan to see).
+          BridgeLibraries.budgetLibrary,
           engineNativeLibrary,
           procedureInputsLibrary,
           procedureResultLibrary,
