@@ -3,7 +3,7 @@
 // `prototype_tools_mcp_extension_plan.md` step 14).
 //
 // `VsCodeScriptingBridge` is a plain Dart class bridged exactly like
-// `MemoryBridge` / `SubstrateBridge` / `ToolBridge` / `McpBridge`: `build.yaml`
+// `MemoryBridge` / `SubstrateBridge` / `ToolBridge` / `McpBridge`: `buildkit.yaml`
 // lists its source file under the `all` module's `barrelFiles`,
 // `tom_d4rt_generator` emits the bridge, and `BrainBridges.register` registers
 // it under [BridgeLibraries.vscodeScriptingLibrary]. It exposes one d4rt-facing

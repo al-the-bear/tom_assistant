@@ -9,7 +9,7 @@
 //     primitive set (`recall`, `persist`, `edge`, `propose_node_type`,
 //     `stack.list`, `stack.create`, `stack.push`, `stack.peek`,
 //     `stack.pop`, `stack.update`, `stack.remove`). No annotation —
-//     selection is `build.yaml`-driven (C.11). ✅ C.12.
+//     selection is `buildkit.yaml`-driven (C.11). ✅ C.12.
 //   - `SubstrateBridge` — plain Dart source class exposing
 //     `llm(prompt, role, budget)`, `embed(text)`,
 //     `search(query, provider, k)`, `fetch(url, budget)`. ✅ C.13.
@@ -32,11 +32,12 @@
 //
 // Wiring across later Phase C steps:
 //
-//   - C.11 — `build.yaml` generator config targeting this folder. ✅
+//   - C.11 — `buildkit.yaml` `d4rtgen:` generator config targeting this
+//     folder. ✅
 //   - C.12 — `MemoryBridge` source class. ✅
 //   - C.13 — `SubstrateBridge` source class. ✅
-//   - C.14 — `dart run build_runner build` output + generated
-//     `BrainBridges` registration; generated bridges compile and register. ✅
+//   - C.14 — `d4rtgen` CLI output + generated `BrainBridges` registration;
+//     generated bridges compile and register. ✅
 //   - C.15 — generator-output round-trip tests against in-memory
 //     test doubles.
 
@@ -51,7 +52,7 @@ export 'memory_bridge.dart';
 export 'substrate_bridge.dart';
 // The `sub.run` host-side seam value types (`ResolvedPrompt`,
 // `UnregisteredPromptException`). Exported here (a module barrel, not a
-// `build.yaml` barrelFile) so consumers keep them on the public surface while
+// `buildkit.yaml` barrelFile) so consumers keep them on the public surface while
 // the d4rt bridge generator does not bridge them (principle 7).
 export 'substrate_run_seams.dart';
 // Extension F step 6 — the `tool.list` / `tool.invoke` bridged primitive

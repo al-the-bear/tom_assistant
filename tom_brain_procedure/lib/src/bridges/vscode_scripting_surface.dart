@@ -16,7 +16,7 @@
 // (`vscode_scripting_bridge.dart`); the port itself only does the call and
 // raises [VsCodeScriptingFailure] when the extension cannot be reached.
 //
-// This file is intentionally NOT listed in `build.yaml`'s `barrelFiles`: the
+// This file is intentionally NOT listed in `buildkit.yaml`'s `barrelFiles`: the
 // port and its failure are host-side Dart types (the installer wiring needs
 // them), not d4rt-facing bridged classes. Only `vscode_scripting_bridge.dart`
 // is bridged.

@@ -59,7 +59,7 @@ final class BridgeLibraries {
   /// script (§ 5.4.2 — the `budget` global's limit/remaining getters). It
   /// lives under `budget/` (not `bridges/`) because it is a view over the
   /// run's `BudgetLedger`, not an effect surface; the generator still
-  /// registers it from the barrel file listed in `build.yaml`.
+  /// registers it from the barrel file listed in `buildkit.yaml`.
   static const String budgetLibrary =
       'package:tom_brain_procedure/src/budget/budget_view.dart';
 }

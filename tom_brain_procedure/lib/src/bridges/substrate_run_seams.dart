@@ -8,13 +8,13 @@
 // the only surface a procedure can touch), these must therefore **not** be
 // bridged.
 //
-// `tom_d4rt_generator` bridges every public class defined in a `build.yaml`
+// `tom_d4rt_generator` bridges every public class defined in a `buildkit.yaml`
 // `barrelFiles` source. `SubstrateBridge` and its substrate failure carrier
 // `LlmCompletionFailure` are intentionally bridged from
 // `substrate_bridge.dart` (a barrelFile). The two seam value types below were
 // originally defined alongside them and so were swept into the bridged set,
 // violating principle 7 and tripping `generated_bridges_test`'s closed
-// seven-class guard. Defining them here — a file that is *not* a `build.yaml`
+// seven-class guard. Defining them here — a file that is *not* a `buildkit.yaml`
 // barrelFile, only imported by `substrate_bridge.dart` — keeps them referenced
 // (the generated `SubstrateBridge` constructor wrapper still resolves
 // `ResolvedPrompt` for its `promptResolver` param) without bridging them.

@@ -137,9 +137,11 @@ environment:
 #
 # Forward steps:
 #   - C.8  — `lib/src/` folder layout. ✅
-#   - C.9  — `dev_dependencies` gain `tom_d4rt_generator: ^1.9.0`
-#            and `build_runner: ^2.10.4` (the C.5 pins). ✅ (see the
-#            dev-dependency-discipline block below).
+#   - C.9  — `dev_dependencies` gain `tom_d4rt_generator: ^1.9.1`
+#            (the bridge-generation toolchain). ✅ (see the
+#            dev-dependency-discipline block below). The generator runs
+#            via its `d4rtgen` CLI reading `buildkit.yaml`, so no
+#            `build_runner` dev-dep is needed.
 #   - C.10 — `.tom_metadata/tom_master.yaml` wiring is a no-op going
 #            forward (policy override 5).
 dependencies:
@@ -196,10 +198,9 @@ dependencies:
 # Dev-dependency discipline (Plan step C.9 / C.5 authoritative pin record).
 #
 # C.9 adds the D4rt bridge-generation toolchain, consumed only at build
-# time (C.11–C.15) to turn the `MemoryBridge` / `SubstrateBridge` source
-# classes into registered d4rt bridges. Neither pin is a runtime
-# dependency: no `lib/` source imports them, so they cannot leak into the
-# engine's shipped surface.
+# time (C.11–C.15) to turn the bridge source classes into registered d4rt
+# bridges. It is not a runtime dependency: no `lib/` source imports it, so
+# it cannot leak into the engine's shipped surface.
 #
 #   - tom_d4rt_generator — `^1.9.1`, the latest *published* version (so
 #                          the constraint resolves from pub.dev) and the
@@ -210,23 +211,20 @@ dependencies:
 #                          plan-2 item #13a re-enable `generateDartscript`
 #                          and delete the hand-authored registrar. The
 #                          caret admits any `1.x` uptake while a `2.0.0` major
-#                          bump trips a re-verify of the C.11 `build.yaml`
-#                          option schema and the C.12–C.13 bridge-source
-#                          authoring conventions. Drives the
-#                          `d4rt_bridge_builder` builder (factory
-#                          `d4rtBridgeBuilder`) C.14 runs via
-#                          `dart run build_runner build`. See Q-C.5.2/3.
-#   - build_runner       — `^2.10.4`, the dominant modern workspace
-#                          constraint. Compatible with the older
-#                          `^2.4.15` D4rt consumers (a single 2.x
-#                          satisfies both), so the prototype introduces no
-#                          resolution skew. The generator's own `^2.4.0`
-#                          floor sits comfortably below.
+#                          bump trips a re-verify of the `buildkit.yaml`
+#                          `d4rtgen:` option schema and the C.12–C.13
+#                          bridge-source authoring conventions. The generator
+#                          runs via its standalone `d4rtgen` CLI
+#                          (`dart run tom_d4rt_generator:d4rtgen`, or the
+#                          installed `d4rtgen` binary) reading the top-level
+#                          `d4rtgen:` block in `buildkit.yaml` — faster and
+#                          more reliable than driving it through
+#                          `build_runner`, which is therefore no longer a
+#                          dev-dependency. See Q-C.5.2/3.
 #
-# Both pins are adopted verbatim from the C.5 record (the single source of
+# The pin is adopted verbatim from the C.5 record (the single source of
 # truth) and locked by `test/dev_dependency_surface_test.dart`.
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
   tom_d4rt_generator: ^1.9.1
-  build_runner: ^2.10.4

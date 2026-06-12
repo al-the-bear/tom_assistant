@@ -1,11 +1,15 @@
 // C.14 generated-bridge contract test.
 //
-// Plan step C.14: "Run `dart run build_runner build`. Verify generated
-// bridges compile and register with tom_core_d4rt."
+// Plan step C.14: "Run the bridge generator. Verify generated bridges
+// compile and register with tom_core_d4rt." The generator runs via its
+// standalone `d4rtgen` CLI (`dart run tom_d4rt_generator:d4rtgen`, or the
+// installed `d4rtgen` binary) against the `d4rtgen:` block in
+// `buildkit.yaml` (C.11) — the build no longer drives it through
+// build_runner.
 //
 // This test is the executable acceptance check for that step. It proves
-// three things about the output of `tom_d4rt_generator` (run via
-// build_runner against `build.yaml`, C.11) and the generated
+// three things about the output of `tom_d4rt_generator` (run via the
+// `d4rtgen` CLI against `buildkit.yaml`, C.11) and the generated
 // `BrainBridges` registration entrypoint (`dartscript.b.dart`, re-enabled
 // by plan-2 item #13a):
 //

@@ -1,39 +1,44 @@
 // C.9 dev-dependency-surface contract test.
 //
-// Locks the two D4rt bridge-generation dev-dependencies the plan (C.9)
-// adds, with the exact pins the C.5 record fixed as the single source of
+// Locks the single D4rt bridge-generation dev-dependency the plan (C.9)
+// adds, with the exact pin the C.5 record fixed as the single source of
 // truth:
 //
-//   - tom_d4rt_generator: ^1.9.1   — the bridge generator. C.14 drives
-//                                    its `d4rt_bridge_builder` builder
-//                                    (factory `d4rtBridgeBuilder`) through
-//                                    `dart run build_runner build`.
+//   - tom_d4rt_generator: ^1.9.1   — the bridge generator. The build runs
+//                                    its standalone `d4rtgen` CLI
+//                                    (`dart run tom_d4rt_generator:d4rtgen`,
+//                                    or the installed `d4rtgen` binary)
+//                                    against the top-level `d4rtgen:` block
+//                                    in `buildkit.yaml`. The CLI is faster
+//                                    and more reliable than driving the
+//                                    generator through `build_runner`, which
+//                                    is therefore NOT a dev-dependency.
 //                                    (Prototype-plan-2 item 1 re-pinned the
 //                                    C.5 `^1.8.24` to `^1.9.0`; plan-2 item
 //                                    #13a re-pinned it to `^1.9.1`, which
 //                                    fixed the dartscript template so
 //                                    `generateDartscript` could be re-enabled.)
-//   - build_runner:       ^2.10.4  — the build-runner the generator runs
-//                                    under.
 //
 // Two complementary locks:
 //
 //   1. Import-locked — `tom_d4rt_generator` is a dev-dependency, so a test
 //      may import it. We import its public builder entry point and
-//      reference `d4rtBridgeBuilder`, the factory C.11's `build.yaml`
-//      names. If the dependency vanishes or the factory is renamed, this
+//      reference `d4rtBridgeBuilder`, the same factory the CLI's
+//      `BridgeConfig` path shares with the (now-retired) build_runner
+//      builder. If the dependency vanishes or the factory is renamed, this
 //      test fails to *load* before the rest of the suite runs. (Note: the
 //      C.7 runtime test does the analogous thing for runtime deps; this
-//      is the dev-dep analogue.) `build_runner` is a CLI toolchain with no
-//      stable importable symbol to anchor on, so it is manifest-locked
-//      only.
+//      is the dev-dep analogue.)
 //
-//   2. Manifest-locked — parses `pubspec.yaml` and asserts both pins are
+//   2. Manifest-locked — parses `pubspec.yaml` and asserts the pin is
 //      declared in the `dev_dependencies:` block (not the runtime
 //      `dependencies:` block). This catches: a removed dev-dep, a drifted
-//      pin, and — critically — either pin leaking into the runtime
+//      pin, and — critically — the pin leaking into the runtime
 //      dependency set (which would put a build-time-only toolchain into
-//      the engine's shipped surface, violating C.7 scope discipline).
+//      the engine's shipped surface, violating C.7 scope discipline). It
+//      also asserts `build_runner` is absent from the dev block: the
+//      migration to the `d4rtgen` CLI dropped it, and a re-added
+//      `build_runner` would signal a regression to the build_runner path.
 //
 // What this test does NOT do: it does not run the generator (that is
 // C.14/C.15) and does not assert anything about the generated output.
@@ -49,10 +54,9 @@ import 'package:test/test.dart';
 void main() {
   group('C.9 dev-dependency surface (import-locked)', () {
     test('tom_d4rt_generator exposes the d4rtBridgeBuilder factory', () {
-      // The factory C.11's build.yaml references under
-      // `targets.$default.builders.tom_d4rt_generator:d4rt_bridge_builder`.
-      // A tear-off reference is compile-time-only — no Builder is
-      // constructed here (that needs BuilderOptions, which is C.14's job).
+      // The factory the generator's `BridgeConfig` path shares between the
+      // `d4rtgen` CLI and the (retired) build_runner builder. A tear-off
+      // reference is compile-time-only — no Builder is constructed here.
       expect(d4rtBridgeBuilder, isNotNull);
       expect(d4rtBridgeBuilder, isA<Function>());
     });
@@ -96,20 +100,22 @@ void main() {
       );
     });
 
-    test('build_runner is a dev-dep pinned ^2.10.4 (the C.5 pin)', () {
+    test('build_runner is NOT a dev-dep (migrated to the d4rtgen CLI)', () {
+      // The build no longer drives the generator through build_runner; it
+      // runs the standalone `d4rtgen` CLI against buildkit.yaml. A re-added
+      // build_runner dev-dep would signal a regression to the old path.
       expect(
-        devBlock.contains(
-            RegExp(r'^  build_runner:\s*\^2\.10\.4', multiLine: true)),
-        isTrue,
-        reason: 'C.5 fixed build_runner: ^2.10.4 as the authoritative pin; '
-            'C.9 must adopt it verbatim in dev_dependencies.',
+        devBlock.contains(RegExp(r'^  build_runner:', multiLine: true)),
+        isFalse,
+        reason: 'build_runner was dropped when the build migrated to the '
+            'd4rtgen CLI; it must not reappear in dev_dependencies.',
       );
     });
 
-    test('neither generation dev-dep leaks into the runtime block', () {
+    test('the generation dev-dep does not leak into the runtime block', () {
       // Scope discipline (C.7): the bridge-generation toolchain is
-      // build-time only. If either pin appears in the runtime
-      // dependencies: block it would ship in the engine's surface.
+      // build-time only. If the pin appears in the runtime dependencies:
+      // block it would ship in the engine's surface.
       expect(
         runtimeBlock.contains(RegExp(r'^  tom_d4rt_generator:', multiLine: true)),
         isFalse,

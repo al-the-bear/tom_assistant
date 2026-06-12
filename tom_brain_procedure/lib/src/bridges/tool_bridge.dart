@@ -3,7 +3,7 @@
 // `tom_brain_procedure_specification.md` § 21.2, § 5.1).
 //
 // This is a **plain Dart class** bridged exactly like `MemoryBridge` /
-// `SubstrateBridge`: `build.yaml` lists this file under the `all` module's
+// `SubstrateBridge`: `buildkit.yaml` lists this file under the `all` module's
 // `barrelFiles`, `tom_d4rt_generator` emits the bridge, and
 // `BrainBridges.register` registers it under [BridgeLibraries.toolLibrary]. A
 // procedure script that imports that library sees the host-injected `tool`

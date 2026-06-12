@@ -5,7 +5,7 @@
 // This is a **plain Dart class** (no annotation — `@D4rtBridged` does
 // not exist in the d4rt ecosystem; see Q-C.3.1 / C.3 / C.11 in
 // `prototype_implementation_details.md`). `tom_d4rt_generator` selects
-// it for bridging because `build.yaml` (C.11) lists this file under the
+// it for bridging because `buildkit.yaml` (C.11) lists this file under the
 // `all` module's `barrelFiles`. The generated bridge registers through
 // `BrainBridges.register(d4rt)` (C.14 / C.16). The generator-output
 // round-trip smoke lands at C.15; this step (C.13) authors only the
