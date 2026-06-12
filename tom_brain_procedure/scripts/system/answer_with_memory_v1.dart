@@ -292,10 +292,16 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // no todos answers once (open == 0) and exits, governed by the answer it just
   // produced rather than by a pre-seeded placeholder todo.
   //
-  // The final answer streams to the live caller through the engine's per-run
-  // token sink: under the OpenAI protocol a tool-deciding turn emits no answer
-  // text, so only the terminal answer reaches the user; the intermediate turns
-  // stream nothing.
+  // Per-call stream routing (§ 9.2 Todo 6). The loop offers tools every turn,
+  // so each `sub.llm` call is an agentic decision turn. The substrate buffers
+  // each turn and routes it once at completion: a tool-deciding turn's text —
+  // the `call:NAME{…}` the model writes under the text tool protocol — goes to
+  // the **thinking** channel, never to the **answer** channel the user reads,
+  // while a plain-answer turn's tokens are replayed to the **answer** channel
+  // in their original chunk boundaries (so the answer still streams). The body
+  // therefore delivers nothing itself — the terminal answer reaches the wire as
+  // the substrate replays the last plain turn — and the loop's `answer` local is
+  // kept only as the returned output for the dispatcher's history back-fill.
   final liveTools = await tool.list();
   var transcript = _assemblePrompt(recall, text, priorTurns, toolCatalogue);
   var answer = '';

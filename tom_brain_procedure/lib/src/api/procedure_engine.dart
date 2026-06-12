@@ -375,11 +375,19 @@ final class ProcedureEngine {
   /// out-of-band notice (`OutboundChunk.notice`). Like [tokenSink], it is bound
   /// only to the top-level run; nested runs do not inherit it. Best-effort —
   /// the engine never awaits it and swallows its errors.
+  ///
+  /// When [thinkingSink] is supplied (the external/user request path, § 9.2
+  /// Todo 6) the engine binds it to the per-run substrate bridge's thinking
+  /// channel, so a tool-deciding turn's `call:NAME{…}` text (and any
+  /// thinking-channel role's completion) reaches the originating channel as an
+  /// out-of-band notice rather than folding into the streamed answer. Like
+  /// [tokenSink] / [noticeSink] it is bound only to the top-level run.
   ProcedureRun invoke(
     ProcedureInvocation invocation, {
     Duration? timeout,
     OutboundDeltaSink? tokenSink,
     ToolNoticeSink? noticeSink,
+    SubstrateThinkingSink? thinkingSink,
   }) {
     final runId = invocation.runId ?? _newRunId();
     final trail = StreamController<TrailEntry>.broadcast();
@@ -413,6 +421,7 @@ final class ProcedureEngine {
             cancellation: cancellation,
             tokenSink: tokenSink,
             noticeSink: noticeSink,
+            thinkingSink: thinkingSink,
             turn: turn,
             profile: invocation.memoryProfile,
             sessionId: invocation.sessionId,
@@ -481,6 +490,7 @@ final class ProcedureEngine {
     RunCancellation? cancellation,
     OutboundDeltaSink? tokenSink,
     ToolNoticeSink? noticeSink,
+    SubstrateThinkingSink? thinkingSink,
     TurnContext? turn,
     String? profile,
     String? sessionId,
@@ -610,6 +620,7 @@ final class ProcedureEngine {
       substrateBridge.client,
       onCall: recordCall,
       onToken: tokenSink,
+      onThinking: thinkingSink,
       budget: runBudget,
       turn: turn,
       onLlmTrail: (llmTrailSink == null && !buildTree)

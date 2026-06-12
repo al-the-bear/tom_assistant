@@ -137,6 +137,18 @@ class SubstrateBridge {
   /// [_onCall] / [_onToken]: not part of the d4rt-facing surface.
   final SubstrateNoteSink? _onNote;
 
+  /// Per-run **thinking** channel sink (`agent_loop_completion.md` § 9.2 Todo
+  /// 6). `null` on the shared template bridge and on internal / free-time runs.
+  /// Distinct from [_onToken] (the **answer** channel the user reads): the
+  /// thinking sink carries text the run produced *while working* — a
+  /// tool-deciding turn's `call:NAME{…}` text, or the whole completion of a
+  /// non-answer role — so that working text never folds into the streamed
+  /// answer. Fire-and-forget (one notice per turn, not per token): a thinking
+  /// notice carries no answer text, so it neither paces nor blocks the body.
+  /// The engine binds it on the top-level external run only; the dispatch route
+  /// delivers each notice beside the answer as an out-of-band [OutboundChunk].
+  final SubstrateThinkingSink? _onThinking;
+
   /// Resolves a provider id to its wire tool protocol (Extension F step 2 /
   /// step 10). `null` ⇒ every provider is treated as [ToolProtocol.openai]
   /// (the default the prototype shipped before tool-calling), so existing
@@ -193,6 +205,7 @@ class SubstrateBridge {
     SubstrateTokenSink? onToken,
     BudgetLedger? budget,
     SubstrateNoteSink? onNote,
+    SubstrateThinkingSink? onThinking,
     ToolProtocolResolver? toolProtocolOf,
     TurnContext? turn,
     LlmTrailObserver? onLlmTrail,
@@ -200,6 +213,7 @@ class SubstrateBridge {
         _onToken = onToken,
         _budget = budget,
         _onNote = onNote,
+        _onThinking = onThinking,
         _toolProtocolOf = toolProtocolOf,
         _turn = turn,
         _onLlmTrail = onLlmTrail;
@@ -276,6 +290,16 @@ class SubstrateBridge {
   /// non-map entry, wrong field types) surfaces a located [FormatException]
   /// (PE-1) — d4rt is an untrusted boundary.
   ///
+  /// [channel] declares where this completion's text streams (§ 9.2 Todo 6):
+  /// `'answer'` (the channel the user reads) or `'thinking'` (an out-of-band
+  /// notice channel). When omitted it defaults by [role] — a deliberation role
+  /// (`analyser` / `sub_thinker` / `evaluator`) streams to thinking, every
+  /// other role (including [defaultRole]) to the answer channel. A tools-bearing
+  /// call is buffered and routed at completion regardless of channel: a
+  /// resolved tool call (the model *working*) always streams to thinking so its
+  /// `call:NAME{…}` text never reaches the answer; a tools-bearing plain answer
+  /// on the answer channel is left for the body to deliver via `emit`.
+  ///
   /// The returned `toolCalls` is uniform regardless of provider (Q-F.4): the
   /// substrate's wire protocol is hidden behind the resolved provider's
   /// [ToolProtocol] (selected by the injected [ToolProtocolResolver],
@@ -305,12 +329,28 @@ class SubstrateBridge {
     String role = defaultRole,
     List<Object?>? tools,
     Map<String, Object?>? budget,
+    String? channel,
   }) =>
       _record<Map<String, Object?>>(
         'llm',
         <String, Object?>{'prompt': prompt, 'role': role},
         () async {
           final catalogue = _buildToolCatalogue(tools);
+          // Per-call stream routing (§ 9.2 Todo 6). The resolved channel says
+          // where this completion's text streams: the **answer** channel the
+          // user reads, or the out-of-band **thinking** channel. Explicit
+          // `channel` wins; otherwise it defaults by role (an
+          // `assistant_to_user` answer streams to the user; a deliberation role
+          // streams to thinking).
+          final toThinking = _resolvesToThinking(channel, role);
+          // A tools-bearing call is an agentic *decision* turn: any chunk could
+          // turn out to be a `call:NAME{…}` the user must never read, so its
+          // text is buffered and routed at completion (tool-deciding text →
+          // thinking; a plain answer is left for the body to deliver via
+          // `emit`). A tools-free call cannot be a tool decision, so an answer
+          // turn streams live token-by-token as before.
+          final hasTools = catalogue.isNotEmpty;
+          final liveAnswer = !toThinking && !hasTools;
           // Turn-correlation stamp (logging-spec §3 / §9): when a turn is bound,
           // name this completion with the turn's id and the next per-turn
           // `callSeq`. The counter advances once per llm call (embeddings do not
@@ -336,6 +376,12 @@ class SubstrateBridge {
           final startedAt = DateTime.now().toUtc();
 
           final buffer = StringBuffer();
+          // A buffered (tools-bearing or thinking) turn captures its deltas so
+          // they can be routed once at completion: a terminal answer replays
+          // them to the answer channel in their original chunk boundaries (so
+          // streaming UX survives), while a tool-deciding turn discards them
+          // from the answer and surfaces the whole text as one thinking notice.
+          final bufferedDeltas = liveAnswer ? null : <String>[];
           final nativeToolCalls = <Object?>[];
           final onToken = _onToken;
           String? providerId;
@@ -345,13 +391,22 @@ class SubstrateBridge {
               case LlmStreamChunk(:final text):
                 buffer.write(text);
                 // External/user-request path (P1.3 #7): forward each delta
-                // live as it arrives. Awaited so the downstream sink (the SSE
-                // edge, once wired) keeps ordering and backpressure. The
-                // buffer is still accumulated — the returned `text` feeds the
-                // procedure's persist step and preserves correct late-failure
-                // HTTP status. With no sink bound the chunk is only buffered
-                // (the internal / free-time path).
-                if (onToken != null) await onToken(text);
+                // live as it arrives, but ONLY when this is a live answer turn
+                // (no tools on offer, answer channel). A tools-bearing turn is
+                // buffered and routed once at completion (§ 9.2 Todo 6) so a
+                // `call:NAME{…}` decision never leaks onto the answer channel;
+                // its deltas are captured to be replayed verbatim if it turns
+                // out to be a terminal answer. Awaited so the downstream sink
+                // keeps ordering and backpressure. The buffer is still
+                // accumulated — the returned `text` feeds the procedure's
+                // persist step and preserves correct late-failure HTTP status.
+                // With no sink bound the chunk is only buffered (the internal /
+                // free-time path).
+                if (liveAnswer && onToken != null) {
+                  await onToken(text);
+                } else {
+                  bufferedDeltas?.add(text);
+                }
               case LlmStreamToolCallProposed(
                   :final toolCallId,
                   :final toolName,
@@ -382,6 +437,28 @@ class SubstrateBridge {
                   answer,
                   catalogue,
                 );
+                // Buffered-turn routing (§ 9.2 Todo 6). A live answer turn
+                // already streamed its tokens, so it needs no completion
+                // routing. Otherwise route the buffered text by outcome:
+                //   - a tool-deciding turn (it resolved to a tool call) is the
+                //     model *working* — its text is the `call:NAME{…}` decision,
+                //     which goes to the thinking channel as one notice and never
+                //     to the answer the user reads;
+                //   - a plain completion on the thinking channel surfaces its
+                //     whole text as one thinking notice;
+                //   - a plain completion on the answer channel IS the answer:
+                //     replay its captured deltas to the answer channel in their
+                //     original chunk boundaries, so a buffered terminal answer
+                //     still streams to the user.
+                if (!liveAnswer) {
+                  if (toolCalls.isNotEmpty || toThinking) {
+                    _onThinking?.call(answer);
+                  } else if (onToken != null && bufferedDeltas != null) {
+                    for (final delta in bufferedDeltas) {
+                      await onToken(delta);
+                    }
+                  }
+                }
                 // Raw-trail observation (§5.2 / §10 step #4): fire the wire +
                 // answer + report to the run's writer. Separate from the
                 // result map (PE-1) and best-effort (logging-spec §9) — a
@@ -496,6 +573,27 @@ class SubstrateBridge {
     if (firstNewline != -1) inner = inner.substring(firstNewline + 1);
     if (inner.endsWith('```')) inner = inner.substring(0, inner.length - 3);
     return inner.trim();
+  }
+
+  /// The deliberation roles whose completions default to the **thinking**
+  /// channel (§ 9.2 Todo 6): they reason *about* a prompt rather than answer the
+  /// user, so their text is working text, not an answer. Every other role
+  /// (notably [defaultRole], `assistant_to_user`) defaults to the answer
+  /// channel.
+  static const Set<String> _thinkingRoles = <String>{
+    'analyser',
+    'sub_thinker',
+    'evaluator',
+  };
+
+  /// Resolves whether a completion streams on the **thinking** channel.
+  ///
+  /// An explicit [channel] wins (`'thinking'` ⇒ thinking; any other value ⇒
+  /// answer); with none given the [role] decides — a [_thinkingRoles] member
+  /// streams to thinking, everything else to the answer channel.
+  static bool _resolvesToThinking(String? channel, String role) {
+    if (channel != null) return channel == 'thinking';
+    return _thinkingRoles.contains(role);
   }
 
   /// Builds a [ToolCatalogue] from the d4rt-supplied [tools] list (each entry
@@ -824,6 +922,19 @@ typedef SubstrateNoteSink = Future<void> Function(
   String category,
   Map<String, Object?> payload,
 );
+
+/// Receives the **thinking** channel text from [SubstrateBridge.llm]
+/// (`agent_loop_completion.md` § 9.2 Todo 6).
+///
+/// Fired once per buffered turn that routes to thinking — a tool-deciding
+/// turn's `call:NAME{…}` decision text, or the whole completion of a
+/// thinking-channel role — never per token. The engine binds a per-run sink
+/// only on the top-level external run; internal / free-time runs leave it
+/// unbound and the thinking text is dropped (no live caller). [text] is the
+/// completion's full text. Fire-and-forget (unlike [SubstrateTokenSink]): a
+/// thinking notice carries no answer text, so it neither paces nor blocks the
+/// body's streaming.
+typedef SubstrateThinkingSink = void Function(String text);
 
 /// Resolves a provider id to the wire [ToolProtocol] it speaks (Extension F
 /// step 2 / step 10).

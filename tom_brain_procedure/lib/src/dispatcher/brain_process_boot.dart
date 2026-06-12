@@ -802,6 +802,21 @@ abstract final class BrainProcessBoot {
         );
       }
 
+      // The per-run thinking channel (§ 9.2 Todo 6): a tool-deciding turn's
+      // `call:NAME{…}` text — and any thinking-channel role's completion — is
+      // surfaced beside the answer as an out-of-band notice, never folded into
+      // the answer the user reads. Like [noticeSink] it is a buffered channel's
+      // own message (Telegram) and ignored by a per-chunk channel (SSE), and is
+      // fire-and-forget so a thinking notice neither blocks nor paces the body.
+      void thinkingSink(String text) {
+        unawaited(
+          access
+              .deliver(OutboundChunk(textDelta: '', notice: text))
+              .drain<void>()
+              .catchError((_) {}),
+        );
+      }
+
       // When the turn began serving — the §5.4 turn-header timestamp. Captured
       // before the run so it brackets the whole turn.
       final startedAt = DateTime.now().toUtc();
@@ -883,6 +898,7 @@ abstract final class BrainProcessBoot {
                   ),
                   tokenSink: streamDelta,
                   noticeSink: noticeSink,
+                  thinkingSink: thinkingSink,
                 )
                 .outcome;
           },
