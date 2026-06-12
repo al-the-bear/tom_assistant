@@ -5,8 +5,10 @@
 //     parses round-trip into the expected typed values.
 //   - Optional sections default to the typed-record defaults when
 //     omitted.
-//   - `${NAME}` env-var substitution works for string fields and
-//     raises on unknown / malformed tokens.
+//   - `${env:NAME}` env-var substitution works for string fields and
+//     raises on an undefined env var; a bare `${name}` (no `env:`
+//     prefix) is an unbound-placeholder error; an unterminated `${`
+//     and a plain `$` are left as-is.
 //   - Every required field, type-mismatch, range-violation, and
 //     topology-violation produces a `MemoryConfigException` whose
 //     message names the offending key path.
@@ -27,7 +29,7 @@ void main() {
 memory:
   root: /var/lib/tom_brain/memory
   sqliteVec:
-    extensionPath: \${TOM_BINARIES}/sqlite_vec/\${PLATFORM}/vec0.so
+    extensionPath: \${env:TOM_BINARIES}/sqlite_vec/\${env:PLATFORM}/vec0.so
   retrieval:
     rrf:
       k: 60
@@ -180,16 +182,16 @@ memory:
   });
 
   group('MemoryConfigLoader.parse — env substitution', () {
-    test('expands `\${NAME}` tokens in string fields', () {
+    test('expands `\${env:NAME}` tokens in string fields', () {
       final cfg = MemoryConfigLoader.parse(
         '''
 memory:
-  root: \${BRAIN_ROOT}/memory
+  root: \${env:BRAIN_ROOT}/memory
   sqliteVec:
     extensionPath: /opt/vec0.so
   replication:
     role: authority
-    writeLogDir: \${BRAIN_ROOT}/write-log
+    writeLogDir: \${env:BRAIN_ROOT}/write-log
 ''',
         envVars: {'BRAIN_ROOT': '/srv/brain'},
       );
@@ -201,7 +203,7 @@ memory:
       expect(
         () => MemoryConfigLoader.parse('''
 memory:
-  root: \${UNSET_VAR}/memory
+  root: \${env:UNSET_VAR}/memory
   sqliteVec:
     extensionPath: /opt/vec0.so
   replication:
@@ -221,11 +223,25 @@ memory:
       );
     });
 
-    test('raises on unterminated `\${` token', () {
+    test('unterminated `\${` (no closing brace) is left as-is', () {
+      final cfg = MemoryConfigLoader.parse('''
+memory:
+  root: "\${UNCLOSED"
+  sqliteVec:
+    extensionPath: /opt/vec0.so
+  replication:
+    role: authority
+    writeLogDir: /tmp/write-log
+''');
+      expect(cfg.root, r'${UNCLOSED');
+    });
+
+    test('a bare `\${name}` (no `env:` prefix) is an unbound-placeholder '
+        'error', () {
       expect(
         () => MemoryConfigLoader.parse('''
 memory:
-  root: "\${UNCLOSED"
+  root: "\${UNCLOSED}"
   sqliteVec:
     extensionPath: /opt/vec0.so
   replication:
@@ -236,13 +252,13 @@ memory:
           isA<MemoryConfigException>().having(
             (e) => e.message,
             'message',
-            contains('unterminated'),
+            allOf(contains('memory.root'), contains('unbound placeholder')),
           ),
         ),
       );
     });
 
-    test('raises on empty `\${}` token', () {
+    test('empty `\${}` is an unbound-placeholder error', () {
       expect(
         () => MemoryConfigLoader.parse('''
 memory:
@@ -257,7 +273,7 @@ memory:
           isA<MemoryConfigException>().having(
             (e) => e.message,
             'message',
-            contains('empty'),
+            contains('unbound placeholder'),
           ),
         ),
       );
@@ -341,7 +357,7 @@ memory:
 memory:
   root: /var/lib/tom_brain/memory
   sqliteVec:
-    binariesRoot: \${TOM_BINARIES}/sqlite_vec
+    binariesRoot: \${env:TOM_BINARIES}/sqlite_vec
   replication:
     role: authority
     writeLogDir: /tmp/write-log

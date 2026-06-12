@@ -23,8 +23,9 @@
 
 import '../config/history_policy.dart' show defaultHistoryCompactionTemplate;
 import '../config/prompt_template_config.dart';
-import '../prompts/placeholder_resolver.dart';
 import '../primitives_native/trail_note.dart';
+
+import 'package:tom_core_agentic/tom_core_agentic.dart' show PlaceholderResolver;
 
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show ConversationHistory, HistorySizing, HistoryTurn;

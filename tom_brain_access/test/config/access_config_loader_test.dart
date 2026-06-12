@@ -24,7 +24,7 @@
 //   5. Forward-only schema (AC-12): an unknown top-level section, and an
 //      unknown key *within* `access:` (or any subsection / user entry), is
 //      rejected at load — never silently ignored.
-//   6. `${ENV}` substitution expands each user's OpenAI bearer-token entries,
+//   6. `${env:NAME}` substitution expands each user's OpenAI bearer-token entries,
 //      the Telegram bot token, and each user's Telegram user ids from the
 //      supplied env map; an undefined token is a loud error; the loader never
 //      reads `Platform.environment` itself.
@@ -663,14 +663,14 @@ access:
       expect(config.edgeStateDirectory, '/var/lib/tom_brain/edge_state');
     });
 
-    test('expands \${ENV} in the directory', () {
+    test('expands \${env:NAME} in the directory', () {
       const doc = r'''
 access:
   openai: { port: 1 }
   rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
   quota: { dailyCap: 1 }
   edgeState:
-    directory: "${STATE_DIR}/edge"
+    directory: "${env:STATE_DIR}/edge"
 ''';
       final config = AccessConfigLoader.parse(
         doc,
@@ -740,14 +740,14 @@ access:
       expect(config.historyDirectory, '/var/lib/tom_brain/history');
     });
 
-    test('expands \${ENV} in the directory', () {
+    test('expands \${env:NAME} in the directory', () {
       const doc = r'''
 access:
   openai: { port: 1 }
   rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
   quota: { dailyCap: 1 }
   history:
-    directory: "${HISTORY_DIR}/history"
+    directory: "${env:HISTORY_DIR}/history"
 ''';
       final config = AccessConfigLoader.parse(
         doc,
@@ -865,18 +865,18 @@ access:
     });
   });
 
-  group('E.44 \${ENV} substitution', () {
+  group('E.44 \${env:NAME} substitution', () {
     test('expands user bearer-token entries and the Telegram bot token', () {
       const doc = r'''
 access:
   openai:
     port: 8080
   telegram:
-    botToken: "${TG_TOKEN}"
+    botToken: "${env:TG_TOKEN}"
   users:
     - id: alice
       openaiBearerTokens:
-        - "${ALICE_TOKEN}"
+        - "${env:ALICE_TOKEN}"
       telegramUserIds:
         - "111"
   rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
@@ -901,7 +901,7 @@ access:
   users:
     - id: alice
       openaiBearerTokens:
-        - "${MISSING}"
+        - "${env:MISSING}"
   rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
   quota: { dailyCap: 1 }
 ''';
@@ -910,14 +910,14 @@ access:
         throwsA(isA<AccessConfigException>().having(
           (e) => e.message,
           'message',
-          contains('undefined env var `\${MISSING}`'),
+          contains('undefined env var `\${env:MISSING}`'),
         )),
       );
     });
 
     test('expands a user\'s Telegram user ids from the env map', () {
       // The deployment workflow sources the owner whitelist from the shell
-      // profile (e.g. `${TELEGRAM_TOM_BRAIN_USER}`); the expanded numeric id —
+      // profile (e.g. `${env:TELEGRAM_TOM_BRAIN_USER}`); the expanded numeric id —
       // not the placeholder — becomes the identity-binding key a real sender
       // is matched against.
       const doc = r'''
@@ -926,7 +926,7 @@ access:
   users:
     - id: alice
       telegramUserIds:
-        - "${OWNER_ID}"
+        - "${env:OWNER_ID}"
   rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
   quota: { dailyCap: 1 }
 ''';
@@ -944,7 +944,7 @@ access:
   users:
     - id: alice
       telegramUserIds:
-        - "${MISSING_OWNER}"
+        - "${env:MISSING_OWNER}"
   rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
   quota: { dailyCap: 1 }
 ''';
@@ -953,7 +953,7 @@ access:
         throwsA(isA<AccessConfigException>().having(
           (e) => e.message,
           'message',
-          contains('undefined env var `\${MISSING_OWNER}`'),
+          contains('undefined env var `\${env:MISSING_OWNER}`'),
         )),
       );
     });

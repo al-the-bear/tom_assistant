@@ -1,17 +1,13 @@
 // Extension F — prompt-assembly module barrel
 // (`tom_brain_procedure_specification.md` § 16, § 21.5, § 21.7).
 //
-// Step 1 lands the placeholder system: the scope stack, the d4rt
-// expression context + evaluator seam, the resolver, and the typed
-// failures. The `PromptTemplateConfig` loader (§ 21.5) lands at step 3 in
-// the `config/` module (beside the layer-1/2 provider + model configs it
-// binds), not here — the dependency arrows point `config → prompts` only,
-// so the template loader (which depends on `ProviderRegistry` /
-// `ModelConfigStore`) lives where it can import them without a cycle. It
-// is exported through `config/config.dart`.
+// The placeholder resolver *core* — the scope stack, the resolver, the
+// typed failures, and the `PlaceholderExpressions` seam — now lives in
+// `tom_core_agentic` (the lowest shared layer, so the substrate / access /
+// memory config loaders resolve through the same mechanism). What stays
+// here is the engine's d4rt backing for that seam: the
+// `D4rtExpressionContext` (which synthesises d4rt source) and the
+// `ExpressionEvaluator` implementations that own the d4rt dependency.
 
 export 'd4rt_expression_context.dart';
 export 'expression_evaluator.dart';
-export 'placeholder_errors.dart';
-export 'placeholder_resolver.dart';
-export 'placeholder_stack.dart';

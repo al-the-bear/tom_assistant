@@ -28,8 +28,6 @@ import 'dart:io';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
-import '../prompts/placeholder_errors.dart';
-import '../prompts/placeholder_resolver.dart';
 import 'llm_config_errors.dart';
 
 /// The wire dialect a provider speaks. Parsed from the `apiType` field.

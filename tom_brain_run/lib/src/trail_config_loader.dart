@@ -2,9 +2,9 @@
 // into a `TrailConfig?` (`tom_brain_logging.md` §4.1 / §8; §10 step #1).
 //
 // Loading goes through the canonical plain-map loader (`loadYamlAsMap`) so no
-// `YamlMap`/`YamlList` node ever leaks into a `TrailConfig`, and `${ENV}`
-// tokens in `root` are expanded through the canonical `expandEnvVars`. The
-// loader is pure and deterministic:
+// `YamlMap`/`YamlList` node ever leaks into a `TrailConfig`, and `${env:NAME}`
+// tokens in `root` are expanded through the shared `YamlConfigReader.expandEnv`
+// (the one placeholder resolver). The loader is pure and deterministic:
 //
 //   * No `trail:` block at all  → returns `null` (unconfigured mode). The
 //     caller resolves that to `TrailMode.unconfigured`.
@@ -18,7 +18,7 @@
 // path), matching the discipline of the sibling section loaders.
 
 import 'package:tom_core_agentic/tom_core_agentic.dart'
-    show MapFieldReader, expandEnvVars, loadYamlAsMap;
+    show MapFieldReader, YamlConfigReader, loadYamlAsMap;
 
 import 'trail_config.dart';
 
@@ -56,7 +56,8 @@ abstract final class TrailConfigLoader {
   ///
   /// Reads only `doc['trail']`, tolerating sibling sections — the same
   /// re-parse-the-whole-document contract every section loader uses. [envVars]
-  /// expands `${NAME}` tokens inside `root` (typically `Platform.environment`).
+  /// expands `${env:NAME}` tokens inside `root` (typically
+  /// `Platform.environment`).
   ///
   /// Returns `null` when there is no `trail:` block (unconfigured mode). Pure:
   /// no I/O, no clock.
@@ -78,12 +79,10 @@ abstract final class TrailConfigLoader {
     _rejectUnknownKeys(trail, _allowedTrailKeys, 'trail');
 
     final String rawRoot = _reader.requireString(trail, 'root', 'trail.root');
-    final String root = expandEnvVars(
-      rawRoot,
-      envVars,
-      path: 'trail.root',
+    final String root = YamlConfigReader(
+      env: envVars,
       errorFactory: TrailConfigException.new,
-    );
+    ).expandEnv(rawRoot, 'trail.root');
 
     final Map<Object?, Object?> capture =
         _reader.optionalMap(trail, 'capture', 'trail.capture') ?? const {};

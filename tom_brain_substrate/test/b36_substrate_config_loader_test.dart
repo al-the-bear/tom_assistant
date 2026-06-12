@@ -9,8 +9,10 @@
 //   * Cross-section validation (roleRoutes → providers refs,
 //     embedding → providers refs, priceTable → providers refs,
 //     webSearch.defaultProvider must be one of the providers).
-//   * `${ENV}` substitution (success, missing var, empty token,
-//     unterminated brace).
+//   * `${env:NAME}` substitution (success, undefined var) and a bare
+//     `${NAME}` (no `env:` prefix) surfacing as a located
+//     unbound-placeholder error — config values reach the environment
+//     only through `${env:NAME}`.
 //   * MCP transport / auth coupling (stdio + bearer is rejected at
 //     load time per the B.34 `McpAuthResolver` invariant; stdio +
 //     `url:` rejected; http + `command:` rejected).
@@ -670,14 +672,14 @@ substrate:
   });
 
   group('B.36 SubstrateConfigLoader.parse — env substitution', () {
-    test('expands \${TOKEN} in provider baseUrl', () {
+    test('expands \${env:TOKEN} in provider baseUrl', () {
       final cfg = SubstrateConfigLoader.parse(
         '''
 substrate:
   providers:
     - id: o
       kind: ollama
-      baseUrl: \${OLLAMA_URL}
+      baseUrl: \${env:OLLAMA_URL}
       models: [m]
   roleRoutes:
     a:
@@ -695,7 +697,7 @@ substrate:
       );
     });
 
-    test('expands \${TOKEN} in api_key.token and secretRef', () {
+    test('expands \${env:TOKEN} in api_key.token and secretRef', () {
       final cfg = SubstrateConfigLoader.parse(
         '''
 substrate:
@@ -706,14 +708,14 @@ substrate:
       models: [m]
       auth:
         method: api_key
-        token: \${INLINE}
+        token: \${env:INLINE}
     - id: o2
       kind: openai
       baseUrl: http://api.example.com
       models: [m]
       auth:
         method: api_key
-        secretRef: \${REF}
+        secretRef: \${env:REF}
   roleRoutes:
     a:
       - {providerId: o, model: m}
@@ -736,7 +738,7 @@ substrate:
   providers:
     - id: o
       kind: ollama
-      baseUrl: \${MISSING}
+      baseUrl: \${env:MISSING}
       models: [m]
   roleRoutes:
     a:
@@ -757,7 +759,8 @@ substrate:
       );
     });
 
-    test('unterminated \${ raises SubstrateConfigException', () {
+    test('a bare \${NAME} (no env: prefix) is a located unbound-placeholder '
+        'error', () {
       expect(
         () => SubstrateConfigLoader.parse(
           '''
@@ -765,7 +768,7 @@ substrate:
   providers:
     - id: o
       kind: ollama
-      baseUrl: "\${UNCLOSED"
+      baseUrl: "\${OLLAMA_URL}"
       models: [m]
   roleRoutes:
     a:
@@ -775,19 +778,19 @@ substrate:
     model: m
     dims: 1
 ''',
-          envVars: const {'UNCLOSED': 'x'},
+          envVars: const {'OLLAMA_URL': 'http://x'},
         ),
         throwsA(
           isA<SubstrateConfigException>().having(
             (e) => e.message,
             'message',
-            contains('unterminated'),
+            contains('unbound placeholder'),
           ),
         ),
       );
     });
 
-    test('empty \${} raises SubstrateConfigException', () {
+    test('empty \${} is a located unbound-placeholder error', () {
       expect(
         () => SubstrateConfigLoader.parse(
           '''
@@ -810,7 +813,7 @@ substrate:
           isA<SubstrateConfigException>().having(
             (e) => e.message,
             'message',
-            contains('empty'),
+            contains('unbound placeholder'),
           ),
         ),
       );

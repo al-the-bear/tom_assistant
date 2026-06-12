@@ -148,7 +148,7 @@ void main() {
 memory:
   root: ${tempDir.path}
   sqliteVec:
-    extensionPath: \${TOM_BINARIES}/sqlite_vec/\${PLATFORM}/vec0.so
+    extensionPath: \${env:TOM_BINARIES}/sqlite_vec/\${env:PLATFORM}/vec0.so
   retrieval:
     rrf:
       k: 60

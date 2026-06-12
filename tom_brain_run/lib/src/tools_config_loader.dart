@@ -2,9 +2,10 @@
 // into a `ToolsConfig?` (§ 21.4; the two-tier file-scope roots).
 //
 // Loading goes through the canonical plain-map loader (`loadYamlAsMap`) so no
-// `YamlMap`/`YamlList` node ever leaks into a `ToolsConfig`, and `${ENV}`
-// tokens in each root are expanded through the canonical `expandEnvVars`. The
-// loader is pure and deterministic, mirroring `TrailConfigLoader`:
+// `YamlMap`/`YamlList` node ever leaks into a `ToolsConfig`, and `${env:NAME}`
+// tokens in each root are expanded through the shared
+// `YamlConfigReader.expandEnv` (the one placeholder resolver). The loader is
+// pure and deterministic, mirroring `TrailConfigLoader`:
 //
 //   * No `tools:` block at all      → returns `null`. The caller resolves that
 //     to the engine's neutral placeholder root.
@@ -16,7 +17,7 @@
 // path), matching the discipline of the sibling section loaders.
 
 import 'package:tom_core_agentic/tom_core_agentic.dart'
-    show MapFieldReader, expandEnvVars, loadYamlAsMap;
+    show MapFieldReader, YamlConfigReader, loadYamlAsMap;
 
 import 'tools_config.dart';
 
@@ -75,8 +76,9 @@ abstract final class ToolsConfigLoader {
     return ToolsConfig(writeScope: writeScope, readScope: readScope);
   }
 
-  /// Reads an optional list of file-scope roots under [key], expanding `${ENV}`
-  /// tokens. Returns an empty list when the key is absent; an empty list under
+  /// Reads an optional list of file-scope roots under [key], expanding
+  /// `${env:NAME}` tokens. Returns an empty list when the key is absent; an
+  /// empty list under
   /// a present key is a located error (a tier should be omitted, not empty).
   static List<String> _readScopeList(
     Map<Object?, Object?> tools,
@@ -92,16 +94,15 @@ abstract final class ToolsConfigLoader {
         'instead of listing an empty tier.',
       );
     }
+    final reader = YamlConfigReader(
+      env: envVars,
+      errorFactory: ToolsConfigException.new,
+    );
     final List<String> roots = <String>[];
     for (var i = 0; i < raw.length; i++) {
       final String path = 'tools.$key[$i]';
       final String value = _reader.stringValue(raw[i], path)!;
-      roots.add(expandEnvVars(
-        value,
-        envVars,
-        path: path,
-        errorFactory: ToolsConfigException.new,
-      ));
+      roots.add(reader.expandEnv(value, path));
     }
     return roots;
   }

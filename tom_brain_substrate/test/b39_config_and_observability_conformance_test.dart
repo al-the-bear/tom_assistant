@@ -809,14 +809,14 @@ substrate:
   providers:
     - id: local-ollama
       kind: ollama
-      baseUrl: ${OLLAMA_URL}
+      baseUrl: ${env:OLLAMA_URL}
       models: [gemma3:27b]
     - id: openrouter
       kind: openai
       baseUrl: https://openrouter.ai/api/v1
       auth:
         method: api_key
-        secretRef: ${OPENROUTER_TOKEN_PATH}
+        secretRef: ${env:OPENROUTER_TOKEN_PATH}
       models: [gpt-4o-mini]
   roleRoutes:
     analyser:

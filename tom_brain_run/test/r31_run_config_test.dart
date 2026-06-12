@@ -18,7 +18,7 @@
 // consumes by delegating each to its *owning* loader (the design the access
 // config sub-barrel documents): `substrate:` → `SubstrateConfigLoader`,
 // `memory:` → `MemoryConfigLoader`, `access:` → `AccessConfigLoader`. Each
-// section loader owns its schema, its `${ENV}` expansion, and its located
+// section loader owns its schema, its `${env:NAME}` expansion, and its located
 // (dotted-key-path) errors — so the run loader needs no error plumbing of its
 // own.
 //
@@ -593,7 +593,7 @@ tools:
       const String doc = '''
 tools:
   writeScope:
-    - \${PROJECT_ROOT}/sub''';
+    - \${env:PROJECT_ROOT}/sub''';
 
       final ToolsConfig? tools = ToolsConfigLoader.parse(
         doc,

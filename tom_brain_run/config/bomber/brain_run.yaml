@@ -2,7 +2,7 @@
 #
 # This file is VERSION-CONTROLLED (config/<host>/brain_run.yaml). It carries no
 # real secrets: the only sensitive values — the Telegram bot token and the
-# owner's Telegram user id — are `${ENV}` tokens resolved at boot from the shell
+# owner's Telegram user id — are `${env:NAME}` tokens resolved at boot from the shell
 # environment (exported in ~/.bashrc on bomber):
 #
 #   TELEGRAM_TOM_BRAIN_TOKEN — the @BotFather token for the tom_brain bot
@@ -163,7 +163,7 @@ access:
     port: 8082
     basePath: /v1
   telegram:
-    botToken: ${TELEGRAM_TOM_BRAIN_TOKEN}
+    botToken: ${env:TELEGRAM_TOM_BRAIN_TOKEN}
   users:
     - id: owner
       displayName: Owner
@@ -172,7 +172,7 @@ access:
         # secret. Override per deployment if the edge is ever exposed.
         - run-token
       telegramUserIds:
-        - ${TELEGRAM_TOM_BRAIN_USER}
+        - ${env:TELEGRAM_TOM_BRAIN_USER}
   # Rate limit / quota set very high (effectively unlimited): the owner is the
   # sole principal and the brain should never throttle or quota-block its own
   # multi-step agentic work.

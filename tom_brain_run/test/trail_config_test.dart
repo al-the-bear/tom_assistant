@@ -23,7 +23,7 @@
 // ── What this suite proves ───────────────────────────────────────────
 //
 //   Group A — TrailConfigLoader.parse (pure): an absent block → null
-//   (unconfigured); a full block → a fully-populated `TrailConfig`; `${ENV}`
+//   (unconfigured); a full block → a fully-populated `TrailConfig`; `${env:NAME}`
 //   expansion of `root`; the §8 defaults when caps/capture are omitted; and a
 //   located error for each malformed shape (missing root, non-positive cap,
 //   unknown key under `trail:` / `trail.capture`, undefined env var, non-map
@@ -147,9 +147,9 @@ void main() {
       expect(trail.captureInternalRoles, isTrue);
     });
 
-    test('\${ENV} in root is expanded from envVars', () {
+    test('\${env:NAME} in root is expanded from envVars', () {
       final TrailConfig? trail = TrailConfigLoader.parse(
-        'trail:\n  root: \${TOM_BRAIN_TRAIL_ROOT}',
+        'trail:\n  root: \${env:TOM_BRAIN_TRAIL_ROOT}',
         envVars: const {'TOM_BRAIN_TRAIL_ROOT': '/env/trail/root'},
       );
       expect(trail, isNotNull);
@@ -213,7 +213,7 @@ void main() {
 
     test('undefined env var in root → located error', () {
       expect(
-        () => TrailConfigLoader.parse('trail:\n  root: \${NOPE}'),
+        () => TrailConfigLoader.parse('trail:\n  root: \${env:NOPE}'),
         throwsA(
           isA<TrailConfigException>().having(
             (e) => e.toString(),

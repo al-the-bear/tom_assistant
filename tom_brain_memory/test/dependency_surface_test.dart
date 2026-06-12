@@ -140,10 +140,10 @@ void main() {
     });
 
     test('tom_core_agentic exposes YamlConfigReader (B.1)', () {
-      // `MemoryConfigLoader` routes its YAML field coercion + `${ENV}`
+      // `MemoryConfigLoader` routes its YAML field coercion + `${env:NAME}`
       // expansion through `YamlConfigReader`. Functional smoke-test:
       // build a reader bound to a domain-exception factory and prove a
-      // required-string read and an `${ENV}` expansion both work, so a
+      // required-string read and an `${env:NAME}` expansion both work, so a
       // signature change in the shared reader surfaces here, not in the
       // loader's first call site.
       final reader = agentic.YamlConfigReader(
@@ -152,7 +152,7 @@ void main() {
       );
       final node = yaml.loadYaml('name: tom\n') as yaml.YamlMap;
       expect(reader.requireString(node, 'name', 'root.name'), 'tom');
-      expect(reader.expandEnv(r'${TOKEN}', 'root.token'), 'secret');
+      expect(reader.expandEnv(r'${env:TOKEN}', 'root.token'), 'secret');
     });
 
     test('yaml exposes the loadYaml entry + YamlMap surface (A.32)', () {
