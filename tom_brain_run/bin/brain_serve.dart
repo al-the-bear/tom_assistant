@@ -81,6 +81,12 @@ Future<void> main(List<String> args) async {
     'Telegram channel: '
     '${config.access.hasTelegram ? 'enabled (long-polling)' : 'disabled (no access.telegram.botToken)'}.',
   );
+
+  // Point the operator at the read-only Trail Observatory (a separate loopback
+  // process). `tomLog.status` renders the `STATUS ` level; the banner names the
+  // URL to open and the trail root to launch it against.
+  tomLog.status(ObservatoryBanner.forStartup(config.trail));
+
   stdout.writeln('Press Ctrl-C to stop.');
   await stdout.flush();
 

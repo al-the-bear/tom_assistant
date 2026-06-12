@@ -38,6 +38,12 @@
 //   modes — the enabled banner names the root and the six full-tree surfaces;
 //   the unconfigured banner names the CWD, the disabled surfaces, and the
 //   "set `trail.root`" hint.
+//
+//   Group D — ObservatoryBanner.forStartup (pure): the startup banner pointing
+//   at the read-only Trail Observatory — the configured banner shows the
+//   loopback URL, the launch command, and the trail root (with host/port
+//   overrides flowing into the URL); the unconfigured banner still shows the
+//   URL but explains there is no trail tree to inspect yet.
 
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:test/test.dart';
@@ -304,6 +310,39 @@ void main() {
       expect(banner, contains('component logs only'));
       expect(banner, contains('/srv/run/cwd'));
       expect(banner, contains('DISABLED'));
+      expect(banner, contains('trail.root'));
+    });
+  });
+
+  group('D · ObservatoryBanner.forStartup (pure)', () {
+    test('configured banner shows the default loopback URL, the launch command, '
+        'and the trail root', () {
+      final TrailConfig trail =
+          TrailConfigLoader.parse('trail:\n  root: /srv/brain/trail')!;
+      final String banner = ObservatoryBanner.forStartup(trail);
+      expect(banner, contains('[tom_brain.observatory]'));
+      expect(banner, contains('http://127.0.0.1:8787/'));
+      expect(banner, contains('observatory.dart'));
+      expect(banner, contains('/srv/brain/trail'));
+    });
+
+    test('host/port overrides flow into the URL', () {
+      final TrailConfig trail =
+          TrailConfigLoader.parse('trail:\n  root: /srv/brain/trail')!;
+      final String banner = ObservatoryBanner.forStartup(
+        trail,
+        host: '0.0.0.0',
+        port: 9000,
+      );
+      expect(banner, contains('http://0.0.0.0:9000/'));
+    });
+
+    test('unconfigured banner still shows the URL but explains there is no '
+        'trail tree yet', () {
+      final String banner = ObservatoryBanner.forStartup(null);
+      expect(banner, contains('[tom_brain.observatory]'));
+      expect(banner, contains('http://127.0.0.1:8787/'));
+      expect(banner, contains('NOT CONFIGURED'));
       expect(banner, contains('trail.root'));
     });
   });
