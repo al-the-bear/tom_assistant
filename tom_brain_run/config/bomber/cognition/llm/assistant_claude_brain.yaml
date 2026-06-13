@@ -1,0 +1,19 @@
+# The `assistant_claude_brain` LLM route (`prompt_configuration.md` §8 / §8.1).
+#
+# The route `assist_user` dispatches over — Claude (Haiku) driven through the
+# Agent-SDK provider in **tom_brain session mode**: the `claude:haiku:brain`
+# provider profile in `brain_run.yaml` persists one Claude-Code session keyed by
+# the live tom_brain session id, so every assist_user prompt within a user's
+# session resumes the same Claude conversation (evict + fresh-retry on a
+# session-not-found error). The user-dedication anchor is still prepended by the
+# role registry before the prompt reaches Claude.
+#
+# Only `assist_user` points here; background `dreaming` stays on the local Gemma
+# `assistant` route (its dream runs carry no tom_brain session id, so brain mode
+# would degrade to fresh anyway, and routing background work through Claude is
+# neither intended nor cheap). Add further entries to make this a
+# rotation/failover chain (first reachable wins).
+
+route:
+  - provider: claude:haiku:brain
+    model: claude-haiku-4-5-20251001

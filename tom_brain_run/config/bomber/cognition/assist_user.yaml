@@ -21,7 +21,7 @@
 # `evaluator` verdict.
 
 tools: all
-llm: assistant
+llm: assistant_claude_brain
 role: assistant_to_user
 
 # The `prompt_analyzer` sub-procedure (`prompt_configuration.md` §10) carries the
