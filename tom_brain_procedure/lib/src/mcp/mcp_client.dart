@@ -207,6 +207,27 @@ final class McpClient {
     }
   }
 
+  /// Drops the pooled connection for [id], closing it best-effort.
+  ///
+  /// Unlike a failed-connect eviction (which the pool does on its own), a
+  /// connection that came up and later went dead stays pooled; the liveness
+  /// monitor (`agent_sdk_provider_and_mcp_liveness.md` § 3.2) calls this when a
+  /// probe finds [id] dead, so the next probe reconnects rather than re-failing
+  /// against the same stale connection. Idempotent: a no-op when nothing is
+  /// pooled for [id]. A close-time [McpFailure] is swallowed — eviction is
+  /// teardown, not a call path that should surface the failure again.
+  Future<void> evict(String id) async {
+    final future = _pool.remove(id);
+    if (future == null) return;
+    try {
+      final connection = await future;
+      await connection.close();
+    } on McpFailure {
+      // A connection that never came up (or fails to close) has nothing more to
+      // tear down; the original failure was already surfaced to its caller.
+    }
+  }
+
   /// Closes every pooled connection. Idempotent — safe to call at shutdown
   /// even if no connection was ever opened.
   Future<void> close() async {

@@ -55,6 +55,7 @@ final class McpServerConfig {
     this.args = const <String>[],
     this.url,
     this.headers = const <String, String>{},
+    this.exposeToLlms = false,
   });
 
   /// The server id — the handle `mcp.list(server)` / `mcp.call(server, …)`
@@ -80,6 +81,15 @@ final class McpServerConfig {
   /// token).
   final Map<String, String> headers;
 
+  /// Whether this server's tools are offered to procedures / LLMs.
+  ///
+  /// Closed by default (`false`): a configured-but-unexposed server is
+  /// reachable by inspection tooling but never auto-offered to a model. A
+  /// server's tools become available only when this is `true` **and** the
+  /// liveness monitor reports it live (`offered = exposeToLlms && isLive`;
+  /// `agent_sdk_provider_and_mcp_liveness.md` § 3.1, § 3.3).
+  final bool exposeToLlms;
+
   /// The `{id, transport, description}` view `mcp.servers()` returns.
   Map<String, Object?> toAdvertisement() => <String, Object?>{
         'id': id,
@@ -96,7 +106,8 @@ final class McpServerConfig {
       other.command == command &&
       _sameList(other.args, args) &&
       other.url == url &&
-      _sameMap(other.headers, headers);
+      _sameMap(other.headers, headers) &&
+      other.exposeToLlms == exposeToLlms;
 
   @override
   int get hashCode => Object.hash(
@@ -109,6 +120,7 @@ final class McpServerConfig {
         Object.hashAllUnordered(
           headers.entries.map((e) => Object.hash(e.key, e.value)),
         ),
+        exposeToLlms,
       );
 
   @override
@@ -215,6 +227,12 @@ final class McpServersConfig {
       final args = _stringList(reader, entry, 'args', '$path.args');
       final url = reader.optionalString(entry, 'url', '$path.url');
       final headers = _stringMap(reader, entry, 'headers', '$path.headers');
+      final exposeToLlms = reader.optionalBool(
+            entry,
+            'exposeToLlms',
+            '$path.exposeToLlms',
+          ) ??
+          false;
 
       servers.add(McpServerConfig(
         id: id,
@@ -224,6 +242,7 @@ final class McpServersConfig {
         args: args,
         url: url,
         headers: headers,
+        exposeToLlms: exposeToLlms,
       ));
     }
 

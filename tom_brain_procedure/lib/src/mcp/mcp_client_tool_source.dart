@@ -21,7 +21,13 @@
 // which `tool.invoke` turns into the standard `{ok: false, error}` envelope.
 
 import '../tools/mcp_tool_source.dart';
+import '../tools/tool_failures.dart';
 import 'mcp_client.dart';
+
+/// Decides whether a configured server's tools are offered to procedures / LLMs
+/// at this moment: `offered(serverId) = exposeToLlms(serverId) &&
+/// monitor.isLive(serverId)` (`agent_sdk_provider_and_mcp_liveness.md` § 3.3).
+typedef McpOfferedGate = bool Function(String serverId);
 
 /// Adapts an [McpClient] to the tools layer's [McpToolSource] port.
 ///
@@ -32,8 +38,20 @@ final class McpClientToolSource implements McpToolSource {
   /// The process-spanning MCP client this projects onto the port.
   final McpClient client;
 
-  /// Wraps [client].
-  const McpClientToolSource(this.client);
+  /// The live availability gate (request (c) § 3.3). When `null`, every
+  /// configured server is offered (the pre-gate behaviour); otherwise a server
+  /// is offered only when `offered(serverId)` is `true`. The gate is consulted
+  /// both when enumerating tools for the merge ([listTools]) and on every call
+  /// ([invokeTool]) — so a server that flips dead / unexposed after boot stops
+  /// serving without a restart.
+  final McpOfferedGate? offered;
+
+  /// Wraps [client], optionally gating server availability through [offered].
+  const McpClientToolSource(this.client, {this.offered});
+
+  /// Whether [serverId] is offered right now: `true` when no gate is set, else
+  /// the gate's verdict.
+  bool _isOffered(String serverId) => offered?.call(serverId) ?? true;
 
   @override
   Future<List<McpToolDefinition>> listTools() async {
@@ -41,6 +59,7 @@ final class McpClientToolSource implements McpToolSource {
     for (final advert in client.servers()) {
       final serverId = advert['id'];
       if (serverId is! String) continue;
+      if (!_isOffered(serverId)) continue;
       final List<Map<String, Object?>> tools;
       try {
         tools = await client.listTools(serverId);
@@ -68,8 +87,19 @@ final class McpClientToolSource implements McpToolSource {
     String server,
     String tool,
     Map<String, Object?> arguments,
-  ) =>
-      client.callTool(server, tool, arguments);
+  ) async {
+    if (!_isOffered(server)) {
+      // A server that is unexposed or has flipped dead since boot is denied
+      // loudly per call (PE-1 style) rather than silently returning a wrong
+      // answer — request (c) § 3.3. `async` makes this a rejected Future,
+      // uniform with the client's own async call path.
+      throw ToolSurfaceUnavailable(
+        surface: 'mcp',
+        tool: 'mcp__${server}__$tool',
+      );
+    }
+    return client.callTool(server, tool, arguments);
+  }
 
   /// Narrows [value] to a `String`, falling back to [fallback] otherwise.
   static String _stringOr(Object? value, String fallback) =>
