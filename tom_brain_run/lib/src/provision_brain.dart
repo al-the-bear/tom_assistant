@@ -64,6 +64,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         LlmTrailSink,
         McpClient,
         McpClientToolSource,
+        McpOfferedGate,
         McpToolDefinition,
         MemoryAccessRecord,
         MemoryAccessSink,
@@ -97,6 +98,9 @@ import 'dream_config.dart' show DreamConfig;
 import 'dream_controller.dart' show DreamController;
 import 'late_dream_surface.dart' show LateDreamSurface;
 import 'mcp_channel_factory.dart' show productionMcpChannelFactory;
+import 'mcp_liveness_monitor.dart' show McpLivenessMonitor;
+import 'mcp_offered_wiring.dart'
+    show mcpLivenessMonitorOverClient, mcpOfferedGate;
 import 'model_override.dart'
     show ModelOverrideRegistry, TomBrainModelSwitcher;
 import 'incoming_trail_writer.dart' show IncomingTrailWriter;
@@ -210,6 +214,8 @@ Future<ProvisionedBrain> provisionBrain({
   RouteChainResolver? routeChainOf,
   McpClient? mcpClient,
   List<McpToolDefinition> mcpTools = const <McpToolDefinition>[],
+  McpOfferedGate? mcpOffered,
+  McpLivenessMonitor? mcpMonitor,
 }) async {
   final Directory scriptsDir =
       systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
@@ -249,8 +255,16 @@ Future<ProvisionedBrain> provisionBrain({
       routeChainOf: routeChainOf,
       mcpClient: mcpClient,
       mcpTools: mcpTools,
+      mcpOffered: mcpOffered,
     ),
   );
+
+  // Start the MCP liveness heartbeat (request c, § 3.2): once the engine is
+  // wired over the gate, the monitor owns the dynamic `isLive` half it reads.
+  // It kicks an immediate probe and then re-probes every 30 s, flipping a
+  // server in / out of `offered(...)` with no process restart. Stopped first in
+  // teardown (below) so no probe outlives the client it reaches through.
+  mcpMonitor?.start();
 
   // Wire the scheduled dream cadence into startup (item b) when a `dream:` block
   // is present AND enabled. The controller owns a `DreamCadenceLoop` whose
@@ -287,6 +301,7 @@ Future<ProvisionedBrain> provisionBrain({
     // pooled child processes / sockets are released here, last.
     shutdown: () async {
       if (dreamController != null) await dreamController.stop();
+      await mcpMonitor?.stop();
       await booted.shutdown();
       if (mcpClient != null) await mcpClient.close();
     },
@@ -430,6 +445,8 @@ Future<BrainProcess> standUpBrainProcess({
   CognitionConfig? cognitionConfig,
   McpClient? mcpClient,
   List<McpToolDefinition> mcpTools = const <McpToolDefinition>[],
+  McpOfferedGate? mcpOffered,
+  McpLivenessMonitor? mcpMonitor,
   ModelOverrideRegistry? modelOverrides,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
@@ -451,6 +468,8 @@ Future<BrainProcess> standUpBrainProcess({
     routeChainOf: routeChainOf,
     mcpClient: mcpClient,
     mcpTools: mcpTools,
+    mcpOffered: mcpOffered,
+    mcpMonitor: mcpMonitor,
   );
 
   final BrainAccessProcess process;
@@ -674,9 +693,26 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
           runConfig.mcpServers,
           DartMcpConnector(channelFactory: productionMcpChannelFactory()),
         );
+  // The dynamic availability gate (request c, § 3.3): the liveness monitor
+  // holds the `isLive` half, the `exposeToLlms` config holds the static half,
+  // and `mcpOfferedGate` folds them into `offered = exposeToLlms && isLive`. The
+  // monitor is built here (it needs the parsed `mcpServers:` config) and started
+  // inside the provisioner, which also stops it in teardown. Each configured id
+  // starts optimistically live, so the boot-time tool merge below offers every
+  // exposed server before the first probe.
+  final McpLivenessMonitor? mcpMonitor = mcpClient == null
+      ? null
+      : mcpLivenessMonitorOverClient(mcpClient, runConfig.mcpServers);
+  final McpOfferedGate? mcpOffered = mcpMonitor == null
+      ? null
+      : mcpOfferedGate(runConfig.mcpServers, mcpMonitor);
+  // Pre-fetch the merged tool descriptors once, through the same gate: an
+  // unexposed (or boot-dead) server contributes no `mcp__*` tools to the
+  // registry, while the per-run invoke path re-checks the gate so a server that
+  // later goes dead drops out of the tool loop live.
   final List<McpToolDefinition> mcpTools = mcpClient == null
       ? const <McpToolDefinition>[]
-      : await McpClientToolSource(mcpClient).listTools();
+      : await McpClientToolSource(mcpClient, offered: mcpOffered).listTools();
 
   return standUpBrainProcess(
     config: runConfig.access,
@@ -702,6 +738,8 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     cognitionConfig: cognitionConfig,
     mcpClient: mcpClient,
     mcpTools: mcpTools,
+    mcpOffered: mcpOffered,
+    mcpMonitor: mcpMonitor,
     modelOverrides: modelOverrides,
   );
 }

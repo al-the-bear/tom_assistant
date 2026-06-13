@@ -135,6 +135,8 @@ export 'src/telegram_inspector_impls.dart'
 export 'src/mcp_channel_factory.dart' show productionMcpChannelFactory;
 export 'src/mcp_liveness_monitor.dart'
     show McpLivenessMonitor, McpProbe, McpEvict;
+export 'src/mcp_offered_wiring.dart'
+    show mcpLivenessMonitorOverClient, mcpOfferedGate;
 
 // ── Per-profile memory log writer (logging-spec §5.6; §10 step #8) ────
 export 'src/memory_profile_log_writer.dart' show MemoryProfileLogWriter;
