@@ -30,6 +30,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         QueueSnapshotSource,
         TelegramLogInspector,
         TelegramLogTail,
+        TelegramMcpInspector,
         TelegramMemoryInspector,
         TelegramModelsInspector,
         TelegramPromptDigest,
@@ -44,6 +45,8 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show
         LiveRunRegistry,
         LiveRunUsage,
+        McpClient,
+        McpFailure,
         SessionTodoStores,
         TodoEntry,
         TodoStore,
@@ -1053,6 +1056,100 @@ final class ToolCatalogueInspector implements TelegramToolsInspector {
       value is String && value.isNotEmpty ? value : fallback;
 
   /// Two-space-indented JSON rendering of a tool's input schema.
+  String _prettyJson(Object? value) =>
+      const JsonEncoder.withIndent('  ').convert(value);
+}
+
+/// Renders the configured external MCP servers for the `/mcp_list` and
+/// `/mcp_inspect` commands (requests a + b), over the process-spanning
+/// [McpClient].
+///
+/// `/mcp_list` lists every configured server with its transport and
+/// description; `/mcp_inspect <server>` lists that server's advertised tools;
+/// `/mcp_inspect <server> <tool>` shows one tool's description + JSON input
+/// schema. The advertised tool list is fetched live from the server, so an
+/// unreachable server (a configured-but-down external) is rendered as an
+/// explicit notice — never thrown — keeping the environmental-failure contract
+/// (PE-6) the edge depends on.
+final class McpServersInspector implements TelegramMcpInspector {
+  /// The process-spanning MCP client the cognition calls out through.
+  final McpClient client;
+
+  /// Builds an inspector over the MCP [client].
+  McpServersInspector({required this.client});
+
+  @override
+  Future<String> mcpList() async {
+    final servers = client.servers();
+    if (servers.isEmpty) return 'No MCP servers are configured.';
+
+    final noun = servers.length == 1 ? 'server' : 'servers';
+    final buffer = StringBuffer('MCP servers (${servers.length} $noun):');
+    for (final server in servers) {
+      final id = _str(server['id'], '(unnamed)');
+      final transport = _str(server['transport'], '(unknown)');
+      final description = _str(server['description'], '(no description)');
+      buffer.write('\n\n$id (transport: $transport)\n  $description');
+    }
+    return buffer.toString();
+  }
+
+  @override
+  Future<String> mcpDetail(String server, {String? tool}) async {
+    if (!client.isConfigured(server)) {
+      return 'No MCP server named "$server" is configured.';
+    }
+
+    final List<Map<String, Object?>> tools;
+    try {
+      tools = await client.listTools(server);
+    } on McpFailure catch (failure) {
+      return 'MCP server "$server" is unreachable: ${failure.message}.';
+    }
+
+    if (tool != null) return _renderToolDetail(server, tool, tools);
+
+    if (tools.isEmpty) {
+      return 'MCP server "$server" advertises no tools.';
+    }
+    final noun = tools.length == 1 ? 'tool' : 'tools';
+    final buffer =
+        StringBuffer('MCP server "$server" tools (${tools.length} $noun):');
+    for (final advertised in tools) {
+      buffer.write('\n  ${_str(advertised['name'], '(unnamed)')} — '
+          '${_str(advertised['description'], '(no description)')}');
+    }
+    return buffer.toString();
+  }
+
+  /// Renders one advertised tool's detail (description + input schema), or a
+  /// "no such tool" notice when the server does not advertise it.
+  String _renderToolDetail(
+    String server,
+    String tool,
+    List<Map<String, Object?>> tools,
+  ) {
+    final advertised = tools.firstWhere(
+      (t) => _str(t['name'], '') == tool,
+      orElse: () => const <String, Object?>{},
+    );
+    if (advertised.isEmpty) {
+      return 'MCP server "$server" advertises no tool named "$tool".';
+    }
+    final buffer = StringBuffer('MCP tool $server / ${_str(advertised['name'], tool)}')
+      ..write('\n  description: ${_str(advertised['description'], '(none)')}');
+    final schema = advertised['input_schema'];
+    if (schema != null) {
+      buffer.write('\n  input schema:\n${_prettyJson(schema)}');
+    }
+    return buffer.toString();
+  }
+
+  /// The non-empty string at [value], or [fallback] when absent / not a string.
+  String _str(Object? value, String fallback) =>
+      value is String && value.isNotEmpty ? value : fallback;
+
+  /// Two-space-indented JSON rendering of an advertised tool's input schema.
   String _prettyJson(Object? value) =>
       const JsonEncoder.withIndent('  ').convert(value);
 }

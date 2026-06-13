@@ -68,6 +68,13 @@ dependencies:
   # smoke (p2_12). A regular dependency because it is imported from `bin/`.
   tom_core_server:
     path: ../../tom_ai/core/tom_core_server
+  # The production MCP channel factory (`mcp_channel_factory.dart`) opens the
+  # real wire transport to a configured external `stdio:` MCP server — request
+  # f. It is the composition root the procedure package's transport-neutral
+  # `DartMcpConnector` defers OS I/O to, so it needs the `dart_mcp` stdio
+  # channel helper + `stream_channel` in `lib/` (not just the test harness).
+  dart_mcp: ^0.5.0
+  stream_channel: ^2.1.4
 
 dev_dependencies:
   lints: ^6.0.0
@@ -80,11 +87,9 @@ dev_dependencies:
   # boots `buildOmlxOllamaSubstrate`.
   tom_brain_smoke_prototype:
     path: ../tom_brain_smoke_prototype
-  # The #32 LIVE end-to-end test inspects the run's on-disk memory **through the
-  # memory MCP server** (its real external inspection surface,
-  # `memory_specification.md` § 3.2) rather than via a private store seam. It
-  # stands `TomBrainMemoryMcpServer` up over an in-host `StreamChannel<String>`
-  # pair and drives it with a real `dart_mcp` client — the same harness shape the
-  # smoke's E.55 conformance test and the memory package's MCP suites use.
-  dart_mcp: ^0.5.0
-  stream_channel: ^2.1.4
+  # NOTE: `dart_mcp` + `stream_channel` are now main dependencies (above): the
+  # production MCP channel factory needs them in `lib/`. The #32 LIVE end-to-end
+  # test still drives a `TomBrainMemoryMcpServer` over an in-host
+  # `StreamChannel<String>` pair with a real `dart_mcp` client — the same
+  # harness shape the smoke's E.55 conformance test and the memory package's
+  # MCP suites use — but reaches them through the main dependency.

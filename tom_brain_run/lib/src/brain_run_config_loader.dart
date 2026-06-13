@@ -25,6 +25,9 @@
 //     `null` when the block is absent — unconfigured trail mode, §4.1).
 //   * `tools:`     → `ToolsConfigLoader.parse` (reads `doc['tools']`; returns
 //     `null` when absent — the engine's placeholder file-scope root; § 21.4).
+//   * `mcpServers:` → `McpServersConfig.fromYamlString` (reads
+//     `doc['mcpServers']`; an absent block yields an empty registry — the
+//     cognition has no outbound MCP servers; § 21.3, § 21.6).
 //
 // Each section loader produces a *located* error (dotted key path) on its own
 // malformed or missing section, so the whole-process loader needs no error
@@ -49,6 +52,8 @@ import 'package:tom_brain_access/tom_brain_access.dart'
     show AccessConfig, AccessConfigLoader;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show MemoryConfig, MemoryConfigLoader;
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
+    show McpServersConfig;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, SubstrateConfigLoader;
 
@@ -100,6 +105,8 @@ abstract final class BrainRunConfigLoader {
         DreamConfigLoader.parse(content, envVars: envVars);
     final CognitionRunConfig? cognition =
         CognitionRunConfigLoader.parse(content, envVars: envVars);
+    final McpServersConfig mcpServers =
+        McpServersConfig.fromYamlString(content);
     return BrainRunConfig(
       substrate: substrate,
       memory: memory,
@@ -108,6 +115,7 @@ abstract final class BrainRunConfigLoader {
       tools: tools,
       dream: dream,
       cognition: cognition,
+      mcpServers: mcpServers,
     );
   }
 

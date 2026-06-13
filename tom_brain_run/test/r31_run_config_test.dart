@@ -224,6 +224,45 @@ void main() {
       expect(config.access.users.first.openAiBearerTokens, contains('run-token'));
     });
 
+    test('an mcpServers section parses into config.mcpServers; its absence '
+        'yields an empty registry', () {
+      // With the section: the two external servers parse onto the run config,
+      // in declaration order, with their transports and descriptions.
+      final String withMcp = '$_substrateSection\n'
+          'memory:\n'
+          '  root: /tmp/x\n'
+          '  sqliteVec:\n'
+          '    binariesRoot: /opt/vec\n'
+          'mcpServers:\n'
+          '  - id: files\n'
+          '    transport: stdio\n'
+          '    description: local filesystem tools\n'
+          '    command: mcp-files\n'
+          '  - id: weather\n'
+          '    transport: http\n'
+          '    url: https://example.test/mcp\n'
+          '$_accessSection\n';
+
+      final BrainRunConfig config = BrainRunConfigLoader.parse(withMcp);
+
+      expect(config.mcpServers.servers.map((s) => s.id),
+          <String>['files', 'weather']);
+      final files = config.mcpServers.byId('files')!;
+      expect(files.transport.name, 'stdio');
+      expect(files.description, 'local filesystem tools');
+      expect(files.command, 'mcp-files');
+      expect(config.mcpServers.byId('weather')!.url, 'https://example.test/mcp');
+
+      // Without the section: the registry is empty, never null.
+      final String withoutMcp = '$_substrateSection\n'
+          'memory:\n'
+          '  root: /tmp/x\n'
+          '  sqliteVec:\n'
+          '    binariesRoot: /opt/vec\n'
+          '$_accessSection\n';
+      expect(BrainRunConfigLoader.parse(withoutMcp).mcpServers.servers, isEmpty);
+    });
+
     test('a substrate section that routes to an unknown provider fails with a '
         'located SubstrateConfigException', () {
       // analyser routes to "ghost", which is not in providers — a substrate

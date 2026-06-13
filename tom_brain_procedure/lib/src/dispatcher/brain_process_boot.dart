@@ -76,7 +76,9 @@ import '../recorder/procedure_tree_record.dart' show ProcedureTreeSink;
 import '../recorder/turn_summary.dart' show TurnSummary, TurnSummarySink;
 import '../procedure_store/procedure_resolver.dart';
 import '../tools/basic_tools.dart' show defaultToolCatalogue;
+import '../mcp/mcp_client.dart' show McpClient;
 import '../tools/file_scope.dart' show FileScope;
+import '../tools/mcp_tool_source.dart' show McpToolDefinition;
 import '../tools/tool_dream_surface.dart' show ToolDreamSurface;
 import '../tools/tool_event.dart' show ToolEvent;
 import 'dispatcher_entry.dart';
@@ -355,6 +357,19 @@ final class BrainProcessConfig {
   /// that yields a prompt naming a route the host cannot expand cannot dispatch.
   final RouteChainResolver? routeChainOf;
 
+  /// The process-spanning outbound MCP client boot threads onto the
+  /// [ProcedureEngine] (§ 21.3), or `null` when the cognition has no MCP
+  /// servers configured. When non-null, every run's `mcp.*` bridge and the
+  /// merged `mcp__*` tools route through it. The run assembly builds it from
+  /// the `mcpServers:` config and owns its lifetime (closed at shutdown).
+  final McpClient? mcpClient;
+
+  /// The MCP tool descriptors boot pre-fetched once (at the run assembly) and
+  /// threads onto the [ProcedureEngine] so every run merges them into its tool
+  /// registry without a per-run network round-trip (§ 21.8). Empty when
+  /// [mcpClient] is `null` or no server advertised any tool.
+  final List<McpToolDefinition> mcpTools;
+
   /// Builds a boot config.
   BrainProcessConfig({
     required this.substrate,
@@ -375,6 +390,8 @@ final class BrainProcessConfig {
     this.turnSummarySink,
     this.promptResolver,
     this.routeChainOf,
+    this.mcpClient,
+    this.mcpTools = const <McpToolDefinition>[],
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
 }
 
@@ -596,6 +613,8 @@ abstract final class BrainProcessBoot {
       toolDreamSurface: config.toolDreamSurface,
       promptResolver: config.promptResolver,
       routeChainOf: config.routeChainOf,
+      mcpClient: config.mcpClient,
+      mcpTools: config.mcpTools,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
     final dispatcher = _wireDispatcher(
@@ -640,6 +659,8 @@ abstract final class BrainProcessBoot {
     required ToolDreamSurface? toolDreamSurface,
     required PromptResolver? promptResolver,
     required RouteChainResolver? routeChainOf,
+    required McpClient? mcpClient,
+    required List<McpToolDefinition> mcpTools,
   }) =>
       ProcedureEngine(
         resolver: resolver,
@@ -658,6 +679,8 @@ abstract final class BrainProcessBoot {
         memoryWriteLimits: memoryWriteLimits,
         toolFileScope: toolFileScope,
         toolDreamSurface: toolDreamSurface,
+        mcpClient: mcpClient,
+        mcpTools: mcpTools,
       );
 
   /// Wires the [RunCoordinator] over the shared [preemption] state (it drives

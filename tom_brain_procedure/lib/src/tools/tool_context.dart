@@ -43,6 +43,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show TomBrainMemoryClien
 
 import '../budget/budget_ledger.dart' show BudgetLedger;
 import 'file_scope.dart';
+import 'mcp_tool_source.dart';
 import 'todo_store.dart';
 import 'tool_dream_surface.dart';
 import 'tool_engine_surface.dart';
@@ -101,6 +102,12 @@ final class ToolContext {
   /// extension (or with the merge profile off).
   final VsCodeToolSource? vscode;
 
+  /// The optional external-MCP surface the merged `mcp__*` tools (§ 21.3) route
+  /// through, or `null` on a run with no MCP servers configured. Like [vscode],
+  /// it is a method-only port (never a raw socket): a merged tool handed a
+  /// context without it raises `ToolSurfaceUnavailable`.
+  final McpToolSource? mcp;
+
   /// The optional dreaming-control surface the `dream.control` tool routes
   /// through (`memory_specification.md` § 9.7), or `null` on a cognition booted
   /// without a dreaming cadence (the `dream:` block absent or disabled). Bound
@@ -110,8 +117,8 @@ final class ToolContext {
 
   /// Builds the surface. [budget], [memory], and [fileScope] are required;
   /// [fileScope] enforces its own non-empty invariant. [todos] defaults to a
-  /// fresh run-scoped store; [web], [engine], [process], [vscode], and [dream]
-  /// are supplied only when the run exposes tools that need them.
+  /// fresh run-scoped store; [web], [engine], [process], [vscode], [mcp], and
+  /// [dream] are supplied only when the run exposes tools that need them.
   ToolContext({
     required this.budget,
     required this.memory,
@@ -121,6 +128,7 @@ final class ToolContext {
     this.engine,
     this.process,
     this.vscode,
+    this.mcp,
     this.dream,
   }) : todos = todos ?? TodoStore();
 }

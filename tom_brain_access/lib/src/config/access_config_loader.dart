@@ -66,10 +66,13 @@ abstract final class AccessConfigLoader {
   /// (substrate / memory / engine / dispatcher, the run package's
   /// `TrailConfigLoader` for `trail:` — `tom_brain_logging.md` §8 — its
   /// `ToolsConfigLoader` for `tools:` — the file-scope roots — its
-  /// `DreamConfigLoader` for `dream:` (memory-spec § 9.7), and its cognition
+  /// `DreamConfigLoader` for `dream:` (memory-spec § 9.7), its cognition
   /// loader for `cognition:` — `prompt_configuration.md` §7.4, the prompt /
-  /// route resolver root) and are tolerated here so the single file feeds
-  /// every section loader. Any other root key is rejected (AC-12).
+  /// route resolver root — and the procedure package's `McpServersConfig`
+  /// for `mcpServers:` (the outbound MCP servers merged into the tool loop,
+  /// `tom_brain_procedure_specification.md` § 21.6)) and are tolerated here
+  /// so the single file feeds every section loader. Any other root key is
+  /// rejected (AC-12).
   static const Set<String> _allowedTopLevelKeys = <String>{
     'substrate',
     'memory',
@@ -79,6 +82,7 @@ abstract final class AccessConfigLoader {
     'tools',
     'dream',
     'cognition',
+    'mcpServers',
     _accessKey,
   };
 

@@ -25,6 +25,8 @@
 import 'package:tom_brain_access/tom_brain_access.dart'
     show AccessConfig;
 import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryConfig;
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
+    show McpServersConfig;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig;
 
@@ -82,6 +84,13 @@ final class BrainRunConfig {
   /// prototype behaviour).
   final CognitionRunConfig? cognition;
 
+  /// The parsed `mcpServers:` section (§ 21.3, § 21.6) — the outbound MCP
+  /// servers the run assembly connects to and whose tools merge into the
+  /// procedure tool loop (request f). Never `null`: an absent `mcpServers:`
+  /// block yields an empty registry (the cognition simply has no MCP servers),
+  /// in which case the run assembly builds no MCP client at all.
+  final McpServersConfig mcpServers;
+
   /// Assembles the parsed sections into the run configuration.
   ///
   /// [trail], [tools], [dream] and [cognition] are optional: an absent `trail:`
@@ -89,7 +98,8 @@ final class BrainRunConfig {
   /// leaves [tools] `null` (the engine's placeholder file-scope root); an absent
   /// `dream:` block leaves [dream] `null` (no dream loop at boot); an absent
   /// `cognition:` block leaves [cognition] `null` (no prompt / route resolvers).
-  const BrainRunConfig({
+  /// [mcpServers] defaults to an empty registry (no MCP servers configured).
+  BrainRunConfig({
     required this.substrate,
     required this.memory,
     required this.access,
@@ -97,7 +107,8 @@ final class BrainRunConfig {
     this.tools,
     this.dream,
     this.cognition,
-  });
+    McpServersConfig? mcpServers,
+  }) : mcpServers = mcpServers ?? McpServersConfig(const []);
 
   /// The active trail mode, derived from whether a `trail:` block was
   /// configured (`tom_brain_logging.md` §4.1): [TrailMode.unconfigured] when

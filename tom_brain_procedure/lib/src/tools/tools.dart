@@ -70,3 +70,6 @@ export 'tool_web_surface.dart' show ToolWebSurface;
 export 'vscode_tool_source.dart' show VsCodeToolDefinition, VsCodeToolSource;
 export 'vscode_tools.dart'
     show VsCodeBrainTool, mergeVsCodeTools, vsCodeToolSurfaceName;
+// Extension F step 8 — the external MCP server tool merge (§ 21.3, § 21.8).
+export 'mcp_tool_source.dart' show McpToolDefinition, McpToolSource;
+export 'mcp_tools.dart' show McpBrainTool, mcpToolSurfaceName, mergeMcpTools;

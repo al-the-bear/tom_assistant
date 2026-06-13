@@ -31,6 +31,10 @@ export 'mcp_client.dart'
         McpServerConnection,
         mcpCallFailedCode,
         mcpUnreachableCode;
+// Step 8 — the adapter that merges configured servers' tools into the
+// `tool.*` surface (§ 21.8); maps `McpClient` onto the tools layer's
+// `McpToolSource` port.
+export 'mcp_client_tool_source.dart' show McpClientToolSource;
 export 'mcp_config_errors.dart' show McpConfigInvalid, mcpConfigInvalidCode;
 // Extension F step 16 — the MCP-client observability stream (§ 13).
 export 'mcp_event.dart'

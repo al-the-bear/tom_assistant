@@ -67,6 +67,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 
 import '../bridges/bridge_call_recorder.dart';
 import '../bridges/llm_call_observation.dart' show LlmCallObservation;
+import '../bridges/mcp_bridge.dart' show McpBridge;
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../budget/budget.dart';
@@ -80,8 +81,12 @@ import '../primitives_native/run_procedure_primitive.dart';
 import '../primitives_native/trail_note.dart';
 import '../primitives_native/yield_primitive.dart';
 import '../bridges/tool_bridge.dart' show ToolBridge;
+import '../mcp/mcp_client.dart' show McpClient;
+import '../mcp/mcp_client_tool_source.dart' show McpClientToolSource;
 import '../tools/basic_tools.dart' show registerBasicTools;
 import '../tools/file_scope.dart' show FileScope;
+import '../tools/mcp_tool_source.dart' show McpToolDefinition, McpToolSource;
+import '../tools/mcp_tools.dart' show McpBrainTool;
 import '../tools/substrate_tool_web_surface.dart' show SubstrateToolWebSurface;
 import '../tools/session_todo_stores.dart' show SessionTodoStores;
 import '../tools/todo_store.dart' show TodoStore;
@@ -181,6 +186,8 @@ final class ProcedureEngine {
     this.validator = SandboxValidator.shared,
     this.toolDreamSurface,
     this.toolProcessSurface = const ProcessRunToolSurface(),
+    this.mcpClient,
+    this.mcpTools = const <McpToolDefinition>[],
     FileScope? toolFileScope,
     PreemptionState? preemptionState,
     Duration stepDeadline = defaultStepDeadline,
@@ -291,6 +298,27 @@ final class ProcedureEngine {
   /// `create_v1` check phase has no general-shell capability. Defaults to the
   /// real [ProcessRunToolSurface]; tests inject a fake to avoid spawning.
   final ToolProcessSurface toolProcessSurface;
+
+  /// The process-spanning external-MCP client every per-run [ToolContext] /
+  /// [McpBridge] is built over (§ 21.3), or `null` when no MCP servers are
+  /// configured. When present, the engine (1) registers the cached [mcpTools]
+  /// as merged `mcp__*` `BrainTool`s in the run's tool registry — so the model
+  /// is offered them in the same `tool.list` and calls them through the same
+  /// tool-calling loop (request f, "external MCP servers as part of the tool
+  /// loop") — (2) carries an [McpClientToolSource] on the run's
+  /// `ToolContext.mcp` so a merged tool's call forwards to the right server, and
+  /// (3) binds an [McpBridge] as the host's `mcp` global so a procedure may also
+  /// call the `mcp.servers` / `mcp.list` / `mcp.call` primitives directly. A
+  /// merged tool and a direct `mcp.call` are alternatives — neither
+  /// double-charges the budget (PE-8).
+  final McpClient? mcpClient;
+
+  /// The external-MCP tool descriptors merged into every run's tool registry
+  /// (request f), fetched once at boot (so the per-run hot path makes no network
+  /// call to list). Empty when [mcpClient] is `null` or no server advertised a
+  /// tool. A merged tool's call still reaches its server live through the
+  /// [mcpClient] (carried on `ToolContext.mcp`).
+  final List<McpToolDefinition> mcpTools;
 
   final Duration _stepDeadlineLimit;
   final DeadlineTimerFactory? _deadlineTimerFactory;
@@ -722,6 +750,21 @@ final class ProcedureEngine {
     // `ToolSurfaceUnavailable` for it, which the loop turns into `{ok: false}`.
     final toolRegistry = ToolRegistry();
     registerBasicTools(toolRegistry);
+    // Merge the configured external MCP servers' tools into this run's registry
+    // (request f / § 21.8): each cached [McpToolDefinition] becomes a merged
+    // `mcp__*` `BrainTool`, indistinguishable to `tool.list` / `tool.invoke`
+    // from a built-in, so the model calls it through the same tool-calling loop.
+    // The descriptors were listed once at boot ([mcpTools]); the per-run merge
+    // is a pure registration with no network call. The invoke path reaches the
+    // server live through [McpClientToolSource] (carried on the context below).
+    final runMcpClient = mcpClient;
+    final McpToolSource? runMcpSource =
+        runMcpClient == null ? null : McpClientToolSource(runMcpClient);
+    if (runMcpClient != null) {
+      for (final definition in mcpTools) {
+        toolRegistry.register(McpBrainTool(definition));
+      }
+    }
     final toolPolicy = const ToolPolicyConfig().policyFor(null);
     // Per-run tool-access seam (the trail half of "tool calls must be in the
     // trails, especially the live-trail"): when a tool-access sink is bound,
@@ -747,22 +790,29 @@ final class ProcedureEngine {
     final TodoStore runTodos = sessionId == null
         ? TodoStore()
         : sessionTodoStores.forSession(sessionId);
+    // The run's tool surface — hoisted into a local so the [McpBridge] (the
+    // host's `mcp` global) shares the *same* context the [ToolBridge] uses, so
+    // a direct `mcp.call` charges the run's ledger exactly as a `tool.invoke`
+    // does. `mcp` carries the external-MCP surface a merged `mcp__*` tool's
+    // call forwards through (PE-1), or `null` when no servers are configured.
+    final runToolContext = ToolContext(
+      budget: ledger,
+      memory: runMemoryBridge.client,
+      fileScope: toolFileScope,
+      todos: runTodos,
+      web: SubstrateToolWebSurface(substrateBridge.client),
+      engine: EngineToolSurface(
+        resolver: resolver,
+        runPrimitive: runPrimitive,
+      ),
+      process: toolProcessSurface,
+      mcp: runMcpSource,
+      dream: toolDreamSurface,
+    );
     final runToolBridge = ToolBridge(
       toolRegistry,
       toolPolicy,
-      ToolContext(
-        budget: ledger,
-        memory: runMemoryBridge.client,
-        fileScope: toolFileScope,
-        todos: runTodos,
-        web: SubstrateToolWebSurface(substrateBridge.client),
-        engine: EngineToolSurface(
-          resolver: resolver,
-          runPrimitive: runPrimitive,
-        ),
-        process: toolProcessSurface,
-        dream: toolDreamSurface,
-      ),
+      runToolContext,
       clock: _now,
       onEvent: (toolAccessSink == null && noticeSink == null)
           ? null
@@ -792,6 +842,13 @@ final class ProcedureEngine {
       memoryBridge: runMemoryBridge,
       substrateBridge: runSubstrateBridge,
       toolBridge: runToolBridge,
+      // The `mcp` global — bound only when MCP servers are configured (§ 21.3),
+      // over the *same* run context the tool bridge uses so a direct `mcp.call`
+      // charges the run's ledger. A script that never imports the mcp library
+      // never sees the global (d4rt globals are keyed by import).
+      mcpBridge: runMcpClient == null
+          ? null
+          : McpBridge(runMcpClient, runToolContext),
       budgetView: budgetView,
       installNativePrimitives: nativePrimitivesInstaller(
         runProcedurePrimitive: runPrimitive,

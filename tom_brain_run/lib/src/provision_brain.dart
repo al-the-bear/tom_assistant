@@ -58,9 +58,13 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         BrainProcessConfig,
         ClassifyFallback,
         FileScope,
+        DartMcpConnector,
         FreeTimeScheduler,
         LlmTrailRecord,
         LlmTrailSink,
+        McpClient,
+        McpClientToolSource,
+        McpToolDefinition,
         MemoryAccessRecord,
         MemoryAccessSink,
         MemoryProvisioningConfig,
@@ -92,6 +96,7 @@ import 'dream_cadence_wiring.dart' show dreamCadenceDriverOverScheduler;
 import 'dream_config.dart' show DreamConfig;
 import 'dream_controller.dart' show DreamController;
 import 'late_dream_surface.dart' show LateDreamSurface;
+import 'mcp_channel_factory.dart' show productionMcpChannelFactory;
 import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
@@ -103,6 +108,7 @@ import 'telegram_inspector_impls.dart'
         CognitionPromptsInspector,
         LiveStopController,
         LiveUsageInspector,
+        McpServersInspector,
         MemoryStatsInspector,
         SessionTodosInspector,
         SubstrateModelsInspector,
@@ -200,6 +206,8 @@ Future<ProvisionedBrain> provisionBrain({
   DreamConfig? dream,
   PromptResolver? promptResolver,
   RouteChainResolver? routeChainOf,
+  McpClient? mcpClient,
+  List<McpToolDefinition> mcpTools = const <McpToolDefinition>[],
 }) async {
   final Directory scriptsDir =
       systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
@@ -237,6 +245,8 @@ Future<ProvisionedBrain> provisionBrain({
       toolDreamSurface: dreamHolder,
       promptResolver: promptResolver,
       routeChainOf: routeChainOf,
+      mcpClient: mcpClient,
+      mcpTools: mcpTools,
     ),
   );
 
@@ -269,12 +279,15 @@ Future<ProvisionedBrain> provisionBrain({
       backgroundRunning: booted.coordinator.hasBackgroundRun,
       draining: booted.coordinator.isDraining,
     ),
-    shutdown: dreamController == null
-        ? booted.shutdown
-        : () async {
-            await dreamController.stop();
-            await booted.shutdown();
-          },
+    // Teardown order: stop the dream loop (if any), drain + dispose the
+    // cognition, then close the MCP client's connection pool (request f). The
+    // client is the run assembly's to own — the engine only uses it — so its
+    // pooled child processes / sockets are released here, last.
+    shutdown: () async {
+      if (dreamController != null) await dreamController.stop();
+      await booted.shutdown();
+      if (mcpClient != null) await mcpClient.close();
+    },
     // Surface the booted memory's read client so the running process can build
     // the Telegram `/memory_status` inspector over it. `TomBrainMemoryClient` is
     // a `tom_brain_shared` type, so this does not pull `tom_brain_memory` into
@@ -413,6 +426,8 @@ Future<BrainProcess> standUpBrainProcess({
   PromptResolver? promptResolver,
   RouteChainResolver? routeChainOf,
   CognitionConfig? cognitionConfig,
+  McpClient? mcpClient,
+  List<McpToolDefinition> mcpTools = const <McpToolDefinition>[],
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -431,6 +446,8 @@ Future<BrainProcess> standUpBrainProcess({
     dream: dream,
     promptResolver: promptResolver,
     routeChainOf: routeChainOf,
+    mcpClient: mcpClient,
+    mcpTools: mcpTools,
   );
 
   final BrainAccessProcess process;
@@ -449,6 +466,7 @@ Future<BrainProcess> standUpBrainProcess({
         stop: provisioned.stopController,
         substrateConfig: substrateConfig,
         cognitionConfig: cognitionConfig,
+        mcpClient: mcpClient,
       ),
     );
   } on Object {
@@ -486,6 +504,7 @@ TelegramInspectors _telegramInspectorsFor({
   required TelegramStopController? stop,
   required SubstrateConfig? substrateConfig,
   required CognitionConfig? cognitionConfig,
+  required McpClient? mcpClient,
 }) {
   final Directory? root = trailRoot == null ? null : Directory(trailRoot);
   return TelegramInspectors(
@@ -520,6 +539,10 @@ TelegramInspectors _telegramInspectorsFor({
     // The tool-catalogue inspector reads the engine's shipped default tool set
     // — a process constant, so it is always wired.
     tools: ToolCatalogueInspector(),
+    // The MCP-servers inspector reads the live outbound MCP client (request f),
+    // so it is wired exactly when the cognition has an MCP client — i.e. when at
+    // least one `mcpServers:` entry was configured.
+    mcp: mcpClient == null ? null : McpServersInspector(client: mcpClient),
   );
 }
 
@@ -608,6 +631,24 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   final TrailConfig? trail = runConfig.trail;
   if (trail != null) TrailJanitor.fromConfig(trail).sweep();
   final sinks = _trailSinksFor(trail);
+
+  // Build the outbound MCP client from the `mcpServers:` config (request f) and
+  // pre-fetch its tool descriptors *once* here so every run merges them into
+  // its tool registry without a per-run network round-trip. An unreachable
+  // server is omitted (PE-6, in `McpClientToolSource.listTools`) rather than
+  // failing boot. When no server is configured, no client is built and the MCP
+  // surface is simply absent (the `mcp.*` bridge raises `ToolSurfaceUnavailable`
+  // and the `/mcp_*` commands report "not available on this deployment").
+  final McpClient? mcpClient = runConfig.mcpServers.servers.isEmpty
+      ? null
+      : McpClient(
+          runConfig.mcpServers,
+          DartMcpConnector(channelFactory: productionMcpChannelFactory()),
+        );
+  final List<McpToolDefinition> mcpTools = mcpClient == null
+      ? const <McpToolDefinition>[]
+      : await McpClientToolSource(mcpClient).listTools();
+
   return standUpBrainProcess(
     config: runConfig.access,
     substrate: substrate,
@@ -630,6 +671,8 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     promptResolver: promptResolver,
     routeChainOf: routeChainOf,
     cognitionConfig: cognitionConfig,
+    mcpClient: mcpClient,
+    mcpTools: mcpTools,
   );
 }
 

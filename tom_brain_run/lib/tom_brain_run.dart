@@ -118,6 +118,7 @@ export 'src/telegram_inspector_impls.dart'
         CognitionPromptsInspector,
         LiveStopController,
         LiveUsageInspector,
+        McpServersInspector,
         MemoryStatsInspector,
         SessionTodosInspector,
         SubstrateModelsInspector,
@@ -125,6 +126,7 @@ export 'src/telegram_inspector_impls.dart'
         TrailIncomingPromptInspector,
         TrailLogInspector,
         TrailStatusInspector;
+export 'src/mcp_channel_factory.dart' show productionMcpChannelFactory;
 
 // ── Per-profile memory log writer (logging-spec §5.6; §10 step #8) ────
 export 'src/memory_profile_log_writer.dart' show MemoryProfileLogWriter;
