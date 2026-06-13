@@ -204,7 +204,9 @@ final class ProcedureEngine {
     ToolAccessSink? toolAccessSink,
     ProcedureTreeSink? procedureTreeSink,
     this.memoryWriteLimits = MemoryWriteLimits.standard,
+    SessionTodoStores? sessionTodoStores,
   })  : toolFileScope = toolFileScope ?? _defaultToolFileScope,
+        sessionTodoStores = sessionTodoStores ?? SessionTodoStores(),
         preemptionState = preemptionState ?? PreemptionState(),
         _stepDeadlineLimit = stepDeadline,
         _deadlineTimerFactory = deadlineTimerFactory,
@@ -231,7 +233,12 @@ final class ProcedureEngine {
   /// a fresh per-run store instead. Exposed so the access layer's inspector seam
   /// (`/todos_list` / `/todos_clear`) can read and reset a session's list off
   /// the booted engine.
-  final SessionTodoStores sessionTodoStores = SessionTodoStores();
+  ///
+  /// Injected so a production boot can pass a [SessionTodoStores.persistentAt]
+  /// (a JSON-file-backed registry under the memory root) — making a session's
+  /// working todo list survive a restart — while tests and a root-less boot get
+  /// the in-memory default.
+  final SessionTodoStores sessionTodoStores;
 
   /// The process-lifetime registry of in-flight runs (`/check_usage`). The
   /// engine opens a [LiveRun] when a run's recorder starts and closes it when

@@ -28,6 +28,8 @@
 // boot wires the shipped `answer_with_memory_v1`, not an inline copy.
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:test/test.dart';
@@ -67,6 +69,7 @@ void main() {
     SubstrateConfig? substrateConfig,
     AccessLayerInstaller? installAccessLayer,
     FileScope? toolFileScope,
+    String? sessionTodoStoreRoot,
   }) =>
       BrainProcessConfig(
         substrate: substrate,
@@ -77,6 +80,7 @@ void main() {
         ),
         installAccessLayer: installAccessLayer,
         toolFileScope: toolFileScope,
+        sessionTodoStoreRoot: sessionTodoStoreRoot,
         // Increment 6 (§6): the booted `answer_with_memory_v1` resolves its
         // prompt through the host `PromptResolver`. Boot threads these seams onto
         // the engine's `SubstrateBridge`; the parity fake reproduces the
@@ -177,6 +181,44 @@ void main() {
       // tool-calling path stays well-formed even with no `tools.fileScope`.
       expect(booted.engine.toolFileScope.writeableRoots,
           const <String>['/tom-brain-engine']);
+    });
+
+    test('a configured sessionTodoStoreRoot makes session todos persist to disk',
+        () async {
+      final dir = Directory.systemTemp.createTempSync('d44_session_todos_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final booted = await BrainProcessBoot.boot(
+        configWith(sessionTodoStoreRoot: dir.path),
+      );
+      addTearDown(booted.shutdown);
+
+      // A todo added under a session is flushed to `<root>/session_todos.json`,
+      // so a later boot over the same root would rehydrate it (the
+      // survives-a-restart contract proven directly in
+      // session_todo_persistence_test.dart).
+      booted.engine.sessionTodoStores.forSession('s1').add('remember this');
+
+      final file = File('${dir.path}/session_todos.json');
+      expect(file.existsSync(), isTrue,
+          reason: 'the booted engine wired a persistent session-todo registry');
+      final decoded = jsonDecode(file.readAsStringSync()) as Map;
+      expect(decoded.keys, contains('s1'));
+    });
+
+    test('no sessionTodoStoreRoot keeps the in-memory (non-persistent) registry',
+        () async {
+      final dir = Directory.systemTemp.createTempSync('d44_session_todos_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final booted = await BrainProcessBoot.boot(configWith());
+      addTearDown(booted.shutdown);
+
+      booted.engine.sessionTodoStores.forSession('s1').add('ephemeral');
+      expect(File('${dir.path}/session_todos.json').existsSync(), isFalse,
+          reason: 'a root-less boot persists nothing');
     });
   });
 

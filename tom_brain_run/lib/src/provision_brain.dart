@@ -256,6 +256,11 @@ Future<ProvisionedBrain> provisionBrain({
       mcpClient: mcpClient,
       mcpTools: mcpTools,
       mcpOffered: mcpOffered,
+      // Persist the per-session working todo lists under the memory root
+      // (`<root>/session_todos.json`) so a session's list survives a brain
+      // restart — the same durable mount the brain-mode agent-SDK session store
+      // keys `agent_sdk_sessions.json` under.
+      sessionTodoStoreRoot: memoryConfig.root,
     ),
   );
 

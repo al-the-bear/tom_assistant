@@ -14,7 +14,15 @@
 // conversation session's persistent store ([SessionTodoStores], so the working
 // list survives from one prompt to the next within a conversation); for a
 // turn-less / internal / dream run it binds a fresh per-run store. Either way
-// the store stays a plain in-memory list — never written to memory.
+// the store stays a plain in-memory list — never written to the memory graph.
+//
+// Durability is layered on without coupling the store to a backend: an [onChanged]
+// hook fires after every mutation, and [SessionTodoStores]'s persistent backend
+// attaches a flush-to-disk closure to it. A store with no hook (a run-scoped /
+// dream store, or the in-memory registry) simply never notifies, so it stays
+// pure scratch. [toJson] / [TodoStore.fromJson] give that backend a stable
+// snapshot — the ordered entries plus the id sequence, so a rehydrated list
+// keeps its ids and never reissues one.
 
 /// One entry in a [TodoStore].
 ///
@@ -47,10 +55,42 @@ final class TodoStore {
   final List<TodoEntry> _entries = <TodoEntry>[];
   int _sequence = 0;
 
+  /// Invoked after every mutation that changed the list ([add], a matched
+  /// [update] / [remove], [clear]). `null` by default, so a run-scoped or dream
+  /// store stays pure scratch; [SessionTodoStores]'s persistent backend sets it
+  /// to a flush-to-disk closure so a session's list survives a restart.
+  void Function()? onChanged;
+
+  /// Rebuilds a store from a [toJson] snapshot. Restores the entries in order
+  /// and the id [sequence], so the rehydrated list keeps its ids and a later
+  /// [add] never reuses one a saved entry held. Malformed entries are skipped
+  /// rather than failing — a damaged snapshot can only lose entries, never crash.
+  factory TodoStore.fromJson(Map<String, Object?> json) {
+    final store = TodoStore();
+    store._sequence = (json['sequence'] as num?)?.toInt() ?? 0;
+    final entries = json['entries'];
+    if (entries is List) {
+      for (final raw in entries) {
+        if (raw is Map) {
+          store._entries.add(TodoEntry(
+            id: '${raw['id']}',
+            text: '${raw['text']}',
+            done: raw['done'] == true,
+          ));
+        }
+      }
+    }
+    return store;
+  }
+
+  /// Builds an empty store.
+  TodoStore();
+
   /// Appends a new entry carrying [text] and returns its assigned id.
   String add(String text) {
     final id = 't${++_sequence}';
     _entries.add(TodoEntry(id: id, text: text));
+    _changed();
     return id;
   }
 
@@ -66,6 +106,7 @@ final class TodoStore {
     if (entry == null) return false;
     if (text != null) entry.text = text;
     if (done != null) entry.done = done;
+    _changed();
     return true;
   }
 
@@ -73,14 +114,31 @@ final class TodoStore {
   bool remove(String id) {
     final before = _entries.length;
     _entries.removeWhere((e) => e.id == id);
-    return _entries.length != before;
+    final removed = _entries.length != before;
+    if (removed) _changed();
+    return removed;
   }
 
   /// Removes every entry, resetting the list to empty (the `/todos_clear`
   /// command's effect). The id sequence is preserved, so a later [add] never
   /// reuses an id a cleared entry held. Editing in place — an in-flight run
   /// holding this store sees the cleared list.
-  void clear() => _entries.clear();
+  void clear() {
+    _entries.clear();
+    _changed();
+  }
+
+  /// The serialisable snapshot [TodoStore.fromJson] reads back: the entries in
+  /// order plus the id [_sequence], so a rehydrated list keeps its ids and
+  /// never reissues one a saved entry held.
+  Map<String, Object?> toJson() => <String, Object?>{
+        'sequence': _sequence,
+        'entries': <Map<String, Object?>>[
+          for (final entry in _entries) entry.toMap(),
+        ],
+      };
+
+  void _changed() => onChanged?.call();
 
   TodoEntry? _find(String id) {
     for (final entry in _entries) {

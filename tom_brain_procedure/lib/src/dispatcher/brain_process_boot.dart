@@ -82,6 +82,7 @@ import '../tools/file_scope.dart' show FileScope;
 import '../tools/mcp_tool_source.dart' show McpToolDefinition;
 import '../tools/tool_dream_surface.dart' show ToolDreamSurface;
 import '../tools/tool_event.dart' show ToolEvent;
+import '../tools/session_todo_stores.dart' show SessionTodoStores;
 import 'dispatcher_entry.dart';
 import 'inbound_classifier.dart';
 import 'memory_provisioning.dart';
@@ -377,6 +378,13 @@ final class BrainProcessConfig {
   /// every configured server unconditionally offered.
   final McpOfferedGate? mcpOffered;
 
+  /// The durable root under which the engine's per-session working todo lists
+  /// are persisted (`<root>/session_todos.json`), so a session's list survives a
+  /// process restart, or `null` for an in-memory-only registry (tests and a boot
+  /// without a durable memory root). Production threads the memory root here —
+  /// the same mount the brain-mode agent-SDK session store uses.
+  final String? sessionTodoStoreRoot;
+
   /// Builds a boot config.
   BrainProcessConfig({
     required this.substrate,
@@ -400,6 +408,7 @@ final class BrainProcessConfig {
     this.mcpClient,
     this.mcpTools = const <McpToolDefinition>[],
     this.mcpOffered,
+    this.sessionTodoStoreRoot,
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
 }
 
@@ -624,6 +633,7 @@ abstract final class BrainProcessBoot {
       mcpClient: config.mcpClient,
       mcpTools: config.mcpTools,
       mcpOffered: config.mcpOffered,
+      sessionTodoStoreRoot: config.sessionTodoStoreRoot,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
     final dispatcher = _wireDispatcher(
@@ -671,6 +681,7 @@ abstract final class BrainProcessBoot {
     required McpClient? mcpClient,
     required List<McpToolDefinition> mcpTools,
     required McpOfferedGate? mcpOffered,
+    required String? sessionTodoStoreRoot,
   }) =>
       ProcedureEngine(
         resolver: resolver,
@@ -692,6 +703,14 @@ abstract final class BrainProcessBoot {
         mcpClient: mcpClient,
         mcpTools: mcpTools,
         mcpOffered: mcpOffered,
+        // A durable root makes the per-session working todo lists survive a
+        // restart (`<root>/session_todos.json`); a root-less boot keeps the
+        // in-memory default.
+        sessionTodoStores: sessionTodoStoreRoot == null
+            ? SessionTodoStores()
+            : SessionTodoStores.persistentAt(
+                File('$sessionTodoStoreRoot/session_todos.json'),
+              ),
       );
 
   /// Wires the [RunCoordinator] over the shared [preemption] state (it drives
