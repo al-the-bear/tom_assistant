@@ -679,8 +679,14 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
 
   // The substrate uses the file-backed registry when a cognition tree was
   // loaded; otherwise `buildSubstrate` falls back to its in-code full roster.
-  final TomBrainSubstrateClient substrate =
-      buildSubstrate(runConfig.substrate, roleRegistry: roleRegistry);
+  final TomBrainSubstrateClient substrate = buildSubstrate(
+    runConfig.substrate,
+    roleRegistry: roleRegistry,
+    // The run's storage root: a `sessionMode: brain` agent-SDK provider keys
+    // its persisted Claude session ids under `<root>/agent_sdk_sessions.json`
+    // (agent-SDK design spec § 1.4).
+    agentSdkSessionRoot: runConfig.memory.root,
+  );
 
   // Boot-time trail sweep (§8 / §10 step #10): write the §7 `.gitignore` and
   // enforce the raw-tier count / aggregate-size caps before any writer appends

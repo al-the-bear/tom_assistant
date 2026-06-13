@@ -502,7 +502,7 @@ substrate:
     });
   });
 
-  group('#31 buildSubstrate — agent_sdk provider (design-spec phase 2)', () {
+  group('#31 buildSubstrate — agent_sdk provider (design-spec phase 3)', () {
     // A config that manufactures an agent-SDK provider alongside the Ollama
     // embedding provider. The agent-SDK provider's bridge socket is never
     // dialed (no completion runs in this group), so no live VS Code window is
@@ -557,7 +557,27 @@ substrate:
       expect(sdk.maxTurns, 12);
     });
 
-    test('a session mode other than `none` is a located phase-3 error', () {
+    test('the default session mode is `none` → NoSessionStrategy', () {
+      final SubstrateConfig cfg =
+          SubstrateConfigLoader.parse('${agentSdkSubstrate()}\n');
+      final sdk = buildSubstrate(cfg).providers['claude'] as AgentSdkLlmProvider;
+      expect(sdk.sessionStrategy, isA<NoSessionStrategy>());
+    });
+
+    test('sessionMode brain builds a BrainSessionStrategy under the run root',
+        () {
+      const String options = '''
+
+      options:
+        sessionMode: brain''';
+      final SubstrateConfig cfg =
+          SubstrateConfigLoader.parse('${agentSdkSubstrate(options: options)}\n');
+      final sdk = buildSubstrate(cfg, agentSdkSessionRoot: '/run/store')
+          .providers['claude'] as AgentSdkLlmProvider;
+      expect(sdk.sessionStrategy, isA<BrainSessionStrategy>());
+    });
+
+    test('sessionMode brain without a run root is a located error', () {
       const String options = '''
 
       options:
@@ -567,7 +587,53 @@ substrate:
       expect(
         () => buildSubstrate(cfg),
         throwsA(isA<SubstrateConfigException>().having((e) => e.message,
-            'message', allOf(contains('sessionMode'), contains('phase 3')))),
+            'message', allOf(contains('sessionMode'), contains('brain')))),
+      );
+    });
+
+    test('sessionMode quest builds a QuestSessionStrategy from its options', () {
+      const String options = '''
+
+      options:
+        sessionMode: quest
+        questId: tom_brain
+        sessionKey: default
+        questHistoryRoot: /srv/quests''';
+      final SubstrateConfig cfg =
+          SubstrateConfigLoader.parse('${agentSdkSubstrate(options: options)}\n');
+      final sdk = buildSubstrate(cfg).providers['claude'] as AgentSdkLlmProvider;
+      expect(sdk.sessionStrategy, isA<QuestSessionStrategy>());
+    });
+
+    test('sessionMode quest missing a required option is a located error', () {
+      const String options = '''
+
+      options:
+        sessionMode: quest
+        questId: tom_brain''';
+      final SubstrateConfig cfg =
+          SubstrateConfigLoader.parse('${agentSdkSubstrate(options: options)}\n');
+      expect(
+        () => buildSubstrate(cfg),
+        throwsA(isA<SubstrateConfigException>().having((e) => e.message,
+            'message', allOf(contains('sessionKey'), contains('quest')))),
+      );
+    });
+
+    test('an unknown session mode is a located error listing valid values', () {
+      const String options = '''
+
+      options:
+        sessionMode: nonsense''';
+      final SubstrateConfig cfg =
+          SubstrateConfigLoader.parse('${agentSdkSubstrate(options: options)}\n');
+      expect(
+        () => buildSubstrate(cfg),
+        throwsA(isA<SubstrateConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('sessionMode'), contains('brain'),
+                contains('quest')))),
       );
     });
 

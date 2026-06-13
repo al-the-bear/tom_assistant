@@ -428,10 +428,12 @@ final class ProcedureEngine {
     // access-edge-minted turnId and shared across every nested run of the turn
     // so the per-turn `callSeq` counter spans sub-procedures. A turn-less
     // invocation (internal / free-time / dream) leaves it `null`, so its
-    // substrate calls stay unstamped.
+    // substrate calls stay unstamped. The invocation's `sessionId` (the live
+    // tom_brain session this turn serves) rides along so the `SubstrateBridge`
+    // can stamp it onto each call's `brainSessionId` (agent-SDK spec § 1.5).
     final turn = invocation.turnId == null
         ? null
-        : TurnContext(invocation.turnId!);
+        : TurnContext(invocation.turnId!, brainSessionId: invocation.sessionId);
 
     unawaited(
       Future<void>(() async {

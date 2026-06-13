@@ -51,6 +51,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart' show promptSha256;
 import 'package:tom_vscode_scripting_api/tom_vscode_scripting_api.dart';
 
+import 'agent_sdk_session.dart';
+
 /// One Anthropic-Agent-SDK backend, exposed as a substrate [LlmProvider].
 ///
 /// Constructed by the run substrate builder's `_buildProvider` for a
@@ -76,6 +78,11 @@ final class AgentSdkLlmProvider implements LlmProvider {
   /// [_clientFuture] so the bridge socket is opened once and reused.
   final Future<AgentSdkClient> Function() clientFactory;
 
+  /// Decides, per call, whether to resume a stored Claude-Code session or start
+  /// fresh, and records / evicts the session id (agent-SDK spec § 1.4). Defaults
+  /// to [NoSessionStrategy] — session mode `none`, every call a first call.
+  final AgentSdkSessionStrategy sessionStrategy;
+
   Future<AgentSdkClient>? _clientFuture;
 
   AgentSdkLlmProvider({
@@ -84,6 +91,7 @@ final class AgentSdkLlmProvider implements LlmProvider {
     required this.clientFactory,
     this.maxTurns,
     this.permissionMode = PermissionMode.default_,
+    this.sessionStrategy = const NoSessionStrategy(),
   });
 
   /// The memoised client (one bridge connection shared across calls).
@@ -123,95 +131,167 @@ final class AgentSdkLlmProvider implements LlmProvider {
       modelId: modelId,
     );
 
-    final sdkOptions = Options(
-      model: modelId,
-      maxTurns: maxTurns,
-      permissionMode: permissionMode,
-      // Session mode `none`: no `resume` / `sessionId` is ever set (phase 2).
-      // `systemPrompt` is left at the SDK default so Claude Code's own system
-      // prompt stays additive and never overrides the anchored `wire.body`.
-    );
+    // The session id to resume, or null for a fresh session. Mode `none` always
+    // returns null; mode `brain` looks it up by the tom_brain session id; mode
+    // `quest` reads it from the window's quest history. A session-shaped failure
+    // on a resumed call evicts the stored id and retries exactly once fresh.
+    String? resumeId = await sessionStrategy.resumeIdFor(options);
+    var retried = false;
+    var emittedChunk = false;
 
-    SdkResultMessage? result;
-    try {
-      final client = await _client();
-      // `wire.body` carries the assistant-dedication anchor verbatim and is
-      // handed to Claude Code unmodified.
-      final query = client.query(prompt: prompt.body, options: sdkOptions);
-      await for (final message in query) {
-        if (message is SdkAssistantMessage) {
-          for (final block in message.content) {
-            if (block is TextBlock && block.text.isNotEmpty) {
-              yield LlmStreamChunk(callId: callId, text: block.text);
+    while (true) {
+      final sdkOptions = Options(
+        model: modelId,
+        maxTurns: maxTurns,
+        permissionMode: permissionMode,
+        // `resume` is the only session knob set. When null, `Options.toJson`
+        // omits the key, so mode `none` sends no session id at all.
+        // `systemPrompt` is left at the SDK default so Claude Code's own system
+        // prompt stays additive and never overrides the anchored `wire.body`.
+        resume: resumeId,
+      );
+
+      SdkResultMessage? result;
+      Object? caught;
+      try {
+        final client = await _client();
+        // `wire.body` carries the assistant-dedication anchor verbatim and is
+        // handed to Claude Code unmodified.
+        final query = client.query(prompt: prompt.body, options: sdkOptions);
+        await for (final message in query) {
+          if (message is SdkAssistantMessage) {
+            for (final block in message.content) {
+              if (block is TextBlock && block.text.isNotEmpty) {
+                emittedChunk = true;
+                yield LlmStreamChunk(callId: callId, text: block.text);
+              }
+              // ThinkingBlock / tool blocks are not part of the assistant reply.
             }
-            // ThinkingBlock / tool blocks are not part of the assistant reply.
+          } else if (message is SdkResultMessage) {
+            result = message;
           }
-        } else if (message is SdkResultMessage) {
-          result = message;
         }
+      } catch (e) {
+        caught = e;
       }
-    } catch (e) {
+
+      // ── Transport / exception failure ──
+      if (caught != null) {
+        final message = caught.toString();
+        if (await _shouldRetryFresh(
+          resumeId: resumeId,
+          retried: retried,
+          emittedChunk: emittedChunk,
+          message: message,
+          options: options,
+        )) {
+          resumeId = null;
+          retried = true;
+          continue;
+        }
+        stopwatch.stop();
+        yield LlmStreamFailed(
+          callId: callId,
+          failure: LlmFailure(
+            // Unclassified here; the router maps onto the spec § 5.4 taxonomy.
+            classCode: 'unknown',
+            message: message,
+            cause: caught,
+          ),
+          report: _buildReport(
+            prompt: prompt,
+            modelId: modelId,
+            wallClockMs: stopwatch.elapsedMilliseconds,
+          ),
+        );
+        return;
+      }
+
+      // ── Stream closed without a terminal `result` message ──
+      if (result == null) {
+        stopwatch.stop();
+        yield LlmStreamFailed(
+          callId: callId,
+          failure: const LlmFailure(
+            classCode: 'format',
+            message:
+                'Agent SDK stream ended without a terminal result message.',
+          ),
+          report: _buildReport(
+            prompt: prompt,
+            modelId: modelId,
+            wallClockMs: stopwatch.elapsedMilliseconds,
+          ),
+        );
+        return;
+      }
+
+      final resolved = result;
+      final report = _buildReport(
+        prompt: prompt,
+        modelId: modelId,
+        wallClockMs: resolved.durationMs ?? stopwatch.elapsedMilliseconds,
+        tokensIn: _usageTokens(resolved.usage, 'input_tokens'),
+        tokensOut: _usageTokens(resolved.usage, 'output_tokens'),
+        cost: resolved.totalCostUsd,
+      );
+
+      // ── Costed error result ──
+      if (resolved.isError) {
+        final message = resolved.result ?? 'Agent SDK reported an error result.';
+        if (await _shouldRetryFresh(
+          resumeId: resumeId,
+          retried: retried,
+          emittedChunk: emittedChunk,
+          message: message,
+          options: options,
+        )) {
+          resumeId = null;
+          retried = true;
+          continue;
+        }
+        stopwatch.stop();
+        yield LlmStreamFailed(
+          callId: callId,
+          failure: LlmFailure(classCode: 'unknown', message: message),
+          report: report,
+        );
+        return;
+      }
+
+      // ── Success ── record the Claude session id so a later call of the same
+      // tom_brain session (mode `brain`) can resume it. No-op in modes
+      // `none` / `quest`.
       stopwatch.stop();
-      yield LlmStreamFailed(
-        callId: callId,
-        failure: LlmFailure(
-          // Unclassified here; the router maps onto the spec § 5.4 taxonomy.
-          classCode: 'unknown',
-          message: e.toString(),
-          cause: e,
-        ),
-        report: _buildReport(
-          prompt: prompt,
-          modelId: modelId,
-          wallClockMs: stopwatch.elapsedMilliseconds,
-        ),
-      );
+      final claudeSessionId = resolved.sessionId;
+      if (claudeSessionId != null && claudeSessionId.isNotEmpty) {
+        await sessionStrategy.record(options, claudeSessionId);
+      }
+      yield LlmStreamCompleted(callId: callId, report: report);
       return;
     }
+  }
 
-    stopwatch.stop();
-
-    if (result == null) {
-      // The SDK stream closed without a terminal `result` message — a
-      // protocol-shape failure.
-      yield LlmStreamFailed(
-        callId: callId,
-        failure: const LlmFailure(
-          classCode: 'format',
-          message: 'Agent SDK stream ended without a terminal result message.',
-        ),
-        report: _buildReport(
-          prompt: prompt,
-          modelId: modelId,
-          wallClockMs: stopwatch.elapsedMilliseconds,
-        ),
-      );
-      return;
+  /// Whether a failed *resumed* call should evict its stored session id and be
+  /// retried once with a fresh session. Only fires when a session id was being
+  /// resumed, no chunk has yet streamed (so the retry cannot duplicate output),
+  /// we have not already retried, and the failure looks session-shaped. Evicts
+  /// the stored id as a side effect when it returns true.
+  Future<bool> _shouldRetryFresh({
+    required String? resumeId,
+    required bool retried,
+    required bool emittedChunk,
+    required String message,
+    required LlmOptions options,
+  }) async {
+    if (resumeId == null ||
+        retried ||
+        emittedChunk ||
+        !agentSdkLooksLikeSessionError(message)) {
+      return false;
     }
-
-    final resolved = result;
-    final report = _buildReport(
-      prompt: prompt,
-      modelId: modelId,
-      wallClockMs: resolved.durationMs ?? stopwatch.elapsedMilliseconds,
-      tokensIn: _usageTokens(resolved.usage, 'input_tokens'),
-      tokensOut: _usageTokens(resolved.usage, 'output_tokens'),
-      cost: resolved.totalCostUsd,
-    );
-
-    if (resolved.isError) {
-      yield LlmStreamFailed(
-        callId: callId,
-        failure: LlmFailure(
-          classCode: 'unknown',
-          message: resolved.result ?? 'Agent SDK reported an error result.',
-        ),
-        report: report,
-      );
-      return;
-    }
-
-    yield LlmStreamCompleted(callId: callId, report: report);
+    await sessionStrategy.evict(options);
+    return true;
   }
 
   /// Builds an [LlmCallReport] with the provider-invariant fields filled:

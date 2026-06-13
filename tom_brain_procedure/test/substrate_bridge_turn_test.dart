@@ -55,6 +55,29 @@ void main() {
       expect(llmCalls[0].callSeq, equals(1));
       expect(llmCalls[1].callSeq, equals(2));
     });
+
+    // The agent-SDK § 1.5 seam: a turn carrying a tom_brain session id stamps it
+    // onto the call's LlmOptions.brainSessionId; a turn without one (or no turn
+    // at all) leaves it null. HTTP providers ignore the field; the agent-SDK
+    // provider in `sessionMode: brain` reads it.
+    test('a turn with a brainSessionId stamps it onto LlmOptions', () async {
+      final turn = TurnContext(TurnId.generate(), brainSessionId: 'tb-42');
+      final bridge = SubstrateBridge(client, turn: turn);
+
+      await bridge.llm('q');
+
+      expect(client.calls.single.options.brainSessionId, 'tb-42');
+    });
+
+    test('a turn without a brainSessionId leaves LlmOptions.brainSessionId null',
+        () async {
+      final turn = TurnContext(TurnId.generate());
+      final bridge = SubstrateBridge(client, turn: turn);
+
+      await bridge.llm('q');
+
+      expect(client.calls.single.options.brainSessionId, isNull);
+    });
   });
 }
 

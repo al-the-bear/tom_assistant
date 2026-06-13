@@ -17,9 +17,19 @@ final class TurnContext {
   /// The id minted at the access edge for this turn.
   final TurnId turnId;
 
+  /// The live tom_brain session id (`Access.session.sessionId`) this turn
+  /// serves, or `null` when the turn runs outside a session (internal /
+  /// free-time / dream).
+  ///
+  /// Stamped onto every user-turn LLM call's [LlmOptions.brainSessionId] by the
+  /// `SubstrateBridge`, where the run-layer `AgentSdkLlmProvider` in
+  /// `sessionMode: brain` reads it to key the persisted Claude-Code session id
+  /// by the tom_brain session (agent-SDK design spec § 1.5).
+  final String? brainSessionId;
+
   int _callSeq = 0;
 
-  TurnContext(this.turnId);
+  TurnContext(this.turnId, {this.brainSessionId});
 
   /// Returns the next LLM call sequence number for this turn.
   ///

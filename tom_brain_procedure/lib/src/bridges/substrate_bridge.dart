@@ -707,10 +707,17 @@ class SubstrateBridge {
           // raw-trail observation; calling `nextCallSeq()` twice would burn two
           // ordinals for one completion (§5.2 `callSeq` must match §3's stamp).
           final callSeq = turn?.nextCallSeq();
+          // Stamp the live tom_brain session id onto the call (agent-SDK spec
+          // § 1.5). Every HTTP / stub provider ignores `brainSessionId`; only
+          // the run-layer `AgentSdkLlmProvider` in `sessionMode: brain` reads it.
+          // A turn-less (internal / dream) call carries a null session id.
+          final stampedOptions = turn?.brainSessionId == null
+              ? options
+              : options.copyWith(brainSessionId: turn!.brainSessionId);
           final call = LlmCall(
             roleId: role,
             inputs: <String, Object?>{'prompt': prompt},
-            options: options,
+            options: stampedOptions,
             budget: _buildBudget(budget),
             turnId: turn?.turnId,
             callSeq: callSeq,

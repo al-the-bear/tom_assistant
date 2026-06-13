@@ -56,10 +56,13 @@
 //     `BrainProcessConfig.substrateConfig`. Validating here too would be a
 //     second, redundant validation surface.
 
+import 'dart:io';
+
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:tom_vscode_scripting_api/tom_vscode_scripting_api.dart';
 
 import 'agent_sdk_llm_provider.dart';
+import 'agent_sdk_session.dart';
 
 /// Builds the prototype's real substrate from a parsed [SubstrateConfig]
 /// (Plan-2 step #31).
@@ -73,6 +76,12 @@ import 'agent_sdk_llm_provider.dart';
 /// validates routed roles against); [webSearch] / [webFetch] override the
 /// no-web default. All three are seams for a richer assembly to inject through.
 ///
+/// [agentSdkSessionRoot] is the run's history/memory root under which a
+/// `sessionMode: brain` agent-SDK provider persists its
+/// `agent_sdk_sessions.json` (`{ brainSessionId → claudeSessionId }`) store
+/// (design-spec § 1.4). `provisionBrain` threads `MemoryConfig.root` here; it is
+/// only required when a provider row actually selects `sessionMode: brain`.
+///
 /// Throws [SubstrateConfigException] with a located message when a provider row
 /// names an unmanufacturable kind (`anthropic` / `stub`), a network provider
 /// declares no `baseUrl`, an `auth` uses an unresolved `secretRef`, or the
@@ -82,11 +91,13 @@ InProcessTomBrainSubstrate buildSubstrate(
   RoleRegistry? roleRegistry,
   WebSearch? webSearch,
   WebFetch? webFetch,
+  String? agentSdkSessionRoot,
 }) {
   // ── Manufacture one concrete provider per config row. ──
   final Map<String, LlmProvider> providers = <String, LlmProvider>{};
   for (final ProviderProfile profile in config.providers) {
-    providers[profile.id] = _buildProvider(profile);
+    providers[profile.id] =
+        _buildProvider(profile, agentSdkSessionRoot: agentSdkSessionRoot);
   }
 
   // ── The router: every route comes from the config's projected policy. ──
@@ -201,7 +212,12 @@ WebFetch buildWebFetch(WebFetchConfig config) => DefaultWebFetch(
 ///
 /// `openai` / `ollama` map to their real transports; `anthropic` / `stub` are
 /// out of the run builder's scope and surface as located errors.
-LlmProvider _buildProvider(ProviderProfile profile) {
+/// [agentSdkSessionRoot] is forwarded to a `sessionMode: brain` agent-SDK row's
+/// JSON store; see [buildSubstrate].
+LlmProvider _buildProvider(
+  ProviderProfile profile, {
+  String? agentSdkSessionRoot,
+}) {
   switch (profile.kind) {
     case ProviderKind.openai:
       return OpenAiPassthroughProvider(
@@ -219,7 +235,10 @@ LlmProvider _buildProvider(ProviderProfile profile) {
         defaultModel: profile.models.first,
       );
     case ProviderKind.agentSdk:
-      return _buildAgentSdkProvider(profile);
+      return _buildAgentSdkProvider(
+        profile,
+        agentSdkSessionRoot: agentSdkSessionRoot,
+      );
     case ProviderKind.anthropic:
     case ProviderKind.stub:
       throw SubstrateConfigException(
@@ -232,7 +251,7 @@ LlmProvider _buildProvider(ProviderProfile profile) {
 }
 
 /// Manufactures the agent-SDK provider for an `agent_sdk` config row
-/// (design-spec § 1; phase 2).
+/// (design-spec § 1).
 ///
 /// Reads the provider-specific knobs out of [ProviderProfile.options]:
 ///   * `bridgeHost` (default `127.0.0.1`) / `bridgePort`
@@ -241,27 +260,22 @@ LlmProvider _buildProvider(ProviderProfile profile) {
 ///   * `permissionMode` (default `default`) — Claude Code's own tool-loop
 ///     permission posture, validated against the SDK's wire alphabet;
 ///   * `maxTurns` (optional) — Claude Code's internal agentic-loop turn cap;
-///   * `sessionMode` (default `none`) — **phase 2 supports only `none`**
-///     (every call is a first call, no session id). `brain` / `quest` are a
-///     located error pointing at phase 3 so a config that names them fails
-///     loudly rather than silently dropping to a stateless call.
+///   * `sessionMode` (default `none`) — `none` (every call is a first call),
+///     `brain` (persist the Claude session id keyed by the tom_brain session,
+///     under [agentSdkSessionRoot]`/agent_sdk_sessions.json`), or `quest` (read
+///     the window's quest history `.session.json`, requiring `questId` /
+///     `sessionKey` / `questHistoryRoot` options). An unknown mode is a located
+///     error.
 ///
 /// The [AgentSdkLlmProvider.clientFactory] connects the bridge socket lazily
 /// on the first completion (and is memoised), so manufacturing the provider
 /// here is synchronous and never touches the network — a config can be built
 /// and validated without a live VS Code window.
-LlmProvider _buildAgentSdkProvider(ProviderProfile profile) {
+LlmProvider _buildAgentSdkProvider(
+  ProviderProfile profile, {
+  String? agentSdkSessionRoot,
+}) {
   final Map<String, Object?> options = profile.options;
-
-  final Object sessionModeRaw = options['sessionMode'] ?? 'none';
-  if (sessionModeRaw != 'none') {
-    throw SubstrateConfigException(
-      'substrate.providers["${profile.id}"].options.sessionMode = '
-      '"$sessionModeRaw": the agent-SDK provider supports only session mode '
-      '`none` in this build (every call is a first call). The `brain` and '
-      '`quest` session modes are wired in design-spec phase 3.',
-    );
-  }
 
   final String bridgeHost = (options['bridgeHost'] as String?) ?? '127.0.0.1';
   final int bridgePort =
@@ -269,6 +283,8 @@ LlmProvider _buildAgentSdkProvider(ProviderProfile profile) {
   final int? maxTurns = (options['maxTurns'] as num?)?.toInt();
   final PermissionMode permissionMode =
       _parsePermissionMode(profile, options['permissionMode']);
+  final AgentSdkSessionStrategy sessionStrategy =
+      _buildSessionStrategy(profile, options, agentSdkSessionRoot);
 
   return AgentSdkLlmProvider(
     id: profile.id,
@@ -277,6 +293,7 @@ LlmProvider _buildAgentSdkProvider(ProviderProfile profile) {
     defaultModel: profile.models.first,
     maxTurns: maxTurns,
     permissionMode: permissionMode,
+    sessionStrategy: sessionStrategy,
     clientFactory: () async {
       final VSCodeBridgeClient client =
           VSCodeBridgeClient(host: bridgeHost, port: bridgePort);
@@ -289,6 +306,71 @@ LlmProvider _buildAgentSdkProvider(ProviderProfile profile) {
       }
       return AgentSdkClient(VSCodeBridgeAgentSdkTransport(client));
     },
+  );
+}
+
+/// Builds the [AgentSdkSessionStrategy] the `sessionMode` option selects
+/// (design-spec § 1.4): `none` → [NoSessionStrategy]; `brain` →
+/// [BrainSessionStrategy] over `agent_sdk_sessions.json` under
+/// [agentSdkSessionRoot] (required); `quest` → [QuestSessionStrategy] over the
+/// `questId` / `sessionKey` / `questHistoryRoot` options (all required). An
+/// unknown mode, or a missing required option, is a located error.
+AgentSdkSessionStrategy _buildSessionStrategy(
+  ProviderProfile profile,
+  Map<String, Object?> options,
+  String? agentSdkSessionRoot,
+) {
+  final Object sessionModeRaw = options['sessionMode'] ?? 'none';
+  switch (sessionModeRaw) {
+    case 'none':
+      return const NoSessionStrategy();
+    case 'brain':
+      if (agentSdkSessionRoot == null) {
+        throw SubstrateConfigException(
+          'substrate.providers["${profile.id}"].options.sessionMode = "brain" '
+          'needs the run history/memory root, but none was provided to '
+          'buildSubstrate (agentSdkSessionRoot). provisionBrain threads it from '
+          'the memory config; a hand-built substrate must pass it explicitly.',
+        );
+      }
+      return BrainSessionStrategy(
+        AgentSdkSessionStore(
+          File('$agentSdkSessionRoot/agent_sdk_sessions.json'),
+        ),
+      );
+    case 'quest':
+      final String questId =
+          _requireStringOption(profile, options, 'questId');
+      final String sessionKey =
+          _requireStringOption(profile, options, 'sessionKey');
+      final String questHistoryRoot =
+          _requireStringOption(profile, options, 'questHistoryRoot');
+      return QuestSessionStrategy(
+        questHistoryRoot: questHistoryRoot,
+        questId: questId,
+        sessionKey: sessionKey,
+      );
+    default:
+      throw SubstrateConfigException(
+        'substrate.providers["${profile.id}"].options.sessionMode = '
+        '"$sessionModeRaw" is not a valid agent-SDK session mode. Valid values: '
+        'none, brain, quest.',
+      );
+  }
+}
+
+/// Reads a required non-empty string [key] out of the agent-SDK [options] bag,
+/// or a located error when it is absent / empty / not a string.
+String _requireStringOption(
+  ProviderProfile profile,
+  Map<String, Object?> options,
+  String key,
+) {
+  final Object? raw = options[key];
+  if (raw is String && raw.isNotEmpty) return raw;
+  throw SubstrateConfigException(
+    'substrate.providers["${profile.id}"].options.$key is required for '
+    'sessionMode "quest" but was ${raw == null ? 'absent' : '"$raw"'}.',
   );
 }
 
