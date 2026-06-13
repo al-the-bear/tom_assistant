@@ -133,13 +133,19 @@ final class HttpMcpTransport with CloseGuard implements McpTransport {
     );
     _controller = controller;
 
-    // Wire outbound: each string from the local sink becomes a POST.
+    // Wire outbound: each string the consumer writes to the returned
+    // `foreign.sink` is emitted on `local.stream`, where this listener turns it
+    // into a POST. Inbound responses go the other way — written to `local.sink`
+    // (below), which the `StreamChannelController` emits on the consumer's
+    // `foreign.stream`. (Writing a response to `foreign.sink` would emit it on
+    // `local.stream` — i.e. feed it straight back into this outbound listener,
+    // an infinite POST-the-response feedback loop.)
     controller.local.stream.listen(
       (line) => unawaited(_postLine(line, controller)),
       onDone: () {
-        // Local side closed (consumer is done). Tear down the
-        // foreign side so dart_mcp's stream completes.
-        unawaited(controller.foreign.sink.close());
+        // Consumer closed its sink (it is done). Close our `local.sink` so the
+        // consumer's `foreign.stream` completes, then settle `done`.
+        unawaited(controller.local.sink.close());
         if (!_doneCompleter.isCompleted) _doneCompleter.complete();
       },
       onError: (Object error, StackTrace stack) {
@@ -226,9 +232,11 @@ final class HttpMcpTransport with CloseGuard implements McpTransport {
     // Body may contain a single JSON-RPC message or a newline-
     // delimited batch. We split on '\n' and forward each non-empty
     // line. dart_mcp's framing expects one JSON-RPC message per line.
+    // Inbound goes to `local.sink` → emitted on the consumer's
+    // `foreign.stream`; never `foreign.sink` (that loops to `local.stream`).
     for (final responseLine in const LineSplitter().convert(body)) {
       if (responseLine.isEmpty) continue;
-      controller.foreign.sink.add(responseLine);
+      controller.local.sink.add(responseLine);
     }
   }
 
@@ -240,10 +248,10 @@ final class HttpMcpTransport with CloseGuard implements McpTransport {
     if (!_doneCompleter.isCompleted) {
       _doneCompleter.completeError(error);
     }
-    // Close the foreign side so dart_mcp's pending `initialize`
-    // resolves (with a StateError it will then have to be racing
-    // against `done`).
-    unawaited(controller.foreign.sink.close());
+    // Close our `local.sink` so the consumer's `foreign.stream` completes and
+    // dart_mcp's pending `initialize` resolves (racing against `done`, which
+    // has just completed with the error).
+    unawaited(controller.local.sink.close());
   }
 
   @override

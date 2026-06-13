@@ -17,17 +17,23 @@
 //     `mcp.unreachable` `McpFailure` — environmental (PE-6), so the boot-time
 //     tool merge simply omits that server rather than aborting.
 //
-//   * `http` — dart_mcp 0.5.1 ships no client-side Streamable-HTTP transport,
-//     so an `http:` external server raises an `mcp.unreachable` `McpFailure`
-//     here. It is environmental, not a config error: the server is configured
-//     correctly, the running build just cannot reach it over HTTP, so its
-//     tools are omitted at boot (PE-6) exactly like an unreachable stdio one.
+//   * `http` — the Streamable-HTTP (POST + JSON response) transport, reached by
+//     delegating to the substrate's `HttpMcpTransport`
+//     (`tom_brain_substrate/lib/src/mcp_client/http_transport.dart`) — the same
+//     transport the substrate's own outbound MCP client already uses, so the run
+//     assembly reuses it rather than rebuilding an HTTP MCP stack. The VS Code
+//     Extension MCP server (request b; `agent_sdk_provider_and_mcp_liveness.md`
+//     § 2) is reached this way at `http://127.0.0.1:19920/`. A server with no
+//     `url` is a configured-but-unreachable server (`mcp.unreachable`); a
+//     network failure surfaces through the transport's channel exactly like an
+//     unreachable stdio one (PE-6), so its tools are omitted at boot.
 //     (The memory MCP server is reached in-process, not through this factory.)
 
 import 'dart:async';
 import 'dart:io';
 
 import 'package:dart_mcp/stdio.dart' show stdioChannel;
+import 'package:http/http.dart' as http;
 import 'package:stream_channel/stream_channel.dart';
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show
@@ -36,29 +42,74 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         McpServerConfig,
         McpTransport,
         mcpUnreachableCode;
+import 'package:tom_brain_substrate/tom_brain_substrate.dart'
+    show HttpMcpTransport, McpBearerCredential;
 
 /// The production [McpChannelFactory] the run assembly hands its
 /// `DartMcpConnector` (request f).
 ///
 /// Dispatches on [McpServerConfig.transport]: a [McpTransport.stdio] server is
-/// spawned as a child process; a [McpTransport.http] server raises an
-/// `mcp.unreachable` [McpFailure] (no HTTP client transport in this build).
-McpChannelFactory productionMcpChannelFactory() => _openProductionChannel;
+/// spawned as a child process; a [McpTransport.http] server opens a
+/// Streamable-HTTP channel via the substrate's `HttpMcpTransport`.
+///
+/// [httpClient] is an optional `package:http.Client` injected for the HTTP
+/// transport (tests own its lifetime). When `null` — the production default —
+/// `HttpMcpTransport` sources its client from the workspace-shared
+/// `tom_core_kernel.TomHttpClientFactory`.
+McpChannelFactory productionMcpChannelFactory({http.Client? httpClient}) =>
+    (config) => _openProductionChannel(config, httpClient);
 
 Future<StreamChannel<String>> _openProductionChannel(
   McpServerConfig config,
+  http.Client? httpClient,
 ) async {
   switch (config.transport) {
     case McpTransport.stdio:
       return _openStdioChannel(config);
     case McpTransport.http:
-      throw McpFailure(
-        mcpUnreachableCode,
-        serverId: config.id,
-        message: 'http MCP transport is not supported by this build '
-            '(server "${config.id}")',
-      );
+      return _openHttpChannel(config, httpClient);
   }
+}
+
+/// Opens a Streamable-HTTP channel to the [config]'s `url` via the substrate's
+/// `HttpMcpTransport`.
+///
+/// A missing/empty [McpServerConfig.url] is a configured-but-unreachable server
+/// (an `mcp.unreachable` [McpFailure]); a `Bearer <token>` in
+/// [McpServerConfig.headers] is forwarded as the transport's bearer credential.
+Future<StreamChannel<String>> _openHttpChannel(
+  McpServerConfig config,
+  http.Client? httpClient,
+) async {
+  final rawUrl = config.url;
+  if (rawUrl == null || rawUrl.isEmpty) {
+    throw McpFailure(
+      mcpUnreachableCode,
+      serverId: config.id,
+      message: 'http MCP server "${config.id}" has no "url"',
+    );
+  }
+  final transport = HttpMcpTransport(
+    id: config.id,
+    url: Uri.parse(rawUrl),
+    auth: _bearerFrom(config.headers),
+    httpClient: httpClient,
+  );
+  return transport.connect();
+}
+
+/// Extracts a [McpBearerCredential] from an `Authorization: Bearer <token>`
+/// entry in [headers] (case-insensitive header name), or `null` when none is
+/// present (the endpoint is then reached anonymously).
+McpBearerCredential? _bearerFrom(Map<String, String> headers) {
+  for (final entry in headers.entries) {
+    if (entry.key.toLowerCase() != 'authorization') continue;
+    const prefix = 'Bearer ';
+    if (entry.value.startsWith(prefix)) {
+      return McpBearerCredential(entry.value.substring(prefix.length));
+    }
+  }
+  return null;
 }
 
 /// Spawns the [config]'s child process and wraps its stdio as a
