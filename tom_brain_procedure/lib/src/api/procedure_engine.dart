@@ -827,6 +827,10 @@ final class ProcedureEngine {
         turnId: turn?.turnId.value,
         startedAt: recorder.startedAt ?? _now(),
         readEffort: () => recorder.accumulatedEffort,
+        // The `/stop_prompt` lever: a top-level run carries its
+        // `RunCancellation.cancel`; a nested run has no handle (`null`) and is
+        // abandoned with its parent (Q-C.39.2).
+        cancel: cancellation?.cancel,
       ),
     );
 

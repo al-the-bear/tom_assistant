@@ -294,6 +294,8 @@ class TelegramAccessEdge {
         await _handleTodosClear(receiver, userId);
       case TelegramCommandKind.checkUsage:
         await _handleCheckUsage(receiver);
+      case TelegramCommandKind.stopPrompt:
+        await _handleStopPrompt(receiver);
     }
   }
 
@@ -454,6 +456,20 @@ class TelegramAccessEdge {
       return;
     }
     await _sendSplit(receiver, await inspector.currentUsage());
+  }
+
+  /// Handles `/stop_prompt`: cooperatively interrupts the prompt being processed
+  /// right now and reports the outcome (a "stopped" confirmation, or a "nothing
+  /// is being processed" notice when the brain is idle). Process-global (the
+  /// single foreground prompt), so like `/check_usage` there is no session to
+  /// resolve. Replies the unavailable message when no stop controller is wired.
+  Future<void> _handleStopPrompt(ChatReceiver receiver) async {
+    final TelegramStopController? controller = _inspectors.stop;
+    if (controller == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    await _sendSplit(receiver, await controller.stopCurrentPrompt());
   }
 
   /// Sends [text] as the minimum number of size-compliant Telegram messages,

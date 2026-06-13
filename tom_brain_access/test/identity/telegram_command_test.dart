@@ -61,6 +61,13 @@ void main() {
           TelegramCommandKind.checkUsage);
     });
 
+    test('parses the stop-prompt command', () {
+      expect(parseTelegramCommand('/stop_prompt')!.kind,
+          TelegramCommandKind.stopPrompt);
+      expect(parseTelegramCommand('/STOP_PROMPT@tom_brain_bot')!.kind,
+          TelegramCommandKind.stopPrompt);
+    });
+
     test('strips a @botname suffix and is case-insensitive', () {
       expect(parseTelegramCommand('/list_sessions@tom_brain_bot')!.kind,
           TelegramCommandKind.listSessions);

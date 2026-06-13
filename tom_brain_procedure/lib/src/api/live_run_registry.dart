@@ -49,6 +49,14 @@ final class LiveRun {
   /// the calls recorded up to the read.
   final EffortMetrics Function() readEffort;
 
+  /// Cooperatively cancels the run (the `/stop_prompt` lever) — the engine
+  /// passes the run's `RunCancellation.cancel` here for a top-level run, so an
+  /// out-of-band observer can abandon the prompt being processed right now.
+  /// `null` for a run that holds no cancellation handle (a nested run, which is
+  /// abandoned with its parent — Q-C.39.2 — or a test fixture); the registry
+  /// treats a `null` cancel as a no-op.
+  final void Function()? cancel;
+
   /// Builds a live-run handle.
   LiveRun({
     required this.runId,
@@ -57,6 +65,7 @@ final class LiveRun {
     required this.turnId,
     required this.startedAt,
     required this.readEffort,
+    this.cancel,
   });
 
   /// The run's live accumulated effort (a fresh read each call).
@@ -123,6 +132,35 @@ final class LiveRunRegistry {
   /// runs, so `/check_usage` can report "no prompt is being processed".
   bool get hasOpenPromptRun => _open.values.any((r) => r.turnId != null);
 
+  /// The open runs that serve a user turn (the single foreground prompt's
+  /// top-level run plus its in-flight sub-procedures). Shared by
+  /// [currentPromptUsage] and [cancelCurrentPrompt] so both read the same
+  /// "what is the current prompt" definition.
+  List<LiveRun> _turnRuns() =>
+      _open.values.where((r) => r.turnId != null).toList();
+
+  /// Cooperatively cancels the user prompt being processed right now, returning
+  /// `true` when one was in flight (and signalled to stop) and `false` when no
+  /// user prompt was open.
+  ///
+  /// This is the `/stop_prompt` lever. The single foreground invariant means
+  /// every open turn-run belongs to the one prompt in flight, so it fires the
+  /// [LiveRun.cancel] of every open turn-run — in practice only the top-level
+  /// run carries a real cancellation handle (a nested run is abandoned with its
+  /// parent, Q-C.39.2), but cancelling all open turn-runs keeps the call
+  /// correct regardless of which runs hold a handle. Cancellation is
+  /// cooperative (Q-C.39.2): the engine stops waiting on the run's guarded step
+  /// and closes it `aborted`; abandoned in-flight work may still finish in the
+  /// background with its result dropped.
+  bool cancelCurrentPrompt() {
+    final runs = _turnRuns();
+    if (runs.isEmpty) return false;
+    for (final run in runs) {
+      run.cancel?.call();
+    }
+    return true;
+  }
+
   /// A folded snapshot of the prompt currently being processed, or `null` when
   /// no user prompt is in flight.
   ///
@@ -133,7 +171,7 @@ final class LiveRunRegistry {
   /// single-foreground invariant should preclude), it falls back to the
   /// earliest-started run so the snapshot is still well-formed.
   LiveRunUsage? currentPromptUsage() {
-    final runs = _open.values.where((r) => r.turnId != null).toList();
+    final runs = _turnRuns();
     if (runs.isEmpty) return null;
 
     LiveRun top = runs.firstWhere(

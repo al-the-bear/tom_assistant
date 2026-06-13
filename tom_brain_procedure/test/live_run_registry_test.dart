@@ -22,6 +22,7 @@ void main() {
     String? turnId,
     DateTime? startedAt,
     EffortMetrics Function()? readEffort,
+    void Function()? cancel,
   }) {
     return LiveRun(
       runId: runId,
@@ -30,6 +31,7 @@ void main() {
       turnId: turnId,
       startedAt: startedAt ?? DateTime(2026),
       readEffort: readEffort ?? () => EffortMetrics.zero,
+      cancel: cancel,
     );
   }
 
@@ -133,6 +135,65 @@ void main() {
       final usage = registry.currentPromptUsage()!;
       expect(usage.runId, 'child-early');
       expect(usage.openRunCount, 2);
+    });
+  });
+
+  group('LiveRunRegistry.cancelCurrentPrompt', () {
+    test('returns false and cancels nothing when no prompt is open', () {
+      final registry = LiveRunRegistry();
+      expect(registry.cancelCurrentPrompt(), isFalse);
+    });
+
+    test('ignores a turn-less background run (returns false, no cancel)', () {
+      final registry = LiveRunRegistry();
+      var cancelled = false;
+      registry.open(
+        run(runId: 'bg', turnId: null, cancel: () => cancelled = true),
+      );
+      expect(registry.cancelCurrentPrompt(), isFalse);
+      expect(cancelled, isFalse);
+    });
+
+    test('cancels the open foreground prompt and reports it', () {
+      final registry = LiveRunRegistry();
+      var topCancelled = false;
+      registry.open(run(
+        runId: 'top',
+        parentRunId: null,
+        turnId: 'turn-1',
+        cancel: () => topCancelled = true,
+      ));
+      expect(registry.cancelCurrentPrompt(), isTrue);
+      expect(topCancelled, isTrue);
+    });
+
+    test('cancels every open turn-run of the prompt', () {
+      final registry = LiveRunRegistry();
+      var topCancelled = false;
+      var childCancelled = false;
+      registry.open(run(
+        runId: 'top',
+        parentRunId: null,
+        turnId: 'turn-1',
+        cancel: () => topCancelled = true,
+      ));
+      registry.open(run(
+        runId: 'child',
+        parentRunId: 'top',
+        turnId: 'turn-1',
+        cancel: () => childCancelled = true,
+      ));
+      expect(registry.cancelCurrentPrompt(), isTrue);
+      expect(topCancelled, isTrue);
+      expect(childCancelled, isTrue);
+    });
+
+    test('a run with no cancel closure is a harmless no-op', () {
+      final registry = LiveRunRegistry();
+      registry.open(run(runId: 'top', parentRunId: null, turnId: 'turn-1'));
+      // No cancel closure attached (e.g. a test/edge case run): the call still
+      // reports a prompt was in flight and does not throw.
+      expect(registry.cancelCurrentPrompt(), isTrue);
     });
   });
 }

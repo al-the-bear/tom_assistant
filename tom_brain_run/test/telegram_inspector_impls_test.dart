@@ -599,6 +599,53 @@ void main() {
       expect(await inspector.currentUsage(), contains('elapsed: 3s'));
     });
   });
+
+  group('LiveStopController', () {
+    test('reports nothing to stop when the registry is empty', () async {
+      final registry = LiveRunRegistry();
+      final controller = LiveStopController(registry: registry);
+      expect(await controller.stopCurrentPrompt(),
+          'No prompt is being processed right now.');
+    });
+
+    test('cancels the foreground prompt and confirms the stop', () async {
+      final registry = LiveRunRegistry();
+      var cancelled = false;
+      registry.open(LiveRun(
+        runId: 'top',
+        procedureId: 'answer_with_thinking_v1',
+        parentRunId: null,
+        turnId: 'turn-1',
+        startedAt: DateTime(2026, 6, 11, 10),
+        readEffort: () => EffortMetrics.zero,
+        cancel: () => cancelled = true,
+      ));
+      final controller = LiveStopController(registry: registry);
+
+      final text = await controller.stopCurrentPrompt();
+      expect(cancelled, isTrue);
+      expect(text, contains('Stopping the prompt being processed'));
+    });
+
+    test('ignores a turn-less background run (nothing to stop)', () async {
+      final registry = LiveRunRegistry();
+      var cancelled = false;
+      registry.open(LiveRun(
+        runId: 'bg',
+        procedureId: 'dream_v1',
+        parentRunId: null,
+        turnId: null,
+        startedAt: DateTime(2026, 6, 11, 10),
+        readEffort: () => EffortMetrics.zero,
+        cancel: () => cancelled = true,
+      ));
+      final controller = LiveStopController(registry: registry);
+
+      expect(await controller.stopCurrentPrompt(),
+          'No prompt is being processed right now.');
+      expect(cancelled, isFalse);
+    });
+  });
 }
 
 /// A memory client double that answers only `stats()`; every other member falls

@@ -71,6 +71,11 @@ enum TelegramCommandKind {
   /// now: time since it started and its accumulating effort (LLM calls, tool
   /// calls, estimated tokens).
   checkUsage,
+
+  /// `/stop_prompt` — interrupt the prompt being processed right now,
+  /// cooperatively abandoning the in-flight foreground run. A no-op (with a
+  /// "nothing is being processed" reply) when the brain is idle.
+  stopPrompt,
 }
 
 /// The command word a user types for each [TelegramCommandKind], without the
@@ -91,6 +96,7 @@ const Map<TelegramCommandKind, String> telegramCommandWords =
   TelegramCommandKind.todosList: 'todos_list',
   TelegramCommandKind.todosClear: 'todos_clear',
   TelegramCommandKind.checkUsage: 'check_usage',
+  TelegramCommandKind.stopPrompt: 'stop_prompt',
 };
 
 /// The reverse of [telegramCommandWords]: the command word (lower-cased,
@@ -162,6 +168,7 @@ String telegramHelpText() {
     ..write('\n/todos_list — show the working todo list of the active session')
     ..write('\n/todos_clear — empty the working todo list of the active session')
     ..write('\n/check_usage — live budget of the prompt being processed now')
+    ..write('\n/stop_prompt — interrupt the prompt being processed now')
     ..write('\n\n/help — show this list');
   return buffer.toString();
 }

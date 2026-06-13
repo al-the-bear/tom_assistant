@@ -106,6 +106,14 @@ final class ProvisionedBrain {
   /// the live budget (the standalone serve path).
   final TelegramUsageInspector? usageInspector;
 
+  /// Interrupts the in-flight foreground prompt for the Telegram `/stop_prompt`
+  /// command — a `tom_brain_access` port type (an allowed dependency), so
+  /// surfacing it here does *not* pull `tom_brain_procedure` into the access
+  /// package. A higher assembly (`tom_brain_run`) sets it over the booted
+  /// engine's `LiveRunRegistry`; `null` when the provisioner does not expose
+  /// the stop lever (the standalone serve path).
+  final TelegramStopController? stopController;
+
   /// Builds a provisioned-brain handle.
   const ProvisionedBrain({
     required this.dispatcher,
@@ -114,6 +122,7 @@ final class ProvisionedBrain {
     this.memoryClient,
     this.todosInspector,
     this.usageInspector,
+    this.stopController,
   });
 }
 

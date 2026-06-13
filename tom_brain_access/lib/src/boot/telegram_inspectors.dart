@@ -166,6 +166,22 @@ abstract interface class TelegramUsageInspector {
   Future<String> currentUsage();
 }
 
+/// Interrupts the prompt being processed right now for the `/stop_prompt`
+/// command.
+///
+/// The one *controller* among the inspection seams — every other port reads,
+/// this one acts. It cooperatively cancels the single foreground prompt's
+/// in-flight run via the engine's process-lifetime live-run registry, so like
+/// [TelegramUsageInspector] it is process-global (no session to resolve).
+/// Implemented in `tom_brain_run`, the one assembly that may reach the engine.
+/// Returns already-rendered, channel-neutral text.
+abstract interface class TelegramStopController {
+  /// Cooperatively interrupts the prompt currently being processed and renders
+  /// the outcome — a "stopped" confirmation when a prompt was in flight, or an
+  /// explicit "no prompt is being processed" notice when the brain is idle.
+  Future<String> stopCurrentPrompt();
+}
+
 /// The read-only inspectors the Telegram edge drives for the inspection
 /// commands (parts b–e).
 ///
@@ -197,6 +213,10 @@ final class TelegramInspectors {
   /// `/check_usage`, or `null` when unavailable.
   final TelegramUsageInspector? usage;
 
+  /// Interrupts the prompt being processed now for `/stop_prompt`, or `null`
+  /// when unavailable.
+  final TelegramStopController? stop;
+
   /// Builds an inspector bundle; every member defaults to absent.
   const TelegramInspectors({
     this.prompts,
@@ -205,6 +225,7 @@ final class TelegramInspectors {
     this.status,
     this.todos,
     this.usage,
+    this.stop,
   });
 
   /// The no-inspectors bundle: every inspection command answers "not available

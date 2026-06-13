@@ -806,6 +806,50 @@ void main() {
           telegramInspectorUnavailableMessage,
         );
       });
+
+      test('/stop_prompt interrupts the prompt (no session resolution)',
+          () async {
+        final d = _answeringDispatcher();
+        final stop = _FakeStopController(
+          stopText: 'Stopped the prompt being processed.',
+        );
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          sessionRegistry: _deterministicRegistry,
+          inspectors: TelegramInspectors(stop: stop),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/stop_prompt'));
+        await pumpEventQueue();
+
+        // The brain is never re-entered — the stop is an engine action; and the
+        // command is process-global, so the controller is called with no id.
+        expect(d.routed, isEmpty);
+        expect(stop.calls, 1);
+        expect(
+          f.chatApi.sentMessages.single,
+          'Stopped the prompt being processed.',
+        );
+      });
+
+      test('/stop_prompt is unavailable when no controller is wired', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(dispatcher: d.dispatcher);
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/stop_prompt'));
+        await pumpEventQueue();
+
+        expect(
+          f.chatApi.sentMessages.single,
+          telegramInspectorUnavailableMessage,
+        );
+      });
     });
 
     group('telegramProcessingAcknowledgement', () {
@@ -922,6 +966,22 @@ final class _FakeUsageInspector implements TelegramUsageInspector {
   Future<String> currentUsage() async {
     calls += 1;
     return usageText;
+  }
+}
+
+/// A stop controller counting how often it is asked and returning a canned
+/// string, used to drive the `/stop_prompt` dispatch path. The command is
+/// process-global, so it takes no session id.
+final class _FakeStopController implements TelegramStopController {
+  _FakeStopController({this.stopText = 'stopped'});
+
+  final String stopText;
+  int calls = 0;
+
+  @override
+  Future<String> stopCurrentPrompt() async {
+    calls += 1;
+    return stopText;
   }
 }
 

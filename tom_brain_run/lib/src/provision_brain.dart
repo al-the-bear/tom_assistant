@@ -44,6 +44,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         QueueSnapshot,
         QueueSnapshotSource,
         TelegramInspectors,
+        TelegramStopController,
         TelegramTodosInspector,
         TelegramUsageInspector,
         serveWithShelfIo,
@@ -98,6 +99,7 @@ import 'streaming_live_trail.dart' show StreamingLiveTrailWriter;
 import 'summary_fanout.dart' show SummaryFanout;
 import 'telegram_inspector_impls.dart'
     show
+        LiveStopController,
         LiveUsageInspector,
         MemoryStatsInspector,
         SessionTodosInspector,
@@ -286,6 +288,11 @@ Future<ProvisionedBrain> provisionBrain({
     // Telegram `/check_usage` command over the engine's `LiveRunRegistry`
     // without the access package depending on `tom_brain_procedure`.
     usageInspector: LiveUsageInspector(registry: booted.engine.liveRunRegistry),
+    // Surface the engine's live-run registry behind the access package's
+    // `TelegramStopController` port, so the running process can build the
+    // Telegram `/stop_prompt` command over the engine's `LiveRunRegistry`
+    // without the access package depending on `tom_brain_procedure`.
+    stopController: LiveStopController(registry: booted.engine.liveRunRegistry),
   );
 }
 
@@ -434,6 +441,7 @@ Future<BrainProcess> standUpBrainProcess({
         queueSnapshot: provisioned.queueSnapshot,
         todos: provisioned.todosInspector,
         usage: provisioned.usageInspector,
+        stop: provisioned.stopController,
       ),
     );
   } on Object {
@@ -468,6 +476,7 @@ TelegramInspectors _telegramInspectorsFor({
   required QueueSnapshotSource queueSnapshot,
   required TelegramTodosInspector? todos,
   required TelegramUsageInspector? usage,
+  required TelegramStopController? stop,
 }) {
   final Directory? root = trailRoot == null ? null : Directory(trailRoot);
   return TelegramInspectors(
@@ -486,6 +495,9 @@ TelegramInspectors _telegramInspectorsFor({
     // The usage inspector reads the engine's live `LiveRunRegistry`, also
     // independent of `trailRoot`, so it is wired whenever one is exposed.
     usage: usage,
+    // The stop controller acts on the same live `LiveRunRegistry`, also
+    // independent of `trailRoot`, so it is wired whenever one is exposed.
+    stop: stop,
   );
 }
 

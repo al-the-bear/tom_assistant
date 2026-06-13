@@ -34,6 +34,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         TelegramPromptDigest,
         TelegramPromptInspector,
         TelegramStatusInspector,
+        TelegramStopController,
         TelegramTodosInspector,
         TelegramUsageInspector;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
@@ -831,5 +832,32 @@ final class LiveUsageInspector implements TelegramUsageInspector {
       if (seconds > 0) '${seconds}s',
     ];
     return parts.join(' ');
+  }
+}
+
+/// Implements the access package's [TelegramStopController] port for the
+/// `/stop_prompt` command, over the engine's process-lifetime [LiveRunRegistry].
+///
+/// The one *acting* port among the inspector impls: where [LiveUsageInspector]
+/// reads the live budget, this interrupts the prompt being processed right now.
+/// It calls [LiveRunRegistry.cancelCurrentPrompt], which cooperatively abandons
+/// the single foreground prompt's in-flight run (Q-C.39.2) — the engine stops
+/// waiting on the run's guarded step and closes it `aborted`. Reports an
+/// explicit "no prompt is being processed" notice when the brain is idle, so a
+/// `/stop_prompt` against a quiet brain is honest rather than silent.
+final class LiveStopController implements TelegramStopController {
+  /// The engine's process-lifetime registry of in-flight runs.
+  final LiveRunRegistry registry;
+
+  /// Builds a controller over the engine's [registry].
+  LiveStopController({required this.registry});
+
+  @override
+  Future<String> stopCurrentPrompt() async {
+    final bool stopped = registry.cancelCurrentPrompt();
+    return stopped
+        ? 'Stopping the prompt being processed. It will wind down at its next '
+            'checkpoint; any answer already streamed stands.'
+        : 'No prompt is being processed right now.';
   }
 }
