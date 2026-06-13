@@ -254,8 +254,12 @@ abstract final class SubstrateConfigLoader {
           'substrate.providers[$i].baseUrl',
         );
       }
-      // Stub providers have no baseUrl; ollama / openai require one.
-      if (kind != ProviderKind.stub && baseUrl == null) {
+      // Stub providers have no baseUrl; the agent-SDK provider reaches the
+      // bridge via `options.bridgeHost` / `options.bridgePort`, not a
+      // `baseUrl`. ollama / openai / anthropic require one.
+      if (kind != ProviderKind.stub &&
+          kind != ProviderKind.agentSdk &&
+          baseUrl == null) {
         throw SubstrateConfigException(
           'substrate.providers[$i] (kind=${kind.name}) requires `baseUrl`.',
         );
@@ -267,12 +271,17 @@ abstract final class SubstrateConfigLoader {
         'substrate.providers[$i].auth',
       );
 
-      // Stub providers ignore auth (always `none`); reject any
-      // declared auth to keep the schema honest.
-      if (kind == ProviderKind.stub && !auth.isNone) {
+      // Stub providers ignore auth (always `none`); the agent-SDK provider
+      // delegates the Anthropic credential to the VS Code bridge / Claude
+      // Code, so it carries no substrate-side auth. Reject any declared
+      // auth on either to keep the schema honest.
+      if ((kind == ProviderKind.stub || kind == ProviderKind.agentSdk) &&
+          !auth.isNone) {
         throw SubstrateConfigException(
-          'substrate.providers[$i] (kind=stub) must declare `auth: '
-          '{method: none}` (or omit `auth:` entirely).',
+          'substrate.providers[$i] (kind=${kind.name}) must declare `auth: '
+          '{method: none}` (or omit `auth:` entirely); the '
+          '${kind == ProviderKind.stub ? "stub has no transport" : "bridge "
+              "owns the Anthropic credential"}.',
         );
       }
 
@@ -309,6 +318,11 @@ abstract final class SubstrateConfigLoader {
         );
       }
 
+      final options = _parseProviderOptions(
+        _optionalMap(entry, 'options'),
+        'substrate.providers[$i].options',
+      );
+
       result.add(
         ProviderProfile(
           id: id,
@@ -316,6 +330,7 @@ abstract final class SubstrateConfigLoader {
           baseUrl: baseUrl,
           auth: auth,
           models: List<String>.unmodifiable(models),
+          options: options,
         ),
       );
     }
@@ -335,12 +350,14 @@ abstract final class SubstrateConfigLoader {
         return ProviderKind.openai;
       case 'anthropic':
         return ProviderKind.anthropic;
+      case 'agent_sdk':
+        return ProviderKind.agentSdk;
       case 'stub':
         return ProviderKind.stub;
       default:
         throw SubstrateConfigException(
-          '$path must be one of `ollama`, `openai`, `anthropic`, `stub` '
-          '(got "$raw").',
+          '$path must be one of `ollama`, `openai`, `anthropic`, '
+          '`agent_sdk`, `stub` (got "$raw").',
         );
     }
   }
@@ -1104,6 +1121,49 @@ abstract final class SubstrateConfigLoader {
 
   static List<Object?>? _optionalList(Map<Object?, Object?> node, String key, String path) =>
       _types.optionalList(node, key, path);
+
+  /// Parses an optional provider `options:` sub-map into a plain Dart
+  /// `Map<String, Object?>` passthrough.
+  ///
+  /// The substrate does not interpret the values — the concrete provider
+  /// builder does (e.g. the run-layer agent-SDK builder). This only
+  /// enforces that keys are strings and deep-converts any nested YAML
+  /// maps / lists to plain Dart collections so consumers never have to
+  /// import `package:yaml`. Returns the empty map when `options:` is
+  /// absent.
+  static Map<String, Object?> _parseProviderOptions(
+    Map<Object?, Object?>? node,
+    String path,
+  ) {
+    if (node == null) return const <String, Object?>{};
+    final out = <String, Object?>{};
+    for (final entry in node.entries) {
+      final key = entry.key;
+      if (key is! String) {
+        throw SubstrateConfigException(
+          '$path keys must be strings (got ${key.runtimeType}).',
+        );
+      }
+      out[key] = _toPlainDart(entry.value);
+    }
+    return Map<String, Object?>.unmodifiable(out);
+  }
+
+  /// Recursively converts a YAML value (possibly `YamlMap` / `YamlList`)
+  /// into plain Dart collections, leaving scalars untouched.
+  static Object? _toPlainDart(Object? value) {
+    if (value is Map) {
+      final m = <String, Object?>{};
+      for (final e in value.entries) {
+        m['${e.key}'] = _toPlainDart(e.value);
+      }
+      return Map<String, Object?>.unmodifiable(m);
+    }
+    if (value is List) {
+      return List<Object?>.unmodifiable(value.map(_toPlainDart));
+    }
+    return value;
+  }
 
   static Uri _parseUri(String raw, String path) => _types.parseUri(raw, path);
 

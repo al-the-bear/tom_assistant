@@ -247,6 +247,21 @@ final class LlmOptions {
   /// docstring on why it stays.
   final Map<String, Object?>? responseFormat;
 
+  /// The live tom_brain session id (`Access.session.sessionId`) this call
+  /// belongs to, stamped by the procedure engine's per-run
+  /// `SubstrateBridge` from the inbound `Access` for user-turn calls;
+  /// `null` for dream / free-time / boot paths that run outside a session.
+  ///
+  /// This is a single additive per-call knob that flows call → router →
+  /// provider unchanged. Every HTTP / stub provider **ignores** it — it
+  /// exists solely so the run-layer `AgentSdkLlmProvider` in its
+  /// `sessionMode: brain` can key the persisted Claude-Code session id by
+  /// the tom_brain session (agent-SDK design spec § 1.5). Threading it
+  /// here, rather than via a separate per-call binding, keeps the seam to
+  /// one optional field and costs nothing for every provider that does
+  /// not read it.
+  final String? brainSessionId;
+
   const LlmOptions({
     this.model,
     this.temperature,
@@ -254,6 +269,7 @@ final class LlmOptions {
     this.stopSequences = const <String>[],
     this.toolCatalogue = ToolCatalogue.empty,
     this.responseFormat,
+    this.brainSessionId,
   });
 
   /// The all-defaults instance. Used as the default value on
@@ -284,6 +300,7 @@ final class LlmOptions {
     List<String>? stopSequences,
     ToolCatalogue? toolCatalogue,
     Object? responseFormat = _unset,
+    Object? brainSessionId = _unset,
   }) {
     return LlmOptions(
       model: identical(model, _unset) ? this.model : model as String?,
@@ -298,6 +315,9 @@ final class LlmOptions {
       responseFormat: identical(responseFormat, _unset)
           ? this.responseFormat
           : responseFormat as Map<String, Object?>?,
+      brainSessionId: identical(brainSessionId, _unset)
+          ? this.brainSessionId
+          : brainSessionId as String?,
     );
   }
 

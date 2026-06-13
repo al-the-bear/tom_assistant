@@ -94,6 +94,17 @@ enum ProviderKind {
   /// `AnthropicLlmProvider` against the Anthropic Messages API.
   anthropic,
 
+  /// `AgentSdkLlmProvider` (run layer) — drives the Anthropic Agent SDK
+  /// through the VS Code Scripting API bridge. Control-inverted: Claude
+  /// Code owns the tool / MCP / memory loop; the provider sees a single
+  /// black-box completion. Construction lives in `tom_brain_run`
+  /// (`brain_substrate_builder.dart`) because it depends on
+  /// `tom_vscode_scripting_api` + a live bridge. Its bridge host/port,
+  /// session mode, and MCP allow-list ride in [ProviderProfile.options]
+  /// rather than [ProviderProfile.baseUrl] / `auth` (the bridge owns the
+  /// Anthropic credential).
+  agentSdk,
+
   /// `StubLlmProvider` — test-only, no transport.
   stub,
 }
@@ -235,12 +246,31 @@ final class ProviderProfile {
   /// declared models has no useful routing target.
   final List<String> models;
 
+  /// Provider-specific opaque settings, parsed by the loader as a
+  /// passthrough of an optional `options:` sub-map and interpreted only
+  /// by the concrete provider builder for kinds that need extra
+  /// configuration.
+  ///
+  /// Generic providers (ollama / openai / anthropic / stub) ignore it.
+  /// [ProviderKind.agentSdk] reads `bridgeHost` / `bridgePort` /
+  /// `sessionMode` / `permissionMode` / `maxTurns` / `mcpServers` and the
+  /// quest-mode `questId` / `sessionKey` / `questHistoryRoot` from here
+  /// (see the agent-SDK design spec § 1.3). Keeping it a generic bag
+  /// avoids leaking run-layer provider specifics into this substrate-level
+  /// config type.
+  ///
+  /// Defaults to the empty map; values are whatever the YAML carried
+  /// (strings / nums / bools / lists / maps), validated by the consuming
+  /// builder, not here.
+  final Map<String, Object?> options;
+
   const ProviderProfile({
     required this.id,
     required this.kind,
     required this.auth,
     required this.models,
     this.baseUrl,
+    this.options = const <String, Object?>{},
   });
 }
 

@@ -258,7 +258,8 @@ substrate:
           isA<SubstrateConfigException>().having(
             (e) => e.message,
             'message',
-            contains('one of `ollama`, `openai`, `anthropic`, `stub`'),
+            contains(
+                'one of `ollama`, `openai`, `anthropic`, `agent_sdk`, `stub`'),
           ),
         ),
       );

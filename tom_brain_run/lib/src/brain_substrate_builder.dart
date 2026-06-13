@@ -215,6 +215,14 @@ LlmProvider _buildProvider(ProviderProfile profile) {
         baseUri: _requireBaseUrl(profile),
         defaultModel: profile.models.first,
       );
+    case ProviderKind.agentSdk:
+      // Wired in agent-SDK design-spec phase 2: AgentSdkLlmProvider drives the
+      // Anthropic Agent SDK over the VS Code bridge. Until then it is a located
+      // error so a config that names it fails loudly rather than silently.
+      throw SubstrateConfigException(
+        'substrate.providers["${profile.id}"].kind = agent_sdk: the agent-SDK '
+        'provider is not yet wired in this build (design-spec phase 2).',
+      );
     case ProviderKind.anthropic:
     case ProviderKind.stub:
       throw SubstrateConfigException(
