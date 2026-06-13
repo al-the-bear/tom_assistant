@@ -194,6 +194,23 @@ access:
   # block) keeps histories in process only.
   history:
     directory: /srv/repos/al_the_bear/_ai/tom_brain/bomber/history
+# Outbound MCP servers (access/procedure spec § 21.3 / § 21.6; request c). Each
+# entry is a server the brain may call *out* to. `exposeToLlms` is the static
+# half of `offered = exposeToLlms && isLive`: when true, the server's tools are
+# merged into the procedure tool loop (and offered to the LLM) as long as the
+# 30 s liveness monitor finds the server reachable; a dead server drops out of
+# the loop live and rejoins when it recovers, with no restart. Closed by default
+# (omit `exposeToLlms` ⇒ false ⇒ callable via the `mcp.*` primitives but never
+# auto-merged into the tool loop).
+mcpServers:
+  # The Tom VS Code Extension MCP server (request b) — the read-only HTTP
+  # surface the extension serves on the loopback. Exposed to the tool loop so
+  # the brain can query the live editor/workspace state while it is up.
+  - id: vscode_ext
+    transport: http
+    url: http://127.0.0.1:19920/
+    description: Tom VS Code Extension (read-only workspace/editor tools)
+    exposeToLlms: true
 # Full trailing mode (tom_brain_logging.md §4.1): the whole trail tree is
 # written under the shared `_ai` mount, keyed by fleet host id (bomber). The
 # raw tiers (llm/, incoming/, procedures/, memory/, brain.log, components/) are
