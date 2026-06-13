@@ -27,6 +27,177 @@ substrate:
       baseUrl: http://127.0.0.1:11434/
       models:
         - nomic-embed-text
+    # ── Anthropic Agent-SDK providers (request a) ──────────────────────────
+    # Claude Code driven through the VS Code Scripting API bridge — a
+    # home-grown tom remote-rpc protocol on the CLI server port (NOT HTTP, so
+    # there is no `/v1/models` to query; the four model ids below are
+    # owner-confirmed). Claude Code owns its own tool / MCP / memory loop; from
+    # tom_brain's side each profile is a single black-box completion on the
+    # `LlmProvider` seam (spec § 1.1). 4 families × 3 session modes = 12
+    # profiles (spec § 1.7), each a distinct routing target. They are NOT wired
+    # into any `roleRoutes` below — configuring them only makes the models
+    # *routable*; an operator repoints a role via a `roleRoutes` edit or the
+    # `/switch_model` command (request e). Common options: the bridge on
+    # 127.0.0.1:19900, `acceptEdits` permission, a 24-turn internal loop cap,
+    # and the `vscode_ext` MCP server (below) offered into Claude Code's own
+    # loop.
+    #   * none  — never passes a session id; every call is a first call.
+    #   * brain — persists the Claude session keyed by the tom_brain session id
+    #             under the run store (`agent_sdk_sessions.json` at memory.root,
+    #             threaded by the engine); evicts + retries once on a
+    #             session-not-found error. No extra options.
+    #   * quest — reuses the session of the quest the VS Code window runs in,
+    #             read-only from `{questHistoryRoot}/{questId}/history/
+    #             {sessionKey}.session.json` (the file the extension writes). We
+    #             bind the tom_brain quest's `default` session.
+    # ── haiku ──
+    - id: claude:haiku:none
+      kind: agent_sdk
+      models:
+        - claude-haiku-4-5-20251001
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: none
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+    - id: claude:haiku:brain
+      kind: agent_sdk
+      models:
+        - claude-haiku-4-5-20251001
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: brain
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+    - id: claude:haiku:quest
+      kind: agent_sdk
+      models:
+        - claude-haiku-4-5-20251001
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: quest
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+        questId: tom_brain
+        sessionKey: default
+        questHistoryRoot: /srv/repos/al_the_bear/_ai/quests
+    # ── sonnet ──
+    - id: claude:sonnet:none
+      kind: agent_sdk
+      models:
+        - claude-sonnet-4-6
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: none
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+    - id: claude:sonnet:brain
+      kind: agent_sdk
+      models:
+        - claude-sonnet-4-6
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: brain
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+    - id: claude:sonnet:quest
+      kind: agent_sdk
+      models:
+        - claude-sonnet-4-6
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: quest
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+        questId: tom_brain
+        sessionKey: default
+        questHistoryRoot: /srv/repos/al_the_bear/_ai/quests
+    # ── opus ──
+    - id: claude:opus:none
+      kind: agent_sdk
+      models:
+        - claude-opus-4-8
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: none
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+    - id: claude:opus:brain
+      kind: agent_sdk
+      models:
+        - claude-opus-4-8
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: brain
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+    - id: claude:opus:quest
+      kind: agent_sdk
+      models:
+        - claude-opus-4-8
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: quest
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+        questId: tom_brain
+        sessionKey: default
+        questHistoryRoot: /srv/repos/al_the_bear/_ai/quests
+    # ── fable ──
+    - id: claude:fable:none
+      kind: agent_sdk
+      models:
+        - claude-fable-5
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: none
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+    - id: claude:fable:brain
+      kind: agent_sdk
+      models:
+        - claude-fable-5
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: brain
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+    - id: claude:fable:quest
+      kind: agent_sdk
+      models:
+        - claude-fable-5
+      options:
+        bridgeHost: 127.0.0.1
+        bridgePort: 19900
+        sessionMode: quest
+        permissionMode: acceptEdits
+        maxTurns: 24
+        mcpServers: [vscode_ext]
+        questId: tom_brain
+        sessionKey: default
+        questHistoryRoot: /srv/repos/al_the_bear/_ai/quests
   roleRoutes:
     assistant_to_user:
       - providerId: omlx
