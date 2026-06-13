@@ -110,7 +110,7 @@ void main() {
             inbound: null,
             configuration: Configuration(entries: <ConfigEntry>[], memoryProfile: null),
             reply: null,
-            runTree: null,
+            runTrees: <ProcedureRun>[],
           ),
         },
       ),

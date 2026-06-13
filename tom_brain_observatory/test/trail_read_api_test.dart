@@ -41,7 +41,8 @@ void main() {
       expect(res.statusCode, 200);
       final trace = jsonDecode(await res.readAsString()) as Map;
       expect(trace['turnId'], '260101-120000.000001');
-      expect((trace['runTree'] as Map)['procedureId'], 'answer_with_memory_v1');
+      expect(((trace['runTrees'] as List).single as Map)['procedureId'],
+          'answer_with_memory_v1');
       expect((trace['reply'] as Map)['outcomeStatus'], 'accepted');
     });
 

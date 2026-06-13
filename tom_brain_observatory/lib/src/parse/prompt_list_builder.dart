@@ -38,14 +38,18 @@ List<PromptListRow> promptList(TrailHost host, {int limit = 10}) {
   return rows.length <= limit ? rows : rows.sublist(0, limit);
 }
 
-/// Builds one row from an `incoming/` record [file], correlating its run-tree by
-/// `turnId`. Returns `null` when the record does not parse.
+/// Builds one row from an `incoming/` record [file], correlating its run-trees
+/// by `turnId`. Counts span **all** of the turn's top-level runs (classifier +
+/// answer + …); the outcome + wall-clock are the substantive answer run's (the
+/// latest-started, last in start order). Returns `null` when the record does not
+/// parse.
 PromptListRow? _rowFor(TrailHost host, File file) {
   final inbound = parseInbound(file.readAsStringSync());
   if (inbound == null) return null;
 
   final turnId = _turnIdOf(file);
-  final runTree = _runTreeFor(host, turnId);
+  final runTrees = _runTreesFor(host, turnId);
+  final substantive = runTrees.isEmpty ? null : runTrees.last;
 
   return PromptListRow(
     turnId: turnId,
@@ -54,19 +58,22 @@ PromptListRow? _rowFor(TrailHost host, File file) {
     principalId: inbound.principalId,
     persona: inbound.persona,
     preview: _preview(inbound.text),
-    outcomeStatus: runTree?.status,
-    wallClockMs: runTree?.elapsedMs,
-    llmCallCount: runTree == null ? 0 : llmCallCount(runTree),
-    memoryAccessCount: runTree == null ? 0 : memoryAccessCount(runTree),
+    outcomeStatus: substantive?.status,
+    wallClockMs: substantive?.elapsedMs,
+    llmCallCount: <int>[for (final run in runTrees) llmCallCount(run)]
+        .fold(0, (a, b) => a + b),
+    memoryAccessCount: <int>[for (final run in runTrees) memoryAccessCount(run)]
+        .fold(0, (a, b) => a + b),
   );
 }
 
-/// Parses the run-tree for [turnId], or `null` when no `procedures/` log exists
-/// (an in-flight turn with no completed run yet).
-ProcedureRun? _runTreeFor(TrailHost host, String turnId) {
-  final log = host.procedureLogFor(turnId);
-  return log == null ? null : parseRunTree(log.readAsStringSync());
-}
+/// Parses every top-level run-tree for [turnId] in start order, or an empty list
+/// when no `procedures/` log exists (an in-flight turn with no completed run).
+List<ProcedureRun> _runTreesFor(TrailHost host, String turnId) => <ProcedureRun>[
+      for (final log in host.procedureLogsFor(turnId))
+        if (parseRunTree(log.readAsStringSync()) case final ProcedureRun run)
+          run,
+    ];
 
 /// Recovers the `turnId` from an `incoming/<channel>/<turnId>.raw.json` path.
 String _turnIdOf(File file) {

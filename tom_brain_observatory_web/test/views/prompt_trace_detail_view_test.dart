@@ -16,6 +16,7 @@ import 'package:tom_brain_observatory_web/src/views/configuration_in_effect_view
 import 'package:tom_brain_observatory_web/src/views/live_reply_view.dart';
 import 'package:tom_brain_observatory_web/src/views/memory/node_detail_view.dart';
 import 'package:tom_brain_observatory_web/src/views/prompt_trace_detail_view.dart';
+import 'package:tom_brain_observatory_web/src/views/run_tree_view.dart';
 
 import '../support/stub_api_client.dart';
 import '../support/stub_memory_api_client.dart';
@@ -50,17 +51,19 @@ PromptTrace _trace({bool withRunTree = true}) => PromptTrace(
         outcomeStatus: 'accepted',
         wallClockMs: 2100,
       ),
-      runTree: withRunTree
-          ? const ProcedureRun(
-              procedureId: 'answer_with_memory_v1',
-              runId: 'run-root',
-              turnId: '260101-120000.000001',
-              status: 'accepted',
-              elapsedMs: 2100,
-              entryCount: 0,
-              nodes: <RunNode>[],
-            )
-          : null,
+      runTrees: withRunTree
+          ? const <ProcedureRun>[
+              ProcedureRun(
+                procedureId: 'answer_with_memory_v1',
+                runId: 'run-root',
+                turnId: '260101-120000.000001',
+                status: 'accepted',
+                elapsedMs: 2100,
+                entryCount: 0,
+                nodes: <RunNode>[],
+              ),
+            ]
+          : const <ProcedureRun>[],
     );
 
 Future<void> _pump(WidgetTester tester, PromptTrace trace) async {
@@ -92,6 +95,48 @@ void main() {
     expect(find.textContaining('local/gemma3:27b'), findsOneWidget);
   });
 
+  testWidgets('a turn with multiple top-level runs renders each, headed by its '
+      'procedure id (PT-2.1 multi-run)', (tester) async {
+    const trace = PromptTrace(
+      turnId: '260101-120000.000001',
+      inbound: null,
+      configuration: Configuration(entries: <ConfigEntry>[], memoryProfile: null),
+      reply: Reply(
+        finalAnswer: 'answer',
+        outcomeStatus: 'accepted',
+        wallClockMs: 2100,
+      ),
+      // The classifier run first, the substantive answer run last (§ 3.2).
+      runTrees: <ProcedureRun>[
+        ProcedureRun(
+          procedureId: 'prompt_analyzer_v1',
+          runId: 'run-classify',
+          turnId: '260101-120000.000001',
+          status: 'accepted',
+          elapsedMs: 40,
+          entryCount: 0,
+          nodes: <RunNode>[],
+        ),
+        ProcedureRun(
+          procedureId: 'answer_with_memory_v1',
+          runId: 'run-answer',
+          turnId: '260101-120000.000001',
+          status: 'accepted',
+          elapsedMs: 2100,
+          entryCount: 0,
+          nodes: <RunNode>[],
+        ),
+      ],
+    );
+    await _pump(tester, trace);
+
+    // Plural section title, both runs rendered, each preceded by its id header.
+    expect(find.text('Run Trees'), findsOneWidget);
+    expect(find.byType(RunTreeView), findsNWidgets(2));
+    expect(find.text('prompt_analyzer_v1'), findsWidgets);
+    expect(find.text('answer_with_memory_v1'), findsWidgets);
+  });
+
   testWidgets('a section absent for the turn is disabled', (tester) async {
     await _pump(tester, _trace(withRunTree: false));
     final runTree = tester.widget<TraceSection>(find.ancestor(
@@ -110,7 +155,7 @@ void main() {
       inbound: null,
       configuration: Configuration(entries: <ConfigEntry>[], memoryProfile: null),
       reply: null, // in flight — no static reply yet
-      runTree: null,
+      runTrees: <ProcedureRun>[],
     );
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -149,19 +194,21 @@ void main() {
         inbound: null,
         configuration: Configuration(entries: <ConfigEntry>[], memoryProfile: null),
         reply: null,
-        runTree: ProcedureRun(
-          procedureId: 'answer_with_memory_v1',
-          runId: 'run-root',
-          turnId: turnId,
-          status: 'accepted',
-          elapsedMs: 2100,
-          entryCount: 1,
-          // A memory access referencing a known fixture node id.
-          nodes: <RunNode>[
-            PrimitiveCallNode(
-                primitive: 'persist', resultId: 'n_fixtureA1', recall: null),
-          ],
-        ),
+        runTrees: <ProcedureRun>[
+          ProcedureRun(
+            procedureId: 'answer_with_memory_v1',
+            runId: 'run-root',
+            turnId: turnId,
+            status: 'accepted',
+            elapsedMs: 2100,
+            entryCount: 1,
+            // A memory access referencing a known fixture node id.
+            nodes: <RunNode>[
+              PrimitiveCallNode(
+                  primitive: 'persist', resultId: 'n_fixtureA1', recall: null),
+            ],
+          ),
+        ],
       ),
     });
     final memory = StubMemoryApiClient(nodes: <String, MemoryNode>{

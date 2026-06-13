@@ -31,6 +31,9 @@ Set<String> executedActs(ProcedureRun run) {
         acts.add(primitive);
       case LlmCallNode():
         acts.add('llm');
+      case ToolCallNode(:final name):
+        // A `tool.invoke` appears in source as the tool name (`memory.read`).
+        acts.add(name);
       case SubRunNode(:final run):
         acts.add(run.procedureId);
       case NoteNode():

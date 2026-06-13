@@ -148,19 +148,65 @@ List<Widget> buildTraceSections(
         child: streamReply ? liveReply : _ReplyBody(reply: trace.reply),
       ),
       TraceSection(
-        title: 'Run Tree',
-        present: trace.runTree != null,
+        title: trace.runTrees.length > 1 ? 'Run Trees' : 'Run Tree',
+        present: trace.runTrees.isNotEmpty,
         initiallyExpanded: true,
-        child: trace.runTree == null
+        child: trace.runTrees.isEmpty
             ? const Text('(no run tree)')
-            : RunTreeView(
-                run: trace.runTree!,
+            : _RunTreesBody(
+                runs: trace.runTrees,
                 onOpenLlmCall: onOpenLlmCall,
                 onInspectScript: onInspectScript,
                 onOpenNode: onOpenNode,
               ),
       ),
     ];
+}
+
+/// The Run-Trees section body (§ 3.2 / § 3.6): every top-level procedure run of
+/// the turn, in start order — the `prompt_analyzer_v1` classifier first, the
+/// substantive answer run last. Each run renders as its own [RunTreeView]; when
+/// the turn has more than one run, each is preceded by a procedure-id header so
+/// the operator can tell the classifier from the answer at a glance.
+class _RunTreesBody extends StatelessWidget {
+  final List<ProcedureRun> runs;
+  final ValueChanged<LlmCallNode>? onOpenLlmCall;
+  final ValueChanged<ProcedureRun>? onInspectScript;
+  final ValueChanged<String>? onOpenNode;
+
+  const _RunTreesBody({
+    required this.runs,
+    required this.onOpenLlmCall,
+    required this.onInspectScript,
+    required this.onOpenNode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final showHeaders = runs.length > 1;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        for (var i = 0; i < runs.length; i++) ...<Widget>[
+          if (showHeaders)
+            Padding(
+              padding: EdgeInsets.only(top: i == 0 ? 0 : 16, bottom: 4),
+              child: Text(
+                runs[i].procedureId,
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+          RunTreeView(
+            run: runs[i],
+            onOpenLlmCall: onOpenLlmCall,
+            onInspectScript: onInspectScript,
+            onOpenNode: onOpenNode,
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 /// The Inbound section body (§ 3.3): an envelope header, the full prompt text,

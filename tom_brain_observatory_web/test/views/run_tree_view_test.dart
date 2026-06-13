@@ -343,6 +343,73 @@ void main() {
     expect(calls, 1); // the resultId tap fires once; no endpoint chips exist.
   });
 
+  testWidgets('renders a tool-call node with its name, args and result size',
+      (tester) async {
+    await _pump(
+      tester,
+      RunTreeView(
+        run: const ProcedureRun(
+          procedureId: 'p',
+          runId: 'r',
+          turnId: null,
+          status: 'accepted',
+          elapsedMs: 10,
+          entryCount: 1,
+          nodes: <RunNode>[
+            ToolCallNode(
+              name: 'memory.read',
+              argSummary: 'text: user name, k: 5',
+              outcome: 'invoked',
+              resultChars: 6274,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.textContaining('p · accepted'));
+    await tester.pumpAndSettle();
+    // A successful invoke renders name(args) → ok, <n> chars with no emphasis.
+    final row = tester.widget<CollapsedRow>(find.ancestor(
+      of: find.textContaining('tool memory.read(text: user name, k: 5) → ok, 6274 chars'),
+      matching: find.byType(CollapsedRow),
+    ));
+    expect(row.emphasis, CollapsedRowEmphasis.normal);
+  });
+
+  testWidgets('renders a denied tool-call node with its reason and error emphasis',
+      (tester) async {
+    await _pump(
+      tester,
+      RunTreeView(
+        run: const ProcedureRun(
+          procedureId: 'p',
+          runId: 'r',
+          turnId: null,
+          status: 'accepted',
+          elapsedMs: 10,
+          entryCount: 1,
+          nodes: <RunNode>[
+            ToolCallNode(
+              name: 'file.write',
+              argSummary: '',
+              outcome: 'denied',
+              reason: 'outside file scope',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.textContaining('p · accepted'));
+    await tester.pumpAndSettle();
+    final row = tester.widget<CollapsedRow>(find.ancestor(
+      of: find.textContaining('tool file.write() → denied: outside file scope'),
+      matching: find.byType(CollapsedRow),
+    ));
+    expect(row.emphasis, CollapsedRowEmphasis.error);
+  });
+
   testWidgets('renders an error node with error emphasis', (tester) async {
     await _pump(
       tester,

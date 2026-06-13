@@ -28,17 +28,18 @@ final class PromptTrace {
   /// a completed run-tree is present.
   final Reply? reply;
 
-  /// The top-level procedure run (§ 3.6), or `null` in unconfigured mode / when
-  /// the run-tree file is absent.
-  final ProcedureRun? runTree;
+  /// Every top-level procedure run of the turn (§ 3.6), in start order — the
+  /// classifier first, the substantive answer run last. Empty in unconfigured
+  /// mode / when no run-tree file is present.
+  final List<ProcedureRun> runTrees;
 
-  const PromptTrace({
+  PromptTrace({
     required this.turnId,
     required this.configuration,
     this.inbound,
     this.reply,
-    this.runTree,
-  });
+    List<ProcedureRun> runTrees = const <ProcedureRun>[],
+  }) : runTrees = List<ProcedureRun>.unmodifiable(runTrees);
 
   /// The locked § 3 JSON contract for `GET /api/traces/{turnId}`.
   Map<String, Object?> toJson() => <String, Object?>{
@@ -46,7 +47,7 @@ final class PromptTrace {
         'inbound': inbound?.toJson(),
         'configuration': configuration.toJson(),
         'reply': reply?.toJson(),
-        'runTree': runTree?.toJson(),
+        'runTrees': <Object?>[for (final run in runTrees) run.toJson()],
       };
 }
 

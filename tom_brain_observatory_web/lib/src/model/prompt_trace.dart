@@ -16,14 +16,18 @@ class PromptTrace {
   final Inbound? inbound;
   final Configuration configuration;
   final Reply? reply;
-  final ProcedureRun? runTree;
+
+  /// Every top-level procedure run of the turn, in start order — the classifier
+  /// first, the substantive answer run last (§ 3.2). Empty when no `procedures/`
+  /// log carried the turn.
+  final List<ProcedureRun> runTrees;
 
   const PromptTrace({
     required this.turnId,
     required this.inbound,
     required this.configuration,
     required this.reply,
-    required this.runTree,
+    required this.runTrees,
   });
 
   factory PromptTrace.fromJson(Map<String, dynamic> json) => PromptTrace(
@@ -33,7 +37,10 @@ class PromptTrace {
             ? const Configuration(entries: <ConfigEntry>[], memoryProfile: null)
             : Configuration.fromJson(json['configuration'] as Map<String, dynamic>),
         reply: _maybe(json['reply'], Reply.fromJson),
-        runTree: _maybe(json['runTree'], ProcedureRun.fromJson),
+        runTrees: <ProcedureRun>[
+          for (final run in (json['runTrees'] as List<dynamic>? ?? const []))
+            ProcedureRun.fromJson(run as Map<String, dynamic>),
+        ],
       );
 }
 
@@ -136,7 +143,8 @@ class Reply {
       );
 }
 
-/// A procedure run (§ 3.6) — the `runTree` and every nested `subRun`.
+/// A procedure run (§ 3.6) — one top-level run in `runTrees` and every nested
+/// `subRun`.
 class ProcedureRun {
   final String procedureId;
   final String runId;
@@ -180,6 +188,7 @@ sealed class RunNode {
     return switch (kind) {
       'primitive' => PrimitiveCallNode.fromJson(json),
       'llm' => LlmCallNode.fromJson(json),
+      'tool' => ToolCallNode.fromJson(json),
       'note' => NoteNode.fromJson(json),
       'error' => ErrorNode.fromJson(json),
       'subRun' => SubRunNode.fromJson(json),
@@ -278,6 +287,35 @@ class LlmCallNode extends RunNode {
         tokensIn: json['tokensIn'] as int? ?? 0,
         tokensOut: json['tokensOut'] as int? ?? 0,
         rawPath: json['rawPath'] as String,
+      );
+}
+
+/// `kind: tool` — a `tool.invoke` call (§ 3.9; e.g. `memory.read`, `file.write`).
+/// The run-tree row carries the tool [name], the one-line [argSummary], the
+/// [outcome] (`invoked` / `failed` / `denied`), and — on success only — the
+/// result size [resultChars] (a *size*, never the payload); [reason] carries the
+/// failure/denial message otherwise.
+class ToolCallNode extends RunNode {
+  final String name;
+  final String argSummary;
+  final String outcome;
+  final int? resultChars;
+  final String? reason;
+
+  const ToolCallNode({
+    required this.name,
+    required this.argSummary,
+    required this.outcome,
+    this.resultChars,
+    this.reason,
+  });
+
+  factory ToolCallNode.fromJson(Map<String, dynamic> json) => ToolCallNode(
+        name: json['name'] as String,
+        argSummary: json['argSummary'] as String? ?? '',
+        outcome: json['outcome'] as String,
+        resultChars: json['resultChars'] as int?,
+        reason: json['reason'] as String?,
       );
 }
 

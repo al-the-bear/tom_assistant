@@ -52,9 +52,10 @@ void main() {
       expect(reply.wallClockMs, 2100);
     });
 
-    test('run tree is present and recursive', () {
-      expect(trace.runTree!.procedureId, 'answer_with_memory_v1');
-      expect(trace.runTree!.nodes.first, isA<SubRunNode>());
+    test('run trees are present and recursive', () {
+      expect(trace.runTrees, hasLength(1));
+      expect(trace.runTrees.single.procedureId, 'answer_with_memory_v1');
+      expect(trace.runTrees.single.nodes.first, isA<SubRunNode>());
     });
 
     test('toJson is the locked §3 shape', () {
@@ -63,7 +64,9 @@ void main() {
       expect((json['inbound'] as Map)['channel'], 'openai');
       expect((json['configuration'] as Map)['entries'], hasLength(2));
       expect((json['reply'] as Map)['outcomeStatus'], 'accepted');
-      expect((json['runTree'] as Map)['procedureId'], 'answer_with_memory_v1');
+      final runTrees = json['runTrees'] as List;
+      expect(runTrees, hasLength(1));
+      expect((runTrees.single as Map)['procedureId'], 'answer_with_memory_v1');
     });
   });
 
@@ -81,9 +84,9 @@ void main() {
   group('promptTraceFor — in-flight turn (c, incoming only)', () {
     final trace = promptTraceFor(host, '260101-120200.000003')!;
 
-    test('inbound present but run-tree / reply absent', () {
+    test('inbound present but run-trees / reply absent', () {
       expect(trace.inbound, isNotNull);
-      expect(trace.runTree, isNull);
+      expect(trace.runTrees, isEmpty);
       expect(trace.reply, isNull);
       expect(trace.configuration.entries, isEmpty);
     });
@@ -92,25 +95,37 @@ void main() {
   group('promptTraceFor — multi-run turn (analyzer + answer, d0)', () {
     // The turn dispatched the fast `prompt_analyzer_v1` classifier (1.6s) and
     // then the substantive `answer_with_memory_v1` run (1036.8s). Both logs
-    // carry the same turn stem; the trace must report the *answer* run, not
-    // whichever the filesystem lists first — otherwise a multi-minute prompt
-    // mis-displays as the classifier's sub-second run with no flow.
+    // carry the same turn stem; the trace must surface BOTH top-level runs in
+    // start order (classifier first, answer last) — otherwise whole procedures
+    // and their secondary LLM/memory calls stay hidden (§ 3.2).
     final trace = promptTraceFor(host, '260101-120300.000004')!;
 
-    test('run tree is the substantive answer run, not the analyzer', () {
-      expect(trace.runTree!.procedureId, 'answer_with_memory_v1');
+    test('both top-level runs surface, classifier first then answer', () {
+      expect(
+        trace.runTrees.map((r) => r.procedureId),
+        <String>['prompt_analyzer_v1', 'answer_with_memory_v1'],
+      );
     });
 
-    test('wall-clock is the answer run duration, not the classifier 1.6s', () {
+    test('wall-clock is the substantive answer run, not the classifier 1.6s', () {
       expect(trace.reply!.wallClockMs, 1036800);
       expect(trace.reply!.outcomeStatus, 'accepted');
     });
 
     test('the full answer flow is present (retrieve + tool loops)', () {
-      final subRuns = trace.runTree!.nodes.whereType<SubRunNode>().toList();
+      final answer = trace.runTrees.last;
+      final subRuns = answer.nodes.whereType<SubRunNode>().toList();
       expect(
         subRuns.map((s) => s.run.procedureId),
         containsAll(<String>['retrieve_for_prompt_v1', 'tool_loop_v1']),
+      );
+    });
+
+    test('toJson surfaces every top-level run in start order', () {
+      final runTrees = trace.toJson()['runTrees'] as List;
+      expect(
+        runTrees.map((r) => (r as Map)['procedureId']),
+        <String>['prompt_analyzer_v1', 'answer_with_memory_v1'],
       );
     });
   });

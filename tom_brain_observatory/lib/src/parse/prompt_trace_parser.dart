@@ -5,8 +5,8 @@
 // keyed by the turn (§ 3.1).
 //
 // Each section degrades independently: a missing `incoming/` record yields a
-// `null` [PromptTrace.inbound], a missing run-tree yields a `null`
-// [PromptTrace.runTree], and so on. The whole trace is `null` only when *no*
+// `null` [PromptTrace.inbound], no `procedures/` logs yield an empty
+// [PromptTrace.runTrees], and so on. The whole trace is `null` only when *no*
 // surface carries the turn at all (§ 4.1 — absence is never an error).
 
 import '../model/prompt_trace.dart';
@@ -23,28 +23,34 @@ import 'trail_host.dart';
 PromptTrace? promptTraceFor(TrailHost host, String turnId) {
   final inbound = _readInbound(host, turnId);
 
-  final procedureLog = host.procedureLogFor(turnId);
-  final runTree = procedureLog == null
-      ? null
-      : parseRunTree(procedureLog.readAsStringSync());
+  // Every top-level run of the turn (classifier first, answer last), each paired
+  // with the `.log` its `llm` links are relative to.
+  final logs = host.procedureLogsFor(turnId);
+  final runs = <ParsedRun>[
+    for (final log in logs)
+      if (parseRunTree(log.readAsStringSync()) case final ProcedureRun run)
+        (run: run, log: log),
+  ];
 
   final configuration = buildConfiguration(
-    runTree: runTree,
-    procedureLog: procedureLog,
+    runs: runs,
     host: host,
     memoryProfile: inbound?.profile,
   );
 
-  final reply = _buildReply(host, turnId, inbound, runTree);
+  // Outcome + wall-clock come from the substantive answer run (the last,
+  // latest-started), not the sub-second classifier.
+  final substantive = runs.isEmpty ? null : runs.last.run;
+  final reply = _buildReply(host, turnId, inbound, substantive);
 
-  if (inbound == null && runTree == null && reply == null) return null;
+  if (inbound == null && runs.isEmpty && reply == null) return null;
 
   return PromptTrace(
     turnId: turnId,
     inbound: inbound,
     configuration: configuration,
     reply: reply,
-    runTree: runTree,
+    runTrees: <ProcedureRun>[for (final r in runs) r.run],
   );
 }
 

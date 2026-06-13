@@ -76,7 +76,7 @@ void main() {
             "outcomeStatus": "accepted",
             "wallClockMs": 2100
           },
-          "runTree": {
+          "runTrees": [{
             "procedureId": "answer_with_memory_v1",
             "runId": "run-fixture-a0",
             "turnId": "260101-120000.000001",
@@ -105,7 +105,7 @@ void main() {
               {"kind": "primitive", "primitive": "persist", "resultId": "n_fixtureA1"},
               {"kind": "primitive", "primitive": "edge", "resultId": "e_fixtureA1", "edge": {"type": "derived_from", "from": "n_fixtureA1", "to": "n_fixtureA2"}}
             ]
-          }
+          }]
         }
       ''') as Map<String, dynamic>);
     });
@@ -121,7 +121,7 @@ void main() {
     });
 
     test('run-tree nodes discriminate by kind, sub-run recurses', () {
-      final run = trace.runTree!;
+      final run = trace.runTrees.single;
       expect(run.procedureId, 'answer_with_memory_v1');
       expect(run.nodes, hasLength(6));
 
@@ -149,6 +149,32 @@ void main() {
       expect(edge.edge!.type, 'derived_from');
       expect(edge.edge!.from, 'n_fixtureA1');
       expect(edge.edge!.to, 'n_fixtureA2');
+    });
+
+    test('decodes a kind:tool node (§3.9 — memory/tool calls)', () {
+      final invoked = RunNode.fromJson(<String, dynamic>{
+        'kind': 'tool',
+        'name': 'memory.read',
+        'argSummary': 'text: user name, k: 5',
+        'outcome': 'invoked',
+        'resultChars': 6274,
+      }) as ToolCallNode;
+      expect(invoked.name, 'memory.read');
+      expect(invoked.argSummary, 'text: user name, k: 5');
+      expect(invoked.outcome, 'invoked');
+      expect(invoked.resultChars, 6274);
+      expect(invoked.reason, isNull);
+
+      final denied = RunNode.fromJson(<String, dynamic>{
+        'kind': 'tool',
+        'name': 'file.write',
+        'argSummary': '',
+        'outcome': 'denied',
+        'reason': 'outside file scope',
+      }) as ToolCallNode;
+      expect(denied.outcome, 'denied');
+      expect(denied.reason, 'outside file scope');
+      expect(denied.resultChars, isNull);
     });
 
     test('an unknown run-node kind is a hard format error', () {

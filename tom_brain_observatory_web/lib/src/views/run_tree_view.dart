@@ -172,6 +172,20 @@ class _RunNodeRow extends StatelessWidget {
         // with no resolvable ids or a bare primitive carries none, so it stays
         // inert.
         PrimitiveCallNode() => _buildPrimitive(node as PrimitiveCallNode),
+        // A `tool.invoke` — a memory or sandbox tool call (§ 4.4). The row shows
+        // the tool name, its arg summary, and the outcome (with the result size
+        // on success — a size, never the payload). Inert: tool payloads are not
+        // recorded in the tree (a denied/failed call surfaces its reason inline).
+        ToolCallNode() => CollapsedRow(
+            icon: Icons.build,
+            label: _toolSummary(node as ToolCallNode),
+            expandable: false,
+            expanded: false,
+            onTap: null,
+            emphasis: (node as ToolCallNode).outcome == 'invoked'
+                ? CollapsedRowEmphasis.normal
+                : CollapsedRowEmphasis.error,
+          ),
         NoteNode(:final category) => CollapsedRow(
             icon: Icons.sticky_note_2,
             label: 'note $category',
@@ -245,6 +259,18 @@ class _RunNodeRow extends StatelessWidget {
           ),
         ],
       );
+
+  /// `tool <name>(<args>) → <outcome>` for a tool call; the success result size
+  /// (`ok, <n> chars`) or the failure/denial reason is appended (§ 3.9 / § 4.4).
+  static String _toolSummary(ToolCallNode n) {
+    final base = 'tool ${n.name}(${n.argSummary})';
+    return switch (n.outcome) {
+      'invoked' => '$base → ok${n.resultChars == null ? '' : ', ${n.resultChars} chars'}',
+      'failed' => '$base → failed${n.reason == null ? '' : ': ${n.reason}'}',
+      'denied' => '$base → denied${n.reason == null ? '' : ': ${n.reason}'}',
+      _ => '$base → ${n.outcome}',
+    };
+  }
 
   /// `llm <callType> · <in>→<out> tok` — what the run node carries (§ 3.9). The
   /// provider/model/wall-clock live in the raw dump (PT-2.4), shown on expand.

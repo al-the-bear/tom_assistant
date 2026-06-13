@@ -52,46 +52,50 @@ final class TrailHost {
     ];
   }
 
-  /// The combined run-tree log for [turnId] — the **substantive answer run**,
-  /// or `null`. `procedures/<proc>/<turnId>__<runId>.log`.
+  /// Every combined run-tree log for [turnId] — **all** of the turn's top-level
+  /// procedure runs — in **start order** (earliest first).
+  /// `procedures/<proc>/<turnId>__<runId>.log`.
   ///
-  /// A single inbound turn dispatches more than one *top-level* procedure run,
+  /// A single inbound turn dispatches more than one top-level procedure run,
   /// each written as its own `.log` file under its procedure directory: the
   /// dispatcher first runs the fast `prompt_analyzer_v1` classifier, then the
   /// chosen answer procedure (`answer_with_memory_v1` / `answer_with_thinking_v1`
-  /// / …). Both files carry the same `turnId` stem, so a first-match scan over
-  /// the (filesystem-ordered) procedure directories would return whichever the
-  /// OS happens to list first — frequently the tiny classifier, mis-reporting a
-  /// multi-minute answer as the classifier's sub-second run and hiding the real
-  /// flow. We instead return the **latest-started** top-level run for the turn:
-  /// the answer always starts after the classifier it was routed by, so the run
-  /// with the greatest start time is the substantive one (PT-1.x). Start time is
-  /// the microsecond stamp in the `run_<micros>_<seq>` token; a token without
-  /// one falls back to the basename, so selection is deterministic regardless of
-  /// directory-listing order.
-  File? procedureLogFor(String turnId) {
+  /// / …). Both files carry the same `turnId` stem. Returning only one (e.g. the
+  /// latest-started) hides whole procedures and every secondary LLM / memory
+  /// call they made, so the operator must see them all (`prompt_tracing.md`
+  /// § 3.2). Start time is the microsecond stamp in the `run_<micros>_<seq>`
+  /// token; a token without one falls back to the basename, so ordering is
+  /// deterministic regardless of directory-listing order. The classifier sorts
+  /// first (it starts before the answer it routes to); the substantive answer
+  /// run sorts last.
+  List<File> procedureLogsFor(String turnId) {
     final dir = Directory(p.join(root.path, 'procedures'));
-    if (!dir.existsSync()) return null;
-    File? best;
-    int bestStart = -1;
-    String bestName = '';
-    for (final proc in dir.listSync().whereType<Directory>()) {
-      for (final file in proc.listSync().whereType<File>()) {
-        final name = p.basename(file.path);
-        if (!name.startsWith('${turnId}__') || !name.endsWith('.log')) {
-          continue;
-        }
-        final start = _runStartMicros(name);
-        if (best == null ||
-            start > bestStart ||
-            (start == bestStart && name.compareTo(bestName) > 0)) {
-          best = file;
-          bestStart = start;
-          bestName = name;
-        }
-      }
-    }
-    return best;
+    if (!dir.existsSync()) return const <File>[];
+    final logs = <File>[
+      for (final proc in dir.listSync().whereType<Directory>())
+        for (final file in proc.listSync().whereType<File>())
+          if (p.basename(file.path).startsWith('${turnId}__') &&
+              file.path.endsWith('.log'))
+            file,
+    ];
+    logs.sort((a, b) {
+      final byStart = _runStartMicros(p.basename(a.path))
+          .compareTo(_runStartMicros(p.basename(b.path)));
+      return byStart != 0
+          ? byStart
+          : p.basename(a.path).compareTo(p.basename(b.path));
+    });
+    return logs;
+  }
+
+  /// The single **substantive answer run** for [turnId] — the latest-started of
+  /// the turn's top-level runs (the answer always starts after the classifier it
+  /// was routed by), or `null` when the turn has none. Used only where a single
+  /// representative log is needed (LLM-link resolution); the full surface uses
+  /// [procedureLogsFor].
+  File? procedureLogFor(String turnId) {
+    final logs = procedureLogsFor(turnId);
+    return logs.isEmpty ? null : logs.last;
   }
 
   /// The run-start microsecond stamp encoded in a procedure-log basename's

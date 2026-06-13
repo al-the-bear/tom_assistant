@@ -14,37 +14,39 @@ import '../model/run_tree.dart';
 import 'run_tree_walk.dart';
 import 'trail_host.dart';
 
-/// Builds the [Configuration] for a turn whose run-tree is [runTree], rendered
-/// from [procedureLog] (the `.log` the `llm` links are relative to). Returns an
-/// entry-less [Configuration] (carrying only [memoryProfile]) when no run-tree
-/// or no log is present — absence is never an error (§ 4.1).
+/// One parsed top-level run paired with the `.log` file its `llm` links resolve
+/// against (`../../llm/…raw.json`, relative to the `procedures/<proc>/` folder).
+typedef ParsedRun = ({ProcedureRun run, File log});
+
+/// Builds the [Configuration] for a turn from **all** its top-level [runs] —
+/// the distinct (role, provider, model, profile) tuples that actually ran across
+/// every run (classifier + answer + …). Returns an entry-less [Configuration]
+/// (carrying only [memoryProfile]) when no run carried an LLM call — absence is
+/// never an error (§ 4.1).
 ///
 /// Entries are de-duplicated by (role, provider, model, profile) and kept in
-/// first-seen order: a `LinkedHashSet` over [ConfigEntry], whose `==`/`hashCode`
-/// define the tuple identity.
+/// first-seen order across the runs: a `LinkedHashSet` over [ConfigEntry], whose
+/// `==`/`hashCode` define the tuple identity.
 Configuration buildConfiguration({
-  required ProcedureRun? runTree,
-  required File? procedureLog,
+  required List<ParsedRun> runs,
   required TrailHost host,
   String? memoryProfile,
 }) {
-  if (runTree == null || procedureLog == null) {
-    return Configuration(memoryProfile: memoryProfile);
-  }
-
   final entries = <ConfigEntry>{};
-  for (final llm in allLlmCalls(runTree)) {
-    final raw = host.llmRawFromLink(procedureLog, llm.rawPath);
-    if (!raw.existsSync()) continue;
-    final decoded = jsonDecode(raw.readAsStringSync());
-    if (decoded is! Map<String, Object?>) continue;
-    entries.add(ConfigEntry(
-      role: decoded['callType'] as String? ?? llm.callType,
-      provider: decoded['provider'] as String? ?? 'unknown',
-      model: decoded['model'] as String? ?? 'unknown',
-      profile:
-          decoded['profile'] as String? ?? decoded['memoryProfile'] as String?,
-    ));
+  for (final (:run, :log) in runs) {
+    for (final llm in allLlmCalls(run)) {
+      final raw = host.llmRawFromLink(log, llm.rawPath);
+      if (!raw.existsSync()) continue;
+      final decoded = jsonDecode(raw.readAsStringSync());
+      if (decoded is! Map<String, Object?>) continue;
+      entries.add(ConfigEntry(
+        role: decoded['callType'] as String? ?? llm.callType,
+        provider: decoded['provider'] as String? ?? 'unknown',
+        model: decoded['model'] as String? ?? 'unknown',
+        profile: decoded['profile'] as String? ??
+            decoded['memoryProfile'] as String?,
+      ));
+    }
   }
   return Configuration(entries: entries.toList(), memoryProfile: memoryProfile);
 }
