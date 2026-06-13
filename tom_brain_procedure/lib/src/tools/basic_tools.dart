@@ -66,6 +66,13 @@ const Set<String> writableNodeShapes = <String>{
   'Procedure',
 };
 
+/// The most characters a single `file.read` may return (the whole file, or the
+/// requested `[offset, offset+limit)` slice). A read that would return more
+/// raises [FileTooLarge], so one tool call cannot blow the model's context
+/// window or the trail on a large file; the caller chunks with `offset` /
+/// `limit` instead.
+const int fileReadMaxChars = 50000;
+
 /// Registers the shipped basic tool set (§ 21.4) into [registry].
 ///
 /// Idempotent only against a fresh registry: registering twice into the same
@@ -88,6 +95,7 @@ List<BrainTool> _basicTools() => <BrainTool>[
       _TodoUpdateTool(),
       _TodoRemoveTool(),
       _FileReadTool(),
+      _FileSizeTool(),
       _FileWriteTool(),
       _FileEditTool(),
       _FileDeleteTool(),
@@ -369,19 +377,32 @@ final class _FileReadTool extends BrainTool {
   @override
   bool get readOnly => true;
   @override
-  String get description => 'Reads a UTF-8 file under the file-scope root.';
+  String get description =>
+      'Reads a UTF-8 file under the file-scope root. Returns at most '
+      '$fileReadMaxChars characters; pass "offset"/"limit" (character indices) '
+      'to read a larger file in chunks.';
   @override
   Map<String, Object?> get inputSchema => const <String, Object?>{
         'type': 'object',
         'required': <Object?>['path'],
         'properties': <String, Object?>{
           'path': <String, Object?>{'type': 'string'},
+          'offset': <String, Object?>{'type': 'integer'},
+          'limit': <String, Object?>{'type': 'integer'},
         },
       };
 
   @override
   Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
     final relative = args['path'] as String;
+    final offset = (args['offset'] as num?)?.toInt() ?? 0;
+    final limit = (args['limit'] as num?)?.toInt();
+    if (offset < 0) {
+      throw ArgumentError('file.read offset must be >= 0 (got $offset)');
+    }
+    if (limit != null && limit < 0) {
+      throw ArgumentError('file.read limit must be >= 0 (got $limit)');
+    }
     final hits = _resolveWithinRoots(ctx.fileScope.readableRoots, relative);
     // Reads search the roots in order: the first root holding the file wins;
     // if none holds it yet, fall through to the primary so the caller sees a
@@ -391,7 +412,65 @@ final class _FileReadTool extends BrainTool {
       orElse: () => hits.first,
     );
     final content = await File(hit.path).readAsString();
-    return <String, Object?>{'path': relative, 'content': content};
+    // The slice the caller asked for, clamped to the file's bounds: from
+    // `offset` for `limit` characters (or to end of file when no limit). A
+    // slice longer than the per-call cap is refused so one read cannot blow the
+    // model's context window; the caller chunks with `offset`/`limit` instead.
+    final start = offset > content.length ? content.length : offset;
+    final end = limit == null
+        ? content.length
+        : (start + limit > content.length ? content.length : start + limit);
+    final sliceLength = end - start;
+    if (sliceLength > fileReadMaxChars) {
+      throw FileTooLarge(
+        requested: relative,
+        requestedChars: sliceLength,
+        maxChars: fileReadMaxChars,
+      );
+    }
+    final slice = content.substring(start, end);
+    return <String, Object?>{
+      'path': relative,
+      'content': slice,
+      'offset': start,
+      'length': slice.length,
+      'totalChars': content.length,
+      'eof': end >= content.length,
+    };
+  }
+}
+
+final class _FileSizeTool extends BrainTool {
+  @override
+  String get name => 'file.size';
+  @override
+  ToolGroup get group => ToolGroup.file;
+  @override
+  bool get readOnly => true;
+  @override
+  String get description =>
+      'Returns the byte length of a file under the file-scope root, for '
+      'planning a chunked file.read.';
+  @override
+  Map<String, Object?> get inputSchema => _pathRequiredSchema;
+
+  @override
+  Future<Object?> run(Map<String, Object?> args, ToolContext ctx) async {
+    final relative = args['path'] as String;
+    final hits = _resolveWithinRoots(ctx.fileScope.readableRoots, relative);
+    final hit = hits.firstWhere(
+      (h) => File(h.path).existsSync(),
+      orElse: () => hits.first,
+    );
+    final file = File(hit.path);
+    if (!file.existsSync()) {
+      return <String, Object?>{'path': relative, 'exists': false};
+    }
+    return <String, Object?>{
+      'path': relative,
+      'exists': true,
+      'bytes': await file.length(),
+    };
   }
 }
 

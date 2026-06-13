@@ -20,7 +20,11 @@
 // registry + policy into the d4rt host.
 
 export 'basic_tools.dart'
-    show defaultToolCatalogue, registerBasicTools, writableNodeShapes;
+    show
+        defaultToolCatalogue,
+        fileReadMaxChars,
+        registerBasicTools,
+        writableNodeShapes;
 export 'brain_tool.dart';
 export 'file_scope.dart' show FileScope;
 export 'session_todo_stores.dart' show SessionTodoStores;
@@ -43,11 +47,13 @@ export 'tool_errors.dart' show ToolAlreadyRegistered, toolAlreadyRegisteredCode;
 export 'tool_failures.dart'
     show
         FileScopeViolation,
+        FileTooLarge,
         NodeShapeNotWritable,
         ProcessExecutableNotAllowed,
         ScriptResultNotJson,
         ToolSurfaceUnavailable,
         fileScopeViolationCode,
+        fileTooLargeCode,
         nodeShapeNotWritableCode,
         processExecutableNotAllowedCode,
         scriptResultNotJsonCode,

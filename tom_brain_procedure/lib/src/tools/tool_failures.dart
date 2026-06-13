@@ -50,6 +50,52 @@ final class FileScopeViolation implements Exception {
   String toString() => '$code: $message';
 }
 
+/// Wire-stable discriminator for a `file.read` over the per-call character cap.
+const String fileTooLargeCode = 'tool.file_too_large';
+
+/// Raised when `file.read` is asked to return more than `fileReadMaxChars`
+/// characters in a single call (the whole file, or the `[offset, offset+limit)`
+/// slice, exceeds the cap).
+///
+/// The cap keeps one read bounded: a model that asks for a multi-megabyte file
+/// would otherwise blow its context window and the trail in a single tool call.
+/// The message leads with the operator-facing instruction — `File too large,
+/// please read in chunks` — and carries the actual span and the cap so the
+/// caller knows how to size its `offset` / `limit` follow-ups. Like the other
+/// file failures it is thrown from `run` and surfaces to the model as
+/// `{ok: false, error}` (the `tool_loop` converts the throw), so the model is
+/// told to chunk rather than silently handed a truncated read.
+final class FileTooLarge implements Exception {
+  /// The caller-supplied path whose requested slice exceeded the cap.
+  final String requested;
+
+  /// The number of characters the requested slice would have returned.
+  final int requestedChars;
+
+  /// The per-call character cap (`fileReadMaxChars`).
+  final int maxChars;
+
+  /// Builds the failure for [requested] whose slice was [requestedChars] long
+  /// against the [maxChars] cap.
+  const FileTooLarge({
+    required this.requested,
+    required this.requestedChars,
+    required this.maxChars,
+  });
+
+  /// The wire-stable failure class (`tool.file_too_large`).
+  String get code => fileTooLargeCode;
+
+  /// Human-readable detail, leading with the required instruction.
+  String get message =>
+      'File too large, please read in chunks — "$requested" slice is '
+      '$requestedChars characters, over the $maxChars-character per-call cap; '
+      'pass "offset"/"limit" to read a window.';
+
+  @override
+  String toString() => '$code: $message';
+}
+
 /// Wire-stable discriminator for a disallowed `memory.write` node shape.
 const String nodeShapeNotWritableCode = 'tool.node_shape_not_writable';
 

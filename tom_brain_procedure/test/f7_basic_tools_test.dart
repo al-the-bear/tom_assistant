@@ -4,9 +4,10 @@
 //
 // What this suite locks:
 //
-//   F.7-1 — `registerBasicTools` registers the thirty-two shipped tools under
+//   F.7-1 — `registerBasicTools` registers the thirty-three shipped tools under
 //           their § 21.4 / § 5.2-5.3 names, groups, and `readOnly` flags (the
-//           sixteen base tools, the three file-scope discovery tools `file.list`
+//           sixteen base tools plus `file.size`, the three file-scope discovery
+//           tools `file.list`
 //           / `file.readableRoots` / `file.writeableRoots` (§ 21.4), the four
 //           explicit verb tools `procedure.plan` / `create` / `critique` /
 //           `decide` (Todo 4 / § 11), the seven creation families `file.edit` /
@@ -37,7 +38,7 @@ import 'package:test/test.dart';
 
 void main() {
   group('F.7-1 registerBasicTools catalogue', () {
-    test('registers the thirty-two § 21.4 / § 5.2-5.3 tools with groups',
+    test('registers the thirty-three § 21.4 / § 5.2-5.3 tools with groups',
         () {
       final registry = ToolRegistry();
       registerBasicTools(registry);
@@ -53,6 +54,7 @@ void main() {
         'todo.update': (group: ToolGroup.todo, readOnly: false),
         'todo.remove': (group: ToolGroup.todo, readOnly: false),
         'file.read': (group: ToolGroup.file, readOnly: true),
+        'file.size': (group: ToolGroup.file, readOnly: true),
         'file.write': (group: ToolGroup.file, readOnly: false),
         'file.edit': (group: ToolGroup.file, readOnly: false),
         'file.delete': (group: ToolGroup.file, readOnly: false),
@@ -100,10 +102,10 @@ void main() {
   });
 
   group('F.7-1b defaultToolCatalogue wire descriptors', () {
-    test('describes the thirty-two basic tools with name/group/description',
+    test('describes the thirty-three basic tools with name/group/description',
         () {
       final catalogue = defaultToolCatalogue();
-      expect(catalogue, hasLength(32));
+      expect(catalogue, hasLength(33));
 
       // Each descriptor carries the four wire fields the substrate's
       // tool-catalogue render reads (`{name, group, description, input_schema}`,
@@ -130,6 +132,7 @@ void main() {
           'todo.update',
           'todo.remove',
           'file.read',
+          'file.size',
           'file.write',
           'file.edit',
           'file.delete',
@@ -337,6 +340,123 @@ void main() {
       final ctx = _ctx(fileScopeRoots: <String>[root.path]);
       await expectLater(
         _run('grep.search', {'pattern': 'x', 'path': '../..'}, ctx),
+        throwsA(isA<FileScopeViolation>()),
+      );
+    });
+  });
+
+  group('F.7-10 file.read is character-capped and chunk-readable', () {
+    late Directory root;
+
+    setUp(() => root = Directory.systemTemp.createTempSync('f7_fileread_'));
+    tearDown(() => root.deleteSync(recursive: true));
+
+    test('a small file reads whole, reporting offset/length/totalChars/eof',
+        () async {
+      File(p.join(root.path, 'small.txt')).writeAsStringSync('hello world');
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
+      final read = (await _run('file.read', {'path': 'small.txt'}, ctx))! as Map;
+      expect(read['content'], 'hello world');
+      expect(read['offset'], 0);
+      expect(read['length'], 'hello world'.length);
+      expect(read['totalChars'], 'hello world'.length);
+      expect(read['eof'], isTrue);
+    });
+
+    test('offset/limit selects a slice and clamps to file bounds', () async {
+      File(p.join(root.path, 'abc.txt')).writeAsStringSync('abcdefghij');
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
+
+      final mid = (await _run(
+        'file.read',
+        {'path': 'abc.txt', 'offset': 3, 'limit': 4},
+        ctx,
+      ))! as Map;
+      expect(mid['content'], 'defg');
+      expect(mid['offset'], 3);
+      expect(mid['length'], 4);
+      expect(mid['eof'], isFalse);
+
+      // A limit past end-of-file clamps and marks eof.
+      final tail = (await _run(
+        'file.read',
+        {'path': 'abc.txt', 'offset': 8, 'limit': 100},
+        ctx,
+      ))! as Map;
+      expect(tail['content'], 'ij');
+      expect(tail['eof'], isTrue);
+    });
+
+    test('an over-cap whole-file read raises FileTooLarge with the message',
+        () async {
+      File(p.join(root.path, 'big.txt'))
+          .writeAsStringSync('x' * (fileReadMaxChars + 1));
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
+      await expectLater(
+        _run('file.read', {'path': 'big.txt'}, ctx),
+        throwsA(
+          isA<FileTooLarge>().having(
+            (e) => e.message,
+            'message',
+            startsWith('File too large, please read in chunks'),
+          ),
+        ),
+      );
+    });
+
+    test('a within-cap chunk of an over-cap file reads fine', () async {
+      File(p.join(root.path, 'big.txt'))
+          .writeAsStringSync('y' * (fileReadMaxChars * 2));
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
+      final chunk = (await _run(
+        'file.read',
+        {'path': 'big.txt', 'offset': 0, 'limit': fileReadMaxChars},
+        ctx,
+      ))! as Map;
+      expect((chunk['content']! as String), hasLength(fileReadMaxChars));
+      expect(chunk['eof'], isFalse);
+    });
+
+    test('an over-cap limit raises FileTooLarge even mid-file', () async {
+      File(p.join(root.path, 'big.txt'))
+          .writeAsStringSync('z' * (fileReadMaxChars * 3));
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
+      await expectLater(
+        _run(
+          'file.read',
+          {'path': 'big.txt', 'offset': 10, 'limit': fileReadMaxChars + 1},
+          ctx,
+        ),
+        throwsA(isA<FileTooLarge>()),
+      );
+    });
+  });
+
+  group('F.7-11 file.size reports a file byte length within the root', () {
+    late Directory root;
+
+    setUp(() => root = Directory.systemTemp.createTempSync('f7_filesize_'));
+    tearDown(() => root.deleteSync(recursive: true));
+
+    test('reports the byte length of an existing file', () async {
+      File(p.join(root.path, 'note.txt')).writeAsStringSync('hello');
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
+      final size = (await _run('file.size', {'path': 'note.txt'}, ctx))! as Map;
+      expect(size['exists'], isTrue);
+      expect(size['bytes'], 5);
+    });
+
+    test('reports exists:false for a missing file', () async {
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
+      final size = (await _run('file.size', {'path': 'absent.txt'}, ctx))! as Map;
+      expect(size['exists'], isFalse);
+      expect(size.containsKey('bytes'), isFalse);
+    });
+
+    test('rejects a path that escapes the root', () async {
+      final ctx = _ctx(fileScopeRoots: <String>[root.path]);
+      await expectLater(
+        _run('file.size', {'path': '../escape.txt'}, ctx),
         throwsA(isA<FileScopeViolation>()),
       );
     });
