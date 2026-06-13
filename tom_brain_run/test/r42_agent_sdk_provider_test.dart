@@ -68,7 +68,8 @@ AgentSdkLlmProvider _provider(_FakeAgentSdkTransport transport) =>
     AgentSdkLlmProvider(
       id: 'claude:sonnet:none',
       defaultModel: 'claude-sonnet-4-6',
-      clientFactory: () async => AgentSdkClient(transport),
+      bridgePort: 19900,
+      clientFactory: (port) async => AgentSdkClient(transport),
     );
 
 void main() {
@@ -268,6 +269,80 @@ void main() {
         () => _provider(transport).complete(_wire, LlmOptions.empty),
         throwsA(isA<AgentSdkQueryException>()),
       );
+    });
+  });
+
+  group('AgentSdkLlmProvider — rebindBridgePort (/cli_server_port)', () {
+    // A success result so a completeStream call resolves the memoised client.
+    List<Map<String, dynamic>> successMessages() => <Map<String, dynamic>>[
+          {
+            'type': 'result',
+            'subtype': 'success',
+            'is_error': false,
+            'result': 'ok',
+            'duration_ms': 5,
+            'usage': {'input_tokens': 1, 'output_tokens': 1},
+          },
+        ];
+
+    test('rebuilds the client against the new port and disposes the old one',
+        () async {
+      final factoryPorts = <int>[];
+      final disposed = <AgentSdkClient>[];
+      final transport = _FakeAgentSdkTransport(messages: successMessages());
+      final provider = AgentSdkLlmProvider(
+        id: 'claude:sonnet:none',
+        defaultModel: 'claude-sonnet-4-6',
+        bridgePort: 19900,
+        clientFactory: (port) async {
+          factoryPorts.add(port);
+          return AgentSdkClient(transport);
+        },
+        clientDisposer: (client) async => disposed.add(client),
+      );
+
+      // First call memoises a client on the original port.
+      await provider.completeStream(_wire, LlmOptions.empty).toList();
+      expect(factoryPorts, <int>[19900]);
+
+      // Rebind to a new port: returns true, evicts + disposes the old client.
+      final changed = await provider.rebindBridgePort(20000);
+      expect(changed, isTrue);
+      expect(provider.bridgePort, 20000);
+      expect(disposed, hasLength(1));
+
+      // The next call reconnects on the new port.
+      await provider.completeStream(_wire, LlmOptions.empty).toList();
+      expect(factoryPorts, <int>[19900, 20000]);
+    });
+
+    test('rebinding to the same port is a no-op (returns false)', () async {
+      final transport = _FakeAgentSdkTransport(messages: successMessages());
+      final provider = AgentSdkLlmProvider(
+        id: 'claude:sonnet:none',
+        defaultModel: 'claude-sonnet-4-6',
+        bridgePort: 19900,
+        clientFactory: (port) async => AgentSdkClient(transport),
+      );
+      expect(await provider.rebindBridgePort(19900), isFalse);
+      expect(provider.bridgePort, 19900);
+    });
+
+    test('rebinding before any call records the port without disposing',
+        () async {
+      var disposeCalls = 0;
+      final transport = _FakeAgentSdkTransport(messages: successMessages());
+      final provider = AgentSdkLlmProvider(
+        id: 'claude:sonnet:none',
+        defaultModel: 'claude-sonnet-4-6',
+        bridgePort: 19900,
+        clientFactory: (port) async => AgentSdkClient(transport),
+        clientDisposer: (client) async => disposeCalls++,
+      );
+      expect(await provider.rebindBridgePort(20100), isTrue);
+      expect(provider.bridgePort, 20100);
+      // No client was memoised yet, so nothing to dispose.
+      expect(disposeCalls, 0);
     });
   });
 }

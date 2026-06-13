@@ -1064,6 +1064,60 @@ void main() {
           telegramInspectorUnavailableMessage,
         );
       });
+
+      test('/cli_server_port passes the parsed port through', () async {
+        final d = _answeringDispatcher();
+        final controller = _FakeCliServerPortController(text: 'port set');
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(cliServerPort: controller),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/cli_server_port 20000'));
+        await pumpEventQueue();
+
+        expect(controller.calls, equals([20000]));
+        expect(f.chatApi.sentMessages.single, 'port set');
+      });
+
+      test('/cli_server_port rejects a non-numeric argument with a usage line',
+          () async {
+        final d = _answeringDispatcher();
+        final controller = _FakeCliServerPortController();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(cliServerPort: controller),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/cli_server_port abc'));
+        await pumpEventQueue();
+
+        expect(controller.calls, isEmpty);
+        expect(f.chatApi.sentMessages.single, contains('Usage:'));
+      });
+
+      test('/cli_server_port is unavailable when no controller is wired',
+          () async {
+        final d = _answeringDispatcher();
+        final f = _edge(dispatcher: d.dispatcher);
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/cli_server_port 20000'));
+        await pumpEventQueue();
+
+        expect(
+          f.chatApi.sentMessages.single,
+          telegramInspectorUnavailableMessage,
+        );
+      });
     });
 
     group('telegramProcessingAcknowledgement', () {
@@ -1271,6 +1325,22 @@ final class _FakeModelSwitcher implements TelegramModelSwitcher {
     required String modelId,
   }) async {
     calls.add((promptId, modelId));
+    return text;
+  }
+}
+
+/// A CLI-server-port controller recording the ports it is asked to set and
+/// returning a canned string, used to drive `/cli_server_port`.
+final class _FakeCliServerPortController
+    implements TelegramCliServerPortController {
+  _FakeCliServerPortController({this.text = 'port set'});
+
+  final String text;
+  final List<int> calls = <int>[];
+
+  @override
+  Future<String> setCliServerPort({required int port}) async {
+    calls.add(port);
     return text;
   }
 }

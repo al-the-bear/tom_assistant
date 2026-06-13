@@ -268,6 +268,24 @@ abstract interface class TelegramModelSwitcher {
   });
 }
 
+/// Changes the VS Code bridge / agent-SDK CLI-server port the running brain
+/// uses, for the `/cli_server_port` command.
+///
+/// A *controller* among the configuration seams: it both persists the chosen
+/// port to the run config (so it survives a restart) and reconnects the live
+/// agent-SDK providers — each provider drops its memoised bridge client on the
+/// old port and lazily reconnects on the new one at its next call. Implemented
+/// in `tom_brain_run`, the one assembly that holds the live providers and knows
+/// the run-config path. Returns already-rendered, channel-neutral text —
+/// including the validation notice for an out-of-range port.
+abstract interface class TelegramCliServerPortController {
+  /// Switches the CLI-server port to [port], persisting it to the run config
+  /// and rebinding the live agent-SDK providers, and renders the outcome — a
+  /// confirmation (with how many providers were rebound and whether it was
+  /// persisted), or a validation notice when [port] is out of range.
+  Future<String> setCliServerPort({required int port});
+}
+
 /// The read-only inspectors the Telegram edge drives for the inspection
 /// commands (parts b–e).
 ///
@@ -323,6 +341,10 @@ final class TelegramInspectors {
   /// unavailable.
   final TelegramModelSwitcher? modelSwitcher;
 
+  /// Changes the VS Code bridge / agent-SDK CLI-server port for
+  /// `/cli_server_port`, or `null` when unavailable.
+  final TelegramCliServerPortController? cliServerPort;
+
   /// Builds an inspector bundle; every member defaults to absent.
   const TelegramInspectors({
     this.prompts,
@@ -337,6 +359,7 @@ final class TelegramInspectors {
     this.models,
     this.promptTypes,
     this.modelSwitcher,
+    this.cliServerPort,
   });
 
   /// The no-inspectors bundle: every inspection command answers "not available

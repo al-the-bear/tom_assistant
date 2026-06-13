@@ -62,6 +62,11 @@ export 'src/model_switch.dart'
         CognitionModelWriteException,
         CognitionModelWriter,
         TomBrainModelSwitcher;
+export 'src/cli_server_port_switch.dart'
+    show
+        CliServerPortConfigWriter,
+        CliServerPortWriteException,
+        TomBrainCliServerPortController;
 export 'src/llm_route_config.dart' show LlmRouteConfig, UnknownLlmRouteException;
 export 'src/brain_run_config_loader.dart'
     show BrainRunConfigException, BrainRunConfigLoader;

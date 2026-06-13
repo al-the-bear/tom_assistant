@@ -74,14 +74,27 @@ final class AgentSdkLlmProvider implements LlmProvider {
   /// The permission posture handed to Claude Code's own tool loop.
   final PermissionMode permissionMode;
 
-  /// Builds (and connects) the [AgentSdkClient]. Memoised on first call via
-  /// [_clientFuture] so the bridge socket is opened once and reused.
-  final Future<AgentSdkClient> Function() clientFactory;
+  /// Builds (and connects) the [AgentSdkClient] for the given bridge port. The
+  /// result is memoised in [_clientFuture] so the bridge socket is opened once
+  /// and reused; [rebindBridgePort] evicts that memo so the next call rebuilds
+  /// against a changed port. The port flows as an argument (not a captured
+  /// closure value) precisely so a runtime rebind can pick a new one.
+  final Future<AgentSdkClient> Function(int bridgePort) clientFactory;
+
+  /// Disposes a memoised client when [rebindBridgePort] drops it — e.g.
+  /// disconnecting the underlying bridge socket so the old port is released.
+  /// `null` leaves the dropped client to be garbage-collected.
+  final Future<void> Function(AgentSdkClient client)? clientDisposer;
 
   /// Decides, per call, whether to resume a stored Claude-Code session or start
   /// fresh, and records / evicts the session id (agent-SDK spec § 1.4). Defaults
   /// to [NoSessionStrategy] — session mode `none`, every call a first call.
   final AgentSdkSessionStrategy sessionStrategy;
+
+  /// The VS Code bridge / CLI-server port the memoised client connects to.
+  /// Mutable so `/cli_server_port` can rebind a live provider via
+  /// [rebindBridgePort].
+  int _bridgePort;
 
   Future<AgentSdkClient>? _clientFuture;
 
@@ -89,13 +102,46 @@ final class AgentSdkLlmProvider implements LlmProvider {
     required this.id,
     required this.defaultModel,
     required this.clientFactory,
+    required int bridgePort,
+    this.clientDisposer,
     this.maxTurns,
     this.permissionMode = PermissionMode.default_,
     this.sessionStrategy = const NoSessionStrategy(),
-  });
+  }) : _bridgePort = bridgePort;
 
-  /// The memoised client (one bridge connection shared across calls).
-  Future<AgentSdkClient> _client() => _clientFuture ??= clientFactory();
+  /// The bridge port the provider currently connects to.
+  int get bridgePort => _bridgePort;
+
+  /// The memoised client (one bridge connection shared across calls), built
+  /// against the current [_bridgePort].
+  Future<AgentSdkClient> _client() =>
+      _clientFuture ??= clientFactory(_bridgePort);
+
+  /// Rebinds the provider to [newPort]: drops the memoised client (disposing it
+  /// via [clientDisposer], so the old bridge socket disconnects) and records the
+  /// new port. The next call to [completeStream] lazily reconnects on [newPort].
+  ///
+  /// Returns `true` when the port actually changed (a reconnect will happen),
+  /// `false` when [newPort] equals the current port (a no-op). Disposal failures
+  /// are swallowed — the old socket may already be dead, which is exactly the
+  /// condition a rebind is recovering from.
+  Future<bool> rebindBridgePort(int newPort) async {
+    if (newPort == _bridgePort) return false;
+    final Future<AgentSdkClient>? pending = _clientFuture;
+    _clientFuture = null;
+    _bridgePort = newPort;
+    if (pending != null) {
+      try {
+        final AgentSdkClient client = await pending;
+        final disposer = clientDisposer;
+        if (disposer != null) await disposer(client);
+      } catch (_) {
+        // Best-effort: the old client may already be unusable; the new port is
+        // already recorded so the next call reconnects regardless.
+      }
+    }
+    return true;
+  }
 
   @override
   Future<LlmCallReport> complete(WirePrompt prompt, LlmOptions options) async {

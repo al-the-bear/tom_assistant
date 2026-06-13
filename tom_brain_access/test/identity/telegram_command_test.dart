@@ -92,6 +92,9 @@ void main() {
           TelegramCommandKind.switchModel);
       expect(parseTelegramCommand('/switch_model answer omlx:gemma')!.argument,
           'answer omlx:gemma');
+      expect(parseTelegramCommand('/cli_server_port 20000')!.kind,
+          TelegramCommandKind.cliServerPort);
+      expect(parseTelegramCommand('/cli_server_port 20000')!.argument, '20000');
     });
 
     test('strips a @botname suffix and is case-insensitive', () {

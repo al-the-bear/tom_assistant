@@ -291,20 +291,33 @@ LlmProvider _buildAgentSdkProvider(
     // The route default; the router resolves the actual model per route.
     // The loader guarantees `models` is non-empty.
     defaultModel: profile.models.first,
+    bridgePort: bridgePort,
     maxTurns: maxTurns,
     permissionMode: permissionMode,
     sessionStrategy: sessionStrategy,
-    clientFactory: () async {
+    // The port flows as the factory argument (not the captured `bridgePort`),
+    // so a runtime `/cli_server_port` rebind reconnects on the chosen port.
+    clientFactory: (port) async {
       final VSCodeBridgeClient client =
-          VSCodeBridgeClient(host: bridgeHost, port: bridgePort);
+          VSCodeBridgeClient(host: bridgeHost, port: port);
       final bool connected = await client.connect();
       if (!connected) {
         throw AgentSdkQueryException(
-          'Could not connect to the VS Code bridge at $bridgeHost:$bridgePort '
+          'Could not connect to the VS Code bridge at $bridgeHost:$port '
           'for agent-SDK provider "${profile.id}".',
         );
       }
       return AgentSdkClient(VSCodeBridgeAgentSdkTransport(client));
+    },
+    // On a rebind, disconnect the old bridge socket so the old port is freed.
+    // The transport is the run-layer `VSCodeBridgeAgentSdkTransport`, which
+    // exposes the live `VSCodeBridgeClient`; the substrate `AgentSdkTransport`
+    // contract has no disconnect, so the disposal lives here at the run seam.
+    clientDisposer: (client) async {
+      final AgentSdkTransport transport = client.transport;
+      if (transport is VSCodeBridgeAgentSdkTransport) {
+        await transport.client.disconnect();
+      }
     },
   );
 }

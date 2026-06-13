@@ -70,6 +70,9 @@ Future<void> main(List<String> args) async {
   final BrainProcess process = await standUpBrainProcessFromConfig(
     config,
     isolateLogRootPath: logRoot.path,
+    // The on-disk run-config path, so `/cli_server_port` can persist a changed
+    // bridge port back into the file it booted from (survives a restart).
+    runConfigPath: configPath,
   );
 
   stdout.writeln(

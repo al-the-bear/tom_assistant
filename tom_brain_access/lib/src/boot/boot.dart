@@ -95,6 +95,7 @@ export 'telegram_access_edge.dart'
         telegramProcessingPreviewLength;
 export 'telegram_inspectors.dart'
     show
+        TelegramCliServerPortController,
         TelegramInspectors,
         TelegramLogInspector,
         TelegramLogTail,

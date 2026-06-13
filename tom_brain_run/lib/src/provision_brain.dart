@@ -43,6 +43,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         ProvisionedBrain,
         QueueSnapshot,
         QueueSnapshotSource,
+        TelegramCliServerPortController,
         TelegramInspectors,
         TelegramStopController,
         TelegramTodosInspector,
@@ -80,14 +81,18 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
     show TomBrainMemoryClient;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show
+        InProcessTomBrainSubstrate,
         RoleRegistry,
         SubstrateConfig,
         TomBrainSubstrateClient,
         bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream,
         loadFileBackedRoleRegistry;
 
+import 'agent_sdk_llm_provider.dart' show AgentSdkLlmProvider;
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
+import 'cli_server_port_switch.dart'
+    show CliServerPortConfigWriter, TomBrainCliServerPortController;
 import 'builtin_bindings.dart' show BrainBuiltins;
 import 'cognition_config.dart' show CognitionConfig;
 import 'cognition_config_loader.dart' show CognitionConfigLoader;
@@ -453,6 +458,7 @@ Future<BrainProcess> standUpBrainProcess({
   McpOfferedGate? mcpOffered,
   McpLivenessMonitor? mcpMonitor,
   CognitionModelWriter? modelWriter,
+  TelegramCliServerPortController? cliServerPortController,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -495,6 +501,7 @@ Future<BrainProcess> standUpBrainProcess({
         cognitionConfig: cognitionConfig,
         mcpClient: mcpClient,
         modelWriter: modelWriter,
+        cliServerPort: cliServerPortController,
       ),
     );
   } on Object {
@@ -534,6 +541,7 @@ TelegramInspectors _telegramInspectorsFor({
   required CognitionConfig? cognitionConfig,
   required McpClient? mcpClient,
   required CognitionModelWriter? modelWriter,
+  required TelegramCliServerPortController? cliServerPort,
 }) {
   final Directory? root = trailRoot == null ? null : Directory(trailRoot);
   return TelegramInspectors(
@@ -588,6 +596,11 @@ TelegramInspectors _telegramInspectorsFor({
             substrate: substrateConfig,
             writer: modelWriter,
           ),
+    // The CLI-server-port controller (`/cli_server_port`) rebinds the live
+    // agent-SDK providers and persists the chosen port to the run config. It is
+    // wired by the from-config entry point whenever there are agent-SDK
+    // providers to rebind; absent → the command reports as unavailable.
+    cliServerPort: cliServerPort,
   );
 }
 
@@ -621,6 +634,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   ClassifyFallback? classifyFallback,
   int foregroundQueueDepth = 4,
   String? isolateLogRootPath,
+  String? runConfigPath,
 }) async {
   // Resolve the scripts dir once so the boot's procedure store and the §6
   // `${scripts_folder}` built-in the prompt resolver carries agree on the same
@@ -684,7 +698,10 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
 
   // The substrate uses the file-backed registry when a cognition tree was
   // loaded; otherwise `buildSubstrate` falls back to its in-code full roster.
-  final TomBrainSubstrateClient substrate = buildSubstrate(
+  // Typed as the concrete facade (not the `TomBrainSubstrateClient` interface)
+  // so the live agent-SDK providers can be reached for the `/cli_server_port`
+  // rebind below.
+  final InProcessTomBrainSubstrate substrate = buildSubstrate(
     runConfig.substrate,
     roleRegistry: roleRegistry,
     // The run's storage root: a `sessionMode: brain` agent-SDK provider keys
@@ -692,6 +709,24 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     // (agent-SDK design spec § 1.4).
     agentSdkSessionRoot: runConfig.memory.root,
   );
+
+  // The `/cli_server_port` controller: collect the live agent-SDK providers
+  // (the `agent_sdk` rows) so a port switch can disconnect them from the old
+  // bridge port and reconnect on the new one, and persist the change to the run
+  // config (when [runConfigPath] is known) so it survives a restart. Wired only
+  // when there is at least one agent-SDK provider to rebind; otherwise the
+  // command reports as unavailable.
+  final List<AgentSdkLlmProvider> agentSdkProviders =
+      substrate.providers.values.whereType<AgentSdkLlmProvider>().toList();
+  final TelegramCliServerPortController? cliServerPortController =
+      agentSdkProviders.isEmpty
+          ? null
+          : TomBrainCliServerPortController(
+              providers: agentSdkProviders,
+              configWriter: runConfigPath == null
+                  ? null
+                  : CliServerPortConfigWriter(File(runConfigPath)),
+            );
 
   // Boot-time trail sweep (§8 / §10 step #10): write the §7 `.gitignore` and
   // enforce the raw-tier count / aggregate-size caps before any writer appends
@@ -762,6 +797,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     mcpOffered: mcpOffered,
     mcpMonitor: mcpMonitor,
     modelWriter: modelWriter,
+    cliServerPortController: cliServerPortController,
   );
 }
 

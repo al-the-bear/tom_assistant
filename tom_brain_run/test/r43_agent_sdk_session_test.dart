@@ -90,7 +90,8 @@ AgentSdkLlmProvider _provider(
     AgentSdkLlmProvider(
       id: 'claude:sonnet:test',
       defaultModel: 'claude-sonnet-4-6',
-      clientFactory: () async => AgentSdkClient(transport),
+      bridgePort: 19900,
+      clientFactory: (port) async => AgentSdkClient(transport),
       sessionStrategy: strategy,
     );
 

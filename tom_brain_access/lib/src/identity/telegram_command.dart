@@ -104,6 +104,11 @@ enum TelegramCommandKind {
   /// `/switch_model <prompt-id> <model-id>` — override the model a cognition
   /// prompt type uses, for this running process (not persisted to config).
   switchModel,
+
+  /// `/cli_server_port <port>` — change the VS Code bridge / agent-SDK
+  /// CLI-server port the running brain connects to: persist it to the run
+  /// config and disconnect/reconnect the live agent-SDK providers.
+  cliServerPort,
 }
 
 /// The command word a user types for each [TelegramCommandKind], without the
@@ -132,6 +137,7 @@ const Map<TelegramCommandKind, String> telegramCommandWords =
   TelegramCommandKind.showModels: 'show_models',
   TelegramCommandKind.showPrompts: 'show_prompts',
   TelegramCommandKind.switchModel: 'switch_model',
+  TelegramCommandKind.cliServerPort: 'cli_server_port',
 };
 
 /// The reverse of [telegramCommandWords]: the command word (lower-cased,
@@ -212,6 +218,8 @@ String telegramHelpText() {
     ..write('\n/show_models — list the configured providers and models')
     ..write('\n/show_prompts — list the cognition prompt types')
     ..write('\n/switch_model <prompt-id> <model-id> — set a prompt type model')
+    ..write('\n/cli_server_port <port> — change the VS Code bridge / agent-SDK '
+        'port (persisted; reconnects the live brain)')
     ..write('\n\n/help — show this list');
   return buffer.toString();
 }

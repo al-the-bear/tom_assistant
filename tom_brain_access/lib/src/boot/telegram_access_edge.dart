@@ -310,6 +310,8 @@ class TelegramAccessEdge {
         await _handleShowPromptTypes(receiver);
       case TelegramCommandKind.switchModel:
         await _handleSwitchModel(receiver, command.argument);
+      case TelegramCommandKind.cliServerPort:
+        await _handleCliServerPort(receiver, command.argument);
     }
   }
 
@@ -608,6 +610,32 @@ class TelegramAccessEdge {
       receiver,
       await switcher.switchModel(promptId: parts[0], modelId: parts[1]),
     );
+  }
+
+  /// Handles `/cli_server_port <port>`: changes the VS Code bridge / agent-SDK
+  /// CLI-server port the running brain uses — the controller persists it to the
+  /// run config and reconnects the live agent-SDK providers, rendering the
+  /// outcome (including the out-of-range notice). Replies a usage line for a
+  /// non-numeric argument and the unavailable message when no controller is
+  /// wired.
+  Future<void> _handleCliServerPort(
+    ChatReceiver receiver,
+    String argument,
+  ) async {
+    final TelegramCliServerPortController? controller = _inspectors.cliServerPort;
+    if (controller == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    final int? port = int.tryParse(argument.trim());
+    if (port == null) {
+      await _send(
+        receiver,
+        'Usage: /cli_server_port <port> (a TCP port number, e.g. 19900).',
+      );
+      return;
+    }
+    await _sendSplit(receiver, await controller.setCliServerPort(port: port));
   }
 
   /// Sends [text] as the minimum number of size-compliant Telegram messages,
