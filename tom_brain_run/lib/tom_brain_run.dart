@@ -57,14 +57,11 @@ export 'src/cognition_config.dart'
 export 'src/cognition_config_loader.dart' show CognitionConfigLoader;
 export 'src/cognition_prompt_resolver.dart'
     show buildPromptResolver, buildRouteChainResolver;
-export 'src/model_override.dart'
+export 'src/model_switch.dart'
     show
-        ModelOverride,
-        ModelOverrideRegistry,
-        ModelOverrideStore,
-        ModelOverrideStoreException,
-        TomBrainModelSwitcher,
-        modelOverrideRoutePrefix;
+        CognitionModelWriteException,
+        CognitionModelWriter,
+        TomBrainModelSwitcher;
 export 'src/llm_route_config.dart' show LlmRouteConfig, UnknownLlmRouteException;
 export 'src/brain_run_config_loader.dart'
     show BrainRunConfigException, BrainRunConfigLoader;

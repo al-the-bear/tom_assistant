@@ -101,8 +101,8 @@ import 'mcp_channel_factory.dart' show productionMcpChannelFactory;
 import 'mcp_liveness_monitor.dart' show McpLivenessMonitor;
 import 'mcp_offered_wiring.dart'
     show mcpLivenessMonitorOverClient, mcpOfferedGate;
-import 'model_override.dart'
-    show ModelOverrideRegistry, ModelOverrideStore, TomBrainModelSwitcher;
+import 'model_switch.dart'
+    show CognitionModelWriter, TomBrainModelSwitcher;
 import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
@@ -447,8 +447,7 @@ Future<BrainProcess> standUpBrainProcess({
   List<McpToolDefinition> mcpTools = const <McpToolDefinition>[],
   McpOfferedGate? mcpOffered,
   McpLivenessMonitor? mcpMonitor,
-  ModelOverrideRegistry? modelOverrides,
-  ModelOverrideStore? modelOverrideStore,
+  CognitionModelWriter? modelWriter,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -490,8 +489,7 @@ Future<BrainProcess> standUpBrainProcess({
         substrateConfig: substrateConfig,
         cognitionConfig: cognitionConfig,
         mcpClient: mcpClient,
-        modelOverrides: modelOverrides,
-        modelOverrideStore: modelOverrideStore,
+        modelWriter: modelWriter,
       ),
     );
   } on Object {
@@ -530,8 +528,7 @@ TelegramInspectors _telegramInspectorsFor({
   required SubstrateConfig? substrateConfig,
   required CognitionConfig? cognitionConfig,
   required McpClient? mcpClient,
-  required ModelOverrideRegistry? modelOverrides,
-  required ModelOverrideStore? modelOverrideStore,
+  required CognitionModelWriter? modelWriter,
 }) {
   final Directory? root = trailRoot == null ? null : Directory(trailRoot);
   return TelegramInspectors(
@@ -559,14 +556,13 @@ TelegramInspectors _telegramInspectorsFor({
         ? null
         : SubstrateModelsInspector(config: substrateConfig),
     // The prompt-types inspector reads the parsed cognition config (not the
-    // trail), so it is wired whenever a `cognition:` tree was loaded. It also
-    // reads the live override registry to call out an active `/switch_model`.
+    // trail), so it is wired whenever a `cognition:` tree was loaded. A
+    // `/switch_model` change is already reflected in that live config (the
+    // prompt's `llm:` route is rewritten in place), so the inspector renders the
+    // switched model from the config itself — no separate override surface.
     promptTypes: cognitionConfig == null
         ? null
-        : CognitionPromptsInspector(
-            config: cognitionConfig,
-            overrides: modelOverrides,
-          ),
+        : CognitionPromptsInspector(config: cognitionConfig),
     // The tool-catalogue inspector reads the engine's shipped default tool set
     // — a process constant, so it is always wired.
     tools: ToolCatalogueInspector(),
@@ -576,20 +572,17 @@ TelegramInspectors _telegramInspectorsFor({
     mcp: mcpClient == null ? null : McpServersInspector(client: mcpClient),
     // The model switcher (request e) needs both the cognition config (the valid
     // prompt-id space) and the substrate config (the valid provider/model
-    // space) plus the live override registry it mutates, so it is wired only
-    // when all three are present.
-    modelSwitcher:
-        cognitionConfig == null || substrateConfig == null || modelOverrides == null
-            ? null
-            : TomBrainModelSwitcher(
-                cognition: cognitionConfig,
-                substrate: substrateConfig,
-                overrides: modelOverrides,
-                // The persistence store (request e): when wired, `/switch_model`
-                // writes the override through to `model_overrides.yaml` so it
-                // survives a restart. Absent → the switch is process-only.
-                store: modelOverrideStore,
-              ),
+    // space), so it is wired only when both are present. The [modelWriter]
+    // persists a validated switch into the normal cognition config (a route file
+    // + the prompt's `llm:` binding + the live config) so it survives a restart;
+    // absent → the switch reports as unavailable rather than half-applied.
+    modelSwitcher: cognitionConfig == null || substrateConfig == null
+        ? null
+        : TomBrainModelSwitcher(
+            cognition: cognitionConfig,
+            substrate: substrateConfig,
+            writer: modelWriter,
+          ),
   );
 }
 
@@ -636,15 +629,14 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   RouteChainResolver? routeChainOf;
   RoleRegistry? roleRegistry;
   CognitionConfig? cognitionConfig;
-  // The process-lifetime model-override registry (request e). Built only when a
-  // cognition tree is loaded — `/switch_model` re-points a registered prompt id,
-  // so without a cognition config there is nothing to override. Both `sub.run`
-  // resolvers read it, and the `/switch_model` switcher mutates it.
-  ModelOverrideRegistry? modelOverrides;
-  // The durable half of the override seam (request e): a `model_overrides.yaml`
-  // at the cognition root the registry is seeded from at boot and `/switch_model`
-  // writes back through, so a switch survives a process restart.
-  ModelOverrideStore? modelOverrideStore;
+  // The `/switch_model` config writer (request e). Built only when a cognition
+  // tree is loaded — a switch re-points a registered prompt id at a model by
+  // editing the normal cognition config (a per-prompt route file + the prompt's
+  // `llm:` binding) and mutating the live [cognitionConfig], so without a
+  // cognition root there is nothing to write. No separate override file or
+  // registry: the switch *is* the configuration, so it survives a restart
+  // because the standard loader reads it back at boot.
+  CognitionModelWriter? modelWriter;
   final cognition = runConfig.cognition;
   final Map<String, String> environment = Platform.environment;
   if (cognition != null) {
@@ -667,27 +659,22 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
       configFolder: cognition.root,
       scriptsFolder: scriptsDir.path,
     );
-    modelOverrides = ModelOverrideRegistry();
-    // Seed the registry from the persisted overrides so prior `/switch_model`
-    // choices take effect from the first run after a restart (request e). The
-    // file lives at the cognition root next to `registry.yaml`.
-    modelOverrideStore =
-        ModelOverrideStore(filePath: '${cognition.root}/model_overrides.yaml');
-    for (final entry in modelOverrideStore.load().entries) {
-      modelOverrides.set(
-        entry.key,
-        providerId: entry.value.providerId,
-        model: entry.value.model,
-      );
-    }
+    // The `/switch_model` writer edits the live [cognitionConfig] (and the
+    // matching on-disk config files). Because the resolvers below read
+    // `config.prompts` / `config.route` fresh on every `sub.run`, a switch the
+    // writer applies takes effect on the next run with no resolver re-wiring,
+    // and survives a restart because the standard loader reads the rewritten
+    // config back at boot — there is no separate override layer to seed.
+    modelWriter = CognitionModelWriter(
+      cognitionRoot: cognition.root,
+      config: cognitionConfig,
+    );
     promptResolver = buildPromptResolver(
       cognitionConfig,
       builtins,
       environment: environment,
-      overrides: modelOverrides,
     );
-    routeChainOf =
-        buildRouteChainResolver(cognitionConfig, overrides: modelOverrides);
+    routeChainOf = buildRouteChainResolver(cognitionConfig);
   }
 
   // The substrate uses the file-backed registry when a cognition tree was
@@ -763,8 +750,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     mcpTools: mcpTools,
     mcpOffered: mcpOffered,
     mcpMonitor: mcpMonitor,
-    modelOverrides: modelOverrides,
-    modelOverrideStore: modelOverrideStore,
+    modelWriter: modelWriter,
   );
 }
 

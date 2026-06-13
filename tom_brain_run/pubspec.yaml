@@ -81,6 +81,11 @@ dependencies:
   # injectable-client seam references `http.Client` in `lib/` (request b;
   # `agent_sdk_provider_and_mcp_liveness.md` § 2).
   http: ^1.2.0
+  # `/switch_model` (request e) rewrites a single prompt's `llm:` binding in its
+  # hand-authored, heavily-commented main-procedure config file. `yaml_edit`'s
+  # surgical node update preserves every comment and formatting choice — only the
+  # one node changes.
+  yaml_edit: ^2.2.0
 
 dev_dependencies:
   lints: ^6.0.0

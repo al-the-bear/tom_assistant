@@ -57,7 +57,6 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show ProviderAuthConfigCases, ProviderProfile, SubstrateConfig;
 
 import 'cognition_config.dart';
-import 'model_override.dart';
 
 /// Reads the §5.3 `incoming/` raw-prompt trail back for the `/observatory_*`
 /// commands (parts b + c).
@@ -939,17 +938,12 @@ final class SubstrateModelsInspector implements TelegramModelsInspector {
 /// `/show_models` prints, so the prompt list and the model list read against one
 /// vocabulary.
 final class CognitionPromptsInspector implements TelegramPromptsInspector {
-  /// The parsed cognition config the process booted from.
+  /// The live cognition config — the same object `/switch_model` mutates, so the
+  /// listed route always reflects the current binding (request e).
   final CognitionConfig config;
 
-  /// The live model-override registry, so `/show_prompts` can call out an active
-  /// `/switch_model` override beside the prompt it targets. `null` on a
-  /// deployment without the override seam.
-  final ModelOverrideRegistry? overrides;
-
-  /// Builds an inspector over the cognition [config], optionally reading the
-  /// live [overrides] registry to show active model switches.
-  CognitionPromptsInspector({required this.config, this.overrides});
+  /// Builds an inspector over the live cognition [config].
+  CognitionPromptsInspector({required this.config});
 
   @override
   Future<String> prompts() async {
@@ -967,17 +961,8 @@ final class CognitionPromptsInspector implements TelegramPromptsInspector {
             '  tools: ${_renderTools(prompt.settings.tools)}'
             '  kind: ${prompt.kind.name}');
       _writeRouteChain(buffer, prompt.settings.llm);
-      _writeOverride(buffer, id);
     }
     return buffer.toString();
-  }
-
-  /// Appends the active `/switch_model` override line for [id], when one is set.
-  /// No-op when no override registry is wired or [id] is not overridden.
-  void _writeOverride(StringBuffer buffer, String id) {
-    final override = overrides?.overrideFor(id);
-    if (override == null) return;
-    buffer.write('\n  override → ${override.providerId}:${override.model}');
   }
 
   /// Appends the named route's provider+model chain (one indented

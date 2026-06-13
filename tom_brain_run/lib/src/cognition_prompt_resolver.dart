@@ -42,7 +42,6 @@ import 'package:tom_core_agentic/tom_core_agentic.dart'
 
 import 'builtin_bindings.dart';
 import 'cognition_config.dart';
-import 'model_override.dart';
 
 /// Builds the `PromptResolver` seam over a loaded [config].
 ///
@@ -60,7 +59,6 @@ proc.PromptResolver buildPromptResolver(
   BrainBuiltins builtins, {
   PlaceholderExpressions? expressions,
   Map<String, String>? environment,
-  ModelOverrideRegistry? overrides,
 }) {
   return (String promptId, Map<String, Object?> inputs) async {
     final registered = config.prompts[promptId];
@@ -88,12 +86,10 @@ proc.PromptResolver buildPromptResolver(
     );
 
     final settings = registered.settings;
-    // A live `/switch_model` override re-points this prompt at a synthetic route
-    // name the route-chain resolver decodes back into the chosen single-entry
-    // chain; every un-overridden prompt keeps its committed route (§ request e).
-    final route = overrides?.overrideFor(promptId) != null
-        ? '$modelOverrideRoutePrefix$promptId'
-        : settings.llm ?? config.registry.llmDefault;
+    // The prompt's resolved `llm:` route — its committed binding, or whatever a
+    // live `/switch_model` rebound it to (the command mutates this same config,
+    // §request e), falling back to the registry default when unset.
+    final route = settings.llm ?? config.registry.llmDefault;
     return proc.ResolvedPrompt(
       role: settings.role,
       llmRoute: route,
@@ -111,28 +107,11 @@ proc.PromptResolver buildPromptResolver(
 /// Maps a named route's ordered `RoleRouteEntryConfig` chain onto the substrate
 /// `RouteEntry` list `sub.send` dispatches over. Throws
 /// [UnknownLlmRouteException] for an unloaded route name (§8.1).
-proc.RouteChainResolver buildRouteChainResolver(
-  CognitionConfig config, {
-  ModelOverrideRegistry? overrides,
-}) {
+proc.RouteChainResolver buildRouteChainResolver(CognitionConfig config) {
   return (String routeName) {
-    // A synthetic override route (`<prefix><promptId>`) resolves to the chosen
-    // model's single-entry chain straight from the live registry, bypassing the
-    // committed config (§ request e). `buildPromptResolver` only emits this name
-    // while an override is active, so the lookup is expected to hit.
-    if (overrides != null && routeName.startsWith(modelOverrideRoutePrefix)) {
-      final promptId = routeName.substring(modelOverrideRoutePrefix.length);
-      final override = overrides.overrideFor(promptId);
-      if (override != null) {
-        return <RouteEntry>[
-          RouteEntry(
-            providerId: override.providerId,
-            model: override.model,
-            conditions: RouteConditions.empty,
-          ),
-        ];
-      }
-    }
+    // Reads the route fresh from the live `config.llmRoutes` map, so a route a
+    // `/switch_model` added (or rebound) resolves the moment the switch lands
+    // (§request e) — the command mutates this same config.
     return config
         .route(routeName)
         .route

@@ -848,172 +848,63 @@ void main() {
           CognitionPromptsInspector(config: _cognitionConfig(prompts: const {}));
       expect(await inspector.prompts(), 'No prompt types are registered.');
     });
-
-    test('shows an active model override beside the prompt it targets', () async {
-      final overrides = ModelOverrideRegistry()
-        ..set('assist_user.answer.main',
-            providerId: 'openrouter', model: 'meta-llama/llama-3-70b');
-      final inspector = CognitionPromptsInspector(
-        config: _cognitionConfig(),
-        overrides: overrides,
-      );
-      final text = await inspector.prompts();
-
-      // The committed route chain still renders…
-      expect(text, contains('local:gemma3:27b'));
-      // …and the active override is called out explicitly.
-      expect(text,
-          contains('override → openrouter:meta-llama/llama-3-70b'));
-    });
-
-    test('shows no override line when the registry has none for a prompt',
-        () async {
-      final inspector = CognitionPromptsInspector(
-        config: _cognitionConfig(),
-        overrides: ModelOverrideRegistry(),
-      );
-      expect(await inspector.prompts(), isNot(contains('override →')));
-    });
   });
 
-  group('ModelOverrideRegistry', () {
-    test('records, reads back, and reports its overrides', () {
-      final registry = ModelOverrideRegistry();
-      expect(registry.isEmpty, isTrue);
-      expect(registry.overrideFor('p.x.main'), isNull);
-
-      registry.set('p.x.main', providerId: 'local', model: 'gemma3:27b');
-      expect(registry.isEmpty, isFalse);
-      final ov = registry.overrideFor('p.x.main')!;
-      expect(ov.providerId, 'local');
-      expect(ov.model, 'gemma3:27b');
-
-      // A second set on the same id replaces it.
-      registry.set('p.x.main', providerId: 'openrouter', model: 'm');
-      expect(registry.overrideFor('p.x.main')!.providerId, 'openrouter');
-    });
-  });
-
-  group('TomBrainModelSwitcher (/switch_model)', () {
-    TomBrainModelSwitcher switcher(ModelOverrideRegistry registry) =>
-        TomBrainModelSwitcher(
+  // The switcher's *validation* gate — it runs before any config is written, so
+  // these cases need no on-disk cognition tree (the writer is `null`, the
+  // deployment's "no config to write to" state). The writer-backed success +
+  // restart-survival path is pinned in `r41_model_switch_test.dart`, which
+  // builds a real cognition tree on disk.
+  group('TomBrainModelSwitcher (/switch_model) validation', () {
+    TomBrainModelSwitcher switcher() => TomBrainModelSwitcher(
           cognition: _cognitionConfig(),
           substrate: _substrateConfig(),
-          overrides: registry,
+          // No writer: this deployment has nothing to write to, so a *valid*
+          // switch reports unavailable rather than half-applying.
         );
 
-    test('a valid switch mutates the registry and confirms', () async {
-      final registry = ModelOverrideRegistry();
-      final text = await switcher(registry).switchModel(
-        promptId: 'assist_user.answer.main',
-        modelId: 'openrouter:meta-llama/llama-3-70b',
-      );
-
-      final ov = registry.overrideFor('assist_user.answer.main')!;
-      expect(ov.providerId, 'openrouter');
-      expect(ov.model, 'meta-llama/llama-3-70b');
-      expect(text, contains('assist_user.answer.main'));
-      expect(text, contains('openrouter:meta-llama/llama-3-70b'));
-    });
-
-    test('a model id is split on the FIRST colon (model names hold colons)',
-        () async {
-      final registry = ModelOverrideRegistry();
-      await switcher(registry).switchModel(
-        promptId: 'assist_user.answer.main',
-        modelId: 'local:gemma3:27b',
-      );
-      final ov = registry.overrideFor('assist_user.answer.main')!;
-      expect(ov.providerId, 'local');
-      expect(ov.model, 'gemma3:27b');
-    });
-
-    test('an unknown prompt id is reported and changes nothing', () async {
-      final registry = ModelOverrideRegistry();
-      final text = await switcher(registry).switchModel(
+    test('an unknown prompt id is reported', () async {
+      final text = await switcher().switchModel(
         promptId: 'no.such.prompt',
         modelId: 'local:gemma3:27b',
       );
       expect(text, contains('No prompt type named "no.such.prompt"'));
-      expect(registry.isEmpty, isTrue);
     });
 
-    test('a model id without a colon is reported and changes nothing',
-        () async {
-      final registry = ModelOverrideRegistry();
-      final text = await switcher(registry).switchModel(
+    test('a model id without a colon is reported', () async {
+      final text = await switcher().switchModel(
         promptId: 'assist_user.answer.main',
         modelId: 'gemma3',
       );
       expect(text, contains('<providerId>:<model>'));
-      expect(registry.isEmpty, isTrue);
     });
 
-    test('an unknown provider is reported and changes nothing', () async {
-      final registry = ModelOverrideRegistry();
-      final text = await switcher(registry).switchModel(
+    test('an unknown provider is reported', () async {
+      final text = await switcher().switchModel(
         promptId: 'assist_user.answer.main',
         modelId: 'ghost:gemma3:27b',
       );
       expect(text, contains('No provider named "ghost"'));
-      expect(registry.isEmpty, isTrue);
     });
 
-    test('a model the provider does not advertise is reported and changes '
-        'nothing', () async {
-      final registry = ModelOverrideRegistry();
-      final text = await switcher(registry).switchModel(
+    test('a model the provider does not advertise is reported', () async {
+      final text = await switcher().switchModel(
         promptId: 'assist_user.answer.main',
         modelId: 'local:not-a-model',
       );
       expect(text, contains('does not advertise a model named "not-a-model"'));
-      expect(registry.isEmpty, isTrue);
     });
 
-    group('with a persistence store (request e)', () {
-      late Directory dir;
-      late ModelOverrideStore store;
-
-      setUp(() {
-        dir = Directory.systemTemp.createTempSync('switch_model_persist_');
-        store = ModelOverrideStore(filePath: '${dir.path}/model_overrides.yaml');
-      });
-
-      tearDown(() {
-        if (dir.existsSync()) dir.deleteSync(recursive: true);
-      });
-
-      TomBrainModelSwitcher persistingSwitcher(ModelOverrideRegistry registry) =>
-          TomBrainModelSwitcher(
-            cognition: _cognitionConfig(),
-            substrate: _substrateConfig(),
-            overrides: registry,
-            store: store,
-          );
-
-      test('a valid switch persists the override and confirms it survives a '
-          'restart', () async {
-        final registry = ModelOverrideRegistry();
-        final text = await persistingSwitcher(registry).switchModel(
-          promptId: 'assist_user.answer.main',
-          modelId: 'local:gemma3:27b',
-        );
-
-        expect(text, contains('persisted'));
-        // The override is on disk, reloadable into a fresh registry.
-        final reloaded = store.load();
-        expect(reloaded['assist_user.answer.main']!.providerId, 'local');
-        expect(reloaded['assist_user.answer.main']!.model, 'gemma3:27b');
-      });
-
-      test('an invalid switch writes nothing to disk', () async {
-        final registry = ModelOverrideRegistry();
-        await persistingSwitcher(registry).switchModel(
-          promptId: 'no.such.prompt',
-          modelId: 'local:gemma3:27b',
-        );
-        expect(store.load(), isEmpty);
-      });
+    test('a fully valid switch with no writer reports the command unavailable',
+        () async {
+      // Splits on the FIRST colon (model names hold colons) and passes every
+      // validation, but with no cognition root to write into the switch is
+      // unavailable rather than half-applied.
+      final text = await switcher().switchModel(
+        promptId: 'assist_user.answer.main',
+        modelId: 'local:gemma3:27b',
+      );
+      expect(text, contains('no cognition config to write to'));
     });
   });
 
