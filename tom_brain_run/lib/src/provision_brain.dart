@@ -102,7 +102,7 @@ import 'mcp_liveness_monitor.dart' show McpLivenessMonitor;
 import 'mcp_offered_wiring.dart'
     show mcpLivenessMonitorOverClient, mcpOfferedGate;
 import 'model_override.dart'
-    show ModelOverrideRegistry, TomBrainModelSwitcher;
+    show ModelOverrideRegistry, ModelOverrideStore, TomBrainModelSwitcher;
 import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
@@ -448,6 +448,7 @@ Future<BrainProcess> standUpBrainProcess({
   McpOfferedGate? mcpOffered,
   McpLivenessMonitor? mcpMonitor,
   ModelOverrideRegistry? modelOverrides,
+  ModelOverrideStore? modelOverrideStore,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -490,6 +491,7 @@ Future<BrainProcess> standUpBrainProcess({
         cognitionConfig: cognitionConfig,
         mcpClient: mcpClient,
         modelOverrides: modelOverrides,
+        modelOverrideStore: modelOverrideStore,
       ),
     );
   } on Object {
@@ -529,6 +531,7 @@ TelegramInspectors _telegramInspectorsFor({
   required CognitionConfig? cognitionConfig,
   required McpClient? mcpClient,
   required ModelOverrideRegistry? modelOverrides,
+  required ModelOverrideStore? modelOverrideStore,
 }) {
   final Directory? root = trailRoot == null ? null : Directory(trailRoot);
   return TelegramInspectors(
@@ -582,6 +585,10 @@ TelegramInspectors _telegramInspectorsFor({
                 cognition: cognitionConfig,
                 substrate: substrateConfig,
                 overrides: modelOverrides,
+                // The persistence store (request e): when wired, `/switch_model`
+                // writes the override through to `model_overrides.yaml` so it
+                // survives a restart. Absent → the switch is process-only.
+                store: modelOverrideStore,
               ),
   );
 }
@@ -634,6 +641,10 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // so without a cognition config there is nothing to override. Both `sub.run`
   // resolvers read it, and the `/switch_model` switcher mutates it.
   ModelOverrideRegistry? modelOverrides;
+  // The durable half of the override seam (request e): a `model_overrides.yaml`
+  // at the cognition root the registry is seeded from at boot and `/switch_model`
+  // writes back through, so a switch survives a process restart.
+  ModelOverrideStore? modelOverrideStore;
   final cognition = runConfig.cognition;
   final Map<String, String> environment = Platform.environment;
   if (cognition != null) {
@@ -657,6 +668,18 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
       scriptsFolder: scriptsDir.path,
     );
     modelOverrides = ModelOverrideRegistry();
+    // Seed the registry from the persisted overrides so prior `/switch_model`
+    // choices take effect from the first run after a restart (request e). The
+    // file lives at the cognition root next to `registry.yaml`.
+    modelOverrideStore =
+        ModelOverrideStore(filePath: '${cognition.root}/model_overrides.yaml');
+    for (final entry in modelOverrideStore.load().entries) {
+      modelOverrides.set(
+        entry.key,
+        providerId: entry.value.providerId,
+        model: entry.value.model,
+      );
+    }
     promptResolver = buildPromptResolver(
       cognitionConfig,
       builtins,
@@ -741,6 +764,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     mcpOffered: mcpOffered,
     mcpMonitor: mcpMonitor,
     modelOverrides: modelOverrides,
+    modelOverrideStore: modelOverrideStore,
   );
 }
 

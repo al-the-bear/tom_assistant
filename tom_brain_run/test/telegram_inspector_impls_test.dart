@@ -969,6 +969,52 @@ void main() {
       expect(text, contains('does not advertise a model named "not-a-model"'));
       expect(registry.isEmpty, isTrue);
     });
+
+    group('with a persistence store (request e)', () {
+      late Directory dir;
+      late ModelOverrideStore store;
+
+      setUp(() {
+        dir = Directory.systemTemp.createTempSync('switch_model_persist_');
+        store = ModelOverrideStore(filePath: '${dir.path}/model_overrides.yaml');
+      });
+
+      tearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+
+      TomBrainModelSwitcher persistingSwitcher(ModelOverrideRegistry registry) =>
+          TomBrainModelSwitcher(
+            cognition: _cognitionConfig(),
+            substrate: _substrateConfig(),
+            overrides: registry,
+            store: store,
+          );
+
+      test('a valid switch persists the override and confirms it survives a '
+          'restart', () async {
+        final registry = ModelOverrideRegistry();
+        final text = await persistingSwitcher(registry).switchModel(
+          promptId: 'assist_user.answer.main',
+          modelId: 'local:gemma3:27b',
+        );
+
+        expect(text, contains('persisted'));
+        // The override is on disk, reloadable into a fresh registry.
+        final reloaded = store.load();
+        expect(reloaded['assist_user.answer.main']!.providerId, 'local');
+        expect(reloaded['assist_user.answer.main']!.model, 'gemma3:27b');
+      });
+
+      test('an invalid switch writes nothing to disk', () async {
+        final registry = ModelOverrideRegistry();
+        await persistingSwitcher(registry).switchModel(
+          promptId: 'no.such.prompt',
+          modelId: 'local:gemma3:27b',
+        );
+        expect(store.load(), isEmpty);
+      });
+    });
   });
 
   group('ToolCatalogueInspector', () {

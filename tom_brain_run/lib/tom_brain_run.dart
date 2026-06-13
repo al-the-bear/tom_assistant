@@ -61,6 +61,8 @@ export 'src/model_override.dart'
     show
         ModelOverride,
         ModelOverrideRegistry,
+        ModelOverrideStore,
+        ModelOverrideStoreException,
         TomBrainModelSwitcher,
         modelOverrideRoutePrefix;
 export 'src/llm_route_config.dart' show LlmRouteConfig, UnknownLlmRouteException;

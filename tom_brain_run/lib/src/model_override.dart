@@ -1,31 +1,42 @@
-// The runtime model-override seam behind the `/switch_model` command (request
-// e).
+// The model-override seam behind the `/switch_model` command (request e).
 //
 // `/switch_model <prompt-id> <model-id>` re-points one cognition prompt type at
-// a chosen `<providerId>:<model>` for the rest of the process, *without* editing
-// the committed cognition config (the override is process-only, never persisted
-// — design decision for request e). The override rides the two `sub.run`
-// resolver seams (`cognition_prompt_resolver.dart`): an overridden prompt's
-// `ResolvedPrompt.llmRoute` becomes the synthetic route name
+// a chosen `<providerId>:<model>`, *without* rewriting the committed per-prompt
+// cognition config (which routes by a shared `llm:` route name — editing the
+// route file would wrongly move every prompt on that route). The override rides
+// the two `sub.run` resolver seams (`cognition_prompt_resolver.dart`): an
+// overridden prompt's `ResolvedPrompt.llmRoute` becomes the synthetic route name
 // `<modelOverrideRoutePrefix><promptId>`, and the route-chain resolver decodes
 // that synthetic name back into a single-entry chain of the chosen model. So a
 // switch re-routes *only* the targeted prompt; every other prompt keeps its
 // committed route.
 //
-// This file holds the three pieces that seam needs:
+// The override is **persisted** to a flat `model_overrides.yaml` at the
+// cognition root (request e revision): `/switch_model` mutates the live registry
+// *and* writes it through, and the boot seeds the registry back from that file —
+// so a switch survives a process restart. (Earlier this seam was process-only;
+// that decision was revised to make `/switch_model` change the configuration on
+// disk, per the "no backwards compatibility" principle.)
+//
+// This file holds the four pieces that seam needs:
 //
 //   * [ModelOverride] — the chosen `(providerId, model)` pair for one prompt.
-//   * [ModelOverrideRegistry] — the process-lifetime map prompt-id → override,
+//   * [ModelOverrideRegistry] — the in-process map prompt-id → override,
 //     consulted by the wrapped resolvers and the prompts inspector.
+//   * [ModelOverrideStore] — the on-disk persistence (`model_overrides.yaml`)
+//     the boot seeds the registry from and `/switch_model` writes through.
 //   * [TomBrainModelSwitcher] — the run-layer `TelegramModelSwitcher` impl: it
 //     validates the prompt-id against the loaded `CognitionConfig` and the
 //     `<providerId>:<model>` id against the `SubstrateConfig`, then mutates the
-//     registry and renders the outcome.
+//     registry, persists it through the store, and renders the outcome.
+
+import 'dart:io';
 
 import 'package:tom_brain_access/tom_brain_access.dart'
     show TelegramModelSwitcher;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig;
+import 'package:tom_core_agentic/tom_core_agentic.dart' show loadYamlAsMap;
 
 import 'cognition_config.dart';
 
@@ -51,12 +62,13 @@ final class ModelOverride {
   const ModelOverride({required this.providerId, required this.model});
 }
 
-/// The process-lifetime registry of active model overrides, keyed by prompt id.
+/// The in-process registry of active model overrides, keyed by prompt id.
 ///
 /// Mutated only by [TomBrainModelSwitcher] (via `/switch_model`); read by the
 /// wrapped resolvers (to re-route an overridden prompt) and the
 /// `CognitionPromptsInspector` (to show the active override in `/show_prompts`).
-/// It is never persisted — an override lives only for the running process.
+/// It is seeded from a [ModelOverrideStore] at boot and written back through
+/// that store on every switch, so an override survives a process restart.
 final class ModelOverrideRegistry {
   final Map<String, ModelOverride> _byPromptId = <String, ModelOverride>{};
 
@@ -76,6 +88,110 @@ final class ModelOverrideRegistry {
 
   /// Whether no prompt is currently overridden.
   bool get isEmpty => _byPromptId.isEmpty;
+
+  /// An unmodifiable snapshot of every active override, keyed by prompt id —
+  /// the shape a [ModelOverrideStore] persists.
+  Map<String, ModelOverride> get entries =>
+      Map<String, ModelOverride>.unmodifiable(_byPromptId);
+}
+
+/// Thrown when a `model_overrides.yaml` file cannot be parsed into overrides
+/// (a non-map document, a non-string value, or a value that is not a
+/// `<providerId>:<model>` pair).
+class ModelOverrideStoreException implements Exception {
+  /// Human-readable, located explanation.
+  final String message;
+
+  /// Builds the exception with a [message].
+  const ModelOverrideStoreException(this.message);
+
+  @override
+  String toString() => 'ModelOverrideStoreException: $message';
+}
+
+/// The on-disk persistence behind `/switch_model`: a flat YAML map at
+/// [filePath] (`<cognition.root>/model_overrides.yaml`) of prompt-id →
+/// `"<providerId>:<model>"`.
+///
+/// The store is the durable half of the override seam (request e): the boot
+/// [load]s it to seed the [ModelOverrideRegistry], and [TomBrainModelSwitcher]
+/// [save]s the registry snapshot through it after every validated switch. The
+/// committed per-prompt cognition config is never touched — a prompt's `llm:`
+/// route name is shared, so the per-prompt override lives in its own file.
+final class ModelOverrideStore {
+  /// The absolute path to the `model_overrides.yaml` file this store owns.
+  final String filePath;
+
+  /// Binds the store to [filePath].
+  const ModelOverrideStore({required this.filePath});
+
+  /// Reads the persisted overrides, keyed by prompt id.
+  ///
+  /// An absent file, or a file with no non-comment content, loads as the empty
+  /// map. Throws [ModelOverrideStoreException] on a malformed document, a
+  /// non-string value, or a value that is not a `<providerId>:<model>` pair.
+  Map<String, ModelOverride> load() {
+    final file = File(filePath);
+    if (!file.existsSync()) return <String, ModelOverride>{};
+    final content = file.readAsStringSync();
+    // A blank or comment-only file (`loadYamlAsMap` rejects a null root) is the
+    // honest empty state — a hand-cleared overrides file.
+    final hasContent = content
+        .split('\n')
+        .map((line) => line.trim())
+        .any((line) => line.isNotEmpty && !line.startsWith('#'));
+    if (!hasContent) return <String, ModelOverride>{};
+
+    final Map<String, Object?> doc = loadYamlAsMap(
+      content,
+      rootPath: 'model_overrides',
+      errorFactory: ModelOverrideStoreException.new,
+    );
+    final result = <String, ModelOverride>{};
+    for (final entry in doc.entries) {
+      final value = entry.value;
+      if (value is! String) {
+        throw ModelOverrideStoreException(
+          'Override for "${entry.key}" must be a "<providerId>:<model>" '
+          'string (got ${value == null ? 'null' : value.runtimeType}).',
+        );
+      }
+      result[entry.key] = _parseModelId(entry.key, value);
+    }
+    return result;
+  }
+
+  /// Rewrites the file to exactly [entries], sorted by prompt id for a
+  /// deterministic on-disk form. Creates the parent directory if needed.
+  void save(Map<String, ModelOverride> entries) {
+    final file = File(filePath);
+    file.parent.createSync(recursive: true);
+    final keys = entries.keys.toList()..sort();
+    final buffer = StringBuffer()
+      ..writeln('# Persisted /switch_model overrides (request e). Auto-managed —')
+      ..writeln('# rewritten on every /switch_model. Format:')
+      ..writeln('#   "<prompt-id>": "<providerId>:<model>"');
+    for (final key in keys) {
+      final override = entries[key]!;
+      buffer.writeln('"$key": "${override.providerId}:${override.model}"');
+    }
+    file.writeAsStringSync(buffer.toString());
+  }
+
+  /// Splits a `<providerId>:<model>` value on the FIRST colon — model names
+  /// carry colons (e.g. `gemma3:27b`), matching [TomBrainModelSwitcher].
+  static ModelOverride _parseModelId(String promptId, String modelId) {
+    final colon = modelId.indexOf(':');
+    if (colon <= 0 || colon >= modelId.length - 1) {
+      throw ModelOverrideStoreException(
+        'Override "$modelId" for "$promptId" must be "<providerId>:<model>".',
+      );
+    }
+    return ModelOverride(
+      providerId: modelId.substring(0, colon),
+      model: modelId.substring(colon + 1),
+    );
+  }
 }
 
 /// The run-layer `TelegramModelSwitcher` implementation behind `/switch_model`
@@ -90,8 +206,10 @@ final class ModelOverrideRegistry {
 ///     model names hold colons, e.g. `gemma3:27b`), its provider must exist in
 ///     [substrate], and that provider must advertise the model.
 ///
-/// On success it records the override in [overrides] (process-only) and confirms;
-/// the wrapped resolvers pick the new route up on the next `sub.run`.
+/// On success it records the override in [overrides], persists the registry
+/// snapshot through [store] (when one is wired) so the switch survives a
+/// restart, and confirms; the wrapped resolvers pick the new route up on the
+/// next `sub.run`.
 final class TomBrainModelSwitcher implements TelegramModelSwitcher {
   /// The loaded cognition config — the source of the valid prompt-id space.
   final CognitionConfig cognition;
@@ -99,15 +217,21 @@ final class TomBrainModelSwitcher implements TelegramModelSwitcher {
   /// The parsed substrate config — the source of the valid provider/model space.
   final SubstrateConfig substrate;
 
-  /// The process-lifetime override registry this switcher mutates.
+  /// The in-process override registry this switcher mutates.
   final ModelOverrideRegistry overrides;
 
-  /// Builds the switcher over the loaded [cognition] + [substrate] configs and
-  /// the live [overrides] registry.
+  /// The on-disk store the validated override is written through, or `null`
+  /// when the deployment has no cognition root to persist into (the switch then
+  /// applies for the running process only).
+  final ModelOverrideStore? store;
+
+  /// Builds the switcher over the loaded [cognition] + [substrate] configs, the
+  /// live [overrides] registry, and the optional persistence [store].
   TomBrainModelSwitcher({
     required this.cognition,
     required this.substrate,
     required this.overrides,
+    this.store,
   });
 
   @override
@@ -142,6 +266,12 @@ final class TomBrainModelSwitcher implements TelegramModelSwitcher {
     }
 
     overrides.set(promptId, providerId: providerId, model: model);
+    final persisted = store;
+    if (persisted != null) {
+      persisted.save(overrides.entries);
+      return 'Prompt type "$promptId" now uses $providerId:$model '
+          '(persisted; survives a restart).';
+    }
     return 'Prompt type "$promptId" now uses $providerId:$model for this '
         'process (override; not persisted to config).';
   }
