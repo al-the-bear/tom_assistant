@@ -97,6 +97,8 @@ import 'dream_config.dart' show DreamConfig;
 import 'dream_controller.dart' show DreamController;
 import 'late_dream_surface.dart' show LateDreamSurface;
 import 'mcp_channel_factory.dart' show productionMcpChannelFactory;
+import 'model_override.dart'
+    show ModelOverrideRegistry, TomBrainModelSwitcher;
 import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
@@ -428,6 +430,7 @@ Future<BrainProcess> standUpBrainProcess({
   CognitionConfig? cognitionConfig,
   McpClient? mcpClient,
   List<McpToolDefinition> mcpTools = const <McpToolDefinition>[],
+  ModelOverrideRegistry? modelOverrides,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -467,6 +470,7 @@ Future<BrainProcess> standUpBrainProcess({
         substrateConfig: substrateConfig,
         cognitionConfig: cognitionConfig,
         mcpClient: mcpClient,
+        modelOverrides: modelOverrides,
       ),
     );
   } on Object {
@@ -505,6 +509,7 @@ TelegramInspectors _telegramInspectorsFor({
   required SubstrateConfig? substrateConfig,
   required CognitionConfig? cognitionConfig,
   required McpClient? mcpClient,
+  required ModelOverrideRegistry? modelOverrides,
 }) {
   final Directory? root = trailRoot == null ? null : Directory(trailRoot);
   return TelegramInspectors(
@@ -532,10 +537,14 @@ TelegramInspectors _telegramInspectorsFor({
         ? null
         : SubstrateModelsInspector(config: substrateConfig),
     // The prompt-types inspector reads the parsed cognition config (not the
-    // trail), so it is wired whenever a `cognition:` tree was loaded.
+    // trail), so it is wired whenever a `cognition:` tree was loaded. It also
+    // reads the live override registry to call out an active `/switch_model`.
     promptTypes: cognitionConfig == null
         ? null
-        : CognitionPromptsInspector(config: cognitionConfig),
+        : CognitionPromptsInspector(
+            config: cognitionConfig,
+            overrides: modelOverrides,
+          ),
     // The tool-catalogue inspector reads the engine's shipped default tool set
     // — a process constant, so it is always wired.
     tools: ToolCatalogueInspector(),
@@ -543,6 +552,18 @@ TelegramInspectors _telegramInspectorsFor({
     // so it is wired exactly when the cognition has an MCP client — i.e. when at
     // least one `mcpServers:` entry was configured.
     mcp: mcpClient == null ? null : McpServersInspector(client: mcpClient),
+    // The model switcher (request e) needs both the cognition config (the valid
+    // prompt-id space) and the substrate config (the valid provider/model
+    // space) plus the live override registry it mutates, so it is wired only
+    // when all three are present.
+    modelSwitcher:
+        cognitionConfig == null || substrateConfig == null || modelOverrides == null
+            ? null
+            : TomBrainModelSwitcher(
+                cognition: cognitionConfig,
+                substrate: substrateConfig,
+                overrides: modelOverrides,
+              ),
   );
 }
 
@@ -589,6 +610,11 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   RouteChainResolver? routeChainOf;
   RoleRegistry? roleRegistry;
   CognitionConfig? cognitionConfig;
+  // The process-lifetime model-override registry (request e). Built only when a
+  // cognition tree is loaded — `/switch_model` re-points a registered prompt id,
+  // so without a cognition config there is nothing to override. Both `sub.run`
+  // resolvers read it, and the `/switch_model` switcher mutates it.
+  ModelOverrideRegistry? modelOverrides;
   final cognition = runConfig.cognition;
   final Map<String, String> environment = Platform.environment;
   if (cognition != null) {
@@ -611,12 +637,15 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
       configFolder: cognition.root,
       scriptsFolder: scriptsDir.path,
     );
+    modelOverrides = ModelOverrideRegistry();
     promptResolver = buildPromptResolver(
       cognitionConfig,
       builtins,
       environment: environment,
+      overrides: modelOverrides,
     );
-    routeChainOf = buildRouteChainResolver(cognitionConfig);
+    routeChainOf =
+        buildRouteChainResolver(cognitionConfig, overrides: modelOverrides);
   }
 
   // The substrate uses the file-backed registry when a cognition tree was
@@ -673,6 +702,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     cognitionConfig: cognitionConfig,
     mcpClient: mcpClient,
     mcpTools: mcpTools,
+    modelOverrides: modelOverrides,
   );
 }
 

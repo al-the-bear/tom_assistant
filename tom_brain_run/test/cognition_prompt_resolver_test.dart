@@ -16,8 +16,13 @@ import 'dart:io';
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show ResolvedPrompt;
 import 'package:tom_brain_run/tom_brain_run.dart'
-    show BrainBuiltins, CognitionConfigLoader, buildPromptResolver,
-        buildRouteChainResolver;
+    show
+        BrainBuiltins,
+        CognitionConfigLoader,
+        ModelOverrideRegistry,
+        buildPromptResolver,
+        buildRouteChainResolver,
+        modelOverrideRoutePrefix;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart' show RouteEntry;
 import 'package:test/test.dart';
 
@@ -347,6 +352,72 @@ void main() {
       expect(chain, hasLength(1));
       expect(chain.single.providerId, 'omlx');
       expect(chain.single.model, 'gemma-4-26b-a4b-it-4bit');
+    });
+  });
+
+  // ── Runtime model-override seam (request e: /switch_model) ────────────
+  //
+  // A process-lifetime `ModelOverrideRegistry` re-routes a single prompt id to a
+  // chosen `<providerId>:<model>` without touching the committed config. The
+  // re-routing rides the two resolver seams: an overridden prompt's
+  // `ResolvedPrompt.llmRoute` becomes the synthetic name
+  // `<modelOverrideRoutePrefix><promptId>`, and the route-chain resolver decodes
+  // that synthetic name back into a single-entry chain of the override.
+  group('runtime model override re-routes the two resolver seams', () {
+    test('buildRouteChainResolver decodes a synthetic override route into a '
+        'single-entry chain, leaving real routes untouched', () {
+      final cfg = CognitionConfigLoader.loadFromDir(_cognitionRoot());
+      final overrides = ModelOverrideRegistry()
+        ..set(promptId, providerId: 'ollama', model: 'gemma3:27b');
+      final routeChainOf = buildRouteChainResolver(cfg, overrides: overrides);
+
+      final List<RouteEntry> overridden =
+          routeChainOf('$modelOverrideRoutePrefix$promptId');
+      expect(overridden, hasLength(1));
+      expect(overridden.single.providerId, 'ollama');
+      expect(overridden.single.model, 'gemma3:27b');
+
+      // A non-synthetic route name still expands the committed config.
+      final List<RouteEntry> real = routeChainOf('assistant');
+      expect(real.single.providerId, 'omlx');
+    });
+
+    test('buildPromptResolver rewrites an overridden prompt\'s llmRoute to the '
+        'synthetic name; an un-overridden prompt keeps its config route',
+        () async {
+      final configRoot = _cognitionRoot();
+      final cfg = CognitionConfigLoader.loadFromDir(configRoot);
+      final overrides = ModelOverrideRegistry()
+        ..set(promptId, providerId: 'ollama', model: 'gemma3:27b');
+      final resolve = buildPromptResolver(
+        cfg,
+        _builtins(configRoot),
+        overrides: overrides,
+      );
+
+      final ResolvedPrompt? overridden = await resolve(promptId, {
+        'text': 'hi',
+        'recall': const <String, Object?>{'nodes': <Object?>[]},
+        'priorTurns': const <Object?>[],
+        'open_todo_reminder': '',
+      });
+      expect(overridden, isNotNull);
+      expect(overridden!.llmRoute, '$modelOverrideRoutePrefix$promptId');
+
+      // A different, un-overridden prompt resolves to its committed route name.
+      final ResolvedPrompt? plain = await resolve(
+        'assist_user.answer_with_thinking.synthesis',
+        {
+          'text': 'hi',
+          'recall': const <String, Object?>{'nodes': <Object?>[]},
+          'priorTurns': const <Object?>[],
+          'rejection_context': '',
+          'analysis': 'a',
+          'sub_reasoning': 's',
+        },
+      );
+      expect(plain, isNotNull);
+      expect(plain!.llmRoute, isNot(startsWith(modelOverrideRoutePrefix)));
     });
   });
 }
