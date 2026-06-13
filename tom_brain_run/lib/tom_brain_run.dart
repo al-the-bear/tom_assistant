@@ -72,6 +72,7 @@ export 'src/brain_substrate_builder.dart'
         buildSubstrate,
         buildWebFetch,
         buildWebSearch;
+export 'src/agent_sdk_llm_provider.dart' show AgentSdkLlmProvider;
 export 'src/provision_brain.dart'
     show
         BrainProcess,

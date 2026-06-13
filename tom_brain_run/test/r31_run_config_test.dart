@@ -77,6 +77,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
         WebSearchProviderConfig;
 import 'package:tom_core_server/tom_core_server.dart'
     show standalonePlatformUtils;
+import 'package:tom_vscode_scripting_api/tom_vscode_scripting_api.dart'
+    show PermissionMode;
 import 'package:test/test.dart';
 
 /// Locates `<workspace>/tom_binaries/sqlite_vec`. Mirrors the #30 suite.
@@ -496,6 +498,93 @@ substrate:
         () => buildSubstrate(cfg),
         throwsA(isA<SubstrateConfigException>()
             .having((e) => e.message, 'message', contains('Ollama'))),
+      );
+    });
+  });
+
+  group('#31 buildSubstrate — agent_sdk provider (design-spec phase 2)', () {
+    // A config that manufactures an agent-SDK provider alongside the Ollama
+    // embedding provider. The agent-SDK provider's bridge socket is never
+    // dialed (no completion runs in this group), so no live VS Code window is
+    // needed — manufacture is synchronous and offline.
+    String agentSdkSubstrate({String options = ''}) => '''
+substrate:
+  providers:
+    - id: claude
+      kind: agent_sdk
+      models:
+        - claude-sonnet-4-6$options
+    - id: ollama
+      kind: ollama
+      baseUrl: http://10.8.0.9:11434
+      models:
+        - nomic-embed-text
+  roleRoutes:
+    assistant_to_user:
+      - providerId: claude
+        model: claude-sonnet-4-6
+  embedding:
+    providerId: ollama
+    model: nomic-embed-text
+    dims: 768
+    normalize: true''';
+
+    test('manufactures an AgentSdkLlmProvider with route default + defaults',
+        () {
+      final SubstrateConfig cfg =
+          SubstrateConfigLoader.parse('${agentSdkSubstrate()}\n');
+      final substrate = buildSubstrate(cfg);
+
+      final provider = substrate.providers['claude'];
+      expect(provider, isA<AgentSdkLlmProvider>());
+      final sdk = provider as AgentSdkLlmProvider;
+      expect(sdk.id, 'claude');
+      expect(sdk.defaultModel, 'claude-sonnet-4-6');
+      expect(sdk.maxTurns, isNull);
+      expect(sdk.permissionMode, PermissionMode.default_);
+    });
+
+    test('reads permissionMode + maxTurns from options', () {
+      const String options = '''
+
+      options:
+        permissionMode: acceptEdits
+        maxTurns: 12''';
+      final SubstrateConfig cfg =
+          SubstrateConfigLoader.parse('${agentSdkSubstrate(options: options)}\n');
+      final sdk = buildSubstrate(cfg).providers['claude'] as AgentSdkLlmProvider;
+      expect(sdk.permissionMode, PermissionMode.acceptEdits);
+      expect(sdk.maxTurns, 12);
+    });
+
+    test('a session mode other than `none` is a located phase-3 error', () {
+      const String options = '''
+
+      options:
+        sessionMode: brain''';
+      final SubstrateConfig cfg =
+          SubstrateConfigLoader.parse('${agentSdkSubstrate(options: options)}\n');
+      expect(
+        () => buildSubstrate(cfg),
+        throwsA(isA<SubstrateConfigException>().having((e) => e.message,
+            'message', allOf(contains('sessionMode'), contains('phase 3')))),
+      );
+    });
+
+    test('an invalid permissionMode is a located error listing valid values',
+        () {
+      const String options = '''
+
+      options:
+        permissionMode: nonsense''';
+      final SubstrateConfig cfg =
+          SubstrateConfigLoader.parse('${agentSdkSubstrate(options: options)}\n');
+      expect(
+        () => buildSubstrate(cfg),
+        throwsA(isA<SubstrateConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('permissionMode'), contains('acceptEdits')))),
       );
     });
   });

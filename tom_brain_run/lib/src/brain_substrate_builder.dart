@@ -57,6 +57,9 @@
 //     second, redundant validation surface.
 
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
+import 'package:tom_vscode_scripting_api/tom_vscode_scripting_api.dart';
+
+import 'agent_sdk_llm_provider.dart';
 
 /// Builds the prototype's real substrate from a parsed [SubstrateConfig]
 /// (Plan-2 step #31).
@@ -216,13 +219,7 @@ LlmProvider _buildProvider(ProviderProfile profile) {
         defaultModel: profile.models.first,
       );
     case ProviderKind.agentSdk:
-      // Wired in agent-SDK design-spec phase 2: AgentSdkLlmProvider drives the
-      // Anthropic Agent SDK over the VS Code bridge. Until then it is a located
-      // error so a config that names it fails loudly rather than silently.
-      throw SubstrateConfigException(
-        'substrate.providers["${profile.id}"].kind = agent_sdk: the agent-SDK '
-        'provider is not yet wired in this build (design-spec phase 2).',
-      );
+      return _buildAgentSdkProvider(profile);
     case ProviderKind.anthropic:
     case ProviderKind.stub:
       throw SubstrateConfigException(
@@ -232,6 +229,84 @@ LlmProvider _buildProvider(ProviderProfile profile) {
         'and `anthropic` is outside the prototype run shape.',
       );
   }
+}
+
+/// Manufactures the agent-SDK provider for an `agent_sdk` config row
+/// (design-spec § 1; phase 2).
+///
+/// Reads the provider-specific knobs out of [ProviderProfile.options]:
+///   * `bridgeHost` (default `127.0.0.1`) / `bridgePort`
+///     (default [defaultVSCodeBridgePort]) — the VS Code Scripting-API CLI
+///     server the provider drives Claude Code through;
+///   * `permissionMode` (default `default`) — Claude Code's own tool-loop
+///     permission posture, validated against the SDK's wire alphabet;
+///   * `maxTurns` (optional) — Claude Code's internal agentic-loop turn cap;
+///   * `sessionMode` (default `none`) — **phase 2 supports only `none`**
+///     (every call is a first call, no session id). `brain` / `quest` are a
+///     located error pointing at phase 3 so a config that names them fails
+///     loudly rather than silently dropping to a stateless call.
+///
+/// The [AgentSdkLlmProvider.clientFactory] connects the bridge socket lazily
+/// on the first completion (and is memoised), so manufacturing the provider
+/// here is synchronous and never touches the network — a config can be built
+/// and validated without a live VS Code window.
+LlmProvider _buildAgentSdkProvider(ProviderProfile profile) {
+  final Map<String, Object?> options = profile.options;
+
+  final Object sessionModeRaw = options['sessionMode'] ?? 'none';
+  if (sessionModeRaw != 'none') {
+    throw SubstrateConfigException(
+      'substrate.providers["${profile.id}"].options.sessionMode = '
+      '"$sessionModeRaw": the agent-SDK provider supports only session mode '
+      '`none` in this build (every call is a first call). The `brain` and '
+      '`quest` session modes are wired in design-spec phase 3.',
+    );
+  }
+
+  final String bridgeHost = (options['bridgeHost'] as String?) ?? '127.0.0.1';
+  final int bridgePort =
+      (options['bridgePort'] as num?)?.toInt() ?? defaultVSCodeBridgePort;
+  final int? maxTurns = (options['maxTurns'] as num?)?.toInt();
+  final PermissionMode permissionMode =
+      _parsePermissionMode(profile, options['permissionMode']);
+
+  return AgentSdkLlmProvider(
+    id: profile.id,
+    // The route default; the router resolves the actual model per route.
+    // The loader guarantees `models` is non-empty.
+    defaultModel: profile.models.first,
+    maxTurns: maxTurns,
+    permissionMode: permissionMode,
+    clientFactory: () async {
+      final VSCodeBridgeClient client =
+          VSCodeBridgeClient(host: bridgeHost, port: bridgePort);
+      final bool connected = await client.connect();
+      if (!connected) {
+        throw AgentSdkQueryException(
+          'Could not connect to the VS Code bridge at $bridgeHost:$bridgePort '
+          'for agent-SDK provider "${profile.id}".',
+        );
+      }
+      return AgentSdkClient(VSCodeBridgeAgentSdkTransport(client));
+    },
+  );
+}
+
+/// Parses the optional `permissionMode` option into a [PermissionMode], or a
+/// located error when it is present but not a valid SDK wire string.
+PermissionMode _parsePermissionMode(ProviderProfile profile, Object? raw) {
+  if (raw == null) return PermissionMode.default_;
+  if (raw is String) {
+    for (final PermissionMode mode in PermissionMode.values) {
+      if (mode.wire == raw) return mode;
+    }
+  }
+  final String valid =
+      PermissionMode.values.map((PermissionMode m) => m.wire).join(', ');
+  throw SubstrateConfigException(
+    'substrate.providers["${profile.id}"].options.permissionMode = "$raw" is '
+    'not a valid agent-SDK permission mode. Valid values: $valid.',
+  );
 }
 
 /// Builds the embedding service from `config.embedding`, reusing the already
