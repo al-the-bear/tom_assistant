@@ -296,6 +296,20 @@ class TelegramAccessEdge {
         await _handleCheckUsage(receiver);
       case TelegramCommandKind.stopPrompt:
         await _handleStopPrompt(receiver);
+      case TelegramCommandKind.toolsList:
+        await _handleToolsList(receiver);
+      case TelegramCommandKind.toolInspect:
+        await _handleToolInspect(receiver, command.argument);
+      case TelegramCommandKind.mcpList:
+        await _handleMcpList(receiver);
+      case TelegramCommandKind.mcpInspect:
+        await _handleMcpInspect(receiver, command.argument);
+      case TelegramCommandKind.showModels:
+        await _handleShowModels(receiver);
+      case TelegramCommandKind.showPrompts:
+        await _handleShowPromptTypes(receiver);
+      case TelegramCommandKind.switchModel:
+        await _handleSwitchModel(receiver, command.argument);
     }
   }
 
@@ -470,6 +484,130 @@ class TelegramAccessEdge {
       return;
     }
     await _sendSplit(receiver, await controller.stopCurrentPrompt());
+  }
+
+  /// Handles `/tools_list`: sends the rendered engine-tool catalogue, split
+  /// across messages if it overflows. Replies the unavailable message when no
+  /// tools inspector is wired.
+  Future<void> _handleToolsList(ChatReceiver receiver) async {
+    final TelegramToolsInspector? inspector = _inspectors.tools;
+    if (inspector == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    await _sendSplit(receiver, await inspector.toolsList());
+  }
+
+  /// Handles `/tool_inspect <name>`: sends one tool's full detail (the inspector
+  /// renders the "no such tool" notice for an unknown name). Replies a usage
+  /// line for a missing argument and the unavailable message when no tools
+  /// inspector is wired.
+  Future<void> _handleToolInspect(
+    ChatReceiver receiver,
+    String argument,
+  ) async {
+    final TelegramToolsInspector? inspector = _inspectors.tools;
+    if (inspector == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    final String name = argument.trim();
+    if (name.isEmpty) {
+      await _send(receiver, 'Usage: /tool_inspect <name> (from /tools_list).');
+      return;
+    }
+    await _sendSplit(receiver, await inspector.toolDetail(name));
+  }
+
+  /// Handles `/mcp_list`: sends the rendered list of configured MCP servers (the
+  /// inspector renders the empty notice when none is configured). Replies the
+  /// unavailable message when no MCP inspector is wired.
+  Future<void> _handleMcpList(ChatReceiver receiver) async {
+    final TelegramMcpInspector? inspector = _inspectors.mcp;
+    if (inspector == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    await _sendSplit(receiver, await inspector.mcpList());
+  }
+
+  /// Handles `/mcp_inspect <server> [tool]`: lists an MCP server's tools, or one
+  /// tool's detail when a second argument is given (the inspector renders the
+  /// unknown-server / unreachable notices). Replies a usage line for a missing
+  /// server and the unavailable message when no MCP inspector is wired.
+  Future<void> _handleMcpInspect(
+    ChatReceiver receiver,
+    String argument,
+  ) async {
+    final TelegramMcpInspector? inspector = _inspectors.mcp;
+    if (inspector == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    final List<String> parts = argument.trim().split(RegExp(r'\s+'))
+      ..removeWhere((p) => p.isEmpty);
+    if (parts.isEmpty) {
+      await _send(
+        receiver,
+        'Usage: /mcp_inspect <server> [tool] (from /mcp_list).',
+      );
+      return;
+    }
+    final String server = parts.first;
+    final String? tool = parts.length > 1 ? parts[1] : null;
+    await _sendSplit(receiver, await inspector.mcpDetail(server, tool: tool));
+  }
+
+  /// Handles `/show_models`: sends the rendered list of configured providers and
+  /// models. Replies the unavailable message when no models inspector is wired.
+  Future<void> _handleShowModels(ChatReceiver receiver) async {
+    final TelegramModelsInspector? inspector = _inspectors.models;
+    if (inspector == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    await _sendSplit(receiver, await inspector.models());
+  }
+
+  /// Handles `/show_prompts`: sends the rendered list of cognition prompt types.
+  /// Replies the unavailable message when no prompts inspector is wired.
+  Future<void> _handleShowPromptTypes(ChatReceiver receiver) async {
+    final TelegramPromptsInspector? inspector = _inspectors.promptTypes;
+    if (inspector == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    await _sendSplit(receiver, await inspector.prompts());
+  }
+
+  /// Handles `/switch_model <prompt-id> <model-id>`: overrides the model a
+  /// cognition prompt type uses for this process (the switcher renders the
+  /// validation notices for an unknown prompt-id / model-id). Replies a usage
+  /// line for a missing argument and the unavailable message when no model
+  /// switcher is wired.
+  Future<void> _handleSwitchModel(
+    ChatReceiver receiver,
+    String argument,
+  ) async {
+    final TelegramModelSwitcher? switcher = _inspectors.modelSwitcher;
+    if (switcher == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    final List<String> parts = argument.trim().split(RegExp(r'\s+'))
+      ..removeWhere((p) => p.isEmpty);
+    if (parts.length != 2) {
+      await _send(
+        receiver,
+        'Usage: /switch_model <prompt-id> <model-id> '
+        '(ids from /show_prompts and /show_models).',
+      );
+      return;
+    }
+    await _sendSplit(
+      receiver,
+      await switcher.switchModel(promptId: parts[0], modelId: parts[1]),
+    );
   }
 
   /// Sends [text] as the minimum number of size-compliant Telegram messages,

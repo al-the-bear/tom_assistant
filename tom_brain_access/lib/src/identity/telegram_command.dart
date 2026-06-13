@@ -76,6 +76,34 @@ enum TelegramCommandKind {
   /// cooperatively abandoning the in-flight foreground run. A no-op (with a
   /// "nothing is being processed" reply) when the brain is idle.
   stopPrompt,
+
+  /// `/tools_list` — list the engine tools the brain can call (name, group,
+  /// and a one-line description per tool).
+  toolsList,
+
+  /// `/tool_inspect <name>` — show one tool's full detail (group, description,
+  /// and input schema).
+  toolInspect,
+
+  /// `/mcp_list` — list the configured external MCP servers (id, transport,
+  /// description).
+  mcpList,
+
+  /// `/mcp_inspect <server>` — list the tools an MCP server advertises; with a
+  /// second argument `/mcp_inspect <server> <tool>` show one tool's detail.
+  mcpInspect,
+
+  /// `/show_models` — list the configured substrate providers and their
+  /// models, each with the `<providerId>:<model>` id used by `/switch_model`.
+  showModels,
+
+  /// `/show_prompts` — list the cognition prompt types, each with the model
+  /// route and role it currently resolves to.
+  showPrompts,
+
+  /// `/switch_model <prompt-id> <model-id>` — override the model a cognition
+  /// prompt type uses, for this running process (not persisted to config).
+  switchModel,
 }
 
 /// The command word a user types for each [TelegramCommandKind], without the
@@ -97,6 +125,13 @@ const Map<TelegramCommandKind, String> telegramCommandWords =
   TelegramCommandKind.todosClear: 'todos_clear',
   TelegramCommandKind.checkUsage: 'check_usage',
   TelegramCommandKind.stopPrompt: 'stop_prompt',
+  TelegramCommandKind.toolsList: 'tools_list',
+  TelegramCommandKind.toolInspect: 'tool_inspect',
+  TelegramCommandKind.mcpList: 'mcp_list',
+  TelegramCommandKind.mcpInspect: 'mcp_inspect',
+  TelegramCommandKind.showModels: 'show_models',
+  TelegramCommandKind.showPrompts: 'show_prompts',
+  TelegramCommandKind.switchModel: 'switch_model',
 };
 
 /// The reverse of [telegramCommandWords]: the command word (lower-cased,
@@ -169,6 +204,14 @@ String telegramHelpText() {
     ..write('\n/todos_clear — empty the working todo list of the active session')
     ..write('\n/check_usage — live budget of the prompt being processed now')
     ..write('\n/stop_prompt — interrupt the prompt being processed now')
+    ..write('\n/tools_list — list the engine tools the brain can call')
+    ..write('\n/tool_inspect <name> — full detail of one engine tool')
+    ..write('\n/mcp_list — list the configured external MCP servers')
+    ..write('\n/mcp_inspect <server> [tool] — list an MCP server tools (or one)')
+    ..write('\n\nConfiguration:')
+    ..write('\n/show_models — list the configured providers and models')
+    ..write('\n/show_prompts — list the cognition prompt types')
+    ..write('\n/switch_model <prompt-id> <model-id> — set a prompt type model')
     ..write('\n\n/help — show this list');
   return buffer.toString();
 }

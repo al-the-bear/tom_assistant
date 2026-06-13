@@ -68,6 +68,32 @@ void main() {
           TelegramCommandKind.stopPrompt);
     });
 
+    test('parses the tools + mcp inspection commands', () {
+      expect(parseTelegramCommand('/tools_list')!.kind,
+          TelegramCommandKind.toolsList);
+      expect(parseTelegramCommand('/tool_inspect mem.recall')!.kind,
+          TelegramCommandKind.toolInspect);
+      expect(parseTelegramCommand('/tool_inspect mem.recall')!.argument,
+          'mem.recall');
+      expect(parseTelegramCommand('/mcp_list')!.kind,
+          TelegramCommandKind.mcpList);
+      expect(parseTelegramCommand('/mcp_inspect memory search')!.kind,
+          TelegramCommandKind.mcpInspect);
+      expect(parseTelegramCommand('/mcp_inspect memory search')!.argument,
+          'memory search');
+    });
+
+    test('parses the configuration commands', () {
+      expect(parseTelegramCommand('/show_models')!.kind,
+          TelegramCommandKind.showModels);
+      expect(parseTelegramCommand('/show_prompts')!.kind,
+          TelegramCommandKind.showPrompts);
+      expect(parseTelegramCommand('/switch_model answer omlx:gemma')!.kind,
+          TelegramCommandKind.switchModel);
+      expect(parseTelegramCommand('/switch_model answer omlx:gemma')!.argument,
+          'answer omlx:gemma');
+    });
+
     test('strips a @botname suffix and is case-insensitive', () {
       expect(parseTelegramCommand('/list_sessions@tom_brain_bot')!.kind,
           TelegramCommandKind.listSessions);

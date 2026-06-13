@@ -850,6 +850,220 @@ void main() {
           telegramInspectorUnavailableMessage,
         );
       });
+
+      test('/tools_list sends the rendered tool catalogue', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            tools: _FakeToolsInspector(listText: 'Tools (2):\nmem.recall'),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/tools_list'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(f.chatApi.sentMessages.single, 'Tools (2):\nmem.recall');
+      });
+
+      test('/tool_inspect sends one tool detail, passing the name through',
+          () async {
+        final d = _answeringDispatcher();
+        final inspector = _FakeToolsInspector(detailText: 'mem.recall — recall');
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(tools: inspector),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/tool_inspect mem.recall'));
+        await pumpEventQueue();
+
+        expect(inspector.inspectedNames, equals(['mem.recall']));
+        expect(f.chatApi.sentMessages.single, 'mem.recall — recall');
+      });
+
+      test('/tool_inspect rejects a missing name with a usage line', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(tools: _FakeToolsInspector()),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/tool_inspect'));
+        await pumpEventQueue();
+
+        expect(f.chatApi.sentMessages.single, contains('Usage:'));
+      });
+
+      test('/tools_list is unavailable when no inspector is wired', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(dispatcher: d.dispatcher);
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/tools_list'));
+        await pumpEventQueue();
+
+        expect(
+          f.chatApi.sentMessages.single,
+          telegramInspectorUnavailableMessage,
+        );
+      });
+
+      test('/mcp_list sends the rendered server list', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            mcp: _FakeMcpInspector(listText: 'MCP servers (1):\nmemory'),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/mcp_list'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(f.chatApi.sentMessages.single, 'MCP servers (1):\nmemory');
+      });
+
+      test('/mcp_inspect passes the server (and optional tool) through',
+          () async {
+        final d = _answeringDispatcher();
+        final inspector = _FakeMcpInspector(detailText: 'memory tools');
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(mcp: inspector),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/mcp_inspect memory'));
+        await pumpEventQueue();
+        f.inbound.add(_inbound(text: '/mcp_inspect memory search', messageId: 'm2'));
+        await pumpEventQueue();
+
+        expect(inspector.calls, equals([('memory', null), ('memory', 'search')]));
+      });
+
+      test('/mcp_inspect rejects a missing server with a usage line', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(mcp: _FakeMcpInspector()),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/mcp_inspect'));
+        await pumpEventQueue();
+
+        expect(f.chatApi.sentMessages.single, contains('Usage:'));
+      });
+
+      test('/show_models sends the rendered provider/model list', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            models: _FakeModelsInspector(text: 'omlx:gemma-4-26b'),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/show_models'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(f.chatApi.sentMessages.single, 'omlx:gemma-4-26b');
+      });
+
+      test('/show_prompts sends the rendered prompt-type list', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(
+            promptTypes: _FakePromptsInspector(text: 'answer_with_memory'),
+          ),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/show_prompts'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(f.chatApi.sentMessages.single, 'answer_with_memory');
+      });
+
+      test('/switch_model passes prompt-id + model-id through', () async {
+        final d = _answeringDispatcher();
+        final switcher = _FakeModelSwitcher(text: 'switched');
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(modelSwitcher: switcher),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/switch_model answer omlx:gemma'));
+        await pumpEventQueue();
+
+        expect(switcher.calls, equals([('answer', 'omlx:gemma')]));
+        expect(f.chatApi.sentMessages.single, 'switched');
+      });
+
+      test('/switch_model rejects a wrong argument count with a usage line',
+          () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(modelSwitcher: _FakeModelSwitcher()),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/switch_model answer'));
+        await pumpEventQueue();
+
+        expect(f.chatApi.sentMessages.single, contains('Usage:'));
+      });
+
+      test('/switch_model is unavailable when no switcher is wired', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(dispatcher: d.dispatcher);
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/switch_model answer omlx:gemma'));
+        await pumpEventQueue();
+
+        expect(
+          f.chatApi.sentMessages.single,
+          telegramInspectorUnavailableMessage,
+        );
+      });
     });
 
     group('telegramProcessingAcknowledgement', () {
@@ -982,6 +1196,82 @@ final class _FakeStopController implements TelegramStopController {
   Future<String> stopCurrentPrompt() async {
     calls += 1;
     return stopText;
+  }
+}
+
+/// A tools inspector recording the names it is asked to inspect and returning
+/// canned strings, used to drive the `/tools_list` / `/tool_inspect` paths.
+final class _FakeToolsInspector implements TelegramToolsInspector {
+  _FakeToolsInspector({this.listText = 'tools', this.detailText = 'detail'});
+
+  final String listText;
+  final String detailText;
+  final List<String> inspectedNames = <String>[];
+
+  @override
+  Future<String> toolsList() async => listText;
+
+  @override
+  Future<String> toolDetail(String name) async {
+    inspectedNames.add(name);
+    return detailText;
+  }
+}
+
+/// An MCP inspector recording the (server, tool?) pairs it is asked about and
+/// returning canned strings, used to drive `/mcp_list` / `/mcp_inspect`.
+final class _FakeMcpInspector implements TelegramMcpInspector {
+  _FakeMcpInspector({this.listText = 'servers', this.detailText = 'detail'});
+
+  final String listText;
+  final String detailText;
+  final List<(String, String?)> calls = <(String, String?)>[];
+
+  @override
+  Future<String> mcpList() async => listText;
+
+  @override
+  Future<String> mcpDetail(String server, {String? tool}) async {
+    calls.add((server, tool));
+    return detailText;
+  }
+}
+
+/// A models inspector returning a canned string, used to drive `/show_models`.
+final class _FakeModelsInspector implements TelegramModelsInspector {
+  _FakeModelsInspector({this.text = 'models'});
+
+  final String text;
+
+  @override
+  Future<String> models() async => text;
+}
+
+/// A prompts inspector returning a canned string, used to drive `/show_prompts`.
+final class _FakePromptsInspector implements TelegramPromptsInspector {
+  _FakePromptsInspector({this.text = 'prompts'});
+
+  final String text;
+
+  @override
+  Future<String> prompts() async => text;
+}
+
+/// A model switcher recording the (prompt-id, model-id) pairs it is asked to
+/// switch and returning a canned string, used to drive `/switch_model`.
+final class _FakeModelSwitcher implements TelegramModelSwitcher {
+  _FakeModelSwitcher({this.text = 'switched'});
+
+  final String text;
+  final List<(String, String)> calls = <(String, String)>[];
+
+  @override
+  Future<String> switchModel({
+    required String promptId,
+    required String modelId,
+  }) async {
+    calls.add((promptId, modelId));
+    return text;
   }
 }
 

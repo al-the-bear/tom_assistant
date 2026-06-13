@@ -182,6 +182,92 @@ abstract interface class TelegramStopController {
   Future<String> stopCurrentPrompt();
 }
 
+/// Renders the engine tool catalogue for the `/tools_list` and
+/// `/tool_inspect` commands.
+///
+/// The brain calls a fixed family of in-process tools (the `tool.*` surface:
+/// memory / file / todo / web / procedure / …). This port lists them and shows
+/// one tool's detail. Implemented in `tom_brain_run` over the procedure
+/// package's tool catalogue; the access edge owns the Telegram presentation.
+/// Each method returns already-rendered, channel-neutral text (including the
+/// "no such tool" notice when [toolDetail] is given an unknown name).
+abstract interface class TelegramToolsInspector {
+  /// Renders the list of engine tools — each tool's name, group, and a
+  /// one-line description.
+  Future<String> toolsList();
+
+  /// Renders the full detail of the tool named [name] (group, description, and
+  /// input schema), or an explicit "no such tool" notice when none matches.
+  Future<String> toolDetail(String name);
+}
+
+/// Renders the configured external MCP servers and their advertised tools for
+/// the `/mcp_list` and `/mcp_inspect` commands.
+///
+/// The brain can call *out* to MCP servers an operator configures. This port
+/// lists those servers and, for one server, the tools it advertises (or one
+/// tool's detail). Implemented in `tom_brain_run` over the MCP client; the
+/// access edge owns the Telegram presentation. Each method returns
+/// already-rendered, channel-neutral text — including the "no servers
+/// configured" / "unreachable" notices, so an environmental MCP failure never
+/// surfaces as a thrown error to the edge.
+abstract interface class TelegramMcpInspector {
+  /// Renders the list of configured MCP servers — each server's id, transport,
+  /// and description — or an explicit empty notice when none is configured.
+  Future<String> mcpList();
+
+  /// Renders the tools advertised by the MCP server [server]; when [tool] is
+  /// supplied, renders that one tool's detail instead. An unknown server or an
+  /// unreachable one is rendered as an explicit notice (never thrown).
+  Future<String> mcpDetail(String server, {String? tool});
+}
+
+/// Renders the configured substrate providers and their models for the
+/// `/show_models` command.
+///
+/// Each model carries a stable `<providerId>:<model>` id the user passes to
+/// `/switch_model`. Implemented in `tom_brain_run` over the `SubstrateConfig`;
+/// the access edge owns the Telegram presentation. Returns already-rendered,
+/// channel-neutral text.
+abstract interface class TelegramModelsInspector {
+  /// Renders the list of providers and their models, each model with its
+  /// `<providerId>:<model>` id.
+  Future<String> models();
+}
+
+/// Renders the cognition prompt types for the `/show_prompts` command.
+///
+/// Each line names a prompt-id (the value `/switch_model` takes) and the model
+/// route / role it currently resolves to (an active override is shown).
+/// Implemented in `tom_brain_run` over the `CognitionConfig` plus the live
+/// override registry; the access edge owns the Telegram presentation. Returns
+/// already-rendered, channel-neutral text.
+abstract interface class TelegramPromptsInspector {
+  /// Renders the list of cognition prompt types, each with its current model
+  /// route / role (and any active override).
+  Future<String> prompts();
+}
+
+/// Overrides the model a cognition prompt type uses, for the `/switch_model`
+/// command.
+///
+/// The one *controller* among the configuration seams — it mutates the live
+/// override registry so a chosen prompt-id resolves to a chosen
+/// `<providerId>:<model>` id for the rest of the process (never persisted to
+/// the version-controlled config). Implemented in `tom_brain_run`, the one
+/// assembly that holds the override registry. Returns already-rendered,
+/// channel-neutral text — including the validation notices for an unknown
+/// prompt-id or model-id.
+abstract interface class TelegramModelSwitcher {
+  /// Overrides the model the prompt type [promptId] uses with [modelId] (a
+  /// `<providerId>:<model>` id from `/show_models`) and renders the outcome —
+  /// a confirmation, or a validation notice when either id is unknown.
+  Future<String> switchModel({
+    required String promptId,
+    required String modelId,
+  });
+}
+
 /// The read-only inspectors the Telegram edge drives for the inspection
 /// commands (parts b–e).
 ///
@@ -217,6 +303,26 @@ final class TelegramInspectors {
   /// when unavailable.
   final TelegramStopController? stop;
 
+  /// Reads the engine tool catalogue for `/tools_list` + `/tool_inspect`, or
+  /// `null` when unavailable.
+  final TelegramToolsInspector? tools;
+
+  /// Reads the configured MCP servers for `/mcp_list` + `/mcp_inspect`, or
+  /// `null` when unavailable.
+  final TelegramMcpInspector? mcp;
+
+  /// Reads the configured providers / models for `/show_models`, or `null`
+  /// when unavailable.
+  final TelegramModelsInspector? models;
+
+  /// Reads the cognition prompt types for `/show_prompts`, or `null` when
+  /// unavailable.
+  final TelegramPromptsInspector? promptTypes;
+
+  /// Overrides a prompt type's model for `/switch_model`, or `null` when
+  /// unavailable.
+  final TelegramModelSwitcher? modelSwitcher;
+
   /// Builds an inspector bundle; every member defaults to absent.
   const TelegramInspectors({
     this.prompts,
@@ -226,6 +332,11 @@ final class TelegramInspectors {
     this.todos,
     this.usage,
     this.stop,
+    this.tools,
+    this.mcp,
+    this.models,
+    this.promptTypes,
+    this.modelSwitcher,
   });
 
   /// The no-inspectors bundle: every inspection command answers "not available
