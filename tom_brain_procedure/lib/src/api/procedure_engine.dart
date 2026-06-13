@@ -82,7 +82,8 @@ import '../primitives_native/trail_note.dart';
 import '../primitives_native/yield_primitive.dart';
 import '../bridges/tool_bridge.dart' show ToolBridge;
 import '../mcp/mcp_client.dart' show McpClient;
-import '../mcp/mcp_client_tool_source.dart' show McpClientToolSource;
+import '../mcp/mcp_client_tool_source.dart'
+    show McpClientToolSource, McpOfferedGate;
 import '../tools/basic_tools.dart' show registerBasicTools;
 import '../tools/file_scope.dart' show FileScope;
 import '../tools/mcp_tool_source.dart' show McpToolDefinition, McpToolSource;
@@ -188,6 +189,7 @@ final class ProcedureEngine {
     this.toolProcessSurface = const ProcessRunToolSurface(),
     this.mcpClient,
     this.mcpTools = const <McpToolDefinition>[],
+    this.mcpOffered,
     FileScope? toolFileScope,
     PreemptionState? preemptionState,
     Duration stepDeadline = defaultStepDeadline,
@@ -319,6 +321,15 @@ final class ProcedureEngine {
   /// tool. A merged tool's call still reaches its server live through the
   /// [mcpClient] (carried on `ToolContext.mcp`).
   final List<McpToolDefinition> mcpTools;
+
+  /// The dynamic `offered = exposeToLlms && isLive` gate threaded onto every
+  /// per-run [McpClientToolSource] (request c, § 3.3). When bound, a merged
+  /// `mcp__*` tool whose server is currently un-offered (statically closed or
+  /// flipped dead by the liveness monitor) is skipped from enumeration and
+  /// raises `ToolSurfaceUnavailable` on invoke, so a dead server drops out of
+  /// the tool loop with no process restart. `null` leaves every configured
+  /// server unconditionally offered (the pre-request-c behaviour).
+  final McpOfferedGate? mcpOffered;
 
   final Duration _stepDeadlineLimit;
   final DeadlineTimerFactory? _deadlineTimerFactory;
@@ -758,8 +769,9 @@ final class ProcedureEngine {
     // is a pure registration with no network call. The invoke path reaches the
     // server live through [McpClientToolSource] (carried on the context below).
     final runMcpClient = mcpClient;
-    final McpToolSource? runMcpSource =
-        runMcpClient == null ? null : McpClientToolSource(runMcpClient);
+    final McpToolSource? runMcpSource = runMcpClient == null
+        ? null
+        : McpClientToolSource(runMcpClient, offered: mcpOffered);
     if (runMcpClient != null) {
       for (final definition in mcpTools) {
         toolRegistry.register(McpBrainTool(definition));

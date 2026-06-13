@@ -77,6 +77,7 @@ import '../recorder/turn_summary.dart' show TurnSummary, TurnSummarySink;
 import '../procedure_store/procedure_resolver.dart';
 import '../tools/basic_tools.dart' show defaultToolCatalogue;
 import '../mcp/mcp_client.dart' show McpClient;
+import '../mcp/mcp_client_tool_source.dart' show McpOfferedGate;
 import '../tools/file_scope.dart' show FileScope;
 import '../tools/mcp_tool_source.dart' show McpToolDefinition;
 import '../tools/tool_dream_surface.dart' show ToolDreamSurface;
@@ -370,6 +371,12 @@ final class BrainProcessConfig {
   /// [mcpClient] is `null` or no server advertised any tool.
   final List<McpToolDefinition> mcpTools;
 
+  /// The dynamic `offered = exposeToLlms && isLive` gate boot threads onto the
+  /// [ProcedureEngine] (request c, § 3.3). The run assembly composes it from the
+  /// `exposeToLlms` config and the live `McpLivenessMonitor`; `null` leaves
+  /// every configured server unconditionally offered.
+  final McpOfferedGate? mcpOffered;
+
   /// Builds a boot config.
   BrainProcessConfig({
     required this.substrate,
@@ -392,6 +399,7 @@ final class BrainProcessConfig {
     this.routeChainOf,
     this.mcpClient,
     this.mcpTools = const <McpToolDefinition>[],
+    this.mcpOffered,
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
 }
 
@@ -615,6 +623,7 @@ abstract final class BrainProcessBoot {
       routeChainOf: config.routeChainOf,
       mcpClient: config.mcpClient,
       mcpTools: config.mcpTools,
+      mcpOffered: config.mcpOffered,
     );
     final coordinator = _wireCoordinator(config: config, preemption: preemption);
     final dispatcher = _wireDispatcher(
@@ -661,6 +670,7 @@ abstract final class BrainProcessBoot {
     required RouteChainResolver? routeChainOf,
     required McpClient? mcpClient,
     required List<McpToolDefinition> mcpTools,
+    required McpOfferedGate? mcpOffered,
   }) =>
       ProcedureEngine(
         resolver: resolver,
@@ -681,6 +691,7 @@ abstract final class BrainProcessBoot {
         toolDreamSurface: toolDreamSurface,
         mcpClient: mcpClient,
         mcpTools: mcpTools,
+        mcpOffered: mcpOffered,
       );
 
   /// Wires the [RunCoordinator] over the shared [preemption] state (it drives
