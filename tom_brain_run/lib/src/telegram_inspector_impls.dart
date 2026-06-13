@@ -38,6 +38,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         TelegramStatusInspector,
         TelegramStopController,
         TelegramTodosInspector,
+        TelegramToolsInspector,
         TelegramUsageInspector;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show
@@ -45,7 +46,8 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         LiveRunUsage,
         SessionTodoStores,
         TodoEntry,
-        TodoStore;
+        TodoStore,
+        defaultToolCatalogue;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show EffortMetrics, LatencyHistogram, MemoryStats, TomBrainMemoryClient;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
@@ -982,4 +984,75 @@ final class CognitionPromptsInspector implements TelegramPromptsInspector {
       ToolsExplicit(:final names) => '[${names.join(', ')}]',
     };
   }
+}
+
+/// Renders the configured tool catalogue for the `/tools_list` and
+/// `/tool_inspect` commands (requests a + b), over the procedure engine's
+/// default `BrainTool` catalogue.
+///
+/// `/tools_list` groups the tools by family with a one-line description each;
+/// `/tool_inspect <name>` shows one tool's family, description, and JSON input
+/// schema. The catalogue is the full shipped set — a prompt's `tools:` setting
+/// (all/readonly/none/explicit) narrows what *that* prompt may call, but the
+/// inspector answers "what tools exist", so it reads the whole set.
+final class ToolCatalogueInspector implements TelegramToolsInspector {
+  /// The tool descriptors, each a `{name, group, description, input_schema}`
+  /// map (the shape `defaultToolCatalogue()` emits). Injected so a test can pin
+  /// a fixture; defaults to the engine's shipped catalogue.
+  final List<Map<String, Object?>> catalogue;
+
+  /// Builds an inspector over the tool [catalogue]; defaults to the engine's
+  /// shipped [defaultToolCatalogue].
+  ToolCatalogueInspector({List<Map<String, Object?>>? catalogue})
+      : catalogue = catalogue ?? defaultToolCatalogue();
+
+  @override
+  Future<String> toolsList() async {
+    if (catalogue.isEmpty) return 'No tools are configured.';
+
+    final byGroup = <String, List<Map<String, Object?>>>{};
+    for (final tool in catalogue) {
+      (byGroup[_str(tool['group'], '(ungrouped)')] ??=
+              <Map<String, Object?>>[])
+          .add(tool);
+    }
+    final groups = byGroup.keys.toList()..sort();
+    final buffer = StringBuffer('Tools (${catalogue.length}):');
+    for (final group in groups) {
+      buffer.write('\n\n$group:');
+      final tools = byGroup[group]!
+        ..sort((a, b) => _str(a['name'], '').compareTo(_str(b['name'], '')));
+      for (final tool in tools) {
+        buffer.write('\n  ${_str(tool['name'], '(unnamed)')} — '
+            '${_str(tool['description'], '(no description)')}');
+      }
+    }
+    return buffer.toString();
+  }
+
+  @override
+  Future<String> toolDetail(String name) async {
+    final tool = catalogue.firstWhere(
+      (t) => _str(t['name'], '') == name,
+      orElse: () => const <String, Object?>{},
+    );
+    if (tool.isEmpty) return 'No tool named "$name" is configured.';
+
+    final buffer = StringBuffer('Tool ${_str(tool['name'], name)}')
+      ..write('\n  group: ${_str(tool['group'], '(ungrouped)')}')
+      ..write('\n  description: ${_str(tool['description'], '(none)')}');
+    final schema = tool['input_schema'];
+    if (schema != null) {
+      buffer.write('\n  input schema:\n${_prettyJson(schema)}');
+    }
+    return buffer.toString();
+  }
+
+  /// The non-empty string at [value], or [fallback] when absent / not a string.
+  String _str(Object? value, String fallback) =>
+      value is String && value.isNotEmpty ? value : fallback;
+
+  /// Two-space-indented JSON rendering of a tool's input schema.
+  String _prettyJson(Object? value) =>
+      const JsonEncoder.withIndent('  ').convert(value);
 }

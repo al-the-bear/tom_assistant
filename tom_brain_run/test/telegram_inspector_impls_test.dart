@@ -849,6 +849,83 @@ void main() {
       expect(await inspector.prompts(), 'No prompt types are registered.');
     });
   });
+
+  group('ToolCatalogueInspector', () {
+    const catalogue = <Map<String, Object?>>[
+      {
+        'name': 'memory.read',
+        'group': 'memory',
+        'description': 'Recalls nodes from memory for a query (read-only).',
+        'input_schema': {
+          'type': 'object',
+          'properties': {
+            'query': {'type': 'string'}
+          },
+        },
+      },
+      {
+        'name': 'file.write',
+        'group': 'file',
+        'description': 'Writes a file within the writeable scope.',
+        'input_schema': {'type': 'object'},
+      },
+      {
+        'name': 'memory.write',
+        'group': 'memory',
+        'description': 'Persists a node to memory.',
+        'input_schema': {'type': 'object'},
+      },
+    ];
+
+    test('lists tools grouped by family with a one-line description', () async {
+      final inspector = ToolCatalogueInspector(catalogue: catalogue);
+      final text = await inspector.toolsList();
+
+      expect(text, contains('Tools (3):'));
+      expect(text, contains('memory:'));
+      expect(text, contains(
+          '  memory.read — Recalls nodes from memory for a query (read-only).'));
+      expect(text, contains('  memory.write — Persists a node to memory.'));
+      expect(text, contains('file:'));
+      // memory.read sorts before memory.write within the group.
+      expect(text.indexOf('memory.read'),
+          lessThan(text.indexOf('memory.write')));
+      // The `file` group sorts before `memory`.
+      expect(text.indexOf('file:'), lessThan(text.indexOf('memory:')));
+    });
+
+    test('inspects one tool with its group, description, and JSON schema',
+        () async {
+      final inspector = ToolCatalogueInspector(catalogue: catalogue);
+      final text = await inspector.toolDetail('memory.read');
+
+      expect(text, contains('Tool memory.read'));
+      expect(text, contains('group: memory'));
+      expect(text, contains(
+          'description: Recalls nodes from memory for a query (read-only).'));
+      expect(text, contains('input schema:'));
+      expect(text, contains('"query"'));
+    });
+
+    test('reports an unknown tool name', () async {
+      final inspector = ToolCatalogueInspector(catalogue: catalogue);
+      expect(await inspector.toolDetail('no.such.tool'),
+          'No tool named "no.such.tool" is configured.');
+    });
+
+    test('reports an empty catalogue', () async {
+      final inspector = ToolCatalogueInspector(catalogue: const []);
+      expect(await inspector.toolsList(), 'No tools are configured.');
+    });
+
+    test('defaults to the engine shipped catalogue (non-empty)', () async {
+      final text = await ToolCatalogueInspector().toolsList();
+      expect(text, startsWith('Tools ('));
+      // The shipped set includes the memory + file families.
+      expect(text, contains('memory.read'));
+      expect(text, contains('file.write'));
+    });
+  });
 }
 
 /// A memory client double that answers only `stats()`; every other member falls

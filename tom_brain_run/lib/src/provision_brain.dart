@@ -106,6 +106,7 @@ import 'telegram_inspector_impls.dart'
         MemoryStatsInspector,
         SessionTodosInspector,
         SubstrateModelsInspector,
+        ToolCatalogueInspector,
         TrailIncomingPromptInspector,
         TrailLogInspector,
         TrailStatusInspector;
@@ -516,6 +517,9 @@ TelegramInspectors _telegramInspectorsFor({
     promptTypes: cognitionConfig == null
         ? null
         : CognitionPromptsInspector(config: cognitionConfig),
+    // The tool-catalogue inspector reads the engine's shipped default tool set
+    // — a process constant, so it is always wired.
+    tools: ToolCatalogueInspector(),
   );
 }
 

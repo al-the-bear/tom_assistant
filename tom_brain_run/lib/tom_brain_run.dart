@@ -121,6 +121,7 @@ export 'src/telegram_inspector_impls.dart'
         MemoryStatsInspector,
         SessionTodosInspector,
         SubstrateModelsInspector,
+        ToolCatalogueInspector,
         TrailIncomingPromptInspector,
         TrailLogInspector,
         TrailStatusInspector;
