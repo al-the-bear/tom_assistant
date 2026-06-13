@@ -92,5 +92,90 @@ void main() {
       await inbound.cancel();
       await transport.close();
     });
+
+    test('the POST advertises both application/json and text/event-stream in '
+        'Accept (the MCP Streamable-HTTP spec; SDK servers 406 otherwise)',
+        () async {
+      String? acceptHeader;
+      unawaited(server.forEach((request) async {
+        acceptHeader = request.headers.value('accept');
+        final body = await utf8.decodeStream(request);
+        final decoded = jsonDecode(body) as Map<String, Object?>;
+        request.response.statusCode = io.HttpStatus.ok;
+        request.response.headers.contentType = io.ContentType.json;
+        request.response.write(jsonEncode(<String, Object?>{
+          'jsonrpc': '2.0',
+          'id': decoded['id'],
+          'result': <String, Object?>{'pong': true},
+        }));
+        await request.response.close();
+      }));
+
+      final transport = HttpMcpTransport(
+        id: 'fixture',
+        url: Uri.parse('http://${server.address.host}:${server.port}/'),
+        httpClient: client,
+      );
+      final StreamChannel<String> channel = await transport.connect();
+      final inbound = StreamQueue<String>(channel.stream);
+      channel.sink.add(jsonEncode(<String, Object?>{
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': 'ping',
+      }));
+      await inbound.next.timeout(const Duration(seconds: 5));
+
+      expect(acceptHeader, isNotNull);
+      expect(acceptHeader, contains('application/json'));
+      expect(acceptHeader, contains('text/event-stream'));
+
+      await channel.sink.close();
+      await inbound.cancel();
+      await transport.close();
+    });
+
+    test('an SSE-framed (text/event-stream) JSON-RPC response is parsed and '
+        'reaches the consumer', () async {
+      unawaited(server.forEach((request) async {
+        final body = await utf8.decodeStream(request);
+        final decoded = jsonDecode(body) as Map<String, Object?>;
+        final payload = jsonEncode(<String, Object?>{
+          'jsonrpc': '2.0',
+          'id': decoded['id'],
+          'result': <String, Object?>{'pong': true},
+        });
+        request.response.statusCode = io.HttpStatus.ok;
+        request.response.headers.contentType =
+            io.ContentType('text', 'event-stream');
+        // One SSE `message` event carrying the JSON-RPC reply, terminated by
+        // the blank-line event boundary — the exact framing the
+        // `@modelcontextprotocol/sdk` StreamableHTTPServerTransport emits when
+        // `enableJsonResponse` is left at its default (false).
+        request.response.write('event: message\ndata: $payload\n\n');
+        await request.response.close();
+      }));
+
+      final transport = HttpMcpTransport(
+        id: 'fixture',
+        url: Uri.parse('http://${server.address.host}:${server.port}/'),
+        httpClient: client,
+      );
+      final StreamChannel<String> channel = await transport.connect();
+      final inbound = StreamQueue<String>(channel.stream);
+      channel.sink.add(jsonEncode(<String, Object?>{
+        'jsonrpc': '2.0',
+        'id': 7,
+        'method': 'ping',
+      }));
+
+      final reply = await inbound.next.timeout(const Duration(seconds: 5));
+      final replyJson = jsonDecode(reply) as Map<String, Object?>;
+      expect(replyJson['id'], equals(7));
+      expect((replyJson['result'] as Map)['pong'], isTrue);
+
+      await channel.sink.close();
+      await inbound.cancel();
+      await transport.close();
+    });
   });
 }

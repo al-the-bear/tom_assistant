@@ -2,14 +2,21 @@
 //
 // What this transport implements:
 //
-//   - The POST-with-JSON-response subset of the MCP "Streamable HTTP"
-//     binding (modelcontextprotocol.io spec 2025-06-18, section
-//     "Streamable HTTP transport"). Each outbound JSON-RPC message
-//     is POSTed to the configured endpoint URL with
-//     `Content-Type: application/json`. The server responds with
-//     either:
+//   - The POST request subset of the MCP "Streamable HTTP" binding
+//     (modelcontextprotocol.io spec 2025-06-18, section "Streamable
+//     HTTP transport"). Each outbound JSON-RPC message is POSTed to the
+//     configured endpoint URL with `Content-Type: application/json` and
+//     an `Accept: application/json, text/event-stream` header (both are
+//     mandatory — the SDK server 406s a POST that omits either). The
+//     server picks its response shape:
 //       * 200 + `Content-Type: application/json` — body is a single
-//         JSON-RPC response, which we feed into the inbound stream.
+//         JSON-RPC response (or newline-delimited batch), fed into the
+//         inbound stream.
+//       * 200 + `Content-Type: text/event-stream` — an SSE stream whose
+//         `data:` payloads each carry one JSON-RPC message; we extract
+//         and feed those. This is the SDK's *default* response mode
+//         (`enableJsonResponse` false), used by the VS Code Extension
+//         MCP server.
 //       * 200 + empty body — accepted notification with no response;
 //         nothing fed to the inbound stream.
 //       * 4xx / 5xx — translated into a typed [McpClientException]
@@ -22,13 +29,12 @@
 //
 // What this transport deliberately does NOT implement:
 //
-//   - Server-Sent Events (SSE) responses, either from a POST (when
-//     the server returns `text/event-stream`) or from a GET-based
-//     server-initiated stream. The v1 memory tool surface
-//     (`memory_specification.md` § 3.2) is request / response with
-//     no server-initiated notifications, so SSE is not on the
-//     critical path. Adding it later does not require a contract
-//     change here — it slots into the same channel surface.
+//   - GET-based server-initiated SSE streams (the server opening its own
+//     notification channel). Only the SSE response to a *client POST* is
+//     parsed (above). The tool surfaces tom_brain calls are request /
+//     response with no server-initiated notifications, so the standalone
+//     GET stream is not on the critical path; it slots into the same
+//     channel surface later without a contract change here.
 //   - Resumability tokens (`Last-Event-ID` headers). Same reason.
 //   - Retries. Substrate Spec § 12 enumerates the substrate failure
 //     taxonomy at the LLM-call layer; for the MCP client at B.8 we
@@ -166,7 +172,15 @@ final class HttpMcpTransport with CloseGuard implements McpTransport {
     if (isClosed) return;
     final headers = <String, String>{
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      // The MCP "Streamable HTTP" binding requires a POST to advertise that it
+      // accepts BOTH a single JSON response and an SSE stream — the server
+      // chooses which to return. The `@modelcontextprotocol/sdk`
+      // `StreamableHTTPServerTransport` rejects a POST whose `Accept` omits
+      // either with `406 Not Acceptable` (before any JSON-RPC logic runs),
+      // regardless of its `enableJsonResponse` setting. Advertising both is
+      // harmless against a JSON-only server (it picks `application/json`) and
+      // mandatory against a spec-compliant one.
+      'Accept': 'application/json, text/event-stream',
     };
     if (auth != null) {
       headers['Authorization'] = 'Bearer ${auth!.token}';
@@ -229,15 +243,57 @@ final class HttpMcpTransport with CloseGuard implements McpTransport {
       return;
     }
 
-    // Body may contain a single JSON-RPC message or a newline-
-    // delimited batch. We split on '\n' and forward each non-empty
-    // line. dart_mcp's framing expects one JSON-RPC message per line.
-    // Inbound goes to `local.sink` → emitted on the consumer's
-    // `foreign.stream`; never `foreign.sink` (that loops to `local.stream`).
-    for (final responseLine in const LineSplitter().convert(body)) {
+    // The server picks its response shape (see the `Accept` header above):
+    //   * `text/event-stream` — an SSE stream whose `data:` payloads each carry
+    //     one JSON-RPC message. The SDK's default mode (`enableJsonResponse`
+    //     false), used by the VS Code Extension MCP server, returns this.
+    //   * anything else (`application/json`) — a single JSON-RPC message or a
+    //     newline-delimited batch.
+    // Either way we feed bare JSON-RPC lines to `local.sink` → emitted on the
+    // consumer's `foreign.stream` (never `foreign.sink`, which would loop back
+    // to `local.stream` and re-POST the response).
+    final contentType =
+        (response.headers['content-type'] ?? '').toLowerCase();
+    final lines = contentType.contains('text/event-stream')
+        ? _extractSseMessages(body)
+        : const LineSplitter().convert(body);
+    for (final responseLine in lines) {
       if (responseLine.isEmpty) continue;
       controller.local.sink.add(responseLine);
     }
+  }
+
+  /// Extracts the JSON-RPC payloads from an SSE response body.
+  ///
+  /// Per the SSE wire format each event is a block of `field: value` lines
+  /// terminated by a blank line; a message's payload is the concatenation
+  /// (newline-joined) of its `data:` field values. Non-`data` fields
+  /// (`event:` / `id:` / `retry:`) and comment lines (`:`) are ignored, so a
+  /// `event: message\ndata: {…}\n\n` block yields exactly the JSON object.
+  static List<String> _extractSseMessages(String body) {
+    final messages = <String>[];
+    final dataLines = <String>[];
+    void flush() {
+      if (dataLines.isEmpty) return;
+      messages.add(dataLines.join('\n'));
+      dataLines.clear();
+    }
+
+    for (final raw in const LineSplitter().convert(body)) {
+      if (raw.isEmpty) {
+        flush(); // event boundary
+        continue;
+      }
+      if (raw.startsWith(':')) continue; // SSE comment
+      if (raw.startsWith('data:')) {
+        var value = raw.substring(5);
+        if (value.startsWith(' ')) value = value.substring(1);
+        dataLines.add(value);
+      }
+      // `event:` / `id:` / `retry:` carry no JSON-RPC payload — ignored.
+    }
+    flush(); // trailing event with no terminating blank line
+    return messages;
   }
 
   void _failTransport(
