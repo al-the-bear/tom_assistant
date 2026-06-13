@@ -298,6 +298,65 @@ void main() {
       expect(text, contains('outcome accepted (entries=3, 800ms)'));
     });
 
+    test('renders the three tool-node forms with name, arg summary, outcome '
+        'and result size (§5.7.1)', () async {
+      final record = ProcedureTreeRecord(
+        procedureId: 'tool_loop_v1',
+        version: 1,
+        runId: 'tool-run-1',
+        parentRunId: null,
+        turnId: 'turn_TL',
+        depth: 1,
+        status: TrailOutcomeStatus.accepted,
+        elapsedMs: 90,
+        entryCount: 3,
+        nodes: <ProcedureTreeNode>[
+          const ProcedureToolNode(
+            name: 'file.read',
+            argSummary: 'path: lib/main.dart',
+            outcome: ProcedureToolOutcome.invoked,
+            resultSize: 1240,
+          ),
+          const ProcedureToolNode(
+            name: 'does.not.exist',
+            argSummary: '',
+            outcome: ProcedureToolOutcome.failed,
+            reason: 'unknown tool "does.not.exist"',
+          ),
+          const ProcedureToolNode(
+            name: 'shell.run',
+            argSummary: 'cmd: rm -rf /',
+            outcome: ProcedureToolOutcome.denied,
+            reason: 'policy denies group shell',
+          ),
+          const ProcedureNoteNode(
+              category: 'loop-complete: llm returned no tool call'),
+        ],
+      );
+
+      ProcedureTreeWriter(root: tempRoot).write(record);
+      final text = File(
+        '${tempRoot.path}/procedures/tool_loop_v1/turn_TL__tool-run-1.log',
+      ).readAsStringSync();
+
+      // The invoked form: result *size*, never the payload.
+      expect(text,
+          contains('├─ tool file.read(path: lib/main.dart) → ok (1240 chars)'));
+      // The failed form: the verbatim reason, no result size.
+      expect(text,
+          contains('├─ tool does.not.exist() → failed: unknown tool '
+              '"does.not.exist"'));
+      // The denied form: the policy refusal message.
+      expect(text,
+          contains('├─ tool shell.run(cmd: rm -rf /) → denied: policy denies '
+              'group shell'));
+      // The termination note rides through as the last *node* before the
+      // outcome line (so it carries the `├─` connector; `└─` is the outcome).
+      expect(text,
+          contains('├─ note loop-complete: llm returned no tool call'));
+      expect(text, contains('└─ outcome accepted (entries=3, 90ms)'));
+    });
+
     test('is best-effort: a write under an unusable root never throws', () {
       // Point the root *inside* a regular file, so creating the
       // `procedures/<proc>/` parent must fail. The writer swallows it (§9).

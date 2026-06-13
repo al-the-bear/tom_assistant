@@ -93,6 +93,71 @@ Future<Object?> run(inputs) async {
         ),
       ];
 
+  // A parent that lists tools (an enumeration that must NOT reach the tree),
+  // issues one llm, invokes a tool that runs (`todo.add` — run-scoped, no
+  // surface), issues a second llm, then invokes an unknown tool (a failure).
+  // The two `tool.invoke` calls must splice in as `ProcedureToolNode`s at the
+  // positions they were issued — between/after the llm calls — while the
+  // `tool.list` enumeration leaves no node (§5.7.1).
+  List<LoadedProcedure> toolTreeProcedures() => <LoadedProcedure>[
+        _procedure(
+          'tool_parent_v1',
+          '''
+import '${BridgeLibraries.substrateLibrary}';
+import '${BridgeLibraries.toolLibrary}';
+
+Future<Object?> run(inputs) async {
+  await tool.list();
+  await sub.llm('first', role: 'recaller');
+  await tool.invoke('todo.add', {'text': 'hello world'});
+  await sub.llm('second', role: 'assistant_to_user');
+  await tool.invoke('does.not.exist', {});
+  return 1;
+}
+''',
+        ),
+      ];
+
+  group('ProcedureEngine combined-tree tool splicing (§5.7.1)', () {
+    test(
+        'tool.invoke calls splice in as tool nodes at their call position; '
+        'tool.list leaves no node', () async {
+      final records = <ProcedureTreeRecord>[];
+      final engine = engineFor(
+        toolTreeProcedures(),
+        procedureTreeSink: records.add,
+      );
+
+      final outcome = await engine
+          .invoke(ProcedureInvocation(procedureId: 'tool_parent_v1'))
+          .outcome;
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+
+      expect(records, hasLength(1));
+      final top = records.single;
+      // llm, then the todo.add tool node, then llm, then the failed tool node.
+      // The `tool.list` enumeration contributes nothing.
+      expect(top.nodes.map(_kindOf).toList(),
+          <String>['llm', 'tool', 'llm', 'tool'],
+          reason: 'tool nodes spliced at call positions; list omitted');
+
+      final invoked = top.nodes[1] as ProcedureToolNode;
+      expect(invoked.name, 'todo.add');
+      expect(invoked.argSummary, 'text: hello world');
+      expect(invoked.outcome, ProcedureToolOutcome.invoked);
+      expect(invoked.resultSize, isNotNull);
+      expect(invoked.resultSize, greaterThan(0),
+          reason: 'the result size, never the payload');
+      expect(invoked.reason, isNull);
+
+      final failed = top.nodes[3] as ProcedureToolNode;
+      expect(failed.name, 'does.not.exist');
+      expect(failed.outcome, ProcedureToolOutcome.failed);
+      expect(failed.resultSize, isNull);
+      expect(failed.reason, contains('unknown tool'));
+    });
+  });
+
   group('ProcedureEngine combined-tree forwarding (§5.7 / §10 step #9)', () {
     test(
         'a bound sink receives exactly one record per top-level run, with the '
@@ -213,6 +278,7 @@ String _kindOf(ProcedureTreeNode node) => switch (node) {
       ProcedurePrimitiveNode(:final primitive) =>
         primitive == 'llm' ? 'llm' : primitive,
       ProcedureSubtreeNode() => 'subtree',
+      ProcedureToolNode() => 'tool',
       ProcedureNoteNode() => 'note',
       ProcedureErrorNode() => 'error',
     };

@@ -48,6 +48,8 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         ProcedureNoteNode,
         ProcedurePrimitiveNode,
         ProcedureSubtreeNode,
+        ProcedureToolNode,
+        ProcedureToolOutcome,
         ProcedureTreeNode,
         ProcedureTreeRecord;
 
@@ -141,6 +143,8 @@ final class ProcedureTreeWriter {
         _renderInto(buffer, tree, prefix: childPrefix, isTop: false);
       case ProcedurePrimitiveNode():
         buffer.writeln('$prefix$connector ${_primitiveLine(node)}');
+      case ProcedureToolNode():
+        buffer.writeln('$prefix$connector ${_toolLine(node)}');
       case ProcedureNoteNode(:final category):
         buffer.writeln('$prefix$connector note $category');
       case ProcedureErrorNode(:final errorKind, :final message):
@@ -196,6 +200,19 @@ final class ProcedureTreeWriter {
       }
     }
     return id == null ? node.primitive : '${node.primitive} → $id';
+  }
+
+  /// One `tool.invoke` line (§5.7.1): `tool <name>(<argSummary>)` then the
+  /// outcome — `→ ok (<n> chars)` on success (the result *size*, never the
+  /// payload), `→ failed: <reason>` / `→ denied: <reason>` otherwise. The arg
+  /// summary is already one line and length-capped at the bridge.
+  String _toolLine(ProcedureToolNode node) {
+    final head = 'tool ${node.name}(${node.argSummary})';
+    return switch (node.outcome) {
+      ProcedureToolOutcome.invoked => '$head → ok (${node.resultSize} chars)',
+      ProcedureToolOutcome.failed => '$head → failed: ${node.reason}',
+      ProcedureToolOutcome.denied => '$head → denied: ${node.reason}',
+    };
   }
 
   /// The §5.7 outcome line: `outcome <status> (entries=<n>, <elapsed>)`, where

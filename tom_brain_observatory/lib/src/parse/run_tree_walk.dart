@@ -23,7 +23,17 @@ Iterable<LlmCallNode> allLlmCalls(ProcedureRun run) =>
 int llmCallCount(ProcedureRun run) => allLlmCalls(run).length;
 
 /// The count of memory/primitive accesses (every non-`llm` primitive call)
-/// across the whole turn's run-tree (§ 4.1). `llm` is its own node kind, so it
-/// is already excluded.
+/// across the whole turn's run-tree (§ 4.1). `llm` and `tool` are their own node
+/// kinds ([LlmCallNode] / [ToolCallNode]), so both are already excluded — a
+/// `tool.invoke` is an effect, not a memory access.
 int memoryAccessCount(ProcedureRun run) =>
     allNodes(run).whereType<PrimitiveCallNode>().length;
+
+/// Every `tool.invoke` call in the run, across all depths (§5.7.1).
+Iterable<ToolCallNode> allToolCalls(ProcedureRun run) =>
+    allNodes(run).whereType<ToolCallNode>();
+
+/// The count of `tool.invoke` calls across the whole turn's run-tree. A tool
+/// call is a distinct node kind, so it never inflates [memoryAccessCount] or
+/// [llmCallCount].
+int toolCallCount(ProcedureRun run) => allToolCalls(run).length;

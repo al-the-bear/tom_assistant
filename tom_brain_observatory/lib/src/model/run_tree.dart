@@ -219,6 +219,53 @@ final class LlmCallNode extends RunNode {
       };
 }
 
+/// One `tool.invoke` call node (`prompt_tracing.md` § 3.2; `tom_brain_logging.md`
+/// §5.7.1). The rendered `.log` carries the tool **name**, a one-line truncated
+/// **arg summary**, the **outcome**, and — on success only — the result **size**
+/// (`resultChars`, never the payload). `tool.list` enumerations are not rendered,
+/// so every tool node here is an `invoke` of one of the three [ToolCallOutcome]s.
+final class ToolCallNode extends RunNode {
+  /// The registered tool name (`file.read`, `memory.persistNote`, …) — one token.
+  final String name;
+
+  /// The one-line, length-capped arg summary as the writer rendered it; empty
+  /// when the tool took no args.
+  final String argSummary;
+
+  /// How the call ended.
+  final ToolCallOutcome outcome;
+
+  /// The character length of the rendered result — present only on
+  /// [ToolCallOutcome.invoked] (a *size*, never the payload); `null` otherwise.
+  final int? resultChars;
+
+  /// The failure / denial message — present only on [ToolCallOutcome.failed] /
+  /// [ToolCallOutcome.denied]; `null` on success.
+  final String? reason;
+
+  const ToolCallNode({
+    required this.name,
+    required this.argSummary,
+    required this.outcome,
+    this.resultChars,
+    this.reason,
+  });
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'kind': 'tool',
+        'name': name,
+        'argSummary': argSummary,
+        'outcome': outcome.name,
+        if (resultChars != null) 'resultChars': resultChars,
+        if (reason != null) 'reason': reason,
+      };
+}
+
+/// The terminal state of a [ToolCallNode] — the three `tool.invoke` outcomes the
+/// §5.7.1 writer renders (`ok` / `failed` / `denied`).
+enum ToolCallOutcome { invoked, failed, denied }
+
 /// A note node — the engine's `note` entry (`step_truncated`, `run_cancelled`, …).
 final class NoteNode extends RunNode {
   /// The note category.

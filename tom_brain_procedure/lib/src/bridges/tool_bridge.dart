@@ -133,22 +133,35 @@ class ToolBridge {
     String name,
     Map<String, Object?> args,
   ) async {
+    // Computed once and carried on every event so the tree node / live-trail
+    // can show *what the run did* without re-inlining the payload (§5.7.1).
+    final argSummary = _summariseArgs(args);
+
     final tool = _registry.lookup(name);
     if (tool == null) {
       final error = 'unknown tool "$name"';
-      _emit(ToolFailed(occurredAt: _clock(), name: name, reason: error));
+      _emit(ToolFailed(
+          occurredAt: _clock(), name: name, reason: error, argSummary: argSummary));
       return _failure(error);
     }
 
     final denial = _policy.denialFor(tool);
     if (denial != null) {
-      _emit(ToolDenied(occurredAt: _clock(), name: name, reason: denial.message));
+      _emit(ToolDenied(
+          occurredAt: _clock(),
+          name: name,
+          reason: denial.message,
+          argSummary: argSummary));
       return _failure(denial.message);
     }
 
     final violation = validateToolArgs(tool.inputSchema, args);
     if (violation != null) {
-      _emit(ToolFailed(occurredAt: _clock(), name: name, reason: violation));
+      _emit(ToolFailed(
+          occurredAt: _clock(),
+          name: name,
+          reason: violation,
+          argSummary: argSummary));
       return _failure(violation);
     }
 
@@ -163,12 +176,48 @@ class ToolBridge {
     } catch (error) {
       // A tool that threw while running is a `ToolFailed` (observability);
       // rethrow so the failure still propagates to the caller unchanged.
-      _emit(ToolFailed(occurredAt: _clock(), name: name, reason: error.toString()));
+      _emit(ToolFailed(
+          occurredAt: _clock(),
+          name: name,
+          reason: error.toString(),
+          argSummary: argSummary));
       rethrow;
     }
-    _emit(ToolInvoked(occurredAt: _clock(), name: name, group: tool.group.name));
+    _emit(ToolInvoked(
+      occurredAt: _clock(),
+      name: name,
+      group: tool.group.name,
+      argSummary: argSummary,
+      resultSize: _resultSize(result),
+    ));
     return <String, Object?>{'ok': true, 'result': result};
   }
+
+  /// The maximum length of a rendered [argSummary] before it is truncated with
+  /// a trailing `…` (§5.7.1) — keeps the tree node and live-trail compact.
+  static const int _argSummaryCap = 80;
+
+  /// A one-line, length-capped rendering of [args] for the tool node / event
+  /// (§5.7.1): `key: value` pairs comma-joined, all whitespace collapsed to
+  /// single spaces, and the `→` arrow stripped so it can never collide with the
+  /// rendered outcome arrow. Truncated to [_argSummaryCap] with a trailing `…`.
+  /// Empty when [args] is empty.
+  static String _summariseArgs(Map<String, Object?> args) {
+    if (args.isEmpty) return '';
+    final rendered = args.entries
+        .map((e) => '${e.key}: ${e.value}')
+        .join(', ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll('→', '->')
+        .trim();
+    if (rendered.length <= _argSummaryCap) return rendered;
+    return '${rendered.substring(0, _argSummaryCap)}…';
+  }
+
+  /// The character length of a tool [result] — a *size* the tree node shows,
+  /// never the payload (§5.7.1). A `null` result is size 0.
+  static int _resultSize(Object? result) =>
+      result == null ? 0 : '$result'.length;
 
   /// The policy-narrowed descriptor list for [tools].
   List<Map<String, Object?>> _describeAll(Iterable<BrainTool> tools) =>

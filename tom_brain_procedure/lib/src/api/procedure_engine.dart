@@ -95,7 +95,8 @@ import '../tools/tool_context.dart' show ToolContext;
 import '../tools/tool_dream_surface.dart' show ToolDreamSurface;
 import '../tools/process_run_surface.dart' show ProcessRunToolSurface;
 import '../tools/tool_process_surface.dart' show ToolProcessSurface;
-import '../tools/tool_event.dart' show ToolNoticeSink;
+import '../tools/tool_event.dart'
+    show ToolDenied, ToolEvent, ToolFailed, ToolInvoked, ToolNoticeSink;
 import '../tools/tool_policy_config.dart' show ToolPolicyConfig;
 import '../tools/tool_registry.dart' show ToolRegistry;
 import '../procedure_store/procedure_loader.dart';
@@ -545,6 +546,15 @@ final class ProcedureEngine {
     final buildTree = treeSink != null;
     final llmObservations = <LlmCallObservation>[];
     final childTrees = <_PositionedChildTree>[];
+    // Positioned `tool.invoke`-family events (§5.7.1). A `tool.invoke` records
+    // no trail entry — it rides only the bridge's `onEvent` seam — so the tree
+    // would otherwise never see it. Each invoke/fail/deny event is captured
+    // here paired with the parent-trail index it fired at (`recorder.entries
+    // .length` at emission), so the assembly splices a `ProcedureToolNode` in
+    // at that position the same way a nested run's subtree is. `tool.list`
+    // (an enumeration, not an effect) is filtered out — it never reaches the
+    // tree. Left empty (and unread) when no tree is built.
+    final toolNodes = <_PositionedToolNode>[];
 
     // Bind the bridges to *this* run's recorder so every effect call lands on
     // the run's trail and folds into its effort tally (E.3.2). The engine's
@@ -826,9 +836,21 @@ final class ProcedureEngine {
       toolPolicy,
       runToolContext,
       clock: _now,
-      onEvent: (toolAccessSink == null && noticeSink == null)
+      onEvent: (toolAccessSink == null && noticeSink == null && !buildTree)
           ? null
           : (event) {
+              // Splice the tool event into the combined tree (§5.7.1): capture
+              // the invoke-family event at the parent-trail index it fired at
+              // so the assembly can render it at that position. `tool.list`
+              // (an enumeration) maps to `null` and is never captured.
+              if (buildTree) {
+                final node = _toolNodeOf(event);
+                if (node != null) {
+                  toolNodes.add(
+                    _PositionedToolNode(recorder.entries.length, node),
+                  );
+                }
+              }
               if (toolAccessSink != null) {
                 try {
                   toolAccessSink(ToolAccessRecord(
@@ -932,6 +954,7 @@ final class ProcedureEngine {
           entries: entries,
           llmObservations: llmObservations,
           children: childTrees,
+          tools: toolNodes,
         );
         if (onTree != null) {
           onTree(tree);
@@ -1271,6 +1294,7 @@ final class ProcedureEngine {
     required List<TrailEntry> entries,
     required List<LlmCallObservation> llmObservations,
     required List<_PositionedChildTree> children,
+    required List<_PositionedToolNode> tools,
   }) {
     final nodes = <ProcedureTreeNode>[];
     var llmIndex = 0;
@@ -1283,8 +1307,22 @@ final class ProcedureEngine {
       }
     }
 
+    // A `tool.invoke` records no trail entry (§5.7.1), so — unlike a primitive
+    // call — its node is spliced from the captured event list by position,
+    // exactly as a nested subtree is. Tools captured at `position` render just
+    // before the entry at that index (and after the last entry for `position ==
+    // entries.length`).
+    void flushToolsAt(int position) {
+      for (final tool in tools) {
+        if (tool.position == position) {
+          nodes.add(tool.node);
+        }
+      }
+    }
+
     for (var i = 0; i < entries.length; i++) {
       flushChildrenAt(i);
+      flushToolsAt(i);
       final entry = entries[i];
       switch (entry.kind) {
         case TrailEntryKind.primitiveCall:
@@ -1326,9 +1364,11 @@ final class ProcedureEngine {
           break;
       }
     }
-    // A nested call issued as the run's very last act lands at `entries.length`
-    // (nothing was recorded after it but the synthetic outcome): flush it too.
+    // A nested call or tool invoke issued as the run's very last act lands at
+    // `entries.length` (nothing was recorded after it but the synthetic
+    // outcome): flush both too.
     flushChildrenAt(entries.length);
+    flushToolsAt(entries.length);
 
     return ProcedureTreeRecord(
       procedureId: loaded.header.id,
@@ -1405,3 +1445,49 @@ final class _PositionedChildTree {
   /// The nested run's combined tree.
   final ProcedureTreeRecord tree;
 }
+
+/// A `tool.invoke`-family tree node paired with the parent-trail index the
+/// invoke fired at (§5.7.1). A `tool.invoke` records no trail entry, so the
+/// assembly cannot derive the node from an entry the way a primitive call is
+/// derived; it captures the bridge event here (at `recorder.entries.length`)
+/// and splices the node in at that position via `flushToolsAt`.
+final class _PositionedToolNode {
+  const _PositionedToolNode(this.position, this.node);
+
+  /// The parent-trail entry index the invoke was issued before.
+  final int position;
+
+  /// The pre-built tool node (the event mapped through [_toolNodeOf]).
+  final ProcedureToolNode node;
+}
+
+/// Maps an invoke-family [ToolEvent] to its [ProcedureToolNode], or `null` for
+/// a `tool.list` enumeration (`ToolListed`) — which is not an effect and never
+/// reaches the tree (§5.7.1). The bridge has already computed the one-line
+/// `argSummary` and the result `resultSize` (a size, never the payload), so
+/// this only re-shapes them into the tree node.
+ProcedureToolNode? _toolNodeOf(ToolEvent event) => switch (event) {
+      ToolInvoked(:final name, :final argSummary, :final resultSize) =>
+        ProcedureToolNode(
+          name: name,
+          argSummary: argSummary,
+          outcome: ProcedureToolOutcome.invoked,
+          resultSize: resultSize,
+        ),
+      ToolFailed(:final name, :final argSummary, :final reason) =>
+        ProcedureToolNode(
+          name: name,
+          argSummary: argSummary,
+          outcome: ProcedureToolOutcome.failed,
+          reason: reason,
+        ),
+      ToolDenied(:final name, :final argSummary, :final reason) =>
+        ProcedureToolNode(
+          name: name,
+          argSummary: argSummary,
+          outcome: ProcedureToolOutcome.denied,
+          reason: reason,
+        ),
+      // `ToolListed` — an enumeration, not an effect; no tree node.
+      _ => null,
+    };

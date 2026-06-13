@@ -116,12 +116,25 @@ final class ToolInvoked extends ToolEvent {
   /// The [ToolGroup] wire name the tool belongs to.
   final String group;
 
+  /// A one-line, length-capped rendering of the call's `args` map, computed at
+  /// the bridge (`tom_brain_logging.md` §5.7.1). The ` → ` token is elided so
+  /// it can never collide with a rendered outcome arrow; may be empty for a
+  /// no-arg tool.
+  final String argSummary;
+
+  /// The character length of the rendered tool result (§5.7.1) — a *size*,
+  /// never the payload, so the tree node can show how much a tool returned
+  /// without re-bloating the trail.
+  final int resultSize;
+
   ToolInvoked({
     required super.occurredAt,
     super.runId,
     super.causedBy,
     required this.name,
     required this.group,
+    required this.argSummary,
+    required this.resultSize,
   });
 
   @override
@@ -131,6 +144,8 @@ final class ToolInvoked extends ToolEvent {
   Map<String, Object?> payloadJson() => <String, Object?>{
         'name': name,
         'group': group,
+        'argSummary': argSummary,
+        'resultSize': resultSize,
       };
 }
 
@@ -145,12 +160,18 @@ final class ToolFailed extends ToolEvent {
   /// result carries, or the thrown error's message on a run failure.
   final String reason;
 
+  /// A one-line, length-capped rendering of the call's `args` map, computed at
+  /// the bridge (`tom_brain_logging.md` §5.7.1); may be empty for a no-arg
+  /// tool or an unknown name.
+  final String argSummary;
+
   ToolFailed({
     required super.occurredAt,
     super.runId,
     super.causedBy,
     required this.name,
     required this.reason,
+    required this.argSummary,
   });
 
   @override
@@ -160,6 +181,7 @@ final class ToolFailed extends ToolEvent {
   Map<String, Object?> payloadJson() => <String, Object?>{
         'name': name,
         'reason': reason,
+        'argSummary': argSummary,
       };
 }
 
@@ -173,12 +195,18 @@ final class ToolDenied extends ToolEvent {
   /// The denial message the policy supplied.
   final String reason;
 
+  /// A one-line, length-capped rendering of the call's `args` map, computed at
+  /// the bridge (`tom_brain_logging.md` §5.7.1); may be empty for a no-arg
+  /// tool.
+  final String argSummary;
+
   ToolDenied({
     required super.occurredAt,
     super.runId,
     super.causedBy,
     required this.name,
     required this.reason,
+    required this.argSummary,
   });
 
   @override
@@ -188,5 +216,6 @@ final class ToolDenied extends ToolEvent {
   Map<String, Object?> payloadJson() => <String, Object?>{
         'name': name,
         'reason': reason,
+        'argSummary': argSummary,
       };
 }

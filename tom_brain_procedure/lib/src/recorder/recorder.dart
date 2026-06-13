@@ -52,6 +52,8 @@ export 'procedure_tree_record.dart'
         ProcedureNoteNode,
         ProcedurePrimitiveNode,
         ProcedureSubtreeNode,
+        ProcedureToolNode,
+        ProcedureToolOutcome,
         ProcedureTreeLlmRef,
         ProcedureTreeNode,
         ProcedureTreeRecord,

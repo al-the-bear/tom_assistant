@@ -74,6 +74,58 @@ final class ProcedureNoteNode extends ProcedureTreeNode {
   const ProcedureNoteNode({required this.category});
 }
 
+/// Which outcome a [ProcedureToolNode] records — the three `tool.invoke`-family
+/// `ToolEvent` variants that splice into the tree (`tom_brain_logging.md`
+/// §5.7.1). `tool.list` (`ToolListed`) is an enumeration, not an effect, and is
+/// deliberately **not** represented here — it never reaches the tree.
+enum ProcedureToolOutcome {
+  /// The tool ran and returned (`ToolInvoked`) — [ProcedureToolNode.resultSize]
+  /// carries the result's character length.
+  invoked,
+
+  /// The call failed (`ToolFailed`: unknown tool / invalid args / the tool
+  /// threw) — [ProcedureToolNode.reason] carries the failure message.
+  failed,
+
+  /// The call was refused by the active `ToolPolicy` (`ToolDenied`) —
+  /// [ProcedureToolNode.reason] carries the denial message.
+  denied,
+}
+
+/// A tool-call node — one `tool.invoke` of the run, spliced in at the position
+/// it was issued (`tom_brain_logging.md` §5.7.1). Records *what the run did*
+/// without re-bloating the trail: the tool [name], a single-line truncated
+/// [argSummary], the [outcome], and — on success — the result [resultSize]
+/// *only* (never the payload). A leaf: a tool node never owns children.
+final class ProcedureToolNode extends ProcedureTreeNode {
+  /// The registered tool name (`file.read`, `memory.persistNote`, …).
+  final String name;
+
+  /// A one-line, length-capped rendering of the call's `args` map, computed at
+  /// the bridge (the ` → ` token elided so it can never collide with the
+  /// rendered outcome arrow). May be empty for a no-arg tool.
+  final String argSummary;
+
+  /// Which of the three `tool.invoke`-family outcomes this node records.
+  final ProcedureToolOutcome outcome;
+
+  /// The character length of the rendered tool result — non-`null` only when
+  /// [outcome] is [ProcedureToolOutcome.invoked]. A *size*, never the payload.
+  final int? resultSize;
+
+  /// The failure / denial message — non-`null` only when [outcome] is
+  /// [ProcedureToolOutcome.failed] or [ProcedureToolOutcome.denied].
+  final String? reason;
+
+  const ProcedureToolNode({
+    required this.name,
+    required this.argSummary,
+    required this.outcome,
+    this.resultSize,
+    this.reason,
+  });
+}
+
 /// An error node — the engine's `error` trail entry (a captured exception or a
 /// dropped-write surface).
 final class ProcedureErrorNode extends ProcedureTreeNode {

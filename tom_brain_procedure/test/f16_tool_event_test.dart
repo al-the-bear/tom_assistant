@@ -29,9 +29,22 @@ final DateTime _at = DateTime.utc(2026, 6, 7, 12, 0, 0);
 /// Builds one of each variant (the canonical fixtures the suite reuses).
 List<ToolEvent> _oneOfEach() => <ToolEvent>[
       ToolListed(occurredAt: _at, count: 3, filter: 'memory'),
-      ToolInvoked(occurredAt: _at, name: 'echo', group: 'file'),
-      ToolFailed(occurredAt: _at, name: 'nope', reason: 'unknown tool "nope"'),
-      ToolDenied(occurredAt: _at, name: 'echo', reason: 'write tools denied'),
+      ToolInvoked(
+          occurredAt: _at,
+          name: 'echo',
+          group: 'file',
+          argSummary: 'value: x',
+          resultSize: 1),
+      ToolFailed(
+          occurredAt: _at,
+          name: 'nope',
+          reason: 'unknown tool "nope"',
+          argSummary: ''),
+      ToolDenied(
+          occurredAt: _at,
+          name: 'echo',
+          reason: 'write tools denied',
+          argSummary: 'value: x'),
     ];
 
 /// Exhaustive switch over the closed sum — the compile-time drift guard.
@@ -64,6 +77,8 @@ void main() {
         causedBy: 'ev_0',
         name: 'echo',
         group: 'file',
+        argSummary: 'value: x',
+        resultSize: 1,
       );
       expect(event.occurredAt, _at);
       expect(event.runId, 'run_1');
@@ -101,21 +116,43 @@ void main() {
       );
     });
 
-    test('ToolInvoked carries name + group', () {
+    test('ToolInvoked carries name + group + argSummary + resultSize', () {
       expect(
-        ToolInvoked(occurredAt: _at, name: 'echo', group: 'file').payloadJson(),
-        <String, Object?>{'name': 'echo', 'group': 'file'},
+        ToolInvoked(
+                occurredAt: _at,
+                name: 'echo',
+                group: 'file',
+                argSummary: 'value: x',
+                resultSize: 1)
+            .payloadJson(),
+        <String, Object?>{
+          'name': 'echo',
+          'group': 'file',
+          'argSummary': 'value: x',
+          'resultSize': 1,
+        },
       );
     });
 
-    test('ToolFailed / ToolDenied carry name + reason', () {
+    test('ToolFailed / ToolDenied carry name + reason + argSummary', () {
       expect(
-        ToolFailed(occurredAt: _at, name: 'nope', reason: 'gone').payloadJson(),
-        <String, Object?>{'name': 'nope', 'reason': 'gone'},
+        ToolFailed(
+                occurredAt: _at, name: 'nope', reason: 'gone', argSummary: '')
+            .payloadJson(),
+        <String, Object?>{'name': 'nope', 'reason': 'gone', 'argSummary': ''},
       );
       expect(
-        ToolDenied(occurredAt: _at, name: 'echo', reason: 'denied').payloadJson(),
-        <String, Object?>{'name': 'echo', 'reason': 'denied'},
+        ToolDenied(
+                occurredAt: _at,
+                name: 'echo',
+                reason: 'denied',
+                argSummary: 'value: x')
+            .payloadJson(),
+        <String, Object?>{
+          'name': 'echo',
+          'reason': 'denied',
+          'argSummary': 'value: x',
+        },
       );
     });
 
@@ -125,12 +162,19 @@ void main() {
         runId: 'run_1',
         name: 'echo',
         group: 'file',
+        argSummary: 'value: x',
+        resultSize: 1,
       ).toJson();
       expect(json, <String, Object?>{
         'kind': 'tool.invoked',
         'occurredAt': _at.toIso8601String(),
         'runId': 'run_1',
-        'payload': <String, Object?>{'name': 'echo', 'group': 'file'},
+        'payload': <String, Object?>{
+          'name': 'echo',
+          'group': 'file',
+          'argSummary': 'value: x',
+          'resultSize': 1,
+        },
       });
     });
   });
@@ -145,7 +189,12 @@ void main() {
   group('F.16-tool-7: noticeLine (out-of-band notice text)', () {
     test('ToolInvoked names the tool', () {
       expect(
-        ToolInvoked(occurredAt: _at, name: 'memory.read', group: 'memory')
+        ToolInvoked(
+                occurredAt: _at,
+                name: 'memory.read',
+                group: 'memory',
+                argSummary: 'text: q',
+                resultSize: 12)
             .noticeLine(),
         '🔧 tool memory.read',
       );
@@ -153,7 +202,11 @@ void main() {
 
     test('ToolFailed marks the failure and carries the reason', () {
       expect(
-        ToolFailed(occurredAt: _at, name: 'does.not.exist', reason: 'unknown')
+        ToolFailed(
+                occurredAt: _at,
+                name: 'does.not.exist',
+                reason: 'unknown',
+                argSummary: '')
             .noticeLine(),
         '⚠️ tool does.not.exist failed: unknown',
       );
@@ -161,7 +214,11 @@ void main() {
 
     test('ToolDenied marks the policy refusal and carries the reason', () {
       expect(
-        ToolDenied(occurredAt: _at, name: 'fs.write', reason: 'read-only')
+        ToolDenied(
+                occurredAt: _at,
+                name: 'fs.write',
+                reason: 'read-only',
+                argSummary: 'path: a.txt')
             .noticeLine(),
         '🚫 tool fs.write denied: read-only',
       );
@@ -238,6 +295,23 @@ void main() {
       final invoked = collected.single as ToolInvoked;
       expect(invoked.name, 'echo');
       expect(invoked.group, 'file');
+      // The bridge is the only place that sees both args and result, so it
+      // computes the one-line arg summary and the result *size* (§5.7.1).
+      expect(invoked.argSummary, 'value: x');
+      expect(invoked.resultSize, 1, reason: 'the echoed "x" is one char');
+    });
+
+    test('a failed invoke carries the arg summary', () async {
+      final collected = <ToolEvent>[];
+      final bridge =
+          _bridge(tools: <BrainTool>[_EchoTool()], onEvent: collected.add);
+
+      // `value` is required by the schema; pass a wrong-typed arg so the call
+      // fails validation but still carries a non-empty arg summary.
+      await bridge.invoke('echo', <String, Object?>{'value': 42});
+
+      expect(collected.single, isA<ToolFailed>());
+      expect((collected.single as ToolFailed).argSummary, 'value: 42');
     });
 
     test('invoke of an unknown tool emits ToolFailed', () async {

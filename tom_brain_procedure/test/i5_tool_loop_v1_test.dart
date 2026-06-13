@@ -58,13 +58,17 @@ void main() {
     );
   });
 
-  ProcedureEngine engineFor(Iterable<LoadedProcedure> procedures) =>
+  ProcedureEngine engineFor(
+    Iterable<LoadedProcedure> procedures, {
+    ProcedureTreeSink? procedureTreeSink,
+  }) =>
       ProcedureEngine(
         resolver: ProcedureResolver(procedures),
         memory: memory,
         memoryBridge: memoryBridge,
         substrateBridge: substrateBridge,
         now: () => DateTime.utc(2026, 6, 2, 12, 0, 0),
+        procedureTreeSink: procedureTreeSink,
       );
 
   Future<ProcedureResolver> systemResolver() async {
@@ -74,9 +78,13 @@ void main() {
 
   Future<ProcedureOutcome> runLoop({
     required Map<String, Object?> arguments,
+    ProcedureTreeSink? procedureTreeSink,
   }) async {
     final resolver = await systemResolver();
-    final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
+    final engine = engineFor(
+      resolver.ids.map(resolver.resolve).toList(),
+      procedureTreeSink: procedureTreeSink,
+    );
     return engine
         .invoke(ProcedureInvocation(
           procedureId: 'tool_loop_v1',
@@ -147,6 +155,63 @@ void main() {
       expect(outcome.result!.output<bool>('toolLoopExhausted'), true);
       // It issued exactly `maxToolLoops` completions — no more, no fewer.
       expect(substrate.completions, 3);
+    });
+  });
+
+  group('§5.7.2 loop-termination reason', () {
+    // The last node of the loop's tree is a note whose category states *why* the
+    // loop stopped. `note(category, …)` rides the recorder → tree → NoteNode
+    // path, so the category surfaces as a `ProcedureNoteNode` (no new node type).
+    String? lastNoteCategory(ProcedureTreeRecord record) {
+      for (final node in record.nodes.reversed) {
+        if (node is ProcedureNoteNode) return node.category;
+      }
+      return null;
+    }
+
+    test('a plain answer emits "loop-complete: llm returned no tool call"',
+        () async {
+      substrate.answerText = 'plain answer';
+
+      final records = <ProcedureTreeRecord>[];
+      final outcome = await runLoop(
+        arguments: <String, Object?>{
+          'transcript': 'no tools needed',
+          'route': 'default',
+          'maxToolLoops': 4,
+          'tools': <Object?>[],
+        },
+        procedureTreeSink: records.add,
+      );
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(records, hasLength(1));
+      expect(lastNoteCategory(records.single),
+          'loop-complete: llm returned no tool call');
+    });
+
+    test('exhaustion on a pending tool call emits "loop-exhausted: max '
+        'iterations reached"', () async {
+      substrate
+        ..proposeReadFor = 'never stops'
+        ..alwaysPropose = true;
+
+      final records = <ProcedureTreeRecord>[];
+      final outcome = await runLoop(
+        arguments: <String, Object?>{
+          'transcript': 'loop forever',
+          'route': 'default',
+          'maxToolLoops': 2,
+          'tools': <Object?>[memoryReadTool],
+        },
+        procedureTreeSink: records.add,
+      );
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(outcome.result!.output<bool>('toolLoopExhausted'), true);
+      expect(records, hasLength(1));
+      expect(lastNoteCategory(records.single),
+          'loop-exhausted: max iterations reached');
     });
   });
 

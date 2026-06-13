@@ -183,7 +183,13 @@ void main() {
       final w = StreamingLiveTrailWriter(root: root, turnsKept: 20);
       w.beginPrompt(_incoming(turnId: _t1, sessionId: 'sess-1', text: 'q'));
       w.onToolCall(_tool(
-          turnId: _t1, event: ToolInvoked(occurredAt: _at, name: 'memory.read', group: 'memory')));
+          turnId: _t1,
+          event: ToolInvoked(
+              occurredAt: _at,
+              name: 'memory.read',
+              group: 'memory',
+              argSummary: 'text: q',
+              resultSize: 12)));
 
       final md = read('sessions/sess-1.live-trail.md');
       expect(md, contains('### 🔧 tool memory.read [${_t1}__01]'),
@@ -199,7 +205,10 @@ void main() {
       w.onToolCall(_tool(
           turnId: _t1,
           event: ToolFailed(
-              occurredAt: _at, name: 'does.not.exist', reason: 'unknown tool "does.not.exist"')));
+              occurredAt: _at,
+              name: 'does.not.exist',
+              reason: 'unknown tool "does.not.exist"',
+              argSummary: '')));
 
       final md = read('sessions/sess-1.live-trail.md');
       expect(md, contains('### 🔧 tool does.not.exist (failed) [${_t1}__01]'));
@@ -209,7 +218,12 @@ void main() {
     test('a turn-less (dream) tool call writes nothing', () {
       StreamingLiveTrailWriter(root: root, turnsKept: 20).onToolCall(_tool(
           turnId: null,
-          event: ToolInvoked(occurredAt: _at, name: 'memory.read', group: 'memory')));
+          event: ToolInvoked(
+              occurredAt: _at,
+              name: 'memory.read',
+              group: 'memory',
+              argSummary: 'text: q',
+              resultSize: 12)));
       final sessions = Directory('${root.path}/sessions');
       expect(sessions.existsSync() && sessions.listSync().isNotEmpty, isFalse);
     });
@@ -217,7 +231,12 @@ void main() {
     test('a tool call with no open turn writes nothing', () {
       StreamingLiveTrailWriter(root: root, turnsKept: 20).onToolCall(_tool(
           turnId: _t1,
-          event: ToolInvoked(occurredAt: _at, name: 'memory.read', group: 'memory')));
+          event: ToolInvoked(
+              occurredAt: _at,
+              name: 'memory.read',
+              group: 'memory',
+              argSummary: 'text: q',
+              resultSize: 12)));
       expect(exists('sessions/sess-1.live-trail.md'), isFalse);
     });
   });
@@ -229,7 +248,13 @@ void main() {
       w.onLlmCall(_llm(turnId: _t1, role: 'recaller', answer: 'r'));
       w.onMemoryCall(_mem(turnId: _t1, primitive: 'recall'));
       w.onToolCall(_tool(
-          turnId: _t1, event: ToolInvoked(occurredAt: _at, name: 'memory.read', group: 'memory')));
+          turnId: _t1,
+          event: ToolInvoked(
+              occurredAt: _at,
+              name: 'memory.read',
+              group: 'memory',
+              argSummary: 'text: q',
+              resultSize: 12)));
       w.onLlmCall(_llm(turnId: _t1, role: 'assistant_to_user', answer: 'done'));
       w.endPrompt(_turn(turnId: _t1, sessionId: 'sess-1'));
 

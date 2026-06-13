@@ -20,7 +20,7 @@
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: toolLoopExhausted, type: bool }
-/// requires: [ send, tool.invoke ]
+/// requires: [ send, tool.invoke, note ]
 //
 // tool_loop_v1 — the single, shared tool-calling loop
 // (prompt_configuration.md § 7.2 / § 7.4, increment 5).
@@ -99,6 +99,7 @@
 import 'package:tom_brain_procedure/src/api/procedure_inputs.dart';
 import 'package:tom_brain_procedure/src/bridges/substrate_bridge.dart';
 import 'package:tom_brain_procedure/src/bridges/tool_bridge.dart';
+import 'package:tom_brain_procedure/src/primitives_native/primitives_native.dart';
 
 Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final route = '${inputs.get('route')}';
@@ -145,6 +146,9 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       if (loops >= maxToolLoops) {
         exhausted = true;
         done = true;
+        // §5.7.2: the loop stopped with a tool call still pending because the
+        // iteration cap was reached — the last termination node before outcome.
+        note('loop-exhausted: max iterations reached', {'loops': loops});
       } else {
         // The awaited call is hoisted into its own local before the assignment:
         // d4rt mis-scopes `x = f(x, await g())` (an `await` in the argument list
@@ -161,12 +165,19 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       if (loops >= maxToolLoops) {
         exhausted = true;
         done = true;
+        // §5.7.2: the cap was reached while the model was still emitting an
+        // unresolvable tool-call attempt — exhaustion on an unresolved call.
+        note('loop-exhausted: unresolved tool call at max iterations',
+            {'loops': loops});
       } else {
         transcript = _appendToolCallError(transcript, tools);
       }
     } else {
       // A plain-answer turn with no executable call: this is the final answer.
       done = true;
+      // §5.7.2: normal completion — the model returned a plain answer, so the
+      // loop is complete because there was no tool call to run.
+      note('loop-complete: llm returned no tool call', {'loops': loops});
     }
   }
 

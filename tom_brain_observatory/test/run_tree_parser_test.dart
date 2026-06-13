@@ -173,6 +173,68 @@ void main() {
     });
   });
 
+  group('parseRunTree — tool.invoke nodes (§5.7.1)', () {
+    const log = 'procedure tool_loop_v1  run r0  turn t0\n'
+        '├─ tool file.read(path: lib/main.dart) → ok (1240 chars)\n'
+        '├─ tool does.not.exist() → failed: unknown tool "does.not.exist"\n'
+        '├─ tool shell.run(cmd: rm -rf /) → denied: policy denies group shell\n'
+        '├─ note loop-complete: llm returned no tool call\n'
+        '└─ outcome accepted (entries=4, 90ms)\n';
+    final run = parseRunTree(log)!;
+
+    test('an invoked tool parses name, arg summary and result size only', () {
+      final tool = run.nodes[0] as ToolCallNode;
+      expect(tool.name, 'file.read');
+      expect(tool.argSummary, 'path: lib/main.dart');
+      expect(tool.outcome, ToolCallOutcome.invoked);
+      expect(tool.resultChars, 1240);
+      expect(tool.reason, isNull);
+    });
+
+    test('a failed tool parses its reason and carries no result size', () {
+      final tool = run.nodes[1] as ToolCallNode;
+      expect(tool.name, 'does.not.exist');
+      expect(tool.argSummary, isEmpty);
+      expect(tool.outcome, ToolCallOutcome.failed);
+      expect(tool.resultChars, isNull);
+      expect(tool.reason, 'unknown tool "does.not.exist"');
+    });
+
+    test('a denied tool parses its policy reason', () {
+      final tool = run.nodes[2] as ToolCallNode;
+      expect(tool.name, 'shell.run');
+      expect(tool.argSummary, 'cmd: rm -rf /');
+      expect(tool.outcome, ToolCallOutcome.denied);
+      expect(tool.reason, 'policy denies group shell');
+    });
+
+    test('the termination note rides through as a NoteNode', () {
+      final note = run.nodes[3] as NoteNode;
+      expect(note.category, 'loop-complete: llm returned no tool call');
+    });
+
+    test('tool nodes count as tools, never as memory accesses', () {
+      expect(toolCallCount(run), 3);
+      expect(memoryAccessCount(run), 0,
+          reason: 'a tool.invoke is an effect, not a memory access');
+      expect(llmCallCount(run), 0);
+    });
+
+    test('an invoked tool round-trips through toJson (size, no reason)', () {
+      final json = (run.nodes[0] as ToolCallNode).toJson();
+      expect(json, <String, Object?>{
+        'kind': 'tool',
+        'name': 'file.read',
+        'argSummary': 'path: lib/main.dart',
+        'outcome': 'invoked',
+        'resultChars': 1240,
+      });
+      final failed = (run.nodes[1] as ToolCallNode).toJson();
+      expect(failed.containsKey('resultChars'), isFalse);
+      expect(failed['reason'], 'unknown tool "does.not.exist"');
+    });
+  });
+
   group('parseRunTree — malformed input degrades, never throws', () {
     test('empty content → null', () => expect(parseRunTree(''), isNull));
     test('no header → null', () => expect(parseRunTree('not a run\n'), isNull));

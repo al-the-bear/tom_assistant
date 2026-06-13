@@ -183,6 +183,11 @@ final RegExp _recallPattern =
     RegExp(r'^recall \((.*?) k=(\S*) → (\d+)(?:: (.+))?\)$');
 final RegExp _notePattern = RegExp(r'^note (.+)$');
 final RegExp _errorPattern = RegExp(r'^error (\S+): (.+)$');
+// `tool <name>(<argSummary>) → <outcome>` (§5.7.1). The name carries no spaces or
+// `(`; the arg summary is everything between the parens (it never contains ` → `,
+// which the writer elides). The outcome tail is then sub-classified below.
+final RegExp _toolPattern = RegExp(r'^tool ([^\s(]+)\((.*)\) → (.+)$');
+final RegExp _toolOkPattern = RegExp(r'^ok \((\d+) chars\)$');
 final RegExp _edgePattern =
     RegExp(r'^edge (\S+) -(\S+)-> (\S+) → (\S+)$');
 final RegExp _primitiveWithIdPattern = RegExp(r'^(\S+) → (\S+)$');
@@ -224,6 +229,41 @@ RunNode _leafNode(String content) {
   final note = _notePattern.firstMatch(content);
   if (note != null) {
     return NoteNode(category: note.group(1)!);
+  }
+
+  // A `tool.invoke` node — checked before the generic id fallback. The outcome
+  // tail decides the variant: `ok (<n> chars)` (size only), `failed: <reason>`,
+  // or `denied: <reason>` (§5.7.1).
+  final tool = _toolPattern.firstMatch(content);
+  if (tool != null) {
+    final name = tool.group(1)!;
+    final argSummary = tool.group(2)!;
+    final tail = tool.group(3)!;
+    final ok = _toolOkPattern.firstMatch(tail);
+    if (ok != null) {
+      return ToolCallNode(
+        name: name,
+        argSummary: argSummary,
+        outcome: ToolCallOutcome.invoked,
+        resultChars: int.parse(ok.group(1)!),
+      );
+    }
+    if (tail.startsWith('failed: ')) {
+      return ToolCallNode(
+        name: name,
+        argSummary: argSummary,
+        outcome: ToolCallOutcome.failed,
+        reason: tail.substring('failed: '.length),
+      );
+    }
+    if (tail.startsWith('denied: ')) {
+      return ToolCallNode(
+        name: name,
+        argSummary: argSummary,
+        outcome: ToolCallOutcome.denied,
+        reason: tail.substring('denied: '.length),
+      );
+    }
   }
 
   // An `edge` line carrying its endpoints (`edge <from> -<type>-> <to> → <id>`)
