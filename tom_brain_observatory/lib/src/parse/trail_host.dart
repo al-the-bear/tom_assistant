@@ -52,20 +52,56 @@ final class TrailHost {
     ];
   }
 
-  /// The combined run-tree log for [turnId] (the top-level run), or `null`.
-  /// `procedures/<proc>/<turnId>__<runId>.log`.
+  /// The combined run-tree log for [turnId] — the **substantive answer run**,
+  /// or `null`. `procedures/<proc>/<turnId>__<runId>.log`.
+  ///
+  /// A single inbound turn dispatches more than one *top-level* procedure run,
+  /// each written as its own `.log` file under its procedure directory: the
+  /// dispatcher first runs the fast `prompt_analyzer_v1` classifier, then the
+  /// chosen answer procedure (`answer_with_memory_v1` / `answer_with_thinking_v1`
+  /// / …). Both files carry the same `turnId` stem, so a first-match scan over
+  /// the (filesystem-ordered) procedure directories would return whichever the
+  /// OS happens to list first — frequently the tiny classifier, mis-reporting a
+  /// multi-minute answer as the classifier's sub-second run and hiding the real
+  /// flow. We instead return the **latest-started** top-level run for the turn:
+  /// the answer always starts after the classifier it was routed by, so the run
+  /// with the greatest start time is the substantive one (PT-1.x). Start time is
+  /// the microsecond stamp in the `run_<micros>_<seq>` token; a token without
+  /// one falls back to the basename, so selection is deterministic regardless of
+  /// directory-listing order.
   File? procedureLogFor(String turnId) {
     final dir = Directory(p.join(root.path, 'procedures'));
     if (!dir.existsSync()) return null;
+    File? best;
+    int bestStart = -1;
+    String bestName = '';
     for (final proc in dir.listSync().whereType<Directory>()) {
       for (final file in proc.listSync().whereType<File>()) {
         final name = p.basename(file.path);
-        if (name.startsWith('${turnId}__') && name.endsWith('.log')) {
-          return file;
+        if (!name.startsWith('${turnId}__') || !name.endsWith('.log')) {
+          continue;
+        }
+        final start = _runStartMicros(name);
+        if (best == null ||
+            start > bestStart ||
+            (start == bestStart && name.compareTo(bestName) > 0)) {
+          best = file;
+          bestStart = start;
+          bestName = name;
         }
       }
     }
-    return null;
+    return best;
+  }
+
+  /// The run-start microsecond stamp encoded in a procedure-log basename's
+  /// `…__run_<micros>_<seq>.log` token, or `-1` when the token carries none
+  /// (so such files order purely by basename). Reverses the writer's run-id
+  /// shape; the stamp is monotonic in run-start order.
+  static int _runStartMicros(String basename) {
+    final match = RegExp(r'__run_(\d+)_').firstMatch(basename);
+    if (match == null) return -1;
+    return int.tryParse(match.group(1)!) ?? -1;
   }
 
   /// Resolves a run-tree `.log` link (`../../llm/<role>/<stem>.raw.json`,

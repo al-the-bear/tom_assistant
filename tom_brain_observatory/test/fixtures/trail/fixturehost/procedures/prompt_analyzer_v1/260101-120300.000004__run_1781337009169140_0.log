@@ -1,0 +1,4 @@
+procedure prompt_analyzer_v1  run run_1781337009169140_0  turn 260101-120300.000004
+├─ subprocedure tool_loop_v1  run run_1781337009485106_1  (accepted)
+│  └─ send
+└─ outcome accepted (entries=2, 1.6s)

@@ -1,0 +1,10 @@
+procedure answer_with_memory_v1  run run_1781337010868413_2  turn 260101-120300.000004
+├─ subprocedure retrieve_for_prompt_v1  run run_1781337010907168_3  (accepted)
+│  └─ recallMulti
+├─ subprocedure tool_loop_v1  run run_1781337021418293_8  (accepted)
+│  ├─ send
+│  └─ send
+├─ subprocedure tool_loop_v1  run run_1781337976793987_9  (accepted)
+│  └─ send
+├─ persist → n_fixture0000000000000000D1
+└─ outcome accepted (entries=6, 1036.8s)

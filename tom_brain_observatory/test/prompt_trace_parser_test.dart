@@ -89,6 +89,32 @@ void main() {
     });
   });
 
+  group('promptTraceFor — multi-run turn (analyzer + answer, d0)', () {
+    // The turn dispatched the fast `prompt_analyzer_v1` classifier (1.6s) and
+    // then the substantive `answer_with_memory_v1` run (1036.8s). Both logs
+    // carry the same turn stem; the trace must report the *answer* run, not
+    // whichever the filesystem lists first — otherwise a multi-minute prompt
+    // mis-displays as the classifier's sub-second run with no flow.
+    final trace = promptTraceFor(host, '260101-120300.000004')!;
+
+    test('run tree is the substantive answer run, not the analyzer', () {
+      expect(trace.runTree!.procedureId, 'answer_with_memory_v1');
+    });
+
+    test('wall-clock is the answer run duration, not the classifier 1.6s', () {
+      expect(trace.reply!.wallClockMs, 1036800);
+      expect(trace.reply!.outcomeStatus, 'accepted');
+    });
+
+    test('the full answer flow is present (retrieve + tool loops)', () {
+      final subRuns = trace.runTree!.nodes.whereType<SubRunNode>().toList();
+      expect(
+        subRuns.map((s) => s.run.procedureId),
+        containsAll(<String>['retrieve_for_prompt_v1', 'tool_loop_v1']),
+      );
+    });
+  });
+
   group('promptTraceFor — unknown turn', () {
     test('returns null (turn unknown to host)', () {
       expect(promptTraceFor(host, '991231-235959.999999'), isNull);

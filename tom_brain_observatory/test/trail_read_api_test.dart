@@ -22,6 +22,7 @@ void main() {
       expect(res.statusCode, 200);
       final rows = jsonDecode(await res.readAsString()) as List;
       expect(rows.map((r) => (r as Map)['turnId']), <String>[
+        '260101-120300.000004',
         '260101-120200.000003',
         '260101-120100.000002',
         '260101-120000.000001',
@@ -32,7 +33,7 @@ void main() {
       final res = await obsGet(api, 'api/traces?limit=1');
       final rows = jsonDecode(await res.readAsString()) as List;
       expect(rows, hasLength(1));
-      expect((rows.single as Map)['turnId'], '260101-120200.000003');
+      expect((rows.single as Map)['turnId'], '260101-120300.000004');
     });
 
     test('GET /api/traces/{turnId} → the PromptTrace', () async {

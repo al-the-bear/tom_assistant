@@ -14,7 +14,8 @@ void main() {
 
     test('one row per incoming record, newest-first', () {
       expect(rows.map((r) => r.turnId), <String>[
-        '260101-120200.000003', // 12:02 — newest
+        '260101-120300.000004', // 12:03 — newest (multi-run: analyzer + answer)
+        '260101-120200.000003', // 12:02
         '260101-120100.000002', // 12:01
         '260101-120000.000001', // 12:00 — oldest
       ]);
@@ -50,7 +51,16 @@ void main() {
     test('limit caps the window, keeping the newest', () {
       final capped = promptList(host, limit: 1);
       expect(capped, hasLength(1));
-      expect(capped.single.turnId, '260101-120200.000003');
+      expect(capped.single.turnId, '260101-120300.000004');
+    });
+
+    test('multi-run turn row reports the answer run, not the analyzer', () {
+      // The 12:03 turn ran the fast prompt_analyzer_v1 (1.6s) then the
+      // substantive answer_with_memory_v1 (1036.8s). The row must surface the
+      // answer run's duration, not the classifier's sub-second time.
+      final row = rows.firstWhere((r) => r.turnId == '260101-120300.000004');
+      expect(row.outcomeStatus, 'accepted');
+      expect(row.wallClockMs, 1036800);
     });
   });
 
