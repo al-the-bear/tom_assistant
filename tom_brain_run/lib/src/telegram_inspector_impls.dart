@@ -31,8 +31,10 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         TelegramLogInspector,
         TelegramLogTail,
         TelegramMemoryInspector,
+        TelegramModelsInspector,
         TelegramPromptDigest,
         TelegramPromptInspector,
+        TelegramPromptsInspector,
         TelegramStatusInspector,
         TelegramStopController,
         TelegramTodosInspector,
@@ -46,6 +48,10 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         TodoStore;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show EffortMetrics, LatencyHistogram, MemoryStats, TomBrainMemoryClient;
+import 'package:tom_brain_substrate/tom_brain_substrate.dart'
+    show ProviderAuthConfigCases, ProviderProfile, SubstrateConfig;
+
+import 'cognition_config.dart';
 
 /// Reads the §5.3 `incoming/` raw-prompt trail back for the `/observatory_*`
 /// commands (parts b + c).
@@ -859,5 +865,121 @@ final class LiveStopController implements TelegramStopController {
         ? 'Stopping the prompt being processed. It will wind down at its next '
             'checkpoint; any answer already streamed stands.'
         : 'No prompt is being processed right now.';
+  }
+}
+
+/// Renders the configured providers and their models for the `/show_models`
+/// command (request c), over the parsed [SubstrateConfig].
+///
+/// Each model is shown with the `<providerId>:<model>` id the `/switch_model`
+/// command expects, so the two commands share one vocabulary. The provider line
+/// carries the kind, the base URL (when transport-backed), and whether the
+/// provider authenticates with an API key — enough to tell a local Ollama row
+/// apart from a paid OpenAI-format vendor without ever printing the credential.
+/// The model that backs the embedding service is flagged, so the operator can
+/// see which row the memory's `embed()` calls route to.
+final class SubstrateModelsInspector implements TelegramModelsInspector {
+  /// The parsed substrate config the process booted from.
+  final SubstrateConfig config;
+
+  /// Builds an inspector over the substrate [config].
+  SubstrateModelsInspector({required this.config});
+
+  @override
+  Future<String> models() async {
+    if (config.providers.isEmpty) return 'No providers are configured.';
+
+    final noun = config.providers.length == 1 ? 'provider' : 'providers';
+    final buffer = StringBuffer(
+      'Models & providers (${config.providers.length} $noun):',
+    );
+    for (final provider in config.providers) {
+      buffer.write('\n\n${_providerLine(provider)}');
+      if (provider.models.isEmpty) {
+        buffer.write('\n  (no models declared)');
+        continue;
+      }
+      for (final model in provider.models) {
+        final marker = _isEmbedding(provider.id, model) ? '  [embedding]' : '';
+        buffer.write('\n  ${provider.id}:$model$marker');
+      }
+    }
+    return buffer.toString();
+  }
+
+  /// The provider's header line: its id plus kind, optional base URL, and
+  /// whether it authenticates with an API key (never the key itself).
+  String _providerLine(ProviderProfile provider) {
+    final parts = <String>['kind: ${provider.kind.name}'];
+    if (provider.baseUrl != null) parts.add('url: ${provider.baseUrl}');
+    parts.add('auth: ${provider.auth.isApiKey ? 'api_key' : 'none'}');
+    return 'Provider ${provider.id} (${parts.join(', ')})';
+  }
+
+  /// Whether `<providerId>:<model>` is the configured embedding backend.
+  bool _isEmbedding(String providerId, String model) =>
+      config.embedding.providerId == providerId &&
+      config.embedding.model == model;
+}
+
+/// Renders the registered prompt types for the `/show_prompts` command
+/// (request d), over the parsed [CognitionConfig].
+///
+/// Each prompt is shown with its full `<main>.<sub>.<prompt>` id (the value a
+/// `/switch_model <prompt-id> …` command targets), the resolved LLM route name,
+/// the substrate role, the resolved tool set, and whether it is a full prompt or
+/// an injected fragment. When the named route is loaded, its provider+model
+/// chain is shown indented with the same `<providerId>:<model>` ids
+/// `/show_models` prints, so the prompt list and the model list read against one
+/// vocabulary.
+final class CognitionPromptsInspector implements TelegramPromptsInspector {
+  /// The parsed cognition config the process booted from.
+  final CognitionConfig config;
+
+  /// Builds an inspector over the cognition [config].
+  CognitionPromptsInspector({required this.config});
+
+  @override
+  Future<String> prompts() async {
+    final ids = config.promptIds..sort();
+    if (ids.isEmpty) return 'No prompt types are registered.';
+
+    final noun = ids.length == 1 ? 'prompt' : 'prompts';
+    final buffer = StringBuffer('Prompt types (${ids.length} $noun):');
+    for (final id in ids) {
+      final prompt = config.resolve(id);
+      buffer
+        ..write('\n\n$id')
+        ..write('\n  llm: ${prompt.settings.llm ?? '(unset)'}'
+            '  role: ${prompt.settings.role}'
+            '  tools: ${_renderTools(prompt.settings.tools)}'
+            '  kind: ${prompt.kind.name}');
+      _writeRouteChain(buffer, prompt.settings.llm);
+    }
+    return buffer.toString();
+  }
+
+  /// Appends the named route's provider+model chain (one indented
+  /// `<providerId>:<model>` per line). No-op when the prompt carries no route
+  /// or the route was not loaded.
+  void _writeRouteChain(StringBuffer buffer, String? routeName) {
+    if (routeName == null) return;
+    final route = config.llmRoutes[routeName];
+    if (route == null || route.route.isEmpty) return;
+    for (final entry in route.route) {
+      buffer.write('\n    ${entry.providerId}:${entry.model}');
+    }
+  }
+
+  /// Renders a resolved [ToolsSetting] to its one-word (or list) form;
+  /// `(default)` when nothing in the inheritance chain set it.
+  String _renderTools(ToolsSetting? tools) {
+    return switch (tools) {
+      null => '(default)',
+      ToolsAll() => 'all',
+      ToolsReadonly() => 'readonly',
+      ToolsNone() => 'none',
+      ToolsExplicit(:final names) => '[${names.join(', ')}]',
+    };
   }
 }

@@ -84,6 +84,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
 import 'builtin_bindings.dart' show BrainBuiltins;
+import 'cognition_config.dart' show CognitionConfig;
 import 'cognition_config_loader.dart' show CognitionConfigLoader;
 import 'cognition_prompt_resolver.dart'
     show buildPromptResolver, buildRouteChainResolver;
@@ -99,10 +100,12 @@ import 'streaming_live_trail.dart' show StreamingLiveTrailWriter;
 import 'summary_fanout.dart' show SummaryFanout;
 import 'telegram_inspector_impls.dart'
     show
+        CognitionPromptsInspector,
         LiveStopController,
         LiveUsageInspector,
         MemoryStatsInspector,
         SessionTodosInspector,
+        SubstrateModelsInspector,
         TrailIncomingPromptInspector,
         TrailLogInspector,
         TrailStatusInspector;
@@ -408,6 +411,7 @@ Future<BrainProcess> standUpBrainProcess({
   DreamConfig? dream,
   PromptResolver? promptResolver,
   RouteChainResolver? routeChainOf,
+  CognitionConfig? cognitionConfig,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -442,6 +446,8 @@ Future<BrainProcess> standUpBrainProcess({
         todos: provisioned.todosInspector,
         usage: provisioned.usageInspector,
         stop: provisioned.stopController,
+        substrateConfig: substrateConfig,
+        cognitionConfig: cognitionConfig,
       ),
     );
   } on Object {
@@ -477,6 +483,8 @@ TelegramInspectors _telegramInspectorsFor({
   required TelegramTodosInspector? todos,
   required TelegramUsageInspector? usage,
   required TelegramStopController? stop,
+  required SubstrateConfig? substrateConfig,
+  required CognitionConfig? cognitionConfig,
 }) {
   final Directory? root = trailRoot == null ? null : Directory(trailRoot);
   return TelegramInspectors(
@@ -498,6 +506,16 @@ TelegramInspectors _telegramInspectorsFor({
     // The stop controller acts on the same live `LiveRunRegistry`, also
     // independent of `trailRoot`, so it is wired whenever one is exposed.
     stop: stop,
+    // The models inspector reads the parsed substrate config (not the trail),
+    // so it is wired whenever the boot threaded one in.
+    models: substrateConfig == null
+        ? null
+        : SubstrateModelsInspector(config: substrateConfig),
+    // The prompt-types inspector reads the parsed cognition config (not the
+    // trail), so it is wired whenever a `cognition:` tree was loaded.
+    promptTypes: cognitionConfig == null
+        ? null
+        : CognitionPromptsInspector(config: cognitionConfig),
   );
 }
 
@@ -543,10 +561,11 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   PromptResolver? promptResolver;
   RouteChainResolver? routeChainOf;
   RoleRegistry? roleRegistry;
+  CognitionConfig? cognitionConfig;
   final cognition = runConfig.cognition;
   final Map<String, String> environment = Platform.environment;
   if (cognition != null) {
-    final cognitionConfig =
+    cognitionConfig =
         CognitionConfigLoader.loadFromDir(cognition.root, env: environment);
     // §7.1 / §11: role prose (persona + objective) is sourced from
     // `cognition/<rolesFolder>/<role>.persona.md` + `<role>.objective.md`,
@@ -606,6 +625,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     dream: runConfig.dream,
     promptResolver: promptResolver,
     routeChainOf: routeChainOf,
+    cognitionConfig: cognitionConfig,
   );
 }
 

@@ -31,7 +31,91 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         MemoryStats,
         TomBrainMemoryClient,
         TurnId;
+import 'package:tom_brain_substrate/tom_brain_substrate.dart'
+    show
+        EmbeddingChoice,
+        McpClientConfigBlock,
+        ProviderAuthConfig,
+        ProviderKind,
+        ProviderProfile,
+        RoleRouteEntryConfig,
+        SubstrateConfig,
+        WebFetchConfig,
+        WebSearchConfig;
 import 'package:test/test.dart';
+
+/// A substrate config with two providers (a local Ollama and a paid
+/// OpenAI-format vendor) plus an embedding choice pointing at the local row.
+SubstrateConfig _substrateConfig({List<ProviderProfile>? providers}) =>
+    SubstrateConfig(
+      providers: providers ??
+          [
+            ProviderProfile(
+              id: 'local',
+              kind: ProviderKind.ollama,
+              auth: ProviderAuthConfig.none,
+              baseUrl: Uri.parse('http://127.0.0.1:11434'),
+              models: const ['gemma3:27b', 'nomic-embed-text'],
+            ),
+            ProviderProfile(
+              id: 'openrouter',
+              kind: ProviderKind.openai,
+              auth: ProviderAuthConfig.apiKey(secretRef: '_ai/secrets/or.key'),
+              baseUrl: Uri.parse('https://openrouter.ai/api/v1'),
+              models: const ['meta-llama/llama-3-70b'],
+            ),
+          ],
+      roleRoutes: const {},
+      embedding: const EmbeddingChoice(
+        providerId: 'local',
+        model: 'nomic-embed-text',
+        dims: 768,
+        normalize: true,
+      ),
+      webSearch: const WebSearchConfig(defaultProvider: 'ddg', providers: {}),
+      webFetch: const WebFetchConfig(),
+      mcpClient: const McpClientConfigBlock(),
+    );
+
+/// A cognition config carrying one registered prompt that routes over the
+/// `fast` LLM route (a two-entry chain referencing the substrate fixture's
+/// providers).
+CognitionConfig _cognitionConfig({
+  Map<String, ResolvedPrompt>? prompts,
+  Map<String, LlmRouteConfig>? llmRoutes,
+}) =>
+    CognitionConfig(
+      registry: const CognitionRegistry(
+        procedures: {},
+        rolesFolder: 'roles',
+        llmFolder: 'llm',
+        llmDefault: 'default',
+      ),
+      prompts: prompts ??
+          const {
+            'assist_user.answer.main': ResolvedPrompt(
+              id: 'assist_user.answer.main',
+              mainProcedure: 'assist_user',
+              subProcedure: 'answer',
+              promptName: 'main',
+              templatePath: 'assist_user/answer.md',
+              kind: PromptKind.prompt,
+              settings: PromptSettings(
+                llm: 'fast',
+                role: 'assistant_to_user',
+                tools: ToolsReadonly(),
+              ),
+            ),
+          },
+      llmRoutes: llmRoutes ??
+          const {
+            'fast': LlmRouteConfig(name: 'fast', route: [
+              RoleRouteEntryConfig(providerId: 'local', model: 'gemma3:27b'),
+              RoleRouteEntryConfig(
+                  providerId: 'openrouter', model: 'meta-llama/llama-3-70b'),
+            ]),
+          },
+    );
 
 IncomingTrailRecord _record({
   required String turnId,
@@ -644,6 +728,125 @@ void main() {
       expect(await controller.stopCurrentPrompt(),
           'No prompt is being processed right now.');
       expect(cancelled, isFalse);
+    });
+  });
+
+  group('SubstrateModelsInspector', () {
+    test('renders providers and models with provider:model ids', () async {
+      final inspector = SubstrateModelsInspector(config: _substrateConfig());
+      final text = await inspector.models();
+
+      expect(text, contains('Models & providers (2 providers):'));
+      expect(
+        text,
+        contains('Provider local (kind: ollama, '
+            'url: http://127.0.0.1:11434, auth: none)'),
+      );
+      expect(text, contains('local:gemma3:27b'));
+      expect(
+        text,
+        contains('Provider openrouter (kind: openai, '
+            'url: https://openrouter.ai/api/v1, auth: api_key)'),
+      );
+      expect(text, contains('openrouter:meta-llama/llama-3-70b'));
+    });
+
+    test('flags the model backing the embedding service', () async {
+      final inspector = SubstrateModelsInspector(config: _substrateConfig());
+      final text = await inspector.models();
+      expect(text, contains('local:nomic-embed-text  [embedding]'));
+      // Only the embedding model is flagged, not the chat model.
+      expect(text, isNot(contains('local:gemma3:27b  [embedding]')));
+    });
+
+    test('never prints the API key, only that auth is api_key', () async {
+      final inspector = SubstrateModelsInspector(config: _substrateConfig());
+      final text = await inspector.models();
+      expect(text, isNot(contains('_ai/secrets/or.key')));
+    });
+
+    test('shows (no models declared) for a provider without models', () async {
+      final inspector = SubstrateModelsInspector(
+        config: _substrateConfig(providers: [
+          ProviderProfile(
+            id: 'empty',
+            kind: ProviderKind.stub,
+            auth: ProviderAuthConfig.none,
+            models: const [],
+          ),
+        ]),
+      );
+      final text = await inspector.models();
+      expect(text, contains('Provider empty (kind: stub, auth: none)'));
+      expect(text, contains('(no models declared)'));
+    });
+
+    test('reports no providers when the config is empty', () async {
+      final inspector =
+          SubstrateModelsInspector(config: _substrateConfig(providers: []));
+      expect(await inspector.models(), 'No providers are configured.');
+    });
+  });
+
+  group('CognitionPromptsInspector', () {
+    test('renders prompt ids with route, role, tools, kind, and chain',
+        () async {
+      final inspector = CognitionPromptsInspector(config: _cognitionConfig());
+      final text = await inspector.prompts();
+
+      expect(text, contains('Prompt types (1 prompt):'));
+      expect(text, contains('assist_user.answer.main'));
+      expect(
+        text,
+        contains('llm: fast  role: assistant_to_user  '
+            'tools: readonly  kind: prompt'),
+      );
+      // The resolved route chain is shown with the same provider:model ids
+      // /show_models prints.
+      expect(text, contains('local:gemma3:27b'));
+      expect(text, contains('openrouter:meta-llama/llama-3-70b'));
+    });
+
+    test('renders an explicit tool list and (default) when tools are unset',
+        () async {
+      final inspector = CognitionPromptsInspector(
+        config: _cognitionConfig(prompts: const {
+          'p.explicit.main': ResolvedPrompt(
+            id: 'p.explicit.main',
+            mainProcedure: 'p',
+            subProcedure: 'explicit',
+            promptName: 'main',
+            templatePath: 'p/explicit.md',
+            kind: PromptKind.fragment,
+            settings: PromptSettings(
+              llm: 'fast',
+              tools: ToolsExplicit(['mem.recall', 'sub.send']),
+            ),
+          ),
+          'p.bare.main': ResolvedPrompt(
+            id: 'p.bare.main',
+            mainProcedure: 'p',
+            subProcedure: 'bare',
+            promptName: 'main',
+            templatePath: 'p/bare.md',
+            kind: PromptKind.prompt,
+            settings: PromptSettings(),
+          ),
+        }),
+      );
+      final text = await inspector.prompts();
+
+      expect(text, contains('tools: [mem.recall, sub.send]'));
+      expect(text, contains('kind: fragment'));
+      // The bare prompt: no tools set anywhere, no llm route.
+      expect(text, contains('tools: (default)'));
+      expect(text, contains('llm: (unset)'));
+    });
+
+    test('reports no prompt types when none are registered', () async {
+      final inspector =
+          CognitionPromptsInspector(config: _cognitionConfig(prompts: const {}));
+      expect(await inspector.prompts(), 'No prompt types are registered.');
     });
   });
 }

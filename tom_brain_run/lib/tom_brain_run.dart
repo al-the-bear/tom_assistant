@@ -115,10 +115,12 @@ export 'src/incoming_trail_writer.dart' show IncomingTrailWriter;
 //    /observatory_*, /show_logs, /memory_status, /check_status commands ───────
 export 'src/telegram_inspector_impls.dart'
     show
+        CognitionPromptsInspector,
         LiveStopController,
         LiveUsageInspector,
         MemoryStatsInspector,
         SessionTodosInspector,
+        SubstrateModelsInspector,
         TrailIncomingPromptInspector,
         TrailLogInspector,
         TrailStatusInspector;
