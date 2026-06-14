@@ -271,6 +271,12 @@ class _PromptCapturingSubstrate implements TomBrainSubstrateClient {
   List<String> answerChunks = <String>['ok'];
   String? lastPrompt;
 
+  /// The opening line of the completion-confirmation prompt (agent-loop
+  /// completion plan § 3.1, revision 2026-06-14). The trailing `sub.llm`
+  /// confirmation call must NOT overwrite the captured answer prompt.
+  static const String _confirmationSentinel =
+      'You have just produced an answer for the user.';
+
   @override
   Future<void> open(SubstrateConfig config) async {}
 
@@ -279,7 +285,31 @@ class _PromptCapturingSubstrate implements TomBrainSubstrateClient {
 
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    lastPrompt = call.inputs['prompt'] as String?;
+    final rawPrompt = call.inputs['prompt'] as String?;
+    final isConfirmation = call.roleId == 'assistant_to_user' &&
+        rawPrompt != null &&
+        rawPrompt.trimLeft().startsWith(_confirmationSentinel);
+    // The confirmation call terminates the loop with `DONE`; only the answer
+    // prompt is captured for assertion.
+    if (isConfirmation) {
+      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
+        const LlmStreamChunk(callId: 'c', text: 'DONE'),
+        const LlmStreamCompleted(
+          callId: 'c',
+          report: LlmCallReport(
+            providerId: 'p',
+            modelId: 'm',
+            anchorHash: 'a',
+            promptHash: 'pr',
+            tokensIn: 1,
+            tokensOut: 1,
+            retries: 0,
+            wallClockMs: 1,
+          ),
+        ),
+      ]);
+    }
+    lastPrompt = rawPrompt;
     return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
       for (final chunk in answerChunks)
         LlmStreamChunk(callId: 'c', text: chunk),

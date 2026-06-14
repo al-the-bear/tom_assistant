@@ -171,8 +171,39 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
   LlmCall? lastCall;
   List<String> answerChunks = <String>['ok'];
 
+  /// The opening line of the completion-confirmation prompt (agent-loop
+  /// completion plan § 3.1, revision 2026-06-14). After each accepted draft the
+  /// body asks the model whether it is `DONE` or wants to `CONTINUE` via a
+  /// direct `sub.llm` call; that call must NOT be captured as the answer call.
+  static const String _confirmationSentinel =
+      'You have just produced an answer for the user.';
+
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
+    final rawPrompt = call.inputs['prompt'];
+    final isConfirmation = call.roleId == 'assistant_to_user' &&
+        rawPrompt is String &&
+        rawPrompt.trimLeft().startsWith(_confirmationSentinel);
+    // The confirmation call terminates the loop with `DONE`; the answer call is
+    // the one the suite asserts against, so only it is captured.
+    if (isConfirmation) {
+      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
+        const LlmStreamChunk(callId: 'c', text: 'DONE'),
+        const LlmStreamCompleted(
+          callId: 'c',
+          report: LlmCallReport(
+            providerId: 'p',
+            modelId: 'm',
+            anchorHash: 'a',
+            promptHash: 'pr',
+            tokensIn: 1,
+            tokensOut: 1,
+            retries: 0,
+            wallClockMs: 1,
+          ),
+        ),
+      ]);
+    }
     lastCall = call;
     return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
       for (final chunk in answerChunks)

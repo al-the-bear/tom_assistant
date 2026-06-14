@@ -103,12 +103,17 @@ void main() {
       // the inline prompt assembly + send/`tool.list` loop are gone — the answer
       // step now names the registered prompt via `run` and delegates the inner
       // tool loop (which still resolves `tool.invoke`) to `tool_loop_v1`. So the
-      // header drops `llm` + `tool.list` and adds `run`.
+      // header adds `run`. The completion-confirmation contract (agent-loop
+      // completion plan § 3, revision 2026-06-14) re-introduces a direct `sub.llm`
+      // call: after each accepted draft the body asks the model — in its normal
+      // `assistant_to_user` profile, presenting the live todo list — whether it is
+      // `DONE` or wants to `CONTINUE`, so `llm` is back in the requires set.
       expect(
           loaded.header.requires,
           <String>[
             'runProcedure',
             'run',
+            'llm',
             'embed',
             'classify',
             'persist',

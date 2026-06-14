@@ -313,6 +313,17 @@ void main() {
 class _RoleAwareSubstrate implements TomBrainSubstrateClient {
   final Map<String, int> _byRole = <String, int>{};
 
+  /// The opening line of the completion-confirmation prompt (agent-loop
+  /// completion plan § 3.1, revision 2026-06-14). After each accepted draft the
+  /// body asks the model — in its normal `assistant_to_user` profile — whether
+  /// it is `DONE` or wants to `CONTINUE`; that call reaches the substrate as a
+  /// `sub.llm` with `inputs['prompt']` starting with this sentinel, distinct
+  /// from the synthesis drafts (which arrive through `sub.run`'s assembled
+  /// template, never carrying a raw `prompt`). The double routes it to a
+  /// [confirmationVerdicts] queue and does **not** count it as a draft.
+  static const String _confirmationSentinel =
+      'You have just produced an answer for the user.';
+
   /// The evaluator verdicts to emit, in order. When exhausted, [defaultVerdict]
   /// is used. A REJECT forces a re-entry; an ACCEPT exits the loop.
   List<String> evaluatorVerdicts = <String>['ACCEPT'];
@@ -322,7 +333,20 @@ class _RoleAwareSubstrate implements TomBrainSubstrateClient {
   /// set it to REJECT).
   String defaultVerdict = 'ACCEPT';
 
+  /// The completion-confirmation replies to emit, in order. When exhausted,
+  /// [defaultConfirmation] is used. `DONE` terminates the loop; `CONTINUE …`
+  /// re-enters. Defaults to a single `DONE` so an under-specified test
+  /// terminates after the first accepted draft.
+  List<String> confirmationVerdicts = <String>['DONE'];
+
+  /// The confirmation reply emitted once [confirmationVerdicts] is exhausted.
+  String defaultConfirmation = 'DONE';
+
   int _evaluatorCalls = 0;
+  int _confirmationCalls = 0;
+
+  /// How many completion-confirmation calls the loop issued.
+  int get confirmationCount => _confirmationCalls;
 
   /// The set of roles whose completion was offered a non-empty tool catalogue —
   /// the proof that `tools: all` reaches the substrate for the synthesis draft
@@ -339,11 +363,14 @@ class _RoleAwareSubstrate implements TomBrainSubstrateClient {
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
     final role = call.roleId;
-    _byRole[role] = (_byRole[role] ?? 0) + 1;
+    final rawPrompt = call.inputs['prompt'];
+    final isConfirmation = role == 'assistant_to_user' &&
+        rawPrompt is String &&
+        rawPrompt.trimLeft().startsWith(_confirmationSentinel);
+    final text = isConfirmation ? _nextConfirmation() : _textForCounted(role);
     if (call.options.toolCatalogue.isNotEmpty) {
       rolesWithTools.add(role);
     }
-    final text = _textFor(role);
     return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
       LlmStreamChunk(callId: 'c', text: text),
       const LlmStreamCompleted(
@@ -360,6 +387,24 @@ class _RoleAwareSubstrate implements TomBrainSubstrateClient {
         ),
       ),
     ]);
+  }
+
+  /// Counts the [role] call (drafts are numbered off this count) and returns
+  /// its canned text. The confirmation call is handled before this point and
+  /// never reaches here, so it never inflates a role count.
+  String _textForCounted(String role) {
+    _byRole[role] = (_byRole[role] ?? 0) + 1;
+    return _textFor(role);
+  }
+
+  /// The next completion-confirmation reply (DONE / CONTINUE …), consumed in
+  /// order from [confirmationVerdicts] with [defaultConfirmation] as the
+  /// fallback. Increments [confirmationCount].
+  String _nextConfirmation() {
+    final n = _confirmationCalls++;
+    return n < confirmationVerdicts.length
+        ? confirmationVerdicts[n]
+        : defaultConfirmation;
   }
 
   String _textFor(String role) {

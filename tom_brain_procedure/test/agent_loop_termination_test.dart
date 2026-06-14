@@ -1,51 +1,50 @@
-// Agent-loop termination — the todo-based termination contract
-// (`agent_loop_completion.md` § 3 / § 6, Todo #1; `thinking_specification.md`
-// § 4).
+// Agent-loop termination — the completion-confirmation contract
+// (`agent_loop_completion.md` § 3 / § 6, revision 2026-06-14;
+// `thinking_specification.md` § 4).
 //
-// These are the RED tests of the agent-loop completion plan, written first.
-// They pin the *target* termination contract that Todos #2 (memory path) and
-// #3 (thinking path) must satisfy; against the current cap-based loops they
-// fail (a plain answer with an open todo terminates early; the prompt carries
-// no todo-discipline block; a REJECT records no todo). Once the two procedures
-// are migrated to the `while (!finished)` guard of § 3.1 they go green.
+// These tests pin the *target* termination contract that the memory path
+// (`answer_with_memory_v1`) and the thinking path (`answer_with_thinking_v1`)
+// satisfy after the 2026-06-14 revision. The mechanical "every session todo is
+// done" gate is gone; termination is now an explicit model decision.
 //
-// The contract under test (§ 3):
+// The contract under test (§ 3, revision 2026-06-14):
 //
-//   A run is finished IFF every session todo is `done` AND the investigation
-//   accepts the last answer. The loop never exits merely because the model
-//   stopped proposing tool calls (memory) or because a single critique
-//   accepts while open todos remain (thinking). The only non-todo exit is the
-//   wall-clock runaway-stop (§ 3.3).
+//   After producing a draft answer a run asks the model — in its normal
+//   `assistant_to_user` profile and presenting the live todo list — whether the
+//   work is finished (`DONE`) or whether it should keep going (`CONTINUE`). On
+//   `CONTINUE` the draft and the are-you-done exchange are folded into the
+//   conversation history and the loop re-enters; on `DONE` (or any unparseable
+//   reply — the never-hang default) the loop exits. The confirmation turn streams
+//   to the **thinking** channel, so its verdict never leaks into the answer.
+//
+//   On the thinking path the self-critique is an inner gate: a REJECT re-enters
+//   directly (and records its missing pieces as a session todo, so the work is
+//   tracked); only an ACCEPT reaches the completion-confirmation gate.
+//
+//   The only non-confirmation exit is the wall-clock runaway-stop (§ 3.3).
 //
 // How the doubles express the contract:
 //
+//   - `_ScriptedSubstrate` is role-aware AND tool-capable. In **memory mode**
+//     the tools-bearing `assistant_to_user` turns are scripted as a queue of
+//     tool-proposals / plain-answers (the inner `tool_loop_v1` cycle). In
+//     **thinking mode** the synthesis (`assistant_to_user`, tool-less) returns a
+//     fresh `draft #N` per call and the evaluator drives ACCEPT / REJECT off a
+//     verdict queue.
+//   - The **completion-confirmation** call (`sub.llm`, role `assistant_to_user`,
+//     no tools, thinking channel) is recognised by its prompt sentinel and
+//     answered from the `confirmationVerdicts` queue (`DONE` / `CONTINUE`). It is
+//     detected before the answer/synthesis routing so it is never mistaken for a
+//     synthesis draft.
 //   - The engine binds each run's `todo.*` tools to the session store of the
-//     invocation's `sessionId`, and exposes that registry as
-//     `engine.sessionTodoStores`. The session store is therefore the single
-//     source of truth for "what work is open" — the tests read and seed it
-//     directly rather than scraping tool-result prose.
-//   - `_ScriptedSubstrate` is role-aware (like gt1's double) AND tool-capable
-//     (like d43's). In **memory mode** the tools-bearing `assistant_to_user`
-//     turns are scripted as a queue of tool-proposals / plain-answers, so a
-//     test can interleave `todo.add` / `todo.update` calls with a premature
-//     plain answer. In **thinking mode** the synthesis (`assistant_to_user`,
-//     tool-less) returns a fresh `draft #N` per call and the evaluator drives
-//     ACCEPT / REJECT off a verdict queue, exactly as gt1.
-//   - Thinking-path progress on todos is simulated with an `onSynthesis` hook
-//     that mutates the session store directly. This keeps the thinking tests
-//     decoupled from *how* the act stage will emit todo mutations (Todo #3
-//     gates tool-calling to the act stage — an internal choice); the contract
-//     they assert is only that the loop reads the live store to decide
-//     termination. The hook fires on the synthesis draft count (one draft per
-//     iteration), which is robust to whether the loop runs the evaluator every
-//     iteration or only once todos are clear.
+//     invocation's `sessionId`, exposed as `engine.sessionTodoStores`. The tests
+//     read and seed it directly.
 //
-// Test 5 (wall-clock runaway-stop, § 6) is `skip`-ped: it needs the loop body
-// to read a deadline, but the cognition layer has no clock primitive today
-// (`answer_with_memory_v1.dart` l.320; confirmed — no body-readable budget /
-// deadline surface in any bridge). Forcing it deterministically requires a new
-// primitive, tracked in `open_topics.tom_brain.md`. The skipped test documents
-// the intended assertions so it can be un-skipped once that primitive lands.
+// Test 5 (wall-clock runaway-stop, § 3.3) is `skip`-ped: it needs the loop body
+// to read a deadline, but the cognition layer has no clock primitive today.
+// Forcing it deterministically requires a new primitive, tracked in
+// `open_topics.tom_brain.md`. The skipped test documents the intended assertions
+// so it can be un-skipped once that primitive lands.
 
 import 'dart:async';
 import 'dart:io';
@@ -61,6 +60,17 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
 import 'answer_parity_prompts.dart';
+
+/// The opening of the procedures' `_confirmationQuestion` — the double keys the
+/// completion-confirmation call off it (kept in sync with the two procedures'
+/// helper text). Matched as a **prefix** of the raw `sub.llm` prompt: the
+/// confirmation question is passed verbatim, so it *starts* with this line,
+/// whereas an answer/synthesis prompt only ever *embeds* the question inside its
+/// folded-in conversation history. A prefix match therefore never mistakes a
+/// re-entry's answer prompt (which carries the prior confirmation turn) for a
+/// fresh confirmation call.
+const String _confirmationSentinel =
+    'You have just produced an answer for the user.';
 
 void main() {
   late _BrainMemory memory;
@@ -78,9 +88,9 @@ void main() {
     // policy, not a runtime input. The shipped `defaultToolCatalogue()` is what
     // `tool.list()` exposes, so the memory-path answer turns carry tools — the
     // gate the scripted substrate uses to consume its tool-proposing answer
-    // turns (T1) and to capture the tools-bearing prompt (T6). Thinking-mode
-    // turns ignore the catalogue (`!thinkingMode && hasTools`), so T2/T4 are
-    // unaffected.
+    // turns and to capture the tools-bearing prompt. Thinking-mode turns ignore
+    // the catalogue (`!thinkingMode && hasTools`), and the completion
+    // confirmation is tool-less, so neither is affected.
     parity.tools = defaultToolCatalogue();
     substrateBridge = SubstrateBridge(
       substrate,
@@ -151,95 +161,97 @@ void main() {
     );
   }
 
-  List<TodoEntry> openTodos(ProcedureEngine engine, String sessionId) {
-    final store = engine.sessionTodoStores.peek(sessionId);
-    if (store == null) return const <TodoEntry>[];
-    return store.list().where((e) => !e.done).toList(growable: false);
-  }
-
-  group('T1 todo-based termination — memory path (§ 3 / § 6.1)', () {
+  group('T1 completion-confirmation — memory path (§ 3 / § 6.1)', () {
     test(
-        'a plain answer that leaves an open todo re-enters; the loop exits only '
-        'once every todo is done', () async {
+        'a CONTINUE confirmation re-enters; the loop exits on DONE, returning '
+        'the last draft', () async {
       final engine = await buildEngine();
-      // Scripted tools-bearing answer turns: add a todo, then answer
-      // prematurely (one todo still open), then mark it done, then the real
-      // final answer.
+      // Two answer drafts; the first confirmation says CONTINUE (re-enter), the
+      // second says DONE (exit). The winning answer is the second draft.
       substrate.answerTurns = <_Turn>[
-        _Turn.tools(<_ProposedCall>[_call('todo.add', {'text': 'step one'})]),
-        _Turn.text('partial — still working on step one'),
-        _Turn.tools(
-            <_ProposedCall>[_call('todo.update', {'id': 't1', 'done': true})]),
-        _Turn.text('final answer once every todo is done'),
+        _Turn.text('draft one'),
+        _Turn.text('draft two'),
       ];
+      substrate.confirmationVerdicts = <String>['CONTINUE', 'DONE'];
 
       final outcome =
           await runMemory(engine, 'do a two-step task', sessionId: 's-mem');
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      // The premature 'partial' answer must NOT win — the loop kept going
-      // because a todo was still open (this is the assertion the current
-      // stop-on-no-tool loop fails: it returns 'partial').
+      // The CONTINUE kept the loop going — the first draft must NOT win.
       expect(
         outcome.result!.output<String>('answer'),
-        'final answer once every todo is done',
+        'draft two',
       );
-      // And no todo is left open at the end.
-      expect(openTodos(engine, 's-mem'), isEmpty,
-          reason: 'termination requires every todo done');
+      // The model was asked to confirm completion once per draft.
+      expect(substrate.confirmationCount, 2,
+          reason: 'one are-you-done confirmation per draft');
+    });
+
+    test('a DONE confirmation on the first pass exits immediately', () async {
+      final engine = await buildEngine();
+      substrate.answerTurns = <_Turn>[_Turn.text('the only answer')];
+      substrate.confirmationVerdicts = <String>['DONE'];
+
+      final outcome =
+          await runMemory(engine, 'a one-shot task', sessionId: 's-once');
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(outcome.result!.output<String>('answer'), 'the only answer');
+      expect(substrate.confirmationCount, 1);
+    });
+
+    test('the confirmation prompt presents the live todo list', () async {
+      final engine = await buildEngine();
+      substrate.answerTurns = <_Turn>[_Turn.text('done answer')];
+      substrate.confirmationVerdicts = <String>['DONE'];
+      // Seed an open session todo; it must surface in the confirmation prompt so
+      // the model can reason over the live task list (§ 3.1 revision).
+      engine.sessionTodoStores.forSession('s-list').add('write the report');
+
+      await runMemory(engine, 'task with an open todo', sessionId: 's-list');
+
+      expect(substrate.confirmationPrompts, isNotEmpty);
+      expect(substrate.confirmationPrompts.last, contains('write the report'),
+          reason: 'the confirmation must present the live todo list as evidence');
     });
   });
 
-  group('T2 todo-based termination — thinking path (§ 3 / § 6.2)', () {
+  group('T2 completion-confirmation — thinking path (§ 3 / § 6.2)', () {
     test(
-        'an ACCEPT critique does not terminate while a session todo is open; '
-        'the loop exits once todos are clear and the critique accepts',
-        () async {
+        'an ACCEPT reaches the confirmation gate; a CONTINUE re-enters and a DONE '
+        'terminates', () async {
       seedRecall();
       substrate.thinkingMode = true;
+      // Both critiques accept; the first confirmation continues (re-enter), the
+      // second finishes.
       substrate.evaluatorVerdicts = <String>['ACCEPT', 'ACCEPT'];
+      substrate.confirmationVerdicts = <String>['CONTINUE', 'DONE'];
 
       final engine = await buildEngine();
-      // Pre-seed one open todo for this session. The thinking loop must read
-      // it and refuse to terminate on the first ACCEPT.
-      engine.sessionTodoStores.forSession('s-think').add('finish the analysis');
-      // Simulate the act stage completing the work on the second iteration:
-      // when the second synthesis draft is produced, mark every session todo
-      // done so the loop can then terminate. (One synthesis draft per
-      // iteration, so this is robust to the evaluator's call cadence.)
-      substrate.onSynthesis = (int draftCount) {
-        if (draftCount >= 2) {
-          final store = engine.sessionTodoStores.peek('s-think')!;
-          for (final e in store.list()) {
-            store.update(e.id, done: true);
-          }
-        }
-      };
-
       final outcome =
           await runThinking(engine, 'reflect on memory', sessionId: 's-think');
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      // Two synthesis passes: iter 1 ACCEPT had an open todo (re-enter); iter 2
-      // ACCEPT with the todo cleared terminates. The current loop, which exits
-      // on the first ACCEPT, produces only one draft.
+      // Two synthesis passes: iter 1 ACCEPT → CONTINUE (re-enter); iter 2 ACCEPT
+      // → DONE (terminate).
       expect(substrate.synthCount, 2,
-          reason: 'the open todo blocks the first ACCEPT from terminating');
+          reason: 'the CONTINUE confirmation re-enters after the first ACCEPT');
+      expect(substrate.confirmationCount, 2,
+          reason: 'the confirmation runs once per ACCEPT');
       expect(outcome.result!.output<String>('answer'), substrate.draftFor(2));
       expect(outcome.result!.output<bool>('incomplete'), isFalse);
-      expect(openTodos(engine, 's-think'), isEmpty);
     });
   });
 
-  group('T3 empty-todo bootstrap (§ 3.2 / § 6.3)', () {
+  group('T3 bootstrap (§ 3.2 / § 6.3)', () {
     test('a trivial prompt that seeds no todos still produces an answer',
         () async {
-      // Non-regression guard: the new bootstrap (§ 3.2 seeds an implicit todo)
-      // must NOT let `_openTodoCount() == 0` short-circuit before any answer is
-      // produced. Green both before and after the migration — it protects the
-      // trivial case the todo-based exit could otherwise break.
+      // Non-regression guard: a trivial prompt is answered once and the DONE
+      // confirmation exits — never silent.
       final engine = await buildEngine();
       substrate.answerTurns = <_Turn>[_Turn.text('hi there')];
+      substrate.confirmationVerdicts = <String>['DONE'];
 
       final outcome = await runMemory(engine, 'hello', sessionId: 's-boot');
 
@@ -251,56 +263,48 @@ void main() {
     });
   });
 
-  group('T4 investigation pushes missing work as todos (§ 6.4)', () {
-    test('a REJECT critique records at least one open todo and re-enters',
-        () async {
+  group('T4 a REJECT records missing work and re-enters directly (§ 6.4)', () {
+    test(
+        'a REJECT critique records at least one open todo and re-enters without '
+        'asking for confirmation', () async {
       seedRecall();
       substrate.thinkingMode = true;
+      // First critique rejects (re-enter directly), second accepts; the post-
+      // ACCEPT confirmation finishes.
       substrate.evaluatorVerdicts = <String>['REJECT', 'ACCEPT'];
+      substrate.confirmationVerdicts = <String>['DONE'];
 
       final engine = await buildEngine();
-      // Once the rejection has pushed its missing pieces as todos and the loop
-      // re-enters, simulate the act stage completing them on the second draft
-      // so the run can terminate.
-      substrate.onSynthesis = (int draftCount) {
-        if (draftCount >= 2) {
-          final store = engine.sessionTodoStores.peek('s-reject');
-          if (store != null) {
-            for (final e in store.list()) {
-              store.update(e.id, done: true);
-            }
-          }
-        }
-      };
-
-      final outcome =
-          await runThinking(engine, 'work the backup topology', sessionId: 's-reject');
+      final outcome = await runThinking(engine, 'work the backup topology',
+          sessionId: 's-reject');
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      // The REJECT investigation fed its missing pieces back as todos — the
-      // mechanism that lets "investigate the last answer" drive the todo-based
-      // termination. The current loop re-enters on REJECT but records no todo,
-      // so this store is empty against the shipped artifact.
+      // The REJECT investigation fed its missing pieces back as a session todo —
+      // tracked open work, even though termination no longer gates on it.
       final store = engine.sessionTodoStores.peek('s-reject');
       expect(store, isNotNull,
           reason: 'the rejection created a session todo for its missing pieces');
       expect(store!.list(), isNotEmpty,
           reason: 'at least one todo was pushed by the REJECT investigation');
+      // Re-entered after the REJECT; produced a second draft.
       expect(substrate.synthCount, greaterThanOrEqualTo(2),
-          reason: 'the loop re-entered to work the pushed todo');
+          reason: 'the REJECT re-entered to redraft');
+      // Confirmation runs only after an ACCEPT — once here, not after the REJECT.
+      expect(substrate.confirmationCount, 1,
+          reason: 'the REJECT re-enters directly; only the ACCEPT confirms');
     });
   });
 
   group('T5 wall-clock runaway-stop (§ 3.3 / § 6.5)', () {
     test(
-      'with the deadline tripped and an open todo, the loop exits incomplete '
-      'with a non-empty answer (never silent)',
+      'with the deadline tripped, the loop exits incomplete with a non-empty '
+      'answer (never silent)',
       () async {
         // Intended contract once a body-readable deadline primitive exists:
         //   - force the deadline into the past;
-        //   - script a loop that never clears its open todo;
+        //   - script a loop that always answers CONTINUE;
         //   - assert the run still returns a non-empty answer with
-        //     incomplete == true (the only non-todo exit, § 3.3).
+        //     incomplete == true (the only non-confirmation exit, § 3.3).
         // Cannot be driven today: the cognition layer has no clock primitive,
         // so the body cannot gracefully observe `_deadlineTripped()`. Tracked
         // in open_topics.tom_brain.md.
@@ -315,13 +319,12 @@ void main() {
     test('the assembled prompt teaches the todo.* tools', () async {
       final engine = await buildEngine();
       substrate.answerTurns = <_Turn>[_Turn.text('plain answer')];
+      substrate.confirmationVerdicts = <String>['DONE'];
 
       await runMemory(engine, 'hello', sessionId: 's-prompt');
 
       // The reminder the request mandates: the prompt must name the todo tools
       // (with a worked sample the model can copy parameter names from, § 9.1).
-      // The current `_assemblePrompt` renders only the passed-in catalogue and
-      // says nothing about todos, so both substrings are absent today.
       final prompt = substrate.toolBearingPrompts.last.toLowerCase();
       expect(prompt, contains('todo.add'),
           reason: 'the prompt must instruct the model to seed todos');
@@ -331,18 +334,17 @@ void main() {
   });
 }
 
-_ProposedCall _call(String name, Map<String, Object?> args) =>
-    _ProposedCall(name, args);
-
 // ── A scripted, role-aware + tool-capable substrate double ──────────
 //
 // Memory mode (default): tools-bearing `assistant_to_user` turns consume
 // [answerTurns] in order — each is either a list of proposed tool calls or a
 // plain answer. Thinking mode: tool-less `assistant_to_user` synthesis returns
 // a fresh `draft #N` and fires [onSynthesis]; the `evaluator` role drives
-// ACCEPT / REJECT off [evaluatorVerdicts]. All other roles (the recall
-// conductor, analyser, sub_thinker) return harmless canned text the loop
-// degrades gracefully on (PE-6).
+// ACCEPT / REJECT off [evaluatorVerdicts]. The completion-confirmation call
+// (`assistant_to_user`, no tools, keyed off [_confirmationSentinel]) is answered
+// from [confirmationVerdicts]. All other roles (the recall conductor, analyser,
+// sub_thinker) return harmless canned text the loop degrades gracefully on
+// (PE-6).
 class _ScriptedSubstrate implements TomBrainSubstrateClient {
   /// When true, `assistant_to_user` calls are thinking-path synthesis drafts
   /// (tool-less) rather than memory-path tools-bearing answer turns.
@@ -357,6 +359,18 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
   List<String> evaluatorVerdicts = <String>['ACCEPT'];
   String defaultVerdict = 'ACCEPT';
   int _evalIdx = 0;
+
+  /// Completion-confirmation verdicts (`DONE` / `CONTINUE`), in order;
+  /// [defaultConfirmation] once exhausted (the never-hang default is `DONE`).
+  List<String> confirmationVerdicts = <String>['DONE'];
+  String defaultConfirmation = 'DONE';
+  int _confIdx = 0;
+
+  /// The prompts of every completion-confirmation call, in order.
+  final List<String> confirmationPrompts = <String>[];
+
+  /// How many completion-confirmation calls were issued.
+  int get confirmationCount => confirmationPrompts.length;
 
   /// Fired with the 1-based synthesis draft count each time a thinking-mode
   /// synthesis draft is produced — the seam a test uses to simulate the act
@@ -384,6 +398,8 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
     final role = call.roleId;
     _byRole[role] = (_byRole[role] ?? 0) + 1;
     final hasTools = call.options.toolCatalogue.isNotEmpty;
+    final promptInput = call.inputs['prompt'];
+    final prompt = promptInput is String ? promptInput : '';
 
     if (role == 'evaluator') {
       final idx = _evalIdx++;
@@ -393,8 +409,22 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
     }
 
     if (role == 'assistant_to_user') {
+      // The completion-confirmation call (`sub.llm`, no tools): keyed off the
+      // confirmation sentinel so it is never mistaken for a synthesis draft or
+      // an answer turn. Matched as a prefix (the raw question is passed verbatim)
+      // so a re-entry's answer/synthesis prompt — which embeds the prior
+      // confirmation turn in its history — is not mis-detected. Detected before
+      // the answer/synthesis routing.
+      if (prompt.trimLeft().startsWith(_confirmationSentinel)) {
+        confirmationPrompts.add(prompt);
+        final idx = _confIdx++;
+        final verdict = idx < confirmationVerdicts.length
+            ? confirmationVerdicts[idx]
+            : defaultConfirmation;
+        return _text(verdict);
+      }
       if (!thinkingMode && hasTools) {
-        toolBearingPrompts.add(call.inputs['prompt']! as String);
+        toolBearingPrompts.add(prompt);
         return _consumeAnswerTurn();
       }
       // Thinking-path synthesis (tool-less): a fresh draft per iteration.
@@ -411,23 +441,7 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
     if (_answerIdx >= answerTurns.length) {
       return _text('done');
     }
-    final turn = answerTurns[_answerIdx++];
-    final calls = turn.calls;
-    if (calls != null) {
-      final events = <LlmStreamEvent>[];
-      var i = 0;
-      for (final c in calls) {
-        events.add(LlmStreamToolCallProposed(
-          callId: 'c',
-          toolCallId: 'tc${i++}',
-          toolName: c.name,
-          arguments: c.args,
-        ));
-      }
-      events.add(_completed());
-      return Stream<LlmStreamEvent>.fromIterable(events);
-    }
-    return _text(turn.text!);
+    return _text(answerTurns[_answerIdx++].text);
   }
 
   String _cannedFor(String role) {
@@ -477,22 +491,12 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
       super.noSuchMethod(invocation);
 }
 
-/// One scripted memory-path answer turn: either [calls] (a tool-proposing
-/// turn) or [text] (a plain answer). Exactly one is non-null.
+/// One scripted memory-path answer turn — the plain-answer [text] the inner
+/// `tool_loop_v1` cycle returns for one `sub.run`.
 class _Turn {
-  _Turn.tools(this.calls) : text = null;
-  _Turn.text(this.text) : calls = null;
+  _Turn.text(this.text);
 
-  final List<_ProposedCall>? calls;
-  final String? text;
-}
-
-/// A single proposed tool call in a scripted [_Turn].
-class _ProposedCall {
-  _ProposedCall(this.name, this.args);
-
-  final String name;
-  final Map<String, Object?> args;
+  final String text;
 }
 
 // ── A consolidated stateful `TomBrainMemory` (the gt1 / d42 shape) ───

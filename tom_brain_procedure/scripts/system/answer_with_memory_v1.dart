@@ -18,7 +18,7 @@
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: incomplete, type: bool }
-/// requires: [ runProcedure, run, embed, classify, persist, edge, stack.push, note, tool.invoke ]
+/// requires: [ runProcedure, run, llm, embed, classify, persist, edge, stack.push, note, tool.invoke ]
 //
 // answer_with_memory_v1 — the prototype's one real system procedure
 // (`prototype_implementation_plan.md` D.10 / D.36–D.42;
@@ -155,17 +155,26 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 
   // Step 2 — answer the user through the registered prompt, running the inner
   // tool-calling loop (`tool_loop_v1`, delegated by `sub.run`) under
-  // **todo-based termination** as the outer loop (§ 7.2 / agent-loop completion
-  // plan § 3). Each `sub.run` resolves the prompt afresh: the template renders
-  // the recall, the prior turns, the user prompt and — on a re-entry — the
-  // open-todo reminder, then the inner loop runs to a plain answer (or
-  // `max_tool_loops` exhaustion). Termination is decided here, *after* the
-  // answer, against the live session todo store: finished iff zero open todos.
+  // **LLM-driven completion confirmation** as the outer loop (§ 7.2 /
+  // agent-loop completion plan § 3, revision 2026-06-14). Each `sub.run`
+  // resolves the prompt afresh: the template renders the recall, the prior
+  // turns, the user prompt and — on a re-entry — a continue reminder, then the
+  // inner loop runs to a plain answer (or `max_tool_loops` exhaustion).
   //
-  // `history` accumulates the drafts across outer iterations so a re-entry sees
-  // what was already said (the "accumulating iteration history" of § 6); it
-  // starts as the dispatcher-threaded `priorTurns` and grows by one
-  // `{user, assistant}` turn per pass.
+  // Termination is no longer a mechanical open-todo count: after each draft the
+  // loop asks the model — in its **normal `assistant_to_user` profile**, the same
+  // persona/session that answers the user — whether this is the final answer
+  // (`DONE`) or whether work still remains (`CONTINUE`), **presenting the live
+  // todo list as evidence**. The confirmation turn streams to the *thinking*
+  // channel (§ 9.2), so its `DONE`/`CONTINUE` text is an out-of-band notice and
+  // never leaks into the user-visible answer. On `CONTINUE` the draft and the
+  // are-you-done exchange are folded into `history` and the loop re-enters; on
+  // `DONE` (or any non-`CONTINUE`, the never-hang default) it exits.
+  //
+  // `history` accumulates the drafts and confirmation exchanges across outer
+  // iterations so a re-entry sees what was already said and why it is continuing
+  // (the "accumulating iteration history" of § 6); it starts as the
+  // dispatcher-threaded `priorTurns` and grows per pass.
   final history = <Object?>[];
   if (priorTurns is List) history.addAll(priorTurns);
 
@@ -187,14 +196,20 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       answer = answerText;
     }
 
-    final open = await _openTodoCount();
-    finished = open == 0;
+    // Completion confirmation — ask the model, presenting its live todo list,
+    // whether the work is done. The reply text is captured both to decide
+    // termination and to record the exchange in history on a continue.
+    final todoList = await _renderTodoList();
+    final question = _confirmationQuestion(text, todoList);
+    final reply = await _confirmCompletion(question);
+    finished = _isFinished(reply);
     if (!finished) {
-      // Open todos remain — this draft is not final. Carry the draft into the
-      // accumulating history and fold an "open todos remain" reminder into the
-      // next pass's prompt, then re-enter (§ 3.1).
+      // The model wants to keep going. Record the draft and the are-you-done
+      // exchange as ordinary chat turns, fold a continue reminder into the next
+      // pass's prompt, then re-enter (§ 3.1 revision).
       history.add(<String, Object?>{'user': text, 'assistant': answer});
-      reminder = _openTodoReminderText(open);
+      history.add(<String, Object?>{'user': question, 'assistant': reply});
+      reminder = _continueReminderText();
     }
   }
 
@@ -308,37 +323,83 @@ bool _isRepeatPrompt(Object? recall, Object? text) {
   return false;
 }
 
-/// Counts the open (`done != true`) entries in the live session todo store via
-/// the `todo.list` tool — the single source of truth the outer loop terminates
-/// on (§ 3.1). `tool.invoke('todo.list', {})` returns
-/// `{ok, result: {todos: […]}}`, each todo a `{id, text, done}` map. A
-/// malformed or failed listing counts as zero open, so the loop then terminates
-/// on the answer already in hand — the never-silent contract (§ 3.4), never a
-/// hang.
+/// Renders the live session todo store as a human-readable checklist for the
+/// completion-confirmation turn (§ 3.1 revision). `tool.invoke('todo.list', {})`
+/// returns `{ok, result: {todos: […]}}`, each todo a `{id, text, done}` map;
+/// each is rendered as `[x]`/`[ ] <text>`. A malformed or empty listing renders
+/// the explicit "empty" line, so the confirmation turn always has a concrete
+/// task list to reason over (never a silent gap).
 //
 // Keep in sync with answer_with_thinking_v1.
-Future<int> _openTodoCount() async {
+Future<String> _renderTodoList() async {
   final Object? listed = await tool.invoke('todo.list', <String, Object?>{});
-  if (listed is! Map) return 0;
+  if (listed is! Map) return _emptyTodoList;
   final result = listed['result'];
-  if (result is! Map) return 0;
+  if (result is! Map) return _emptyTodoList;
   final todos = result['todos'];
-  if (todos is! List) return 0;
-  var open = 0;
+  if (todos is! List || todos.isEmpty) return _emptyTodoList;
+  final lines = <String>[];
   for (final entry in todos) {
-    if (entry is Map && entry['done'] != true) open += 1;
+    if (entry is! Map) continue;
+    final box = entry['done'] == true ? '[x]' : '[ ]';
+    lines.add('$box ${entry['text']}');
   }
-  return open;
+  return lines.isEmpty ? _emptyTodoList : lines.join('\n');
 }
 
-/// The "open todos remain" reminder folded into the next pass's prompt (via the
-/// `open_todo_reminder` template binding) when a completed `sub.run` answer
-/// arrives with work still outstanding (§ 3.1), so the next pass keeps going
-/// rather than treating the draft as the final answer.
-String _openTodoReminderText(int open) {
-  return 'You still have $open open todo(s). You are not finished until every '
-      'todo is marked done with todo.update. Continue the work, or mark the '
-      'remaining todos done if they are already complete.';
+/// The rendered task list shown when the session store holds no todos.
+const String _emptyTodoList = '(your task list is currently empty)';
+
+/// Builds the completion-confirmation prompt (§ 3.1 revision): it presents the
+/// user request and the live [todoList] and asks the model — in its normal
+/// `assistant_to_user` profile — to declare `DONE` or `CONTINUE`. The first-word
+/// contract makes `_isFinished` cheap and unambiguous.
+//
+// Keep in sync with answer_with_thinking_v1.
+String _confirmationQuestion(Object? text, String todoList) {
+  return 'You have just produced an answer for the user. Before it is delivered, '
+      'confirm whether your work is complete.\n\n'
+      'The user asked:\n$text\n\n'
+      'Your current task list:\n$todoList\n\n'
+      'If your latest answer fully satisfies the request and no task still needs '
+      'doing, reply with DONE as the first word. If there is still work to do '
+      '(an open task, or the answer is incomplete), reply with CONTINUE as the '
+      'first word, then one sentence on what remains.';
+}
+
+/// Issues the confirmation turn through the substrate in the normal
+/// `assistant_to_user` profile, routed to the **thinking** channel (§ 9.2) so its
+/// `DONE`/`CONTINUE` text surfaces as an out-of-band notice and never reaches the
+/// user-visible answer. Returns the reply text (`''` on a non-string result).
+//
+// Keep in sync with answer_with_thinking_v1.
+Future<String> _confirmCompletion(String question) async {
+  final Object? completion =
+      await sub.llm(question, role: 'assistant_to_user', channel: 'thinking');
+  if (completion is! Map) return '';
+  final reply = completion['text'];
+  return reply is String ? reply : '';
+}
+
+/// Whether the confirmation [reply] declares the work finished (§ 3.1 revision).
+/// `CONTINUE` (as the first word, case-insensitive) keeps the loop running;
+/// everything else — `DONE`, an empty reply, or any unparseable text — finishes
+/// the loop. Defaulting ambiguity to finished is the never-hang guarantee: an
+/// unclear confirmation never spins the loop forever (the wall-clock runaway-stop
+/// is the only other exit, § 3.3).
+//
+// Keep in sync with answer_with_thinking_v1.
+bool _isFinished(String reply) {
+  return !reply.trim().toUpperCase().startsWith('CONTINUE');
+}
+
+/// The reminder folded into the next pass's prompt (via the `open_todo_reminder`
+/// template binding) after the model asked to continue, so the next answer pass
+/// knows it is resuming unfinished work rather than starting fresh.
+String _continueReminderText() {
+  return 'You indicated your previous answer was not yet complete. Review your '
+      'task list, continue the outstanding work, and mark each task done with '
+      'todo.update as you finish it.';
 }
 
 /// Collects the ids of the recalled nodes that fed the answer prompt — the

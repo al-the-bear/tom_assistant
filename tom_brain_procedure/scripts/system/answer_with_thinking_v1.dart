@@ -2,31 +2,33 @@
 /// id: answer_with_thinking_v1
 /// version: 1
 /// summary: The recursive thinking branch — analyse, sub-reason, synthesise,
-///   self-critique, and re-enter until every session todo is done and the
-///   critique accepts (todo-based termination), then persist the exchange.
+///   self-critique, and re-enter until the critique accepts AND the model
+///   confirms (presented its live todo list) that no work remains, then persist
+///   the exchange.
 /// successCriterion: a deliberation-cued prompt is answered through the
 ///   recursive loop — the loop dispatches its analyse/sub-think sub-prompts via
 ///   `sub.run`, runs an `evaluator` critique each pass (the investigation of the
-///   last answer), pushes the critique's missing pieces as session todos on
-///   REJECT, and terminates only once every session todo is done AND the
-///   critique accepts; an Event + Conclusion (+ derived_from edges to the cited
-///   recalled nodes) are persisted on exit.
+///   last answer), re-enters directly on REJECT, and on ACCEPT asks the model —
+///   in its normal `assistant_to_user` profile, presenting the live todo list —
+///   whether it is `DONE` or wants to `CONTINUE`, terminating only on `DONE`; an
+///   Event + Conclusion (+ derived_from edges to the cited recalled nodes) are
+///   persisted on exit.
 /// budget: { wallClockMs: 14400000 }
 /// # Only a wall-clock deadline (§ 5.4): a foreground user prompt is virtually
 /// # unlimited on every count dimension, exactly as `answer_with_memory_v1`.
-/// # 14400000 ms (240 min) is the spec's external default — the **only** non-todo
-/// # exit, a runaway-stop for a genuinely hung run, enforced externally by the
-/// # engine (the body cannot read the clock; agent-loop completion plan § 3.3).
-/// # Re-entry is bounded by the todo-based termination contract, not a count cap:
-/// # the loop re-enters until the session todo store is empty and the critique
-/// # accepts.
+/// # 14400000 ms (240 min) is the spec's external default — the **only**
+/// # non-confirmation exit, a runaway-stop for a genuinely hung run, enforced
+/// # externally by the engine (the body cannot read the clock; agent-loop
+/// # completion plan § 3.3). Re-entry is bounded by the completion-confirmation
+/// # contract, not a count cap: the loop re-enters while the critique rejects, or
+/// # while an accepted draft's completion-confirmation says `CONTINUE`.
 /// inputs:
 ///   - { name: text, type: String, required: true }
 ///   - { name: priorTurns, type: List, required: false }
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: incomplete, type: bool }
-/// requires: [ runProcedure, run, embed, persist, edge, tool.invoke ]
+/// requires: [ runProcedure, run, llm, embed, persist, edge, tool.invoke ]
 //
 // answer_with_thinking_v1 — the thinking branch of the entry router
 // (`tom_brain_completion_plan.md` Todo 6, gaps G-T1 / G-T4 / C-2;
@@ -86,24 +88,28 @@
 //                    the accumulating `rejectionHistory` (the increasing history
 //                    the re-entry templates fold in via `${rejection_context}`)
 //                    AND pushed as a new session todo (`tool.invoke('todo.add')`)
-//                    so there is tracked open work; on ACCEPT the loop marks the
-//                    todos *it* pushed done (the accepted draft resolved them).
-//                    The loop re-enters while any session todo is open or the
-//                    critique rejected.
+//                    so there is tracked open work; the loop then re-enters
+//                    directly. On ACCEPT the loop marks the todos *it* pushed
+//                    done (the accepted draft resolved them) and runs the
+//                    completion-confirmation gate (below).
 //
-// ── Todo-based termination + the never-silent contract (§ 3, gap-hunt § 6.5) ─
+// ── Completion-confirmation termination + the never-silent contract (§ 3) ────
 //
-// There is **no iteration cap**. Each pass computes, after the critique,
-// `open = _openTodoCount()` (the live session todo store via `tool.invoke`) and
-// `accepted = _isAccept(verdict)`, and the loop is finished iff
-// `open == 0 && accepted` — every tracked piece of work is done AND the
-// investigation accepts the draft. The single non-todo exit is the wall-clock
-// runaway-stop (§ 3.3), enforced externally by the engine: the body cannot read
-// the clock, so it loops purely on `!finished`. Because the session todo store
-// is the source of truth, a REJECT that pushes a missing-piece todo cannot be
-// "accepted away" until that work is cleared — investigation feeds termination.
+// There is **no iteration cap**. A REJECT always re-enters directly (the
+// critique is the inner gate). On ACCEPT the loop runs the **completion
+// confirmation** (§ 3.1 revision 2026-06-14): it asks the model — in its normal
+// `assistant_to_user` profile, presenting the live todo list (`_renderTodoList`)
+// — whether this is the final answer (`DONE`) or work still remains
+// (`CONTINUE`). `_isFinished` reads the first word: `CONTINUE` re-enters (the
+// draft + the are-you-done exchange join `history`), anything else (`DONE`, an
+// empty or unparseable reply — the never-hang default) finishes. The
+// confirmation turn streams to the **thinking** channel (§ 9.2), so its verdict
+// is an out-of-band notice that never leaks into the answer. The single
+// non-confirmation exit is the wall-clock runaway-stop (§ 3.3), enforced
+// externally by the engine: the body cannot read the clock, so it loops purely
+// on `!finished`.
 //
-// The body always exits with a critique-accepted, todo-clear answer, so
+// The body always exits with a critique-accepted, confirmed-complete answer, so
 // `incomplete` is always `false` here (the only `incomplete = true` source is
 // the external wall-clock runaway-stop, which is not observable in the body —
 // agent-loop plan § 3.4). A foreground prompt is therefore never answered with
@@ -160,11 +166,21 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final retrieval = await runProcedure('retrieve_for_prompt_v1', inputs);
   final recall = retrieval.output('recall');
 
-  // Todo-based termination (§ 3): no iteration cap. The loop re-enters until the
-  // live session todo store is empty AND the critique accepts the draft. The ids
-  // of the todos this loop pushed (one per REJECT, holding the critique's missing
-  // pieces) are tracked so an eventual ACCEPT can mark exactly those done — never
-  // any pre-existing session todo the act stage owns.
+  // Termination (§ 3, revision 2026-06-14): no iteration cap. The self-critique
+  // (stage D) is the inner gate — a REJECT always re-enters directly — and the
+  // **completion-confirmation** is the final gate: once the critique accepts, the
+  // loop asks the model, in its normal `assistant_to_user` profile and presenting
+  // the live todo list, whether it is really done (`DONE`) or wants to continue
+  // (`CONTINUE`). The ids of the todos this loop pushed (one per REJECT, holding
+  // the critique's missing pieces) are tracked so an ACCEPT can mark exactly
+  // those done before the confirmation sees the list — never any pre-existing
+  // session todo the act stage owns.
+  //
+  // `history` accumulates the conversation across iterations — the dispatcher's
+  // `priorTurns`, plus, on each `CONTINUE`, the draft and the are-you-done
+  // exchange — and is folded into the stage templates via `priorTurns`.
+  final history = <Object?>[];
+  history.addAll(priorTurnsList);
   var draft = '';
   // The increasing rejection history (§9): each REJECT appends the rejected
   // draft + its critique here, and the re-entry templates fold it in via
@@ -190,7 +206,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       inputs: <String, Object?>{
         'text': text,
         'recall': recall,
-        'priorTurns': List<Object?>.of(priorTurnsList),
+        'priorTurns': List<Object?>.of(history),
         'rejection_context': rejectionHistory,
       },
     );
@@ -213,7 +229,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       inputs: <String, Object?>{
         'text': text,
         'recall': recall,
-        'priorTurns': List<Object?>.of(priorTurnsList),
+        'priorTurns': List<Object?>.of(history),
         'rejection_context': rejectionHistory,
         'analysis': analysis,
         'sub_reasoning': subReasoning,
@@ -235,34 +251,48 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 
     if (accepted) {
       // The accepted draft resolved the missing pieces this loop pushed — mark
-      // exactly those done so the todo-based termination can fire. (Any other
-      // open session todo, owned by the act stage, still blocks termination.)
-      // The awaited update is hoisted into the loop body, not an argument
-      // position, to stay clear of d4rt's `x = f(await g())` mis-scoping.
+      // exactly those done so the completion-confirmation sees a cleared list
+      // for the work this loop tracked. (Any other open session todo, owned by
+      // the act stage, still surfaces in the confirmation's todo list.) The
+      // awaited update is hoisted into the loop body, not an argument position,
+      // to stay clear of d4rt's `x = f(await g())` mis-scoping.
       for (final id in pushedTodoIds) {
         await tool.invoke(
             'todo.update', <String, Object?>{'id': id, 'done': true});
+      }
+
+      // Completion confirmation (§ 3.1 revision): the critique accepted the
+      // draft, so ask the model — in its normal `assistant_to_user` profile and
+      // presenting the live todo list — whether this is the final answer
+      // (`DONE`) or work still remains (`CONTINUE`). The confirmation streams to
+      // the thinking channel (§ 9.2), so its verdict never leaks into the
+      // answer. On `CONTINUE` the accepted draft and the are-you-done exchange
+      // join `history` and the loop re-enters; on `DONE` (the never-hang
+      // default) it exits.
+      final todoList = await _renderTodoList();
+      final question = _confirmationQuestion(text, todoList);
+      final reply = await _confirmCompletion(question);
+      finished = _isFinished(reply);
+      if (!finished) {
+        history.add(<String, Object?>{'user': text, 'assistant': draft});
+        history.add(<String, Object?>{'user': question, 'assistant': reply});
       }
     } else {
       // Stage E — re-entry: append the rejected draft + its critique to the
       // accumulating rejection history so the next pass's re-entry template
       // knows what to fix, AND push the critique's missing pieces as a concrete
-      // session todo so termination cannot fire until that work is cleared. This
-      // is how "investigate the last answer" feeds the todo-based termination
-      // (§ 5.2).
+      // session todo so the work is tracked. A rejected draft always re-enters
+      // directly — the completion-confirmation gate runs only on an accepted
+      // draft — so `finished` stays false (§ 5.2).
       rejectionHistory = _appendRejection(
           rejectionHistory, iteration + 1, draft, verdict);
       final pushedId = await _pushMissingPieceTodo(verdict);
       if (pushedId.isNotEmpty) {
         pushedTodoIds.add(pushedId);
       }
+      finished = false;
     }
 
-    // Termination: finished iff no session todo is open AND the investigation
-    // accepted the draft. The wall-clock runaway-stop (§ 3.3) is the only
-    // non-todo exit and is enforced externally — not observable here.
-    final open = await _openTodoCount();
-    finished = open == 0 && accepted;
     iteration = iteration + 1;
   }
 
@@ -338,25 +368,74 @@ String _appendRejection(
   return '${history}Attempt $attempt:\nDraft:\n$draft\nCritique:\n$verdict\n\n';
 }
 
-/// Counts the open (`done != true`) entries in the live session todo store via
-/// the `todo.list` tool — the source of truth the loop terminates on (§ 3.1).
-/// `tool.invoke('todo.list', {})` returns `{ok, result: {todos: […]}}`, each
-/// todo a `{id, text, done}` map. A malformed or failed listing counts as zero
-/// open (never a hang); the loop then terminates on the accepted draft in hand.
+/// Renders the live session todo store as a human-readable checklist for the
+/// completion-confirmation turn (§ 3.1 revision). `tool.invoke('todo.list', {})`
+/// returns `{ok, result: {todos: […]}}`, each todo a `{id, text, done}` map;
+/// each is rendered as `[x]`/`[ ] <text>`. A malformed or empty listing renders
+/// the explicit "empty" line, so the confirmation turn always has a concrete
+/// task list to reason over (never a silent gap).
 //
 // Keep in sync with answer_with_memory_v1.
-Future<int> _openTodoCount() async {
+Future<String> _renderTodoList() async {
   final Object? listed = await tool.invoke('todo.list', <String, Object?>{});
-  if (listed is! Map) return 0;
+  if (listed is! Map) return _emptyTodoList;
   final result = listed['result'];
-  if (result is! Map) return 0;
+  if (result is! Map) return _emptyTodoList;
   final todos = result['todos'];
-  if (todos is! List) return 0;
-  var open = 0;
+  if (todos is! List || todos.isEmpty) return _emptyTodoList;
+  final lines = <String>[];
   for (final entry in todos) {
-    if (entry is Map && entry['done'] != true) open += 1;
+    if (entry is! Map) continue;
+    final box = entry['done'] == true ? '[x]' : '[ ]';
+    lines.add('$box ${entry['text']}');
   }
-  return open;
+  return lines.isEmpty ? _emptyTodoList : lines.join('\n');
+}
+
+/// The rendered task list shown when the session store holds no todos.
+const String _emptyTodoList = '(your task list is currently empty)';
+
+/// Builds the completion-confirmation prompt (§ 3.1 revision): it presents the
+/// user request and the live [todoList] and asks the model — in its normal
+/// `assistant_to_user` profile — to declare `DONE` or `CONTINUE`. The first-word
+/// contract makes `_isFinished` cheap and unambiguous.
+//
+// Keep in sync with answer_with_memory_v1.
+String _confirmationQuestion(Object? text, String todoList) {
+  return 'You have just produced an answer for the user. Before it is delivered, '
+      'confirm whether your work is complete.\n\n'
+      'The user asked:\n$text\n\n'
+      'Your current task list:\n$todoList\n\n'
+      'If your latest answer fully satisfies the request and no task still needs '
+      'doing, reply with DONE as the first word. If there is still work to do '
+      '(an open task, or the answer is incomplete), reply with CONTINUE as the '
+      'first word, then one sentence on what remains.';
+}
+
+/// Issues the confirmation turn through the substrate in the normal
+/// `assistant_to_user` profile, routed to the **thinking** channel (§ 9.2) so its
+/// `DONE`/`CONTINUE` text surfaces as an out-of-band notice and never reaches the
+/// user-visible answer. Returns the reply text (`''` on a non-string result).
+//
+// Keep in sync with answer_with_memory_v1.
+Future<String> _confirmCompletion(String question) async {
+  final Object? completion =
+      await sub.llm(question, role: 'assistant_to_user', channel: 'thinking');
+  if (completion is! Map) return '';
+  final reply = completion['text'];
+  return reply is String ? reply : '';
+}
+
+/// Whether the confirmation [reply] declares the work finished (§ 3.1 revision).
+/// `CONTINUE` (as the first word, case-insensitive) keeps the loop running;
+/// everything else — `DONE`, an empty reply, or any unparseable text — finishes
+/// the loop. Defaulting ambiguity to finished is the never-hang guarantee: an
+/// unclear confirmation never spins the loop forever (the wall-clock runaway-stop
+/// is the only other exit, § 3.3).
+//
+// Keep in sync with answer_with_memory_v1.
+bool _isFinished(String reply) {
+  return !reply.trim().toUpperCase().startsWith('CONTINUE');
 }
 
 /// Pushes the critique's "missing pieces" as one session todo (`todo.add`) and
