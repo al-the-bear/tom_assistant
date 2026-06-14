@@ -58,7 +58,7 @@ class _FakeAgentSdkTransport extends AgentSdkTransport {
 }
 
 const _wire = WirePrompt(
-  body: 'ANCHOR\n\nWhat is the capital of France?',
+  system: 'ANCHOR\n\nWhat is the capital of France?',
   anchorHash: 'anchor-hash-A1',
   roleId: 'assistant_to_user',
   templateSha: 'template-sha-T1',
@@ -153,7 +153,7 @@ void main() {
       expect(report.anchorHash, 'anchor-hash-A1');
       expect(report.providerId, 'claude:sonnet:none');
       expect(report.modelId, 'claude-sonnet-4-6');
-      expect(report.promptHash, promptSha256(_wire.body));
+      expect(report.promptHash, promptSha256(_wire.combined));
       expect(report.templateSha, 'template-sha-T1');
       expect(report.tokensIn, 88);
       expect(report.tokensOut, 40);
@@ -173,10 +173,10 @@ void main() {
       expect(completed.report.modelId, 'claude-opus-4-8');
     });
 
-    test('wire body is handed to the SDK unmodified, no session id set',
+    test('wire prompt is handed to the SDK unmodified, no session id set',
         () async {
       await provider.completeStream(_wire, LlmOptions.empty).toList();
-      expect(transport.lastPrompt, _wire.body);
+      expect(transport.lastPrompt, _wire.combined);
       // Mode none: never a `resume` / `sessionId` on the SDK options.
       expect(transport.lastOptions, isNotNull);
       expect(transport.lastOptions!.containsKey('resume'), isFalse);

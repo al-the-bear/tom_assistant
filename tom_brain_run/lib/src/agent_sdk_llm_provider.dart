@@ -35,8 +35,11 @@
 // ── Anchor invariant (§ 1.1; Postulate 3 / spec § 4.1) ──
 //
 // The role registry has already prepended the assistant-dedication anchor into
-// `WirePrompt.body`. The provider sends `wire.body` to Claude Code **unmodified**
-// (as the `query` prompt) and stamps `report.anchorHash = wire.anchorHash` on
+// `WirePrompt.system` (which leads `WirePrompt.combined`). The agent SDK has no
+// native system/user channel split for the query input, so the provider sends
+// `wire.combined` to Claude Code **unmodified** (as the `query` prompt — the
+// WirePrompt no-native-separation path, step 4 / D7.1) and stamps
+// `report.anchorHash = wire.anchorHash` on
 // every report, exactly like the HTTP providers. Claude Code's own system prompt
 // is additive context, never a replacement for the anchor — so `Options.systemPrompt`
 // is left at its append/preset default and is never set to `override`.
@@ -193,7 +196,11 @@ final class AgentSdkLlmProvider implements LlmProvider {
         // `resume` is the only session knob set. When null, `Options.toJson`
         // omits the key, so mode `none` sends no session id at all.
         // `systemPrompt` is left at the SDK default so Claude Code's own system
-        // prompt stays additive and never overrides the anchored `wire.body`.
+        // prompt stays additive and never overrides the anchored prompt. The
+        // agent SDK has no native system/user channel split for the query
+        // input, so the whole anchored prompt is sent as one string via
+        // `wire.combined` (the WirePrompt no-native-separation path — see step
+        // 4 / D7.1).
         resume: resumeId,
       );
 
@@ -201,9 +208,10 @@ final class AgentSdkLlmProvider implements LlmProvider {
       Object? caught;
       try {
         final client = await _client();
-        // `wire.body` carries the assistant-dedication anchor verbatim and is
-        // handed to Claude Code unmodified.
-        final query = client.query(prompt: prompt.body, options: sdkOptions);
+        // `wire.combined` carries the assistant-dedication anchor verbatim (the
+        // anchor leads `wire.system`, which leads `combined`) and is handed to
+        // Claude Code unmodified.
+        final query = client.query(prompt: prompt.combined, options: sdkOptions);
         await for (final message in query) {
           if (message is SdkAssistantMessage) {
             for (final block in message.content) {
@@ -357,7 +365,7 @@ final class AgentSdkLlmProvider implements LlmProvider {
       providerId: id,
       modelId: modelId,
       anchorHash: prompt.anchorHash,
-      promptHash: promptSha256(prompt.body),
+      promptHash: promptSha256(prompt.combined),
       tokensIn: tokensIn,
       tokensOut: tokensOut,
       retries: 0,
@@ -373,9 +381,9 @@ final class AgentSdkLlmProvider implements LlmProvider {
       (usage?[key] as num?)?.toInt() ?? 0;
 
   /// A per-call id unique enough for trail correlation:
-  /// `agentsdk-<id>-<micros>-<32-bit body hash>`.
+  /// `agentsdk-<id>-<micros>-<32-bit prompt hash>`.
   String _newCallId(WirePrompt prompt) {
     final now = DateTime.now().microsecondsSinceEpoch;
-    return 'agentsdk-$id-$now-${prompt.body.hashCode.toUnsigned(32)}';
+    return 'agentsdk-$id-$now-${prompt.combined.hashCode.toUnsigned(32)}';
   }
 }

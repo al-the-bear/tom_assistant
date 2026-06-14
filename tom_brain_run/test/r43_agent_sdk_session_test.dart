@@ -66,7 +66,7 @@ class _ScriptedAgentSdkTransport extends AgentSdkTransport {
 }
 
 const _wire = WirePrompt(
-  body: 'ANCHOR\n\nWhat is the capital of France?',
+  system: 'ANCHOR\n\nWhat is the capital of France?',
   anchorHash: 'anchor-hash-A1',
   roleId: 'assistant_to_user',
   templateSha: 'template-sha-T1',
