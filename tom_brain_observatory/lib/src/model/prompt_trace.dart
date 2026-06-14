@@ -146,11 +146,24 @@ final class ConfigEntry {
   /// The memory profile the call ran under, when the raw dump carried one.
   final String? profile;
 
+  /// The generation knobs the call ran with (§ 4.5), reconstructed from the raw
+  /// dump beside provider/model. `null` ⇒ the brain left the knob at the
+  /// provider / role default; [stopSequences] is empty when the call pinned
+  /// none. These are display detail, *not* tuple identity: de-duplication keys
+  /// on (role, provider, model, profile) only — a role runs with stable knobs,
+  /// so the first-seen call's settings represent it (§ 3.4 / § 4.3).
+  final double? temperature;
+  final int? maxOutputTokens;
+  final List<String> stopSequences;
+
   const ConfigEntry({
     required this.role,
     required this.provider,
     required this.model,
     this.profile,
+    this.temperature,
+    this.maxOutputTokens,
+    this.stopSequences = const <String>[],
   });
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -158,6 +171,9 @@ final class ConfigEntry {
         'provider': provider,
         'model': model,
         if (profile != null) 'profile': profile,
+        if (temperature != null) 'temperature': temperature,
+        if (maxOutputTokens != null) 'maxOutputTokens': maxOutputTokens,
+        if (stopSequences.isNotEmpty) 'stopSequences': stopSequences,
       };
 
   @override

@@ -184,4 +184,34 @@ void main() {
       );
     });
   });
+
+  group('ConfigEntry.fromJson (§4.5 generation knobs)', () {
+    test('decodes the knobs when the entry carries them', () {
+      final entry = ConfigEntry.fromJson(jsonDecode('''
+        {
+          "role": "recall_planner", "provider": "local", "model": "m",
+          "temperature": 0.2, "maxOutputTokens": 256, "stopSequences": ["STOP"]
+        }
+      ''') as Map<String, dynamic>);
+      expect(entry.temperature, 0.2);
+      expect(entry.maxOutputTokens, 256);
+      expect(entry.stopSequences, <String>['STOP']);
+    });
+
+    test('absent knobs decode to null / empty stop set', () {
+      final entry = ConfigEntry.fromJson(jsonDecode('''
+        {"role": "assistant_to_user", "provider": "local", "model": "m"}
+      ''') as Map<String, dynamic>);
+      expect(entry.temperature, isNull);
+      expect(entry.maxOutputTokens, isNull);
+      expect(entry.stopSequences, isEmpty);
+    });
+
+    test('an integer temperature widens to a double', () {
+      final entry = ConfigEntry.fromJson(jsonDecode('''
+        {"role": "r", "provider": "local", "model": "m", "temperature": 1}
+      ''') as Map<String, dynamic>);
+      expect(entry.temperature, 1.0);
+    });
+  });
 }

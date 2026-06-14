@@ -109,11 +109,22 @@ class ConfigEntry {
   final String model;
   final String? profile;
 
+  /// The generation knobs this role ran with (§ 4.5), reconstructed server-side
+  /// from the role's raw dump. `null` ⇒ left at the provider / role default;
+  /// [stopSequences] is empty when none were pinned. The contract omits these
+  /// keys when absent (§ 3.1), so they decode to `null` / an empty set.
+  final double? temperature;
+  final int? maxOutputTokens;
+  final List<String> stopSequences;
+
   const ConfigEntry({
     required this.role,
     required this.provider,
     required this.model,
     required this.profile,
+    this.temperature,
+    this.maxOutputTokens,
+    this.stopSequences = const <String>[],
   });
 
   factory ConfigEntry.fromJson(Map<String, dynamic> json) => ConfigEntry(
@@ -121,6 +132,13 @@ class ConfigEntry {
         provider: json['provider'] as String,
         model: json['model'] as String,
         profile: json['profile'] as String?,
+        temperature: (json['temperature'] as num?)?.toDouble(),
+        maxOutputTokens: json['maxOutputTokens'] as int?,
+        stopSequences: <String>[
+          for (final s in (json['stopSequences'] as List<dynamic>? ??
+              const <dynamic>[]))
+            s as String,
+        ],
       );
 }
 

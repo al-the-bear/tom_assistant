@@ -45,6 +45,13 @@ Configuration buildConfiguration({
         model: decoded['model'] as String? ?? 'unknown',
         profile: decoded['profile'] as String? ??
             decoded['memoryProfile'] as String?,
+        temperature: (decoded['temperature'] as num?)?.toDouble(),
+        maxOutputTokens: decoded['maxOutputTokens'] as int?,
+        stopSequences: <String>[
+          for (final s in (decoded['stopSequences'] as List<Object?>? ??
+              const <Object?>[]))
+            s as String,
+        ],
       ));
     }
   }

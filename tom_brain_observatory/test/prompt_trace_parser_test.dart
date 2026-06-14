@@ -42,6 +42,35 @@ void main() {
       );
     });
 
+    test('configuration carries the generation knobs from the raw dump', () {
+      final planner = trace.configuration.entries
+          .firstWhere((e) => e.role == 'recall_planner');
+      expect(planner.temperature, 0.2);
+      expect(planner.maxOutputTokens, 256);
+      expect(planner.stopSequences, <String>['STOP']);
+      // The assistant_to_user dump pins no knobs → defaults (null / empty).
+      final answerer = trace.configuration.entries
+          .firstWhere((e) => e.role == 'assistant_to_user');
+      expect(answerer.temperature, isNull);
+      expect(answerer.maxOutputTokens, isNull);
+      expect(answerer.stopSequences, isEmpty);
+    });
+
+    test('toJson emits present knobs and omits absent ones', () {
+      final entries =
+          (trace.toJson()['configuration'] as Map)['entries'] as List;
+      final planner = entries
+          .firstWhere((e) => (e as Map)['role'] == 'recall_planner') as Map;
+      expect(planner['temperature'], 0.2);
+      expect(planner['maxOutputTokens'], 256);
+      expect(planner['stopSequences'], <String>['STOP']);
+      final answerer = entries
+          .firstWhere((e) => (e as Map)['role'] == 'assistant_to_user') as Map;
+      expect(answerer.containsKey('temperature'), isFalse);
+      expect(answerer.containsKey('maxOutputTokens'), isFalse);
+      expect(answerer.containsKey('stopSequences'), isFalse);
+    });
+
     test('reply joins the summary answer with the run outcome', () {
       final reply = trace.reply!;
       expect(

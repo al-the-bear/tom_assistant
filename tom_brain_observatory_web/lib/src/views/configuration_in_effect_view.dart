@@ -81,6 +81,22 @@ class ConfigChip extends StatelessWidget {
             _kv('model', entry.model),
             _kv('profile', entry.profile ?? '—'),
             _kv('role', entry.role),
+            // § 4.5 generation knobs. An unset knob reads `(default)` — the
+            // brain left it at the provider / role default; an empty stop set
+            // reads `(none)`.
+            _kv('temperature', entry.temperature?.toString() ?? '(default)'),
+            _kv(
+              'max output',
+              entry.maxOutputTokens != null
+                  ? '${entry.maxOutputTokens} tok'
+                  : '(default)',
+            ),
+            _kv(
+              'stop sequences',
+              entry.stopSequences.isEmpty
+                  ? '(none)'
+                  : entry.stopSequences.join('  '),
+            ),
           ],
         ),
         actions: <Widget>[
