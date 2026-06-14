@@ -291,6 +291,76 @@ void main() {
     });
   });
 
+  group('F.7-3b memory.write embeds policy-bearing types before persist', () {
+    test(
+        'a Conclusion embeds [statement, rationale] and persists a non-null '
+        'vector', () async {
+      final memory = _StubMemory()..nodeTypes['Conclusion'] = _conclusionDecl();
+      final embedder = _StubEmbed();
+      final ctx = _ctx(memory: memory, embedder: embedder);
+
+      await _run(
+        'memory.write',
+        {
+          'typeName': 'Conclusion',
+          'values': const {
+            'statement': 'the sky is blue',
+            'rationale': 'Rayleigh scattering',
+          },
+        },
+        ctx,
+      );
+
+      // The tool derived the embed text from the type's declared source
+      // fields, in declaration order, and persisted the resulting vector.
+      expect(embedder.embedded, hasLength(1));
+      expect(embedder.embedded.single, contains('the sky is blue'));
+      expect(embedder.embedded.single, contains('Rayleigh scattering'));
+      expect(memory.persisted, hasLength(1));
+      expect(memory.persisted.single.embedding, isNotNull);
+      expect(memory.persisted.single.embedding, embedder.vector);
+    });
+
+    test('a policy-bearing write without an embedder raises ToolSurfaceUnavailable',
+        () async {
+      final memory = _StubMemory()..nodeTypes['Conclusion'] = _conclusionDecl();
+      final ctx = _ctx(memory: memory); // no embedder
+
+      await expectLater(
+        _run(
+          'memory.write',
+          {
+            'typeName': 'Conclusion',
+            'values': const {'statement': 's', 'rationale': 'r'},
+          },
+          ctx,
+        ),
+        throwsA(isA<ToolSurfaceUnavailable>()),
+      );
+      expect(memory.persisted, isEmpty,
+          reason: 'no unembeddable draft reaches memory');
+    });
+
+    test('a type with no declared policy persists with a null embedding',
+        () async {
+      // No decl registered → getNodeType returns null → embedding-none path.
+      final memory = _StubMemory();
+      final ctx = _ctx(memory: memory); // no embedder needed
+
+      await _run(
+        'memory.write',
+        {
+          'typeName': 'Conclusion',
+          'values': const {'statement': 's'},
+        },
+        ctx,
+      );
+
+      expect(memory.persisted, hasLength(1));
+      expect(memory.persisted.single.embedding, isNull);
+    });
+  });
+
   group('F.7-4 file tools cannot escape the configured root', () {
     late Directory root;
 
@@ -698,6 +768,7 @@ ToolContext _ctx({
   TodoStore? todos,
   ToolWebSurface? web,
   ToolEngineSurface? engine,
+  ToolEmbedSurface? embedder,
 }) =>
     ToolContext(
       budget: budget ?? _uncappedLedger(),
@@ -707,6 +778,7 @@ ToolContext _ctx({
       todos: todos,
       web: web,
       engine: engine,
+      embedder: embedder,
     );
 
 BudgetLedger _uncappedLedger() =>
@@ -745,6 +817,11 @@ class _StubMemory implements TomBrainMemoryClient {
   final List<({NodeId id, DemotionReason reason})> demoted =
       <({NodeId id, DemotionReason reason})>[];
   final List<RecallQuery> recallQueries = <RecallQuery>[];
+
+  /// Node-type declarations `getNodeType` resolves against. A type absent
+  /// from this map resolves to `null` — the embedding-`none` fallback the
+  /// `memory.write` tool treats as "no vector to produce".
+  final Map<String, NodeTypeDecl> nodeTypes = <String, NodeTypeDecl>{};
   RecallResult recallReturn = RecallResult(
     nodes: const <Node>[],
     report: const RecallReport(
@@ -773,9 +850,46 @@ class _StubMemory implements TomBrainMemoryClient {
   }
 
   @override
+  Future<NodeTypeDecl?> getNodeType(String typeName) async =>
+      nodeTypes[typeName];
+
+  @override
   dynamic noSuchMethod(Invocation invocation) =>
       super.noSuchMethod(invocation);
 }
+
+/// A `ToolEmbedSurface` test double recording the texts it was asked to
+/// embed and returning a fixed vector for each.
+class _StubEmbed implements ToolEmbedSurface {
+  final List<String> embedded = <String>[];
+  final Vec vector;
+
+  _StubEmbed({Vec? vector})
+      : vector = vector ?? Vec.fromList(List<double>.filled(768, 0.5));
+
+  @override
+  Future<Vec> embed(String text) async {
+    embedded.add(text);
+    return vector;
+  }
+}
+
+/// A `Conclusion` declaration mirroring the bootstrap policy
+/// (`nomic-embed-text@v1.5`, dim 768, source fields `[statement, rationale]`).
+NodeTypeDecl _conclusionDecl() => NodeTypeDecl(
+      typeName: 'Conclusion',
+      version: BrainVersion.initial,
+      schema: const <String, FieldSpec>{},
+      embeddingPolicy: const EmbeddingPolicy(
+        modelIdentity: 'nomic-embed-text@v1.5',
+        dimensions: 768,
+        sourceFields: <String>['statement', 'rationale'],
+      ),
+      indexPolicy: IndexPolicy.indexNothing,
+      retentionPolicy: RetentionPolicy.indefinite,
+      allowedOutgoing: const <EdgeType>{},
+      allowedIncoming: const <EdgeType>{},
+    );
 
 /// A `ToolWebSurface` test double recording its calls.
 class _StubWeb implements ToolWebSurface {

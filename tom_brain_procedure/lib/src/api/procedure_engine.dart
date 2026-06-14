@@ -88,6 +88,8 @@ import '../tools/basic_tools.dart' show registerBasicTools;
 import '../tools/file_scope.dart' show FileScope;
 import '../tools/mcp_tool_source.dart' show McpToolDefinition, McpToolSource;
 import '../tools/mcp_tools.dart' show McpBrainTool;
+import '../tools/substrate_tool_embed_surface.dart'
+    show SubstrateToolEmbedSurface;
 import '../tools/substrate_tool_web_surface.dart' show SubstrateToolWebSurface;
 import '../tools/session_todo_stores.dart' show SessionTodoStores;
 import '../tools/todo_store.dart' show TodoStore;
@@ -832,6 +834,11 @@ final class ProcedureEngine {
       fileScope: toolFileScope,
       todos: runTodos,
       web: SubstrateToolWebSurface(substrateBridge.client),
+      // The `memory.write` tool embeds a policy-bearing node before persisting
+      // it (memory never embeds lazily). Wraps the raw substrate client, not the
+      // budget-charging bridge: the embedding is an internal step of the one
+      // `memoryWrites` the write already charges (PE-8).
+      embedder: SubstrateToolEmbedSurface(substrateBridge.client),
       engine: EngineToolSurface(
         resolver: resolver,
         runPrimitive: runPrimitive,

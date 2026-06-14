@@ -46,6 +46,7 @@ import 'file_scope.dart';
 import 'mcp_tool_source.dart';
 import 'todo_store.dart';
 import 'tool_dream_surface.dart';
+import 'tool_embed_surface.dart';
 import 'tool_engine_surface.dart';
 import 'tool_process_surface.dart';
 import 'tool_web_surface.dart';
@@ -90,6 +91,14 @@ final class ToolContext {
   /// route through, or `null` on a run that exposes none.
   final ToolEngineSurface? engine;
 
+  /// The optional embedding surface the `memory.write` tool uses to produce a
+  /// vector for an embedding-policy node type before persisting it (memory
+  /// never embeds lazily; `memory_specification.md` § 2.4). `null` on a run
+  /// that writes only embedding-`none` types; a `memory.write` of a
+  /// policy-bearing type without it raises `ToolSurfaceUnavailable` rather than
+  /// persisting an unembeddable draft.
+  final ToolEmbedSurface? embedder;
+
   /// The optional, allow-listed process surface the `analyze.*` / `test.*`
   /// tools route through (`creation_specification.md` § 5.2, § 5.3), or `null`
   /// on a run that exposes none. Never a raw `Process.run` handle: the surface
@@ -117,8 +126,9 @@ final class ToolContext {
 
   /// Builds the surface. [budget], [memory], and [fileScope] are required;
   /// [fileScope] enforces its own non-empty invariant. [todos] defaults to a
-  /// fresh run-scoped store; [web], [engine], [process], [vscode], [mcp], and
-  /// [dream] are supplied only when the run exposes tools that need them.
+  /// fresh run-scoped store; [web], [engine], [embedder], [process], [vscode],
+  /// [mcp], and [dream] are supplied only when the run exposes tools that need
+  /// them.
   ToolContext({
     required this.budget,
     required this.memory,
@@ -126,6 +136,7 @@ final class ToolContext {
     TodoStore? todos,
     this.web,
     this.engine,
+    this.embedder,
     this.process,
     this.vscode,
     this.mcp,

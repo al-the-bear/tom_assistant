@@ -70,7 +70,9 @@ export 'tool_policy_config.dart' show ToolPolicyConfig;
 // serves (`ToolPolicy` / `ToolPolicyConfig` switch on it).
 export 'tool_policy_profile.dart' show ToolPolicyProfile;
 export 'tool_registry.dart' show ToolRegistry;
+export 'substrate_tool_embed_surface.dart' show SubstrateToolEmbedSurface;
 export 'substrate_tool_web_surface.dart' show SubstrateToolWebSurface;
+export 'tool_embed_surface.dart' show ToolEmbedSurface;
 export 'tool_web_surface.dart' show ToolWebSurface;
 // Extension F step 13 — the VS Code extension tool merge (§ 21.8).
 export 'vscode_tool_source.dart' show VsCodeToolDefinition, VsCodeToolSource;

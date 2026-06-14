@@ -45,9 +45,11 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         Node,
         NodeDraft,
         NodeId,
+        NodeTypeDecl,
         RecallMode,
         RecallQuery,
-        Scope;
+        Scope,
+        Vec;
 
 import 'brain_tool.dart';
 import 'tool_context.dart';
@@ -222,13 +224,46 @@ final class _MemoryWriteTool extends BrainTool {
       );
     }
     final values = (args['values'] as Map).cast<String, Object?>();
+
+    // Memory never embeds lazily (`memory_specification.md` § 2.4): if the type
+    // declares an embedding policy, the *caller* — here the tool — must produce
+    // the vector, exactly as a scripted procedure does `sub.embed` before
+    // `mem.persist`. The embed text is policy-driven (the type's declared
+    // `sourceFields`, in order), so a new writable type added via
+    // `propose_node_type_v1` works without touching this tool.
+    final decl = await ctx.memory.getNodeType(typeName);
+    Vec? embedding;
+    if (decl != null && !decl.embeddingPolicy.isNone) {
+      final embedder = ctx.embedder;
+      if (embedder == null) {
+        throw ToolSurfaceUnavailable(tool: name, surface: 'embedder');
+      }
+      embedding = await embedder.embed(_embedText(decl, values));
+    }
+
     ctx.budget.check('persist');
     final id = await ctx.memory.persist(
-      NodeDraft(typeName: typeName, values: values),
+      NodeDraft(typeName: typeName, values: values, embedding: embedding),
       scope: const Scope(producer: _toolProducer),
     );
     ctx.budget.charge('persist');
     return <String, Object?>{'id': id.value};
+  }
+
+  /// Concatenates the values of [decl]'s declared embedding `sourceFields` (in
+  /// declaration order, skipping absent or empty fields) into the single string
+  /// the substrate embeds — mirroring how a scripted procedure assembles its
+  /// `sub.embed` input from the same policy fields.
+  static String _embedText(NodeTypeDecl decl, Map<String, Object?> values) {
+    final parts = <String>[];
+    for (final field in decl.embeddingPolicy.sourceFields) {
+      final value = values[field];
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isEmpty) continue;
+      parts.add(text);
+    }
+    return parts.join('\n');
   }
 }
 
