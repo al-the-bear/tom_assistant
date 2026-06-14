@@ -21,6 +21,8 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:shelf_static/shelf_static.dart';
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
+    show ProcedureValidationChain;
 
 import '../live/live_tail.dart';
 import '../memory/memory_read_client.dart';
@@ -45,9 +47,17 @@ final class TrailReadApi {
 
   /// The directory the running brain's procedure scripts live in
   /// (`scripts/system/`, § 4.6), served read-only by `GET /api/procedures/<id>`
-  /// (PT-3.1), or `null` when the observatory has no script root to expose (the
-  /// endpoint then 404s — absence is never an error, § 4.1).
+  /// (PT-3.1) and written by `PUT /api/procedures/<id>` under the authoring
+  /// guards (§ 6.3, AUTH-1…AUTH-3), or `null` when the observatory has no script
+  /// root to expose (the endpoints then 404 — absence is never an error, § 4.1).
   final Directory? scriptRoot;
+
+  /// The directory the running brain's externalized prompt files live in (a
+  /// role's `<roleId>.persona.md` / `<roleId>.objective.md`, substrate § 6),
+  /// read and written by `GET`/`PUT /api/prompts/<roleId>/<part>` under the
+  /// authoring guards (§ 6.3, AUTH-1…AUTH-3), or `null` when no prompts root is
+  /// configured (the endpoints then 404 — absence is never an error, § 4.1).
+  final Directory? promptsRoot;
 
   /// The Module-2 memory read surface (`prompt_tracing.md` § 8.4), serving
   /// `/api/memory/*` over the injected [memory] client. The client is optional:
@@ -61,8 +71,23 @@ final class TrailReadApi {
     this.listLimit = 10,
     this.webRoot,
     this.scriptRoot,
+    this.promptsRoot,
     MemoryReadClient? memory,
   }) : _memoryApi = MemoryReadApi(client: memory);
+
+  /// The closed set of writable prompt-file halves (§ 6.3, AUTH-1): a role's
+  /// persona prose and its objective prose. Anything else is refused.
+  static const Set<String> _promptParts = {'persona', 'objective'};
+
+  /// Whether a path key (a procedure id or a role id) is a single clean
+  /// segment — ASCII word characters, underscore, and dash only. Procedure and
+  /// role ids are identifiers (`answer_with_memory_v1`, `analyser`), so this
+  /// allow-list is their exact shape. It is the AUTH-2 first line: it rejects a
+  /// separator, a `..` traversal, and a percent-encoded `%2F` (which
+  /// `shelf_router` leaves undecoded, so a raw containment check alone would
+  /// treat it as a literal in-root filename) before any path is built.
+  static bool _isSafeKey(String key) =>
+      key.isNotEmpty && RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(key);
 
   /// The composed handler: `/api/*` routed to the JSON API, everything else to
   /// the static root (when [webRoot] is set) with SPA fallback.
@@ -86,7 +111,10 @@ final class TrailReadApi {
       ..get('/api/traces/<turnId>/stream', _turnStream)
       ..get('/api/traces/<turnId>', _singleTrace)
       ..get('/api/llm', _llmRaw)
-      ..get('/api/procedures/<procedureId>', _procedureScript);
+      ..get('/api/procedures/<procedureId>', _procedureScript)
+      ..put('/api/procedures/<procedureId>', _writeProcedureScript)
+      ..get('/api/prompts/<roleId>/<part>', _readPromptFile)
+      ..put('/api/prompts/<roleId>/<part>', _writePromptFile);
     _memoryApi.registerRoutes(router); // /api/memory/* (§ 8.4)
     return router;
   }
@@ -213,6 +241,131 @@ final class TrailReadApi {
       file.readAsStringSync(),
       headers: <String, String>{'content-type': 'text/plain; charset=utf-8'},
     );
+  }
+
+  /// `PUT /api/procedures/{procedureId}` — the source-authoring surface (§ 6.3,
+  /// § 8.3(8)): writes a procedure script back to
+  /// `scripts/system/<procedureId>.dart` so the running brain re-reads it on its
+  /// next run (AUTH-5; no signal, the brain pulls). The body is the verbatim
+  /// d4rt source.
+  ///
+  /// The three AUTH guards land in order:
+  ///   - AUTH-2 (containment): the same normalise + `isWithin` + `.dart` guard
+  ///     the read path uses — an id that escapes [scriptRoot] is refused `403`
+  ///     before any read or write.
+  ///   - AUTH-3 (validate-before-write): the body is run through the brain's own
+  ///     [ProcedureValidationChain] (header → sandbox → contract, LLM-free,
+  ///     executes nothing). A body with a malformed header, a sandbox violation,
+  ///     or a broken contract is rejected `422` with the findings, and the
+  ///     on-disk file is left untouched — a bad save can never reach the brain.
+  ///
+  /// `404` when [scriptRoot] is `null` (no script root configured), mirroring
+  /// the read endpoint — absence is never an error (§ 4.1).
+  Future<Response> _writeProcedureScript(
+    Request request,
+    String procedureId,
+  ) async {
+    final root = scriptRoot;
+    if (root == null) {
+      return _json(<String, Object?>{'error': 'no script root configured'},
+          status: HttpStatus.notFound);
+    }
+    final scriptsRoot = p.normalize(root.absolute.path);
+    final resolved = p.normalize(p.join(scriptsRoot, '$procedureId.dart'));
+    if (!_isSafeKey(procedureId) ||
+        !p.isWithin(scriptsRoot, resolved) ||
+        !resolved.endsWith('.dart')) {
+      return _json(<String, Object?>{'error': 'not a procedure script'},
+          status: HttpStatus.forbidden);
+    }
+    final source = await request.readAsString();
+    final validation = ProcedureValidationChain.shared.validate(source);
+    if (!validation.ok) {
+      return _json(
+        <String, Object?>{
+          'error': 'procedure validation failed',
+          'findings': <Object?>[
+            for (final finding in validation.findings) finding.toMap(),
+          ],
+        },
+        status: HttpStatus.unprocessableEntity,
+      );
+    }
+    File(resolved).writeAsStringSync(source);
+    return _json(<String, Object?>{'ok': true, 'id': procedureId});
+  }
+
+  /// `GET /api/prompts/{roleId}/{part}` — the externalized prompt-file half of
+  /// the authoring surface (§ 6.3, § 8.3(9)): the verbatim override prose of a
+  /// role's `<roleId>.<part>.md`, `part ∈ {persona, objective}`. Served
+  /// `text/plain`. `404` when no override exists — the signal the UI turns into
+  /// "create override" (§ 6.3) — or when no prompts root is configured.
+  Response _readPromptFile(Request request, String roleId, String part) {
+    final resolved = _promptFilePath(roleId, part);
+    if (resolved == null) {
+      return _json(<String, Object?>{'error': 'not a prompt file'},
+          status: promptsRoot == null
+              ? HttpStatus.notFound
+              : HttpStatus.forbidden);
+    }
+    final file = File(resolved);
+    if (!file.existsSync()) {
+      return _json(<String, Object?>{'error': 'no override for $roleId.$part'},
+          status: HttpStatus.notFound);
+    }
+    return Response.ok(
+      file.readAsStringSync(),
+      headers: <String, String>{'content-type': 'text/plain; charset=utf-8'},
+    );
+  }
+
+  /// `PUT /api/prompts/{roleId}/{part}` — writes (materialising if absent) a
+  /// role's override prose so the brain's file-backed role loader re-reads it on
+  /// the next call assembled for that role (AUTH-5). The body is the verbatim
+  /// prose.
+  ///
+  /// AUTH-2 (containment) confines the write to `<promptsRoot>/<roleId>.<part>.md`
+  /// with `part` closed to {persona, objective}; anything else is `403`. AUTH-3
+  /// for prose is a non-empty check: a blank body is rejected `422` without
+  /// touching disk. `404` when no prompts root is configured.
+  Future<Response> _writePromptFile(
+    Request request,
+    String roleId,
+    String part,
+  ) async {
+    final resolved = _promptFilePath(roleId, part);
+    if (resolved == null) {
+      return _json(<String, Object?>{'error': 'not a prompt file'},
+          status: promptsRoot == null
+              ? HttpStatus.notFound
+              : HttpStatus.forbidden);
+    }
+    final prose = await request.readAsString();
+    if (prose.trim().isEmpty) {
+      return _json(
+        <String, Object?>{'error': 'prompt prose must be non-empty'},
+        status: HttpStatus.unprocessableEntity,
+      );
+    }
+    File(resolved).writeAsStringSync(prose);
+    return _json(<String, Object?>{'ok': true, 'role': roleId, 'part': part});
+  }
+
+  /// Resolves the on-disk path of a role's `<roleId>.<part>.md` override under
+  /// [promptsRoot], or `null` when no prompts root is configured, the [part] is
+  /// not a writable half, or the resolved path escapes the root (the AUTH-2
+  /// containment guard, shared by the read and write prompt endpoints).
+  String? _promptFilePath(String roleId, String part) {
+    final root = promptsRoot;
+    if (root == null || !_promptParts.contains(part) || !_isSafeKey(roleId)) {
+      return null;
+    }
+    final promptsDir = p.normalize(root.absolute.path);
+    final resolved = p.normalize(p.join(promptsDir, '$roleId.$part.md'));
+    if (!p.isWithin(promptsDir, resolved) || !resolved.endsWith('.md')) {
+      return null;
+    }
+    return resolved;
   }
 
   /// The static root (PT-1.5): the web build served read-only, with an

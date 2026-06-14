@@ -162,29 +162,64 @@ void main() {
     });
   });
 
-  group('PT-8.3 — OBS-4: no control path into the brain', () {
-    test('no lib/ source carries write or control IO vocabulary', () {
+  group('PT-8.3 — OBS-4: writes confined to the source-authoring surface', () {
+    // The source-authoring surface (`prompt_tracing.md` § 6.3, AUTH-1) is the
+    // *one* sanctioned write site: `PUT /api/procedures/<id>` and
+    // `PUT /api/prompts/<roleId>/<part>` write a procedure script / prompt file
+    // under containment (AUTH-2) + validation (AUTH-3). It is still not a
+    // control path into the brain (OBS-4): the brain pulls the edit by
+    // re-reading source (AUTH-5); the app never pushes. Every *other* lib/
+    // source stays write-free, and even the authoring file may write only via
+    // the single sanctioned verb — never a delete / rename / truncate /
+    // openWrite / raw-file write that could reach the trail or memory (OBS-1 /
+    // OBS-3 prove those roots stay byte-for-byte untouched under exercise).
+    const authoringSurface = 'lib/src/api/trail_read_api.dart';
+
+    /// The destructive / raw write verbs no source may carry — the sanctioned
+    /// `writeAsStringSync` of the authoring surface is deliberately absent so it
+    /// can be checked separately.
+    final destructiveIo = <RegExp>[
+      RegExp(r'\.openWrite\('),
+      RegExp(r'\.writeAsBytes'),
+      RegExp(r'RandomAccessFile'),
+      RegExp(r'FileMode\.(write|append|writeOnly|writeOnlyAppend)'),
+      RegExp(r'\.create(Sync)?\('),
+      RegExp(r'\.delete(Sync)?\('),
+      RegExp(r'\.rename(Sync)?\('),
+      RegExp(r'\.truncate(Sync)?\('),
+    ];
+
+    test('no lib/ source outside the authoring surface carries any write IO',
+        () {
       // The operationalisation of "no write path is introduced anywhere in the
-      // package at any phase" (`prompt_tracing_plan.md` § 10). A future edit
-      // that adds any of these turns this red even with no endpoint test.
-      final writeIo = <RegExp>[
-        RegExp(r'\.openWrite\('),
-        RegExp(r'\.writeAsString'),
-        RegExp(r'\.writeAsBytes'),
-        RegExp(r'RandomAccessFile'),
-        RegExp(r'FileMode\.(write|append|writeOnly|writeOnlyAppend)'),
-        RegExp(r'\.create(Sync)?\('),
-        RegExp(r'\.delete(Sync)?\('),
-        RegExp(r'\.rename(Sync)?\('),
-        RegExp(r'\.truncate(Sync)?\('),
-      ];
+      // package at any phase" (`prompt_tracing_plan.md` § 10), minus the one
+      // file the spec sanctions. A future edit that adds write IO to any other
+      // file — or that adds a control path — turns this red with no endpoint
+      // test.
+      final writeIo = <RegExp>[...destructiveIo, RegExp(r'\.writeAsString')];
       for (final entry in libDartSources().entries) {
+        if (entry.key == authoringSurface) continue;
         for (final token in writeIo) {
           expect(token.hasMatch(entry.value), isFalse,
-              reason: '${entry.key} matches "${token.pattern}" — the '
-                  'observatory holds no write/control path (OBS-4)');
+              reason: '${entry.key} matches "${token.pattern}" — only the '
+                  'authoring surface ($authoringSurface) may write (OBS-4)');
         }
       }
+    });
+
+    test('the authoring surface writes only via the sanctioned verb', () {
+      final src = libDartSources()[authoringSurface];
+      expect(src, isNotNull);
+      // The two PUT handlers write through `writeAsStringSync` and nothing
+      // else: no destructive or raw-file verb that could reach the trail or
+      // memory is present.
+      for (final token in destructiveIo) {
+        expect(token.hasMatch(src!), isFalse,
+            reason: '$authoringSurface matches "${token.pattern}" — the '
+                'authoring surface may only write source files, never '
+                'delete/rename/truncate or raw-write (AUTH-1)');
+      }
+      expect(src, contains('writeAsStringSync'));
     });
   });
 

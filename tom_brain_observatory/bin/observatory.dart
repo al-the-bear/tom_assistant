@@ -12,7 +12,15 @@
 //                       (default: ../tom_brain_observatory_web/build/web)
 //   --scripts=<dir>     the running brain's procedure scripts served read-only
 //                       by GET /api/procedures/<id> (§ 4.6; default:
-//                       ../tom_brain_procedure/scripts/system)
+//                       ../tom_brain_procedure/scripts/system) and written by
+//                       PUT /api/procedures/<id> under the authoring guards
+//                       (§ 6.3, AUTH-1…AUTH-3)
+//   --prompts=<dir>     the running brain's externalized prompt files
+//                       (<roleId>.persona.md / <roleId>.objective.md, the
+//                       cognition's roles folder), read+written by
+//                       GET/PUT /api/prompts/<roleId>/<part> under the same
+//                       guards (§ 6.3); no default — the prompt endpoints 404
+//                       until it points at the brain's roles folder
 //   --port=N            loopback port (default 8787)
 //   --host=ADDR         bind address (default 127.0.0.1; loopback-only by design)
 //
@@ -49,6 +57,7 @@ Future<void> main(List<String> args) async {
   final flags = _flags(args);
   final webDir = flags['web'] ?? _defaultWebRoot();
   final scriptsDir = flags['scripts'] ?? _defaultScriptRoot();
+  final promptsDir = flags['prompts'];
   final port = int.tryParse(flags['port'] ?? '') ?? _defaultPort;
   final bindHost = flags['host'] ?? _defaultHost;
 
@@ -65,8 +74,22 @@ Future<void> main(List<String> args) async {
   if (!scriptRoot.existsSync()) {
     stderr.writeln(
       'observatory: procedure scripts not found at $scriptsDir — '
-      'GET /api/procedures/<id> will 404 until --scripts points at the '
+      'GET/PUT /api/procedures/<id> will 404 until --scripts points at the '
       "brain's scripts/system directory.",
+    );
+  }
+
+  final promptsRoot = promptsDir == null ? null : Directory(promptsDir);
+  if (promptsRoot == null) {
+    stderr.writeln(
+      'observatory: no --prompts root — GET/PUT /api/prompts/<roleId>/<part> '
+      "will 404 until it points at the brain's roles folder.",
+    );
+  } else if (!promptsRoot.existsSync()) {
+    stderr.writeln(
+      'observatory: prompts root not found at $promptsDir — '
+      'GET/PUT /api/prompts/<roleId>/<part> will 404 until --prompts points '
+      "at the brain's roles folder.",
     );
   }
 
@@ -82,6 +105,8 @@ Future<void> main(List<String> args) async {
     host: TrailHost.at(trailRoot),
     webRoot: webRoot.existsSync() ? webRoot : null,
     scriptRoot: scriptRoot.existsSync() ? scriptRoot : null,
+    promptsRoot:
+        promptsRoot != null && promptsRoot.existsSync() ? promptsRoot : null,
   );
   final server = await shelf_io.serve(api.handler, bindHost, port);
 

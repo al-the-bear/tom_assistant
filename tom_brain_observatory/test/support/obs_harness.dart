@@ -48,6 +48,21 @@ Future<Response> obsPost(
       headers: const <String, String>{'content-type': 'application/json'},
     ));
 
+/// Drives the composed shelf handler with a `PUT` of a raw text [body] to
+/// [path] — the source-authoring surface (§ 6.3, AUTH-1…AUTH-3) writes verbatim
+/// text (a procedure script or a prompt-file half), not JSON.
+Future<Response> obsPut(
+  TrailReadApi api,
+  String path, {
+  String? body,
+}) async =>
+    api.handler(Request(
+      'PUT',
+      Uri.parse('http://localhost/$path'),
+      body: body,
+      headers: const <String, String>{'content-type': 'text/plain'},
+    ));
+
 /// Reads an SSE body to completion, returning the decoded `data:` payloads.
 Future<List<Object?>> drainSse(Response res) async {
   final body = await res.readAsString();
