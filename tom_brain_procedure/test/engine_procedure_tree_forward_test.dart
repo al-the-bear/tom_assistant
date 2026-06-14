@@ -49,12 +49,22 @@ void main() {
   ProcedureEngine engineFor(
     Iterable<LoadedProcedure> procedures, {
     ProcedureTreeSink? procedureTreeSink,
+    bool withRouteResolver = false,
   }) =>
       ProcedureEngine(
         resolver: ProcedureResolver(procedures),
         memory: memory,
         memoryBridge: MemoryBridge(memory),
-        substrateBridge: SubstrateBridge(substrate),
+        substrateBridge: SubstrateBridge(
+          substrate,
+          // `sub.send` selects a route by name (§ 7.4), so it needs a
+          // RouteChainResolver bound; without one every `send` throws. The
+          // tool_loop path uses `send`, so the tree test for it does too.
+          routeChainOf: withRouteResolver
+              ? (_) =>
+                  const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')]
+              : null,
+        ),
         now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
         procedureTreeSink: procedureTreeSink,
       );
@@ -117,6 +127,61 @@ Future<Object?> run(inputs) async {
 ''',
         ),
       ];
+
+  // A parent whose model call goes through `sub.send` (route selected by name)
+  // rather than `sub.llm` (role-routed). `tool_loop_v1` — the body behind
+  // `sub.run` — issues its model calls this way, so this is the dominant recent
+  // path. Both `send` and `llm` are real substrate completions (shared
+  // `_completeOnce`), each firing one `onLlmTrail` observation, so a `send` node
+  // must carry the same drill-into [ProcedureTreeLlmRef] as an `llm` node.
+  List<LoadedProcedure> sendTreeProcedures() => <LoadedProcedure>[
+        _procedure(
+          'send_parent_v1',
+          '''
+import '${BridgeLibraries.substrateLibrary}';
+
+Future<Object?> run(inputs) async {
+  await sub.send('hi', llmRoute: 'r', role: 'assistant_to_user');
+  return 1;
+}
+''',
+        ),
+      ];
+
+  group('ProcedureEngine combined-tree send linkage (§5.7)', () {
+    test(
+        'a sub.send node carries an llm ref just like sub.llm — the tool_loop '
+        'model call renders as a drill-into llm line, not a bare send', () async {
+      final records = <ProcedureTreeRecord>[];
+      final engine = engineFor(
+        sendTreeProcedures(),
+        procedureTreeSink: records.add,
+        withRouteResolver: true,
+      );
+
+      final turnId = TurnId.generate();
+      final outcome = await engine
+          .invoke(ProcedureInvocation(
+              procedureId: 'send_parent_v1', turnId: turnId))
+          .outcome;
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+
+      expect(records, hasLength(1));
+      final top = records.single;
+      expect(top.nodes.map(_kindOf).toList(), <String>['send']);
+
+      final sent = top.nodes.single as ProcedurePrimitiveNode;
+      expect(sent.primitive, 'send');
+      expect(sent.llm, isNotNull,
+          reason: 'a send is a real completion — it must carry the llm ref');
+      expect(sent.llm!.callType, 'assistant_to_user',
+          reason: 'callType is the role the completion ran under');
+      expect(sent.llm!.turnId, turnId.value);
+      expect(sent.llm!.callSeq, 1, reason: 'first llm of the turn');
+      expect(sent.llm!.tokensIn, 7);
+      expect(sent.llm!.tokensOut, 3);
+    });
+  });
 
   group('ProcedureEngine combined-tree tool splicing (§5.7.1)', () {
     test(

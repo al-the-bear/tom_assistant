@@ -1345,7 +1345,16 @@ final class ProcedureEngine {
           final payload = entry.payload;
           final primitive = '${payload['primitive']}';
           ProcedureTreeLlmRef? llm;
-          if (primitive == 'llm' && llmIndex < llmObservations.length) {
+          // Both `llm` and `send` are real substrate completions: each fires the
+          // same `onLlmTrail` observation (substrate_bridge `_completeOnce`) and
+          // writes a raw dump, so each must consume one observation here. The
+          // `tool_loop_v1` path routes its model calls through `send` (route
+          // selected by name, § 7.4); attaching the ref makes those calls render
+          // as drill-into `llm <role> → tok → raw` lines instead of an inert
+          // `send` line. Consuming for both also keeps `llmIndex` aligned with
+          // the observation stream in a mixed `llm` + `send` run.
+          if ((primitive == 'llm' || primitive == 'send') &&
+              llmIndex < llmObservations.length) {
             final obs = llmObservations[llmIndex++];
             llm = ProcedureTreeLlmRef(
               callType: obs.callType,
