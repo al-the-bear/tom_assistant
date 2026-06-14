@@ -18,9 +18,11 @@
 //   - Wrap the prompt body. `LlmProvider` contract (B.11): "Providers
 //     MUST NOT prepend, append, or reorder the body of the prompt
 //     they receive." The role registry (B.21+) has already prepended
-//     the anchor; this provider sends `WirePrompt.combined` to the
-//     vendor verbatim as a single `{role: 'user', content: body}`
-//     message.
+//     the anchor to `WirePrompt.system`; this provider routes each
+//     channel to its native OpenAI slot — `WirePrompt.system`
+//     (anchor-first) as a `{role: 'system'}` message, `WirePrompt.user`
+//     as a `{role: 'user'}` message — verbatim, in that order. The
+//     system message is omitted only when `system` is empty.
 //   - Compute / forward cost. The router-side price table (B.32+)
 //     populates `LlmCallReport.cost` for paid providers; the provider
 //     leaves it `null`.
@@ -133,9 +135,7 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
     final response = await httpClient.chat(
       baseUri: baseUri,
       model: modelId,
-      messages: <OpenAiMessage>[
-        OpenAiMessage(role: 'user', content: prompt.combined),
-      ],
+      messages: _buildMessages(prompt),
       options: openAiOptions,
       apiKey: apiKey,
       extraHeaders: extraHeaders,
@@ -179,9 +179,7 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
       await for (final frag in httpClient.chatStream(
         baseUri: baseUri,
         model: modelId,
-        messages: <OpenAiMessage>[
-          OpenAiMessage(role: 'user', content: prompt.combined),
-        ],
+        messages: _buildMessages(prompt),
         options: openAiOptions,
         apiKey: apiKey,
         extraHeaders: extraHeaders,
@@ -323,6 +321,18 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
   void disposeHttpClient() => httpClient.close();
 
   // ─── Internals ────────────────────────────────────────────────
+
+  /// Maps the two-channel [WirePrompt] onto the OpenAI message list:
+  /// the anchor-first `system` channel as a `{role: 'system'}` message
+  /// (omitted when empty) followed by the call-specific `user` channel
+  /// as a `{role: 'user'}` message — in that order, verbatim.
+  List<OpenAiMessage> _buildMessages(WirePrompt prompt) {
+    return <OpenAiMessage>[
+      if (prompt.system.isNotEmpty)
+        OpenAiMessage(role: 'system', content: prompt.system),
+      OpenAiMessage(role: 'user', content: prompt.user),
+    ];
+  }
 
   OpenAiGenerationOptions _toOpenAiOptions(LlmOptions options) {
     return OpenAiGenerationOptions(

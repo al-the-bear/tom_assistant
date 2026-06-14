@@ -40,7 +40,10 @@
 //      I/O inside the stub, and this provider's contract is "no I/O".
 //   3. **Default echo** — `'STUB:' + prompt.combined`. Used when neither
 //      script nor responder is configured. Documented at
-//      [StubLlmProvider.defaultEcho].
+//      [StubLlmProvider.defaultEcho]. The stub has no native system
+//      channel, so it consumes `WirePrompt.combined` (the documented
+//      no-system-channel fallback: `system + "\n\n" + user`, anchor-first)
+//      — never the two channels separately.
 //
 // Determinism guarantees (the whole point of the stub):
 //

@@ -500,8 +500,12 @@ class _OllamaHarness implements _ProviderHarness {
 
   @override
   String get lastForwardedBody {
+    // `_wirePrompt` routes its body through the system channel, which the
+    // provider forwards as the system-role message (the user message carries
+    // the empty `user` slot). The body-discipline contract checks that this
+    // system content is forwarded verbatim, unmutated.
     final call = _fake.chatCalls.last;
-    return call.messages.single.content;
+    return call.messages.firstWhere((m) => m.role == 'system').content;
   }
 
   @override
@@ -673,7 +677,11 @@ class _OpenAiHarness implements _ProviderHarness {
 
   @override
   String get lastForwardedBody =>
-      _fake.chatCalls.last.messages.single.content;
+      // `_wirePrompt` routes its body through the system channel; the provider
+      // forwards it as the system-role message (the user slot is empty here).
+      _fake.chatCalls.last.messages
+          .firstWhere((m) => m.role == 'system')
+          .content;
 
   @override
   String get expectedResponseFragment => _lastHappyResponse;

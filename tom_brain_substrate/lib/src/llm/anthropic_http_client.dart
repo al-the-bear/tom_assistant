@@ -74,9 +74,12 @@ abstract class AnthropicHttpClient {
   /// One non-streaming `/v1/messages` round-trip.
   ///
   /// [model] is the resolved Anthropic model id (e.g.
-  /// `claude-sonnet-4-20250514`). [messages] is the conversation list —
-  /// for the post-anchor wire prompt the substrate sends a single
-  /// `{role: 'user', content: <WirePrompt.combined>}` message. [apiKey] is
+  /// `claude-sonnet-4-20250514`). [system] is the standing framing
+  /// (`WirePrompt.system`, anchor-first); it is sent as the Messages API
+  /// top-level `system` field and is omitted from the request body when
+  /// empty. [messages] is the conversation list — for the post-anchor wire
+  /// prompt the substrate sends a single
+  /// `{role: 'user', content: <WirePrompt.user>}` message. [apiKey] is
   /// sent as `x-api-key`; `null` ⇒ no auth header. [anthropicVersion] is
   /// sent as the REQUIRED `anthropic-version` header. [options] carries
   /// the (REQUIRED) `max_tokens` plus the optional knobs.
@@ -85,6 +88,7 @@ abstract class AnthropicHttpClient {
     required String model,
     required List<AnthropicMessage> messages,
     required AnthropicGenerationOptions options,
+    String system = '',
     String? apiKey,
     String anthropicVersion = '2023-06-01',
     Map<String, String> extraHeaders = const <String, String>{},
@@ -97,11 +101,16 @@ abstract class AnthropicHttpClient {
   /// structural events (`content_block_start` / `_stop`, `ping`,
   /// `message_stop`) are consumed and not emitted. The terminal
   /// `message_stop` event closes the stream cleanly.
+  ///
+  /// [system] is sent as the top-level `system` field (anchor-first,
+  /// omitted when empty); [messages] carries the single
+  /// `{role: 'user', content: <WirePrompt.user>}` message.
   Stream<AnthropicStreamFragment> messageStream({
     required Uri baseUri,
     required String model,
     required List<AnthropicMessage> messages,
     required AnthropicGenerationOptions options,
+    String system = '',
     String? apiKey,
     String anthropicVersion = '2023-06-01',
     Map<String, String> extraHeaders = const <String, String>{},
@@ -117,10 +126,11 @@ abstract class AnthropicHttpClient {
 ///
 /// Mirrors Anthropic's wire shape: `{role: 'user'|'assistant', content:
 /// '...'}`. The substrate currently sends only one `user` message per
-/// call (the anchor-prefixed `WirePrompt.combined`); the list shape is
-/// preserved for future multi-turn registries. The system prompt is a
-/// separate top-level `system` field in the Messages API; the substrate
-/// folds it into the anchored body, so it is not modelled here.
+/// call (`WirePrompt.user`, the call-specific content); the list shape is
+/// preserved for future multi-turn registries. The standing framing
+/// (`WirePrompt.system`, anchor-first) is delivered through the Messages
+/// API's separate top-level `system` field — see [AnthropicHttpClient.message]'s
+/// `system` argument — and is therefore not modelled here.
 final class AnthropicMessage {
   final String role;
   final String content;
@@ -264,6 +274,7 @@ final class DefaultAnthropicHttpClient extends DefaultWireHttpClientBase
     required String model,
     required List<AnthropicMessage> messages,
     required AnthropicGenerationOptions options,
+    String system = '',
     String? apiKey,
     String anthropicVersion = '2023-06-01',
     Map<String, String> extraHeaders = const <String, String>{},
@@ -279,6 +290,7 @@ final class DefaultAnthropicHttpClient extends DefaultWireHttpClientBase
       ),
       jsonBody: _messageBody(
         model: model,
+        system: system,
         messages: messages,
         options: options,
         stream: false,
@@ -301,6 +313,7 @@ final class DefaultAnthropicHttpClient extends DefaultWireHttpClientBase
     required String model,
     required List<AnthropicMessage> messages,
     required AnthropicGenerationOptions options,
+    String system = '',
     String? apiKey,
     String anthropicVersion = '2023-06-01',
     Map<String, String> extraHeaders = const <String, String>{},
@@ -320,6 +333,7 @@ final class DefaultAnthropicHttpClient extends DefaultWireHttpClientBase
       },
       body: jsonEncode(_messageBody(
         model: model,
+        system: system,
         messages: messages,
         options: options,
         stream: true,
@@ -362,10 +376,13 @@ final class DefaultAnthropicHttpClient extends DefaultWireHttpClientBase
   }
 
   /// Anthropic `/v1/messages` request body. `max_tokens` is required and
-  /// always present. [stream] selects the SSE streaming response. The
-  /// generation knobs are shared between both paths.
+  /// always present. [system] is the top-level system prompt — included
+  /// only when non-empty so a system-less call sends no `system` key.
+  /// [stream] selects the SSE streaming response. The generation knobs are
+  /// shared between both paths.
   Map<String, Object?> _messageBody({
     required String model,
+    required String system,
     required List<AnthropicMessage> messages,
     required AnthropicGenerationOptions options,
     required bool stream,
@@ -373,6 +390,7 @@ final class DefaultAnthropicHttpClient extends DefaultWireHttpClientBase
     return <String, Object?>{
       'model': model,
       'max_tokens': options.maxOutputTokens,
+      if (system.isNotEmpty) 'system': system,
       'messages': messages.map((m) => m.toJson()).toList(growable: false),
       'stream': stream,
       ...options.toJsonFragment(),

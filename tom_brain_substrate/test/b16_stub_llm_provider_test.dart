@@ -570,6 +570,24 @@ void main() {
       );
     });
 
+    test(
+        'default echo concatenates the two channels as system + "\\n\\n" + user '
+        '(the no-system-channel fallback)', () {
+      const wp = WirePrompt(
+        system: 'I am dedicated to this user.',
+        user: 'user question',
+        anchorHash: 'a',
+        roleId: 'r',
+      );
+      // The stub has no native system channel, so it echoes
+      // `WirePrompt.combined` — the documented `system + "\n\n" + user`
+      // concatenation, anchor-first.
+      expect(
+        StubLlmProvider.defaultEcho(wp, const LlmOptions()),
+        'STUB:I am dedicated to this user.\n\nuser question',
+      );
+    });
+
     test('responder, when present, wins over the default echo', () async {
       final provider = StubLlmProvider(
         responder: (_, _) => 'CUSTOM',

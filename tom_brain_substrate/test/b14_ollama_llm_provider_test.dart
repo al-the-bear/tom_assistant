@@ -99,8 +99,9 @@ void main() {
       expect(report.promptHash, _sha256Stamp('anchor + body'));
     });
 
-    test('complete sends the prompt body verbatim as a single user message',
-        () async {
+    test(
+        'complete sends system + user as two messages '
+        '([{role:system}, {role:user}])', () async {
       final fake = _FakeOllamaHttpClient()
         ..chatResponse = const OllamaChatResponse(
           model: 'gemma3:27b',
@@ -110,7 +111,8 @@ void main() {
 
       await provider.complete(
         const WirePrompt(
-          system: 'I am dedicated to this user.\n\nuser question',
+          system: 'I am dedicated to this user.',
+          user: 'user question',
           anchorHash: 'sha256:x',
           roleId: 'assistant_to_user',
         ),
@@ -119,12 +121,37 @@ void main() {
 
       final call = fake.chatCalls.single;
       expect(call.model, 'gemma3:27b');
+      // Anchor-first system channel leads as a `system` message,
+      // followed by the call-specific `user` message.
+      expect(call.messages, hasLength(2));
+      expect(call.messages[0].role, 'system');
+      expect(call.messages[0].content, 'I am dedicated to this user.');
+      expect(call.messages[1].role, 'user');
+      expect(call.messages[1].content, 'user question');
+    });
+
+    test('complete omits the system message when system is empty', () async {
+      final fake = _FakeOllamaHttpClient()
+        ..chatResponse = const OllamaChatResponse(
+          model: 'gemma3:27b',
+          content: '',
+        );
+      final provider = _newProvider(httpClient: fake);
+
+      await provider.complete(
+        const WirePrompt(
+          system: '',
+          user: 'just the user turn',
+          anchorHash: 'sha256:x',
+          roleId: 'assistant_to_user',
+        ),
+        const LlmOptions(),
+      );
+
+      final call = fake.chatCalls.single;
       expect(call.messages, hasLength(1));
       expect(call.messages.single.role, 'user');
-      expect(
-        call.messages.single.content,
-        'I am dedicated to this user.\n\nuser question',
-      );
+      expect(call.messages.single.content, 'just the user turn');
     });
 
     test('options.model overrides the default model when provided', () async {

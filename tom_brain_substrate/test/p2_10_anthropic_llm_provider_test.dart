@@ -95,8 +95,9 @@ void main() {
       expect(report.promptHash, _sha256Stamp('anchor + body'));
     });
 
-    test('complete sends the prompt body verbatim as a single user message',
-        () async {
+    test(
+        'complete routes system to the top-level system field and user to the '
+        'single user message', () async {
       final fake = _FakeAnthropicHttpClient()
         ..messageResponse = const AnthropicChatResponse(
           model: 'claude-sonnet-4-20250514',
@@ -106,7 +107,8 @@ void main() {
 
       await provider.complete(
         const WirePrompt(
-          system: 'I am dedicated to this user.\n\nuser question',
+          system: 'I am dedicated to this user.',
+          user: 'user question',
           anchorHash: 'sha256:x',
           roleId: 'assistant_to_user',
         ),
@@ -115,12 +117,13 @@ void main() {
 
       final call = fake.messageCalls.single;
       expect(call.model, 'claude-sonnet-4-20250514');
+      // The anchor-first standing framing rides the Messages API
+      // top-level `system` field, NOT a conversation message.
+      expect(call.system, 'I am dedicated to this user.');
+      // Only the call-specific user content becomes a `user` message.
       expect(call.messages, hasLength(1));
       expect(call.messages.single.role, 'user');
-      expect(
-        call.messages.single.content,
-        'I am dedicated to this user.\n\nuser question',
-      );
+      expect(call.messages.single.content, 'user question');
     });
 
     test('options.model overrides the default model when provided', () async {
@@ -328,6 +331,7 @@ void main() {
           .completeStream(
             const WirePrompt(
               system: 'streaming body',
+              user: 'stream question',
               anchorHash: 'sha256:stream-anchor',
               roleId: 'assistant_to_user',
               templateSha: 'tpl-2',
@@ -335,6 +339,13 @@ void main() {
             const LlmOptions(),
           )
           .toList();
+
+      // The streaming path routes channels exactly like the
+      // non-streaming path: system → top-level field, user → message.
+      final streamCall = fake.messageCalls.single;
+      expect(streamCall.system, 'streaming body');
+      expect(streamCall.messages.single.role, 'user');
+      expect(streamCall.messages.single.content, 'stream question');
 
       expect(events.first, isA<LlmStreamStarted>());
       expect(events.last, isA<LlmStreamCompleted>());
@@ -358,7 +369,11 @@ void main() {
       expect(completed.report.templateSha, 'tpl-2');
       expect(completed.report.tokensIn, 7);
       expect(completed.report.tokensOut, 11);
-      expect(completed.report.promptHash, _sha256Stamp('streaming body'));
+      // promptHash is over WirePrompt.combined (system + "\n\n" + user).
+      expect(
+        completed.report.promptHash,
+        _sha256Stamp('streaming body\n\nstream question'),
+      );
     });
 
     test('empty-delta fragments do not emit a Chunk event', () async {
@@ -597,6 +612,7 @@ void main() {
       final resp = await client.message(
         baseUri: Uri.parse('https://api.anthropic.com/'),
         model: 'claude-sonnet-4-20250514',
+        system: 'I am dedicated to this user.',
         messages: const <AnthropicMessage>[
           AnthropicMessage(role: 'user', content: 'hi'),
         ],
@@ -612,6 +628,8 @@ void main() {
       expect(body['model'], 'claude-sonnet-4-20250514');
       expect(body['max_tokens'], 64);
       expect(body['stream'], false);
+      // The system channel rides the Messages API top-level `system` field.
+      expect(body['system'], 'I am dedicated to this user.');
       final messages = body['messages'] as List<Object?>;
       expect(messages, hasLength(1));
 
@@ -620,6 +638,38 @@ void main() {
       expect(resp.inputTokens, 9);
       expect(resp.outputTokens, 4);
       expect(resp.stopReason, 'end_turn');
+
+      client.close();
+    });
+
+    test('non-streaming: empty system omits the top-level system field',
+        () async {
+      late http.Request captured;
+      final client = DefaultAnthropicHttpClient(
+        client: MockClient((req) async {
+          captured = req;
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'model': 'm',
+              'content': <Object?>[],
+            }),
+            200,
+            headers: <String, String>{'content-type': 'application/json'},
+          );
+        }),
+      );
+
+      await client.message(
+        baseUri: Uri.parse('https://api.anthropic.com/'),
+        model: 'm',
+        messages: const <AnthropicMessage>[
+          AnthropicMessage(role: 'user', content: 'hi'),
+        ],
+        options: const AnthropicGenerationOptions(maxOutputTokens: 8),
+      );
+
+      final body = jsonDecode(captured.body) as Map<String, Object?>;
+      expect(body.containsKey('system'), isFalse);
 
       client.close();
     });
@@ -786,6 +836,7 @@ final class _FakeAnthropicHttpClient implements AnthropicHttpClient {
     required String model,
     required List<AnthropicMessage> messages,
     required AnthropicGenerationOptions options,
+    String system = '',
     String? apiKey,
     String anthropicVersion = '2023-06-01',
     Map<String, String> extraHeaders = const <String, String>{},
@@ -794,6 +845,7 @@ final class _FakeAnthropicHttpClient implements AnthropicHttpClient {
     messageCalls.add(_AnthropicMessageInvocation(
       baseUri: baseUri,
       model: model,
+      system: system,
       messages: messages,
       options: options,
       apiKey: apiKey,
@@ -810,6 +862,7 @@ final class _FakeAnthropicHttpClient implements AnthropicHttpClient {
     required String model,
     required List<AnthropicMessage> messages,
     required AnthropicGenerationOptions options,
+    String system = '',
     String? apiKey,
     String anthropicVersion = '2023-06-01',
     Map<String, String> extraHeaders = const <String, String>{},
@@ -819,6 +872,7 @@ final class _FakeAnthropicHttpClient implements AnthropicHttpClient {
     messageCalls.add(_AnthropicMessageInvocation(
       baseUri: baseUri,
       model: model,
+      system: system,
       messages: messages,
       options: options,
       apiKey: apiKey,
@@ -840,6 +894,7 @@ final class _FakeAnthropicHttpClient implements AnthropicHttpClient {
 final class _AnthropicMessageInvocation {
   final Uri baseUri;
   final String model;
+  final String system;
   final List<AnthropicMessage> messages;
   final AnthropicGenerationOptions options;
   final String? apiKey;
@@ -849,6 +904,7 @@ final class _AnthropicMessageInvocation {
   const _AnthropicMessageInvocation({
     required this.baseUri,
     required this.model,
+    required this.system,
     required this.messages,
     required this.options,
     required this.apiKey,

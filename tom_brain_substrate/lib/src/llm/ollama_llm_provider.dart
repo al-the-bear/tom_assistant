@@ -22,8 +22,11 @@
 //   - Wrap the prompt body. `LlmProvider` contract (B.11): "Providers
 //     MUST NOT prepend, append, or reorder the body of the prompt
 //     they receive." The role registry (B.21+) has already prepended
-//     the anchor; this provider sends `WirePrompt.combined` to Ollama
-//     verbatim as a single `{role: 'user', content: body}` message.
+//     the anchor to `WirePrompt.system`; this provider routes each
+//     channel to its native `/api/chat` slot — `WirePrompt.system`
+//     (anchor-first) as a `{role: 'system'}` message, `WirePrompt.user`
+//     as a `{role: 'user'}` message — verbatim, in that order. The
+//     system message is omitted only when `system` is empty.
 //   - Compute / forward cost. Ollama is local-only; cost is `null`.
 //     The router-side price table (B.32+) populates cost for paid
 //     providers; Ollama's report keeps `cost: null`.
@@ -93,9 +96,7 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
     final response = await httpClient.chat(
       baseUri: baseUri,
       model: modelId,
-      messages: <OllamaMessage>[
-        OllamaMessage(role: 'user', content: prompt.combined),
-      ],
+      messages: _buildMessages(prompt),
       options: ollamaOptions,
       requestTimeout: requestTimeout,
     );
@@ -136,9 +137,7 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
       await for (final frag in httpClient.chatStream(
         baseUri: baseUri,
         model: modelId,
-        messages: <OllamaMessage>[
-          OllamaMessage(role: 'user', content: prompt.combined),
-        ],
+        messages: _buildMessages(prompt),
         options: ollamaOptions,
         requestTimeout: requestTimeout,
       )) {
@@ -278,6 +277,18 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
   void disposeHttpClient() => httpClient.close();
 
   // ─── Internals ────────────────────────────────────────────────
+
+  /// Maps the two-channel [WirePrompt] onto the `/api/chat` message
+  /// list: the anchor-first `system` channel as a `{role: 'system'}`
+  /// message (omitted when empty) followed by the call-specific `user`
+  /// channel as a `{role: 'user'}` message — in that order, verbatim.
+  List<OllamaMessage> _buildMessages(WirePrompt prompt) {
+    return <OllamaMessage>[
+      if (prompt.system.isNotEmpty)
+        OllamaMessage(role: 'system', content: prompt.system),
+      OllamaMessage(role: 'user', content: prompt.user),
+    ];
+  }
 
   OllamaGenerationOptions _toOllamaOptions(LlmOptions options) {
     return OllamaGenerationOptions(

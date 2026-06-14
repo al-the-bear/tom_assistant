@@ -83,8 +83,9 @@ abstract class OpenAiHttpClient {
   /// [model] is the resolved OpenAI-format model id (e.g.
   /// `gpt-4o-mini`, `mistralai/mistral-7b-instruct`).
   /// [messages] is the OpenAI-format conversation list — for the
-  /// post-anchor wire prompt the substrate sends a single
-  /// `{role: 'user', content: <WirePrompt.combined>}` message.
+  /// post-anchor wire prompt the substrate sends the anchor-first
+  /// `{role: 'system', content: <WirePrompt.system>}` message (omitted
+  /// when empty) followed by `{role: 'user', content: <WirePrompt.user>}`.
   /// [apiKey] is the bearer token for `Authorization: Bearer …`;
   /// `null` ⇒ no auth header (useful for self-hosted gateways).
   /// [options] carries provider-tunable knobs that translate to
@@ -172,10 +173,11 @@ abstract class OpenAiHttpClient {
 /// One conversation message sent to `/v1/chat/completions`.
 ///
 /// Mirrors OpenAI's wire shape: `{role: 'user'|'system'|'assistant'|'tool',
-/// content: '...'}`. The substrate currently sends only one message
-/// per call (`role: 'user'` with the anchor-prefixed `WirePrompt.combined`);
-/// the list shape is preserved so multi-turn role registries (B.21+)
-/// can compose conversations without churning this interface.
+/// content: '...'}`. The substrate sends the anchor-first
+/// `WirePrompt.system` as a `role: 'system'` message (when non-empty)
+/// and `WirePrompt.user` as a `role: 'user'` message; the list shape is
+/// preserved so multi-turn role registries (B.21+) can compose
+/// conversations without churning this interface.
 final class OpenAiMessage {
   final String role;
   final String content;

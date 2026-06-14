@@ -17,9 +17,12 @@
 //     `classCode: 'unknown'` envelope on the streaming path; the router
 //     reclassifies.
 //   - Wrap the prompt body. `LlmProvider` contract (B.11): the role
-//     registry has already prepended the assistant-dedication anchor;
-//     this provider sends `WirePrompt.combined` to the vendor verbatim as a
-//     single `{role: 'user', content: body}` message.
+//     registry has already prepended the assistant-dedication anchor to
+//     `WirePrompt.system`. This provider routes each channel to its native
+//     Messages-API slot — `WirePrompt.system` (anchor-first) to the
+//     top-level `system` field, `WirePrompt.user` to a single
+//     `{role: 'user', content: user}` message — without prepending,
+//     appending, or reordering either.
 //   - Compute / forward cost, resolve the model id, or rotate the
 //     credential — all router responsibilities (same split as B.15).
 //
@@ -111,8 +114,9 @@ final class AnthropicLlmProvider extends HttpLlmProviderBase {
     final response = await httpClient.message(
       baseUri: baseUri,
       model: modelId,
+      system: prompt.system,
       messages: <AnthropicMessage>[
-        AnthropicMessage(role: 'user', content: prompt.combined),
+        AnthropicMessage(role: 'user', content: prompt.user),
       ],
       options: anthropicOptions,
       apiKey: apiKey,
@@ -158,8 +162,9 @@ final class AnthropicLlmProvider extends HttpLlmProviderBase {
       await for (final frag in httpClient.messageStream(
         baseUri: baseUri,
         model: modelId,
+        system: prompt.system,
         messages: <AnthropicMessage>[
-          AnthropicMessage(role: 'user', content: prompt.combined),
+          AnthropicMessage(role: 'user', content: prompt.user),
         ],
         options: anthropicOptions,
         apiKey: apiKey,
