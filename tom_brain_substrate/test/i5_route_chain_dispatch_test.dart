@@ -153,7 +153,7 @@ void main() {
 // ─── Test helpers ────────────────────────────────────────────────
 
 WirePrompt _prompt(String body) => WirePrompt(
-      body: body,
+      system: body,
       anchorHash: 'sha256:anchor',
       roleId: 'assistant_to_user',
       templateSha: 'sha-abc',
@@ -191,7 +191,7 @@ class _ScriptedFailureProvider implements LlmProvider {
       modelId: options.model ?? defaultModel,
       anchorHash: prompt.anchorHash,
       promptHash: 'sha256:body',
-      tokensIn: prompt.body.length,
+      tokensIn: prompt.combined.length,
       tokensOut: 1,
       retries: 0,
       wallClockMs: 0,

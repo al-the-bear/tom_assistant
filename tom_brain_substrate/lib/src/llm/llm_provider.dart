@@ -105,7 +105,7 @@ import 'wire_prompt.dart';
 /// would either (a) corrupt the anchor block and trip the
 /// [LlmCallReport.anchorHash] regression, or (b) inject text the
 /// audit trail cannot attribute to a role template. Providers
-/// translate `WirePrompt.body` into whatever wire shape the backend
+/// translate `WirePrompt.combined` into whatever wire shape the backend
 /// expects (e.g. a single `messages: [{role: user, content: body}]`
 /// JSON object for Ollama / OpenAI Chat Completions) but the body
 /// content goes through unchanged.
@@ -162,7 +162,7 @@ abstract class LlmProvider {
   /// equal [id]; the `modelId` MUST equal the resolved model id (the
   /// router resolves [options].model per [LlmOptions.model]'s
   /// documented resolution order before invoking the provider); the
-  /// `promptHash` MUST be the content hash of [prompt].[WirePrompt.body].
+  /// `promptHash` MUST be the content hash of [prompt].[WirePrompt.combined].
   /// These fields are the trail's only way to attribute a call
   /// without storing the prompt text itself.
   Future<LlmCallReport> complete(WirePrompt prompt, LlmOptions options);

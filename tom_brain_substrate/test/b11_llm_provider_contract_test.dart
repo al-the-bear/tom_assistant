@@ -52,13 +52,13 @@ void main() {
   group('B.11 / WirePrompt', () {
     test('carries body + anchorHash + roleId + optional templateSha', () {
       const wp = WirePrompt(
-        body: 'I am dedicated to this user.\n\n<role body here>',
+        system: 'I am dedicated to this user.\n\n<role body here>',
         anchorHash: 'sha256:deadbeef',
         roleId: 'assistant_to_user',
         templateSha: 'a1b2c3d',
       );
 
-      expect(wp.body, startsWith('I am dedicated to this user.'));
+      expect(wp.combined, startsWith('I am dedicated to this user.'));
       expect(wp.anchorHash, 'sha256:deadbeef');
       expect(wp.roleId, 'assistant_to_user');
       expect(wp.templateSha, 'a1b2c3d');
@@ -66,7 +66,7 @@ void main() {
 
     test('templateSha is nullable (development / unstaged-template path)', () {
       const wp = WirePrompt(
-        body: 'anchor + body',
+        system: 'anchor + body',
         anchorHash: 'sha256:cafebabe',
         roleId: 'analyser',
       );
@@ -81,7 +81,7 @@ void main() {
       // assertion: a constructed `WirePrompt` is exactly that runtime
       // type.
       const wp = WirePrompt(
-        body: 'x',
+        system: 'x',
         anchorHash: 'y',
         roleId: 'z',
       );
@@ -112,7 +112,7 @@ void main() {
 
         final report = await provider.complete(
           const WirePrompt(
-            body: 'anchor + body',
+            system: 'anchor + body',
             anchorHash: 'sha256:expected-anchor',
             roleId: 'assistant_to_user',
             templateSha: 'tpl-1',
@@ -143,7 +143,7 @@ void main() {
         final events = await provider
             .completeStream(
               const WirePrompt(
-                body: 'anchor + body',
+                system: 'anchor + body',
                 anchorHash: 'sha256:expected-anchor',
                 roleId: 'assistant_to_user',
               ),
@@ -193,14 +193,14 @@ void main() {
         expect(() => dummy.id, throwsA(isA<UnimplementedError>()));
         expect(
           () => dummy.complete(
-            const WirePrompt(body: 'x', anchorHash: 'y', roleId: 'z'),
+            const WirePrompt(system: 'x', anchorHash: 'y', roleId: 'z'),
             const LlmOptions(),
           ),
           throwsA(isA<UnimplementedError>()),
         );
         expect(
           () => dummy.completeStream(
-            const WirePrompt(body: 'x', anchorHash: 'y', roleId: 'z'),
+            const WirePrompt(system: 'x', anchorHash: 'y', roleId: 'z'),
             const LlmOptions(),
           ),
           throwsA(isA<UnimplementedError>()),
@@ -245,8 +245,57 @@ void main() {
       // — i.e. no `package:tom_brain_substrate/src/...` deep import.
       // Reaching the two types under that constraint proves the
       // top-level barrel re-exports the llm/ surface.
-      const _ = WirePrompt(body: 'x', anchorHash: 'y', roleId: 'z');
+      const _ = WirePrompt(system: 'x', anchorHash: 'y', roleId: 'z');
       expect(_FakeProvider(id: 'x', completeBody: 'y'), isA<LlmProvider>());
+    });
+  });
+
+  group('B.11 / WirePrompt — two-channel (system + user) shape', () {
+    test('round-trips every field; user defaults to empty', () {
+      const p = WirePrompt(
+        system: 'anchor + framing',
+        anchorHash: 'sha256:a',
+        roleId: 'analyser',
+        templateSha: 'sha-tmpl',
+      );
+      expect(p.system, 'anchor + framing');
+      expect(p.user, '', reason: 'user is optional; default is the empty string');
+      expect(p.anchorHash, 'sha256:a');
+      expect(p.roleId, 'analyser');
+      expect(p.templateSha, 'sha-tmpl');
+    });
+
+    test('carries an explicit user channel', () {
+      const p = WirePrompt(
+        system: 'standing framing',
+        user: 'call-specific inputs',
+        anchorHash: 'sha256:a',
+        roleId: 'r',
+      );
+      expect(p.system, 'standing framing');
+      expect(p.user, 'call-specific inputs');
+      expect(p.templateSha, isNull);
+    });
+
+    test('combined joins system then user with a blank line', () {
+      const p = WirePrompt(
+        system: 'SYS',
+        user: 'USR',
+        anchorHash: 'sha256:a',
+        roleId: 'r',
+      );
+      expect(p.combined, 'SYS\n\nUSR');
+    });
+
+    test('combined is system alone when user is empty (anchor leads)', () {
+      const p = WirePrompt(system: 'SYS', anchorHash: 'sha256:a', roleId: 'r');
+      expect(p.combined, 'SYS', reason: 'no blank-line padding for an empty user');
+    });
+
+    test('combined is user alone when system is empty', () {
+      const p =
+          WirePrompt(system: '', user: 'USR', anchorHash: 'sha256:a', roleId: 'r');
+      expect(p.combined, 'USR');
     });
   });
 }
@@ -276,8 +325,8 @@ final class _FakeProvider implements LlmProvider {
       providerId: id,
       modelId: 'fake-model',
       anchorHash: prompt.anchorHash,
-      promptHash: 'sha256:fake-prompt-${prompt.body.hashCode}',
-      tokensIn: prompt.body.length,
+      promptHash: 'sha256:fake-prompt-${prompt.combined.hashCode}',
+      tokensIn: prompt.combined.length,
       tokensOut: completeBody.length,
       retries: 0,
       wallClockMs: 1,
@@ -292,7 +341,7 @@ final class _FakeProvider implements LlmProvider {
     LlmOptions options,
   ) async* {
     final callId =
-        'fake-call-${DateTime.now().microsecondsSinceEpoch}-${prompt.body.hashCode}';
+        'fake-call-${DateTime.now().microsecondsSinceEpoch}-${prompt.combined.hashCode}';
 
     yield LlmStreamStarted(
       callId: callId,

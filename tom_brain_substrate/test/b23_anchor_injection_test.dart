@@ -175,7 +175,7 @@ void main() {
       final r = makeRole();
       final p = r.assemble();
       expect(
-        p.body.startsWith(AssistantDedicationAnchor.text),
+        p.combined.startsWith(AssistantDedicationAnchor.text),
         isTrue,
         reason: 'body must open with the anchor (Postulate 3, invariant 1)',
       );
@@ -205,17 +205,17 @@ void main() {
         objective: 'OBJECTIVE-MARKER',
       );
       final p = r.assemble();
-      expect(p.body, contains('PERSONA:'));
-      expect(p.body, contains('PERSONA-MARKER'));
-      expect(p.body, contains('OBJECTIVE:'));
-      expect(p.body, contains('OBJECTIVE-MARKER'));
-      expect(p.body, contains('INPUTS:'));
+      expect(p.combined, contains('PERSONA:'));
+      expect(p.combined, contains('PERSONA-MARKER'));
+      expect(p.combined, contains('OBJECTIVE:'));
+      expect(p.combined, contains('OBJECTIVE-MARKER'));
+      expect(p.combined, contains('INPUTS:'));
     });
 
     test('OUTPUT SCHEMA: marker is absent when outputSchema is null', () {
       final r = makeRole();
       final p = r.assemble();
-      expect(p.body, isNot(contains('OUTPUT SCHEMA:')));
+      expect(p.combined, isNot(contains('OUTPUT SCHEMA:')));
     });
 
     test('OUTPUT SCHEMA: marker is present when outputSchema is non-null', () {
@@ -223,7 +223,7 @@ void main() {
         outputSchema: const <String, Object?>{'type': 'object'},
       );
       final p = r.assemble();
-      expect(p.body, contains('OUTPUT SCHEMA:'));
+      expect(p.combined, contains('OUTPUT SCHEMA:'));
     });
 
     test('OUTPUT SCHEMA: section embeds the actual schema JSON so the model '
@@ -248,11 +248,11 @@ void main() {
       final p = r.assemble();
       // The real schema is embedded verbatim (JSON-encoded), so the declared
       // key names reach the model.
-      expect(p.body, contains('"questions"'));
-      expect(p.body, contains('"required"'));
+      expect(p.combined, contains('"questions"'));
+      expect(p.combined, contains('"required"'));
       // The old dangling meta-reference is gone.
       expect(
-        p.body,
+        p.combined,
         isNot(contains("matching the schema declared on this role")),
       );
     });
@@ -260,8 +260,8 @@ void main() {
     test('empty inputs renders the literal "(none)" placeholder', () {
       final r = makeRole();
       final p = r.assemble();
-      expect(p.body, contains('INPUTS:'));
-      expect(p.body, contains('(none)'));
+      expect(p.combined, contains('INPUTS:'));
+      expect(p.combined, contains('(none)'));
     });
 
     test('non-empty inputs renders entries in declaration order', () {
@@ -272,7 +272,7 @@ void main() {
         'middle': 42,
       });
       // Insertion order is the contract (LinkedHashMap default).
-      final body = p.body;
+      final body = p.combined;
       final iZeta = body.indexOf('zeta: last');
       final iAlpha = body.indexOf('alpha: first');
       final iMiddle = body.indexOf('middle: 42');
@@ -284,7 +284,7 @@ void main() {
       expect(iAlpha < iMiddle, isTrue,
           reason: 'alpha was declared second; should appear before middle');
       // (none) must not appear when inputs is populated.
-      expect(p.body, isNot(contains('(none)')));
+      expect(p.combined, isNot(contains('(none)')));
     });
   });
 
@@ -295,12 +295,12 @@ void main() {
       for (final template in registry.templates) {
         final p = template.assemble();
         expect(
-          AssistantDedicationAnchor.containsAnchor(p.body),
+          AssistantDedicationAnchor.containsAnchor(p.combined),
           isTrue,
           reason: '${template.id} must produce an anchored body',
         );
         expect(
-          p.body.startsWith(AssistantDedicationAnchor.text),
+          p.combined.startsWith(AssistantDedicationAnchor.text),
           isTrue,
           reason: '${template.id} body must START with the anchor',
         );
@@ -327,17 +327,17 @@ void main() {
           'thinking_trail_summary': 'No prior context.',
         });
         expect(
-          AssistantDedicationAnchor.containsAnchor(p.body),
+          AssistantDedicationAnchor.containsAnchor(p.combined),
           isTrue,
           reason: '${template.id} must produce an anchored body with inputs',
         );
         expect(
-          p.body.startsWith(AssistantDedicationAnchor.text),
+          p.combined.startsWith(AssistantDedicationAnchor.text),
           isTrue,
           reason: '${template.id} body must START with the anchor with inputs',
         );
-        expect(p.body, contains('user_prompt: What is the capital of France?'));
-        expect(p.body, contains('thinking_trail_summary: No prior context.'));
+        expect(p.combined, contains('user_prompt: What is the capital of France?'));
+        expect(p.combined, contains('thinking_trail_summary: No prior context.'));
       }
     });
 
@@ -346,7 +346,7 @@ void main() {
       final registry = bootstrapRoleRegistry();
       final evaluator = registry.get('evaluator');
       final p = evaluator.assemble();
-      expect(p.body, contains('OUTPUT SCHEMA:'));
+      expect(p.combined, contains('OUTPUT SCHEMA:'));
     });
 
     test(
@@ -363,7 +363,7 @@ void main() {
         expect(t.outputSchema, isNull,
             reason: '$id should not declare an outputSchema');
         final p = t.assemble();
-        expect(p.body, isNot(contains('OUTPUT SCHEMA:')),
+        expect(p.combined, isNot(contains('OUTPUT SCHEMA:')),
             reason: '$id assembled body should not carry the marker');
       }
     });
@@ -385,13 +385,13 @@ void main() {
       });
       // The anchor appears at the top (from `wrap`) and once as the
       // input value — total two occurrences, NOT three.
-      final occurrences = AssistantDedicationAnchor.text.allMatches(p.body).length;
+      final occurrences = AssistantDedicationAnchor.text.allMatches(p.combined).length;
       expect(occurrences, equals(2),
           reason: 'wrap must be idempotent at the boundary; the input value '
               'occurrence is the user-supplied second occurrence');
       // The body still starts with the anchor (the wrap-side occurrence
       // comes first, ahead of any input that contains it).
-      expect(p.body.startsWith(AssistantDedicationAnchor.text), isTrue);
+      expect(p.combined.startsWith(AssistantDedicationAnchor.text), isTrue);
       // The anchor hash is still the current one.
       expect(p.anchorHash, equals(AnchorRegistry.currentHash));
     });
@@ -403,10 +403,10 @@ void main() {
       };
       final p = r.assemble(inputs: inputs);
       for (var i = 0; i < 50; i++) {
-        expect(p.body, contains('k$i: v$i'));
+        expect(p.combined, contains('k$i: v$i'));
       }
       // The body still opens with the anchor.
-      expect(p.body.startsWith(AssistantDedicationAnchor.text), isTrue);
+      expect(p.combined.startsWith(AssistantDedicationAnchor.text), isTrue);
     });
 
     test('whitespace-only input value is rendered verbatim (role layer does '
@@ -415,7 +415,7 @@ void main() {
       final p = r.assemble(inputs: <String, Object?>{
         'whitespace': '   ',
       });
-      expect(p.body, contains('whitespace:    '),
+      expect(p.combined, contains('whitespace:    '),
           reason: 'value is rendered as-is, including leading spaces');
     });
 
@@ -424,14 +424,14 @@ void main() {
       final p = r.assemble(inputs: <String, Object?>{
         'maybe_null': null,
       });
-      expect(p.body, contains('maybe_null: null'));
+      expect(p.combined, contains('maybe_null: null'));
     });
 
     test('empty inputs map and the no-arg call produce identical bodies', () {
       final r = makeRole();
       final p1 = r.assemble();
       final p2 = r.assemble(inputs: const <String, Object?>{});
-      expect(p1.body, equals(p2.body));
+      expect(p1.combined, equals(p2.combined));
       expect(p1.anchorHash, equals(p2.anchorHash));
     });
 
@@ -440,7 +440,7 @@ void main() {
       final r = makeRole();
       final p1 = r.assemble(inputs: const {'a': 1, 'b': 2});
       final p2 = r.assemble(inputs: const {'a': 1, 'b': 2});
-      expect(p1.body, equals(p2.body));
+      expect(p1.combined, equals(p2.combined));
       expect(p1.anchorHash, equals(p2.anchorHash));
       expect(p1.roleId, equals(p2.roleId));
     });

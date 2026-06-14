@@ -85,7 +85,7 @@ abstract base class HttpLlmProviderBase implements LlmProvider {
   /// Builds an [LlmCallReport] with the provider-invariant fields
   /// already filled: provenance (`providerId` = [id]), the anchor
   /// stamp (`anchorHash` = the prompt's), the body hash
-  /// (`promptHash` = `promptSha256(prompt.body)`), `retries: 0`, and
+  /// (`promptHash` = `promptSha256(prompt.combined)`), `retries: 0`, and
   /// the prompt's `templateSha`. Callers supply only the per-call
   /// counters and notes.
   ///
@@ -103,7 +103,7 @@ abstract base class HttpLlmProviderBase implements LlmProvider {
       providerId: id,
       modelId: modelId,
       anchorHash: prompt.anchorHash,
-      promptHash: promptSha256(prompt.body),
+      promptHash: promptSha256(prompt.combined),
       tokensIn: tokensIn,
       tokensOut: tokensOut,
       retries: 0,
@@ -117,7 +117,7 @@ abstract base class HttpLlmProviderBase implements LlmProvider {
   /// `<callIdPrefix>-<id>-<micros>-<32-bit body hash>`.
   String newCallId(WirePrompt prompt) {
     final now = DateTime.now().microsecondsSinceEpoch;
-    return '$callIdPrefix-$id-$now-${prompt.body.hashCode.toUnsigned(32)}';
+    return '$callIdPrefix-$id-$now-${prompt.combined.hashCode.toUnsigned(32)}';
   }
 
   /// Releases owned HTTP resources. No-op if the HTTP client was

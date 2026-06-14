@@ -22,7 +22,7 @@
 //   - Wrap the prompt body. `LlmProvider` contract (B.11): "Providers
 //     MUST NOT prepend, append, or reorder the body of the prompt
 //     they receive." The role registry (B.21+) has already prepended
-//     the anchor; this provider sends `WirePrompt.body` to Ollama
+//     the anchor; this provider sends `WirePrompt.combined` to Ollama
 //     verbatim as a single `{role: 'user', content: body}` message.
 //   - Compute / forward cost. Ollama is local-only; cost is `null`.
 //     The router-side price table (B.32+) populates cost for paid
@@ -53,7 +53,7 @@ import 'wire_prompt.dart';
 ///   - Every emitted [LlmCallReport] has `anchorHash` =
 ///     `prompt.anchorHash`; `providerId` = this provider's [id];
 ///     `modelId` = the resolved model id (`options.model` ?? [defaultModel]);
-///     `promptHash` = sha256 of `prompt.body`; `templateSha` =
+///     `promptHash` = sha256 of `prompt.combined`; `templateSha` =
 ///     `prompt.templateSha`.
 ///   - Non-streaming `completeStream` shape: exactly one
 ///     [LlmStreamStarted], then concatenated chunks (one per Ollama
@@ -94,7 +94,7 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
       baseUri: baseUri,
       model: modelId,
       messages: <OllamaMessage>[
-        OllamaMessage(role: 'user', content: prompt.body),
+        OllamaMessage(role: 'user', content: prompt.combined),
       ],
       options: ollamaOptions,
       requestTimeout: requestTimeout,
@@ -137,7 +137,7 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
         baseUri: baseUri,
         model: modelId,
         messages: <OllamaMessage>[
-          OllamaMessage(role: 'user', content: prompt.body),
+          OllamaMessage(role: 'user', content: prompt.combined),
         ],
         options: ollamaOptions,
         requestTimeout: requestTimeout,

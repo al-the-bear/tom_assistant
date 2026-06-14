@@ -96,7 +96,7 @@ void main() {
       );
       final prompt = registry.get('assistant_to_user').assemble();
 
-      expect(prompt.body, contains('I am the on-disk assistant voice.'));
+      expect(prompt.combined, contains('I am the on-disk assistant voice.'));
     });
 
     test('file content is trimmed of surrounding whitespace', () {
@@ -235,7 +235,7 @@ void main() {
         inputs: const <String, Object?>{'sub_question': 'what is x?'},
       );
       expect(prompt.roleId, equals('sub_thinker'));
-      expect(prompt.body, isNotEmpty);
+      expect(prompt.combined, isNotEmpty);
     });
 
     test('a blank / whitespace-only file falls back to the in-code value', () {
@@ -275,7 +275,7 @@ void main() {
           registry.get(id).personaText,
           equals(bootstrap.get(id).personaText),
         );
-        expect(registry.get(id).assemble().body, isNotEmpty);
+        expect(registry.get(id).assemble().combined, isNotEmpty);
       }
     });
 
@@ -309,13 +309,13 @@ void main() {
       for (final id in prototypeRoleIds) {
         final prompt = registry.get(id).assemble();
         expect(
-          prompt.body,
+          prompt.combined,
           startsWith(AssistantDedicationAnchor.text),
           reason: '$id (file-loaded) must start with the anchor',
         );
         expect(prompt.anchorHash, equals(AnchorRegistry.currentHash));
         // The overridden persona must still be present after the anchor.
-        expect(prompt.body, contains('on-disk voice for $id'));
+        expect(prompt.combined, contains('on-disk voice for $id'));
       }
     });
 
@@ -330,7 +330,7 @@ void main() {
         final prompt = registry.get(id).assemble(
           inputs: const <String, Object?>{'k': 'v'},
         );
-        expect(prompt.body, startsWith(AssistantDedicationAnchor.text));
+        expect(prompt.combined, startsWith(AssistantDedicationAnchor.text));
         expect(prompt.anchorHash, equals(AnchorRegistry.currentHash));
       }
     });

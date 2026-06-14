@@ -395,7 +395,7 @@ void main() {
       final r = bootstrapRoleRegistry();
       expect(r.contains('researcher'), isTrue);
       final p = r.get('researcher').assemble();
-      expect(p.body, startsWith(AssistantDedicationAnchor.text));
+      expect(p.combined, startsWith(AssistantDedicationAnchor.text));
       expect(p.anchorHash, equals(AnchorRegistry.currentHash));
       expect(p.roleId, equals('researcher'));
     });

@@ -516,7 +516,7 @@ void main() {
 // ─── Test helpers ────────────────────────────────────────────────
 
 WirePrompt _prompt(String body) => WirePrompt(
-      body: body,
+      system: body,
       anchorHash: 'sha256:anchor',
       roleId: 'analyser',
       templateSha: 'sha-abc',

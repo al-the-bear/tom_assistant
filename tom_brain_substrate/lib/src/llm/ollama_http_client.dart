@@ -85,7 +85,7 @@ abstract class OllamaHttpClient {
   /// [model] is the resolved Ollama model id (e.g. `gemma3:27b`).
   /// [messages] is the OpenAI-format conversation list — for the
   /// post-anchor wire prompt the substrate sends a single
-  /// `{role: 'user', content: <WirePrompt.body>}` message.
+  /// `{role: 'user', content: <WirePrompt.combined>}` message.
   /// [options] carries provider-tunable knobs that translate to
   /// Ollama's `options` map (`temperature`, `num_predict`, `stop`).
   /// [requestTimeout] caps the round-trip; `null` ⇒ no cap.
@@ -155,7 +155,7 @@ abstract class OllamaHttpClient {
 ///
 /// Mirrors Ollama's wire shape: `{role: 'user'|'system'|'assistant',
 /// content: '...'}`. The substrate currently sends only one message
-/// per call (`role: 'user'` with the anchor-prefixed `WirePrompt.body`);
+/// per call (`role: 'user'` with the anchor-prefixed `WirePrompt.combined`);
 /// the list shape is preserved so multi-turn role registries (B.21+)
 /// can compose conversations without churning this interface.
 final class OllamaMessage {

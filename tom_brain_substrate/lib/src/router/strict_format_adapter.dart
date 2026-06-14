@@ -56,9 +56,12 @@ class StrictFormatAdapter {
   static const String reinforcementMarker = '[STRICT FORMAT REQUIRED]';
 
   /// Returns a copy of [prompt] with a strict-format reinforcement block
-  /// appended to the body. Every provenance field
+  /// appended to the [WirePrompt.system] channel. Every provenance field
   /// ([WirePrompt.anchorHash], [WirePrompt.roleId],
-  /// [WirePrompt.templateSha]) is carried through unchanged.
+  /// [WirePrompt.templateSha]) and the [WirePrompt.user] channel are
+  /// carried through unchanged. The block is a standing instruction, so
+  /// it belongs in `system`; appending it there keeps the anchor leading
+  /// the system channel.
   ///
   /// When [responseFormat] is non-null (the role declared a structured
   /// output via `LlmOptions.responseFormat`), the JSON-encoded schema is
@@ -68,7 +71,8 @@ class StrictFormatAdapter {
     Map<String, Object?>? responseFormat,
   }) {
     return WirePrompt(
-      body: '${prompt.body}\n\n${_block(responseFormat)}',
+      system: '${prompt.system}\n\n${_block(responseFormat)}',
+      user: prompt.user,
       anchorHash: prompt.anchorHash,
       roleId: prompt.roleId,
       templateSha: prompt.templateSha,

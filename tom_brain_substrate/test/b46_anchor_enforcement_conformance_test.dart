@@ -219,16 +219,16 @@ void main() {
               expect(captor.prompts, hasLength(1));
               final wire = captor.prompts.single;
               expect(
-                AssistantDedicationAnchor.containsAnchor(wire.body),
+                AssistantDedicationAnchor.containsAnchor(wire.combined),
                 isTrue,
                 reason: 'role $roleId / shape ${shape.label}: '
-                    'WirePrompt.body must contain the anchor',
+                    'WirePrompt.system (via combined) must contain the anchor',
               );
               expect(
-                wire.body.startsWith(AssistantDedicationAnchor.text),
+                wire.combined.startsWith(AssistantDedicationAnchor.text),
                 isTrue,
                 reason: 'role $roleId / shape ${shape.label}: '
-                    'WirePrompt.body must START with the anchor text',
+                    'WirePrompt.system (via combined) must START with the anchor text',
               );
               expect(wire.anchorHash, AnchorRegistry.currentHash);
               expect(wire.roleId, roleId);
@@ -260,11 +260,11 @@ void main() {
               expect(captor.prompts, hasLength(1));
               final wire = captor.prompts.single;
               expect(
-                AssistantDedicationAnchor.containsAnchor(wire.body),
+                AssistantDedicationAnchor.containsAnchor(wire.combined),
                 isTrue,
               );
               expect(
-                wire.body.startsWith(AssistantDedicationAnchor.text),
+                wire.combined.startsWith(AssistantDedicationAnchor.text),
                 isTrue,
               );
               expect(wire.anchorHash, AnchorRegistry.currentHash);

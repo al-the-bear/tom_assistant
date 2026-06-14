@@ -209,7 +209,7 @@ final class _RecordingProvider implements LlmProvider {
         modelId: options.model ?? defaultModel,
         anchorHash: prompt.anchorHash,
         promptHash: 'sha256:0',
-        tokensIn: prompt.body.length,
+        tokensIn: prompt.combined.length,
         tokensOut: 0,
         retries: 0,
         wallClockMs: 0,

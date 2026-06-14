@@ -112,7 +112,7 @@ void main() {
         test('no-arg assemble produces an anchored body', () {
           final p = role.assemble();
           expect(
-            AssistantDedicationAnchor.containsAnchor(p.body),
+            AssistantDedicationAnchor.containsAnchor(p.combined),
             isTrue,
             reason: '${role.id}: assemble() body must contain the anchor',
           );
@@ -121,7 +121,7 @@ void main() {
         test('empty inputs map produces an anchored body', () {
           final p = role.assemble(inputs: const <String, Object?>{});
           expect(
-            AssistantDedicationAnchor.containsAnchor(p.body),
+            AssistantDedicationAnchor.containsAnchor(p.combined),
             isTrue,
             reason:
                 '${role.id}: assemble(inputs: {}) body must contain the anchor',
@@ -135,7 +135,7 @@ void main() {
                 'Prior context: the user has asked similar questions before.',
           });
           expect(
-            AssistantDedicationAnchor.containsAnchor(p.body),
+            AssistantDedicationAnchor.containsAnchor(p.combined),
             isTrue,
             reason: '${role.id}: populated-inputs body must contain the anchor',
           );
@@ -156,16 +156,16 @@ void main() {
           final p1 = role.assemble();
           final p2 = role.assemble();
           expect(
-            AssistantDedicationAnchor.containsAnchor(p1.body),
+            AssistantDedicationAnchor.containsAnchor(p1.combined),
             isTrue,
           );
           expect(
-            AssistantDedicationAnchor.containsAnchor(p2.body),
+            AssistantDedicationAnchor.containsAnchor(p2.combined),
             isTrue,
           );
           // The property is stable across calls — not just "happens
           // to hold once".
-          expect(p1.body, equals(p2.body));
+          expect(p1.combined, equals(p2.combined));
         });
       });
     }
@@ -227,12 +227,12 @@ void main() {
         'pre_anchored_input': AssistantDedicationAnchor.text,
       });
       expect(
-        AssistantDedicationAnchor.containsAnchor(p.body),
+        AssistantDedicationAnchor.containsAnchor(p.combined),
         isTrue,
         reason: 'pre-anchored input must not bypass the wrap',
       );
       expect(
-        p.body.startsWith(AssistantDedicationAnchor.text),
+        p.combined.startsWith(AssistantDedicationAnchor.text),
         isTrue,
         reason: 'the prepended anchor must precede the pre-anchored input',
       );
@@ -248,7 +248,7 @@ void main() {
           'tampered_input': 'preamble ${AssistantDedicationAnchor.text} tail',
         });
         expect(
-          AssistantDedicationAnchor.containsAnchor(p.body),
+          AssistantDedicationAnchor.containsAnchor(p.combined),
           isTrue,
           reason: '${role.id}: pre-anchored input did not converge on anchor',
         );
@@ -299,7 +299,7 @@ void main() {
       for (final role in registry.templates) {
         final p = role.assemble();
         expect(
-          AssistantDedicationAnchor.containsAnchor(p.body),
+          AssistantDedicationAnchor.containsAnchor(p.combined),
           isTrue,
           reason: '${role.id}: empty-inputs assemble did not converge on '
               'anchor',
@@ -309,7 +309,7 @@ void main() {
         // empty-prompt tamper vector tries to produce an
         // anchor-only outbound; the role layer's empty-input case
         // produces a richer body that still carries the anchor.
-        expect(p.body.length, greaterThan(AssistantDedicationAnchor.text.length));
+        expect(p.combined.length, greaterThan(AssistantDedicationAnchor.text.length));
       }
     });
 
@@ -324,11 +324,11 @@ void main() {
         'empty_value_two': '',
       });
       expect(
-        AssistantDedicationAnchor.containsAnchor(p.body),
+        AssistantDedicationAnchor.containsAnchor(p.combined),
         isTrue,
       );
       expect(
-        p.body.startsWith(AssistantDedicationAnchor.text),
+        p.combined.startsWith(AssistantDedicationAnchor.text),
         isTrue,
       );
     });
@@ -588,7 +588,7 @@ void main() {
         for (final inputs in inputShapes) {
           final p = role.assemble(inputs: inputs);
           expect(
-            AssistantDedicationAnchor.containsAnchor(p.body),
+            AssistantDedicationAnchor.containsAnchor(p.combined),
             isTrue,
             reason: '${role.id} × ${inputs.keys.toList()}: '
                 'assembled body did not converge on the anchor',

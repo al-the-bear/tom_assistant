@@ -18,7 +18,7 @@
 //   - Wrap the prompt body. `LlmProvider` contract (B.11): "Providers
 //     MUST NOT prepend, append, or reorder the body of the prompt
 //     they receive." The role registry (B.21+) has already prepended
-//     the anchor; this provider sends `WirePrompt.body` to the
+//     the anchor; this provider sends `WirePrompt.combined` to the
 //     vendor verbatim as a single `{role: 'user', content: body}`
 //     message.
 //   - Compute / forward cost. The router-side price table (B.32+)
@@ -73,7 +73,7 @@ import 'wire_prompt.dart';
 ///     `prompt.anchorHash`; `providerId` = this provider's [id];
 ///     `modelId` = the resolved model id (response echo wins;
 ///     fallback to `options.model` then [defaultModel]);
-///     `promptHash` = sha256 of `prompt.body`; `templateSha` =
+///     `promptHash` = sha256 of `prompt.combined`; `templateSha` =
 ///     `prompt.templateSha`.
 ///   - Streaming `completeStream` shape: exactly one
 ///     [LlmStreamStarted], then one [LlmStreamChunk] per non-empty
@@ -134,7 +134,7 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
       baseUri: baseUri,
       model: modelId,
       messages: <OpenAiMessage>[
-        OpenAiMessage(role: 'user', content: prompt.body),
+        OpenAiMessage(role: 'user', content: prompt.combined),
       ],
       options: openAiOptions,
       apiKey: apiKey,
@@ -180,7 +180,7 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
         baseUri: baseUri,
         model: modelId,
         messages: <OpenAiMessage>[
-          OpenAiMessage(role: 'user', content: prompt.body),
+          OpenAiMessage(role: 'user', content: prompt.combined),
         ],
         options: openAiOptions,
         apiKey: apiKey,

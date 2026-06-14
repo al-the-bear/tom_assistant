@@ -76,7 +76,7 @@ abstract class AnthropicHttpClient {
   /// [model] is the resolved Anthropic model id (e.g.
   /// `claude-sonnet-4-20250514`). [messages] is the conversation list —
   /// for the post-anchor wire prompt the substrate sends a single
-  /// `{role: 'user', content: <WirePrompt.body>}` message. [apiKey] is
+  /// `{role: 'user', content: <WirePrompt.combined>}` message. [apiKey] is
   /// sent as `x-api-key`; `null` ⇒ no auth header. [anthropicVersion] is
   /// sent as the REQUIRED `anthropic-version` header. [options] carries
   /// the (REQUIRED) `max_tokens` plus the optional knobs.
@@ -117,7 +117,7 @@ abstract class AnthropicHttpClient {
 ///
 /// Mirrors Anthropic's wire shape: `{role: 'user'|'assistant', content:
 /// '...'}`. The substrate currently sends only one `user` message per
-/// call (the anchor-prefixed `WirePrompt.body`); the list shape is
+/// call (the anchor-prefixed `WirePrompt.combined`); the list shape is
 /// preserved for future multi-turn registries. The system prompt is a
 /// separate top-level `system` field in the Messages API; the substrate
 /// folds it into the anchored body, so it is not modelled here.

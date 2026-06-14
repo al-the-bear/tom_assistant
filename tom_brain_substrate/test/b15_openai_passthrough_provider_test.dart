@@ -26,7 +26,7 @@
 //     off-interface helpers landed at B.15 for B.18 / B.25 / B.26
 //     consumers) call through to the seam unchanged and surface
 //     ordering / cardinality invariants.
-//   - Prove `LlmCallReport.promptHash` is sha256 over `prompt.body`
+//   - Prove `LlmCallReport.promptHash` is sha256 over `prompt.combined`
 //     (deterministic given the prompt body — same body → same hash;
 //     different body → different hash; same prefix shape `sha256:` as
 //     B.14 + `AnchorRegistry.currentHash`).
@@ -71,7 +71,7 @@ void main() {
 
       final report = await provider.complete(
         const WirePrompt(
-          body: 'anchor + body',
+          system: 'anchor + body',
           anchorHash: 'sha256:anchor-stamp',
           roleId: 'assistant_to_user',
           templateSha: 'tpl-1',
@@ -99,7 +99,7 @@ void main() {
 
       await provider.complete(
         const WirePrompt(
-          body: 'I am dedicated to this user.\n\nuser question',
+          system: 'I am dedicated to this user.\n\nuser question',
           anchorHash: 'sha256:x',
           roleId: 'assistant_to_user',
         ),
@@ -128,7 +128,7 @@ void main() {
       );
 
       final report = await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'sha256:y', roleId: 'analyser'),
+        const WirePrompt(system: 'x', anchorHash: 'sha256:y', roleId: 'analyser'),
         const LlmOptions(model: 'mistralai/mistral-7b-instruct'),
       );
 
@@ -144,7 +144,7 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(
           temperature: 0.42,
           maxOutputTokens: 256,
@@ -166,7 +166,7 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(responseFormat: <String, Object?>{'type': 'json_object'}),
       );
 
@@ -191,7 +191,7 @@ void main() {
       );
 
       await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
 
@@ -208,7 +208,7 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final report = await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
 
@@ -230,7 +230,7 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final report = await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
 
@@ -250,7 +250,7 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final report = await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
 
@@ -275,7 +275,7 @@ void main() {
         final provider = _newProvider(httpClient: fake);
 
         final report = await provider.complete(
-          const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+          const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
           const LlmOptions(
             toolCatalogue: ToolCatalogue(<ToolDescriptor>[
               ToolDescriptor(
@@ -305,7 +305,7 @@ void main() {
 
       await expectLater(
         provider.complete(
-          const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+          const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
           const LlmOptions(),
         ),
         throwsA(isA<OpenAiHttpException>()),
@@ -344,7 +344,7 @@ void main() {
         final events = await provider
             .completeStream(
               const WirePrompt(
-                body: 'streaming body',
+                system: 'streaming body',
                 anchorHash: 'sha256:stream-anchor',
                 roleId: 'assistant_to_user',
                 templateSha: 'tpl-2',
@@ -398,7 +398,7 @@ void main() {
 
       final events = await provider
           .completeStream(
-            const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
             const LlmOptions(),
           )
           .toList();
@@ -422,7 +422,7 @@ void main() {
 
       final events = await provider
           .completeStream(
-            const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
             const LlmOptions(),
           )
           .toList();
@@ -454,7 +454,7 @@ void main() {
 
       final events = await provider
           .completeStream(
-            const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
             const LlmOptions(),
           )
           .toList();
@@ -477,7 +477,7 @@ void main() {
 
         final events = await provider
             .completeStream(
-              const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+              const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
               const LlmOptions(),
             )
             .toList();
@@ -499,11 +499,11 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final r1 = await provider.complete(
-        const WirePrompt(body: 'deterministic', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'deterministic', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       final r2 = await provider.complete(
-        const WirePrompt(body: 'deterministic', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'deterministic', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       expect(r1.promptHash, r2.promptHash);
@@ -517,11 +517,11 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final r1 = await provider.complete(
-        const WirePrompt(body: 'first', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'first', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       final r2 = await provider.complete(
-        const WirePrompt(body: 'second', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'second', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       expect(r1.promptHash, isNot(equals(r2.promptHash)));
@@ -672,7 +672,7 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final report = await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(model: 'fallback-model'),
       );
 

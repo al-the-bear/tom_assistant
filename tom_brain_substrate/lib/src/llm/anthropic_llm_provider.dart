@@ -18,7 +18,7 @@
 //     reclassifies.
 //   - Wrap the prompt body. `LlmProvider` contract (B.11): the role
 //     registry has already prepended the assistant-dedication anchor;
-//     this provider sends `WirePrompt.body` to the vendor verbatim as a
+//     this provider sends `WirePrompt.combined` to the vendor verbatim as a
 //     single `{role: 'user', content: body}` message.
 //   - Compute / forward cost, resolve the model id, or rotate the
 //     credential — all router responsibilities (same split as B.15).
@@ -57,7 +57,7 @@ import 'wire_prompt.dart';
 /// every emitted [LlmCallReport] has `anchorHash` = `prompt.anchorHash`,
 /// `providerId` = [id], `modelId` = the resolved model id (response echo
 /// wins; fallback to `options.model` then [defaultModel]), `promptHash`
-/// = sha256 of `prompt.body`, `templateSha` = `prompt.templateSha`.
+/// = sha256 of `prompt.combined`, `templateSha` = `prompt.templateSha`.
 ///
 /// **Streaming shape.** Exactly one [LlmStreamStarted], then one
 /// [LlmStreamChunk] per non-empty `content_block_delta`, then exactly
@@ -112,7 +112,7 @@ final class AnthropicLlmProvider extends HttpLlmProviderBase {
       baseUri: baseUri,
       model: modelId,
       messages: <AnthropicMessage>[
-        AnthropicMessage(role: 'user', content: prompt.body),
+        AnthropicMessage(role: 'user', content: prompt.combined),
       ],
       options: anthropicOptions,
       apiKey: apiKey,
@@ -159,7 +159,7 @@ final class AnthropicLlmProvider extends HttpLlmProviderBase {
         baseUri: baseUri,
         model: modelId,
         messages: <AnthropicMessage>[
-          AnthropicMessage(role: 'user', content: prompt.body),
+          AnthropicMessage(role: 'user', content: prompt.combined),
         ],
         options: anthropicOptions,
         apiKey: apiKey,

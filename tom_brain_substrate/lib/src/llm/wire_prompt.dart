@@ -62,10 +62,26 @@
 /// must consume the same shape and a subtype here would invite
 /// per-provider variants that bypass the anchor guarantee.
 ///
+/// **Two channels.** A `WirePrompt` carries the prompt as two separate
+/// parts so providers can route each to its native channel (a top-level
+/// `system` field on Anthropic, a `system`-role message on OpenAI /
+/// Ollama; the Stub concatenates):
+///   - [system] — the standing framing: the assistant-dedication anchor,
+///     the role persona / objective, the structured-output declaration.
+///     This is the part the model treats as instructions.
+///   - [user] — the call-specific content (the inputs the caller injected
+///     for this one prompt). May be empty for system-only roles.
+///
+/// The native-channel mapping is the provider's responsibility; a
+/// provider that has no channel separation reads [combined].
+///
 /// **Anchor invariant.** Every `WirePrompt` is the output of
-/// `tom_brain_shared.anchor.wrap(roleTemplateBody)`:
-///   - [body] begins with the anchor block followed by the
-///     role-assembled body.
+/// `RoleTemplate.assemble`, which runs the assembled system text through
+/// `AssistantDedicationAnchor.ensurePrefix(...)`:
+///   - [system] BEGINS with the anchor block. The anchor leads the
+///     *system* channel — the part the model reads as instructions — so
+///     the dedication framing is the first thing every backend sees,
+///     regardless of how [user] is delivered.
 ///   - [anchorHash] is the content hash of the anchor block, used
 ///     by the router/provider to stamp `LlmCallReport.anchorHash`
 ///     so the conformance test (B.46) can prove the anchor was
@@ -78,21 +94,29 @@
 /// every emitted report and fails the build if a path produced a
 /// prompt without it.
 final class WirePrompt {
-  /// The fully assembled prompt text, anchor-first.
+  /// The standing framing channel, anchor-first.
   ///
   /// Guaranteed shape (by `RoleTemplate.assemble`):
   ///
   /// ```
   /// <anchor block (constant from tom_brain_shared)>
   ///
-  /// <role-assembled body (persona + objective + template + inputs)>
+  /// <role-assembled framing (persona + objective + output schema)>
   /// ```
   ///
-  /// Providers send this string as the user/system message to their
-  /// backend. The substrate does not split it back into anchor /
-  /// body components for the wire format — the model sees one
-  /// coherent prompt whose first paragraph is the anchor.
-  final String body;
+  /// A provider routes this to its native system channel (Anthropic
+  /// top-level `system`, OpenAI / Ollama `system`-role message). The
+  /// first paragraph is always the assistant-dedication anchor.
+  final String system;
+
+  /// The call-specific content channel — the inputs the caller injected
+  /// for this prompt.
+  ///
+  /// Empty (the default) for system-only roles that carry no per-call
+  /// user text. A provider routes this to its native user channel; a
+  /// provider with no channel separation appends it after [system] (see
+  /// [combined]).
+  final String user;
 
   /// Content hash of the anchor block that was prepended.
   ///
@@ -122,9 +146,24 @@ final class WirePrompt {
   final String? templateSha;
 
   const WirePrompt({
-    required this.body,
+    required this.system,
+    this.user = '',
     required this.anchorHash,
     required this.roleId,
     this.templateSha,
   });
+
+  /// The two channels joined into one string, with a blank line between
+  /// them and empty parts dropped.
+  ///
+  /// This is what a provider sends when it has no native channel
+  /// separation — permanently the Stub provider, and transitionally any
+  /// provider until its native-channel mapping lands. Because [system]
+  /// leads (and begins with the anchor), `combined` always begins with
+  /// the anchor too.
+  String get combined {
+    if (user.isEmpty) return system;
+    if (system.isEmpty) return user;
+    return '$system\n\n$user';
+  }
 }

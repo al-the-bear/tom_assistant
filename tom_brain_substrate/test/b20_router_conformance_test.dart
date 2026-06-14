@@ -740,7 +740,7 @@ void main() {
 // ─── Test helpers ────────────────────────────────────────────────
 
 WirePrompt _prompt(String body) => WirePrompt(
-      body: body,
+      system: body,
       anchorHash: 'sha256:anchor',
       roleId: 'analyser',
       templateSha: 'sha-abc',
@@ -927,7 +927,7 @@ class _CountingProvider implements LlmProvider {
       modelId: model,
       anchorHash: prompt.anchorHash,
       promptHash: 'sha256:body',
-      tokensIn: prompt.body.length,
+      tokensIn: prompt.combined.length,
       tokensOut: 4,
       retries: 0,
       wallClockMs: 0,
@@ -1023,7 +1023,7 @@ class _ScriptedProvider implements LlmProvider {
       modelId: options.model ?? defaultModel,
       anchorHash: prompt.anchorHash,
       promptHash: 'sha256:body',
-      tokensIn: prompt.body.length,
+      tokensIn: prompt.combined.length,
       tokensOut: 1,
       retries: 0,
       wallClockMs: delay.inMilliseconds,

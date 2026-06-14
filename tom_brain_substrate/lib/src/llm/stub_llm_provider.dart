@@ -38,7 +38,7 @@
 //      `Map<String, String>`, raise to simulate failure). Synchronous
 //      on purpose: a `Future` return would invite tests to do real
 //      I/O inside the stub, and this provider's contract is "no I/O".
-//   3. **Default echo** — `'STUB:' + prompt.body`. Used when neither
+//   3. **Default echo** — `'STUB:' + prompt.combined`. Used when neither
 //      script nor responder is configured. Documented at
 //      [StubLlmProvider.defaultEcho].
 //
@@ -46,7 +46,7 @@
 //
 //   - `wallClockMs: 0` on every emitted [LlmCallReport]. No `Stopwatch`
 //     is started. Tests pin the value to `0` exactly.
-//   - `tokensIn = prompt.body.length`, `tokensOut = response.length`
+//   - `tokensIn = prompt.combined.length`, `tokensOut = response.length`
 //     (character counts). Documented as a proxy tokeniser — the
 //     conformance tests downstream do not depend on real token counts.
 //   - `retries: 0`, `cost: null` on every report.
@@ -223,7 +223,7 @@ final class StubLlmProvider implements LlmProvider {
     _script.add(response);
   }
 
-  /// Default response generator: `'STUB:' + prompt.body`.
+  /// Default response generator: `'STUB:' + prompt.combined`.
   ///
   /// Used when the stub is constructed without `script:` and without
   /// `responder:`. The `STUB:` prefix makes deterministic
@@ -231,7 +231,7 @@ final class StubLlmProvider implements LlmProvider {
   /// configuration mistake ever pointed a production path at the
   /// stub.
   static String defaultEcho(WirePrompt prompt, LlmOptions options) {
-    return 'STUB:${prompt.body}';
+    return 'STUB:${prompt.combined}';
   }
 
   /// Default chunk splitter: returns `[response]` if non-empty,
@@ -268,8 +268,8 @@ final class StubLlmProvider implements LlmProvider {
       providerId: id,
       modelId: modelId,
       anchorHash: prompt.anchorHash,
-      promptHash: promptSha256(prompt.body),
-      tokensIn: prompt.body.length,
+      promptHash: promptSha256(prompt.combined),
+      tokensIn: prompt.combined.length,
       tokensOut: response.length,
       retries: 0,
       wallClockMs: 0,
@@ -309,8 +309,8 @@ final class StubLlmProvider implements LlmProvider {
           providerId: id,
           modelId: modelId,
           anchorHash: prompt.anchorHash,
-          promptHash: promptSha256(prompt.body),
-          tokensIn: prompt.body.length,
+          promptHash: promptSha256(prompt.combined),
+          tokensIn: prompt.combined.length,
           tokensOut: 0,
           retries: 0,
           wallClockMs: 0,
@@ -333,8 +333,8 @@ final class StubLlmProvider implements LlmProvider {
         providerId: id,
         modelId: modelId,
         anchorHash: prompt.anchorHash,
-        promptHash: promptSha256(prompt.body),
-        tokensIn: prompt.body.length,
+        promptHash: promptSha256(prompt.combined),
+        tokensIn: prompt.combined.length,
         tokensOut: response.length,
         retries: 0,
         wallClockMs: 0,
@@ -365,7 +365,7 @@ final class StubLlmProvider implements LlmProvider {
   }
 
   String _callIdFor(WirePrompt prompt) {
-    final bodyTag = prompt.body.hashCode.toUnsigned(32).toRadixString(16);
+    final bodyTag = prompt.combined.hashCode.toUnsigned(32).toRadixString(16);
     return 'stub-$id-$_callCounter-$bodyTag';
   }
 
@@ -428,8 +428,8 @@ final class _AlwaysFailsStubProvider extends StubLlmProvider {
         providerId: id,
         modelId: modelId,
         anchorHash: prompt.anchorHash,
-        promptHash: promptSha256(prompt.body),
-        tokensIn: prompt.body.length,
+        promptHash: promptSha256(prompt.combined),
+        tokensIn: prompt.combined.length,
         tokensOut: 0,
         retries: 0,
         wallClockMs: 0,

@@ -32,7 +32,7 @@
 //      prompt body. The verification reaches into the per-provider
 //      transport (`_FakeOllamaHttpClient`, `_FakeOpenAiHttpClient`)
 //      or — for the stub — uses the `defaultEcho` responder
-//      (`'STUB:' + prompt.body`) and asserts the body suffix.
+//      (`'STUB:' + prompt.combined`) and asserts the body suffix.
 //
 //   5. **Streaming lifecycle.** `completeStream` emits exactly one
 //      [LlmStreamStarted] first, then zero-or-more [LlmStreamChunk]
@@ -202,7 +202,7 @@ void _runConformance(_HarnessBuilder buildHarness) {
   });
 
   group('contract — provenance stamp invariant', () {
-    test('promptHash is sha256:<lowercase-hex> over prompt.body', () async {
+    test('promptHash is sha256:<lowercase-hex> over prompt.combined', () async {
       final h = buildHarness()..primeHappy(responseText: 'OK');
       addTearDown(h.dispose);
 
@@ -210,7 +210,7 @@ void _runConformance(_HarnessBuilder buildHarness) {
       final report = await h.provider.complete(prompt, LlmOptions.empty);
 
       final expected =
-          'sha256:${sha256.convert(utf8.encode(prompt.body)).toString()}';
+          'sha256:${sha256.convert(utf8.encode(prompt.combined)).toString()}';
       expect(report.promptHash, expected);
       expect(report.promptHash, startsWith('sha256:'));
     });
@@ -434,7 +434,7 @@ WirePrompt _wirePrompt({
   String? templateSha,
 }) {
   return WirePrompt(
-    body: body,
+    system: body,
     anchorHash: anchorHash,
     roleId: roleId,
     templateSha: templateSha,
@@ -859,7 +859,7 @@ class _StubHarness implements _ProviderHarness {
     _provider = StubLlmProvider(
       id: 'stub:b17',
       responder: (prompt, _) {
-        _lastBody = prompt.body;
+        _lastBody = prompt.combined;
         return responseText;
       },
     );
@@ -903,7 +903,7 @@ class _StubHarness implements _ProviderHarness {
     _provider = StubLlmProvider(
       id: 'stub:b17',
       responder: (prompt, _) {
-        _lastBody = prompt.body;
+        _lastBody = prompt.combined;
         return body;
       },
       chunkSplitter: StubLlmProvider.splitByWord,

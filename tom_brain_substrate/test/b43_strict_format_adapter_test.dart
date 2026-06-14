@@ -35,9 +35,9 @@ void main() {
 
       // The original body is preserved verbatim and stays first (so the
       // anchor paragraph remains the prompt's opening).
-      expect(reinforced.body, startsWith('anchor-block\n\nrole body text'));
+      expect(reinforced.combined, startsWith('anchor-block\n\nrole body text'));
       expect(
-        reinforced.body,
+        reinforced.combined,
         contains(StrictFormatAdapter.reinforcementMarker),
       );
     });
@@ -54,10 +54,10 @@ void main() {
     test('without a schema, embeds only the generic strict-format text', () {
       final reinforced = adapter.reinforce(_prompt('body'));
 
-      expect(reinforced.body, contains('did not match the required'));
+      expect(reinforced.combined, contains('did not match the required'));
       // No JSON schema fragment when none was supplied.
-      expect(reinforced.body, isNot(contains('"type"')));
-      expect(reinforced.body, isNot(contains('conforming to this schema')));
+      expect(reinforced.combined, isNot(contains('"type"')));
+      expect(reinforced.combined, isNot(contains('conforming to this schema')));
     });
 
     test('with a schema, embeds the JSON-encoded schema', () {
@@ -70,8 +70,8 @@ void main() {
       final reinforced =
           adapter.reinforce(_prompt('body'), responseFormat: schema);
 
-      expect(reinforced.body, contains('conforming to this schema'));
-      expect(reinforced.body, contains(jsonEncode(schema)));
+      expect(reinforced.combined, contains('conforming to this schema'));
+      expect(reinforced.combined, contains(jsonEncode(schema)));
     });
   });
 
@@ -273,7 +273,7 @@ void main() {
 // ─── Test helpers ────────────────────────────────────────────────
 
 WirePrompt _prompt(String body) => WirePrompt(
-      body: body,
+      system: body,
       anchorHash: 'sha256:anchor',
       roleId: 'analyser',
       templateSha: 'sha-abc',
@@ -319,7 +319,7 @@ class _RecordingFailureProvider implements LlmProvider {
     LlmOptions options,
   ) async {
     callCount++;
-    bodies.add(prompt.body);
+    bodies.add(prompt.combined);
     if (_exceptions.isNotEmpty) {
       throw _exceptions.removeAt(0);
     }
@@ -329,7 +329,7 @@ class _RecordingFailureProvider implements LlmProvider {
       modelId: options.model ?? defaultModel,
       anchorHash: prompt.anchorHash,
       promptHash: 'sha256:body',
-      tokensIn: prompt.body.length,
+      tokensIn: prompt.combined.length,
       tokensOut: r.length,
       retries: 0,
       wallClockMs: 0,
@@ -343,7 +343,7 @@ class _RecordingFailureProvider implements LlmProvider {
     LlmOptions options,
   ) async* {
     streamCallCount++;
-    bodies.add(prompt.body);
+    bodies.add(prompt.combined);
     final callId = 'rfp-$id-$streamCallCount';
     yield LlmStreamStarted(
       callId: callId,

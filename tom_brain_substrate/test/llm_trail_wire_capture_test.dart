@@ -58,7 +58,7 @@ void main() {
           await f.facade.completeStream(_assistantCall()).toList();
       final wire = (events.last as LlmStreamCompleted).wire!;
 
-      // The provider echoes `prompt.body.length` as tokensIn; the captured
+      // The provider echoes `prompt.combined.length` as tokensIn; the captured
       // body must be that same string (one source of truth, not a re-render).
       final report = (events.last as LlmStreamCompleted).report;
       expect(wire.body.length, report.tokensIn);
@@ -172,7 +172,7 @@ final class _RecordingProvider implements LlmProvider {
         modelId: options.model ?? defaultModel,
         anchorHash: prompt.anchorHash,
         promptHash: 'sha256:0',
-        tokensIn: prompt.body.length,
+        tokensIn: prompt.combined.length,
         tokensOut: 0,
         retries: 0,
         wallClockMs: 0,

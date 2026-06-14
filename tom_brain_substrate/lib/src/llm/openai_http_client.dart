@@ -84,7 +84,7 @@ abstract class OpenAiHttpClient {
   /// `gpt-4o-mini`, `mistralai/mistral-7b-instruct`).
   /// [messages] is the OpenAI-format conversation list — for the
   /// post-anchor wire prompt the substrate sends a single
-  /// `{role: 'user', content: <WirePrompt.body>}` message.
+  /// `{role: 'user', content: <WirePrompt.combined>}` message.
   /// [apiKey] is the bearer token for `Authorization: Bearer …`;
   /// `null` ⇒ no auth header (useful for self-hosted gateways).
   /// [options] carries provider-tunable knobs that translate to
@@ -173,7 +173,7 @@ abstract class OpenAiHttpClient {
 ///
 /// Mirrors OpenAI's wire shape: `{role: 'user'|'system'|'assistant'|'tool',
 /// content: '...'}`. The substrate currently sends only one message
-/// per call (`role: 'user'` with the anchor-prefixed `WirePrompt.body`);
+/// per call (`role: 'user'` with the anchor-prefixed `WirePrompt.combined`);
 /// the list shape is preserved so multi-turn role registries (B.21+)
 /// can compose conversations without churning this interface.
 final class OpenAiMessage {

@@ -53,7 +53,7 @@
 //     [AnchorViolation] on mismatch. The hook lands at B.40; B.23
 //     ships the registry + the exception so the hook lands by
 //     consumption, not by invention.
-//   * The provider-side hashing of `WirePrompt.body`. Providers
+//   * The provider-side hashing of `WirePrompt.combined`. Providers
 //     (B.14 Ollama, B.15 OpenAI passthrough, B.16 Stub) call the same
 //     `promptSha256` helper this registry does, but on a different
 //     input and lifecycle — the body hash is per-call and
@@ -87,7 +87,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart' show promptSha256;
 /// `_ai/quests/tom_brain/overview.tom_brain.md`):
 ///
 /// 1. Every [WirePrompt] the substrate emits has
-///    [WirePrompt.body] starting with [AssistantDedicationAnchor.text]
+///    [WirePrompt.combined] starting with [AssistantDedicationAnchor.text]
 ///    (enforced structurally: only [RoleTemplate.assemble] produces
 ///    [WirePrompt]; `assemble` wraps via
 ///    [AssistantDedicationAnchor.wrap]).

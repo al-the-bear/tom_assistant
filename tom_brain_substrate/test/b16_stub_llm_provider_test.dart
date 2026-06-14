@@ -11,7 +11,7 @@
 //
 //   - Prove every determinism guarantee the file-level header makes:
 //       * `wallClockMs == 0` on every emitted report.
-//       * `tokensIn == prompt.body.length`.
+//       * `tokensIn == prompt.combined.length`.
 //       * `tokensOut == response.length`.
 //       * `retries == 0`, `cost == null`.
 //       * `callId` shape and monotonic counter advance.
@@ -28,7 +28,7 @@
 //         return value is the response. A `throw` inside the responder
 //         re-throws from `complete` and surfaces as `LlmStreamFailed`
 //         (`classCode: 'unknown'`) from `completeStream`.
-//       * **Default echo** (`'STUB:' + prompt.body`) is the fallback
+//       * **Default echo** (`'STUB:' + prompt.combined`) is the fallback
 //         when neither script nor responder is configured.
 //
 //   - Prove the chunk-splitter contract:
@@ -100,7 +100,7 @@ void main() {
 
         final report = await provider.complete(
           const WirePrompt(
-            body: 'I am dedicated to this user.\n\nask',
+            system: 'I am dedicated to this user.\n\nask',
             anchorHash: 'sha256:anchor-stamp',
             roleId: 'assistant_to_user',
             templateSha: 'tpl-1',
@@ -120,7 +120,7 @@ void main() {
     test('options.model overrides defaultModel on the report', () async {
       final provider = StubLlmProvider(defaultModel: 'fallback');
       final report = await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(model: 'caller-picked'),
       );
       expect(report.modelId, 'caller-picked');
@@ -131,14 +131,14 @@ void main() {
       final captured = <String>[];
       final provider = StubLlmProvider(
         responder: (prompt, options) {
-          captured.add(prompt.body);
+          captured.add(prompt.combined);
           return 'ok';
         },
       );
 
       await provider.complete(
         const WirePrompt(
-          body: 'I am dedicated to this user.\n\nverbatim body',
+          system: 'I am dedicated to this user.\n\nverbatim body',
           anchorHash: 'a',
           roleId: 'r',
         ),
@@ -158,7 +158,7 @@ void main() {
         final events = await provider
             .completeStream(
               const WirePrompt(
-                body: 'streaming body',
+                system: 'streaming body',
                 anchorHash: 'sha256:stream-anchor',
                 roleId: 'assistant_to_user',
                 templateSha: 'tpl-2',
@@ -196,7 +196,7 @@ void main() {
 
         final events = await provider
             .completeStream(
-              const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+              const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
               const LlmOptions(),
             )
             .toList();
@@ -214,7 +214,7 @@ void main() {
       () async {
         final provider = StubLlmProvider();
         final report = await provider.complete(
-          const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+          const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
           const LlmOptions(
             toolCatalogue: ToolCatalogue(<ToolDescriptor>[
               ToolDescriptor(
@@ -239,11 +239,11 @@ void main() {
         () async {
       final provider = StubLlmProvider();
       final r1 = await provider.complete(
-        const WirePrompt(body: 'a', anchorHash: 'h', roleId: 'r'),
+        const WirePrompt(system: 'a', anchorHash: 'h', roleId: 'r'),
         const LlmOptions(),
       );
       final r2 = await provider.complete(
-        const WirePrompt(body: 'a longer body', anchorHash: 'h', roleId: 'r'),
+        const WirePrompt(system: 'a longer body', anchorHash: 'h', roleId: 'r'),
         const LlmOptions(),
       );
       for (final r in <LlmCallReport>[r1, r2]) {
@@ -253,13 +253,13 @@ void main() {
       }
     });
 
-    test('tokensIn == prompt.body.length, tokensOut == response.length',
+    test('tokensIn == prompt.combined.length, tokensOut == response.length',
         () async {
       final provider = StubLlmProvider(
-        responder: (prompt, _) => 'ECHO:${prompt.body}',
+        responder: (prompt, _) => 'ECHO:${prompt.combined}',
       );
       final report = await provider.complete(
-        const WirePrompt(body: 'twelve chars', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'twelve chars', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       expect(report.tokensIn, 'twelve chars'.length);
@@ -274,11 +274,11 @@ void main() {
         ]);
 
         final firstReport = await provider.complete(
-          const WirePrompt(body: 'same', anchorHash: 'h', roleId: 'r'),
+          const WirePrompt(system: 'same', anchorHash: 'h', roleId: 'r'),
           const LlmOptions(),
         );
         final secondReport = await provider.complete(
-          const WirePrompt(body: 'same', anchorHash: 'h', roleId: 'r'),
+          const WirePrompt(system: 'same', anchorHash: 'h', roleId: 'r'),
           const LlmOptions(),
         );
 
@@ -295,11 +295,11 @@ void main() {
     test('promptHash is sha256(body) and is stable across calls', () async {
       final provider = StubLlmProvider();
       final r1 = await provider.complete(
-        const WirePrompt(body: 'deterministic', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'deterministic', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       final r2 = await provider.complete(
-        const WirePrompt(body: 'deterministic', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'deterministic', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       expect(r1.promptHash, _sha256Stamp('deterministic'));
@@ -309,11 +309,11 @@ void main() {
     test('different prompt bodies hash differently', () async {
       final provider = StubLlmProvider();
       final r1 = await provider.complete(
-        const WirePrompt(body: 'first', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'first', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       final r2 = await provider.complete(
-        const WirePrompt(body: 'second', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'second', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       expect(r1.promptHash, isNot(r2.promptHash));
@@ -322,7 +322,7 @@ void main() {
     test('notes always contains stub:deterministic', () async {
       final provider = StubLlmProvider();
       final report = await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       expect(report.notes, contains('stub:deterministic'));
@@ -335,20 +335,20 @@ void main() {
       expect(provider.callCount, 0);
 
       await provider.complete(
-        const WirePrompt(body: 'a', anchorHash: 'h', roleId: 'r'),
+        const WirePrompt(system: 'a', anchorHash: 'h', roleId: 'r'),
         const LlmOptions(),
       );
       expect(provider.callCount, 1);
 
       await provider.complete(
-        const WirePrompt(body: 'b', anchorHash: 'h', roleId: 'r'),
+        const WirePrompt(system: 'b', anchorHash: 'h', roleId: 'r'),
         const LlmOptions(),
       );
       expect(provider.callCount, 2);
 
       await provider
           .completeStream(
-            const WirePrompt(body: 'c', anchorHash: 'h', roleId: 'r'),
+            const WirePrompt(system: 'c', anchorHash: 'h', roleId: 'r'),
             const LlmOptions(),
           )
           .toList();
@@ -360,7 +360,7 @@ void main() {
       final provider = StubLlmProvider(id: 'stub:shape');
       final events = await provider
           .completeStream(
-            const WirePrompt(body: 'shape-test', anchorHash: 'a', roleId: 'r'),
+            const WirePrompt(system: 'shape-test', anchorHash: 'a', roleId: 'r'),
             const LlmOptions(),
           )
           .toList();
@@ -374,13 +374,13 @@ void main() {
       final provider = StubLlmProvider();
       final s1 = await provider
           .completeStream(
-            const WirePrompt(body: 'same', anchorHash: 'a', roleId: 'r'),
+            const WirePrompt(system: 'same', anchorHash: 'a', roleId: 'r'),
             const LlmOptions(),
           )
           .toList();
       final s2 = await provider
           .completeStream(
-            const WirePrompt(body: 'same', anchorHash: 'a', roleId: 'r'),
+            const WirePrompt(system: 'same', anchorHash: 'a', roleId: 'r'),
             const LlmOptions(),
           )
           .toList();
@@ -398,11 +398,11 @@ void main() {
       expect(provider.scriptRemaining, 3);
 
       final r1 = await provider.complete(
-        const WirePrompt(body: 'a', anchorHash: 'h', roleId: 'r'),
+        const WirePrompt(system: 'a', anchorHash: 'h', roleId: 'r'),
         const LlmOptions(),
       );
       final r2 = await provider.complete(
-        const WirePrompt(body: 'a', anchorHash: 'h', roleId: 'r'),
+        const WirePrompt(system: 'a', anchorHash: 'h', roleId: 'r'),
         const LlmOptions(),
       );
 
@@ -415,14 +415,14 @@ void main() {
         () async {
       final provider = StubLlmProvider(script: const <String>['only one']);
       await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'h', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'h', roleId: 'r'),
         const LlmOptions(),
       );
       expect(provider.scriptRemaining, 0);
 
       await expectLater(
         provider.complete(
-          const WirePrompt(body: 'x', anchorHash: 'h', roleId: 'r'),
+          const WirePrompt(system: 'x', anchorHash: 'h', roleId: 'r'),
           const LlmOptions(),
         ),
         throwsA(
@@ -445,7 +445,7 @@ void main() {
       final outs = <int>[];
       for (var i = 0; i < 5; i++) {
         final r = await provider.complete(
-          const WirePrompt(body: 'x', anchorHash: 'h', roleId: 'r'),
+          const WirePrompt(system: 'x', anchorHash: 'h', roleId: 'r'),
           const LlmOptions(),
         );
         outs.add(r.tokensOut);
@@ -463,7 +463,7 @@ void main() {
     test('enqueueScripted extends a draining queue at runtime', () async {
       final provider = StubLlmProvider(script: const <String>['first']);
       await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'h', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'h', roleId: 'r'),
         const LlmOptions(),
       );
       expect(provider.scriptRemaining, 0);
@@ -472,7 +472,7 @@ void main() {
       expect(provider.scriptRemaining, 1);
 
       final r = await provider.complete(
-        const WirePrompt(body: 'x', anchorHash: 'h', roleId: 'r'),
+        const WirePrompt(system: 'x', anchorHash: 'h', roleId: 'r'),
         const LlmOptions(),
       );
       expect(r.tokensOut, 'extension'.length);
@@ -495,7 +495,7 @@ void main() {
 
       final report = await provider.complete(
         const WirePrompt(
-          body: 'body',
+          system: 'body',
           anchorHash: 'a',
           roleId: 'analyser',
         ),
@@ -514,7 +514,7 @@ void main() {
 
       await expectLater(
         provider.complete(
-          const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+          const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
           const LlmOptions(),
         ),
         throwsA(isA<FormatException>()),
@@ -531,7 +531,7 @@ void main() {
 
         final events = await provider
             .completeStream(
-              const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+              const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
               const LlmOptions(),
             )
             .toList();
@@ -556,14 +556,14 @@ void main() {
         () async {
       final provider = StubLlmProvider();
       final report = await provider.complete(
-        const WirePrompt(body: 'hi', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'hi', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       expect(report.tokensOut, 'STUB:hi'.length);
     });
 
     test('default echo is exposed as a static helper', () {
-      const wp = WirePrompt(body: 'data', anchorHash: 'a', roleId: 'r');
+      const wp = WirePrompt(system: 'data', anchorHash: 'a', roleId: 'r');
       expect(
         StubLlmProvider.defaultEcho(wp, const LlmOptions()),
         'STUB:data',
@@ -575,7 +575,7 @@ void main() {
         responder: (_, _) => 'CUSTOM',
       );
       final report = await provider.complete(
-        const WirePrompt(body: 'body', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'body', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       expect(report.tokensOut, 'CUSTOM'.length);
@@ -587,14 +587,14 @@ void main() {
         responder: (_, _) => 'fallback',
       );
       final report = await provider.complete(
-        const WirePrompt(body: 'body', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'body', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       expect(report.tokensOut, 'scripted'.length);
 
       // Once the script is drained, the responder takes over.
       final next = await provider.complete(
-        const WirePrompt(body: 'body', anchorHash: 'a', roleId: 'r'),
+        const WirePrompt(system: 'body', anchorHash: 'a', roleId: 'r'),
         const LlmOptions(),
       );
       expect(next.tokensOut, 'fallback'.length);
@@ -626,7 +626,7 @@ void main() {
         );
         final events = await provider
             .completeStream(
-              const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+              const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
               const LlmOptions(),
             )
             .toList();
@@ -646,7 +646,7 @@ void main() {
       );
       final events = await provider
           .completeStream(
-            const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
             const LlmOptions(),
           )
           .toList();
@@ -663,7 +663,7 @@ void main() {
       );
       final events = await provider
           .completeStream(
-            const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
             const LlmOptions(),
           )
           .toList();
@@ -686,7 +686,7 @@ void main() {
       );
       await expectLater(
         provider.complete(
-          const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+          const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
           const LlmOptions(),
         ),
         throwsA(same(boom)),
@@ -704,7 +704,7 @@ void main() {
         );
         await expectLater(
           provider.complete(
-            const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
             const LlmOptions(),
           ),
           throwsA(isA<StateError>().having(
@@ -726,7 +726,7 @@ void main() {
       );
       final events = await provider
           .completeStream(
-            const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
             const LlmOptions(),
           )
           .toList();
@@ -758,7 +758,7 @@ void main() {
       );
       final events = await provider
           .completeStream(
-            const WirePrompt(body: 'x', anchorHash: 'a', roleId: 'r'),
+            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
             const LlmOptions(),
           )
           .toList();

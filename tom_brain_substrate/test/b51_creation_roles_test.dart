@@ -87,7 +87,7 @@ void main() {
     test('every creation role assembles anchor-first and stamps the hash', () {
       for (final t in creationRoleTemplates()) {
         final p = t.assemble();
-        expect(p.body, startsWith(AssistantDedicationAnchor.text),
+        expect(p.combined, startsWith(AssistantDedicationAnchor.text),
             reason: t.id);
         expect(p.anchorHash, equals(AnchorRegistry.currentHash), reason: t.id);
         expect(p.roleId, equals(t.id), reason: t.id);

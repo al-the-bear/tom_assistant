@@ -67,7 +67,7 @@
 //     [AnchorRegistry.currentHash] on the produced [WirePrompt].
 //
 //   * The structural enforcement of Postulate 3: every [WirePrompt]
-//     this method returns has its [WirePrompt.body] starting with
+//     this method returns has its [WirePrompt.system] starting with
 //     [AssistantDedicationAnchor.text] (via `wrap`), and its
 //     [WirePrompt.anchorHash] equal to [AnchorRegistry.currentHash].
 //     Tests at `test/b23_anchor_injection_test.dart` pin this for
@@ -313,7 +313,7 @@ final class RoleTemplate {
   /// **Anchor invariant (Postulate 3 / Plan step B.23).** The
   /// returned [WirePrompt] is guaranteed:
   ///
-  /// 1. Its [WirePrompt.body] starts with
+  /// 1. Its [WirePrompt.system] starts with
   ///    [AssistantDedicationAnchor.text]. This is structural — the
   ///    assembled body is run through
   ///    [AssistantDedicationAnchor.wrap], which is idempotent and
@@ -392,8 +392,13 @@ final class RoleTemplate {
     // covered by `b23_anchor_injection_test.dart`. One anchor mechanism,
     // owned by the shared primitive, used everywhere.
     final wrapped = AssistantDedicationAnchor.ensurePrefix(assembled);
+    // Transitional mapping (prompt-restructuring plan step 2): the whole
+    // anchor-led body is the `system` channel; `user` is empty until the
+    // template-pair loader (step 4) splits the per-call inputs into it.
+    // `system` begins with the anchor, satisfying the anchor-leads-system
+    // invariant on `WirePrompt.system`.
     return WirePrompt(
-      body: wrapped,
+      system: wrapped,
       anchorHash: AnchorRegistry.currentHash,
       roleId: id,
       // templateSha stays null until B.36 lands the file-backed

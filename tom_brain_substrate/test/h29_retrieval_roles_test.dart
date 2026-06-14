@@ -105,7 +105,7 @@ void main() {
       for (final t in retrievalRoleTemplates()) {
         final prompt = t.assemble(inputs: const {'prompt': 'why is the sky '
             'blue?'});
-        expect(prompt.body, startsWith(AssistantDedicationAnchor.text),
+        expect(prompt.combined, startsWith(AssistantDedicationAnchor.text),
             reason: t.id);
         expect(prompt.anchorHash, equals(AnchorRegistry.currentHash),
             reason: t.id);
@@ -116,7 +116,7 @@ void main() {
     test('anchor-first holds for an empty inputs map too', () {
       for (final t in retrievalRoleTemplates()) {
         final prompt = t.assemble();
-        expect(prompt.body, startsWith(AssistantDedicationAnchor.text),
+        expect(prompt.combined, startsWith(AssistantDedicationAnchor.text),
             reason: t.id);
       }
     });

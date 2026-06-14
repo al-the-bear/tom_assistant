@@ -505,7 +505,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
           callId: event.callId,
           report: event.report,
           wire: CapturedWirePrompt(
-            body: prompt.body,
+            body: prompt.combined,
             anchorHash: prompt.anchorHash,
             roleId: prompt.roleId,
             templateSha: prompt.templateSha,
