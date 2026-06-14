@@ -98,6 +98,7 @@ final class LlmTrailWriter {
   Map<String, Object?> _rawJson(LlmTrailRecord record) {
     final obs = record.observation;
     final report = obs.report;
+    final options = obs.options;
     return <String, Object?>{
       'turnId': obs.turnId,
       'callSeq': obs.callSeq,
@@ -109,6 +110,13 @@ final class LlmTrailWriter {
       'trailId': record.trailId,
       'provider': report.providerId,
       'model': report.modelId,
+      // §4.5 model-config detail: the generation knobs the call ran with,
+      // alongside provider/model above. Null knobs (the router's "provider /
+      // role default") stay null; an empty stop set is omitted entirely.
+      'temperature': options.temperature,
+      'maxOutputTokens': options.maxOutputTokens,
+      if (options.stopSequences.isNotEmpty)
+        'stopSequences': options.stopSequences,
       'startedAt': obs.startedAt.toIso8601String(),
       'wallClockMs': report.wallClockMs,
       'tokensIn': report.tokensIn,

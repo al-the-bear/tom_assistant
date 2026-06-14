@@ -844,6 +844,7 @@ class SubstrateBridge {
                       wire: wire,
                       answer: answer,
                       report: report,
+                      options: stampedOptions,
                     ));
                   } catch (_) {
                     // Trail writing is non-essential; swallow to protect the

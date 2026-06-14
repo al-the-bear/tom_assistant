@@ -97,6 +97,42 @@ void main() {
       expect(line, contains('↳ llm/assistant_to_user/turn_01JZ__01.raw.json'));
     });
 
+    test('carries the call\'s generation settings (temperature/max/stops)', () {
+      buildWriter().write(_record(
+        callType: 'assistant_to_user',
+        turnId: 'turn_01JZ',
+        callSeq: 1,
+        options: const LlmOptions(
+          temperature: 0.35,
+          maxOutputTokens: 512,
+          stopSequences: <String>['STOP', '###'],
+        ),
+      ));
+
+      final file =
+          File('${root.path}/llm/assistant_to_user/turn_01JZ__01.raw.json');
+      final json = jsonDecode(file.readAsStringSync()) as Map<String, Object?>;
+      expect(json['temperature'], 0.35);
+      expect(json['maxOutputTokens'], 512);
+      expect(json['stopSequences'], <String>['STOP', '###']);
+    });
+
+    test('omits stopSequences when none are set; null knobs stay null', () {
+      buildWriter().write(_record(
+        callType: 'assistant_to_user',
+        turnId: 'turn_01JZ',
+        callSeq: 1,
+      ));
+
+      final file =
+          File('${root.path}/llm/assistant_to_user/turn_01JZ__01.raw.json');
+      final json = jsonDecode(file.readAsStringSync()) as Map<String, Object?>;
+      expect(json.containsKey('stopSequences'), isFalse,
+          reason: 'an empty stop set is omitted, not serialised as []');
+      expect(json['temperature'], isNull);
+      expect(json['maxOutputTokens'], isNull);
+    });
+
     test('a turn-less call falls back to <runId>__<callId> for the stem', () {
       buildWriter().write(_record(
         callType: 'analyser',
@@ -170,6 +206,7 @@ LlmTrailRecord _record({
   required int? callSeq,
   String callId = 'c1',
   String runId = 'disp-fg-run-7',
+  LlmOptions options = LlmOptions.empty,
 }) =>
     LlmTrailRecord(
       observation: LlmCallObservation(
@@ -194,6 +231,7 @@ LlmTrailRecord _record({
           retries: 0,
           wallClockMs: 1298,
         ),
+        options: options,
       ),
       runId: runId,
       trailId: 't_01K',

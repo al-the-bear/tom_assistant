@@ -25,6 +25,14 @@ class LlmCallDetail {
   final int? tokensOut;
   final int? retries;
   final int? wallClockMs;
+
+  /// The generation knobs the call ran with (§ 4.5 model-config detail), beside
+  /// provider/model above. `null` ⇒ the brain left the knob at the provider /
+  /// role default; [stopSequences] is empty when the call pinned none.
+  final double? temperature;
+  final int? maxOutputTokens;
+  final List<String> stopSequences;
+
   final Object? wire;
   final String? answer;
 
@@ -42,6 +50,9 @@ class LlmCallDetail {
     required this.wallClockMs,
     required this.wire,
     required this.answer,
+    this.temperature,
+    this.maxOutputTokens,
+    this.stopSequences = const <String>[],
   });
 
   factory LlmCallDetail.fromJson(Map<String, dynamic> json) => LlmCallDetail(
@@ -56,6 +67,13 @@ class LlmCallDetail {
         tokensOut: json['tokensOut'] as int?,
         retries: json['retries'] as int?,
         wallClockMs: json['wallClockMs'] as int?,
+        temperature: (json['temperature'] as num?)?.toDouble(),
+        maxOutputTokens: json['maxOutputTokens'] as int?,
+        stopSequences: <String>[
+          for (final s in (json['stopSequences'] as List<dynamic>? ??
+              const <dynamic>[]))
+            s as String,
+        ],
         wire: json['wire'],
         answer: json['answer'] as String?,
       );

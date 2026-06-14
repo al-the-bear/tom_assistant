@@ -22,7 +22,13 @@ const _node = LlmCallNode(
   rawPath: _rawPath,
 );
 
-LlmCallDetail _detail({String? roleId}) => LlmCallDetail(
+LlmCallDetail _detail({
+  String? roleId,
+  double? temperature,
+  int? maxOutputTokens,
+  List<String> stopSequences = const <String>[],
+}) =>
+    LlmCallDetail(
       callType: 'assistant_to_user',
       provider: 'local',
       model: 'gemma3:27b',
@@ -34,6 +40,9 @@ LlmCallDetail _detail({String? roleId}) => LlmCallDetail(
       tokensOut: 340,
       retries: 1,
       wallClockMs: 1850,
+      temperature: temperature,
+      maxOutputTokens: maxOutputTokens,
+      stopSequences: stopSequences,
       wire: <String, Object?>{
         'messages': <Object?>[
           <String, Object?>{'role': 'system', 'content': 'You are Tom.'},
@@ -75,6 +84,37 @@ void main() {
     // Wire body (pretty JSON) and answer.
     expect(find.textContaining('"role": "system"'), findsOneWidget);
     expect(find.text('Hi — how can I help?'), findsOneWidget);
+  });
+
+  testWidgets('renders the generation settings (§4.5 model-config detail)',
+      (tester) async {
+    await _pump(
+      tester,
+      StubApiClient(llmCalls: <String, LlmCallDetail>{
+        _rawPath: _detail(
+          temperature: 0.35,
+          maxOutputTokens: 512,
+          stopSequences: <String>['STOP', '###'],
+        ),
+      }),
+    );
+
+    expect(find.textContaining('temp 0.35'), findsOneWidget);
+    expect(find.textContaining('max out 512 tok'), findsOneWidget);
+    expect(find.textContaining('STOP'), findsWidgets);
+    expect(find.textContaining('###'), findsWidgets);
+  });
+
+  testWidgets('shows (default) for unset knobs and hides empty stops',
+      (tester) async {
+    await _pump(
+      tester,
+      StubApiClient(llmCalls: <String, LlmCallDetail>{_rawPath: _detail()}),
+    );
+
+    expect(find.textContaining('temp (default)'), findsOneWidget);
+    expect(find.textContaining('max out (default)'), findsOneWidget);
+    expect(find.textContaining('stops'), findsNothing);
   });
 
   testWidgets('shows a not-found state when the host has no dump', (tester) async {

@@ -115,6 +115,8 @@ class _LlmCallBody extends StatelessWidget {
         ],
         const SizedBox(height: 16),
         _MetricsWrap(detail: detail),
+        const SizedBox(height: 12),
+        _SettingsWrap(detail: detail),
         const SizedBox(height: 16),
         // Hashes verbatim — identical scaffolds are visibly identical (§ 4.5).
         _HashLine(label: 'anchor', hash: detail.anchorHash),
@@ -174,6 +176,37 @@ class _MetricsWrap extends StatelessWidget {
           _MetricChip(label: 'wall', value: formatWallClock(detail.wallClockMs)),
         ],
       );
+}
+
+/// The §4.5 model-config row beside provider/model in the header: the
+/// generation knobs the call ran with (temperature, max output tokens, stop
+/// sequences). An unset knob reads `(default)` — the brain left it at the
+/// provider / role default; an empty stop set is omitted entirely.
+class _SettingsWrap extends StatelessWidget {
+  final LlmCallDetail detail;
+  const _SettingsWrap({required this.detail});
+
+  @override
+  Widget build(BuildContext context) {
+    final temperature = detail.temperature;
+    final maxOut = detail.maxOutputTokens;
+    final stops = detail.stopSequences;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: <Widget>[
+        _MetricChip(
+          label: 'temp',
+          value: temperature?.toString() ?? '(default)',
+        ),
+        _MetricChip(
+          label: 'max out',
+          value: maxOut != null ? '$maxOut tok' : '(default)',
+        ),
+        if (stops.isNotEmpty) _MetricChip(label: 'stops', value: stops.join('  ')),
+      ],
+    );
+  }
 }
 
 class _MetricChip extends StatelessWidget {

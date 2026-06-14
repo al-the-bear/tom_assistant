@@ -18,7 +18,7 @@
 // procedure script can never read the scaffold it ran under.
 
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
-    show CapturedWirePrompt, LlmCallReport;
+    show CapturedWirePrompt, LlmCallReport, LlmOptions;
 
 /// One completed LLM call as the substrate bridge observed it.
 ///
@@ -58,6 +58,14 @@ final class LlmCallObservation {
   /// wall-clock, anchorHash, promptHash, templateSha.
   final LlmCallReport report;
 
+  /// The generation knobs the call was submitted with (temperature,
+  /// maxOutputTokens, stopSequences, …) — the §4.5 "what settings ran"
+  /// half of the config detail. `provider` / `model` already live on the
+  /// [report]; these are the rest of the model-config the operator wants to
+  /// see alongside them. Defaults to [LlmOptions.empty] for the fixtures /
+  /// internal paths that pin no knobs.
+  final LlmOptions options;
+
   const LlmCallObservation({
     required this.callType,
     required this.turnId,
@@ -67,6 +75,7 @@ final class LlmCallObservation {
     required this.wire,
     required this.answer,
     required this.report,
+    this.options = LlmOptions.empty,
   });
 }
 
