@@ -133,6 +133,7 @@ import '../llm/llm_provider.dart';
 import '../llm/wire_prompt.dart';
 import '../mcp_client/mcp_client.dart';
 import '../obs/substrate_event_bus.dart';
+import '../roles/reloading_role_registry.dart';
 import '../roles/role_registry.dart';
 import '../router/llm_router.dart';
 import '../web/web_fetch.dart';
@@ -205,7 +206,13 @@ McpClient _defaultMcpClientFactory(McpEndpoint endpoint) {
 /// B.46 proves no public path bypasses the check.
 final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     with CloseGuard {
-  final RoleRegistry _roleRegistry;
+  /// The role roster the facade assembles prompts from. A `fixed` holder when
+  /// the facade was given a plain [RoleRegistry]; a `reloading` holder when
+  /// given a [roleProseReload], which re-reads edited `<role>.persona.md` /
+  /// `<role>.objective.md` files on the next call (`prompt_tracing.md` § 6.3,
+  /// AUTH-5). Reload changes only role *prose*; the roster and capability
+  /// surface are invariant.
+  final ReloadingRoleRegistry _roles;
   final Map<String, LlmProvider> _providers;
   final LlmRouter _router;
   final EmbeddingService _embeddingService;
@@ -269,6 +276,11 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
   ///   * [now] — clock seam. Tests inject a fixed clock to get
   ///     deterministic `occurredAt` / `snapshotAt` values; production
   ///     code leaves the default.
+  ///   * [roleProseReload] — when non-null, the facade assembles prompts
+  ///     through this reloading holder so an edited `<role>.persona.md` /
+  ///     `<role>.objective.md` is picked up on the next call (§ 6.3 AUTH-5);
+  ///     [roleRegistry] is then ignored for assembly. When null, the facade
+  ///     wraps [roleRegistry] in a `fixed` holder that never reloads.
   InProcessTomBrainSubstrate({
     required RoleRegistry roleRegistry,
     required Map<String, LlmProvider> providers,
@@ -276,11 +288,13 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     required EmbeddingService embeddingService,
     required WebSearch webSearch,
     required WebFetch webFetch,
+    ReloadingRoleRegistry? roleProseReload,
     SubstrateEventBus? eventBus,
     SubstrateConfig? config,
     McpClientFactory? mcpClientFactory,
     DateTime Function()? now,
-  })  : _roleRegistry = roleRegistry,
+  })  : _roles =
+            roleProseReload ?? ReloadingRoleRegistry.fixed(roleRegistry),
         _providers = Map<String, LlmProvider>.unmodifiable(providers),
         _router = router,
         _embeddingService = embeddingService,
@@ -302,7 +316,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
   /// want to assert "the facade routed through this exact registry"
   /// (B.42 conformance suite leans on this for the cross-provider
   /// equivalence assertion).
-  RoleRegistry get roleRegistry => _roleRegistry;
+  RoleRegistry get roleRegistry => _roles.latest;
 
   /// The provider map keyed by `LlmProvider.id`. Unmodifiable copy
   /// of the constructor argument; mutating the original map after
@@ -320,7 +334,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     // Cross-validation: every routed role id must be registered.
     // Surfaces SubstrateConfigException (wrapping RoleTemplateNotFound)
     // before the facade adopts the config.
-    config.validateRoleRegistry(_roleRegistry);
+    config.validateRoleRegistry(_roles.current());
     _config = config;
   }
 
@@ -364,7 +378,10 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
   Future<LlmCallReport> complete(LlmCall call) async {
     _ensureNotClosed('complete');
 
-    final template = _roleRegistry.get(call.roleId);
+    // Pick up any edited role prose before assembling (`prompt_tracing.md`
+    // § 6.3, AUTH-5). Signature-gated, so an unchanged prose set costs only a
+    // stat sweep; a fixed holder is a no-op.
+    final template = _roles.current().get(call.roleId);
     final prompt = template.assemble(inputs: call.inputs);
     final callId = _allocateCallId();
 
@@ -418,7 +435,8 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     // unknown role surfaces synchronously to the caller (RoleNotFound),
     // not lazily on the first listen.
     _ensureNotClosed('completeStream');
-    final template = _roleRegistry.get(call.roleId);
+    // Same AUTH-5 prose pickup as `complete`.
+    final template = _roles.current().get(call.roleId);
     final prompt = template.assemble(inputs: call.inputs);
     final callId = _allocateCallId();
 

@@ -76,6 +76,12 @@ import 'agent_sdk_session.dart';
 /// validates routed roles against); [webSearch] / [webFetch] override the
 /// no-web default. All three are seams for a richer assembly to inject through.
 ///
+/// [roleProseReload] — when non-null, the facade assembles prompts through this
+/// reloading holder so an edited `<role>.persona.md` / `<role>.objective.md` is
+/// picked up on the next LLM call without a restart (`prompt_tracing.md` § 6.3,
+/// AUTH-5). When supplied it is the assembly authority; [roleRegistry] is then
+/// only the validation/introspection fallback.
+///
 /// [agentSdkSessionRoot] is the run's history/memory root under which a
 /// `sessionMode: brain` agent-SDK provider persists its
 /// `agent_sdk_sessions.json` (`{ brainSessionId → claudeSessionId }`) store
@@ -89,6 +95,7 @@ import 'agent_sdk_session.dart';
 InProcessTomBrainSubstrate buildSubstrate(
   SubstrateConfig config, {
   RoleRegistry? roleRegistry,
+  ReloadingRoleRegistry? roleProseReload,
   WebSearch? webSearch,
   WebFetch? webFetch,
   String? agentSdkSessionRoot,
@@ -136,8 +143,13 @@ InProcessTomBrainSubstrate buildSubstrate(
     // `pruner` / `reconsolidator` / `repetition_detector` calls unroutable.
     // This roster registers all their templates; the config's `roleRoutes`
     // supplies their routes (both halves are required for a role to dispatch).
-    roleRegistry: roleRegistry ??
+    roleRegistry: roleProseReload?.latest ??
+        roleRegistry ??
         bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream(),
+    // When present, the assembly authority — an edited role-prose file is picked
+    // up on the next call (§ 6.3 AUTH-5). When null the facade wraps the
+    // `roleRegistry` above in a `fixed`, never-reloading holder.
+    roleProseReload: roleProseReload,
     providers: providers,
     router: router,
     embeddingService: embeddingService,

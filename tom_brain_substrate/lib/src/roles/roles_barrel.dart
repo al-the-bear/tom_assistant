@@ -97,6 +97,13 @@ export 'bootstrap_roles.dart';
 // schema, budgets) stays the in-code authority. The anchor stays injected
 // unconditionally on every assembled prompt regardless of source.
 export 'file_backed_role_loader.dart';
+// The refreshable holder around the prose-overlaid registry: lets an operator
+// edit `<role>.persona.md` / `<role>.objective.md` and have the next LLM call
+// pick the edit up without a restart (`prompt_tracing.md` § 6.3, AUTH-5). A
+// `fixed` holder wraps an immutable registry and never reloads; a `reloading`
+// holder rebuilds the overlay only when the prose files' cheap signature
+// changes. The roster and capability surface stay invariant across reloads.
+export 'reloading_role_registry.dart';
 // Plan Extension-H step #29 — the six retrieval roles (substrate § 6.2a).
 // A separate, optional roster (template + cheap-route config + a
 // deterministic, never-throwing output parser per role). The bootstrap

@@ -82,11 +82,10 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show
         InProcessTomBrainSubstrate,
-        RoleRegistry,
+        ReloadingRoleRegistry,
         SubstrateConfig,
         TomBrainSubstrateClient,
-        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream,
-        loadFileBackedRoleRegistry;
+        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream;
 
 import 'agent_sdk_llm_provider.dart' show AgentSdkLlmProvider;
 import 'brain_run_config.dart';
@@ -646,7 +645,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // `cognition:` config tree (§7.1 / §7.4 / §8) when the block is present.
   PromptResolver? promptResolver;
   RouteChainResolver? routeChainOf;
-  RoleRegistry? roleRegistry;
+  ReloadingRoleRegistry? roleProseReload;
   CognitionConfig? cognitionConfig;
   // The `/switch_model` config writer (request e). Built only when a cognition
   // tree is loaded — a switch re-points a registered prompt id at a model by
@@ -665,8 +664,12 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     // `cognition/<rolesFolder>/<role>.persona.md` + `<role>.objective.md`,
     // overlaid on the full live roster. The in-code roster supplies the
     // capability surface and the fallback for any role (or half) whose file
-    // is absent or blank.
-    roleRegistry = loadFileBackedRoleRegistry(
+    // is absent or blank. Wrapped in a *reloading* holder so an operator can
+    // edit a role's prose file and have the next LLM call pick it up without a
+    // restart (`prompt_tracing.md` § 6.3, AUTH-5) — the same pull-based pickup
+    // the prompt *template body* already has (`buildPromptResolver` re-reads it
+    // per `sub.run`).
+    roleProseReload = ReloadingRoleRegistry.reloading(
       base:
           bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream(),
       rolesDir: Directory(
@@ -703,7 +706,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // rebind below.
   final InProcessTomBrainSubstrate substrate = buildSubstrate(
     runConfig.substrate,
-    roleRegistry: roleRegistry,
+    roleProseReload: roleProseReload,
     // The run's storage root: a `sessionMode: brain` agent-SDK provider keys
     // its persisted Claude session ids under `<root>/agent_sdk_sessions.json`
     // (agent-SDK design spec § 1.4).
