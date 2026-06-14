@@ -22,7 +22,9 @@
 //   - Pin the `RoleTemplate.assemble` contract (two-channel split,
 //     prompt-restructuring plan step 4): the returned
 //     `WirePrompt.system` starts with `AssistantDedicationAnchor.text`
-//     even though the system scaffold omits the anchor; the
+//     (the scaffold leads with the `${role.anchor}` placeholder since
+//     plan step 6, and `ensurePrefix` is the idempotent structural
+//     guarantee regardless of whether the placeholder is present); the
 //     `WirePrompt.anchorHash` equals `AnchorRegistry.currentHash`;
 //     the `WirePrompt.roleId` equals the template's `id`; the
 //     `WirePrompt.templateSha` is `null` (deferred to the file-backed
@@ -190,13 +192,15 @@ void main() {
       );
     });
 
-    test('system begins with the anchor even though the scaffold omits it '
-        '(ensurePrefix prepends, plan step 4)', () {
-      // The in-code system scaffold (and the Phase-3 `<role>.system.md`
-      // template that replaces it) never emits the anchor itself —
-      // `assemble` guarantees the lead via `ensurePrefix`. Proven by
-      // stripping the anchor prefix and showing the remainder is the bare
-      // PERSONA scaffold, not a second anchor.
+    test('system begins with the anchor, then the bare PERSONA scaffold '
+        '(ensurePrefix guarantee, plan step 4 / step 6)', () {
+      // Since plan step 6 the scaffold *leads* with the `${role.anchor}`
+      // placeholder, so the rendered body already starts with the anchor and
+      // `ensurePrefix` is idempotent. The structural guarantee is still
+      // `ensurePrefix` (an operator who deletes `${role.anchor}` from the
+      // scaffold cannot defeat the lead). Proven by stripping one anchor
+      // prefix and showing the remainder is the bare PERSONA scaffold, not a
+      // second anchor.
       final r = makeRole(personaText: 'SCAFFOLD-PERSONA');
       final p = r.assemble();
       expect(p.system.startsWith(AssistantDedicationAnchor.text), isTrue);

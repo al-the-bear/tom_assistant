@@ -147,3 +147,8 @@ export 'dream/dream_barrel.dart';
 export 'role_budget_defaults.dart';
 export 'role_registry.dart';
 export 'role_template.dart';
+// Prompt-restructuring plan step 6 (Phase 3) — the shared, placeholder-bearing
+// role-preamble system scaffold (`prompt_configuration.md` § 13.1).
+// `RoleTemplate._composeSystem` renders it; exported so the observatory /
+// tests can read `SystemScaffold.template` directly.
+export 'system_scaffold.dart';

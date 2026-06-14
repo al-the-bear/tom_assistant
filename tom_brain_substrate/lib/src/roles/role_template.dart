@@ -114,6 +114,7 @@ import '../llm/anchor_registry.dart';
 import '../llm/wire_prompt.dart';
 import 'allowed_action.dart';
 import 'role_budget_defaults.dart';
+import 'system_scaffold.dart';
 
 /// One role the substrate's LLM path can dispatch under.
 ///
@@ -411,41 +412,46 @@ final class RoleTemplate {
     );
   }
 
-  /// Builds the system channel (before the anchor is prepended): the
-  /// role's persona, objective, and optional output-schema declaration.
+  /// Builds the system channel by rendering the shared [SystemScaffold]
+  /// template with this role's persona, objective, and optional
+  /// output-schema section.
   ///
-  /// In-code fallback for the role framing. The scaffold intentionally
-  /// does *not* emit the anchor — [assemble] prepends it via
-  /// [AssistantDedicationAnchor.ensurePrefix], so the system channel leads
-  /// with the anchor regardless of what this method (or the Phase-3
-  /// `<role>.system.md` template that replaces it) contains. The test
-  /// suite at `b23_anchor_injection_test.dart` pins the individual
-  /// sections (persona present, objective present, output-schema marker
-  /// present iff `outputSchema != null`) independently of the anchor.
-  String _composeSystem() {
-    final sections = <String>[
-      'PERSONA:\n$personaText',
-      'OBJECTIVE:\n$objective',
-    ];
-    if (outputSchema != null) {
-      // Embed the *actual* schema, not a meta-reference to it. A model can
-      // only emit the declared key names (e.g. `questions`) when the schema
-      // body is in the prompt; a dangling "match this role's outputSchema"
-      // sentence left the model to guess the shape and it answered with the
-      // wrong keys (and inside markdown fences). This mirrors the
-      // `StrictFormatAdapter` re-emit block, which already `jsonEncode`s the
-      // schema — one structured-output convention, used on both the first
-      // emit and the format retry.
-      sections.add(
-        'OUTPUT SCHEMA:\n'
-        'Respond with a single JSON object — and nothing else: no prose, no '
-        'markdown code fences, no commentary — that conforms to this JSON '
-        'schema:\n'
-        '${jsonEncode(outputSchema)}',
+  /// The scaffold layout (the `PERSONA:` / `OBJECTIVE:` / `OUTPUT SCHEMA:`
+  /// framing and the `${role.anchor}` lead) lives in [SystemScaffold.template]
+  /// as placeholder-bearing text (plan step 6 / `prompt_configuration.md`
+  /// § 13.1) — this method only supplies the injected values. The rendered
+  /// text already leads with the anchor (via `${role.anchor}`); [assemble]
+  /// still runs it through [AssistantDedicationAnchor.ensurePrefix], which is
+  /// idempotent here, so the anchor cannot be defeated by editing the
+  /// scaffold. The test suite at `b23_anchor_injection_test.dart` pins the
+  /// individual sections (persona present, objective present, output-schema
+  /// marker present iff `outputSchema != null`) and
+  /// `system_scaffold_test.dart` pins the exact assembled layout.
+  String _composeSystem() => SystemScaffold.render(
+        persona: personaText,
+        objective: objective,
+        outputSchemaSection:
+            outputSchema == null ? '' : _outputSchemaSection(outputSchema!),
       );
-    }
-    return sections.join('\n\n');
-  }
+
+  /// The fully composed `OUTPUT SCHEMA:` section for a role that declares an
+  /// [outputSchema], including its own leading `\n\n` separator so the
+  /// [SystemScaffold] can append it directly after the objective with no
+  /// intervening blank-line placeholder.
+  ///
+  /// Embeds the *actual* schema, not a meta-reference to it. A model can only
+  /// emit the declared key names (e.g. `questions`) when the schema body is in
+  /// the prompt; a dangling "match this role's outputSchema" sentence left the
+  /// model to guess the shape and it answered with the wrong keys (and inside
+  /// markdown fences). This mirrors the `StrictFormatAdapter` re-emit block,
+  /// which already `jsonEncode`s the schema — one structured-output
+  /// convention, used on both the first emit and the format retry.
+  static String _outputSchemaSection(Map<String, Object?> schema) =>
+      '\n\nOUTPUT SCHEMA:\n'
+      'Respond with a single JSON object — and nothing else: no prose, no '
+      'markdown code fences, no commentary — that conforms to this JSON '
+      'schema:\n'
+      '${jsonEncode(schema)}';
 
   /// Builds the user channel: the caller-supplied [inputs], one
   /// `key: value` line per entry, in declaration (insertion) order.
