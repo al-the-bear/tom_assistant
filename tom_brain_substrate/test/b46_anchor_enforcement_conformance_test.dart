@@ -182,11 +182,13 @@ void main() {
     // For every role × every prompt-emitting method × every input
     // shape: capture the `WirePrompt` the provider sees, then assert:
     //
-    //   1. The prompt body contains the anchor verbatim.
-    //   2. The prompt body STARTS with the anchor text (the
-    //      stronger substrate invariant — `assemble(...)`
-    //      deterministically prepends, never relies on
-    //      `wrap(...)`'s idempotency).
+    //   1. The prompt's `system` channel contains the anchor verbatim.
+    //   2. The prompt's `system` channel STARTS with the anchor text
+    //      (the stronger substrate invariant — `assemble(...)`
+    //      deterministically prepends to the system channel, never
+    //      relies on `wrap(...)`'s idempotency). Asserting on `system`
+    //      (not `combined`) proves the anchor cannot escape the
+    //      instruction channel into the call-specific `user` content.
     //   3. The prompt's `anchorHash` equals
     //      `AnchorRegistry.currentHash`.
     //   4. The prompt's `roleId` matches the call's `roleId`.
@@ -219,16 +221,16 @@ void main() {
               expect(captor.prompts, hasLength(1));
               final wire = captor.prompts.single;
               expect(
-                AssistantDedicationAnchor.containsAnchor(wire.combined),
+                AssistantDedicationAnchor.containsAnchor(wire.system),
                 isTrue,
                 reason: 'role $roleId / shape ${shape.label}: '
-                    'WirePrompt.system (via combined) must contain the anchor',
+                    'WirePrompt.system must contain the anchor',
               );
               expect(
-                wire.combined.startsWith(AssistantDedicationAnchor.text),
+                wire.system.startsWith(AssistantDedicationAnchor.text),
                 isTrue,
                 reason: 'role $roleId / shape ${shape.label}: '
-                    'WirePrompt.system (via combined) must START with the anchor text',
+                    'WirePrompt.system must START with the anchor text',
               );
               expect(wire.anchorHash, AnchorRegistry.currentHash);
               expect(wire.roleId, roleId);
@@ -260,11 +262,11 @@ void main() {
               expect(captor.prompts, hasLength(1));
               final wire = captor.prompts.single;
               expect(
-                AssistantDedicationAnchor.containsAnchor(wire.combined),
+                AssistantDedicationAnchor.containsAnchor(wire.system),
                 isTrue,
               );
               expect(
-                wire.combined.startsWith(AssistantDedicationAnchor.text),
+                wire.system.startsWith(AssistantDedicationAnchor.text),
                 isTrue,
               );
               expect(wire.anchorHash, AnchorRegistry.currentHash);
