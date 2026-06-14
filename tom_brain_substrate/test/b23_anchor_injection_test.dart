@@ -19,15 +19,18 @@
 //     provider / model / role identifiers; `toString` surfaces all
 //     fields so a diagnostic dump is readable without re-reading the
 //     report.
-//   - Pin the `RoleTemplate.assemble` contract: the returned
-//     `WirePrompt.body` starts with `AssistantDedicationAnchor.text`;
-//     the `WirePrompt.anchorHash` equals `AnchorRegistry.currentHash`;
+//   - Pin the `RoleTemplate.assemble` contract (two-channel split,
+//     prompt-restructuring plan step 4): the returned
+//     `WirePrompt.system` starts with `AssistantDedicationAnchor.text`
+//     even though the system scaffold omits the anchor; the
+//     `WirePrompt.anchorHash` equals `AnchorRegistry.currentHash`;
 //     the `WirePrompt.roleId` equals the template's `id`; the
-//     `WirePrompt.templateSha` is `null` (deferred to B.36 — see
-//     Q-B.22.3); the body contains `PERSONA:` / `OBJECTIVE:` /
-//     `INPUTS:` section markers; the `OUTPUT SCHEMA:` marker is
-//     present iff the role declares an `outputSchema`; the inputs map
-//     renders entries in declaration order or `(none)` when empty.
+//     `WirePrompt.templateSha` is `null` (deferred to the file-backed
+//     loader — see Q-B.22.3); the `system` channel carries the
+//     `PERSONA:` / `OBJECTIVE:` section markers and the `OUTPUT SCHEMA:`
+//     marker iff the role declares an `outputSchema`; the `user`
+//     channel renders the inputs map as `key: value` lines in
+//     declaration order, and is empty when `inputs` is empty.
 //   - Pin the cross-role invariant: every role in
 //     `bootstrapRoleRegistry().templates` produces an anchored prompt
 //     for both an empty inputs map and a populated inputs map.
@@ -171,14 +174,37 @@ void main() {
       );
     }
 
-    test('returned WirePrompt body starts with the anchor text', () {
+    test('returned WirePrompt system starts with the anchor text', () {
       final r = makeRole();
       final p = r.assemble();
       expect(
+        p.system.startsWith(AssistantDedicationAnchor.text),
+        isTrue,
+        reason: 'the system channel must open with the anchor '
+            '(Postulate 3, invariant 1)',
+      );
+      // ...and so does the combined view, since system leads.
+      expect(
         p.combined.startsWith(AssistantDedicationAnchor.text),
         isTrue,
-        reason: 'body must open with the anchor (Postulate 3, invariant 1)',
       );
+    });
+
+    test('system begins with the anchor even though the scaffold omits it '
+        '(ensurePrefix prepends, plan step 4)', () {
+      // The in-code system scaffold (and the Phase-3 `<role>.system.md`
+      // template that replaces it) never emits the anchor itself —
+      // `assemble` guarantees the lead via `ensurePrefix`. Proven by
+      // stripping the anchor prefix and showing the remainder is the bare
+      // PERSONA scaffold, not a second anchor.
+      final r = makeRole(personaText: 'SCAFFOLD-PERSONA');
+      final p = r.assemble();
+      expect(p.system.startsWith(AssistantDedicationAnchor.text), isTrue);
+      final afterAnchor =
+          p.system.substring(AssistantDedicationAnchor.text.length);
+      expect(afterAnchor, startsWith('PERSONA:'),
+          reason: 'the scaffold leads with PERSONA:, not another anchor block');
+      expect(afterAnchor, contains('SCAFFOLD-PERSONA'));
     });
 
     test('returned WirePrompt anchorHash equals AnchorRegistry.currentHash', () {
@@ -199,17 +225,21 @@ void main() {
       expect(p.templateSha, isNull);
     });
 
-    test('body contains PERSONA:, OBJECTIVE:, and INPUTS: section markers', () {
+    test('system channel carries PERSONA: / OBJECTIVE: markers; there is no '
+        'INPUTS: scaffolding (plan step 4)', () {
       final r = makeRole(
         personaText: 'PERSONA-MARKER',
         objective: 'OBJECTIVE-MARKER',
       );
       final p = r.assemble();
-      expect(p.combined, contains('PERSONA:'));
-      expect(p.combined, contains('PERSONA-MARKER'));
-      expect(p.combined, contains('OBJECTIVE:'));
-      expect(p.combined, contains('OBJECTIVE-MARKER'));
-      expect(p.combined, contains('INPUTS:'));
+      // Persona/objective bind from the registry into the system channel.
+      expect(p.system, contains('PERSONA:'));
+      expect(p.system, contains('PERSONA-MARKER'));
+      expect(p.system, contains('OBJECTIVE:'));
+      expect(p.system, contains('OBJECTIVE-MARKER'));
+      // The old single-body `INPUTS:` header is gone — inputs live in the
+      // user channel, rendered as bare `key: value` lines.
+      expect(p.combined, isNot(contains('INPUTS:')));
     });
 
     test('OUTPUT SCHEMA: marker is absent when outputSchema is null', () {
@@ -257,25 +287,32 @@ void main() {
       );
     });
 
-    test('empty inputs renders the literal "(none)" placeholder', () {
+    test('empty inputs produces an empty user half (no "(none)" scaffolding, '
+        'plan step 4)', () {
       final r = makeRole();
       final p = r.assemble();
-      expect(p.combined, contains('INPUTS:'));
-      expect(p.combined, contains('(none)'));
+      expect(p.user, isEmpty,
+          reason: 'an empty user half is legal for a system-only prompt');
+      // The old single-body `(none)` placeholder is gone.
+      expect(p.combined, isNot(contains('(none)')));
+      // combined collapses to just the system channel when user is empty.
+      expect(p.combined, equals(p.system));
     });
 
-    test('non-empty inputs renders entries in declaration order', () {
+    test('non-empty inputs render as key: value lines in the user channel, in '
+        'declaration order', () {
       final r = makeRole();
       final p = r.assemble(inputs: <String, Object?>{
         'zeta': 'last',
         'alpha': 'first',
         'middle': 42,
       });
-      // Insertion order is the contract (LinkedHashMap default).
-      final body = p.combined;
-      final iZeta = body.indexOf('zeta: last');
-      final iAlpha = body.indexOf('alpha: first');
-      final iMiddle = body.indexOf('middle: 42');
+      // Insertion order is the contract (LinkedHashMap default). The inputs
+      // land in the user channel, not the system channel.
+      final user = p.user;
+      final iZeta = user.indexOf('zeta: last');
+      final iAlpha = user.indexOf('alpha: first');
+      final iMiddle = user.indexOf('middle: 42');
       expect(iZeta, greaterThanOrEqualTo(0));
       expect(iAlpha, greaterThanOrEqualTo(0));
       expect(iMiddle, greaterThanOrEqualTo(0));
@@ -283,8 +320,8 @@ void main() {
           reason: 'zeta was declared first; should appear before alpha');
       expect(iAlpha < iMiddle, isTrue,
           reason: 'alpha was declared second; should appear before middle');
-      // (none) must not appear when inputs is populated.
-      expect(p.combined, isNot(contains('(none)')));
+      // The system channel carries only the framing, not the inputs.
+      expect(p.system, isNot(contains('zeta: last')));
     });
   });
 

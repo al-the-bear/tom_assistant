@@ -315,9 +315,9 @@ void main() {
 
     test('role assemble with empty-string input values still anchors', () {
       // Adjacent tamper vector: the caller supplies inputs whose
-      // *values* are empty strings. The role's `_composeBody` will
-      // render `key: ` (empty value) lines; the anchor still
-      // prepends.
+      // *values* are empty strings. The role's `_composeUser` will
+      // render `key: ` (empty value) lines into the user channel; the
+      // anchor still prepends to the system channel.
       final role = bootstrapRoleRegistry().get('analyser');
       final p = role.assemble(inputs: const <String, Object?>{
         'empty_value_one': '',

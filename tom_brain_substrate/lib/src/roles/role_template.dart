@@ -58,17 +58,19 @@
 //
 // What B.23 adds to this file:
 //
-//   * The [assemble] method on `RoleTemplate`. Composes the prompt
-//     body in the order
+//   * The [assemble] method on `RoleTemplate`. Composes the two-channel
+//     [WirePrompt]: the `system` channel is
 //     `[anchor block] + [persona] + [objective] + [optional output
-//      schema marker] + [inputs]`, runs the result through
-//     [AssistantDedicationAnchor.wrap] (idempotent — wrap re-confirms
-//     the anchor is present), then stamps
+//      schema marker]` (the anchor prepended via
+//     [AssistantDedicationAnchor.ensurePrefix]); the `user` channel is
+//     the per-call `[inputs]`. It then stamps
 //     [AnchorRegistry.currentHash] on the produced [WirePrompt].
+//     (Prompt-restructuring plan step 4 split the former single body
+//     into these two channels and removed the old `_composeBody`.)
 //
 //   * The structural enforcement of Postulate 3: every [WirePrompt]
 //     this method returns has its [WirePrompt.system] starting with
-//     [AssistantDedicationAnchor.text] (via `wrap`), and its
+//     [AssistantDedicationAnchor.text] (via `ensurePrefix`), and its
 //     [WirePrompt.anchorHash] equal to [AnchorRegistry.currentHash].
 //     Tests at `test/b23_anchor_injection_test.dart` pin this for
 //     every bootstrap role and every tampering vector enumerated in
@@ -330,13 +332,27 @@ final class RoleTemplate {
   ///    (bootstrap-in-code roles have no git sha to point at — see
   ///    Q-B.22.3 in `prototype_implementation_questions.md`).
   ///
-  /// **Body composition.** The non-anchor body is assembled in a
-  /// fixed order, designed so a reader of the prompt sees the most
-  /// stable framing first and the most call-specific text last:
+  /// **Channel split (prompt-restructuring plan step 4).** [assemble]
+  /// produces the two-channel [WirePrompt]:
+  ///
+  ///   - [WirePrompt.system] — the standing framing, anchor-first. Built
+  ///     from [_composeSystem] (persona / objective / optional output
+  ///     schema) and then run through
+  ///     [AssistantDedicationAnchor.ensurePrefix], so the anchor leads the
+  ///     system channel even though the scaffold itself never emits it.
+  ///     This is the in-code fallback for the role framing; Phase 3 of the
+  ///     plan moves the `PERSONA:` / `OBJECTIVE:` / `OUTPUT SCHEMA:`
+  ///     scaffolding into per-role `<role>.system.md` template files while
+  ///     keeping this in-code rendering as the reviewed fallback.
+  ///   - [WirePrompt.user] — the call-specific content. Built from
+  ///     [_composeUser]: one `key: value` line per [inputs] entry, in
+  ///     declaration order. An empty [inputs] map yields an empty user
+  ///     half (legal — a system-only prompt). Phase 4/5 of the plan moves
+  ///     this per-call rendering into `<role>.user.md` template slots.
+  ///
+  /// **System layout** ([_composeSystem], before the anchor is prepended):
   ///
   /// ```
-  /// <anchor block, from AssistantDedicationAnchor.text>
-  ///
   /// PERSONA:
   /// <personaText>
   ///
@@ -347,27 +363,21 @@ final class RoleTemplate {
   /// Respond with a single JSON object … that conforms to this
   /// JSON schema:
   /// <jsonEncode(outputSchema)>]
+  /// ```
   ///
-  /// INPUTS:
+  /// **User layout** ([_composeUser]):
+  ///
+  /// ```
   /// <key>: <value (toString)>
   /// <key>: <value (toString)>
   /// ...
   /// ```
   ///
-  /// Empty [inputs] is permitted — the `INPUTS:` section then
-  /// contains the literal text `(none)` so the prompt still
-  /// communicates the absence of caller-supplied context (rather
-  /// than an unexplained blank section). The B.36 file-backed
-  /// loader will replace this composition with a Mustache-style
-  /// template render against the role's `<role>.system.md` body;
-  /// the anchor wrap and the hash stamp are unchanged.
-  ///
-  /// **Input value serialisation.** Each input value is converted
-  /// via `Object?.toString()` — the role layer does not enforce
-  /// JSON-encodability here (the api/-layer [LlmCall.inputs] doc
-  /// reserves the right to validate inputs against the role's
-  /// declared schema, which lands at B.36 with `templateRef`). At
-  /// B.23 the only requirement is "produce a prompt body the model
+  /// **Input value serialisation.** Each input value is converted via
+  /// `Object?.toString()` — the role layer does not enforce
+  /// JSON-encodability here (the api/-layer [LlmCall.inputs] doc reserves
+  /// the right to validate inputs against the role's declared schema). The
+  /// only requirement at this step is "produce a user channel the model
   /// can read"; `toString` is the minimum that satisfies that.
   ///
   /// **No bypass.** This is the only method on the role layer that
@@ -380,46 +390,43 @@ final class RoleTemplate {
   /// equal [AnchorRegistry.currentHash]. The combination is the
   /// structural proof of Postulate 3.
   WirePrompt assemble({Map<String, Object?> inputs = const {}}) {
-    final assembled = _composeBody(inputs);
     // `ensurePrefix`, not `wrap`. The shared `wrap` keys idempotency on
     // `contains(text)`, giving only the *contains-anchor* guarantee — if
-    // an input value happens to include the anchor text mid-string,
-    // `wrap` would return the body unchanged and the result would start
-    // with `PERSONA:`, violating substrate invariant 1 ("body starts with
-    // anchor"). `ensurePrefix` keys idempotency on `startsWith` and so
-    // always produces the strict starts-with guarantee for every input
-    // shape, including the "input-value-contains-anchor" tamper vector
-    // covered by `b23_anchor_injection_test.dart`. One anchor mechanism,
+    // the system scaffold happened to include the anchor text mid-string,
+    // `wrap` would leave it unmoved and the channel would start with
+    // `PERSONA:`, violating the anchor-leads-`system` invariant.
+    // `ensurePrefix` keys idempotency on `startsWith` and so always
+    // produces the strict starts-with guarantee. One anchor mechanism,
     // owned by the shared primitive, used everywhere.
-    final wrapped = AssistantDedicationAnchor.ensurePrefix(assembled);
-    // Transitional mapping (prompt-restructuring plan step 2): the whole
-    // anchor-led body is the `system` channel; `user` is empty until the
-    // template-pair loader (step 4) splits the per-call inputs into it.
-    // `system` begins with the anchor, satisfying the anchor-leads-system
-    // invariant on `WirePrompt.system`.
+    final system = AssistantDedicationAnchor.ensurePrefix(_composeSystem());
+    final user = _composeUser(inputs);
     return WirePrompt(
-      system: wrapped,
+      system: system,
+      user: user,
       anchorHash: AnchorRegistry.currentHash,
       roleId: id,
-      // templateSha stays null until B.36 lands the file-backed
-      // loader (Q-B.22.3). Documented on the field.
+      // templateSha stays null until the file-backed loader assigns a git
+      // sha (Q-B.22.3). Documented on the field.
       templateSha: null,
     );
   }
 
-  /// Builds the pre-anchor body. Extracted for readability and so
-  /// the test suite at `b23_anchor_injection_test.dart` can pin the
-  /// individual sections (persona present, objective present,
-  /// output-schema marker present iff `outputSchema != null`, inputs
-  /// rendered in declaration order) independently of the anchor
-  /// wrap.
-  String _composeBody(Map<String, Object?> inputs) {
-    final buf = StringBuffer()
-      ..writeln('PERSONA:')
-      ..writeln(personaText)
-      ..writeln()
-      ..writeln('OBJECTIVE:')
-      ..writeln(objective);
+  /// Builds the system channel (before the anchor is prepended): the
+  /// role's persona, objective, and optional output-schema declaration.
+  ///
+  /// In-code fallback for the role framing. The scaffold intentionally
+  /// does *not* emit the anchor — [assemble] prepends it via
+  /// [AssistantDedicationAnchor.ensurePrefix], so the system channel leads
+  /// with the anchor regardless of what this method (or the Phase-3
+  /// `<role>.system.md` template that replaces it) contains. The test
+  /// suite at `b23_anchor_injection_test.dart` pins the individual
+  /// sections (persona present, objective present, output-schema marker
+  /// present iff `outputSchema != null`) independently of the anchor.
+  String _composeSystem() {
+    final sections = <String>[
+      'PERSONA:\n$personaText',
+      'OBJECTIVE:\n$objective',
+    ];
     if (outputSchema != null) {
       // Embed the *actual* schema, not a meta-reference to it. A model can
       // only emit the declared key names (e.g. `questions`) when the schema
@@ -429,25 +436,30 @@ final class RoleTemplate {
       // `StrictFormatAdapter` re-emit block, which already `jsonEncode`s the
       // schema — one structured-output convention, used on both the first
       // emit and the format retry.
-      buf
-        ..writeln()
-        ..writeln('OUTPUT SCHEMA:')
-        ..writeln('Respond with a single JSON object — and nothing else: no '
-            'prose, no markdown code fences, no commentary — that conforms '
-            'to this JSON schema:')
-        ..writeln(jsonEncode(outputSchema));
+      sections.add(
+        'OUTPUT SCHEMA:\n'
+        'Respond with a single JSON object — and nothing else: no prose, no '
+        'markdown code fences, no commentary — that conforms to this JSON '
+        'schema:\n'
+        '${jsonEncode(outputSchema)}',
+      );
     }
-    buf
-      ..writeln()
-      ..writeln('INPUTS:');
-    if (inputs.isEmpty) {
-      buf.writeln('(none)');
-    } else {
-      for (final entry in inputs.entries) {
-        buf.writeln('${entry.key}: ${entry.value}');
-      }
-    }
-    return buf.toString();
+    return sections.join('\n\n');
+  }
+
+  /// Builds the user channel: the caller-supplied [inputs], one
+  /// `key: value` line per entry, in declaration (insertion) order.
+  ///
+  /// An empty [inputs] map produces an empty string — a legal empty user
+  /// half for a system-only prompt. Each value is rendered via
+  /// `Object?.toString()`; the role layer does not trim values (a
+  /// whitespace-only value renders verbatim) and `null` stringifies as the
+  /// literal `null`.
+  String _composeUser(Map<String, Object?> inputs) {
+    if (inputs.isEmpty) return '';
+    return inputs.entries
+        .map((entry) => '${entry.key}: ${entry.value}')
+        .join('\n');
   }
 
   @override
