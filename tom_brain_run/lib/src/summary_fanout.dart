@@ -31,7 +31,8 @@ import 'dart:io';
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show LlmTrailRecord, SubstrateBridge, TurnSummary;
 
-import 'llm_raw_path.dart' show llmRawPathFromRoot, llmRawStem;
+import 'llm_raw_path.dart'
+    show llmRawPathFromRoot, llmRawStem, sanitizeTrailFileToken;
 
 /// The §5.4 session-narrative writer — one file per session,
 /// `sessions/<sessionId>.summary.md`, keyed by `sessionId` only (Q3: the
@@ -53,7 +54,7 @@ final class SessionSummaryWriter {
   void writeTurn(TurnSummary summary) {
     final header = '$_sessionFileMarker\n${_sessionHeaderBody(summary)}';
     final file = File(
-      '${root.path}/sessions/${_sanitizeFileToken(summary.sessionId)}.summary.md',
+      '${root.path}/sessions/${sanitizeTrailFileToken(summary.sessionId)}.summary.md',
     );
     _TurnBlockFile(file: file, header: header, cap: cap)
         .append(_renderTurnBlock(summary, includeSession: false));
@@ -121,7 +122,7 @@ final class CallProjectionWriter {
     final bucket = bucketOf(record);
     final header = '<!-- tom-brain $kind summary: $bucket -->\n# $kind $bucket';
     final file = File(
-      '${root.path}/summary/$subdir/${_sanitizeFileToken(bucket)}.summary.md',
+      '${root.path}/summary/$subdir/${sanitizeTrailFileToken(bucket)}.summary.md',
     );
     _ProjectionFile(file: file, header: header, cap: cap)
         .prepend(_renderProjectionEntry(record, '../../'));
@@ -287,11 +288,6 @@ String _timestamp(DateTime instant) {
   return '${utc.year}-${two(utc.month)}-${two(utc.day)} '
       '${two(utc.hour)}:${two(utc.minute)}:${two(utc.second)}';
 }
-
-/// Makes a bucket key (session id, role, `provider-model`) safe as a file stem
-/// by collapsing path separators / whitespace to `_`.
-String _sanitizeFileToken(String token) =>
-    token.replaceAll(RegExp(r'[\\/\s]+'), '_');
 
 // ─── File primitives ─────────────────────────────────────────────────
 

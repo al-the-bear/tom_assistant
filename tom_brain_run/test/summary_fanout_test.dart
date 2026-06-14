@@ -195,6 +195,39 @@ void main() {
     });
   });
 
+  group('SummaryFanout — cross-platform-safe filenames', () {
+    test('a colon-bearing llm id never reaches the by-llm filename', () {
+      // Regression: a cognition profile id like `claude:haiku:brain` flowed
+      // straight into `by-llm/<provider>-<model>.summary.md`, and the colons
+      // are reserved on Windows — `git checkout` aborts with `invalid path`,
+      // permanently wedging legiondary01's `_ai` clone. The bucket must be
+      // sanitized so no reserved character reaches disk.
+      SummaryFanout.rootedAt(root).onCall(_record(
+        callType: 'brain',
+        turnId: 'turn_W',
+        callSeq: 1,
+        providerId: 'claude:haiku:brain',
+        modelId: 'gemma',
+        answer: 'sanitized',
+      ));
+
+      final byLlm = Directory('${root.path}/summary/by-llm');
+      final names = byLlm
+          .listSync()
+          .map((e) => e.uri.pathSegments.last)
+          .toList();
+      expect(names, hasLength(1));
+      // The colons collapse to `_`; the `-` provider/model separator survives.
+      expect(names.single, 'claude_haiku_brain-gemma.summary.md');
+      // No reserved Windows character survives in any trail filename.
+      expect(
+        RegExp(r'[\\/:*?"<>|]').hasMatch(names.single),
+        isFalse,
+        reason: 'colons/reserved chars abort git checkout on Windows',
+      );
+    });
+  });
+
   group('SummaryFanout — §8 caps', () {
     test('session turn blocks cap, dropping the oldest from the head', () {
       final fanout = SummaryFanout.rootedAt(root, cap: 2);
@@ -294,6 +327,8 @@ LlmTrailRecord _record({
   String callId = 'c1',
   String runId = 'run-7',
   String answer = 'an answer',
+  String providerId = 'omlx',
+  String modelId = 'gemma-4',
 }) =>
     LlmTrailRecord(
       observation: LlmCallObservation(
@@ -308,9 +343,9 @@ LlmTrailRecord _record({
           roleId: 'assistant_to_user',
         ),
         answer: answer,
-        report: const LlmCallReport(
-          providerId: 'omlx',
-          modelId: 'gemma-4',
+        report: LlmCallReport(
+          providerId: providerId,
+          modelId: modelId,
           anchorHash: 'sha256:anchor',
           promptHash: 'sha256:prompt',
           tokensIn: 1,

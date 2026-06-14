@@ -52,6 +52,8 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         ToolListed,
         TurnSummary;
 
+import 'llm_raw_path.dart' show sanitizeTrailFileToken;
+
 /// Marker comment identifying the per-session live-trail file, self-identifying
 /// next to its `.summary.md` sibling.
 const String _liveTrailMarker = '<!-- tom-brain session live-trail -->';
@@ -206,7 +208,7 @@ final class StreamingLiveTrailWriter {
   // ─── File I/O ──────────────────────────────────────────────────────
 
   File _sessionFile(String sessionId) => File(
-        '${root.path}/sessions/${_sanitizeFileToken(sessionId)}.live-trail.md',
+        '${root.path}/sessions/${sanitizeTrailFileToken(sessionId)}.live-trail.md',
       );
 
   /// Trims the file to the last `turnsKept - 1` prompt blocks, then appends the
@@ -266,11 +268,6 @@ final class StreamingLiveTrailWriter {
   /// marker when over [max].
   static String _clip(String text, int max) =>
       text.length <= max ? text : '${text.substring(0, max)}\n…(trimmed)';
-
-  /// Makes a session id safe as a file stem by collapsing path separators /
-  /// whitespace to `_` (matching `summary_fanout.dart`).
-  static String _sanitizeFileToken(String token) =>
-      token.replaceAll(RegExp(r'[\\/\s]+'), '_');
 
   static void _safe(void Function() effect) {
     try {

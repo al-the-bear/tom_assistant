@@ -62,3 +62,23 @@ String llmRawStem(LlmTrailRecord record) {
 /// directory to build the markdown link.
 String llmRawPathFromRoot(LlmTrailRecord record) =>
     'llm/${record.observation.callType}/${llmRawStem(record)}.raw.json';
+
+/// Characters that are illegal in a path component on at least one platform the
+/// trail is cloned to: the Windows-reserved set `\ / : * ? " < > |`, the C0
+/// control range, and whitespace. A run of any of them collapses to one `_`.
+final RegExp _reservedFileChars = RegExp(r'[\\/:*?"<>|\s\x00-\x1f]+');
+
+/// Makes a free-form token (a session id, a role, or a `<provider>-<model>`
+/// llm id) safe as a file **stem** on every platform — most importantly
+/// Windows, where `:` and the rest of the reserved set abort `git checkout`
+/// with `invalid path`. That failure mode is not cosmetic: a single colon in a
+/// committed trail filename permanently wedges a Windows clone's `_ai` — it can
+/// never advance past that commit. An llm id like `claude:haiku:brain` thus
+/// becomes `claude_haiku_brain`. This is the single sanitization rule; every
+/// trail writer that turns a free-form token into a filename calls it rather
+/// than re-deriving its own. Returns `_` when the token sanitizes to empty, so a
+/// stem is never blank.
+String sanitizeTrailFileToken(String token) {
+  final cleaned = token.replaceAll(_reservedFileChars, '_');
+  return cleaned.isEmpty ? '_' : cleaned;
+}
