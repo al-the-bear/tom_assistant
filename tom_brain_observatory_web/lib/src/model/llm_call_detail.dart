@@ -12,6 +12,13 @@ class LlmCallDetail {
   final String? provider;
   final String? model;
   final String? profile;
+
+  /// The cognition role this call was assembled for (`analyser`, `answerer`, …),
+  /// when the dump carries it. It keys the externalized prompt files (a role's
+  /// `<roleId>.persona.md` / `.objective.md`), so the §4.5 detail can offer the
+  /// "edit prompt files" affordance (§ 6.3); `null` when the role is unknown.
+  final String? roleId;
+
   final String? anchorHash;
   final String? promptHash;
   final int? tokensIn;
@@ -26,6 +33,7 @@ class LlmCallDetail {
     required this.provider,
     required this.model,
     required this.profile,
+    required this.roleId,
     required this.anchorHash,
     required this.promptHash,
     required this.tokensIn,
@@ -41,6 +49,7 @@ class LlmCallDetail {
         provider: json['provider'] as String?,
         model: json['model'] as String?,
         profile: (json['profile'] ?? json['memoryProfile']) as String?,
+        roleId: (json['roleId'] ?? json['role']) as String?,
         anchorHash: json['anchorHash'] as String?,
         promptHash: json['promptHash'] as String?,
         tokensIn: json['tokensIn'] as int?,

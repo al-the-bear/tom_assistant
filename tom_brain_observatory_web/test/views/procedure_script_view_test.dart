@@ -74,4 +74,28 @@ void main() {
     await _pump(tester, ProcedureScriptView(client: client, run: _run()));
     expect(find.textContaining('No source'), findsOneWidget);
   });
+
+  testWidgets('the edit affordance opens the editable source and saves it back',
+      (tester) async {
+    final client = StubApiClient(
+      scripts: <String, String>{'answer_with_memory_v1': _source},
+    );
+    await _pump(tester, ProcedureScriptView(client: client, run: _run()));
+
+    // Read mode: no text field yet.
+    expect(find.byType(TextField), findsNothing);
+
+    await tester.tap(find.byTooltip('Edit source'));
+    await tester.pumpAndSettle();
+
+    final field = find.byType(TextField);
+    expect(field, findsOneWidget);
+    await tester.enterText(field, 'EDITED');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(client.procedureWrites.single, ('answer_with_memory_v1', 'EDITED'));
+    // A clean save returns to the read view (no field) over the new source.
+    expect(find.byType(TextField), findsNothing);
+  });
 }

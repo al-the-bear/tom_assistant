@@ -4,6 +4,7 @@
 // up a dump by its `rawPath` link (PT-2.4 LLM-call detail).
 
 import 'package:tom_brain_observatory_web/src/api/trace_api_client.dart';
+import 'package:tom_brain_observatory_web/src/model/authoring.dart';
 import 'package:tom_brain_observatory_web/src/model/live_step.dart';
 import 'package:tom_brain_observatory_web/src/model/llm_call_detail.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
@@ -15,8 +16,18 @@ class StubApiClient implements TraceApiClient {
   /// Keyed by the run-tree `LlmCall`'s `rawPath` link (PT-2.4).
   final Map<String, LlmCallDetail> llmCalls;
 
-  /// Keyed by procedureId — the verbatim d4rt source (PT-3.2).
+  /// Keyed by procedureId — the verbatim d4rt source (PT-3.2). A save through
+  /// [writeProcedureScript] mutates this map, so a re-fetch sees the edit.
   final Map<String, String> scripts;
+
+  /// Keyed by `<roleId>/<part>` — the externalized override prose (PT-4.x). A
+  /// save through [writePromptFile] mutates this map. A missing key is the
+  /// `404` "no override yet" the editor turns into a create-override start.
+  final Map<String, String> prompts;
+
+  /// When set, the next [writeProcedureScript] / [writePromptFile] returns this
+  /// instead of saving, letting a test drive the `422`-findings path.
+  final AuthoringResult? rejectWrites;
 
   /// Canned SSE live-tail per turnId, keyed by turnId (PT-4.2).
   final Map<String, Stream<LiveStep>> turnStreams;
@@ -28,15 +39,24 @@ class StubApiClient implements TraceApiClient {
   /// fires, letting a test assert the list reloads on a tick.
   final List<PromptListRow>? rowsAfterChange;
 
+  /// Records every save, in order, so a widget test can assert what the Save
+  /// button marshalled.
+  final List<(String, String)> procedureWrites = <(String, String)>[];
+  final List<(String, String, String)> promptWrites =
+      <(String, String, String)>[];
+
   StubApiClient({
     this.rows = const <PromptListRow>[],
     this.traces = const <String, PromptTrace>{},
     this.llmCalls = const <String, LlmCallDetail>{},
-    this.scripts = const <String, String>{},
+    Map<String, String>? scripts,
+    Map<String, String>? prompts,
+    this.rejectWrites,
     this.turnStreams = const <String, Stream<LiveStep>>{},
     this.changes,
     this.rowsAfterChange,
-  });
+  })  : scripts = scripts ?? <String, String>{},
+        prompts = prompts ?? <String, String>{};
 
   bool _reloaded = false;
 
@@ -56,6 +76,28 @@ class StubApiClient implements TraceApiClient {
   @override
   Future<String?> procedureScript(String procedureId) async =>
       scripts[procedureId];
+
+  @override
+  Future<AuthoringResult> writeProcedureScript(
+      String procedureId, String source) async {
+    procedureWrites.add((procedureId, source));
+    if (rejectWrites != null) return rejectWrites!;
+    scripts[procedureId] = source;
+    return AuthoringResult.saved;
+  }
+
+  @override
+  Future<String?> readPromptFile(String roleId, String part) async =>
+      prompts['$roleId/$part'];
+
+  @override
+  Future<AuthoringResult> writePromptFile(
+      String roleId, String part, String prose) async {
+    promptWrites.add((roleId, part, prose));
+    if (rejectWrites != null) return rejectWrites!;
+    prompts['$roleId/$part'] = prose;
+    return AuthoringResult.saved;
+  }
 
   @override
   Stream<LiveStep> tailTurn(String turnId) =>

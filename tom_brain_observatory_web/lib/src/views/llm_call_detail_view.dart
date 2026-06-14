@@ -13,6 +13,7 @@ import '../model/llm_call_detail.dart';
 import '../model/prompt_trace.dart';
 import 'format.dart';
 import 'monospace_block.dart';
+import 'prompt_file_editor_view.dart';
 
 /// The detail page for one run-tree LLM call ([node]) within [turnId], over
 /// [client]. Fetches the §3.7 dump lazily on open.
@@ -57,20 +58,41 @@ class _LlmCallDetailViewState extends State<LlmCallDetailView> {
             if (detail == null) {
               return const Center(child: Text('No raw dump for this LLM call.'));
             }
-            return _LlmCallBody(detail: detail);
+            return _LlmCallBody(
+              detail: detail,
+              onEditPrompt: (roleId, part) =>
+                  _openPromptEditor(context, roleId, part),
+            );
           },
         ),
       );
+
+  /// Opens a role's persona/objective override in the editable prompt-file view
+  /// (§ 6.3); the affordance is only offered when the call carries a [roleId].
+  void _openPromptEditor(BuildContext context, String roleId, String part) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => PromptFileEditorView(
+        client: widget.client,
+        roleId: roleId,
+        part: part,
+      ),
+    ));
+  }
 }
 
-/// The §4.5 body. Pure (no Future/Navigator) so it is testable directly.
+/// The §4.5 body. Pure (no Future) so it is testable directly. [onEditPrompt] is
+/// invoked with `(roleId, part)` when a role's "edit prompt files" affordance is
+/// triggered (§ 6.3); it is offered only when the call carries a role.
 class _LlmCallBody extends StatelessWidget {
   final LlmCallDetail detail;
-  const _LlmCallBody({required this.detail});
+  final void Function(String roleId, String part)? onEditPrompt;
+
+  const _LlmCallBody({required this.detail, this.onEditPrompt});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final roleId = detail.roleId;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
@@ -84,6 +106,13 @@ class _LlmCallBody extends StatelessWidget {
           ].join('  ·  '),
           style: theme.textTheme.titleMedium,
         ),
+        if (roleId != null && onEditPrompt != null) ...<Widget>[
+          const SizedBox(height: 8),
+          _EditPromptBar(
+            roleId: roleId,
+            onEditPrompt: onEditPrompt!,
+          ),
+        ],
         const SizedBox(height: 16),
         _MetricsWrap(detail: detail),
         const SizedBox(height: 16),
@@ -101,6 +130,32 @@ class _LlmCallBody extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The role's "edit prompt files" affordance (§ 6.3): a labelled pair of
+/// buttons opening this call's [roleId] persona / objective override in the
+/// editable prompt-file view. Shown only when the call carries a role.
+class _EditPromptBar extends StatelessWidget {
+  final String roleId;
+  final void Function(String roleId, String part) onEditPrompt;
+
+  const _EditPromptBar({required this.roleId, required this.onEditPrompt});
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          Text('role $roleId', style: Theme.of(context).textTheme.bodySmall),
+          for (final part in const <String>['persona', 'objective'])
+            OutlinedButton.icon(
+              icon: const Icon(Icons.edit, size: 16),
+              label: Text('edit $part'),
+              onPressed: () => onEditPrompt(roleId, part),
+            ),
+        ],
+      );
 }
 
 /// tokens in/out · retries · wall-clock — the §4.5 metrics row.

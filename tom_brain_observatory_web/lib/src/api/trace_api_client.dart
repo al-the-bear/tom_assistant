@@ -12,6 +12,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../model/authoring.dart';
 import '../model/live_step.dart';
 import '../model/llm_call_detail.dart';
 import '../model/prompt_trace.dart';
@@ -36,6 +37,29 @@ abstract interface class TraceApiClient {
   /// procedure script (§ 4.6 / PT-3.1), or `null` when the host exposes no such
   /// script (no script root, or the id is unknown — absence is not an error).
   Future<String?> procedureScript(String procedureId);
+
+  /// `PUT /api/procedures/{procedureId}` — the source-authoring write (§ 6.3,
+  /// AUTH-1…AUTH-3): saves an edited d4rt [source] back to the brain's
+  /// `scripts/system/<procedureId>.dart` so it is re-read on the next run
+  /// (AUTH-5). The brain's own validator gates the save: a `200` returns
+  /// [AuthoringResult.saved]; a `422` returns the findings (the file is left
+  /// untouched). A containment refusal (`403`) or absent script root (`404`)
+  /// throws — those are misconfigurations, not editable outcomes.
+  Future<AuthoringResult> writeProcedureScript(
+      String procedureId, String source);
+
+  /// `GET /api/prompts/{roleId}/{part}` — the verbatim override prose of a
+  /// role's `<roleId>.<part>.md`, `part ∈ {persona, objective}` (§ 6.3), or
+  /// `null` when no override exists yet (the `404` the editor turns into a
+  /// "create override" starting point) or no prompts root is configured.
+  Future<String?> readPromptFile(String roleId, String part);
+
+  /// `PUT /api/prompts/{roleId}/{part}` — writes (materialising if absent) a
+  /// role's override [prose] so the brain re-reads it the next time it assembles
+  /// a call for that role (AUTH-5). A `200` returns [AuthoringResult.saved]; a
+  /// `422` (blank prose) returns a finding. A `403`/`404` throws.
+  Future<AuthoringResult> writePromptFile(
+      String roleId, String part, String prose);
 
   /// `GET /api/traces/{turnId}/stream` — the SSE live-tail of a turn (§ 4.8):
   /// one [LiveStep] per cognitive step as the brain appends it, the stream
@@ -107,6 +131,65 @@ class HttpTraceApiClient implements TraceApiClient {
       throw http.ClientException('GET $uri → ${res.statusCode}', uri);
     }
     return res.body;
+  }
+
+  @override
+  Future<AuthoringResult> writeProcedureScript(
+      String procedureId, String source) async {
+    final uri = _resolve('api/procedures/$procedureId', const <String, String>{});
+    final res = await _http.put(uri,
+        body: source,
+        headers: const <String, String>{'content-type': 'text/plain'});
+    return _authoringResult(uri, 'PUT', res);
+  }
+
+  @override
+  Future<String?> readPromptFile(String roleId, String part) async {
+    final uri =
+        _resolve('api/prompts/$roleId/$part', const <String, String>{});
+    final res = await _http.get(uri);
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return res.body;
+  }
+
+  @override
+  Future<AuthoringResult> writePromptFile(
+      String roleId, String part, String prose) async {
+    final uri =
+        _resolve('api/prompts/$roleId/$part', const <String, String>{});
+    final res = await _http.put(uri,
+        body: prose,
+        headers: const <String, String>{'content-type': 'text/plain'});
+    return _authoringResult(uri, 'PUT', res);
+  }
+
+  /// Maps a source-authoring `PUT` response into an [AuthoringResult]: `200` →
+  /// [AuthoringResult.saved]; `422` → the validator findings (a procedure carries
+  /// a `findings[]` array; a prompt carries a single `error` string, normalised
+  /// into one finding). Anything else (`403`/`404`/5xx) is a misconfiguration,
+  /// not an editable outcome, so it throws.
+  AuthoringResult _authoringResult(Uri uri, String method, http.Response res) {
+    if (res.statusCode == 200) return AuthoringResult.saved;
+    if (res.statusCode == 422) {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final raw = body['findings'];
+      if (raw is List) {
+        return AuthoringResult.rejected(<AuthoringFinding>[
+          for (final f in raw)
+            AuthoringFinding.fromJson(f as Map<String, dynamic>),
+        ]);
+      }
+      return AuthoringResult.rejected(<AuthoringFinding>[
+        AuthoringFinding(
+          code: 'prompt.invalid',
+          message: body['error'] as String? ?? 'rejected',
+        ),
+      ]);
+    }
+    throw http.ClientException('$method $uri → ${res.statusCode}', uri);
   }
 
   @override

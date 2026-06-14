@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 
 import '../api/trace_api_client.dart';
 import '../model/prompt_trace.dart';
+import 'procedure_editor.dart';
 import 'run_step_correlation.dart';
 
 /// The script inspector for [run], over [client]. Fetches the source lazily.
@@ -35,15 +36,37 @@ class ProcedureScriptView extends StatefulWidget {
 class _ProcedureScriptViewState extends State<ProcedureScriptView> {
   late Future<String?> _source;
 
+  /// When true the body is the editable source area (§ 6.3); otherwise the
+  /// read-only correlated listing. Toggled from the AppBar edit affordance.
+  bool _editing = false;
+
   @override
   void initState() {
     super.initState();
     _source = widget.client.procedureScript(widget.run.procedureId);
   }
 
+  /// After a clean save the freshly-written source replaces the future so a
+  /// switch back to the read view re-correlates against what actually landed.
+  void _onSaved(String saved) {
+    setState(() {
+      _source = Future<String?>.value(saved);
+      _editing = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text('script · ${widget.run.procedureId}')),
+        appBar: AppBar(
+          title: Text('script · ${widget.run.procedureId}'),
+          actions: <Widget>[
+            IconButton(
+              tooltip: _editing ? 'View' : 'Edit source',
+              icon: Icon(_editing ? Icons.visibility : Icons.edit),
+              onPressed: () => setState(() => _editing = !_editing),
+            ),
+          ],
+        ),
         body: FutureBuilder<String?>(
           future: _source,
           builder: (context, snapshot) {
@@ -57,6 +80,16 @@ class _ProcedureScriptViewState extends State<ProcedureScriptView> {
             if (source == null) {
               return Center(
                 child: Text('No source for procedure ${widget.run.procedureId}.'),
+              );
+            }
+            if (_editing) {
+              return SingleChildScrollView(
+                child: ProcedureEditor(
+                  client: widget.client,
+                  procedureId: widget.run.procedureId,
+                  initialSource: source,
+                  onSaved: _onSaved,
+                ),
               );
             }
             return ProcedureScriptBody(run: widget.run, source: source);

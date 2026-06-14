@@ -22,11 +22,12 @@ const _node = LlmCallNode(
   rawPath: _rawPath,
 );
 
-LlmCallDetail _detail() => const LlmCallDetail(
+LlmCallDetail _detail({String? roleId}) => LlmCallDetail(
       callType: 'assistant_to_user',
       provider: 'local',
       model: 'gemma3:27b',
       profile: 'default',
+      roleId: roleId,
       anchorHash: 'sha256:aaaa1111',
       promptHash: 'sha256:bbbb2222',
       tokensIn: 1200,
@@ -79,5 +80,33 @@ void main() {
   testWidgets('shows a not-found state when the host has no dump', (tester) async {
     await _pump(tester, StubApiClient());
     expect(find.text('No raw dump for this LLM call.'), findsOneWidget);
+  });
+
+  testWidgets('offers the edit-prompt affordance and opens the editor for a role',
+      (tester) async {
+    await _pump(
+      tester,
+      StubApiClient(
+        llmCalls: <String, LlmCallDetail>{_rawPath: _detail(roleId: 'analyser')},
+        prompts: <String, String>{'analyser/persona': 'persona prose'},
+      ),
+    );
+
+    expect(find.text('role analyser'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'edit persona'));
+    await tester.pumpAndSettle();
+
+    // The prompt-file editor page is now on top, seeded with the override.
+    expect(find.text('prompt · analyser.persona'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('offers no edit-prompt affordance when the call carries no role',
+      (tester) async {
+    await _pump(
+      tester,
+      StubApiClient(llmCalls: <String, LlmCallDetail>{_rawPath: _detail()}),
+    );
+    expect(find.textContaining('edit persona'), findsNothing);
   });
 }
