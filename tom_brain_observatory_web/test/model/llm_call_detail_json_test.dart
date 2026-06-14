@@ -48,4 +48,40 @@ void main() {
       expect(detail.temperature, 1.0);
     });
   });
+
+  group('LlmCallDetail.roleId resolution (§6.3 editor gate)', () {
+    test('an explicit roleId is used verbatim', () {
+      final detail = LlmCallDetail.fromJson(jsonDecode('''
+        {"callType": "assistant_to_user", "roleId": "answerer"}
+      ''') as Map<String, dynamic>);
+
+      expect(detail.roleId, 'answerer');
+    });
+
+    test('a legacy "role" field still resolves', () {
+      final detail = LlmCallDetail.fromJson(jsonDecode('''
+        {"callType": "assistant_to_user", "role": "answerer"}
+      ''') as Map<String, dynamic>);
+
+      expect(detail.roleId, 'answerer');
+    });
+
+    test('falls back to callType — the role key the dump actually carries', () {
+      // The live trail writer records the role only as `callType`; callType IS
+      // the role id (the `<id>.persona.md` filename stem), so the editor gate
+      // must reach it through callType when no explicit roleId is present.
+      final detail = LlmCallDetail.fromJson(jsonDecode('''
+        {"callType": "analyser"}
+      ''') as Map<String, dynamic>);
+
+      expect(detail.roleId, 'analyser');
+    });
+
+    test('an unknown callType yields a null role (no editor affordance)', () {
+      final detail = LlmCallDetail.fromJson(
+          jsonDecode('{}') as Map<String, dynamic>);
+
+      expect(detail.roleId, isNull);
+    });
+  });
 }

@@ -13,10 +13,12 @@ class LlmCallDetail {
   final String? model;
   final String? profile;
 
-  /// The cognition role this call was assembled for (`analyser`, `answerer`, …),
-  /// when the dump carries it. It keys the externalized prompt files (a role's
-  /// `<roleId>.persona.md` / `.objective.md`), so the §4.5 detail can offer the
-  /// "edit prompt files" affordance (§ 6.3); `null` when the role is unknown.
+  /// The cognition role this call was assembled for (`analyser`, `answerer`, …).
+  /// Resolved from `roleId`, the legacy `role`, or — for live dumps that only
+  /// record the role as `callType` — `callType` itself (callType IS the role
+  /// key). It keys the externalized prompt files (a role's `<roleId>.persona.md`
+  /// / `.objective.md`), so the §4.5 detail can offer the "edit prompt files"
+  /// affordance (§ 6.3); `null` only when the dump carries no role at all.
   final String? roleId;
 
   final String? anchorHash;
@@ -60,7 +62,12 @@ class LlmCallDetail {
         provider: json['provider'] as String?,
         model: json['model'] as String?,
         profile: (json['profile'] ?? json['memoryProfile']) as String?,
-        roleId: (json['roleId'] ?? json['role']) as String?,
+        // The live trail writer records the role only as `callType` (callType
+        // IS the role key — the `<roleId>.persona.md` filename stem), so fall
+        // back to it when no explicit `roleId` / legacy `role` is present. This
+        // is what makes the §6.3 prompt-file editor reachable for live dumps.
+        roleId:
+            (json['roleId'] ?? json['role'] ?? json['callType']) as String?,
         anchorHash: json['anchorHash'] as String?,
         promptHash: json['promptHash'] as String?,
         tokensIn: json['tokensIn'] as int?,
