@@ -73,18 +73,32 @@ abstract final class CognitionConfigLoader {
     'kind',
   };
 
+  /// The default template-existence probe: treats every candidate path as
+  /// present. Used by the pure [parse] when no caller-supplied probe injects real
+  /// filesystem knowledge, so an inline `parse` never fails fast on a missing
+  /// template file and reports both halves present. [loadFromDir] supplies a real
+  /// `File.existsSync` probe rooted at the cognition root (§8 step 8).
+  static bool _allTemplatesPresent(String _) => true;
+
   /// Parses [registryYaml] plus the [procedureConfigs] it references (keyed by
   /// the registry's `config:` filename) into a [CognitionConfig].
   ///
   /// Pure: no I/O, no clock. [env] expands `${env:NAME}` tokens in string
-  /// values. Throws [CognitionConfigException] (located) on any malformed shape,
-  /// a missing `template`, a duplicate mapping key, an unknown setting key, or a
-  /// referenced config that is absent from [procedureConfigs].
+  /// values. [templateExists] is the caller-injected probe over cognition-root-
+  /// relative paths used to resolve each `kind: prompt` `template:` *stem* to its
+  /// `<stem>.system.md` + `<stem>.user.md` pair (and each `kind: fragment` stem
+  /// to its `<stem>.md`) and to set the per-half present/empty flags — it
+  /// defaults to "all present" so a pure inline parse never touches the disk.
+  /// Throws [CognitionConfigException] (located) on any malformed shape, a
+  /// missing `template`, a duplicate mapping key, an unknown setting key, a
+  /// referenced config absent from [procedureConfigs], or a prompt whose stem
+  /// resolves to *neither* half (a fragment whose single file is absent).
   static CognitionConfig parse({
     required String registryYaml,
     required Map<String, String> procedureConfigs,
     Map<String, String> llmRouteConfigs = const {},
     Map<String, String> env = const {},
+    bool Function(String relativePath) templateExists = _allTemplatesPresent,
   }) {
     final YamlConfigReader envReader =
         YamlConfigReader(env: env, errorFactory: CognitionConfigException.new);
@@ -99,7 +113,8 @@ abstract final class CognitionConfigLoader {
           '"${proc.configFile}" was not provided.',
         );
       }
-      _parseProcedure(proc, content, registry, envReader, prompts);
+      _parseProcedure(proc, content, registry, envReader, templateExists,
+          prompts);
     }
 
     final Map<String, LlmRouteConfig> llmRoutes = <String, LlmRouteConfig>{};
@@ -166,6 +181,11 @@ abstract final class CognitionConfigLoader {
       procedureConfigs: configs,
       llmRouteConfigs: routeConfigs,
       env: env,
+      // The real probe: a template stem resolves against the on-disk cognition
+      // tree, so the per-half present/empty flags and the fail-fast neither-half
+      // check reflect what actually ships (§8 step 8).
+      templateExists: (relativePath) =>
+          File('$cognitionRootDir/$relativePath').existsSync(),
     );
   }
 
@@ -233,6 +253,7 @@ abstract final class CognitionConfigLoader {
     String content,
     CognitionRegistry registry,
     YamlConfigReader envReader,
+    bool Function(String relativePath) templateExists,
     Map<String, ResolvedPrompt> out,
   ) {
     final Map<String, Object?> doc = _loadMap(content, proc.name);
@@ -257,10 +278,14 @@ abstract final class CognitionConfigLoader {
             _reader.mapValue(pe.value, promptPath)!;
         _rejectUnknownKeys(pm, _promptAllowedKeys, promptPath);
 
-        final String template = envReader.expandEnv(
+        // The `template:` value is a *stem* (§8 step 8): a `kind: prompt`
+        // resolves `<stem>.system.md` + `<stem>.user.md`, a `kind: fragment`
+        // the single `<stem>.md`.
+        final String stem = envReader.expandEnv(
           _reader.requireString(pm, 'template', '$promptPath.template'),
           '$promptPath.template',
         );
+        final PromptKind kind = _parseKind(pm['kind'], '$promptPath.kind');
         final _SettingsLayer promptLayer =
             _readSettings(pm, promptPath, envReader);
 
@@ -272,8 +297,9 @@ abstract final class CognitionConfigLoader {
           mainProcedure: proc.name,
           subProcedure: key,
           promptName: promptName,
-          templatePath: '${proc.folder}/$template',
-          kind: _parseKind(pm['kind'], '$promptPath.kind'),
+          template: _resolveTemplate(
+              proc.folder, stem, kind, templateExists, '$promptPath.template'),
+          kind: kind,
           settings: PromptSettings(
             temperature: merged.temperature,
             maxToolLoops: merged.maxToolLoops,
@@ -285,6 +311,55 @@ abstract final class CognitionConfigLoader {
           ),
         );
       }
+    }
+  }
+
+  // ── template stem → file(s) resolution (§8 step 8) ──────────────────
+
+  /// Resolves a `template:` [stem] (under the procedure [folder]) to its
+  /// on-disk file(s), using [templateExists] for the per-half present/empty
+  /// flags (§8 step 8 / `prompt_configuration.md` §13.1).
+  ///
+  /// A [PromptKind.prompt] resolves the `<stem>.system.md` + `<stem>.user.md`
+  /// pair: either half may be absent (→ empty string at assembly), but a prompt
+  /// whose stem resolves to *neither* file is a located, fail-fast
+  /// [CognitionConfigException]. A [PromptKind.fragment] resolves the single
+  /// `<stem>.md`; an absent fragment file is likewise fatal (a registered
+  /// fragment with no body is meaningless).
+  static TemplateResolution _resolveTemplate(
+    String folder,
+    String stem,
+    PromptKind kind,
+    bool Function(String relativePath) templateExists,
+    String path,
+  ) {
+    switch (kind) {
+      case PromptKind.prompt:
+        final String systemPath = '$folder/$stem.system.md';
+        final String userPath = '$folder/$stem.user.md';
+        final bool systemPresent = templateExists(systemPath);
+        final bool userPresent = templateExists(userPath);
+        if (!systemPresent && !userPresent) {
+          throw CognitionConfigException(
+            '$path: prompt stem "$stem" resolves to neither "$systemPath" nor '
+            '"$userPath" — at least one half of the pair must exist.',
+          );
+        }
+        return PromptTemplateFiles(
+          system:
+              ResolvedTemplateFile(path: systemPath, present: systemPresent),
+          user: ResolvedTemplateFile(path: userPath, present: userPresent),
+        );
+      case PromptKind.fragment:
+        final String fragmentPath = '$folder/$stem.md';
+        if (!templateExists(fragmentPath)) {
+          throw CognitionConfigException(
+            '$path: fragment stem "$stem" resolves to no file "$fragmentPath".',
+          );
+        }
+        return FragmentTemplateFiles(
+          ResolvedTemplateFile(path: fragmentPath, present: true),
+        );
     }
   }
 

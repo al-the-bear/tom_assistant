@@ -98,7 +98,12 @@ CognitionConfig _cognitionConfig({
               mainProcedure: 'assist_user',
               subProcedure: 'answer',
               promptName: 'main',
-              templatePath: 'assist_user/answer.md',
+              template: PromptTemplateFiles(
+                system: ResolvedTemplateFile(
+                    path: 'assist_user/answer.system.md', present: false),
+                user: ResolvedTemplateFile(
+                    path: 'assist_user/answer.user.md', present: true),
+              ),
               kind: PromptKind.prompt,
               settings: PromptSettings(
                 llm: 'fast',
@@ -816,7 +821,8 @@ void main() {
             mainProcedure: 'p',
             subProcedure: 'explicit',
             promptName: 'main',
-            templatePath: 'p/explicit.md',
+            template: FragmentTemplateFiles(
+                ResolvedTemplateFile(path: 'p/explicit.md', present: true)),
             kind: PromptKind.fragment,
             settings: PromptSettings(
               llm: 'fast',
@@ -828,7 +834,11 @@ void main() {
             mainProcedure: 'p',
             subProcedure: 'bare',
             promptName: 'main',
-            templatePath: 'p/bare.md',
+            template: PromptTemplateFiles(
+              system:
+                  ResolvedTemplateFile(path: 'p/bare.system.md', present: false),
+              user: ResolvedTemplateFile(path: 'p/bare.user.md', present: true),
+            ),
             kind: PromptKind.prompt,
             settings: PromptSettings(),
           ),

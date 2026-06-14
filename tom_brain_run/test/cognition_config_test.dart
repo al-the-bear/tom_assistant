@@ -75,19 +75,26 @@ void main() {
       );
     });
 
-    test('resolve returns the ID parts, template path, and kind', () {
+    test('resolve returns the ID parts, resolved template pair, and kind', () {
       final p = config.resolve('assist_user.prompt_analyzer.classification');
       expect(p.id, 'assist_user.prompt_analyzer.classification');
       expect(p.mainProcedure, 'assist_user');
       expect(p.subProcedure, 'prompt_analyzer');
       expect(p.promptName, 'classification');
-      expect(p.templatePath, 'assist_user/prompt_analyzer.classification.md');
       expect(p.kind, PromptKind.prompt);
+      // The `template:` value is a stem; a prompt resolves the system+user pair.
+      final pair = p.template as PromptTemplateFiles;
+      expect(pair.system.path,
+          'assist_user/prompt_analyzer.classification.system.md');
+      expect(
+          pair.user.path, 'assist_user/prompt_analyzer.classification.user.md');
     });
 
-    test('a fragment carries kind = fragment', () {
+    test('a fragment carries kind = fragment and a single resolved file', () {
       final p = config.resolve('assist_user.answer_with_memory.tool_catalogue');
       expect(p.kind, PromptKind.fragment);
+      final frag = p.template as FragmentTemplateFiles;
+      expect(frag.file.path, 'assist_user/answer_with_memory.tool_catalogue.md');
     });
   });
 
@@ -206,6 +213,7 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
       File('${dir.path}/registry.yaml').writeAsStringSync(_registryYaml);
       File('${dir.path}/assist_user.yaml').writeAsStringSync(_assistUserYaml);
+      _writeAssistUserTemplates(dir.path);
 
       final config = CognitionConfigLoader.loadFromDir(dir.path);
       expect(
@@ -221,6 +229,23 @@ void main() {
       );
     });
   });
+}
+
+/// Writes one `<stem>.user.md` per `kind: prompt` and the single `<stem>.md` for
+/// the `tool_catalogue` fragment under `<root>/assist_user/`, so `loadFromDir`'s
+/// real existence probe resolves every stem (§8 step 8 fail-fast otherwise).
+void _writeAssistUserTemplates(String root) {
+  final folder = Directory('$root/assist_user')..createSync(recursive: true);
+  for (final stem in const <String>[
+    'prompt_analyzer.classification',
+    'answer_with_thinking.analysis',
+    'answer_with_thinking.synthesis',
+    'answer_with_memory.assembly',
+  ]) {
+    File('${folder.path}/$stem.user.md').writeAsStringSync('body for $stem\n');
+  }
+  File('${folder.path}/answer_with_memory.tool_catalogue.md')
+      .writeAsStringSync('fragment body\n');
 }
 
 const String _registryYaml = '''
@@ -244,7 +269,7 @@ llm: default
 prompt_analyzer:
   prompts:
     classification:
-      template: prompt_analyzer.classification.md
+      template: prompt_analyzer.classification
       tools: none
       max_tool_loops: 1
       temperature: 0.0
@@ -253,19 +278,19 @@ answer_with_thinking:
   temperature: 0.5
   prompts:
     analysis:
-      template: answer_with_thinking.analysis.md
+      template: answer_with_thinking.analysis
       tools: readonly
     synthesis:
-      template: answer_with_thinking.synthesis.md
+      template: answer_with_thinking.synthesis
       tools: all
 
 answer_with_memory:
   prompts:
     assembly:
-      template: answer_with_memory.assembly.md
+      template: answer_with_memory.assembly
       tools: [recall, search]
     tool_catalogue:
-      template: answer_with_memory.tool_catalogue.md
+      template: answer_with_memory.tool_catalogue
       kind: fragment
 ''';
 
@@ -278,7 +303,7 @@ max_tool_loops: 6
 answer_with_memory:
   prompts:
     assembly:
-      template: answer_with_memory.assembly.md
+      template: answer_with_memory.assembly
 ''';
 
 /// A prompt with no `template` key — fail fast at load.
@@ -304,6 +329,6 @@ const String _unknownSettingYaml = '''
 answer_with_memory:
   prompts:
     assembly:
-      template: answer_with_memory.assembly.md
+      template: answer_with_memory.assembly
       bogus_setting: 7
 ''';

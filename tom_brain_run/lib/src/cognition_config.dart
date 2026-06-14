@@ -181,6 +181,88 @@ final class PromptSettings {
   });
 }
 
+/// One resolved template file: its cognition-root-relative [path] and whether it
+/// is [present] on disk (§8 step 8 / `prompt_configuration.md` §13.1).
+///
+/// An absent half of a prompt pair (`present == false`) renders to the empty
+/// string at assembly time. A fragment's single file — and at least one half of
+/// every prompt — is always `present` (the loader fails fast otherwise).
+final class ResolvedTemplateFile {
+  /// The path relative to the cognition root (`<folder>/<stem>.<suffix>`).
+  final String path;
+
+  /// Whether the file exists on disk.
+  final bool present;
+
+  /// Binds the resolved file.
+  const ResolvedTemplateFile({required this.path, required this.present});
+
+  @override
+  bool operator ==(Object other) =>
+      other is ResolvedTemplateFile &&
+      other.path == path &&
+      other.present == present;
+
+  @override
+  int get hashCode => Object.hash(path, present);
+
+  @override
+  String toString() => 'ResolvedTemplateFile(path: $path, present: $present)';
+}
+
+/// How a registered template's `template:` *stem* resolved to file(s) on disk
+/// (§8 step 8). A closed alphabet of two forms mirroring [PromptKind]:
+/// [PromptTemplateFiles] (a `kind: prompt` `<stem>.system.md` + `<stem>.user.md`
+/// pair) and [FragmentTemplateFiles] (a `kind: fragment` single `<stem>.md`).
+sealed class TemplateResolution {
+  const TemplateResolution();
+}
+
+/// A `kind: prompt` template resolved to its `<stem>.system.md` +
+/// `<stem>.user.md` pair. Either half may be absent (→ empty string); the loader
+/// fails fast when *neither* half is present.
+final class PromptTemplateFiles extends TemplateResolution {
+  /// The standing-framing half (`<stem>.system.md`).
+  final ResolvedTemplateFile system;
+
+  /// The call-specific half (`<stem>.user.md`).
+  final ResolvedTemplateFile user;
+
+  /// Binds the pair.
+  const PromptTemplateFiles({required this.system, required this.user});
+
+  @override
+  bool operator ==(Object other) =>
+      other is PromptTemplateFiles &&
+      other.system == system &&
+      other.user == user;
+
+  @override
+  int get hashCode => Object.hash(system, user);
+
+  @override
+  String toString() => 'PromptTemplateFiles(system: $system, user: $user)';
+}
+
+/// A `kind: fragment` template resolved to its single `<stem>.md`.
+final class FragmentTemplateFiles extends TemplateResolution {
+  /// The single fragment file (`<stem>.md`).
+  final ResolvedTemplateFile file;
+
+  /// Binds the single file.
+  const FragmentTemplateFiles(this.file);
+
+  @override
+  bool operator ==(Object other) =>
+      other is FragmentTemplateFiles && other.file == file;
+
+  @override
+  int get hashCode => file.hashCode;
+
+  @override
+  String toString() => 'FragmentTemplateFiles(file: $file)';
+}
+
 /// One registered prompt, flattened to its full ID plus resolved settings (§5).
 final class ResolvedPrompt {
   /// The full `<main>.<sub>.<prompt>` ID.
@@ -195,8 +277,10 @@ final class ResolvedPrompt {
   /// The prompt-name segment.
   final String promptName;
 
-  /// The template path, relative to the cognition root (`<folder>/<template>`).
-  final String templatePath;
+  /// The resolved template file(s) — a `<stem>.system.md` + `<stem>.user.md`
+  /// pair for a [PromptKind.prompt], a single `<stem>.md` for a
+  /// [PromptKind.fragment] (§8 step 8). The `template:` config value is the stem.
+  final TemplateResolution template;
 
   /// Whether this is a full prompt or a reusable fragment.
   final PromptKind kind;
@@ -210,7 +294,7 @@ final class ResolvedPrompt {
     required this.mainProcedure,
     required this.subProcedure,
     required this.promptName,
-    required this.templatePath,
+    required this.template,
     required this.kind,
     required this.settings,
   });

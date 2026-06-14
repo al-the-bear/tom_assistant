@@ -81,11 +81,11 @@ answer_with_memory:
   prompts:
     # The assembly prompt — this is the node /switch_model re-points.
     assembly:
-      template: answer_with_memory.assembly.md
+      template: answer_with_memory.assembly
 ''');
 
   Directory('${root.path}/assist_user').createSync(recursive: true);
-  File('${root.path}/assist_user/answer_with_memory.assembly.md')
+  File('${root.path}/assist_user/answer_with_memory.assembly.user.md')
       .writeAsStringSync(r'Answer: ${text}');
 
   Directory('${root.path}/llm').createSync(recursive: true);

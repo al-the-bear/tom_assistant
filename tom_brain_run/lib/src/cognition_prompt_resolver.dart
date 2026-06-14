@@ -46,8 +46,10 @@ import 'cognition_config.dart';
 /// Builds the `PromptResolver` seam over a loaded [config].
 ///
 /// The returned function resolves a prompt id to a procedure-side
-/// `ResolvedPrompt`: it loads the template at `<configFolder>/<templatePath>`
-/// (the cognition root is [builtins].configFolder), renders the
+/// `ResolvedPrompt`: it loads the resolved template file(s) under
+/// [builtins].configFolder — a `kind: prompt` `<stem>.system.md` +
+/// `<stem>.user.md` pair (an absent half → empty string) joined into one body,
+/// or a `kind: fragment` single `<stem>.md` (§8 step 8) — renders the
 /// `priorTurns` / `recall` / `open_todo_reminder` / `text` inputs into the
 /// labelled blocks the pre-§6 builders produced, resolves the §6 built-ins
 /// ([expressions] backs any `${{ … }}` form; [environment] backs `${env:NAME}`),
@@ -68,8 +70,8 @@ proc.PromptResolver buildPromptResolver(
       return null;
     }
 
-    final templatePath = _joinPath(builtins.configFolder, registered.templatePath);
-    final rawTemplate = await File(templatePath).readAsString();
+    final rawTemplate =
+        await _loadRawTemplate(registered.template, builtins.configFolder);
 
     final resolver = builtins.resolver(
       expressions: expressions,
@@ -283,6 +285,36 @@ String _renderReminder(Object? reminder) =>
 
 /// Stringifies a prompt input, rendering `null` as the empty string.
 String _stringOf(Object? value) => value == null ? '' : '$value';
+
+/// Loads a resolved [template] into one raw body under the cognition-root
+/// [configFolder] (§8 step 8).
+///
+/// A [PromptTemplateFiles] pair reads each present half (an absent half → the
+/// empty string) and joins them with the same rule the substrate `WirePrompt`
+/// uses for a no-native-separation provider — `system`, then a blank line, then
+/// `user`, with empty parts dropped. So a prompt whose system half is absent
+/// (every live `assist_user` / `dreaming` template until the §9 content split)
+/// yields exactly its `<stem>.user.md` bytes — byte-identical to the pre-§8
+/// single template file. A [FragmentTemplateFiles] reads its single file.
+Future<String> _loadRawTemplate(
+  TemplateResolution template,
+  String configFolder,
+) async {
+  switch (template) {
+    case PromptTemplateFiles(:final system, :final user):
+      final String systemText = system.present
+          ? await File(_joinPath(configFolder, system.path)).readAsString()
+          : '';
+      final String userText = user.present
+          ? await File(_joinPath(configFolder, user.path)).readAsString()
+          : '';
+      if (systemText.isEmpty) return userText;
+      if (userText.isEmpty) return systemText;
+      return '$systemText\n\n$userText';
+    case FragmentTemplateFiles(:final file):
+      return File(_joinPath(configFolder, file.path)).readAsString();
+  }
+}
 
 /// Joins a cognition-root [dir] with a relative [rel] template path. POSIX
 /// separators (the cognition config paths are `/`-based); a trailing separator

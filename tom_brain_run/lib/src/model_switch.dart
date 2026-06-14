@@ -185,7 +185,7 @@ final class CognitionModelWriter {
       mainProcedure: prompt.mainProcedure,
       subProcedure: prompt.subProcedure,
       promptName: prompt.promptName,
-      templatePath: prompt.templatePath,
+      template: prompt.template,
       kind: prompt.kind,
       settings: PromptSettings(
         temperature: s.temperature,

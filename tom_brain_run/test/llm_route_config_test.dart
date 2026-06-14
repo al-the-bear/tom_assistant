@@ -199,6 +199,13 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
       File('${dir.path}/registry.yaml').writeAsStringSync(_registryYaml);
       File('${dir.path}/assist_user.yaml').writeAsStringSync(_assistUserYaml);
+      // The step-8 stem→pair resolver fail-fasts at load on a `kind: prompt`
+      // whose stem resolves to neither half, so author the user halves on disk.
+      final assistFolder = Directory('${dir.path}/assist_user')..createSync();
+      File('${assistFolder.path}/prompt_analyzer.classification.user.md')
+          .writeAsStringSync('classification body\n');
+      File('${assistFolder.path}/answer_with_memory.assembly.user.md')
+          .writeAsStringSync('assembly body\n');
       Directory('${dir.path}/llm').createSync();
       File('${dir.path}/llm/default.yaml').writeAsStringSync(_defaultRouteYaml);
       File('${dir.path}/llm/local_fast.yaml')
@@ -250,14 +257,14 @@ llm: default
 prompt_analyzer:
   prompts:
     classification:
-      template: prompt_analyzer.classification.md
+      template: prompt_analyzer.classification
       tools: none
       llm: local_fast
 
 answer_with_memory:
   prompts:
     assembly:
-      template: answer_with_memory.assembly.md
+      template: answer_with_memory.assembly
 ''';
 
 const String _defaultRouteYaml = '''

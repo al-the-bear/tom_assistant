@@ -32,14 +32,14 @@ role: assistant_to_user
 prompt_analyzer:
   prompts:
     classification:
-      template: prompt_analyzer.classification.md
+      template: prompt_analyzer.classification
       tools: none
       role: analyser
 
 answer_with_memory:
   prompts:
     assembly:
-      template: answer_with_memory.assembly.md
+      template: answer_with_memory.assembly
 
 # The `research` sub-procedure (`prompt_configuration.md` §10) carries the single
 # `claim_extraction` prompt the migrated `research_v1` runs: it distils the
@@ -48,7 +48,7 @@ answer_with_memory:
 research:
   prompts:
     claim_extraction:
-      template: research.claim_extraction.md
+      template: research.claim_extraction
       tools: none
       role: researcher
 
@@ -61,23 +61,23 @@ research:
 plan:
   prompts:
     classify:
-      template: plan.classify.md
+      template: plan.classify
       tools: none
       role: planner
     decompose:
-      template: plan.decompose.md
+      template: plan.decompose
       tools: none
       role: decomposer
     order:
-      template: plan.order.md
+      template: plan.order
       tools: none
       role: estimator
     evaluate:
-      template: plan.evaluate.md
+      template: plan.evaluate
       tools: none
       role: plan_evaluator
     replan:
-      template: plan.replan.md
+      template: plan.replan
       tools: none
       role: re_planner
 
@@ -92,15 +92,15 @@ plan:
 create:
   prompts:
     test_first:
-      template: create.test_first.md
+      template: create.test_first
       tools: none
       role: tester
     draft:
-      template: create.draft.md
+      template: create.draft
       tools: none
       role: creator
     review:
-      template: create.review.md
+      template: create.review
       tools: none
       role: reviewer
 
@@ -113,39 +113,39 @@ create:
 author:
   prompts:
     draft:
-      template: author.draft.md
+      template: author.draft
       tools: none
       role: procedure_author
     fix_validation:
-      template: author.fix_validation.md
+      template: author.fix_validation
       tools: none
       role: procedure_author
     critique:
-      template: author.critique.md
+      template: author.critique
       tools: none
       role: procedure_critic
 
 answer_with_thinking:
   prompts:
     analysis:
-      template: answer_with_thinking.analysis.md
+      template: answer_with_thinking.analysis
       tools: readonly
       role: analyser
     analysis_reentry:
-      template: answer_with_thinking.analysis_reentry.md
+      template: answer_with_thinking.analysis_reentry
       tools: readonly
       role: analyser
     sub_think:
-      template: answer_with_thinking.sub_think.md
+      template: answer_with_thinking.sub_think
       tools: readonly
       role: sub_thinker
     synthesis:
-      template: answer_with_thinking.synthesis.md
+      template: answer_with_thinking.synthesis
       tools: all
     synthesis_reentry:
-      template: answer_with_thinking.synthesis_reentry.md
+      template: answer_with_thinking.synthesis_reentry
       tools: all
     critique:
-      template: answer_with_thinking.critique.md
+      template: answer_with_thinking.critique
       tools: none
       role: evaluator
