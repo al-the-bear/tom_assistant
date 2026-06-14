@@ -69,6 +69,7 @@ import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../budget/budget.dart' show MemoryWriteLimits;
 import '../procedure_store/disk_procedure_store.dart';
+import '../procedure_store/procedure_store_interface.dart' show ProcedureStore;
 import '../recorder/llm_trail_record.dart' show LlmTrailSink;
 import '../recorder/memory_access_record.dart' show MemoryAccessSink;
 import '../recorder/tool_access_record.dart' show ToolAccessSink;
@@ -610,7 +611,11 @@ abstract final class BrainProcessBoot {
     required ProvisionedMemory memory,
     required TomBrainSubstrateClient substrate,
   }) async {
-    final resolver = await _resolveProcedures(config);
+    // One disk store, used both to build the initial resolver and as the
+    // engine's reload store, so an edited `scripts/system/<id>.dart` is picked
+    // up on the next run (`prompt_tracing.md` § 6.3, AUTH-5).
+    final procedureStore = _diskProcedureStore(config);
+    final resolver = await ProcedureResolver.fromStore(procedureStore);
 
     // One shared preemption state for the engine (yields against it) and the
     // coordinator (drives it) — see the file header.
@@ -620,6 +625,7 @@ abstract final class BrainProcessBoot {
       memory: memory,
       substrate: substrate,
       resolver: resolver,
+      procedureReloadStore: procedureStore,
       preemption: preemption,
       llmTrailSink: config.llmTrailSink,
       memoryAccessSink: config.memoryAccessSink,
@@ -645,16 +651,14 @@ abstract final class BrainProcessBoot {
     return (dispatcher: dispatcher, engine: engine, coordinator: coordinator);
   }
 
-  /// Resolves the disk procedure store (system + optional user scripts) into a
-  /// [ProcedureResolver] (bring-up phase 3, step 1).
-  static Future<ProcedureResolver> _resolveProcedures(
-    BrainProcessConfig config,
-  ) =>
-      ProcedureResolver.fromStore(
-        DiskProcedureStore(
-          systemDir: config.systemScriptsDir,
-          userDir: config.userScriptsDir,
-        ),
+  /// Builds the disk procedure store (system + optional user scripts) that both
+  /// seeds the initial [ProcedureResolver] and backs the engine's reload handle,
+  /// so an edited `scripts/system/<id>.dart` is picked up on the next run
+  /// (bring-up phase 3, step 1; `prompt_tracing.md` § 6.3, AUTH-5).
+  static DiskProcedureStore _diskProcedureStore(BrainProcessConfig config) =>
+      DiskProcedureStore(
+        systemDir: config.systemScriptsDir,
+        userDir: config.userScriptsDir,
       );
 
   /// Wires the [ProcedureEngine] over both bridges, the shared [preemption]
@@ -668,6 +672,7 @@ abstract final class BrainProcessBoot {
     required ProvisionedMemory memory,
     required TomBrainSubstrateClient substrate,
     required ProcedureResolver resolver,
+    required ProcedureStore procedureReloadStore,
     required PreemptionState preemption,
     required LlmTrailSink? llmTrailSink,
     required MemoryAccessSink? memoryAccessSink,
@@ -685,6 +690,7 @@ abstract final class BrainProcessBoot {
   }) =>
       ProcedureEngine(
         resolver: resolver,
+        procedureReloadStore: procedureReloadStore,
         memory: memory.client,
         memoryBridge: MemoryBridge(memory.client),
         substrateBridge: SubstrateBridge(

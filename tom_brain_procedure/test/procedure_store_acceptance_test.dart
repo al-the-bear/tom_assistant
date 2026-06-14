@@ -327,6 +327,15 @@ final class _FakeStore implements ProcedureStore {
     if (src == null) return null;
     return ProcedureSource(ref: ref, source: src);
   }
+
+  @override
+  Future<String> signature() async {
+    final parts = _sources.entries
+        .map((e) => '${e.key}|${e.value?.length ?? -1}')
+        .toList()
+      ..sort();
+    return parts.join('\n');
+  }
 }
 
 /// Fake `TomBrainMemoryClient` exposing only the `stream` + `get` calls

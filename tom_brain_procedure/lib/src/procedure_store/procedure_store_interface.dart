@@ -56,4 +56,17 @@ abstract interface class ProcedureStore {
   /// Throws [ArgumentError] when [ref] is not [handles]d by this store —
   /// a programmer error, since refs come from this store's own `list`.
   Future<ProcedureSource?> read(ProcedureRef ref);
+
+  /// A cheap content fingerprint of everything this store would serve,
+  /// computed **without reading source bodies**.
+  ///
+  /// Two calls return an equal string iff the procedures the store would
+  /// serve are unchanged — where "unchanged" is whatever the backend can
+  /// detect cheaply: a disk backend stats each file (path + mtime + size,
+  /// no body read), a memory backend fingerprints its node references. The
+  /// [ProcedureResolverHandle] consults this to skip a full re-read when
+  /// nothing changed (mtime-gated reload), so an unchanged run pays only a
+  /// stat sweep, not a parse of every script. The format is opaque — only
+  /// equality is meaningful, never the bytes.
+  Future<String> signature();
 }

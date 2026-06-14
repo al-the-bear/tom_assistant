@@ -103,6 +103,8 @@ import '../tools/tool_policy_config.dart' show ToolPolicyConfig;
 import '../tools/tool_registry.dart' show ToolRegistry;
 import '../procedure_store/procedure_loader.dart';
 import '../procedure_store/procedure_resolver.dart';
+import '../procedure_store/procedure_resolver_handle.dart';
+import '../procedure_store/procedure_store_interface.dart';
 import '../recorder/llm_trail_record.dart';
 import '../recorder/memory_access_record.dart';
 import '../recorder/procedure_tree_record.dart';
@@ -183,7 +185,8 @@ final class ProcedureEngine {
   /// skipped-and-reported rather than allowed to bloat the store or fail the
   /// run. Defaults to [MemoryWriteLimits.standard].
   ProcedureEngine({
-    required this.resolver,
+    required ProcedureResolver resolver,
+    ProcedureStore? procedureReloadStore,
     required this.memory,
     required this.memoryBridge,
     required this.substrateBridge,
@@ -207,7 +210,10 @@ final class ProcedureEngine {
     ProcedureTreeSink? procedureTreeSink,
     this.memoryWriteLimits = MemoryWriteLimits.standard,
     SessionTodoStores? sessionTodoStores,
-  })  : toolFileScope = toolFileScope ?? _defaultToolFileScope,
+  })  : _resolverHandle = procedureReloadStore == null
+            ? ProcedureResolverHandle.fixed(resolver)
+            : ProcedureResolverHandle.reloading(procedureReloadStore, resolver),
+        toolFileScope = toolFileScope ?? _defaultToolFileScope,
         sessionTodoStores = sessionTodoStores ?? SessionTodoStores(),
         preemptionState = preemptionState ?? PreemptionState(),
         _stepDeadlineLimit = stepDeadline,
@@ -221,8 +227,16 @@ final class ProcedureEngine {
         _toolAccessSink = toolAccessSink,
         _procedureTreeSink = procedureTreeSink;
 
-  /// Resolves a procedure id (and optional version) to a loaded source.
-  final ProcedureResolver resolver;
+  /// The refreshable holder around the version resolver (C.25). Reloading
+  /// when the engine was given a `procedureReloadStore`, fixed otherwise. The
+  /// engine refreshes it once per top-level run (in [invoke]) so an edited
+  /// script is picked up on the next run (`prompt_tracing.md` § 6.3, AUTH-5)
+  /// while a turn always resolves against one fixed snapshot.
+  final ProcedureResolverHandle _resolverHandle;
+
+  /// Resolves a procedure id (and optional version) to a loaded source —
+  /// the current snapshot held by [_resolverHandle].
+  ProcedureResolver get resolver => _resolverHandle.current;
 
   /// The memory client the recorder writes every run to.
   final TomBrainMemoryClient memory;
@@ -447,6 +461,12 @@ final class ProcedureEngine {
     unawaited(
       Future<void>(() async {
         try {
+          // Top-level-run entry: pick up any edited script before resolving
+          // (`prompt_tracing.md` § 6.3, AUTH-5). Signature-gated, so an
+          // unchanged script set costs only a stat sweep; a fixed handle is a
+          // no-op. Done here (not per nested run) so the whole turn resolves
+          // against one fixed snapshot — within-turn purity is preserved.
+          await _resolverHandle.maybeRefresh();
           final result = await _runInternal(
             runId: runId,
             procedureId: invocation.procedureId,

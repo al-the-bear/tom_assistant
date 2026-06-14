@@ -82,6 +82,24 @@ final class DiskProcedureStore implements ProcedureStore {
     return ProcedureSource(ref: ref, source: source);
   }
 
+  @override
+  Future<String> signature() async {
+    // Stat each source file (path + mtime + size) without reading its body —
+    // an add/remove changes the path set, an edit changes mtime/size. Sorted
+    // so the fingerprint is order-independent.
+    final parts = <String>[];
+    for (final ref in await list()) {
+      final stat = await FileStat.stat(ref.locator);
+      parts.add(
+        '${ref.locator}|'
+        '${stat.modified.microsecondsSinceEpoch}|'
+        '${stat.size}',
+      );
+    }
+    parts.sort();
+    return parts.join('\n');
+  }
+
   Future<List<ProcedureRef>> _listDir(
     Directory dir,
     ProcedureOrigin origin,

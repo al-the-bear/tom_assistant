@@ -40,6 +40,18 @@ final class CompositeProcedureStore implements ProcedureStore {
   }
 
   @override
+  Future<String> signature() async {
+    // Concatenate each backend's fingerprint, tagged by position, so the
+    // composite changes iff any backend changes. Order is construction order
+    // (stable), matching `list`.
+    final parts = <String>[];
+    for (var i = 0; i < backends.length; i++) {
+      parts.add('$i:${await backends[i].signature()}');
+    }
+    return parts.join('\n--\n');
+  }
+
+  @override
   Future<ProcedureSource?> read(ProcedureRef ref) async {
     for (final backend in backends) {
       if (backend.handles(ref)) return backend.read(ref);

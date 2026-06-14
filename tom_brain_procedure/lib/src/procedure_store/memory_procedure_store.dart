@@ -66,6 +66,19 @@ final class MemoryProcedureStore implements ProcedureStore {
   }
 
   @override
+  Future<String> signature() async {
+    // Fingerprint the brain-procedure node references (their ids). This
+    // catches a node being authored or removed — the structural changes that
+    // matter for reload. It does not gate on a node *body* changing in place:
+    // brain-authored procedures are versioned (a revision is a new node, hence
+    // a new ref) and are not edited through the observability authoring surface
+    // (AUTH-4), so a same-id in-place body mutation is out of this store's
+    // reload contract. Computing it needs no `get` — only the cheap `list`.
+    final refs = await list();
+    return (refs.map((r) => r.locator).toList()..sort()).join('\n');
+  }
+
+  @override
   Future<ProcedureSource?> read(ProcedureRef ref) async {
     if (!handles(ref)) {
       throw ArgumentError.value(

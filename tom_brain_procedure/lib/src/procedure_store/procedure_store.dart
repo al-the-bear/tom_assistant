@@ -43,5 +43,6 @@ export 'procedure_not_found.dart'
 export 'procedure_origin.dart' show ProcedureOrigin;
 export 'procedure_ref.dart' show ProcedureRef;
 export 'procedure_resolver.dart' show ProcedureResolver;
+export 'procedure_resolver_handle.dart' show ProcedureResolverHandle;
 export 'procedure_source.dart' show ProcedureSource;
 export 'procedure_store_interface.dart' show ProcedureStore;
