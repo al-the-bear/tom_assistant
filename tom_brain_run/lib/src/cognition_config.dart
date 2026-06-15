@@ -363,6 +363,283 @@ final class CognitionConfig {
     }
     return route(name);
   }
+
+  /// The editable catalogue (`prompt_configuration.md` §13.4 / plan step 13):
+  /// every registered template with its resolved file path(s) + per-half
+  /// present/empty flags, the role prose files, and the config-file inventory.
+  /// This is the data the observatory catalogue route (plan step 14) serves —
+  /// derived purely from this config, no I/O.
+  ///
+  /// Templates are listed in ID order; their present/empty flags are the ones
+  /// the loader already resolved (§8 step 8). Roles are the distinct `role:`
+  /// values across every prompt plus the foundational `assistant_to_user`
+  /// default (so the anchor-bearing role is always editable), in name order;
+  /// their persona/objective files are listed by path under the registry roles
+  /// folder — present/empty is resolved by the observatory file route when the
+  /// file is read (an absent half is offered as an empty document, step 15).
+  /// The config inventory lists `registry.yaml`, each registered procedure
+  /// config, each loaded `llm/<name>.yaml` route config, and the `substrate:`
+  /// block (located by [substrateConfigFile], default `brain_run.yaml`, and its
+  /// within-file `substrate` key).
+  CognitionCatalogue catalogue({String substrateConfigFile = 'brain_run.yaml'}) {
+    final List<String> ids = prompts.keys.toList()..sort();
+    final List<CatalogueTemplate> templates = <CatalogueTemplate>[
+      for (final id in ids)
+        CatalogueTemplate(
+          id: id,
+          kind: prompts[id]!.kind,
+          files: _catalogueFilesOf(prompts[id]!.template),
+        ),
+    ];
+
+    final Set<String> roleNames = <String>{
+      'assistant_to_user',
+      for (final prompt in prompts.values) prompt.settings.role,
+    };
+    final List<CatalogueRole> roles = <CatalogueRole>[
+      for (final name in roleNames.toList()..sort())
+        CatalogueRole(
+          name: name,
+          personaPath: '${registry.rolesFolder}/$name.persona.md',
+          objectivePath: '${registry.rolesFolder}/$name.objective.md',
+        ),
+    ];
+
+    final List<String> procNames = registry.procedures.keys.toList()..sort();
+    final List<String> routeNames = llmRoutes.keys.toList()..sort();
+    final List<CatalogueConfigFile> configFiles = <CatalogueConfigFile>[
+      const CatalogueConfigFile(
+        kind: CatalogueConfigKind.registry,
+        name: 'registry',
+        path: 'registry.yaml',
+      ),
+      for (final name in procNames)
+        CatalogueConfigFile(
+          kind: CatalogueConfigKind.procedure,
+          name: name,
+          path: registry.procedures[name]!.configFile,
+        ),
+      for (final name in routeNames)
+        CatalogueConfigFile(
+          kind: CatalogueConfigKind.llm,
+          name: name,
+          path: '${registry.llmFolder}/$name.yaml',
+        ),
+      CatalogueConfigFile(
+        kind: CatalogueConfigKind.substrate,
+        name: 'substrate',
+        path: substrateConfigFile,
+        location: 'substrate',
+      ),
+    ];
+
+    return CognitionCatalogue(
+      templates: templates,
+      roles: roles,
+      configFiles: configFiles,
+    );
+  }
+
+  static List<CatalogueTemplateFile> _catalogueFilesOf(TemplateResolution t) {
+    switch (t) {
+      case PromptTemplateFiles(:final system, :final user):
+        return <CatalogueTemplateFile>[
+          CatalogueTemplateFile(
+            path: system.path,
+            part: CataloguePart.system,
+            present: system.present,
+          ),
+          CatalogueTemplateFile(
+            path: user.path,
+            part: CataloguePart.user,
+            present: user.present,
+          ),
+        ];
+      case FragmentTemplateFiles(:final file):
+        return <CatalogueTemplateFile>[
+          CatalogueTemplateFile(
+            path: file.path,
+            part: CataloguePart.fragment,
+            present: file.present,
+          ),
+        ];
+    }
+  }
+}
+
+/// Which editable slot a catalogue template file plays (§13.4 / plan step 13).
+/// Mirrors the template half of the observatory `/api/templates?part=` alphabet
+/// (plan step 15); the `persona`/`objective` parts of that alphabet are role
+/// files, carried by [CatalogueRole] rather than this enum.
+enum CataloguePart {
+  /// The standing-framing half of a `kind: prompt` pair (`<stem>.system.md`).
+  system,
+
+  /// The call-specific half of a `kind: prompt` pair (`<stem>.user.md`).
+  user,
+
+  /// The single file of a `kind: fragment` template (`<stem>.md`).
+  fragment,
+}
+
+/// What kind of config file a [CatalogueConfigFile] points at (§13.4).
+enum CatalogueConfigKind {
+  /// `registry.yaml`.
+  registry,
+
+  /// A per-main-procedure config (`<proc>.yaml`).
+  procedure,
+
+  /// A per-route LLM config (`llm/<name>.yaml`).
+  llm,
+
+  /// The `substrate:` block in the run config file.
+  substrate,
+}
+
+/// One template file in the editable catalogue: its cognition-root-relative
+/// [path], the [part] it plays, and whether it is [present] on disk (§13.4).
+///
+/// An absent half of a prompt pair (`present == false`) is offered to the
+/// observatory editor as an empty document the operator can fill in (plan
+/// step 15).
+final class CatalogueTemplateFile {
+  /// The path relative to the cognition root.
+  final String path;
+
+  /// The editable slot this file plays.
+  final CataloguePart part;
+
+  /// Whether the file exists on disk.
+  final bool present;
+
+  /// Binds the catalogue template file.
+  const CatalogueTemplateFile({
+    required this.path,
+    required this.part,
+    required this.present,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is CatalogueTemplateFile &&
+      other.path == path &&
+      other.part == part &&
+      other.present == present;
+
+  @override
+  int get hashCode => Object.hash(path, part, present);
+
+  @override
+  String toString() =>
+      'CatalogueTemplateFile(path: $path, part: ${part.name}, '
+      'present: $present)';
+}
+
+/// One registered template, flattened for the catalogue (§13.4): its full [id],
+/// [kind], and resolved [files] — a `system` + `user` pair for a
+/// [PromptKind.prompt], a single `fragment` file for a [PromptKind.fragment],
+/// each with its present/empty flag.
+final class CatalogueTemplate {
+  /// The full `<main>.<sub>.<prompt>` ID.
+  final String id;
+
+  /// Whether this is a full prompt or a reusable fragment.
+  final PromptKind kind;
+
+  /// The resolved files (one for a fragment, two for a prompt pair).
+  final List<CatalogueTemplateFile> files;
+
+  /// Binds the catalogue template.
+  const CatalogueTemplate({
+    required this.id,
+    required this.kind,
+    required this.files,
+  });
+
+  @override
+  String toString() =>
+      'CatalogueTemplate(id: $id, kind: ${kind.name}, files: $files)';
+}
+
+/// A role's externalised prose files (§13.4 / increment 8): the cognition-root-
+/// relative persona/objective paths under the registry roles folder. Listed by
+/// path only — present/empty is resolved by the observatory file route when the
+/// file is read (an absent half falls back per increment 8; plan step 15).
+final class CatalogueRole {
+  /// The role name (e.g. `assistant_to_user`).
+  final String name;
+
+  /// The persona prose path (`<rolesFolder>/<name>.persona.md`).
+  final String personaPath;
+
+  /// The objective prose path (`<rolesFolder>/<name>.objective.md`).
+  final String objectivePath;
+
+  /// Binds the catalogue role.
+  const CatalogueRole({
+    required this.name,
+    required this.personaPath,
+    required this.objectivePath,
+  });
+
+  @override
+  String toString() =>
+      'CatalogueRole(name: $name, persona: $personaPath, '
+      'objective: $objectivePath)';
+}
+
+/// One config-file inventory entry (§13.4): the registry, a per-procedure
+/// config, a per-route llm config, or the `substrate:` block.
+final class CatalogueConfigFile {
+  /// What kind of config this entry points at.
+  final CatalogueConfigKind kind;
+
+  /// The entry name: `registry` / the procedure name / the route name /
+  /// `substrate`.
+  final String name;
+
+  /// The file path. Cognition-root-relative for registry/procedure/llm; the run
+  /// config file (default `brain_run.yaml`) for the substrate block.
+  final String path;
+
+  /// A within-file key for entries that are a *block* of a larger file rather
+  /// than a whole file — `substrate` for the substrate block; `null` otherwise.
+  final String? location;
+
+  /// Binds the catalogue config entry.
+  const CatalogueConfigFile({
+    required this.kind,
+    required this.name,
+    required this.path,
+    this.location,
+  });
+
+  @override
+  String toString() => 'CatalogueConfigFile(kind: ${kind.name}, name: $name, '
+      'path: $path, location: $location)';
+}
+
+/// The editable catalogue exposed from [CognitionConfig.catalogue] (§13.4 / plan
+/// step 13): every registered [templates] with its resolved files + present
+/// flags, the [roles] prose files, and the [configFiles] inventory. This is the
+/// data the observatory catalogue route (plan step 14) serves.
+final class CognitionCatalogue {
+  /// Every registered template, in ID order.
+  final List<CatalogueTemplate> templates;
+
+  /// Every referenced role's prose files, in name order.
+  final List<CatalogueRole> roles;
+
+  /// The config-file inventory.
+  final List<CatalogueConfigFile> configFiles;
+
+  /// Binds the catalogue.
+  const CognitionCatalogue({
+    required this.templates,
+    required this.roles,
+    required this.configFiles,
+  });
 }
 
 /// Thrown when a cognition config (registry or main-procedure file) is malformed

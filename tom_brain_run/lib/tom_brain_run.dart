@@ -41,6 +41,13 @@ export 'src/cognition_run_config.dart'
 export 'src/cognition_run_config_loader.dart' show CognitionRunConfigLoader;
 export 'src/cognition_config.dart'
     show
+        CatalogueConfigFile,
+        CatalogueConfigKind,
+        CataloguePart,
+        CatalogueRole,
+        CatalogueTemplate,
+        CatalogueTemplateFile,
+        CognitionCatalogue,
         CognitionConfig,
         CognitionConfigException,
         CognitionRegistry,
