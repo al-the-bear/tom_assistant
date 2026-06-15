@@ -24,6 +24,12 @@
 //                       step 15). No default — the catalogue route 503s "config
 //                       unavailable" and the template routes 503 likewise until
 //                       it points at the brain's cognition root
+//   --run-config=<dir>  the run-config root the substrate config file
+//                       (brain_run.yaml) resolves against for GET/PUT
+//                       /api/config?kind=substrate (§ 6.4, step 16). Defaults to
+//                       the --cognition root (the common single-tree layout);
+//                       the registry/procedure/llm_route config kinds always
+//                       resolve against --cognition
 //   --port=N            loopback port (default 8787)
 //   --host=ADDR         bind address (default 127.0.0.1; loopback-only by design)
 //
@@ -47,7 +53,7 @@ Future<void> main(List<String> args) async {
     stderr.writeln(
       'usage: dart run bin/observatory.dart <trail-host-root> '
       '[--web=<dir>] [--scripts=<dir>] '
-      '[--cognition=<dir>] [--port=N] [--host=ADDR]',
+      '[--cognition=<dir>] [--run-config=<dir>] [--port=N] [--host=ADDR]',
     );
     exitCode = 64; // EX_USAGE
     return;
@@ -64,6 +70,7 @@ Future<void> main(List<String> args) async {
   final webDir = flags['web'] ?? _defaultWebRoot();
   final scriptsDir = flags['scripts'] ?? _defaultScriptRoot();
   final cognitionDir = flags['cognition'];
+  final runConfigDir = flags['run-config'];
   final port = int.tryParse(flags['port'] ?? '') ?? _defaultPort;
   final bindHost = flags['host'] ?? _defaultHost;
 
@@ -99,6 +106,16 @@ Future<void> main(List<String> args) async {
           ? Directory(cognitionDir)
           : null;
 
+  // The run-config root for GET/PUT /api/config?kind=substrate (step 16): the
+  // whole-process run config (brain_run.yaml) can live outside the cognition
+  // tree, so it is a distinct containment root. Defaults to the cognition root
+  // (the single-tree layout) when --run-config is omitted; the other config
+  // kinds always resolve against the cognition root.
+  final runConfigRoot =
+      (runConfigDir != null && Directory(runConfigDir).existsSync())
+          ? Directory(runConfigDir)
+          : null;
+
   // The Module-2 memory surface (§ 8.4) is deferred: the real `dart_mcp`-backed
   // McpReadConnection is wired at the run-assembly seam, not here. Until then
   // `memory:` stays null, so every `/api/memory/*` route answers 503 "memory
@@ -113,6 +130,7 @@ Future<void> main(List<String> args) async {
     scriptRoot: scriptRoot.existsSync() ? scriptRoot : null,
     cognition: cognition,
     cognitionRoot: cognitionRoot,
+    runConfigRoot: runConfigRoot,
   );
   final server = await shelf_io.serve(api.handler, bindHost, port);
 

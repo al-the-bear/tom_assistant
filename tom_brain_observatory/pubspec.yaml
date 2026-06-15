@@ -50,6 +50,15 @@ dependencies:
   # the brain tree; read-only — the observatory only *reads* the parsed config.
   tom_brain_run:
     path: ../tom_brain_run
+  # The config-authoring surface (`GET`/`PUT /api/config`, plan step 16, § 6.3
+  # AUTH-3) validates a `substrate:` block *before* it lands, and the gate must be
+  # the brain's own parser — never a divergent copy that could accept a config the
+  # brain rejects at boot (or reject a valid one). So a substrate edit is parsed by
+  # `SubstrateConfigLoader.parse` (pure, no I/O), the same loader the run assembly
+  # uses. Registry/procedure/llm edits go through `CognitionConfigLoader` (already
+  # available via `tom_brain_run`). In-tree path dep like the rest of the tree.
+  tom_brain_substrate:
+    path: ../tom_brain_substrate
   # The Trail Read API (PT-1.4 / PT-1.5) is a thin read-only shelf service.
   # tom_core_server uses shelf internally but does not re-export it, so the
   # router + static-file handler are taken directly (the same shelf the base

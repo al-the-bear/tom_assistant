@@ -24,7 +24,15 @@ import 'package:shelf_static/shelf_static.dart';
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show ProcedureValidationChain;
 import 'package:tom_brain_run/tom_brain_run.dart'
-    show CataloguePart, CognitionConfig;
+    show
+        CatalogueConfigFile,
+        CatalogueConfigKind,
+        CataloguePart,
+        CognitionConfig,
+        CognitionConfigException,
+        CognitionConfigLoader;
+import 'package:tom_brain_substrate/tom_brain_substrate.dart'
+    show SubstrateConfigException, SubstrateConfigLoader;
 
 import '../live/live_tail.dart';
 import '../memory/memory_read_client.dart';
@@ -69,6 +77,21 @@ final class TrailReadApi {
   /// routes then `503`). Containment to this root is the AUTH-2 guard.
   final Directory? cognitionRoot;
 
+  /// The run-config root the `substrate` config file ([substrateConfigFile],
+  /// default `brain_run.yaml`) resolves against for `GET`/`PUT /api/config`
+  /// (plan step 16). The whole-process run config can live outside the cognition
+  /// root, so it is a distinct containment root (AUTH-2) — but it defaults to
+  /// [cognitionRoot] when not separately configured (the common single-tree
+  /// layout). The registry/procedure/llm config kinds always resolve against
+  /// [cognitionRoot]; only the substrate kind uses this root.
+  final Directory? runConfigRoot;
+
+  /// The file the `substrate:` provider/model block lives in, relative to
+  /// [runConfigRoot] (default `brain_run.yaml`, § 6.4 / route 10). Shared with
+  /// the catalogue surface so the config-file inventory and the `/api/config`
+  /// resolution agree on the substrate path.
+  final String substrateConfigFile;
+
   /// The Module-2 memory read surface (`prompt_tracing.md` § 8.4), serving
   /// `/api/memory/*` over the injected [memory] client. The client is optional:
   /// absent it (the `dart_mcp` connector is deferred at run-assembly) every
@@ -90,9 +113,11 @@ final class TrailReadApi {
     this.scriptRoot,
     this.cognition,
     this.cognitionRoot,
+    Directory? runConfigRoot,
     MemoryReadClient? memory,
-    String substrateConfigFile = 'brain_run.yaml',
-  })  : _memoryApi = MemoryReadApi(client: memory),
+    this.substrateConfigFile = 'brain_run.yaml',
+  })  : runConfigRoot = runConfigRoot ?? cognitionRoot,
+        _memoryApi = MemoryReadApi(client: memory),
         _catalogueApi = CatalogueReadApi(
           config: cognition,
           substrateConfigFile: substrateConfigFile,
@@ -154,7 +179,9 @@ final class TrailReadApi {
       ..get('/api/procedures/<procedureId>', _procedureScript)
       ..put('/api/procedures/<procedureId>', _writeProcedureScript)
       ..get('/api/templates', _readTemplateFile)
-      ..put('/api/templates', _writeTemplateFile);
+      ..put('/api/templates', _writeTemplateFile)
+      ..get('/api/config', _readConfigFile)
+      ..put('/api/config', _writeConfigFile);
     _memoryApi.registerRoutes(router); // /api/memory/* (§ 8.4)
     _catalogueApi.registerRoutes(router); // /api/catalogue (§ 8.3, step 14)
     return router;
@@ -515,6 +542,257 @@ final class TrailReadApi {
       }
     }
     return -1;
+  }
+
+  /// `GET /api/config?kind=<kind>&name=<name>` — the verbatim text of a
+  /// registered config file (§ 6.3, § 8.3(10)): `kind ∈ {registry, procedure,
+  /// llm_route, substrate}`. The registered set comes from the cognition
+  /// catalogue (route 12), so an unregistered kind/name — or a path that escapes
+  /// its containment root — is `403`, never an arbitrary file read. Served
+  /// `text/plain`.
+  ///
+  /// Unlike a template override (offered as an empty document to create), a
+  /// config file the brain needs at boot must exist: a registered-but-absent
+  /// config is a misconfiguration, served `404` (not an empty body). `503`
+  /// "config unavailable" when no cognition config is wired.
+  Response _readConfigFile(Request request) {
+    final config = cognition;
+    if (config == null || cognitionRoot == null) {
+      return _json(<String, Object?>{'error': 'config unavailable'},
+          status: HttpStatus.serviceUnavailable);
+    }
+    final kind = request.url.queryParameters['kind'];
+    final name = request.url.queryParameters['name'];
+    if (kind == null || name == null) {
+      return _json(<String, Object?>{'error': 'requires ?kind= and ?name='},
+          status: HttpStatus.badRequest);
+    }
+    final resolved = _configFilePath(kind, name);
+    if (resolved == null) {
+      return _json(<String, Object?>{'error': 'not a registered config file'},
+          status: HttpStatus.forbidden);
+    }
+    final file = File(resolved);
+    if (!file.existsSync()) {
+      return _json(<String, Object?>{'error': 'no config file $kind/$name'},
+          status: HttpStatus.notFound);
+    }
+    return Response.ok(
+      file.readAsStringSync(),
+      headers: <String, String>{'content-type': 'text/plain; charset=utf-8'},
+    );
+  }
+
+  /// `PUT /api/config?kind=<kind>&name=<name>` — writes a registered config file
+  /// so the brain re-reads it (AUTH-5; no signal, the brain pulls). The body is
+  /// the verbatim YAML.
+  ///
+  /// The AUTH guards land in order:
+  ///   - AUTH-2 (containment): the kind/name must resolve, via the catalogue, to
+  ///     a `.yaml` file inside its containment root — the cognition root for
+  ///     registry/procedure/llm_route, the run-config root for substrate
+  ///     ([_configFilePath]); an unregistered or escaping target is `403` before
+  ///     any write.
+  ///   - AUTH-3 (validate-before-write): the proposed content is parsed by the
+  ///     brain's *own* loader — `SubstrateConfigLoader` for the `substrate:`
+  ///     block, `CognitionConfigLoader` for registry/procedure/llm_route — the
+  ///     same fail-fast validation the brain applies at boot (unknown key,
+  ///     missing default, unknown llm route). A config the brain would reject at
+  ///     boot is rejected `422` here with the loader's located message, the
+  ///     on-disk file left untouched. The proposed edit is validated *in memory*
+  ///     (the other config files are read from disk and the edited one
+  ///     substituted) — never by mutating a temp tree — so the read-only
+  ///     filesystem discipline (OBS-1, the authoring surface writes only via
+  ///     `writeAsStringSync`) holds.
+  ///
+  /// On success the response reports the AUTH-4 effect: a procedure config edit
+  /// (per-prompt settings) is `next-use`; a registry / llm_route / substrate edit
+  /// (structure + provider routing the loader reads at boot) is `next-boot`.
+  /// `503` "config unavailable" when no cognition config is wired.
+  Future<Response> _writeConfigFile(Request request) async {
+    final config = cognition;
+    if (config == null || cognitionRoot == null) {
+      return _json(<String, Object?>{'error': 'config unavailable'},
+          status: HttpStatus.serviceUnavailable);
+    }
+    final kind = request.url.queryParameters['kind'];
+    final name = request.url.queryParameters['name'];
+    if (kind == null || name == null) {
+      return _json(<String, Object?>{'error': 'requires ?kind= and ?name='},
+          status: HttpStatus.badRequest);
+    }
+    final resolved = _configFilePath(kind, name);
+    if (resolved == null) {
+      return _json(<String, Object?>{'error': 'not a registered config file'},
+          status: HttpStatus.forbidden);
+    }
+    final body = await request.readAsString();
+    final rejection = _validateConfig(kind, name, body);
+    if (rejection != null) {
+      return _json(
+        <String, Object?>{'error': 'config validation failed', 'detail': rejection},
+        status: HttpStatus.unprocessableEntity,
+      );
+    }
+    File(resolved).writeAsStringSync(body);
+    return _json(<String, Object?>{
+      'ok': true,
+      'kind': kind,
+      'name': name,
+      'effect': _effectFor(kind),
+    });
+  }
+
+  /// Resolves the on-disk path of the registered config file for [kind]/[name]
+  /// via the cognition catalogue (route 12, the authoritative inventory), or
+  /// `null` when [kind] is not a config wire kind, [kind]/[name] is not a
+  /// registered config, or the resolved path escapes its containment root (the
+  /// AUTH-2 guard). Registry/procedure/llm_route resolve against the cognition
+  /// root; substrate resolves against the run-config root. The path is taken
+  /// from the catalogue, never concatenated from raw input, so a traversal
+  /// `name` simply fails to match and is refused.
+  String? _configFilePath(String kind, String name) {
+    final config = cognition;
+    final cognitionDir = cognitionRoot;
+    if (config == null || cognitionDir == null) return null;
+    final wanted = _kindFromWire(kind);
+    if (wanted == null) return null;
+
+    final catalogue =
+        config.catalogue(substrateConfigFile: substrateConfigFile);
+    CatalogueConfigFile? entry;
+    for (final cf in catalogue.configFiles) {
+      if (cf.kind == wanted && cf.name == name) {
+        entry = cf;
+        break;
+      }
+    }
+    if (entry == null) return null;
+
+    final Directory? root = wanted == CatalogueConfigKind.substrate
+        ? runConfigRoot
+        : cognitionDir;
+    if (root == null) return null;
+    final rootPath = p.normalize(root.absolute.path);
+    final resolved = p.normalize(p.join(rootPath, entry.path));
+    if (!p.isWithin(rootPath, resolved) || !resolved.endsWith('.yaml')) {
+      return null;
+    }
+    return resolved;
+  }
+
+  /// Maps a `/api/config` wire `kind` to its catalogue [CatalogueConfigKind].
+  /// The wire alphabet (§ 8.3(10): `registry`/`procedure`/`llm_route`/
+  /// `substrate`) names the per-route llm config `llm_route`, while the catalogue
+  /// enum names it `llm`; this is the single translation point. Returns `null`
+  /// for any other token (refused `403` by the caller).
+  static CatalogueConfigKind? _kindFromWire(String kind) {
+    switch (kind) {
+      case 'registry':
+        return CatalogueConfigKind.registry;
+      case 'procedure':
+        return CatalogueConfigKind.procedure;
+      case 'llm_route':
+        return CatalogueConfigKind.llm;
+      case 'substrate':
+        return CatalogueConfigKind.substrate;
+      default:
+        return null;
+    }
+  }
+
+  /// The AUTH-4 effect a [kind] edit takes (§ 6.4, AUTH-4): a `procedure` config
+  /// carries per-prompt settings the resolver reads live, so an edit takes effect
+  /// on the **next use**; `registry` / `llm_route` / `substrate` are structure +
+  /// provider routing the loader reads at **boot**, so an edit takes effect on the
+  /// next process start. The editor states this so the operator is not surprised.
+  static String _effectFor(String kind) =>
+      kind == 'procedure' ? 'next-use' : 'next-boot';
+
+  /// Validates a proposed config [body] for [kind]/[name] (AUTH-3), returning the
+  /// owning loader's located message on rejection or `null` when it parses
+  /// clean. A `substrate` edit goes through [SubstrateConfigLoader.parse] (it
+  /// reads only the `substrate:` block, tolerating siblings); a registry /
+  /// procedure / llm_route edit goes through [CognitionConfigLoader.parse] with
+  /// the proposed file substituted into the on-disk tree.
+  ///
+  /// Validation never mutates disk: the *other* config files are read and the
+  /// edited one is replaced in memory, then the pure `parse` is run — the same
+  /// boot-time fail-fast, with no temp tree to copy or delete.
+  String? _validateConfig(String kind, String name, String body) {
+    final wanted = _kindFromWire(kind);
+    if (wanted == null) return 'unknown config kind "$kind"';
+    try {
+      if (wanted == CatalogueConfigKind.substrate) {
+        SubstrateConfigLoader.parse(body);
+      } else {
+        _parseCognitionEdit(wanted, name, body);
+      }
+      return null;
+    } on SubstrateConfigException catch (e) {
+      return e.message;
+    } on CognitionConfigException catch (e) {
+      return e.message;
+    }
+  }
+
+  /// Re-parses the cognition tree with the [kind]/[name] config replaced by
+  /// [body], using the pure [CognitionConfigLoader.parse]. Reads the unedited
+  /// registry / procedure / llm files off disk; substitutes the edited one; runs
+  /// the same template-existence probe (rooted at the cognition root) the brain
+  /// uses at boot. Throws [CognitionConfigException] when the proposed tree is
+  /// invalid.
+  ///
+  /// A registry edit that references a procedure/route config file not already
+  /// registered surfaces as a located "referenced config was not provided"
+  /// rejection — adding a wholly new procedure is a multi-file operation outside
+  /// a single config write, so it is conservatively refused here rather than
+  /// validated against a guessed file set.
+  void _parseCognitionEdit(CatalogueConfigKind kind, String name, String body) {
+    final config = cognition!;
+    final rootPath = p.normalize(cognitionRoot!.absolute.path);
+
+    final String registryYaml = kind == CatalogueConfigKind.registry
+        ? body
+        : File(p.join(rootPath, 'registry.yaml')).readAsStringSync();
+
+    final Map<String, String> procedureConfigs = <String, String>{};
+    for (final proc in config.registry.procedures.values) {
+      final file = File(p.join(rootPath, proc.configFile));
+      procedureConfigs[proc.configFile] =
+          file.existsSync() ? file.readAsStringSync() : '';
+    }
+    if (kind == CatalogueConfigKind.procedure) {
+      final proc = config.registry.procedures[name];
+      if (proc != null) procedureConfigs[proc.configFile] = body;
+    }
+
+    final Map<String, String> routeConfigs = <String, String>{};
+    final llmDir = Directory(p.join(rootPath, config.registry.llmFolder));
+    if (llmDir.existsSync()) {
+      for (final entity in llmDir.listSync()) {
+        if (entity is File && entity.path.endsWith('.yaml')) {
+          routeConfigs[_stemOf(entity.path)] = entity.readAsStringSync();
+        }
+      }
+    }
+    if (kind == CatalogueConfigKind.llm) routeConfigs[name] = body;
+
+    CognitionConfigLoader.parse(
+      registryYaml: registryYaml,
+      procedureConfigs: procedureConfigs,
+      llmRouteConfigs: routeConfigs,
+      templateExists: (relativePath) =>
+          File(p.join(rootPath, relativePath)).existsSync(),
+    );
+  }
+
+  /// The filename stem of [path] (`default` for `…/default.yaml`), matching the
+  /// route-name key `CognitionConfigLoader.loadFromDir` uses for `llm/` configs.
+  static String _stemOf(String path) {
+    final name = p.basename(path);
+    final dot = name.lastIndexOf('.');
+    return dot < 0 ? name : name.substring(0, dot);
   }
 
   /// The static root (PT-1.5): the web build served read-only, with an
