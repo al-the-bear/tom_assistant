@@ -25,6 +25,7 @@ library;
 export 'src/api/catalogue_read_api.dart';
 export 'src/api/memory_read_api.dart';
 export 'src/api/trail_read_api.dart';
+export 'src/memory/http_mcp_read_connection.dart';
 export 'src/memory/mcp_read_connection.dart';
 export 'src/memory/memory_nodes.dart';
 export 'src/memory/memory_read_client.dart';

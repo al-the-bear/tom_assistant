@@ -30,6 +30,19 @@
 //                       the --cognition root (the common single-tree layout);
 //                       the registry/procedure/llm_route config kinds always
 //                       resolve against --cognition
+//   --memory-mcp-url=<url>
+//                       the running memory MCP server's Streamable-HTTP endpoint
+//                       (e.g. http://127.0.0.1:8765/mcp), served by the
+//                       standalone tom_brain_memory/bin/memory_mcp_server.dart.
+//                       When given, GET /api/memory/* is served read-only over an
+//                       MCP client to it (§ 8.4). The store handle stays in that
+//                       separate process, so OBS-3 ("never opens a DB file")
+//                       holds. Omitted, or unreachable ⇒ /api/memory/* 503s
+//                       "memory unavailable" and the UI degrades cleanly
+//   --memory-mcp-token=<token>
+//                       optional bearer forwarded as Authorization: Bearer to the
+//                       memory MCP endpoint (omit for the anonymous loopback
+//                       posture)
 //   --port=N            loopback port (default 8787)
 //   --host=ADDR         bind address (default 127.0.0.1; loopback-only by design)
 //
@@ -53,7 +66,9 @@ Future<void> main(List<String> args) async {
     stderr.writeln(
       'usage: dart run bin/observatory.dart <trail-host-root> '
       '[--web=<dir>] [--scripts=<dir>] '
-      '[--cognition=<dir>] [--run-config=<dir>] [--port=N] [--host=ADDR]',
+      '[--cognition=<dir>] [--run-config=<dir>] '
+      '[--memory-mcp-url=<url>] [--memory-mcp-token=<token>] '
+      '[--port=N] [--host=ADDR]',
     );
     exitCode = 64; // EX_USAGE
     return;
@@ -116,14 +131,17 @@ Future<void> main(List<String> args) async {
           ? Directory(runConfigDir)
           : null;
 
-  // The Module-2 memory surface (§ 8.4) is deferred: the real `dart_mcp`-backed
-  // McpReadConnection is wired at the run-assembly seam, not here. Until then
-  // `memory:` stays null, so every `/api/memory/*` route answers 503 "memory
-  // unavailable" — the routes exist, the UI degrades cleanly, nothing crashes.
-  stderr.writeln(
-    'observatory: memory connector not wired — /api/memory/* will 503 '
-    '"memory unavailable" until the MCP read connection is injected (§ 8.4).',
-  );
+  // The Module-2 memory surface (§ 8.4): when `--memory-mcp-url` points at a
+  // running memory MCP server (the standalone
+  // `tom_brain_memory/bin/memory_mcp_server.dart`, which serves `/mcp` over the
+  // store opened WAL-mode read-concurrent), the observatory connects as a
+  // read-only MCP client and serves `/api/memory/*` over it. The store handle
+  // lives in that separate process, so OBS-3 ("never opens a DB file") holds.
+  // Without the flag — or if the server is unreachable — `memory:` stays null
+  // and every `/api/memory/*` route answers 503 "memory unavailable"; the routes
+  // exist, the UI degrades cleanly, nothing crashes.
+  final memory = await _connectMemory(flags['memory-mcp-url'],
+      bearerToken: flags['memory-mcp-token']);
   final api = TrailReadApi(
     host: TrailHost.at(trailRoot),
     webRoot: webRoot.existsSync() ? webRoot : null,
@@ -131,6 +149,7 @@ Future<void> main(List<String> args) async {
     cognition: cognition,
     cognitionRoot: cognitionRoot,
     runConfigRoot: runConfigRoot,
+    memory: memory,
   );
   final server = await shelf_io.serve(api.handler, bindHost, port);
 
@@ -150,6 +169,49 @@ Future<void> main(List<String> args) async {
   ProcessSignal.sigint.watch().listen(shutdown);
   if (!Platform.isWindows) {
     ProcessSignal.sigterm.watch().listen(shutdown);
+  }
+}
+
+/// Connects the Module-2 memory read surface (§ 8.4) when [memoryMcpUrl] points
+/// at a running memory MCP server, or returns `null` (the `/api/memory/*` routes
+/// then 503 "memory unavailable"). A connect / handshake failure is environmental
+/// — it is reported and the observatory still boots its trail/catalogue surface,
+/// matching the read-only-mirror posture: memory monitoring degrades, it never
+/// aborts the process.
+Future<MemoryReadClient?> _connectMemory(
+  String? memoryMcpUrl, {
+  String? bearerToken,
+}) async {
+  if (memoryMcpUrl == null || memoryMcpUrl.isEmpty) {
+    stderr.writeln(
+      'observatory: no --memory-mcp-url — /api/memory/* will 503 "memory '
+      'unavailable". Run tom_brain_memory/bin/memory_mcp_server.dart against the '
+      "brain's run config and pass its http://127.0.0.1:<port>/mcp URL (§ 8.4).",
+    );
+    return null;
+  }
+  final Uri url;
+  try {
+    url = Uri.parse(memoryMcpUrl);
+  } on FormatException catch (e) {
+    stderr.writeln(
+      'observatory: --memory-mcp-url is not a valid URL ($memoryMcpUrl: '
+      '${e.message}) — /api/memory/* will 503 "memory unavailable".',
+    );
+    return null;
+  }
+  try {
+    final connection =
+        await HttpMcpReadConnection.connect(url, bearerToken: bearerToken);
+    stdout.writeln('observatory: memory connector wired to $url.');
+    return MemoryReadClient(connection);
+  } on McpReadException catch (e) {
+    stderr.writeln(
+      'observatory: could not reach the memory MCP server at $url (${e.message}) '
+      '— /api/memory/* will 503 "memory unavailable". Is '
+      'memory_mcp_server.dart running?',
+    );
+    return null;
   }
 }
 
