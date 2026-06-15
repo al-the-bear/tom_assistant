@@ -37,12 +37,21 @@ import 'memory/support/fake_read_connection.dart';
 import 'support/obs_harness.dart';
 
 /// A fully wired server: trail host + web root + script root + a (faked) memory
-/// client, so [exerciseEveryEndpoint] reaches every route.
-TrailReadApi _wiredApi(String hostPath) => TrailReadApi(
+/// client, so [exerciseEveryEndpoint] reaches every route. When [cognitionRoot]
+/// is supplied the catalogue + template/config read routes (steps 14–16) execute
+/// their real read path against that tree (rather than answering `503`); the tree
+/// is the editable authoring surface, deliberately *not* one of the brain-owned
+/// roots OBS-1 snapshots, so a read of it leaves the trail untouched all the same.
+TrailReadApi _wiredApi(String hostPath, {Directory? cognitionRoot}) =>
+    TrailReadApi(
       host: TrailHost.at(hostPath),
       webRoot: Directory(fixtureWebRootPath),
       scriptRoot: Directory(fixtureScriptRootPath),
       memory: MemoryReadClient(FakeReadConnection(allReadToolStubs())),
+      cognition: cognitionRoot == null
+          ? null
+          : CognitionConfigLoader.loadFromDir(cognitionRoot.path),
+      cognitionRoot: cognitionRoot,
     );
 
 /// Recursively copies the trail tree at [from] into a fresh temp dir, returning
@@ -66,9 +75,18 @@ String _copyTreeToTemp(String from) {
 void main() {
   group('PT-8.1 — OBS-1: the app never writes the trail tree', () {
     test('exercising every endpoint mutates no file the brain owns', () async {
-      final api = _wiredApi(fixtureHostPath);
+      // Wire a real cognition tree so the steps-14..16 read routes
+      // (`/api/catalogue`, `GET /api/templates`, `GET /api/config`) execute their
+      // real read path inside the walk — not merely the `503` config-unavailable
+      // branch — and prove they touch no brain-owned file either.
+      final cognitionDir = Directory.systemTemp.createTempSync('obs_conf_cog_');
+      addTearDown(() => cognitionDir.deleteSync(recursive: true));
+      writeMinimalCognitionTree(cognitionDir);
+      final api = _wiredApi(fixtureHostPath, cognitionRoot: cognitionDir);
       // Everything the brain wrote that this app reads: the trail tree, the
-      // procedure-script root, and the served web build.
+      // procedure-script root, and the served web build. The cognition tree is
+      // the editable authoring surface, not a brain-owned read root, so it is not
+      // snapshotted here (its writes are the dedicated endpoint tests' concern).
       final roots = <String>[
         fixtureHostPath,
         fixtureScriptRootPath,

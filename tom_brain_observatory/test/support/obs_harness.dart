@@ -124,6 +124,23 @@ Future<void> exerciseEveryEndpoint(TrailReadApi api) async {
   await obsPost(api, 'api/memory/classify',
       body: <String, Object?>{'embedding': <double>[0.1, 0.2]});
   await obsGet(api, 'api/memory/profiles');
+
+  // Editable catalogue + authoring read surface (§ 8.3(9..11), steps 14–16):
+  // the catalogue index and the read halves of the template / config authoring
+  // routes. The ids/kinds match `writeMinimalCognitionTree`, so when [api] is
+  // wired with a cognition root these execute their real read path; when it is
+  // not they answer `503` "config unavailable". Either way they are reads and
+  // write nothing — so OBS-1's "every endpoint mutates no trail file" walk now
+  // genuinely covers the steps-14..16 surface too. The three PUT mutation routes
+  // are deliberately *not* walked here: a successful write lands in its
+  // sanctioned target (the procedure-script root is itself a snapshotted
+  // brain-owned root), so their write behaviour is proven by the dedicated
+  // endpoint tests plus the structural PT-8.4 / OBS-4 bounds, never by this
+  // no-mutation walk.
+  await obsGet(api, 'api/catalogue');
+  await obsGet(api,
+      'api/templates?id=assist_user.answer_with_memory.assembly&part=system');
+  await obsGet(api, 'api/config?kind=registry&name=registry');
 }
 
 /// A no-mutation fingerprint of every file under a trail root: path → (modified,
