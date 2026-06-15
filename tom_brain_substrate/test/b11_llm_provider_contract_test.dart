@@ -2,9 +2,11 @@
 //
 // Scope of this test file:
 //
-//   - Pin the `WirePrompt` value-class shape (4 fields:
-//     `body`, `anchorHash`, `roleId`, optional `templateSha`) so a
-//     future drop / rename triggers a compile failure here.
+//   - Pin the `WirePrompt` value-class shape (5 fields: the two-channel
+//     `system` + `user` split, `anchorHash`, `roleId`, optional
+//     `templateSha`) so a future drop / rename triggers a compile failure
+//     here. (`body` was replaced by the `system` + `user` split in
+//     `prompt_restructuring_and_configuration_plan.md` step 2.)
 //   - Pin the `LlmProvider` abstract interface shape:
 //       * `String get id;`
 //       * `Future<LlmCallReport> complete(WirePrompt, LlmOptions);`
@@ -50,7 +52,7 @@ import 'package:test/test.dart';
 
 void main() {
   group('B.11 / WirePrompt', () {
-    test('carries body + anchorHash + roleId + optional templateSha', () {
+    test('combined leads with the anchor-first system framing', () {
       const wp = WirePrompt(
         system: 'I am dedicated to this user.\n\n<role body here>',
         anchorHash: 'sha256:deadbeef',
@@ -58,6 +60,8 @@ void main() {
         templateSha: 'a1b2c3d',
       );
 
+      // `combined` is what a no-system-channel provider sends; since the
+      // anchor leads `system`, it leads `combined` too (the step-2 invariant).
       expect(wp.combined, startsWith('I am dedicated to this user.'));
       expect(wp.anchorHash, 'sha256:deadbeef');
       expect(wp.roleId, 'assistant_to_user');
