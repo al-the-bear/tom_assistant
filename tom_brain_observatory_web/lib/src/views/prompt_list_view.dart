@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import '../api/memory_api_client.dart';
 import '../api/trace_api_client.dart';
 import '../model/prompt_trace.dart';
+import 'configuration_catalogue_view.dart';
 import 'format.dart';
 import 'memory/memory_home_view.dart';
 import 'outcome_chip.dart';
@@ -73,6 +74,12 @@ class _PromptListViewState extends State<PromptListView> {
     ));
   }
 
+  void _openConfiguration() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ConfigurationCatalogueView(client: widget.client),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
@@ -82,6 +89,11 @@ class _PromptListViewState extends State<PromptListView> {
               icon: const Icon(Icons.memory),
               tooltip: 'Memory',
               onPressed: _openMemory,
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'Configuration',
+              onPressed: _openConfiguration,
             ),
           ],
         ),

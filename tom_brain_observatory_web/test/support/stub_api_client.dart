@@ -5,6 +5,7 @@
 
 import 'package:tom_brain_observatory_web/src/api/trace_api_client.dart';
 import 'package:tom_brain_observatory_web/src/model/authoring.dart';
+import 'package:tom_brain_observatory_web/src/model/catalogue.dart';
 import 'package:tom_brain_observatory_web/src/model/live_step.dart';
 import 'package:tom_brain_observatory_web/src/model/llm_call_detail.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
@@ -25,9 +26,19 @@ class StubApiClient implements TraceApiClient {
   /// `404` "no override yet" the editor turns into a create-override start.
   final Map<String, String> prompts;
 
-  /// When set, the next [writeProcedureScript] / [writePromptFile] returns this
-  /// instead of saving, letting a test drive the `422`-findings path.
+  /// When set, the next [writeProcedureScript] / [writePromptFile] /
+  /// [writeConfigFile] returns this instead of saving, letting a test drive the
+  /// `422`-findings path.
   final AuthoringResult? rejectWrites;
+
+  /// The `GET /api/catalogue` body (§ 6.4); `null` models the host `503`
+  /// "config unavailable".
+  final CognitionCatalogue? catalogueData;
+
+  /// Keyed by `<wireKind>/<name>` — the registered config file's verbatim text
+  /// (§ 6.4). A save through [writeConfigFile] mutates this map. A missing key
+  /// is the `404` "registered-but-absent" the editor opens as an empty buffer.
+  final Map<String, String> configs;
 
   /// Canned SSE live-tail per turnId, keyed by turnId (PT-4.2).
   final Map<String, Stream<LiveStep>> turnStreams;
@@ -44,6 +55,8 @@ class StubApiClient implements TraceApiClient {
   final List<(String, String)> procedureWrites = <(String, String)>[];
   final List<(String, String, String)> promptWrites =
       <(String, String, String)>[];
+  final List<(String, String, String)> configWrites =
+      <(String, String, String)>[];
 
   StubApiClient({
     this.rows = const <PromptListRow>[],
@@ -52,11 +65,14 @@ class StubApiClient implements TraceApiClient {
     Map<String, String>? scripts,
     Map<String, String>? prompts,
     this.rejectWrites,
+    this.catalogueData,
+    Map<String, String>? configs,
     this.turnStreams = const <String, Stream<LiveStep>>{},
     this.changes,
     this.rowsAfterChange,
   })  : scripts = scripts ?? <String, String>{},
-        prompts = prompts ?? <String, String>{};
+        prompts = prompts ?? <String, String>{},
+        configs = configs ?? <String, String>{};
 
   bool _reloaded = false;
 
@@ -96,6 +112,22 @@ class StubApiClient implements TraceApiClient {
     promptWrites.add((roleId, part, prose));
     if (rejectWrites != null) return rejectWrites!;
     prompts['$roleId/$part'] = prose;
+    return AuthoringResult.saved;
+  }
+
+  @override
+  Future<CognitionCatalogue?> catalogue() async => catalogueData;
+
+  @override
+  Future<String?> readConfigFile(String kind, String name) async =>
+      configs['$kind/$name'];
+
+  @override
+  Future<AuthoringResult> writeConfigFile(
+      String kind, String name, String content) async {
+    configWrites.add((kind, name, content));
+    if (rejectWrites != null) return rejectWrites!;
+    configs['$kind/$name'] = content;
     return AuthoringResult.saved;
   }
 

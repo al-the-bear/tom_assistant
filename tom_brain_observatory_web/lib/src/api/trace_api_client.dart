@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../model/authoring.dart';
+import '../model/catalogue.dart';
 import '../model/live_step.dart';
 import '../model/llm_call_detail.dart';
 import '../model/prompt_trace.dart';
@@ -64,6 +65,27 @@ abstract interface class TraceApiClient {
   /// returns a finding. A `403`/`503` throws.
   Future<AuthoringResult> writePromptFile(
       String roleId, String part, String prose);
+
+  /// `GET /api/catalogue` — the registry-derived editable index the gear
+  /// configuration editor browses (§ 6.4 / § 13.4), or `null` when no cognition
+  /// config is wired (the host answers `503` "config unavailable" — the UI
+  /// degrades to an "unavailable" notice rather than an error).
+  Future<CognitionCatalogue?> catalogue();
+
+  /// `GET /api/config?kind=<kind>&name=<name>` — the verbatim text of a
+  /// registered config file (§ 6.4); [kind] is the wire alphabet
+  /// (`registry` / `procedure` / `llm_route` / `substrate`). `null` when the
+  /// host has no such file on disk (`404` — a registered-but-absent config).
+  /// A containment refusal (`403`) or absent config (`503`) throws.
+  Future<String?> readConfigFile(String kind, String name);
+
+  /// `PUT /api/config?kind=<kind>&name=<name>` — writes a registered config file
+  /// so the brain re-reads it (AUTH-5). The brain's own loader validates first:
+  /// a `200` returns [AuthoringResult.saved]; a `422` returns the loader's
+  /// located rejection as one finding (the on-disk file is left untouched). A
+  /// `403`/`503` throws.
+  Future<AuthoringResult> writeConfigFile(
+      String kind, String name, String content);
 
   /// `GET /api/traces/{turnId}/stream` — the SSE live-tail of a turn (§ 4.8):
   /// one [LiveStep] per cognitive step as the brain appends it, the stream
@@ -168,6 +190,53 @@ class HttpTraceApiClient implements TraceApiClient {
         body: prose,
         headers: const <String, String>{'content-type': 'text/plain'});
     return _authoringResult(uri, 'PUT', res);
+  }
+
+  @override
+  Future<CognitionCatalogue?> catalogue() async {
+    final uri = _resolve('api/catalogue', const <String, String>{});
+    final res = await _http.get(uri);
+    if (res.statusCode == 503) return null;
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return CognitionCatalogue.fromJson(
+        jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  @override
+  Future<String?> readConfigFile(String kind, String name) async {
+    final uri =
+        _resolve('api/config', <String, String>{'kind': kind, 'name': name});
+    final res = await _http.get(uri);
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return res.body;
+  }
+
+  @override
+  Future<AuthoringResult> writeConfigFile(
+      String kind, String name, String content) async {
+    final uri =
+        _resolve('api/config', <String, String>{'kind': kind, 'name': name});
+    final res = await _http.put(uri,
+        body: content,
+        headers: const <String, String>{'content-type': 'text/plain'});
+    if (res.statusCode == 200) return AuthoringResult.saved;
+    if (res.statusCode == 422) {
+      // A config rejection is `{error, detail}` (the loader's located message),
+      // not a `findings[]` array — surface the detail as one finding.
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      return AuthoringResult.rejected(<AuthoringFinding>[
+        AuthoringFinding(
+          code: 'config.invalid',
+          message: (body['detail'] ?? body['error']) as String? ?? 'rejected',
+        ),
+      ]);
+    }
+    throw http.ClientException('PUT $uri → ${res.statusCode}', uri);
   }
 
   /// Maps a source-authoring `PUT` response into an [AuthoringResult]: `200` →
