@@ -193,8 +193,16 @@ final class MemoryReadApi {
   // ─── plumbing ──────────────────────────────────────────────────────────
 
   /// Runs [body] with the wired client, or answers `503` "memory unavailable"
-  /// when the connector is deferred or a read fails ([McpReadException]) — the
-  /// memory surface is always environmental, never a crash (§ 8.4).
+  /// when the connector is deferred or a read fails — the memory surface is
+  /// always environmental, never a crash (§ 8.4).
+  ///
+  /// [McpReadException] is the expected, typed transport failure. Any *other*
+  /// throw is still degraded to `503` rather than a raw `500`: the connection
+  /// seam can surface a bare `StateError` when the MCP session closes
+  /// underneath a call (json_rpc_2's "client is closed"), which is just as
+  /// environmental as a connect failure. The route contract (§ 8.4) is that
+  /// `/api/memory/*` never 500s, so the only escape from this method is a built
+  /// [Response].
   Future<Response> _guard(
     Future<Response> Function(MemoryReadClient client) body,
   ) async {
@@ -204,6 +212,8 @@ final class MemoryReadApi {
       return await body(c);
     } on McpReadException catch (e) {
       return _unavailable(detail: e.message);
+    } catch (e) {
+      return _unavailable(detail: 'memory read failed: $e');
     }
   }
 

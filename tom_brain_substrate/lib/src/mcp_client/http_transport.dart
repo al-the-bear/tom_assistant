@@ -105,6 +105,22 @@ final class HttpMcpTransport with CloseGuard implements McpTransport {
   StreamChannelController<String>? _controller;
   bool _connected = false;
 
+  /// The MCP session id the server assigned on the `initialize` response
+  /// (`Mcp-Session-Id` header), echoed back on every follow-up POST. The
+  /// spec's `StreamableHTTPServerTransport` — and the memory server's
+  /// `McpHttpServer` — create a session on `initialize` and then `400`/`404`
+  /// any later request that omits this header, so capturing and replaying it
+  /// is mandatory for anything beyond the handshake. `null` until the first
+  /// session-bearing response; an anonymous, session-less server simply never
+  /// sends the header and the field stays `null` (no header is added).
+  String? _sessionId;
+
+  /// The MCP "Streamable HTTP" session-id header, both as it arrives on the
+  /// `initialize` response and as it is replayed on subsequent requests
+  /// (matched case-insensitively by `package:http`, which lower-cases response
+  /// header names).
+  static const String _sessionIdHeader = 'Mcp-Session-Id';
+
   /// [httpClient] — an explicit `package:http.Client`; takes precedence
   /// over [factory] and is left open for the caller on [close].
   ///
@@ -185,6 +201,15 @@ final class HttpMcpTransport with CloseGuard implements McpTransport {
     if (auth != null) {
       headers['Authorization'] = 'Bearer ${auth!.token}';
     }
+    // Replay the server-assigned session id on every request after the
+    // handshake. Without it a session-based server (`McpHttpServer`, the SDK
+    // transport) rejects the very next message — e.g. `notifications/
+    // initialized` — with `400`/`404`, which drops the channel before any tool
+    // call can run.
+    final sessionId = _sessionId;
+    if (sessionId != null) {
+      headers[_sessionIdHeader] = sessionId;
+    }
 
     http.Response response;
     try {
@@ -210,6 +235,17 @@ final class HttpMcpTransport with CloseGuard implements McpTransport {
         ),
       );
       return;
+    }
+
+    // Capture the session id the server minted on the `initialize` response so
+    // every later POST can replay it (above). `package:http` lower-cases
+    // response header names, so the lookup uses the lower-cased key. Only the
+    // first non-empty value is adopted — subsequent responses do not carry it.
+    final assignedSessionId = response.headers[_sessionIdHeader.toLowerCase()];
+    if (_sessionId == null &&
+        assignedSessionId != null &&
+        assignedSessionId.isNotEmpty) {
+      _sessionId = assignedSessionId;
     }
 
     final status = response.statusCode;

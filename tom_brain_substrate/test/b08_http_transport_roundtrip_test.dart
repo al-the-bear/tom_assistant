@@ -177,5 +177,66 @@ void main() {
       await inbound.cancel();
       await transport.close();
     });
+
+    test('captures the Mcp-Session-Id from the initialize response and replays '
+        'it on every subsequent request', () async {
+      const sessionId = 'sess-abc123';
+      final seenSessionIds = <String?>[];
+      var requestCount = 0;
+      unawaited(server.forEach((request) async {
+        requestCount++;
+        seenSessionIds.add(request.headers.value('mcp-session-id'));
+        final body = await utf8.decodeStream(request);
+        final decoded = jsonDecode(body) as Map<String, Object?>;
+        request.response.statusCode = io.HttpStatus.ok;
+        request.response.headers.contentType = io.ContentType.json;
+        // The server mints the session id on the first response (the
+        // `initialize` reply) and never re-sends it — exactly McpHttpServer's
+        // contract.
+        if (requestCount == 1) {
+          request.response.headers.set('Mcp-Session-Id', sessionId);
+        }
+        request.response.write(jsonEncode(<String, Object?>{
+          'jsonrpc': '2.0',
+          'id': decoded['id'],
+          'result': <String, Object?>{'ok': true},
+        }));
+        await request.response.close();
+      }));
+
+      final transport = HttpMcpTransport(
+        id: 'fixture',
+        url: Uri.parse('http://${server.address.host}:${server.port}/'),
+        httpClient: client,
+      );
+      final StreamChannel<String> channel = await transport.connect();
+      final inbound = StreamQueue<String>(channel.stream);
+
+      // First request — the handshake — carries no session id yet.
+      channel.sink.add(jsonEncode(<String, Object?>{
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': 'initialize',
+      }));
+      await inbound.next.timeout(const Duration(seconds: 5));
+
+      // Second request — must now replay the captured session id.
+      channel.sink.add(jsonEncode(<String, Object?>{
+        'jsonrpc': '2.0',
+        'id': 2,
+        'method': 'tools/list',
+      }));
+      await inbound.next.timeout(const Duration(seconds: 5));
+
+      expect(seenSessionIds, hasLength(2));
+      expect(seenSessionIds[0], isNull,
+          reason: 'the handshake request precedes any assigned session id');
+      expect(seenSessionIds[1], equals(sessionId),
+          reason: 'follow-up requests must replay the assigned session id');
+
+      await channel.sink.close();
+      await inbound.cancel();
+      await transport.close();
+    });
   });
 }

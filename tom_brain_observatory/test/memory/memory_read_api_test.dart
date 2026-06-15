@@ -17,6 +17,23 @@ import 'package:test/test.dart';
 
 import 'support/fake_read_connection.dart';
 
+/// A connection whose every call throws a bare [StateError] — the shape
+/// json_rpc_2 raises when the MCP session closes underneath a call ("the client
+/// is closed"). Used to prove the route degrades to 503 rather than 500.
+final class _ClosedSessionConnection implements McpReadConnection {
+  @override
+  Future<Map<String, Object?>> callTool(
+          String name, Map<String, Object?> args) async =>
+      throw StateError('Bad state: The client is closed.');
+
+  @override
+  Future<List<Map<String, Object?>>> listTools() async =>
+      throw StateError('Bad state: The client is closed.');
+
+  @override
+  Future<void> close() async {}
+}
+
 const _fixtureHost = 'test/fixtures/trail/fixturehost';
 
 Future<Response> _get(TrailReadApi api, String path) async =>
@@ -255,6 +272,35 @@ void main() {
     test('the Module-1 trail surface still works without memory', () async {
       final res = await _get(api, 'api/traces');
       expect(res.statusCode, 200);
+    });
+  });
+
+  group('PT-6 — a closed MCP session degrades to 503, never 500', () {
+    // The route contract (§ 8.4): /api/memory/* never 500s. A bare StateError
+    // from a closed json_rpc_2 client (the session dropping under a call) must
+    // still surface as "memory unavailable", not a raw Internal Server Error.
+    final api = TrailReadApi(
+      host: host,
+      memory: MemoryReadClient(_ClosedSessionConnection()),
+    );
+
+    Future<void> expectDegraded(Response res) async {
+      expect(res.statusCode, 503);
+      final body = await _jsonMap(res);
+      expect(body['error'], startsWith('memory read failed'));
+    }
+
+    test('GET /api/memory/profiles on a closed session is a 503', () async {
+      await expectDegraded(await _get(api, 'api/memory/profiles'));
+    });
+
+    test('GET /api/memory/stacks on a closed session is a 503', () async {
+      await expectDegraded(await _get(api, 'api/memory/stacks'));
+    });
+
+    test('POST /api/memory/recall on a closed session is a 503', () async {
+      await expectDegraded(
+          await _post(api, 'api/memory/recall', <String, Object?>{'text': 'x'}));
     });
   });
 }
