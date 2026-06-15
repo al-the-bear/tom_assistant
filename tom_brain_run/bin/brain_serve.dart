@@ -11,7 +11,12 @@
 // and stands the access process up. It then serves until SIGINT/SIGTERM.
 //
 // Usage:
-//   dart run bin/brain_serve.dart <run-config.yaml>
+//   dart run bin/brain_serve.dart <run-config.yaml> [--no-observatory]
+//       [--observatory-port=N] [--observatory-host=ADDR]
+//
+// The Trail Observatory (the official config + control surface) is hosted
+// in-process by default, in a second isolate; `--no-observatory` skips it and
+// `--observatory-port` / `--observatory-host` move its loopback bind.
 //
 // `${ENV}` references in the config (e.g. `access.telegram.botToken:
 // "${TELEGRAM_BOT_TOKEN}"`) are expanded from this process's environment.
@@ -23,13 +28,46 @@ import 'package:tom_brain_memory/tom_brain_memory.dart' show FanoutLogOutput;
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_core_server/tom_core_server.dart' show standalonePlatformUtils;
 
+const String _usage = 'usage: dart run bin/brain_serve.dart <run-config.yaml> '
+    '[--no-observatory] [--observatory-port=N] [--observatory-host=ADDR]';
+
 Future<void> main(List<String> args) async {
-  if (args.length != 1 || args.first.startsWith('-')) {
-    stderr.writeln('usage: dart run bin/brain_serve.dart <run-config.yaml>');
+  final List<String> positional =
+      args.where((a) => !a.startsWith('-')).toList();
+  if (positional.length != 1) {
+    stderr.writeln(_usage);
     exitCode = 64; // EX_USAGE
     return;
   }
-  final String configPath = args.first;
+  final String configPath = positional.single;
+
+  // The Observatory is hosted in-process by default; the flags only turn it off
+  // or move its loopback bind. Unknown flags are a usage error, so a typo never
+  // silently changes behaviour.
+  bool observatoryEnabled = true;
+  String observatoryHost = ObservatoryOptions.defaultHost;
+  int observatoryPort = ObservatoryOptions.defaultPort;
+  for (final String flag in args.where((a) => a.startsWith('-'))) {
+    if (flag == '--observatory') {
+      observatoryEnabled = true;
+    } else if (flag == '--no-observatory') {
+      observatoryEnabled = false;
+    } else if (flag.startsWith('--observatory-port=')) {
+      final int? value = int.tryParse(flag.substring(flag.indexOf('=') + 1));
+      if (value == null) {
+        stderr.writeln('brain_serve: --observatory-port needs an integer.');
+        exitCode = 64;
+        return;
+      }
+      observatoryPort = value;
+    } else if (flag.startsWith('--observatory-host=')) {
+      observatoryHost = flag.substring(flag.indexOf('=') + 1);
+    } else {
+      stderr.writeln('brain_serve: unknown flag "$flag".\n$_usage');
+      exitCode = 64;
+      return;
+    }
+  }
 
   final File configFile = File(configPath);
   if (!configFile.existsSync()) {
@@ -85,21 +123,50 @@ Future<void> main(List<String> args) async {
     '${config.access.hasTelegram ? 'enabled (long-polling)' : 'disabled (no access.telegram.botToken)'}.',
   );
 
-  // Point the operator at the read-only Trail Observatory (a separate loopback
-  // process). `tomLog.status` renders the `STATUS ` level; the banner names the
-  // URL to open and the trail root to launch it against.
-  tomLog.status(ObservatoryBanner.forStartup(config.trail));
+  // Host the read-only Trail Observatory in a second isolate (the official
+  // config + control surface), unless `--no-observatory` was passed or no trail
+  // tree is configured (there is nothing for the mirror to read). It binds its
+  // own loopback socket; a failure to come up is non-fatal — the brain keeps
+  // serving and the banner falls back to the hand-launch hint.
+  ObservatoryIsolateHost? observatory;
+  if (observatoryEnabled && config.trail != null) {
+    observatory = await spawnObservatoryIsolate(
+      ObservatoryOptions(
+        trailRoot: config.trail!.root,
+        cognitionDir: config.cognition?.root,
+        host: observatoryHost,
+        port: observatoryPort,
+      ),
+      onInfo: (m) => tomLog.status('[tom_brain.observatory] $m'),
+      onWarning: (m) => tomLog.status('[tom_brain.observatory] $m'),
+    );
+  }
+
+  // `tomLog.status` renders the `STATUS ` level. When the observatory is serving
+  // in-process the banner names its bound URL; otherwise it names the URL and the
+  // hand-launch command for the standalone process.
+  tomLog.status(
+    observatory != null
+        ? ObservatoryBanner.running(observatory.url, config.trail!.root)
+        : ObservatoryBanner.forStartup(
+            config.trail,
+            host: observatoryHost,
+            port: observatoryPort,
+          ),
+  );
 
   stdout.writeln('Press Ctrl-C to stop.');
   await stdout.flush();
 
-  // Graceful teardown: stop the access channels and the booted cognition (drain
-  // foreground, dispose the memory isolate, close the substrate) on a signal.
+  // Graceful teardown: stop the observatory isolate, then the access channels
+  // and the booted cognition (drain foreground, dispose the memory isolate,
+  // close the substrate) on a signal.
   bool stopping = false;
   Future<void> shutdown(ProcessSignal signal) async {
     if (stopping) return;
     stopping = true;
     stdout.writeln('brain_serve: $signal — stopping…');
+    await observatory?.stop();
     await process.stop();
   }
 

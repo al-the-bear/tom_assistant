@@ -129,6 +129,12 @@ export 'src/dream_config_loader.dart' show DreamConfigLoader;
 // ── Trail config + mode + banner (logging-spec §4.1 / §8; §10 step #1) ─
 export 'src/trail_banner.dart' show TrailBanner;
 export 'src/observatory_banner.dart' show ObservatoryBanner;
+export 'src/observatory_isolate_host.dart'
+    show ObservatoryHostLog, ObservatoryIsolateHost, spawnObservatoryIsolate;
+// Re-exported so callers configure the in-process observatory without importing
+// the observatory package directly (the run layer owns its lifecycle).
+export 'package:tom_brain_observatory/tom_brain_observatory.dart'
+    show ObservatoryOptions;
 export 'src/tools_config.dart' show ToolsConfig, ToolsConfigException;
 export 'src/tools_config_loader.dart' show ToolsConfigLoader;
 export 'src/trail_config.dart' show TrailConfig, TrailConfigException, TrailMode;

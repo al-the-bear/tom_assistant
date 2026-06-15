@@ -25,6 +25,8 @@ library;
 export 'src/api/catalogue_read_api.dart';
 export 'src/api/memory_read_api.dart';
 export 'src/api/trail_read_api.dart';
+export 'src/launch/observatory_server.dart'
+    show ObservatoryLog, ObservatoryOptions, ObservatoryServer, startObservatoryServer;
 export 'src/memory/http_mcp_read_connection.dart';
 export 'src/memory/mcp_read_connection.dart';
 export 'src/memory/memory_nodes.dart';

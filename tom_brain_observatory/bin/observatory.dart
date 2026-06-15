@@ -51,18 +51,13 @@
 
 import 'dart:io';
 
-import 'package:path/path.dart' as p;
-import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:tom_brain_observatory/tom_brain_observatory.dart';
-import 'package:tom_brain_run/tom_brain_run.dart'
-    show CognitionConfig, CognitionConfigException, CognitionConfigLoader;
-
-const _defaultPort = 8787;
-const _defaultHost = '127.0.0.1';
 
 Future<void> main(List<String> args) async {
-  final positional = args.where((a) => !a.startsWith('-')).toList();
-  if (positional.length != 1) {
+  final ObservatoryOptions options;
+  try {
+    options = ObservatoryOptions.fromArgs(args);
+  } on ArgumentError {
     stderr.writeln(
       'usage: dart run bin/observatory.dart <trail-host-root> '
       '[--web=<dir>] [--scripts=<dir>] '
@@ -74,95 +69,32 @@ Future<void> main(List<String> args) async {
     return;
   }
 
-  final trailRoot = positional.single;
-  if (!Directory(trailRoot).existsSync()) {
-    stderr.writeln('observatory: trail-host root not found: $trailRoot');
+  if (!Directory(options.trailRoot).existsSync()) {
+    stderr.writeln('observatory: trail-host root not found: ${options.trailRoot}');
     exitCode = 66; // EX_NOINPUT
     return;
   }
 
-  final flags = _flags(args);
-  final webDir = flags['web'] ?? _defaultWebRoot();
-  final scriptsDir = flags['scripts'] ?? _defaultScriptRoot();
-  final cognitionDir = flags['cognition'];
-  final runConfigDir = flags['run-config'];
-  final port = int.tryParse(flags['port'] ?? '') ?? _defaultPort;
-  final bindHost = flags['host'] ?? _defaultHost;
-
-  final webRoot = Directory(webDir);
-  if (!webRoot.existsSync()) {
-    stderr.writeln(
-      'observatory: web build not found at $webDir — run '
-      '`flutter build web` in tom_brain_observatory_web first '
-      '(serving the /api surface only).',
-    );
-  }
-
-  final scriptRoot = Directory(scriptsDir);
-  if (!scriptRoot.existsSync()) {
-    stderr.writeln(
-      'observatory: procedure scripts not found at $scriptsDir — '
-      'GET/PUT /api/procedures/<id> will 404 until --scripts points at the '
-      "brain's scripts/system directory.",
-    );
-  }
-
-  // The editable catalogue (§ 8.3, step 14): GET /api/catalogue serves the
-  // parsed cognition config's registry-derived index, and GET/PUT
-  // /api/templates?id=&part= (§ 6.3, step 15) reads and writes the registered
-  // template files it points at. Loaded read-only from the --cognition root; a
-  // malformed config is reported (not fatal — the observatory is a read-only
-  // mirror for trail/memory) and leaves both routes to 503 "config
-  // unavailable", exactly as an absent root does. The directory itself is the
-  // root the template paths resolve against (the AUTH-2 containment root).
-  final cognition = _loadCognition(cognitionDir);
-  final cognitionRoot =
-      (cognitionDir != null && Directory(cognitionDir).existsSync())
-          ? Directory(cognitionDir)
-          : null;
-
-  // The run-config root for GET/PUT /api/config?kind=substrate (step 16): the
-  // whole-process run config (brain_run.yaml) can live outside the cognition
-  // tree, so it is a distinct containment root. Defaults to the cognition root
-  // (the single-tree layout) when --run-config is omitted; the other config
-  // kinds always resolve against the cognition root.
-  final runConfigRoot =
-      (runConfigDir != null && Directory(runConfigDir).existsSync())
-          ? Directory(runConfigDir)
-          : null;
-
-  // The Module-2 memory surface (§ 8.4): when `--memory-mcp-url` points at a
-  // running memory MCP server (the standalone
-  // `tom_brain_memory/bin/memory_mcp_server.dart`, which serves `/mcp` over the
-  // store opened WAL-mode read-concurrent), the observatory connects as a
-  // read-only MCP client and serves `/api/memory/*` over it. The store handle
-  // lives in that separate process, so OBS-3 ("never opens a DB file") holds.
-  // Without the flag — or if the server is unreachable — `memory:` stays null
-  // and every `/api/memory/*` route answers 503 "memory unavailable"; the routes
-  // exist, the UI degrades cleanly, nothing crashes.
-  final memory = await _connectMemory(flags['memory-mcp-url'],
-      bearerToken: flags['memory-mcp-token']);
-  final api = TrailReadApi(
-    host: TrailHost.at(trailRoot),
-    webRoot: webRoot.existsSync() ? webRoot : null,
-    scriptRoot: scriptRoot.existsSync() ? scriptRoot : null,
-    cognition: cognition,
-    cognitionRoot: cognitionRoot,
-    runConfigRoot: runConfigRoot,
-    memory: memory,
+  // The whole assembly (web / scripts / cognition / run-config / memory MCP) is
+  // owned by `startObservatoryServer`; this bin only routes its narration to the
+  // console and owns the process-wide signal lifecycle. The in-process variant
+  // the brain spawns (`tom_brain_run`'s `observatory_isolate_host.dart`) calls the
+  // same function but must NOT touch signals / `exit` — those are process-wide.
+  final server = await startObservatoryServer(
+    options,
+    onInfo: (m) => stdout.writeln('observatory: $m'),
+    onWarning: (m) => stderr.writeln('observatory: $m'),
   );
-  final server = await shelf_io.serve(api.handler, bindHost, port);
 
   stdout.writeln(
-    'tom_brain_observatory serving on http://${server.address.host}:${server.port}/ '
-    '(trail: $trailRoot${webRoot.existsSync() ? ', web: $webDir' : ', /api only'}).',
+    'tom_brain_observatory serving on ${server.url} (trail: ${options.trailRoot}).',
   );
   stdout.writeln('Press Ctrl-C to stop.');
   await stdout.flush();
 
   Future<void> shutdown(ProcessSignal signal) async {
     stdout.writeln('observatory: $signal — stopping…');
-    await server.close(force: true);
+    await server.close();
     exit(0);
   }
 
@@ -171,104 +103,3 @@ Future<void> main(List<String> args) async {
     ProcessSignal.sigterm.watch().listen(shutdown);
   }
 }
-
-/// Connects the Module-2 memory read surface (§ 8.4) when [memoryMcpUrl] points
-/// at a running memory MCP server, or returns `null` (the `/api/memory/*` routes
-/// then 503 "memory unavailable"). A connect / handshake failure is environmental
-/// — it is reported and the observatory still boots its trail/catalogue surface,
-/// matching the read-only-mirror posture: memory monitoring degrades, it never
-/// aborts the process.
-Future<MemoryReadClient?> _connectMemory(
-  String? memoryMcpUrl, {
-  String? bearerToken,
-}) async {
-  if (memoryMcpUrl == null || memoryMcpUrl.isEmpty) {
-    stderr.writeln(
-      'observatory: no --memory-mcp-url — /api/memory/* will 503 "memory '
-      'unavailable". Run tom_brain_memory/bin/memory_mcp_server.dart against the '
-      "brain's run config and pass its http://127.0.0.1:<port>/mcp URL (§ 8.4).",
-    );
-    return null;
-  }
-  final Uri url;
-  try {
-    url = Uri.parse(memoryMcpUrl);
-  } on FormatException catch (e) {
-    stderr.writeln(
-      'observatory: --memory-mcp-url is not a valid URL ($memoryMcpUrl: '
-      '${e.message}) — /api/memory/* will 503 "memory unavailable".',
-    );
-    return null;
-  }
-  try {
-    final connection =
-        await HttpMcpReadConnection.connect(url, bearerToken: bearerToken);
-    stdout.writeln('observatory: memory connector wired to $url.');
-    return MemoryReadClient(connection);
-  } on McpReadException catch (e) {
-    stderr.writeln(
-      'observatory: could not reach the memory MCP server at $url (${e.message}) '
-      '— /api/memory/* will 503 "memory unavailable". Is '
-      'memory_mcp_server.dart running?',
-    );
-    return null;
-  }
-}
-
-/// Loads the cognition config from [cognitionDir] for `GET /api/catalogue`, or
-/// returns `null` when no root is configured or the config fails to parse (the
-/// route then 503s "config unavailable"). The observatory is a read-only mirror,
-/// so a malformed cognition tree is reported but never fatal.
-CognitionConfig? _loadCognition(String? cognitionDir) {
-  if (cognitionDir == null) {
-    stderr.writeln(
-      'observatory: no --cognition root — GET /api/catalogue will 503 '
-      '"config unavailable" until it points at the brain\'s cognition root.',
-    );
-    return null;
-  }
-  if (!Directory(cognitionDir).existsSync()) {
-    stderr.writeln(
-      'observatory: cognition root not found at $cognitionDir — '
-      'GET /api/catalogue will 503 "config unavailable".',
-    );
-    return null;
-  }
-  try {
-    return CognitionConfigLoader.loadFromDir(cognitionDir);
-  } on CognitionConfigException catch (e) {
-    stderr.writeln(
-      'observatory: cognition config at $cognitionDir failed to parse '
-      '(${e.message}) — GET /api/catalogue will 503 "config unavailable".',
-    );
-    return null;
-  }
-}
-
-/// Parse `--key=value` flags from [args] (positional args are ignored here).
-Map<String, String> _flags(List<String> args) => <String, String>{
-      for (final a in args)
-        if (a.startsWith('--') && a.contains('='))
-          a.substring(2, a.indexOf('=')): a.substring(a.indexOf('=') + 1),
-    };
-
-/// The sibling web app's build output, relative to this script's package root.
-String _defaultWebRoot() => p.normalize(p.join(
-      p.dirname(Platform.script.toFilePath()),
-      '..',
-      '..',
-      'tom_brain_observatory_web',
-      'build',
-      'web',
-    ));
-
-/// The sibling procedure package's script directory (`scripts/system`),
-/// relative to this script's package root (§ 4.6).
-String _defaultScriptRoot() => p.normalize(p.join(
-      p.dirname(Platform.script.toFilePath()),
-      '..',
-      '..',
-      'tom_brain_procedure',
-      'scripts',
-      'system',
-    ));

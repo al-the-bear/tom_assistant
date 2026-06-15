@@ -18,7 +18,10 @@
 #   ./run_tom_brain.sh /path/cfg.yaml  # uses an explicit config
 #
 # On startup the OpenAI edge listens on :8080/v1, Ollama on :8081/api,
-# Anthropic on :8082/v1, and the Telegram channel pings the owner.
+# Anthropic on :8082/v1, and the Telegram channel pings the owner. The read-only
+# Trail Observatory is hosted in-process (a second isolate) on :8787 — enabled
+# here with the explicit `--observatory` switch; pass `--no-observatory` to skip
+# it, or `--observatory-port=N` to move its loopback bind.
 #
 # Ctrl-C (or `kill` of this script) cleanly stops the server: the server runs
 # as a child, and a SIGINT/SIGTERM trap forwards a graceful stop to it, waits,
@@ -67,7 +70,7 @@ echo "run_tom_brain: launching with config: $CONFIG"
 # process-group id reaches every process in the group. `set +m` afterwards
 # silences job-control notices for the rest of the script.
 set -m
-dart run bin/brain_serve.dart "$CONFIG" &
+dart run bin/brain_serve.dart "$CONFIG" --observatory &
 SERVER_PGID=$!                            # job-control leader == the group id
 set +m
 

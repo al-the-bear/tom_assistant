@@ -52,6 +52,16 @@ dependencies:
     path: ../tom_brain_memory
   tom_brain_shared:
     path: ../tom_brain_shared
+  # The Trail Observatory is the official configuration + control surface, so the
+  # run assembly owns its lifecycle: `brain_serve` spawns the read-only backend in
+  # a second isolate (`observatory_isolate_host.dart`) and tears it down on
+  # shutdown, instead of leaving the operator to launch a separate process. This
+  # is a deliberate mutual path dep — the observatory depends on `tom_brain_run`
+  # for the cognition config model it mirrors (read-only), and the run layer
+  # depends on the observatory to host it. `Isolate.spawn` over the shared
+  # `startObservatoryServer` library function keeps it a genuine second isolate.
+  tom_brain_observatory:
+    path: ../tom_brain_observatory
   # The retrieval eval harness (Plan-2 ext step #33; spec § 23.8) parses its
   # `retrieval_eval.yaml` through the canonical plain-map loader so no
   # `YamlMap`/`YamlList` node leaks into a `RetrievalEvalConfig`.
