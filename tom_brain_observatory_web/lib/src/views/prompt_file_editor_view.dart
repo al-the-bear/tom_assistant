@@ -1,9 +1,11 @@
 // Slice 4 — the externalized prompt-file editor page (§ 6.3, AUTH-1…AUTH-5).
 // Opened from a role's "edit prompt files" affordance (§ 4.5), it loads a role's
 // `<roleId>.<part>.md` override prose (`part ∈ {persona, objective}`) via
-// `GET /api/prompts/<roleId>/<part>` and writes the buffer back via
-// `PUT /api/prompts/<roleId>/<part>` — the brain re-reads it the next time it
-// assembles a call for that role (AUTH-5; no signal, the brain pulls).
+// `GET /api/templates?id=<roleId>&part=<part>` and writes the buffer back via
+// `PUT /api/templates?id=<roleId>&part=<part>` — the unified template surface
+// (step 18; the old `/api/prompts/{roleId}/{part}` route is removed). The brain
+// re-reads it the next time it assembles a call for that role (AUTH-5; no
+// signal, the brain pulls).
 //
 // A `404` on load means no override exists yet: the editor starts empty as a
 // "create override", and the first save materialises the file. A blank save is

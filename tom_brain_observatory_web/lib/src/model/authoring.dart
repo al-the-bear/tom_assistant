@@ -1,8 +1,8 @@
 // PT-3.3 / PT-4.x — the source-authoring write results (§ 6.3, AUTH-1…AUTH-3).
 // The web client marshals a `PUT /api/procedures/<id>` (a d4rt script) or
-// `PUT /api/prompts/<roleId>/<part>` (a role's externalized prose) into one of
-// these, so an edit view can show "saved" or surface the brain's own validator
-// findings on a `422` — never silently swallow a rejected save.
+// `PUT /api/templates?id=<roleId>&part=<part>` (a role's externalized prose)
+// into one of these, so an edit view can show "saved" or surface the brain's own
+// validator findings on a `422` — never silently swallow a rejected save.
 
 /// One validator finding behind a rejected procedure save (§ 6.3, AUTH-3). It is
 /// a verbatim echo of the brain's `ProcedureValidationFinding.toMap()`: a stable
