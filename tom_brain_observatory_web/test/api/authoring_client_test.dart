@@ -80,7 +80,7 @@ void main() {
   });
 
   group('readPromptFile', () {
-    test('GETs /api/prompts/<roleId>/<part> and returns the verbatim prose',
+    test('GETs /api/templates?id=&part= and returns the verbatim prose',
         () async {
       final seen = <http.Request>[];
       final client = clientThat(
@@ -89,7 +89,9 @@ void main() {
       final prose = await client.readPromptFile('analyser', 'persona');
 
       expect(prose, 'persona prose');
-      expect(seen.single.url.path, '/api/prompts/analyser/persona');
+      expect(seen.single.url.path, '/api/templates');
+      expect(seen.single.url.queryParameters,
+          <String, String>{'id': 'analyser', 'part': 'persona'});
     });
 
     test('returns null on 404 — the "create override" start', () async {
@@ -100,7 +102,7 @@ void main() {
   });
 
   group('writePromptFile', () {
-    test('PUTs the prose to /api/prompts/<roleId>/<part> and is saved on 200',
+    test('PUTs the prose to /api/templates?id=&part= and is saved on 200',
         () async {
       final seen = <http.Request>[];
       final client = clientThat(
@@ -112,7 +114,9 @@ void main() {
       expect(result.ok, isTrue);
       final req = seen.single;
       expect(req.method, 'PUT');
-      expect(req.url.path, '/api/prompts/analyser/persona');
+      expect(req.url.path, '/api/templates');
+      expect(req.url.queryParameters,
+          <String, String>{'id': 'analyser', 'part': 'persona'});
       expect(req.body, 'new prose');
     });
 

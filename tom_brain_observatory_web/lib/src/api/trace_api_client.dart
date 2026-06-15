@@ -48,16 +48,20 @@ abstract interface class TraceApiClient {
   Future<AuthoringResult> writeProcedureScript(
       String procedureId, String source);
 
-  /// `GET /api/prompts/{roleId}/{part}` — the verbatim override prose of a
-  /// role's `<roleId>.<part>.md`, `part ∈ {persona, objective}` (§ 6.3), or
-  /// `null` when no override exists yet (the `404` the editor turns into a
-  /// "create override" starting point) or no prompts root is configured.
+  /// `GET /api/templates?id=<roleId>&part=<part>` — the verbatim override prose
+  /// of a role's `<roleId>.<part>.md`, `part ∈ {persona, objective}` (§ 6.3),
+  /// served via the unified template surface (step 15; the old
+  /// `/api/prompts/{roleId}/{part}` route is removed). An empty body is the
+  /// "create override" starting point; `null` is still mapped from a `404`
+  /// defensively, though the template route reports an absent half as an empty
+  /// body 200.
   Future<String?> readPromptFile(String roleId, String part);
 
-  /// `PUT /api/prompts/{roleId}/{part}` — writes (materialising if absent) a
-  /// role's override [prose] so the brain re-reads it the next time it assembles
-  /// a call for that role (AUTH-5). A `200` returns [AuthoringResult.saved]; a
-  /// `422` (blank prose) returns a finding. A `403`/`404` throws.
+  /// `PUT /api/templates?id=<roleId>&part=<part>` — writes (materialising if
+  /// absent) a role's override [prose] so the brain re-reads it the next time it
+  /// assembles a call for that role (AUTH-5). A `200` returns
+  /// [AuthoringResult.saved]; a `422` (blank prose / malformed placeholder)
+  /// returns a finding. A `403`/`503` throws.
   Future<AuthoringResult> writePromptFile(
       String roleId, String part, String prose);
 
@@ -145,8 +149,8 @@ class HttpTraceApiClient implements TraceApiClient {
 
   @override
   Future<String?> readPromptFile(String roleId, String part) async {
-    final uri =
-        _resolve('api/prompts/$roleId/$part', const <String, String>{});
+    final uri = _resolve(
+        'api/templates', <String, String>{'id': roleId, 'part': part});
     final res = await _http.get(uri);
     if (res.statusCode == 404) return null;
     if (res.statusCode != 200) {
@@ -158,8 +162,8 @@ class HttpTraceApiClient implements TraceApiClient {
   @override
   Future<AuthoringResult> writePromptFile(
       String roleId, String part, String prose) async {
-    final uri =
-        _resolve('api/prompts/$roleId/$part', const <String, String>{});
+    final uri = _resolve(
+        'api/templates', <String, String>{'id': roleId, 'part': part});
     final res = await _http.put(uri,
         body: prose,
         headers: const <String, String>{'content-type': 'text/plain'});

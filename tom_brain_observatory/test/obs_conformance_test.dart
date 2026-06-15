@@ -165,7 +165,7 @@ void main() {
   group('PT-8.3 — OBS-4: writes confined to the source-authoring surface', () {
     // The source-authoring surface (`prompt_tracing.md` § 6.3, AUTH-1) is the
     // *one* sanctioned write site: `PUT /api/procedures/<id>` and
-    // `PUT /api/prompts/<roleId>/<part>` write a procedure script / prompt file
+    // `PUT /api/templates?id=&part=` write a procedure script / template file
     // under containment (AUTH-2) + validation (AUTH-3). It is still not a
     // control path into the brain (OBS-4): the brain pulls the edit by
     // re-reading source (AUTH-5); the app never pushes. Every *other* lib/

@@ -23,7 +23,8 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:shelf_static/shelf_static.dart';
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show ProcedureValidationChain;
-import 'package:tom_brain_run/tom_brain_run.dart' show CognitionConfig;
+import 'package:tom_brain_run/tom_brain_run.dart'
+    show CataloguePart, CognitionConfig;
 
 import '../live/live_tail.dart';
 import '../memory/memory_read_client.dart';
@@ -54,12 +55,19 @@ final class TrailReadApi {
   /// root to expose (the endpoints then 404 — absence is never an error, § 4.1).
   final Directory? scriptRoot;
 
-  /// The directory the running brain's externalized prompt files live in (a
-  /// role's `<roleId>.persona.md` / `<roleId>.objective.md`, substrate § 6),
-  /// read and written by `GET`/`PUT /api/prompts/<roleId>/<part>` under the
-  /// authoring guards (§ 6.3, AUTH-1…AUTH-3), or `null` when no prompts root is
-  /// configured (the endpoints then 404 — absence is never an error, § 4.1).
-  final Directory? promptsRoot;
+  /// The parsed cognition config, shared with the catalogue surface and used to
+  /// resolve a `GET`/`PUT /api/templates` request's `?id=`/`?part=` to a
+  /// registered template/role file (route 12 is the authoritative file set,
+  /// § 6.3, § 8.3(9)). `null` when no cognition root was configured — the
+  /// template routes then answer `503` "config unavailable", mirroring the
+  /// catalogue route.
+  final CognitionConfig? cognition;
+
+  /// The cognition root directory the catalogue's root-relative paths resolve
+  /// against, so `GET`/`PUT /api/templates` can read and write the on-disk
+  /// template file. `null` when no cognition root was configured (the template
+  /// routes then `503`). Containment to this root is the AUTH-2 guard.
+  final Directory? cognitionRoot;
 
   /// The Module-2 memory read surface (`prompt_tracing.md` § 8.4), serving
   /// `/api/memory/*` over the injected [memory] client. The client is optional:
@@ -80,9 +88,9 @@ final class TrailReadApi {
     this.listLimit = 10,
     this.webRoot,
     this.scriptRoot,
-    this.promptsRoot,
+    this.cognition,
+    this.cognitionRoot,
     MemoryReadClient? memory,
-    CognitionConfig? cognition,
     String substrateConfigFile = 'brain_run.yaml',
   })  : _memoryApi = MemoryReadApi(client: memory),
         _catalogueApi = CatalogueReadApi(
@@ -90,17 +98,34 @@ final class TrailReadApi {
           substrateConfigFile: substrateConfigFile,
         );
 
-  /// The closed set of writable prompt-file halves (§ 6.3, AUTH-1): a role's
-  /// persona prose and its objective prose. Anything else is refused.
-  static const Set<String> _promptParts = {'persona', 'objective'};
+  /// The closed set of editable template parts (§ 6.3, AUTH-1): the two halves
+  /// of a prompt pair, a fragment's single file, and a role's persona/objective
+  /// prose. Anything else is refused (`403`).
+  static const Set<String> _templateParts = {
+    'system',
+    'user',
+    'fragment',
+    'persona',
+    'objective',
+  };
 
-  /// Whether a path key (a procedure id or a role id) is a single clean
-  /// segment — ASCII word characters, underscore, and dash only. Procedure and
-  /// role ids are identifiers (`answer_with_memory_v1`, `analyser`), so this
-  /// allow-list is their exact shape. It is the AUTH-2 first line: it rejects a
-  /// separator, a `..` traversal, and a percent-encoded `%2F` (which
-  /// `shelf_router` leaves undecoded, so a raw containment check alone would
-  /// treat it as a literal in-root filename) before any path is built.
+  /// The parts whose file must be non-empty on write (AUTH-3): a fragment and a
+  /// role's prose carry meaning only when present, so an empty body is rejected
+  /// `422`. A prompt pair's `system` / `user` half may be written empty — the
+  /// empty-override signal the editor uses (§ 6.3).
+  static const Set<String> _nonEmptyParts = {
+    'fragment',
+    'persona',
+    'objective',
+  };
+
+  /// Whether a path key (a procedure id) is a single clean segment — ASCII word
+  /// characters, underscore, and dash only. Procedure ids are identifiers
+  /// (`answer_with_memory_v1`), so this allow-list is their exact shape. It is
+  /// the AUTH-2 first line: it rejects a separator, a `..` traversal, and a
+  /// percent-encoded `%2F` (which `shelf_router` leaves undecoded, so a raw
+  /// containment check alone would treat it as a literal in-root filename)
+  /// before any path is built.
   static bool _isSafeKey(String key) =>
       key.isNotEmpty && RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(key);
 
@@ -128,8 +153,8 @@ final class TrailReadApi {
       ..get('/api/llm', _llmRaw)
       ..get('/api/procedures/<procedureId>', _procedureScript)
       ..put('/api/procedures/<procedureId>', _writeProcedureScript)
-      ..get('/api/prompts/<roleId>/<part>', _readPromptFile)
-      ..put('/api/prompts/<roleId>/<part>', _writePromptFile);
+      ..get('/api/templates', _readTemplateFile)
+      ..put('/api/templates', _writeTemplateFile);
     _memoryApi.registerRoutes(router); // /api/memory/* (§ 8.4)
     _catalogueApi.registerRoutes(router); // /api/catalogue (§ 8.3, step 14)
     return router;
@@ -311,77 +336,185 @@ final class TrailReadApi {
     return _json(<String, Object?>{'ok': true, 'id': procedureId});
   }
 
-  /// `GET /api/prompts/{roleId}/{part}` — the externalized prompt-file half of
-  /// the authoring surface (§ 6.3, § 8.3(9)): the verbatim override prose of a
-  /// role's `<roleId>.<part>.md`, `part ∈ {persona, objective}`. Served
-  /// `text/plain`. `404` when no override exists — the signal the UI turns into
-  /// "create override" (§ 6.3) — or when no prompts root is configured.
-  Response _readPromptFile(Request request, String roleId, String part) {
-    final resolved = _promptFilePath(roleId, part);
+  /// `GET /api/templates?id=<promptId>&part=<part>` — the verbatim text of any
+  /// registered template file (§ 6.3, § 8.3(9)): a prompt pair's `system` /
+  /// `user` half, a `fragment`'s single file, or a role's `persona` / `objective`
+  /// prose. The registered file set comes from the cognition catalogue (route
+  /// 12), so an unregistered id/part is `403`, never an arbitrary file read.
+  /// Served `text/plain`.
+  ///
+  /// A registered-but-absent half (one side of a pair, or a not-yet-created role
+  /// override) is the empty-override signal: it is served as an **empty body
+  /// 200**, not a `404` — the editor turns an empty body into "create override"
+  /// (§ 6.3). `503` "config unavailable" when no cognition config is wired,
+  /// mirroring the catalogue route.
+  Response _readTemplateFile(Request request) {
+    final config = cognition;
+    final root = cognitionRoot;
+    if (config == null || root == null) {
+      return _json(<String, Object?>{'error': 'config unavailable'},
+          status: HttpStatus.serviceUnavailable);
+    }
+    final id = request.url.queryParameters['id'];
+    final part = request.url.queryParameters['part'];
+    if (id == null || part == null) {
+      return _json(<String, Object?>{'error': 'requires ?id= and ?part='},
+          status: HttpStatus.badRequest);
+    }
+    final resolved = _templateFilePath(id, part);
     if (resolved == null) {
-      return _json(<String, Object?>{'error': 'not a prompt file'},
-          status: promptsRoot == null
-              ? HttpStatus.notFound
-              : HttpStatus.forbidden);
+      return _json(<String, Object?>{'error': 'not a registered template file'},
+          status: HttpStatus.forbidden);
     }
     final file = File(resolved);
-    if (!file.existsSync()) {
-      return _json(<String, Object?>{'error': 'no override for $roleId.$part'},
-          status: HttpStatus.notFound);
-    }
+    final body = file.existsSync() ? file.readAsStringSync() : '';
     return Response.ok(
-      file.readAsStringSync(),
+      body,
       headers: <String, String>{'content-type': 'text/plain; charset=utf-8'},
     );
   }
 
-  /// `PUT /api/prompts/{roleId}/{part}` — writes (materialising if absent) a
-  /// role's override prose so the brain's file-backed role loader re-reads it on
-  /// the next call assembled for that role (AUTH-5). The body is the verbatim
-  /// prose.
+  /// `PUT /api/templates?id=<promptId>&part=<part>` — writes (materialising if
+  /// absent) any registered template file so the brain re-reads it on its next
+  /// assembled call for that template/role (AUTH-5; no signal, the brain pulls).
+  /// The body is the verbatim template/prose text.
   ///
-  /// AUTH-2 (containment) confines the write to `<promptsRoot>/<roleId>.<part>.md`
-  /// with `part` closed to {persona, objective}; anything else is `403`. AUTH-3
-  /// for prose is a non-empty check: a blank body is rejected `422` without
-  /// touching disk. `404` when no prompts root is configured.
-  Future<Response> _writePromptFile(
-    Request request,
-    String roleId,
-    String part,
-  ) async {
-    final resolved = _promptFilePath(roleId, part);
-    if (resolved == null) {
-      return _json(<String, Object?>{'error': 'not a prompt file'},
-          status: promptsRoot == null
-              ? HttpStatus.notFound
-              : HttpStatus.forbidden);
+  /// The AUTH guards land in order:
+  ///   - AUTH-2 (containment): the id/part must resolve, via the catalogue, to a
+  ///     file inside the cognition root ending `.md` ([_templateFilePath]); an
+  ///     unregistered or escaping target is `403` before any write.
+  ///   - AUTH-3 (validate-before-write): the body is placeholder-scanned — a
+  ///     malformed (unterminated) `${…}` / `${{…}}` token is rejected `422` with
+  ///     the offending token, the file left untouched. A prompt pair's `system`
+  ///     / `user` half may be empty (the empty-override signal); a fragment /
+  ///     persona / objective must be non-empty (`422` otherwise).
+  ///
+  /// `503` "config unavailable" when no cognition config is wired.
+  Future<Response> _writeTemplateFile(Request request) async {
+    final config = cognition;
+    final root = cognitionRoot;
+    if (config == null || root == null) {
+      return _json(<String, Object?>{'error': 'config unavailable'},
+          status: HttpStatus.serviceUnavailable);
     }
-    final prose = await request.readAsString();
-    if (prose.trim().isEmpty) {
+    final id = request.url.queryParameters['id'];
+    final part = request.url.queryParameters['part'];
+    if (id == null || part == null) {
+      return _json(<String, Object?>{'error': 'requires ?id= and ?part='},
+          status: HttpStatus.badRequest);
+    }
+    final resolved = _templateFilePath(id, part);
+    if (resolved == null) {
+      return _json(<String, Object?>{'error': 'not a registered template file'},
+          status: HttpStatus.forbidden);
+    }
+    final body = await request.readAsString();
+    final malformed = _malformedPlaceholder(body);
+    if (malformed != null) {
       return _json(
-        <String, Object?>{'error': 'prompt prose must be non-empty'},
+        <String, Object?>{'error': 'malformed placeholder', 'detail': malformed},
         status: HttpStatus.unprocessableEntity,
       );
     }
-    File(resolved).writeAsStringSync(prose);
-    return _json(<String, Object?>{'ok': true, 'role': roleId, 'part': part});
+    if (_nonEmptyParts.contains(part) && body.trim().isEmpty) {
+      return _json(
+        <String, Object?>{'error': '$part template must be non-empty'},
+        status: HttpStatus.unprocessableEntity,
+      );
+    }
+    File(resolved).writeAsStringSync(body);
+    return _json(<String, Object?>{'ok': true, 'id': id, 'part': part});
   }
 
-  /// Resolves the on-disk path of a role's `<roleId>.<part>.md` override under
-  /// [promptsRoot], or `null` when no prompts root is configured, the [part] is
-  /// not a writable half, or the resolved path escapes the root (the AUTH-2
-  /// containment guard, shared by the read and write prompt endpoints).
-  String? _promptFilePath(String roleId, String part) {
-    final root = promptsRoot;
-    if (root == null || !_promptParts.contains(part) || !_isSafeKey(roleId)) {
+  /// Resolves the on-disk path of the registered template file for [id]/[part]
+  /// via the cognition catalogue (route 12, the authoritative file set), or
+  /// `null` when [part] is not editable, [id] is not a registered template/role,
+  /// or the resolved path escapes the cognition root (the AUTH-2 containment
+  /// guard). The path is taken from the catalogue, never concatenated from raw
+  /// caller input, so a traversal `id` simply fails to match and is refused.
+  String? _templateFilePath(String id, String part) {
+    final config = cognition;
+    final root = cognitionRoot;
+    if (config == null || root == null || !_templateParts.contains(part)) {
       return null;
     }
-    final promptsDir = p.normalize(root.absolute.path);
-    final resolved = p.normalize(p.join(promptsDir, '$roleId.$part.md'));
-    if (!p.isWithin(promptsDir, resolved) || !resolved.endsWith('.md')) {
+    final catalogue = config.catalogue();
+    String? relative;
+    if (part == 'persona' || part == 'objective') {
+      for (final role in catalogue.roles) {
+        if (role.name != id) continue;
+        relative = part == 'persona' ? role.personaPath : role.objectivePath;
+        break;
+      }
+    } else {
+      final wanted = part == 'system'
+          ? CataloguePart.system
+          : part == 'user'
+              ? CataloguePart.user
+              : CataloguePart.fragment;
+      for (final template in catalogue.templates) {
+        if (template.id != id) continue;
+        for (final file in template.files) {
+          if (file.part != wanted) continue;
+          relative = file.path;
+          break;
+        }
+        break;
+      }
+    }
+    if (relative == null) return null;
+    final cognitionDir = p.normalize(root.absolute.path);
+    final resolved = p.normalize(p.join(cognitionDir, relative));
+    if (!p.isWithin(cognitionDir, resolved) || !resolved.endsWith('.md')) {
       return null;
     }
     return resolved;
+  }
+
+  /// Scans [text] for a malformed placeholder (AUTH-3): an unterminated
+  /// `${ … }` or `${{ … }}` token. Returns a human-readable description of the
+  /// first offending token, or `null` when every placeholder is well-formed.
+  ///
+  /// The brain's resolver (`tom_core_agentic`) tolerates an unterminated `${` by
+  /// emitting it as literal text; the editor is deliberately stricter on write
+  /// so an author gets immediate feedback rather than a silently-literal token.
+  static String? _malformedPlaceholder(String text) {
+    var index = 0;
+    while (true) {
+      final open = text.indexOf(r'${', index);
+      if (open < 0) return null;
+      if (text.startsWith(r'${{', open)) {
+        final end = _expressionEnd(text, open + 3);
+        if (end < 0) return 'unterminated \${{ … }} at offset $open';
+        index = end + 2;
+      } else {
+        final close = text.indexOf('}', open + 2);
+        if (close < 0) return 'unterminated \${ … } at offset $open';
+        index = close + 1;
+      }
+    }
+  }
+
+  /// Index of the first `}` of the closing `}}` for a `${{` expression opened at
+  /// [start] (just past the `${{`), or `-1` if unterminated. Mirrors the brain
+  /// resolver's brace-balanced scan so an inner `{ }` does not close it early.
+  static int _expressionEnd(String text, int start) {
+    var depth = 0;
+    for (var i = start; i < text.length; i++) {
+      final char = text[i];
+      if (char == '{') {
+        depth++;
+      } else if (char == '}') {
+        if (depth > 0) {
+          depth--;
+        } else if (i + 1 < text.length && text[i + 1] == '}') {
+          return i;
+        } else {
+          return -1;
+        }
+      }
+    }
+    return -1;
   }
 
   /// The static root (PT-1.5): the web build served read-only, with an

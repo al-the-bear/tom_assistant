@@ -5,7 +5,7 @@
 // 127.0.0.1 by default so the observatory is never exposed off-host.
 //
 // Usage:
-//   dart run bin/observatory.dart <trail-host-root> [--web=<dir>] [--scripts=<dir>] [--prompts=<dir>] [--cognition=<dir>] [--port=N] [--host=ADDR]
+//   dart run bin/observatory.dart <trail-host-root> [--web=<dir>] [--scripts=<dir>] [--cognition=<dir>] [--port=N] [--host=ADDR]
 //
 //   <trail-host-root>   the trail tree to read, e.g. _ai/tom_brain_trail/<host>
 //   --web=<dir>         the `flutter build web` output to serve at `/`
@@ -15,17 +15,15 @@
 //                       ../tom_brain_procedure/scripts/system) and written by
 //                       PUT /api/procedures/<id> under the authoring guards
 //                       (§ 6.3, AUTH-1…AUTH-3)
-//   --prompts=<dir>     the running brain's externalized prompt files
-//                       (<roleId>.persona.md / <roleId>.objective.md, the
-//                       cognition's roles folder), read+written by
-//                       GET/PUT /api/prompts/<roleId>/<part> under the same
-//                       guards (§ 6.3); no default — the prompt endpoints 404
-//                       until it points at the brain's roles folder
 //   --cognition=<dir>   the running brain's cognition root (registry.yaml +
-//                       per-procedure configs + templates), served read-only by
-//                       GET /api/catalogue (§ 8.3, step 14); no default — the
-//                       catalogue route 503s "config unavailable" until it
-//                       points at the brain's cognition root
+//                       per-procedure configs + templates + roles). Served
+//                       read-only by GET /api/catalogue (§ 8.3, step 14), and
+//                       it is also the root GET/PUT /api/templates?id=&part=
+//                       reads and writes registered template files against,
+//                       under the authoring guards (§ 6.3, AUTH-2/AUTH-3,
+//                       step 15). No default — the catalogue route 503s "config
+//                       unavailable" and the template routes 503 likewise until
+//                       it points at the brain's cognition root
 //   --port=N            loopback port (default 8787)
 //   --host=ADDR         bind address (default 127.0.0.1; loopback-only by design)
 //
@@ -48,7 +46,7 @@ Future<void> main(List<String> args) async {
   if (positional.length != 1) {
     stderr.writeln(
       'usage: dart run bin/observatory.dart <trail-host-root> '
-      '[--web=<dir>] [--scripts=<dir>] [--prompts=<dir>] '
+      '[--web=<dir>] [--scripts=<dir>] '
       '[--cognition=<dir>] [--port=N] [--host=ADDR]',
     );
     exitCode = 64; // EX_USAGE
@@ -65,7 +63,6 @@ Future<void> main(List<String> args) async {
   final flags = _flags(args);
   final webDir = flags['web'] ?? _defaultWebRoot();
   final scriptsDir = flags['scripts'] ?? _defaultScriptRoot();
-  final promptsDir = flags['prompts'];
   final cognitionDir = flags['cognition'];
   final port = int.tryParse(flags['port'] ?? '') ?? _defaultPort;
   final bindHost = flags['host'] ?? _defaultHost;
@@ -88,26 +85,19 @@ Future<void> main(List<String> args) async {
     );
   }
 
-  final promptsRoot = promptsDir == null ? null : Directory(promptsDir);
-  if (promptsRoot == null) {
-    stderr.writeln(
-      'observatory: no --prompts root — GET/PUT /api/prompts/<roleId>/<part> '
-      "will 404 until it points at the brain's roles folder.",
-    );
-  } else if (!promptsRoot.existsSync()) {
-    stderr.writeln(
-      'observatory: prompts root not found at $promptsDir — '
-      'GET/PUT /api/prompts/<roleId>/<part> will 404 until --prompts points '
-      "at the brain's roles folder.",
-    );
-  }
-
   // The editable catalogue (§ 8.3, step 14): GET /api/catalogue serves the
-  // parsed cognition config's registry-derived index. Loaded read-only from the
-  // --cognition root; a malformed config is reported (not fatal — the
-  // observatory is a read-only mirror) and leaves the catalogue route to 503
-  // "config unavailable", exactly as an absent root does.
+  // parsed cognition config's registry-derived index, and GET/PUT
+  // /api/templates?id=&part= (§ 6.3, step 15) reads and writes the registered
+  // template files it points at. Loaded read-only from the --cognition root; a
+  // malformed config is reported (not fatal — the observatory is a read-only
+  // mirror for trail/memory) and leaves both routes to 503 "config
+  // unavailable", exactly as an absent root does. The directory itself is the
+  // root the template paths resolve against (the AUTH-2 containment root).
   final cognition = _loadCognition(cognitionDir);
+  final cognitionRoot =
+      (cognitionDir != null && Directory(cognitionDir).existsSync())
+          ? Directory(cognitionDir)
+          : null;
 
   // The Module-2 memory surface (§ 8.4) is deferred: the real `dart_mcp`-backed
   // McpReadConnection is wired at the run-assembly seam, not here. Until then
@@ -121,9 +111,8 @@ Future<void> main(List<String> args) async {
     host: TrailHost.at(trailRoot),
     webRoot: webRoot.existsSync() ? webRoot : null,
     scriptRoot: scriptRoot.existsSync() ? scriptRoot : null,
-    promptsRoot:
-        promptsRoot != null && promptsRoot.existsSync() ? promptsRoot : null,
     cognition: cognition,
+    cognitionRoot: cognitionRoot,
   );
   final server = await shelf_io.serve(api.handler, bindHost, port);
 
