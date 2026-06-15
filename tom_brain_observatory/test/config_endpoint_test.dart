@@ -42,7 +42,7 @@ void main() {
 
   setUp(() {
     cognitionDir = Directory.systemTemp.createTempSync('obs_config_');
-    _writeTree(cognitionDir);
+    writeMinimalCognitionTree(cognitionDir);
     cognition = CognitionConfigLoader.loadFromDir(cognitionDir.path);
   });
 
@@ -301,79 +301,4 @@ substrate:
       expect(res.statusCode, 503);
     });
   });
-}
-
-/// Writes a minimal cognition tree (mirrors `templates_endpoint_test.dart`)
-/// plus a `brain_run.yaml` carrying a valid `substrate:` block, so all four
-/// config kinds — `registry`, `procedure`, `llm_route`, `substrate` — resolve.
-void _writeTree(Directory root) {
-  File('${root.path}/registry.yaml').writeAsStringSync('''
-procedures:
-  assist_user:
-    config: assist_user.yaml
-    folder: assist_user
-roles:
-  folder: roles
-llm:
-  folder: llm
-  default: default
-''');
-
-  File('${root.path}/assist_user.yaml').writeAsStringSync('''
-temperature: 1.0
-llm: default
-
-answer_with_memory:
-  prompts:
-    assembly:
-      template: answer_with_memory.assembly
-      tools: all
-    tool_catalogue:
-      template: answer_with_memory.tool_catalogue
-      kind: fragment
-
-answer_with_thinking:
-  prompts:
-    analysis:
-      template: answer_with_thinking.analysis
-      role: analyser
-''');
-
-  final Directory folder = Directory('${root.path}/assist_user')..createSync();
-  File('${folder.path}/answer_with_memory.assembly.system.md')
-      .writeAsStringSync('system framing\n');
-  File('${folder.path}/answer_with_memory.assembly.user.md')
-      .writeAsStringSync('user body\n');
-  File('${folder.path}/answer_with_thinking.analysis.user.md')
-      .writeAsStringSync('analysis body\n');
-  File('${folder.path}/answer_with_memory.tool_catalogue.md')
-      .writeAsStringSync('fragment body\n');
-
-  Directory('${root.path}/llm').createSync();
-  File('${root.path}/llm/default.yaml').writeAsStringSync('''
-route:
-  - provider: ollama
-    model: gemma3:27b
-''');
-
-  Directory('${root.path}/roles').createSync();
-  File('${root.path}/roles/analyser.persona.md')
-      .writeAsStringSync('ANALYSER VOICE\n');
-
-  // The whole-process run config the `substrate` kind resolves against
-  // (run-config root defaults to the cognition root here). A minimal but valid
-  // `substrate:` block — one stub provider, one role route, an embedding model.
-  File('${root.path}/brain_run.yaml').writeAsStringSync('''
-substrate:
-  providers:
-    - id: local
-      kind: stub
-  roleRoutes:
-    assistant_to_user:
-      - {providerId: local, model: base-model}
-  embedding:
-    providerId: local
-    model: embed
-    dims: 1
-''');
 }

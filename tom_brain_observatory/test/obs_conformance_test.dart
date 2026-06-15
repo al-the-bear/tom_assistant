@@ -30,6 +30,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:tom_brain_observatory/tom_brain_observatory.dart';
+import 'package:tom_brain_run/tom_brain_run.dart' show CognitionConfigLoader;
 import 'package:test/test.dart';
 
 import 'memory/support/fake_read_connection.dart';
@@ -220,6 +221,141 @@ void main() {
                 'delete/rename/truncate or raw-write (AUTH-1)');
       }
       expect(src, contains('writeAsStringSync'));
+    });
+  });
+
+  group('PT-8.4 — the mutation surface is exactly the three authoring routes',
+      () {
+    // Step 17: the only mutation routes are `PUT /api/procedures/<id>`,
+    // `PUT /api/templates`, and `PUT /api/config`; everything else is
+    // read-only. This is the HTTP-edge counterpart to OBS-1/OBS-3 (which prove
+    // the *trail* and *memory* roots stay byte-for-byte untouched): here we
+    // enumerate every route registration across the whole `lib/` surface, by
+    // verb, so a future edit that adds a write/delete door anywhere turns this
+    // red with no endpoint test.
+
+    /// Every route path registered with HTTP [method] across all lib sources —
+    /// matches the `..put('PATH', …)` / `router.post('PATH', …)` registration
+    /// forms used by the three route files.
+    Set<String> routesFor(String method) {
+      final re = RegExp("\\.$method\\('([^']+)'");
+      return <String>{
+        for (final src in libDartSources().values)
+          for (final m in re.allMatches(src)) m.group(1)!,
+      };
+    }
+
+    test('the only write-source (PUT) routes are the three sanctioned ones',
+        () {
+      expect(routesFor('put'), <String>{
+        '/api/procedures/<procedureId>',
+        '/api/templates',
+        '/api/config',
+      });
+    });
+
+    test('no route uses the destructive DELETE verb', () {
+      expect(routesFor('delete'), isEmpty,
+          reason: 'a DELETE route is a mutation door — the only mutation '
+              'routes are the three PUT authoring routes (step 17)');
+    });
+
+    test('every POST route is a read-only memory query, never a mutation', () {
+      // POST carries a request body, but only for the memory recall/classify
+      // *reads* (OBS-2 proves none maps to the write tool). No POST exists
+      // outside the memory read surface, so POST is not a hidden mutation door.
+      for (final route in routesFor('post')) {
+        expect(route, startsWith('/api/memory/'),
+            reason: 'POST $route is outside the memory read surface — the only '
+                'mutation routes are the three PUT authoring routes (step 17)');
+      }
+    });
+  });
+
+  group('PT-8.4 — AUTH-6: the anchor and tool-policy profiles are not editable',
+      () {
+    // AUTH-6 (`prompt_tracing.md` § 6.3): the assistant-dedication anchor and
+    // the tool-policy profiles are structural — the anchor is injected on every
+    // LLM call by `RoleTemplate.assemble`, the profiles gate tool access — and
+    // must never be reachable through the authoring surface. Proven two ways:
+    // behaviourally (the config wire-kind alphabet refuses them; the anchor is
+    // not a catalogue template) and structurally (the kind translator names
+    // only the four editable kinds).
+    late Directory cognitionDir;
+
+    setUp(() {
+      cognitionDir = Directory.systemTemp.createTempSync('obs_auth6_');
+      writeMinimalCognitionTree(cognitionDir);
+    });
+    tearDown(() {
+      if (cognitionDir.existsSync()) cognitionDir.deleteSync(recursive: true);
+    });
+
+    TrailReadApi cognitionWired() => TrailReadApi(
+          host: TrailHost.at(fixtureHostPath),
+          cognition: CognitionConfigLoader.loadFromDir(cognitionDir.path),
+          cognitionRoot: cognitionDir,
+        );
+
+    test('PUT /api/config refuses an anchor / tool-policy / profile kind (403)',
+        () async {
+      final api = cognitionWired();
+      for (final kind in <String>[
+        'anchor',
+        'tool_policy',
+        'tool_policy_profile',
+        'profile',
+        'persona_anchor',
+      ]) {
+        final res = await obsPut(
+          api,
+          'api/config?kind=${Uri.encodeQueryComponent(kind)}&name=any',
+          body: 'whatever: 1',
+        );
+        expect(res.statusCode, HttpStatus.forbidden,
+            reason: 'kind=$kind is outside the editable alphabet — the anchor '
+                'and tool-policy profiles are not editable at the HTTP surface '
+                '(AUTH-6)');
+      }
+    });
+
+    test('PUT /api/templates refuses the dedication anchor (unregistered, 403)',
+        () async {
+      // The assistant-dedication anchor is injected structurally by
+      // `RoleTemplate.assemble`; it is not a catalogue-registered template, so
+      // it has no editable door through the template surface either (AUTH-6).
+      final res = await obsPut(
+        cognitionWired(),
+        'api/templates?id=assistant_dedication_anchor&part=system',
+        body: 'a hijacked anchor',
+      );
+      expect(res.statusCode, HttpStatus.forbidden);
+    });
+
+    test('the config kind alphabet names only the four editable kinds', () {
+      final src = libDartSources()['lib/src/api/trail_read_api.dart']!;
+      // Positive: `_kindFromWire` (the single gate) names the four editable
+      // kinds. Negative: it names no anchor / tool-policy / profile kind, so a
+      // future edit that makes one editable turns this red even before a
+      // behavioural test exists for it (AUTH-6).
+      for (final kind in <String>[
+        "'registry'",
+        "'procedure'",
+        "'llm_route'",
+        "'substrate'",
+      ]) {
+        expect(src, contains(kind));
+      }
+      for (final forbidden in <String>[
+        "'anchor'",
+        "'tool_policy'",
+        "'profile'",
+        "'persona_anchor'",
+      ]) {
+        expect(src, isNot(contains(forbidden)),
+            reason: '$forbidden appears as a config kind — the anchor and '
+                'tool-policy profiles must not be editable (AUTH-6)');
+      }
     });
   });
 
