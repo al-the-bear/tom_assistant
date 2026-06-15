@@ -23,6 +23,7 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:shelf_static/shelf_static.dart';
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show ProcedureValidationChain;
+import 'package:tom_brain_run/tom_brain_run.dart' show CognitionConfig;
 
 import '../live/live_tail.dart';
 import '../memory/memory_read_client.dart';
@@ -30,6 +31,7 @@ import '../model/prompt_trace.dart';
 import '../parse/prompt_list_builder.dart';
 import '../parse/prompt_trace_parser.dart';
 import '../parse/trail_host.dart';
+import 'catalogue_read_api.dart';
 import 'memory_read_api.dart';
 
 /// A read-only shelf service over one [TrailHost], optionally serving an
@@ -66,6 +68,13 @@ final class TrailReadApi {
   /// always exist, so the UI gets a clean signal, never a 404.
   final MemoryReadApi _memoryApi;
 
+  /// The editable-catalogue read surface (`prompt_tracing.md` § 8.3, plan
+  /// step 14), serving `GET /api/catalogue` over the injected [cognition] config.
+  /// The config is optional: absent it (the observatory was launched without a
+  /// cognition root) the route answers `503` "config unavailable" — the route
+  /// always exists, so the UI gets a clean signal, never a 404.
+  final CatalogueReadApi _catalogueApi;
+
   TrailReadApi({
     required this.host,
     this.listLimit = 10,
@@ -73,7 +82,13 @@ final class TrailReadApi {
     this.scriptRoot,
     this.promptsRoot,
     MemoryReadClient? memory,
-  }) : _memoryApi = MemoryReadApi(client: memory);
+    CognitionConfig? cognition,
+    String substrateConfigFile = 'brain_run.yaml',
+  })  : _memoryApi = MemoryReadApi(client: memory),
+        _catalogueApi = CatalogueReadApi(
+          config: cognition,
+          substrateConfigFile: substrateConfigFile,
+        );
 
   /// The closed set of writable prompt-file halves (§ 6.3, AUTH-1): a role's
   /// persona prose and its objective prose. Anything else is refused.
@@ -116,6 +131,7 @@ final class TrailReadApi {
       ..get('/api/prompts/<roleId>/<part>', _readPromptFile)
       ..put('/api/prompts/<roleId>/<part>', _writePromptFile);
     _memoryApi.registerRoutes(router); // /api/memory/* (§ 8.4)
+    _catalogueApi.registerRoutes(router); // /api/catalogue (§ 8.3, step 14)
     return router;
   }
 

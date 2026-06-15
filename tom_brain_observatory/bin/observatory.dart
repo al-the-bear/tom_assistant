@@ -5,7 +5,7 @@
 // 127.0.0.1 by default so the observatory is never exposed off-host.
 //
 // Usage:
-//   dart run bin/observatory.dart <trail-host-root> [--web=<dir>] [--scripts=<dir>] [--port=N] [--host=ADDR]
+//   dart run bin/observatory.dart <trail-host-root> [--web=<dir>] [--scripts=<dir>] [--prompts=<dir>] [--cognition=<dir>] [--port=N] [--host=ADDR]
 //
 //   <trail-host-root>   the trail tree to read, e.g. _ai/tom_brain_trail/<host>
 //   --web=<dir>         the `flutter build web` output to serve at `/`
@@ -21,6 +21,11 @@
 //                       GET/PUT /api/prompts/<roleId>/<part> under the same
 //                       guards (§ 6.3); no default — the prompt endpoints 404
 //                       until it points at the brain's roles folder
+//   --cognition=<dir>   the running brain's cognition root (registry.yaml +
+//                       per-procedure configs + templates), served read-only by
+//                       GET /api/catalogue (§ 8.3, step 14); no default — the
+//                       catalogue route 503s "config unavailable" until it
+//                       points at the brain's cognition root
 //   --port=N            loopback port (default 8787)
 //   --host=ADDR         bind address (default 127.0.0.1; loopback-only by design)
 //
@@ -32,6 +37,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:tom_brain_observatory/tom_brain_observatory.dart';
+import 'package:tom_brain_run/tom_brain_run.dart'
+    show CognitionConfig, CognitionConfigException, CognitionConfigLoader;
 
 const _defaultPort = 8787;
 const _defaultHost = '127.0.0.1';
@@ -41,7 +48,8 @@ Future<void> main(List<String> args) async {
   if (positional.length != 1) {
     stderr.writeln(
       'usage: dart run bin/observatory.dart <trail-host-root> '
-      '[--web=<dir>] [--scripts=<dir>] [--port=N] [--host=ADDR]',
+      '[--web=<dir>] [--scripts=<dir>] [--prompts=<dir>] '
+      '[--cognition=<dir>] [--port=N] [--host=ADDR]',
     );
     exitCode = 64; // EX_USAGE
     return;
@@ -58,6 +66,7 @@ Future<void> main(List<String> args) async {
   final webDir = flags['web'] ?? _defaultWebRoot();
   final scriptsDir = flags['scripts'] ?? _defaultScriptRoot();
   final promptsDir = flags['prompts'];
+  final cognitionDir = flags['cognition'];
   final port = int.tryParse(flags['port'] ?? '') ?? _defaultPort;
   final bindHost = flags['host'] ?? _defaultHost;
 
@@ -93,6 +102,13 @@ Future<void> main(List<String> args) async {
     );
   }
 
+  // The editable catalogue (§ 8.3, step 14): GET /api/catalogue serves the
+  // parsed cognition config's registry-derived index. Loaded read-only from the
+  // --cognition root; a malformed config is reported (not fatal — the
+  // observatory is a read-only mirror) and leaves the catalogue route to 503
+  // "config unavailable", exactly as an absent root does.
+  final cognition = _loadCognition(cognitionDir);
+
   // The Module-2 memory surface (§ 8.4) is deferred: the real `dart_mcp`-backed
   // McpReadConnection is wired at the run-assembly seam, not here. Until then
   // `memory:` stays null, so every `/api/memory/*` route answers 503 "memory
@@ -107,6 +123,7 @@ Future<void> main(List<String> args) async {
     scriptRoot: scriptRoot.existsSync() ? scriptRoot : null,
     promptsRoot:
         promptsRoot != null && promptsRoot.existsSync() ? promptsRoot : null,
+    cognition: cognition,
   );
   final server = await shelf_io.serve(api.handler, bindHost, port);
 
@@ -126,6 +143,36 @@ Future<void> main(List<String> args) async {
   ProcessSignal.sigint.watch().listen(shutdown);
   if (!Platform.isWindows) {
     ProcessSignal.sigterm.watch().listen(shutdown);
+  }
+}
+
+/// Loads the cognition config from [cognitionDir] for `GET /api/catalogue`, or
+/// returns `null` when no root is configured or the config fails to parse (the
+/// route then 503s "config unavailable"). The observatory is a read-only mirror,
+/// so a malformed cognition tree is reported but never fatal.
+CognitionConfig? _loadCognition(String? cognitionDir) {
+  if (cognitionDir == null) {
+    stderr.writeln(
+      'observatory: no --cognition root — GET /api/catalogue will 503 '
+      '"config unavailable" until it points at the brain\'s cognition root.',
+    );
+    return null;
+  }
+  if (!Directory(cognitionDir).existsSync()) {
+    stderr.writeln(
+      'observatory: cognition root not found at $cognitionDir — '
+      'GET /api/catalogue will 503 "config unavailable".',
+    );
+    return null;
+  }
+  try {
+    return CognitionConfigLoader.loadFromDir(cognitionDir);
+  } on CognitionConfigException catch (e) {
+    stderr.writeln(
+      'observatory: cognition config at $cognitionDir failed to parse '
+      '(${e.message}) — GET /api/catalogue will 503 "config unavailable".',
+    );
+    return null;
   }
 }
 

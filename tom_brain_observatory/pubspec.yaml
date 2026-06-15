@@ -25,8 +25,13 @@ environment:
 dependencies:
   tom_core_server:
     path: ../../tom_ai/core/tom_core_server
-  tom_build_base:
-    path: ../../tom_ai/basics/tom_build_base
+  # Hosted, not path — matching the rest of the brain tree (`tom_brain_run`'s
+  # closure resolves `tom_build_base` from pub.dev as a hosted transitive). A
+  # direct path dep here would collide with that hosted source (a non-root path
+  # dep cannot coexist with a hosted dep of the same name without an override,
+  # which the workspace rule forbids). `^2.6.21` is the version the whole brain
+  # closure already locks.
+  tom_build_base: ^2.6.21
   # The source-authoring surface (§ 6.3, AUTH-3) validates a procedure script
   # *before* it lands. The gate must be the brain's own gate, never a divergent
   # copy: a reimplemented validator could accept a script the brain rejects (or
@@ -36,6 +41,15 @@ dependencies:
   # with. In-tree path dep like the rest of the brain tree.
   tom_brain_procedure:
     path: ../tom_brain_procedure
+  # The editable-catalogue route (`GET /api/catalogue`, plan step 14) serves the
+  # `CognitionConfig.catalogue()` index (plan step 13) — every registered
+  # template, the role prose files, and the config-file inventory. That model
+  # lives in `tom_brain_run` (the cognition composition root), so the observatory
+  # reads it from there rather than re-deriving the registry shape (which would
+  # drift from what the brain actually loads). In-tree path dep like the rest of
+  # the brain tree; read-only — the observatory only *reads* the parsed config.
+  tom_brain_run:
+    path: ../tom_brain_run
   # The Trail Read API (PT-1.4 / PT-1.5) is a thin read-only shelf service.
   # tom_core_server uses shelf internally but does not re-export it, so the
   # router + static-file handler are taken directly (the same shelf the base

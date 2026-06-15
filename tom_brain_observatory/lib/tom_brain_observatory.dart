@@ -22,6 +22,7 @@
 /// handle (OBS-3), never the write tool (OBS-2).
 library;
 
+export 'src/api/catalogue_read_api.dart';
 export 'src/api/memory_read_api.dart';
 export 'src/api/trail_read_api.dart';
 export 'src/memory/mcp_read_connection.dart';
