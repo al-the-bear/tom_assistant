@@ -149,10 +149,11 @@ void main() {
       // (rendered later by SubstrateBridge.run from the tool policy).
       expect(resolved.templateBody, contains(r'${tools.catalogue}'));
       // The main procedure's settings flow through: user-facing role, the
-      // `assistant` default route, the full tool catalogue (tools: all), the
-      // default tool-loop cap.
+      // `assist_user`-level `llm: assistant_claude_brain` route (overriding the
+      // registry `assistant` default), the full tool catalogue (tools: all),
+      // the default tool-loop cap.
       expect(resolved.role, 'assistant_to_user');
-      expect(resolved.llmRoute, 'assistant');
+      expect(resolved.llmRoute, 'assistant_claude_brain');
       expect(resolved.tools, isNotEmpty);
       expect(resolved.maxToolLoops, 6);
     });
@@ -248,9 +249,11 @@ void main() {
       });
 
       expect(resolved, isNotNull);
-      // §9: synthesis inherits the user-facing role + assistant route + tools:all.
+      // §9: synthesis inherits the user-facing role + the `assist_user`-level
+      // `assistant_claude_brain` route (overriding the registry default) +
+      // tools:all.
       expect(resolved!.role, 'assistant_to_user');
-      expect(resolved.llmRoute, 'assistant');
+      expect(resolved.llmRoute, 'assistant_claude_brain');
       expect(resolved.tools, isNotEmpty);
       // The catalogue marker survives for SubstrateBridge.run to render.
       expect(resolved.templateBody, contains(r'${tools.catalogue}'));
