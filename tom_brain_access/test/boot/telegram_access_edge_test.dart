@@ -420,6 +420,71 @@ void main() {
       });
     });
 
+    group('/trace_memory toggle (§ 6.5)', () {
+      test('/trace_memory is intercepted, toggled, and acknowledged', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          sessionRegistry: _deterministicRegistry,
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/trace_memory'));
+        await pumpEventQueue();
+
+        // The command never reaches the brain; the reply states the new state.
+        expect(d.routed, isEmpty);
+        expect(f.chatApi.sentMessages.single, contains('ON'));
+      });
+
+      test(
+          'an ordinary prompt after /trace_memory ON is stamped with the trace '
+          'metadata, preserving the sender id', () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          sessionRegistry: _deterministicRegistry,
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/trace_memory')); // → ON
+        await pumpEventQueue();
+        f.inbound.add(_inbound(text: 'recall something'));
+        await pumpEventQueue();
+
+        expect(d.routed, hasLength(1));
+        final Map<String, Object?> metadata = d.routed.single.envelope.metadata;
+        expect(metadata[traceMemoryMetadataKey], isTrue);
+        // The channel-supplied sender id survives the metadata merge.
+        expect(metadata[telegramSenderIdMetadataKey], 'tg-42');
+      });
+
+      test('an ordinary prompt without /trace_memory carries no trace metadata',
+          () async {
+        final d = _answeringDispatcher();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          sessionRegistry: _deterministicRegistry,
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: 'recall something'));
+        await pumpEventQueue();
+
+        expect(d.routed, hasLength(1));
+        expect(
+          d.routed.single.envelope.metadata[traceMemoryMetadataKey],
+          isNull,
+        );
+      });
+    });
+
     group('/help + inspection commands (parts a–e)', () {
       test('/help is intercepted and lists every command word', () async {
         final d = _answeringDispatcher();

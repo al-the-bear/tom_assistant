@@ -60,6 +60,10 @@ const String _activeRowKey = 'active';
 /// The `EdgeStateStore` row key for the ordered session list.
 const String _sessionsRowKey = 'sessions';
 
+/// The `EdgeStateStore` row key for the per-user memory-recall trace toggle
+/// (the `/trace_memory` command). Absent / non-`true` means tracing is off.
+const String _traceMemoryRowKey = 'traceMemory';
+
 /// The per-session-entry key for its name.
 const String _sessionNameKey = 'name';
 
@@ -74,12 +78,18 @@ class _SessionRef {
   _SessionRef(this.name, this.id);
 }
 
-/// One Telegram user's session state: the [active] session name and the ordered
-/// [sessions] list (always led by `global`).
+/// One Telegram user's session state: the [active] session name, the ordered
+/// [sessions] list (always led by `global`), and the [traceMemory] toggle (the
+/// `/trace_memory` command — whether memory-recall tracing is on for this user).
 class _UserSessions {
   String active;
   final List<_SessionRef> sessions;
-  _UserSessions({required this.active, required this.sessions});
+  bool traceMemory;
+  _UserSessions({
+    required this.active,
+    required this.sessions,
+    this.traceMemory = false,
+  });
 }
 
 /// The active session resolved for one inbound Telegram message (§ 6.5).
@@ -261,6 +271,24 @@ final class TelegramSessionRegistry {
     return 'Session renamed to $trimmed';
   }
 
+  /// Whether [userId] currently has memory-recall tracing on (the
+  /// `/trace_memory` toggle, § 6.5). The edge reads this before admitting an
+  /// ordinary prompt and stamps the trace flag onto the request when it is on.
+  bool isTraceMemoryEnabled(String userId) =>
+      _ensureUser(userId).traceMemory;
+
+  /// Handles `/trace_memory`: flips [userId]'s memory-recall trace toggle,
+  /// persists it, and returns the confirmation stating the resulting state.
+  String toggleTraceMemory(String userId) {
+    final _UserSessions user = _ensureUser(userId);
+    user.traceMemory = !user.traceMemory;
+    _save();
+    return user.traceMemory
+        ? 'Memory tracing is now ON — each memory search will report what it '
+            'found.'
+        : 'Memory tracing is now OFF.';
+  }
+
   /// The active session reference for [user]. Falls back to `global` if the
   /// stored active name no longer matches any session (defensive — a save keeps
   /// them consistent).
@@ -313,7 +341,11 @@ final class TelegramSessionRegistry {
         sessions.add(_SessionRef(name, id is String ? id : null));
       }
       if (sessions.isEmpty) return;
-      _users[userId] = _UserSessions(active: active, sessions: sessions);
+      _users[userId] = _UserSessions(
+        active: active,
+        sessions: sessions,
+        traceMemory: row[_traceMemoryRowKey] == true,
+      );
     });
   }
 
@@ -324,6 +356,7 @@ final class TelegramSessionRegistry {
       for (final entry in _users.entries)
         entry.key: <String, Object?>{
           _activeRowKey: entry.value.active,
+          _traceMemoryRowKey: entry.value.traceMemory,
           _sessionsRowKey: [
             for (final _SessionRef ref in entry.value.sessions)
               <String, Object?>{

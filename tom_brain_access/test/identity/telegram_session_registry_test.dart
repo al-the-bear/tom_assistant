@@ -179,6 +179,44 @@ void main() {
       expect(f.adopted, contains(_vid(9)));
     });
 
+    test('trace-memory defaults off and toggles on/off with the right reply',
+        () {
+      final f = build();
+      f.registry.resolveActive('u1');
+      expect(f.registry.isTraceMemoryEnabled('u1'), isFalse);
+
+      final onReply = f.registry.toggleTraceMemory('u1');
+      expect(f.registry.isTraceMemoryEnabled('u1'), isTrue);
+      expect(onReply, contains('ON'));
+
+      final offReply = f.registry.toggleTraceMemory('u1');
+      expect(f.registry.isTraceMemoryEnabled('u1'), isFalse);
+      expect(offReply, contains('OFF'));
+    });
+
+    test('trace-memory state persists across a restart (same store)', () {
+      final store = MapEdgeStateStore();
+      build(store: store).registry
+        ..resolveActive('u1')
+        ..toggleTraceMemory('u1'); // → ON, persisted
+
+      final second = TelegramSessionRegistry(
+        store: store,
+        mintSessionId: () => fail('restart must not mint a fresh id'),
+        adoptSession: (_) {},
+      );
+      expect(second.isTraceMemoryEnabled('u1'), isTrue);
+    });
+
+    test('trace-memory is per-user', () {
+      final f = build();
+      f.registry.resolveActive('u1');
+      f.registry.resolveActive('u2');
+      f.registry.toggleTraceMemory('u1');
+      expect(f.registry.isTraceMemoryEnabled('u1'), isTrue);
+      expect(f.registry.isTraceMemoryEnabled('u2'), isFalse);
+    });
+
     test('per-user isolation: two users keep independent sessions', () {
       final f = build();
       f.registry.resolveActive('u1'); // u1 default = id-000

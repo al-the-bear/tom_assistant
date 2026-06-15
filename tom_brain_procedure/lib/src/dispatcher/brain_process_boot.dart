@@ -58,7 +58,13 @@ import 'dart:io';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, TomBrainSubstrateClient;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show Access, ConversationHistory, HistoryTurn, OutboundChunk, PreemptionState;
+    show
+        Access,
+        ConversationHistory,
+        HistoryTurn,
+        OutboundChunk,
+        PreemptionState,
+        traceMemoryMetadataKey;
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show DeliberationVerdict, classifyDeliberationCue;
 
@@ -72,6 +78,7 @@ import '../procedure_store/disk_procedure_store.dart';
 import '../procedure_store/procedure_store_interface.dart' show ProcedureStore;
 import '../recorder/llm_trail_record.dart' show LlmTrailSink;
 import '../recorder/memory_access_record.dart' show MemoryAccessSink;
+import '../recorder/memory_recall_notice.dart' show MemoryRecallNotice;
 import '../recorder/tool_access_record.dart' show ToolAccessSink;
 import '../recorder/procedure_tree_record.dart' show ProcedureTreeSink;
 import '../recorder/turn_summary.dart' show TurnSummary, TurnSummarySink;
@@ -839,6 +846,27 @@ abstract final class BrainProcessBoot {
         );
       }
 
+      // The per-turn memory-recall trace channel (the `/trace_memory` toggle,
+      // access § 6.5): bound only when the originating edge stamped the request
+      // (a per-user toggle). When bound, each `recall` / `recallMulti` this turn
+      // issues — top-level OR nested — surfaces what each retrieval mode found as
+      // its own out-of-band notice, so a buffered channel (Telegram) shows the
+      // lookup as a short sequence of immediate messages. Like the other notice
+      // channels it is fire-and-forget and ignored by a per-chunk channel (SSE);
+      // `null` leaves the turn untraced and the engine on its plain recall path.
+      final bool traceMemory =
+          access.envelope.metadata[traceMemoryMetadataKey] == true;
+      void memoryNoticeSink(MemoryRecallNotice notice) {
+        for (final line in notice.noticeLines()) {
+          unawaited(
+            access
+                .deliver(OutboundChunk(textDelta: '', notice: line))
+                .drain<void>()
+                .catchError((_) {}),
+          );
+        }
+      }
+
       // When the turn began serving — the §5.4 turn-header timestamp. Captured
       // before the run so it brackets the whole turn.
       final startedAt = DateTime.now().toUtc();
@@ -921,6 +949,7 @@ abstract final class BrainProcessBoot {
                   tokenSink: streamDelta,
                   noticeSink: noticeSink,
                   thinkingSink: thinkingSink,
+                  memoryNoticeSink: traceMemory ? memoryNoticeSink : null,
                 )
                 .outcome;
           },

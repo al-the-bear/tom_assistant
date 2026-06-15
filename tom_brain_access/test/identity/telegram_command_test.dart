@@ -97,6 +97,14 @@ void main() {
       expect(parseTelegramCommand('/cli_server_port 20000')!.argument, '20000');
     });
 
+    test('parses the trace-memory toggle command', () {
+      expect(parseTelegramCommand('/trace_memory')!.kind,
+          TelegramCommandKind.traceMemory);
+      expect(parseTelegramCommand('/trace_memory')!.argument, '');
+      expect(parseTelegramCommand('/TRACE_MEMORY@tom_brain_bot')!.kind,
+          TelegramCommandKind.traceMemory);
+    });
+
     test('strips a @botname suffix and is case-insensitive', () {
       expect(parseTelegramCommand('/list_sessions@tom_brain_bot')!.kind,
           TelegramCommandKind.listSessions);

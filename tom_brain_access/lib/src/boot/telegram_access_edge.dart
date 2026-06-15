@@ -40,7 +40,8 @@
 
 import 'dart:async';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show InboundRequest;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show InboundRequest, traceMemoryMetadataKey;
 import 'package:tom_chattools/tom_chattools.dart' show ChatApi, ChatReceiver;
 
 import '../adapters/telegram/telegram_inbound_mapping.dart'
@@ -231,8 +232,20 @@ class TelegramAccessEdge {
     if (active.notice != null) {
       await _send(receiver, active.notice!);
     }
-    final InboundRequest stamped =
-        request.copyWith(sessionId: active.sessionId);
+    // When this user has memory-recall tracing on (`/trace_memory`), stamp the
+    // per-turn trace flag onto the envelope metadata so the dispatch route binds
+    // the memory-notice sink for this turn (§ 6.5). Merge rather than replace —
+    // `copyWith` swaps the whole metadata map, so the channel-supplied keys
+    // (the sender id) must be carried forward.
+    final InboundRequest stamped = _sessionRegistry.isTraceMemoryEnabled(userId)
+        ? request.copyWith(
+            sessionId: active.sessionId,
+            metadata: <String, Object?>{
+              ...request.metadata,
+              traceMemoryMetadataKey: true,
+            },
+          )
+        : request.copyWith(sessionId: active.sessionId);
 
     try {
       await _assembler.admitTelegram(
@@ -312,6 +325,8 @@ class TelegramAccessEdge {
         await _handleSwitchModel(receiver, command.argument);
       case TelegramCommandKind.cliServerPort:
         await _handleCliServerPort(receiver, command.argument);
+      case TelegramCommandKind.traceMemory:
+        await _send(receiver, _sessionRegistry.toggleTraceMemory(userId));
     }
   }
 

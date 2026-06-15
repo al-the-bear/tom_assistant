@@ -109,6 +109,12 @@ enum TelegramCommandKind {
   /// CLI-server port the running brain connects to: persist it to the run
   /// config and disconnect/reconnect the live agent-SDK providers.
   cliServerPort,
+
+  /// `/trace_memory` — toggle per-user memory-recall tracing. While on, each
+  /// memory lookup the brain runs for this user surfaces what every retrieval
+  /// search found as its own out-of-band message. The same command turns it
+  /// back off; the reply states the resulting state.
+  traceMemory,
 }
 
 /// The command word a user types for each [TelegramCommandKind], without the
@@ -138,6 +144,7 @@ const Map<TelegramCommandKind, String> telegramCommandWords =
   TelegramCommandKind.showPrompts: 'show_prompts',
   TelegramCommandKind.switchModel: 'switch_model',
   TelegramCommandKind.cliServerPort: 'cli_server_port',
+  TelegramCommandKind.traceMemory: 'trace_memory',
 };
 
 /// The reverse of [telegramCommandWords]: the command word (lower-cased,
@@ -220,6 +227,8 @@ String telegramHelpText() {
     ..write('\n/switch_model <prompt-id> <model-id> — set a prompt type model')
     ..write('\n/cli_server_port <port> — change the VS Code bridge / agent-SDK '
         'port (persisted; reconnects the live brain)')
+    ..write('\n/trace_memory — toggle messages tracing what each memory search '
+        'finds (same command turns it off)')
     ..write('\n\n/help — show this list');
   return buffer.toString();
 }

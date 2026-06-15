@@ -212,7 +212,8 @@ export 'src/access/access.dart'
         RemoteToolDef,
         RemoteToolResult,
         ResolvedIdentity,
-        Session;
+        Session,
+        traceMemoryMetadataKey;
 
 // E.39 — access/ backpressure: the `BackpressureSignal` sealed base + its one
 // realisation `DeliveryStalled` (with `StallReason`), plus the `Backpressure`

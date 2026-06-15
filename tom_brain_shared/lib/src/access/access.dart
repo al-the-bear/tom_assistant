@@ -52,7 +52,7 @@ export 'access_event.dart'
     show AccessCreated, AccessDelivered, AccessEvent, AccessFailed;
 export 'backpressure.dart'
     show Backpressure, BackpressureSignal, DeliveryStalled, StallReason;
-export 'inbound_request.dart' show InboundRequest;
+export 'inbound_request.dart' show InboundRequest, traceMemoryMetadataKey;
 export 'outbound_chunk.dart' show OutboundChunk;
 export 'persona.dart' show Persona;
 export 'request_fidelity.dart'

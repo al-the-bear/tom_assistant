@@ -107,6 +107,8 @@ import '../procedure_store/procedure_resolver_handle.dart';
 import '../procedure_store/procedure_store_interface.dart';
 import '../recorder/llm_trail_record.dart';
 import '../recorder/memory_access_record.dart';
+import '../recorder/memory_recall_notice.dart'
+    show MemoryNoticeSink, MemoryRecallNotice;
 import '../recorder/procedure_tree_record.dart';
 import '../recorder/tool_access_record.dart';
 import '../recorder/run_records.dart';
@@ -432,12 +434,22 @@ final class ProcedureEngine {
   /// thinking-channel role's completion) reaches the originating channel as an
   /// out-of-band notice rather than folding into the streamed answer. Like
   /// [tokenSink] / [noticeSink] it is bound only to the top-level run.
+  /// When [memoryNoticeSink] is supplied (the external/user request path, the
+  /// `/trace_memory` toggle) the engine fires it for each `recall` /
+  /// `recallMulti` call this turn issues, so the dispatch route can surface the
+  /// retrieval steps to the originating channel as out-of-band notices. Unlike
+  /// [tokenSink] / [noticeSink] / [thinkingSink], it is threaded to *every*
+  /// nested run, not just the top-level one — memory recall happens inside
+  /// nested runs (`retrieve_for_prompt_v1`, the `recall_*` strategies), never
+  /// the top-level body. Best-effort — the engine never awaits it and swallows
+  /// its errors.
   ProcedureRun invoke(
     ProcedureInvocation invocation, {
     Duration? timeout,
     OutboundDeltaSink? tokenSink,
     ToolNoticeSink? noticeSink,
     SubstrateThinkingSink? thinkingSink,
+    MemoryNoticeSink? memoryNoticeSink,
   }) {
     final runId = invocation.runId ?? _newRunId();
     final trail = StreamController<TrailEntry>.broadcast();
@@ -480,6 +492,7 @@ final class ProcedureEngine {
             tokenSink: tokenSink,
             noticeSink: noticeSink,
             thinkingSink: thinkingSink,
+            memoryNoticeSink: memoryNoticeSink,
             turn: turn,
             profile: invocation.memoryProfile,
             sessionId: invocation.sessionId,
@@ -549,6 +562,7 @@ final class ProcedureEngine {
     OutboundDeltaSink? tokenSink,
     ToolNoticeSink? noticeSink,
     SubstrateThinkingSink? thinkingSink,
+    MemoryNoticeSink? memoryNoticeSink,
     TurnContext? turn,
     String? profile,
     String? sessionId,
@@ -634,27 +648,47 @@ final class ProcedureEngine {
     // call awaits `recordCall` first (its trail/metrics effect is load-bearing)
     // then fires the sink best-effort: a throwing writer is swallowed so it
     // cannot break the run.
+    // Two best-effort observers ride the one per-run memory seam: the process
+    // [_memoryAccessSink] (the §5.6 per-profile memory log) and the per-run
+    // [memoryNoticeSink] (the `/trace_memory` toggle — surfaces each recall to
+    // the originating channel as out-of-band notices). With both unbound the
+    // bridge keeps the plain `recordCall` fast path; either failing is swallowed
+    // so neither logging nor a trace message can break the run.
     final memoryAccessSink = _memoryAccessSink;
-    final BridgeCallRecorder recordMemoryCall = memoryAccessSink == null
-        ? recordCall
-        : (primitive, input, result, {int? elapsedMs}) async {
-            await recordCall(primitive, input, result, elapsedMs: elapsedMs);
-            try {
-              memoryAccessSink(MemoryAccessRecord(
-                primitive: primitive,
-                input: input,
-                result: result,
-                elapsedMs: elapsedMs,
-                profile: profile,
-                runId: runId,
-                trailId: recorder.isOpen ? recorder.trailId.value : null,
-                turnId: turn?.turnId.value,
-                at: _now(),
-              ));
-            } catch (_) {
-              // Trail writing is non-essential; never let it break the run.
-            }
-          };
+    final BridgeCallRecorder recordMemoryCall =
+        (memoryAccessSink == null && memoryNoticeSink == null)
+            ? recordCall
+            : (primitive, input, result, {int? elapsedMs}) async {
+                await recordCall(primitive, input, result, elapsedMs: elapsedMs);
+                if (memoryAccessSink != null) {
+                  try {
+                    memoryAccessSink(MemoryAccessRecord(
+                      primitive: primitive,
+                      input: input,
+                      result: result,
+                      elapsedMs: elapsedMs,
+                      profile: profile,
+                      runId: runId,
+                      trailId: recorder.isOpen ? recorder.trailId.value : null,
+                      turnId: turn?.turnId.value,
+                      at: _now(),
+                    ));
+                  } catch (_) {
+                    // Trail writing is non-essential; never break the run.
+                  }
+                }
+                if (memoryNoticeSink != null) {
+                  final notice =
+                      MemoryRecallNotice.fromCall(primitive, result);
+                  if (notice != null) {
+                    try {
+                      memoryNoticeSink(notice);
+                    } catch (_) {
+                      // A dropped trace must never break the run.
+                    }
+                  }
+                }
+              };
     // Per-run non-fatal write backstop (spec § 5.4). A fresh guard over the
     // process's caps bounds this run's writes and dedups its edges; a skipped
     // write fires a `memory_write_skipped` note on the run trail (the recorder
@@ -730,6 +764,10 @@ final class ProcedureEngine {
           noticeSink: call.id == SubstrateBridge.toolLoopProcedureId
               ? noticeSink
               : null,
+          // The memory-recall trace, unlike the streaming sinks, is threaded
+          // to *every* nested run: recall happens inside nested runs, so a
+          // tool_loop_v1-only gate would surface nothing.
+          memoryNoticeSink: memoryNoticeSink,
           onTree: buildTree
               ? (childTree) =>
                   childTrees.add(_PositionedChildTree(position, childTree))
@@ -1208,6 +1246,7 @@ final class ProcedureEngine {
     OutboundDeltaSink? tokenSink,
     ToolNoticeSink? noticeSink,
     SubstrateThinkingSink? thinkingSink,
+    MemoryNoticeSink? memoryNoticeSink,
     void Function(ProcedureTreeRecord tree)? onTree,
   }) async {
     final outcome = await _runInternal(
@@ -1224,6 +1263,7 @@ final class ProcedureEngine {
       tokenSink: tokenSink,
       noticeSink: noticeSink,
       thinkingSink: thinkingSink,
+      memoryNoticeSink: memoryNoticeSink,
       turn: turn,
       profile: profile,
       sessionId: sessionId,

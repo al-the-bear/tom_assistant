@@ -46,6 +46,16 @@ import 'request_fidelity.dart';
 /// (keep the current value) from an explicit `null` (clear the field).
 const Object _unset = Object();
 
+/// Metadata key on [InboundRequest.metadata] that requests per-turn memory-recall
+/// tracing: when present and `true`, the dispatch route binds a memory-notice
+/// sink so each recall mode's outcome is surfaced to the originating channel as
+/// an out-of-band notice (the Telegram `/trace_memory` toggle, access spec
+/// § 6.5). Absent / `false` leaves the turn untraced. Declared here, in shared,
+/// because the access edge (which stamps it) and the procedure engine / dispatch
+/// route (which read it) both reference the one spelling — exactly the
+/// cross-phase-constant case the reuse rule covers (cf. `InboundKinds`).
+const String traceMemoryMetadataKey = 'tom.trace_memory';
+
 /// The normalised inbound request — one user prompt, decoded from its
 /// originating channel into the channel-agnostic shape the dispatcher's
 /// single entry point `accept(Access)` consumes.
