@@ -11,19 +11,16 @@
 //
 // ── Why the script spells it `subLlm`, not `sub.llm` ────────────────
 //
-// `sub` is the substrate-bridge global (`D4rtDcliHost.substrateGlobal`), so
-// `sub.llm(...)` in a script parses as a *method call on the substrate
-// bridge* — today's low-level completion. The high-level sugar must
-// therefore be a distinct identifier, and d4rt registers engine-native
-// primitives as bare top-level functions. So the sugar is bound as the
-// camelCase token `subLlm` — which is exactly the dotted→camel call-token
-// the catalog derives for the canonical `requires` name `sub.llm`
-// (`callTokensFor('sub.llm') == {'sub.llm', 'subLlm'}`). The validator
-// accepts either spelling as a call to the one primitive; the runtime
-// routes `subLlm(...)` to this sugar and `sub.llm(...)` to the bridge
-// method. The full rename (making `sub.llm` route to the sugar while the
-// low-level moves to a bare `llm`) is steps 10–11; step 9 only adds the
-// sugar, its catalog entry, and the validator wiring.
+// `sub` is the substrate-bridge global (`D4rtDcliHost.substrateGlobal`).
+// The high-level sugar is a distinct identifier, and d4rt registers
+// engine-native primitives as bare top-level functions. So the sugar is bound
+// as the camelCase token `subLlm` — which is exactly the dotted→camel
+// call-token the catalog derives for the canonical `requires` name `sub.llm`
+// (`callTokensFor('sub.llm') == {'subLlm'}`). The low-level substrate `llm`
+// method was retired in Phase 5, step 12, so the dotted `sub.llm(...)` spelling
+// is no longer a callable substrate method — only the bare `subLlm(...)` sugar
+// reaches this nested-procedure path, and there is nothing for it to collide
+// with. The substrate's surviving low-level completion entry is `sub.send`.
 //
 // What this suite locks:
 //
@@ -97,9 +94,9 @@ void main() {
     });
 
     test('the sugar call token is the bare camelCase spelling', () {
-      // `sub.llm(...)` itself is the raw substrate `llm` method; the sugar is
-      // only ever spelled `subLlm`, so the catalog claims that token alone and
-      // never collides with the low-level call.
+      // The low-level substrate `llm` method was retired (Phase 5, step 12), so
+      // the sugar is only ever spelled `subLlm`: the catalog claims that token
+      // alone and there is no low-level `sub.llm` call left to collide with.
       expect(BridgedPrimitiveCatalog.callTokensFor('sub.llm'),
           <String>{'subLlm'});
     });

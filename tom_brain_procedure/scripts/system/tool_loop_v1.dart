@@ -95,8 +95,8 @@
 // names a `role` and supplies the transcript as the role template's `prompt`
 // *input* — it can never hand the substrate a pre-assembled wire prompt, so
 // the assistant-dedication anchor is always prepended at the substrate's
-// assembly time, exactly as for `sub.llm`. Only *route selection* moved off
-// the role (§ 7.4).
+// assembly time. The role assembles the wire prompt; only *route selection* is
+// decoupled from it (§ 7.4).
 import 'package:tom_brain_procedure/src/api/procedure_inputs.dart';
 import 'package:tom_brain_procedure/src/bridges/substrate_bridge.dart';
 import 'package:tom_brain_procedure/src/bridges/tool_bridge.dart';

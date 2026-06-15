@@ -1,9 +1,10 @@
-// Extension F step 10 — low-level `llm` tool-protocol widening.
+// Extension F step 10 — substrate-completion tool-protocol widening.
 //
-// `SubstrateBridge.llm` gains an optional `tools` catalogue and widens its
-// return from `{text, report}` to `{text, toolCalls, report}` (`toolCalls`
-// empty when none). The substrate hides the wire protocol behind the
-// resolved provider's `toolProtocol`
+// `SubstrateBridge.send` (the surviving low-level completion entry after the
+// `llm` method was retired in Phase 5, step 12) carries an optional `tools`
+// catalogue and returns `{text, toolCalls, unresolvedToolCall, report}`
+// (`toolCalls` empty when none). The substrate hides the wire protocol behind
+// the resolved provider's `toolProtocol`
 // (`tom_brain_procedure_specification.md` § 21.1, § 21.6, Q-F.4):
 //
 //   - `openai`    — the provider surfaces native `tool_calls` as
@@ -24,6 +25,14 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:test/test.dart';
 
+/// A trivial [RouteChainResolver] every `send` in this file routes over — the
+/// low-level `llm` method was retired (Phase 5, step 12), so the bridge's
+/// completion entry is now `send`, which selects a route by name and needs a
+/// resolver bound. The fake client ignores the chain; only its presence
+/// matters.
+List<RouteEntry> _fastRoute(String _) =>
+    const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')];
+
 void main() {
   late _FakeSubstrateClient client;
 
@@ -31,13 +40,13 @@ void main() {
     client = _FakeSubstrateClient();
   });
 
-  group('F.10 SubstrateBridge.llm — tools inbound conversion', () {
+  group('F.10 SubstrateBridge.send — tools inbound conversion', () {
     test('passes the tool catalogue onto LlmOptions (name/desc/schema)',
         () async {
       client.streamEvents = _completed('answer', providerId: 'omlx');
-      final bridge = SubstrateBridge(client);
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
 
-      await bridge.llm('q', tools: <Object?>[
+      await bridge.send('q', llmRoute: 'fast', tools: <Object?>[
         <String, Object?>{
           'name': 'memory.read',
           'description': 'reads a memory node',
@@ -59,9 +68,9 @@ void main() {
     test('no tools ⇒ empty catalogue, and the return still carries toolCalls',
         () async {
       client.streamEvents = _completed('plain answer', providerId: 'omlx');
-      final bridge = SubstrateBridge(client);
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
 
-      final out = await bridge.llm('q');
+      final out = await bridge.send('q', llmRoute: 'fast');
 
       expect(client.lastCall!.options.toolCatalogue.isEmpty, isTrue);
       expect(out['text'], 'plain answer');
@@ -72,10 +81,10 @@ void main() {
     test('rejects a tool entry missing its name with a FormatException',
         () async {
       client.streamEvents = _completed('a', providerId: 'omlx');
-      final bridge = SubstrateBridge(client);
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
 
       await expectLater(
-        bridge.llm('q', tools: <Object?>[
+        bridge.send('q', llmRoute: 'fast', tools: <Object?>[
           <String, Object?>{'description': 'no name here'},
         ]),
         throwsA(isA<FormatException>()),
@@ -83,7 +92,7 @@ void main() {
     });
   });
 
-  group('F.10 SubstrateBridge.llm — openai protocol (native tool_calls)', () {
+  group('F.10 SubstrateBridge.send — openai protocol (native tool_calls)', () {
     test('collects LlmStreamToolCallProposed events into uniform toolCalls',
         () async {
       client.streamEvents = <LlmStreamEvent>[
@@ -101,9 +110,9 @@ void main() {
         _ok('c1'),
       ];
       // Default (no resolver) ⇒ openai protocol.
-      final bridge = SubstrateBridge(client);
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       final calls = out['toolCalls']! as List<Object?>;
       expect(calls, hasLength(1));
@@ -117,9 +126,9 @@ void main() {
         () async {
       final notes = <_CapturedNote>[];
       client.streamEvents = _completed('just prose', providerId: 'omlx');
-      final bridge = SubstrateBridge(client, onNote: _capture(notes));
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute, onNote: _capture(notes));
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       expect(out['text'], 'just prose');
       expect(out['toolCalls'], isEmpty);
@@ -127,7 +136,7 @@ void main() {
     });
   });
 
-  group('F.10 SubstrateBridge.llm — json_text protocol (JSON in text)', () {
+  group('F.10 SubstrateBridge.send — json_text protocol (JSON in text)', () {
     test('parses a JSON tool-call object from the completion identically',
         () async {
       client.streamEvents = _completed(
@@ -136,10 +145,11 @@ void main() {
       );
       final bridge = SubstrateBridge(
         client,
+        routeChainOf: _fastRoute,
         toolProtocolOf: (_) => ToolProtocol.jsonText,
       );
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       final calls = out['toolCalls']! as List<Object?>;
       expect(calls, hasLength(1));
@@ -157,10 +167,11 @@ void main() {
       );
       final bridge = SubstrateBridge(
         client,
+        routeChainOf: _fastRoute,
         toolProtocolOf: (_) => ToolProtocol.jsonText,
       );
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       final calls = out['toolCalls']! as List<Object?>;
       expect(calls, hasLength(1));
@@ -175,11 +186,12 @@ void main() {
       );
       final bridge = SubstrateBridge(
         client,
+        routeChainOf: _fastRoute,
         onNote: _capture(notes),
         toolProtocolOf: (_) => ToolProtocol.jsonText,
       );
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       expect(out['toolCalls'], isEmpty);
       // The text falls through as the no-tool answer.
@@ -196,11 +208,12 @@ void main() {
       );
       final bridge = SubstrateBridge(
         client,
+        routeChainOf: _fastRoute,
         onNote: _capture(notes),
         toolProtocolOf: (_) => ToolProtocol.jsonText,
       );
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       expect(out['text'], 'The answer is 42.');
       expect(out['toolCalls'], isEmpty);
@@ -215,11 +228,12 @@ void main() {
       );
       final bridge = SubstrateBridge(
         client,
+        routeChainOf: _fastRoute,
         onNote: _capture(notes),
         toolProtocolOf: (_) => ToolProtocol.jsonText,
       );
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       expect(out['toolCalls'], isEmpty);
       expect(notes, hasLength(1));
@@ -227,7 +241,7 @@ void main() {
     });
   });
 
-  group('F.10 SubstrateBridge.llm — multi-format text recovery', () {
+  group('F.10 SubstrateBridge.send — multi-format text recovery', () {
     // The live failure that motivated this: Gemma-on-oMLX runs under the
     // `openai` protocol but writes the tool call into the completion text in
     // its own chat-template dialect instead of emitting a native `tool_calls`
@@ -241,9 +255,9 @@ void main() {
         providerId: 'omlx',
       );
       // Default bridge ⇒ openai protocol (no native tool_calls emitted).
-      final bridge = SubstrateBridge(client);
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       final calls = out['toolCalls']! as List<Object?>;
       expect(calls, hasLength(1));
@@ -262,10 +276,11 @@ void main() {
       );
       final bridge = SubstrateBridge(
         client,
+        routeChainOf: _fastRoute,
         toolProtocolOf: (_) => ToolProtocol.jsonText,
       );
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       final calls = out['toolCalls']! as List<Object?>;
       expect(calls, hasLength(1));
@@ -279,10 +294,11 @@ void main() {
       );
       final bridge = SubstrateBridge(
         client,
+        routeChainOf: _fastRoute,
         toolProtocolOf: (_) => ToolProtocol.jsonText,
       );
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       final calls = out['toolCalls']! as List<Object?>;
       expect(calls, hasLength(1));
@@ -297,9 +313,9 @@ void main() {
         providerId: 'omlx',
       );
       // Catalogue offers only memory.read; rm_rf is not on offer.
-      final bridge = SubstrateBridge(client, onNote: _capture(notes));
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute, onNote: _capture(notes));
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       expect(out['toolCalls'], isEmpty);
       expect(notes, hasLength(1));
@@ -307,7 +323,7 @@ void main() {
     });
   });
 
-  group('F.10 SubstrateBridge.llm — unresolved tool-call guard (§ 9.1 Todo 8)',
+  group('F.10 SubstrateBridge.send — unresolved tool-call guard (§ 9.1 Todo 8)',
       () {
     // A completion that *looks* like a tool-call attempt but resolves to zero
     // executable calls (a name not on offer, or args that fail every parse)
@@ -322,9 +338,9 @@ void main() {
         providerId: 'omlx',
       );
       // Catalogue offers only memory.read; totally.bogus is not on offer.
-      final bridge = SubstrateBridge(client, onNote: _capture(notes));
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute, onNote: _capture(notes));
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       expect(out['toolCalls'], isEmpty);
       // The new guard signal — the loop reads this to feed an error turn back.
@@ -335,9 +351,9 @@ void main() {
 
     test('plain prose does not flag unresolvedToolCall', () async {
       client.streamEvents = _completed('The answer is 42.', providerId: 'omlx');
-      final bridge = SubstrateBridge(client);
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       expect(out['text'], 'The answer is 42.');
       expect(out['toolCalls'], isEmpty);
@@ -349,9 +365,9 @@ void main() {
         'call:memory.read{id: "n1"}',
         providerId: 'omlx',
       );
-      final bridge = SubstrateBridge(client);
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
 
-      final out = await bridge.llm('q', tools: _oneTool());
+      final out = await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       expect((out['toolCalls']! as List<Object?>), hasLength(1));
       expect(out['unresolvedToolCall'], isFalse);
@@ -363,6 +379,7 @@ void main() {
       final answerTokens = <String>[];
       final bridge = SubstrateBridge(
         client,
+        routeChainOf: _fastRoute,
         onToken: (delta) async => answerTokens.add(delta),
         onThinking: (text) => notices.add(text),
       );
@@ -371,7 +388,7 @@ void main() {
         providerId: 'omlx',
       );
 
-      await bridge.llm('q', tools: _oneTool());
+      await bridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       // The bogus call text surfaces on the thinking channel…
       expect(notices.single, contains('call:totally.bogus'));
@@ -380,7 +397,7 @@ void main() {
     });
   });
 
-  group('F.10 SubstrateBridge.llm — protocol uniformity (Q-F.4)', () {
+  group('F.10 SubstrateBridge.send — protocol uniformity (Q-F.4)', () {
     test('openai native and json_text text yield the same toolCalls shape',
         () async {
       // openai path.
@@ -393,8 +410,8 @@ void main() {
         ),
         _ok('c1'),
       ];
-      final openaiBridge = SubstrateBridge(client);
-      final openaiOut = await openaiBridge.llm('q', tools: _oneTool());
+      final openaiBridge = SubstrateBridge(client, routeChainOf: _fastRoute);
+      final openaiOut = await openaiBridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       // json_text path.
       final client2 = _FakeSubstrateClient()
@@ -404,9 +421,10 @@ void main() {
         );
       final jsonBridge = SubstrateBridge(
         client2,
+        routeChainOf: _fastRoute,
         toolProtocolOf: (_) => ToolProtocol.jsonText,
       );
-      final jsonOut = await jsonBridge.llm('q', tools: _oneTool());
+      final jsonOut = await jsonBridge.send('q', llmRoute: 'fast', tools: _oneTool());
 
       final a = (openaiOut['toolCalls']! as List<Object?>).single!
           as Map<String, Object?>;

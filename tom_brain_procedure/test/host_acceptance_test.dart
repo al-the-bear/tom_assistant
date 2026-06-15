@@ -67,7 +67,11 @@ void main() {
     memoryClient = _RecordingMemoryClient(stacks);
     substrateClient = _RecordingSubstrateClient();
     memoryBridge = MemoryBridge(memoryClient);
-    substrateBridge = SubstrateBridge(substrateClient);
+    substrateBridge = SubstrateBridge(
+      substrateClient,
+      routeChainOf: (_) =>
+          const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+    );
   });
 
   group('C.18-1 host boots', () {
@@ -116,7 +120,7 @@ Future<bool> run() async {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<bool> run() async {
-  final answer = await sub.llm('probe');
+  final answer = await sub.send('probe', llmRoute: 'fast');
   return answer.containsKey('text');
 }
 ''');
@@ -200,7 +204,7 @@ Future<Map<String, Object?>> run(String question) async {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<String> run(String prompt) async {
-  final answer = await sub.llm(prompt);
+  final answer = await sub.send(prompt, llmRoute: 'fast');
   return answer['text'];
 }
 ''',
@@ -241,7 +245,7 @@ import '${BridgeLibraries.substrateLibrary}';
 
 Future<Map<String, Object?>> run(String question) async {
   final recall = await mem.recall(question);
-  final answer = await sub.llm('use the recalled context');
+  final answer = await sub.send('use the recalled context', llmRoute: 'fast');
   return {
     'recalledId': recall['nodes'][0]['id'],
     'answer': answer['text'],
@@ -262,7 +266,7 @@ Future<Map<String, Object?>> run(String question) async {
 }
 
 /// Builds a minimal completed `llm` stream: optional [chunks] (or a single
-/// [text]) followed by an `LlmStreamCompleted` so `sub.llm(...)` resolves.
+/// [text]) followed by an `LlmStreamCompleted` so `sub.send(...)` resolves.
 List<LlmStreamEvent> _completedStream({
   String? text,
   List<String>? chunks,

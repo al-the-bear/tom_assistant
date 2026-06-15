@@ -1,7 +1,7 @@
 // Turn-correlation stamping on SubstrateBridge (logging-spec §3 / §9 — the
 // "→ substrate" end of the `turnId` thread-through).
 //
-// When the engine binds a per-run [TurnContext] to the bridge, every `llm`
+// When the engine binds a per-run [TurnContext] to the bridge, every `send`
 // completion stamps the turn's `turnId` and the next `callSeq` onto the
 // outbound [LlmCall]. `turnId` + `callSeq` together uniquely name the call
 // (§3). With no turn bound (the shared template bridge, internal / free-time /
@@ -13,6 +13,14 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:test/test.dart';
 
+/// A trivial [RouteChainResolver] every `send` in this file routes over — the
+/// low-level `llm` method was retired (Phase 5, step 12), so the bridge's
+/// completion entry is now `send`, which selects a route by name and needs a
+/// resolver bound. The recording client ignores the chain; only its presence
+/// matters.
+List<RouteEntry> _fastRoute(String _) =>
+    const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')];
+
 void main() {
   late _RecordingSubstrate client;
 
@@ -20,8 +28,8 @@ void main() {
 
   group('SubstrateBridge turn stamping', () {
     test('with no turn bound the LlmCall carries no turnId / callSeq', () async {
-      final bridge = SubstrateBridge(client);
-      await bridge.llm('q');
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
+      await bridge.send('q', llmRoute: 'fast');
       expect(client.calls.single.turnId, isNull);
       expect(client.calls.single.callSeq, isNull);
     });
@@ -29,10 +37,11 @@ void main() {
     test('a bound turn stamps the turnId and a monotonic callSeq per llm call',
         () async {
       final turn = TurnContext(TurnId.generate());
-      final bridge = SubstrateBridge(client, turn: turn);
+      final bridge =
+          SubstrateBridge(client, routeChainOf: _fastRoute, turn: turn);
 
-      await bridge.llm('first');
-      await bridge.llm('second');
+      await bridge.send('first', llmRoute: 'fast');
+      await bridge.send('second', llmRoute: 'fast');
 
       expect(client.calls, hasLength(2));
       expect(client.calls[0].turnId, same(turn.turnId));
@@ -43,11 +52,12 @@ void main() {
 
     test('only llm calls consume a callSeq — embed does not', () async {
       final turn = TurnContext(TurnId.generate());
-      final bridge = SubstrateBridge(client, turn: turn);
+      final bridge =
+          SubstrateBridge(client, routeChainOf: _fastRoute, turn: turn);
 
-      await bridge.llm('a');
+      await bridge.send('a', llmRoute: 'fast');
       await bridge.embed('not a completion');
-      await bridge.llm('b');
+      await bridge.send('b', llmRoute: 'fast');
 
       final llmCalls = client.calls;
       expect(llmCalls, hasLength(2));
@@ -62,9 +72,10 @@ void main() {
     // provider in `sessionMode: brain` reads it.
     test('a turn with a brainSessionId stamps it onto LlmOptions', () async {
       final turn = TurnContext(TurnId.generate(), brainSessionId: 'tb-42');
-      final bridge = SubstrateBridge(client, turn: turn);
+      final bridge =
+          SubstrateBridge(client, routeChainOf: _fastRoute, turn: turn);
 
-      await bridge.llm('q');
+      await bridge.send('q', llmRoute: 'fast');
 
       expect(client.calls.single.options.brainSessionId, 'tb-42');
     });
@@ -72,9 +83,10 @@ void main() {
     test('a turn without a brainSessionId leaves LlmOptions.brainSessionId null',
         () async {
       final turn = TurnContext(TurnId.generate());
-      final bridge = SubstrateBridge(client, turn: turn);
+      final bridge =
+          SubstrateBridge(client, routeChainOf: _fastRoute, turn: turn);
 
-      await bridge.llm('q');
+      await bridge.send('q', llmRoute: 'fast');
 
       expect(client.calls.single.options.brainSessionId, isNull);
     });
@@ -82,7 +94,7 @@ void main() {
 }
 
 /// A `TomBrainSubstrateClient` that records every [LlmCall] it is handed and
-/// returns a trivial one-chunk completed stream so `llm` resolves cleanly.
+/// returns a trivial one-chunk completed stream so `send` resolves cleanly.
 class _RecordingSubstrate implements TomBrainSubstrateClient {
   final List<LlmCall> calls = <LlmCall>[];
 

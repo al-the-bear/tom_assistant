@@ -29,7 +29,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 import 'package:test/test.dart';
 
 /// A representative legit procedure: a header doc-comment plus a `run`
-/// entry point whose `requires` set (`recall`, `llm`, `persist`) is exactly
+/// entry point whose `requires` set (`recall`, `send`, `persist`) is exactly
 /// the bridged primitives the body calls.
 const String _legitSource = '''
 /// @procedure
@@ -38,10 +38,10 @@ const String _legitSource = '''
 /// summary: recall, answer, persist
 /// successCriterion: a streamed answer is delivered
 /// budget: { wallClockMs: 60000 }
-/// requires: [ recall, llm, persist ]
+/// requires: [ recall, send, persist ]
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
   final hits = await mem.recall(inputs.text, k: 8);
-  final answer = await sub.llm('Answer using: \${hits.summary}', role: 'assistant');
+  final answer = await sub.send('Answer using: \${hits.summary}', llmRoute: 'fast', role: 'assistant');
   await mem.persist(answer);
   return ProcedureResult.ok(answer);
 }
@@ -214,7 +214,7 @@ Future<ProcedureResult> handle(ProcedureInputs inputs) async {
     test('requires exactly matches the calls', () {
       expect(
         () => validator.validateRequires(
-          _header(requires: const ['recall', 'llm', 'persist']),
+          _header(requires: const ['recall', 'send', 'persist']),
           _legitSource,
         ),
         returnsNormally,
@@ -271,10 +271,10 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
 
   group('validateRequires — rejections', () {
     test('undeclared call', () {
-      // Body calls `persist` but only `recall` + `llm` are declared.
+      // Body calls `persist` but only `recall` + `send` are declared.
       _expectRequiresMismatch(
         () => validator.validateRequires(
-          _header(requires: const ['recall', 'llm']),
+          _header(requires: const ['recall', 'send']),
           _legitSource,
         ),
         RequiresMismatchKind.undeclaredCall,
@@ -286,7 +286,7 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
       // Declares `edge` but the body never calls it.
       _expectRequiresMismatch(
         () => validator.validateRequires(
-          _header(requires: const ['recall', 'llm', 'persist', 'edge']),
+          _header(requires: const ['recall', 'send', 'persist', 'edge']),
           _legitSource,
         ),
         RequiresMismatchKind.unusedRequire,
@@ -297,7 +297,7 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
     test('unknown primitive name', () {
       _expectRequiresMismatch(
         () => validator.validateRequires(
-          _header(requires: const ['recall', 'llm', 'persist', 'teleport']),
+          _header(requires: const ['recall', 'send', 'persist', 'teleport']),
           _legitSource,
         ),
         RequiresMismatchKind.unknownPrimitive,
@@ -310,13 +310,13 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
       // so declaring it is an unused requirement.
       const src = '''
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
-  final answer = await sub.llm('do not persist this', role: 'assistant');
+  final answer = await sub.send('do not persist this', llmRoute: 'fast', role: 'assistant');
   return ProcedureResult.ok(answer);
 }
 ''';
       _expectRequiresMismatch(
         () => validator.validateRequires(
-          _header(requires: const ['llm', 'persist']),
+          _header(requires: const ['send', 'persist']),
           src,
         ),
         RequiresMismatchKind.unusedRequire,
@@ -329,13 +329,13 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
       // code is real code, so it must be declared.
       const src = r'''
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
-  final answer = await sub.llm('hits: ${await mem.recall(inputs.text)}', role: 'a');
+  final answer = await sub.send('hits: ${await mem.recall(inputs.text)}', llmRoute: 'fast', role: 'a');
   return ProcedureResult.ok(answer);
 }
 ''';
       _expectRequiresMismatch(
         () => validator.validateRequires(
-          _header(requires: const ['llm']),
+          _header(requires: const ['send']),
           src,
         ),
         RequiresMismatchKind.undeclaredCall,
@@ -345,18 +345,18 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
 
     test('a member access on another receiver is not a primitive call', () {
       // `inputs.recall(...)` is a member call on `inputs`, not the `mem.recall`
-      // bridged primitive, so declaring `recall` would be unused (only `llm`
+      // bridged primitive, so declaring `recall` would be unused (only `send`
       // is actually called).
       const src = '''
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
   final extra = inputs.recall();
-  final answer = await sub.llm(extra, role: 'assistant');
+  final answer = await sub.send(extra, llmRoute: 'fast', role: 'assistant');
   return ProcedureResult.ok(answer);
 }
 ''';
       _expectRequiresMismatch(
         () => validator.validateRequires(
-          _header(requires: const ['llm', 'recall']),
+          _header(requires: const ['send', 'recall']),
           src,
         ),
         RequiresMismatchKind.unusedRequire,
@@ -374,8 +374,10 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
           {'mem.stackPush'});
       expect(BridgedPrimitiveCatalog.callTokensFor('propose_node_type'),
           {'mem.proposeNodeType'});
-      expect(BridgedPrimitiveCatalog.callTokensFor('llm'), {'sub.llm'});
-      // The scripted-LLM sugar is the bare `subLlm`, never the raw `sub.llm`.
+      expect(BridgedPrimitiveCatalog.callTokensFor('send'), {'sub.send'});
+      // The scripted-LLM sugar is the bare `subLlm`, never the raw `sub.llm`
+      // (the low-level `llm` method was retired in Phase 5, step 12; only the
+      // `sub.llm` *scripted sugar* canonical name survives).
       expect(BridgedPrimitiveCatalog.callTokensFor('sub.llm'), {'subLlm'});
       // Engine-native primitives stay bare top-level calls.
       expect(BridgedPrimitiveCatalog.callTokensFor('note'), {'note'});
@@ -383,7 +385,7 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
 
     test('isKnown covers memory, substrate, native and sugar', () {
       expect(BridgedPrimitiveCatalog.isKnown('recall'), isTrue);
-      expect(BridgedPrimitiveCatalog.isKnown('llm'), isTrue);
+      expect(BridgedPrimitiveCatalog.isKnown('send'), isTrue);
       expect(BridgedPrimitiveCatalog.isKnown('runProcedure'), isTrue);
       expect(BridgedPrimitiveCatalog.isKnown('think'), isTrue);
       expect(BridgedPrimitiveCatalog.isKnown('teleport'), isFalse);
@@ -407,7 +409,7 @@ Future<ProcedureResult> handle(ProcedureInputs inputs) async {
     test('validate attributes a requires failure to the id', () {
       expect(
         () => validator.validate(
-          _loaded(_legitSource, id: 'leaky', requires: const ['recall', 'llm']),
+          _loaded(_legitSource, id: 'leaky', requires: const ['recall', 'send']),
         ),
         throwsA(isA<ProcedureRequiresMismatch>()
             .having((e) => e.procedureId, 'procedureId', 'leaky')
@@ -418,9 +420,9 @@ Future<ProcedureResult> handle(ProcedureInputs inputs) async {
     test('validateAll passes a clean set', () {
       final set = [
         _loaded(_legitSource,
-            id: 'a', requires: const ['recall', 'llm', 'persist']),
+            id: 'a', requires: const ['recall', 'send', 'persist']),
         _loaded(_legitSource,
-            id: 'b', version: 2, requires: const ['recall', 'llm', 'persist']),
+            id: 'b', version: 2, requires: const ['recall', 'send', 'persist']),
       ];
       expect(() => validator.validateAll(set), returnsNormally);
     });
@@ -428,8 +430,8 @@ Future<ProcedureResult> handle(ProcedureInputs inputs) async {
     test('validateAll fails when one procedure is malformed', () {
       final set = [
         _loaded(_legitSource,
-            id: 'good', requires: const ['recall', 'llm', 'persist']),
-        _loaded(_legitSource, id: 'bad', requires: const ['recall', 'llm']),
+            id: 'good', requires: const ['recall', 'send', 'persist']),
+        _loaded(_legitSource, id: 'bad', requires: const ['recall', 'send']),
       ];
       expect(
         () => validator.validateAll(set),

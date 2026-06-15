@@ -43,7 +43,11 @@ void main() {
     memoryClient = _RecordingMemoryClient(stacks);
     substrateClient = _RecordingSubstrateClient();
     memoryBridge = MemoryBridge(memoryClient);
-    substrateBridge = SubstrateBridge(substrateClient);
+    substrateBridge = SubstrateBridge(
+      substrateClient,
+      routeChainOf: (_) =>
+          const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+    );
     interpreter = D4rt();
     BrainBridges.register(interpreter);
   });
@@ -102,7 +106,7 @@ Future<Map<String, Object?>> main(MemoryBridge mem) async {
       expect(out['bm25Candidates'], 4);
     });
 
-    test('a script calls SubstrateBridge.llm and reads the answer text',
+    test('a script calls SubstrateBridge.send and reads the answer text',
         () async {
       substrateClient.streamEvents = <LlmStreamEvent>[
         const LlmStreamStarted(
@@ -132,7 +136,7 @@ Future<Map<String, Object?>> main(MemoryBridge mem) async {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Map<String, Object?>> main(SubstrateBridge sub) async {
-  final answer = await sub.llm('draft the answer');
+  final answer = await sub.send('draft the answer', llmRoute: 'fast');
   return {
     'text': answer['text'],
     'provider': answer['report']['providerId'],
@@ -197,7 +201,7 @@ import '${BridgeLibraries.substrateLibrary}';
 
 Future<Map<String, Object?>> main(MemoryBridge mem, SubstrateBridge sub) async {
   final recall = await mem.recall('prior?');
-  final answer = await sub.llm('use the recalled context');
+  final answer = await sub.send('use the recalled context', llmRoute: 'fast');
   return {
     'recalledId': recall['nodes'][0]['id'],
     'answer': answer['text'],

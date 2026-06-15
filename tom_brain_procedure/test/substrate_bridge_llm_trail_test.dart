@@ -2,9 +2,9 @@
 // §10 step #4 — the "→ writer" end of the seam).
 //
 // The §5.2 raw trail needs the **wire body** the provider saw plus the answer
-// and the report. Those three only coexist inside `SubstrateBridge.llm`, which
+// and the report. Those three only coexist inside `SubstrateBridge.send`, which
 // drains the substrate stream. When the engine binds an `onLlmTrail` observer,
-// the bridge fires exactly one [LlmCallObservation] per completed `llm` call,
+// the bridge fires exactly one [LlmCallObservation] per completed `send` call,
 // carrying the captured wire, the concatenated answer, the report, and the
 // turn-correlation stamp. With no observer bound the bridge stays silent and
 // the wire never escapes (PE-1 — it is also never on the d4rt-facing result).
@@ -15,6 +15,14 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:test/test.dart';
 
+/// A trivial [RouteChainResolver] every `send` in this file routes over — the
+/// low-level `llm` method was retired (Phase 5, step 12), so the bridge's
+/// completion entry is now `send`, which selects a route by name and needs a
+/// resolver bound. The recording client ignores the chain; only its presence
+/// matters.
+List<RouteEntry> _fastRoute(String _) =>
+    const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')];
+
 void main() {
   late _RecordingSubstrate client;
 
@@ -23,8 +31,8 @@ void main() {
   group('SubstrateBridge raw-LLM-trail observation (§5.2 / §10 step #4)', () {
     test('with no observer bound the bridge fires nothing and answers cleanly',
         () async {
-      final bridge = SubstrateBridge(client);
-      final result = await bridge.llm('q');
+      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
+      final result = await bridge.send('q', llmRoute: 'fast');
       // The completion still works; the wire body is not on the d4rt result.
       expect(result['text'], 'hello world');
       expect(result.containsKey('wire'), isFalse,
@@ -37,11 +45,12 @@ void main() {
       final turn = TurnContext(TurnId.generate());
       final bridge = SubstrateBridge(
         client,
+        routeChainOf: _fastRoute,
         turn: turn,
         onLlmTrail: observed.add,
       );
 
-      await bridge.llm('q', role: 'assistant_to_user');
+      await bridge.send('q', llmRoute: 'fast', role: 'assistant_to_user');
 
       expect(observed, hasLength(1));
       final obs = observed.single;
@@ -66,13 +75,14 @@ void main() {
       final turn = TurnContext(TurnId.generate());
       final bridge = SubstrateBridge(
         client,
+        routeChainOf: _fastRoute,
         turn: turn,
         onLlmTrail: observed.add,
       );
 
-      await bridge.llm('first');
+      await bridge.send('first', llmRoute: 'fast');
       await bridge.embed('not a completion');
-      await bridge.llm('second');
+      await bridge.send('second', llmRoute: 'fast');
 
       expect(observed, hasLength(2),
           reason: 'embed does not produce an llm observation');
@@ -84,10 +94,11 @@ void main() {
         () async {
       final bridge = SubstrateBridge(
         client,
+        routeChainOf: _fastRoute,
         onLlmTrail: (_) => throw StateError('writer blew up'),
       );
 
-      final result = await bridge.llm('q');
+      final result = await bridge.send('q', llmRoute: 'fast');
       expect(result['text'], 'hello world');
     });
   });

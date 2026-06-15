@@ -456,22 +456,6 @@ BridgedClass _createSubstrateBridgeBridge() {
       'procedureRunner': (visitor, target) => D4.validateTarget<$tom_brain_procedure_7.SubstrateBridge>(target, 'SubstrateBridge').procedureRunner,
     },
     methods: {
-      'llm': (visitor, target, positional, named, typeArgs) {
-        final t = D4.validateTarget<$tom_brain_procedure_7.SubstrateBridge>(target, 'SubstrateBridge');
-        D4.requireMinArgs(positional, 1, 'llm');
-        final prompt = D4.getRequiredArg<String>(positional, 0, 'prompt', 'llm');
-        final tools = D4.coerceListOrNull<Object?>(named['tools'], 'tools');
-        final budget = D4.coerceMapOrNull<String, Object?>(named['budget'], 'budget');
-        final channel = D4.getOptionalNamedArg<String?>(named, 'channel');
-        if (!named.containsKey('role')) {
-          return t.llm(prompt, tools: tools, budget: budget, channel: channel);
-        }
-        if (named.containsKey('role')) {
-          final role = D4.getRequiredNamedArg<String>(named, 'role', 'llm');
-          return t.llm(prompt, tools: tools, budget: budget, channel: channel, role: role);
-        }
-        throw StateError('Unreachable: all named parameter combinations should be covered');
-      },
       'send': (visitor, target, positional, named, typeArgs) {
         final t = D4.validateTarget<$tom_brain_procedure_7.SubstrateBridge>(target, 'SubstrateBridge');
         D4.requireMinArgs(positional, 1, 'send');
@@ -548,7 +532,6 @@ BridgedClass _createSubstrateBridgeBridge() {
       '': 'SubstrateBridge(TomBrainSubstrateClient client, {BridgeCallRecorder? onCall, SubstrateTokenSink? onToken, BudgetLedger? budget, SubstrateNoteSink? onNote, SubstrateThinkingSink? onThinking, ToolProtocolResolver? toolProtocolOf, RouteChainResolver? routeChainOf, PromptResolver? promptResolver, ProcedureRunner? runProcedure, TurnContext? turn, LlmTrailObserver? onLlmTrail})',
     },
     methodSignatures: {
-      'llm': 'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, List<Object?>? tools, Map<String, Object?>? budget, String? channel})',
       'send': 'Future<Map<String, Object?>> send(String transcript, {required String llmRoute, String role = defaultRole, List<Object?>? tools, double? temperature, int? maxOutputTokens, Map<String, Object?>? responseFormat, String? channel})',
       'run': 'Future<Map<String, Object?>> run(String promptId, {Map<String, Object?> inputs = const <String, Object?>{}})',
       'render': 'Future<String> render(String promptId, {Map<String, Object?> inputs = const <String, Object?>{}})',

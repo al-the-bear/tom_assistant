@@ -49,7 +49,6 @@ void main() {
   ProcedureEngine engineFor(
     Iterable<LoadedProcedure> procedures, {
     ProcedureTreeSink? procedureTreeSink,
-    bool withRouteResolver = false,
   }) =>
       ProcedureEngine(
         resolver: ProcedureResolver(procedures),
@@ -58,12 +57,11 @@ void main() {
         substrateBridge: SubstrateBridge(
           substrate,
           // `sub.send` selects a route by name (§ 7.4), so it needs a
-          // RouteChainResolver bound; without one every `send` throws. The
-          // tool_loop path uses `send`, so the tree test for it does too.
-          routeChainOf: withRouteResolver
-              ? (_) =>
-                  const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')]
-              : null,
+          // RouteChainResolver bound; without one every `send` throws. Every
+          // procedure in this file completes through `send`, so the resolver
+          // is always bound.
+          routeChainOf: (_) =>
+              const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
         ),
         now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
         procedureTreeSink: procedureTreeSink,
@@ -83,9 +81,9 @@ import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {
   await mem.recall('q', modes: ['bm25'], k: 4);
-  await sub.llm('parent', role: 'recaller');
+  await sub.send('parent', llmRoute: 'fast', role: 'recaller');
   await runProcedure('child_v1', inputs);
-  await sub.llm('final', role: 'assistant_to_user');
+  await sub.send('final', llmRoute: 'fast', role: 'assistant_to_user');
   return 1;
 }
 ''',
@@ -96,7 +94,7 @@ Future<Object?> run(inputs) async {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
-  await sub.llm('child', role: 'evaluator');
+  await sub.send('child', llmRoute: 'fast', role: 'evaluator');
   return {'v': 1};
 }
 ''',
@@ -118,9 +116,9 @@ import '${BridgeLibraries.toolLibrary}';
 
 Future<Object?> run(inputs) async {
   await tool.list();
-  await sub.llm('first', role: 'recaller');
+  await sub.send('first', llmRoute: 'fast', role: 'recaller');
   await tool.invoke('todo.add', {'text': 'hello world'});
-  await sub.llm('second', role: 'assistant_to_user');
+  await sub.send('second', llmRoute: 'fast', role: 'assistant_to_user');
   await tool.invoke('does.not.exist', {});
   return 1;
 }
@@ -150,13 +148,12 @@ Future<Object?> run(inputs) async {
 
   group('ProcedureEngine combined-tree send linkage (§5.7)', () {
     test(
-        'a sub.send node carries an llm ref just like sub.llm — the tool_loop '
+        'a sub.send node carries an llm ref — the tool_loop '
         'model call renders as a drill-into llm line, not a bare send', () async {
       final records = <ProcedureTreeRecord>[];
       final engine = engineFor(
         sendTreeProcedures(),
         procedureTreeSink: records.add,
-        withRouteResolver: true,
       );
 
       final turnId = TurnId.generate();
@@ -200,10 +197,10 @@ Future<Object?> run(inputs) async {
 
       expect(records, hasLength(1));
       final top = records.single;
-      // llm, then the todo.add tool node, then llm, then the failed tool node.
-      // The `tool.list` enumeration contributes nothing.
+      // send, then the todo.add tool node, then send, then the failed tool
+      // node. The `tool.list` enumeration contributes nothing.
       expect(top.nodes.map(_kindOf).toList(),
-          <String>['llm', 'tool', 'llm', 'tool'],
+          <String>['send', 'tool', 'send', 'tool'],
           reason: 'tool nodes spliced at call positions; list omitted');
 
       final invoked = top.nodes[1] as ProcedureToolNode;
@@ -252,12 +249,12 @@ Future<Object?> run(inputs) async {
       expect(top.depth, 1);
       expect(top.status, TrailOutcomeStatus.accepted);
 
-      // The nodes are interleaved in trail order: recall, the recaller llm,
-      // the spliced subtree, then the assistant llm — the subtree sits exactly
+      // The nodes are interleaved in trail order: recall, the recaller send,
+      // the spliced subtree, then the assistant send — the subtree sits exactly
       // where `runProcedure` was issued.
       expect(top.nodes.map(_kindOf).toList(),
-          <String>['recall', 'llm', 'subtree', 'llm'],
-          reason: 'subtree spliced between the two parent llm calls');
+          <String>['recall', 'send', 'subtree', 'send'],
+          reason: 'subtree spliced between the two parent send calls');
 
       final recall = top.nodes[0] as ProcedurePrimitiveNode;
       expect(recall.primitive, 'recall');
@@ -266,7 +263,7 @@ Future<Object?> run(inputs) async {
       expect((recall.result['nodes'] as List).length, 1);
 
       final recaller = top.nodes[1] as ProcedurePrimitiveNode;
-      expect(recaller.primitive, 'llm');
+      expect(recaller.primitive, 'send');
       expect(recaller.llm, isNotNull);
       expect(recaller.llm!.callType, 'recaller');
       expect(recaller.llm!.turnId, turnId.value);
@@ -278,15 +275,15 @@ Future<Object?> run(inputs) async {
           reason: 'the nested record points back at the top-level run');
       expect(subtree.turnId, turnId.value);
       expect(subtree.depth, 2);
-      // The child's single node is its evaluator llm call (callSeq advanced
+      // The child's single node is its evaluator send call (callSeq advanced
       // across the run boundary).
-      expect(subtree.nodes.map(_kindOf).toList(), <String>['llm']);
+      expect(subtree.nodes.map(_kindOf).toList(), <String>['send']);
       final childLlm = subtree.nodes.single as ProcedurePrimitiveNode;
       expect(childLlm.llm!.callType, 'evaluator');
       expect(childLlm.llm!.callSeq, 2);
 
       final assistant = top.nodes[3] as ProcedurePrimitiveNode;
-      expect(assistant.primitive, 'llm');
+      expect(assistant.primitive, 'send');
       expect(assistant.llm!.callType, 'assistant_to_user');
       expect(assistant.llm!.callSeq, 3,
           reason: 'third llm of the turn — counter spans the subprocedure');
@@ -340,8 +337,7 @@ Future<Object?> run(inputs) async {
 }
 
 String _kindOf(ProcedureTreeNode node) => switch (node) {
-      ProcedurePrimitiveNode(:final primitive) =>
-        primitive == 'llm' ? 'llm' : primitive,
+      ProcedurePrimitiveNode(:final primitive) => primitive,
       ProcedureSubtreeNode() => 'subtree',
       ProcedureToolNode() => 'tool',
       ProcedureNoteNode() => 'note',

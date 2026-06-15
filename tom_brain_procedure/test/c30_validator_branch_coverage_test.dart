@@ -76,10 +76,10 @@ const String _cleanSource = '''
 /// summary: recall, answer, persist
 /// successCriterion: a streamed answer is delivered
 /// budget: { wallClockMs: 60000 }
-/// requires: [ recall, llm, persist ]
+/// requires: [ recall, send, persist ]
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
   final hits = await mem.recall(inputs.text, k: 8);
-  final answer = await sub.llm('Answer using: \${hits.summary}', role: 'assistant');
+  final answer = await sub.send('Answer using: \${hits.summary}', llmRoute: 'fast', role: 'assistant');
   await mem.persist(answer);
   return ProcedureResult.ok(answer);
 }
@@ -463,7 +463,7 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
 
     test('a clean procedure clears all three layers', () {
       final set = [
-        _loaded(source: _cleanSource, requires: const ['recall', 'llm', 'persist']),
+        _loaded(source: _cleanSource, requires: const ['recall', 'send', 'persist']),
       ];
       expect(() => gate(set), returnsNormally);
     });
@@ -488,7 +488,7 @@ Future<ProcedureResult> run(ProcedureInputs inputs) async {
       final set = [
         _loaded(
           source: "import 'dart:io';\n$_cleanSource",
-          requires: const ['recall', 'llm', 'persist'],
+          requires: const ['recall', 'send', 'persist'],
         ),
       ];
       expect(

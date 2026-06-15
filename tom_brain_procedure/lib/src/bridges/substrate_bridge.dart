@@ -28,8 +28,10 @@
 // ── Anchor invariant (PE-7) ─────────────────────────────────────────
 //
 // Every prompt the machinery issues carries the assistant-dedication
-// anchor because `llm(...)` is the *only* completion path and it always
-// routes through the substrate client. The bridge has no raw-completion
+// anchor because the shared `_completeOnce` core is the *only* completion
+// path and it always routes through the substrate client (`send` and the
+// internal retrieval-role completion both feed it). The bridge has no
+// raw-completion
 // escape hatch: it cannot supply a pre-assembled wire prompt — it can
 // only name a `role` and supply `inputs`, and the substrate prepends
 // the anchor at assembly time (substrate invariant 1, B.46). The bridge
@@ -92,10 +94,14 @@ import 'substrate_run_seams.dart';
 ///
 /// Mirrors the substrate rows of
 /// `tom_brain_procedure_specification.md` § 5.1:
-/// `llm(prompt, {role, budget})`, `embed(text)`,
-/// `search(query, {provider, k})`, `fetch(url, {budget})`. Each method
-/// delegates to the wrapped [TomBrainSubstrateClient] and converts
-/// between d4rt primitives and the substrate domain types.
+/// `send(transcript, {llmRoute, role})`, `run(promptId, {inputs})`,
+/// `embed(text)`, `search(query, {provider, k})`, `fetch(url, {budget})`.
+/// `send` and `run` are the only substrate completion entry points — the
+/// low-level `llm` method was retired (prompt_configuration.md Phase 5,
+/// step 12): every completion now routes by an explicit named route
+/// (`send`) or a registered prompt id (`run`). Each method delegates to the
+/// wrapped [TomBrainSubstrateClient] and converts between d4rt primitives
+/// and the substrate domain types.
 class SubstrateBridge {
   /// The interface-boundary substrate client every method delegates to
   /// (PE-10). Injected by the host (C.16).
@@ -112,7 +118,7 @@ class SubstrateBridge {
   /// bridge and on every internal / free-time run — those keep the buffered
   /// path. The engine binds a per-run sink only for an **external/user**
   /// request (the path the spec § 11 step 2 mandates streaming for); when a
-  /// sink is bound, [llm] forwards each generated chunk to it as it arrives
+  /// sink is bound, [send] forwards each generated chunk to it as it arrives
   /// rather than only concatenating the answer at the end. Like [_onCall],
   /// per-run binding is what makes streaming concurrency-safe: two runs that
   /// share the same client each carry their own sink. Not part of the
@@ -166,7 +172,7 @@ class SubstrateBridge {
 
   /// Resolves an LLM route *name* to the `List<RouteEntry>` chain [send]
   /// dispatches over (§7.4 / §8). `null` ⇒ [send] cannot route and throws a
-  /// [StateError]; [llm] is unaffected (it routes by role). The host binds a
+  /// [StateError]; [send] is unaffected (it routes by role). The host binds a
   /// resolver backed by the cognition config's `llm:` route table at boot
   /// wiring (increment 5 step 5d); this constructor hook is only the seam, the
   /// `ToolProtocolResolver` pattern applied to route selection. Not part of the
@@ -175,7 +181,7 @@ class SubstrateBridge {
 
   /// Resolves a registered prompt *id* to its inherited settings + loaded,
   /// placeholder-resolved template body (§7.4 / §7.1). `null` ⇒ [run] cannot
-  /// resolve a prompt and throws a [StateError]; [llm] / [send] are unaffected
+  /// resolve a prompt and throws a [StateError]; [send] is unaffected
   /// (they take an already-assembled transcript, not an id). The host binds a
   /// resolver backed by the cognition config's prompt registry at boot wiring
   /// (increment 5 step 5d); this constructor hook is only the seam, the
@@ -200,7 +206,7 @@ class SubstrateBridge {
   /// and on every internal / free-time / dream run — those issue completions
   /// outside a user turn, so their [LlmCall]s carry no `turnId` / `callSeq`. The
   /// engine binds a per-run context built from the turn's id when the
-  /// invocation supplies one; each [llm] completion then stamps the turn's
+  /// invocation supplies one; each [send] completion then stamps the turn's
   /// `turnId` and the next per-turn `callSeq` onto the outbound [LlmCall]. Like
   /// [_onCall] / [_onToken], the binding is per-run so concurrent runs that
   /// share the client each carry their own turn; but unlike them the *counter*
@@ -224,7 +230,7 @@ class SubstrateBridge {
   /// Wraps [client]. The host constructs this natively and registers the
   /// instance with the d4rt runtime. [onCall], when supplied, records each
   /// completed primitive call against the issuing run (E.3.2). [onToken], when
-  /// supplied, receives each [llm] chunk's text delta live as it streams
+  /// supplied, receives each [send] chunk's text delta live as it streams
   /// (P1.3 #7 — the external/user-request path). [budget], when supplied,
   /// enforces the run's procedure-header budget (PE-8). [onNote], when
   /// supplied, receives the low-level tool-protocol diagnostics
@@ -232,10 +238,10 @@ class SubstrateBridge {
   /// provider's wire tool protocol (defaulting to [ToolProtocol.openai]) —
   /// both Extension F step 10. [routeChainOf], when supplied, resolves an LLM
   /// route name to the chain [send] dispatches over (§7.4); without it [send]
-  /// throws and [llm] is unaffected. [turn], when supplied, stamps the turn's
-  /// `turnId` and an incrementing `callSeq` onto every [llm] call (logging-spec
+  /// throws and [send] is unaffected. [turn], when supplied, stamps the turn's
+  /// `turnId` and an incrementing `callSeq` onto every [send] call (logging-spec
   /// §3 / §9). [onLlmTrail], when supplied, receives one [LlmCallObservation]
-  /// per completed [llm] call (wire body + answer + report) so a downstream
+  /// per completed [send] call (wire body + answer + report) so a downstream
   /// raw-LLM-trail writer can serialise the §5.2 `llm/<role>/…raw.json` file
   /// (logging-spec §10 step #4).
   SubstrateBridge(
@@ -325,11 +331,11 @@ class SubstrateBridge {
   }
 
   /// The role the prototype's user-facing answer step uses (§ 5.1
-  /// step "answer"). The default for [llm] when the caller does not
+  /// step "answer"). The default for [send] when the caller does not
   /// name a role.
   static const String defaultRole = 'assistant_to_user';
 
-  /// The budget [llm] grants a call when the caller passes no `budget`
+  /// The budget [send] grants a call when the caller passes no `budget`
   /// map. Matches the procedure-header example in
   /// `tom_brain_procedure_specification.md` § 4 — generous
   /// enough that the single-shot prototype never trips it. The engine's
@@ -343,116 +349,51 @@ class SubstrateBridge {
         memoryWrites: 1000000,
       );
 
-  // ── llm ───────────────────────────────────────────────────────────
+  // ── send ──────────────────────────────────────────────────────────
 
-  /// Runs an LLM completion through the substrate and returns the
-  /// generated text, any proposed tool calls, and the call report.
+  /// Runs one completion over an **explicitly named LLM route** (§7.4) and
+  /// returns `{text, toolCalls, unresolvedToolCall, report}` — the uniform
+  /// completion shape every substrate entry point yields.
   ///
-  /// [prompt] is supplied to the role template as the `prompt` input
-  /// (Q-C.13.3); the bridge never supplies a raw wire prompt, so the
-  /// substrate's anchor injection (PE-7) cannot be bypassed. [role]
-  /// names the role-registry key and defaults to [defaultRole]. [budget]
-  /// is an optional primitive map (`wallClockMs`, `tokenSpend`,
-  /// `toolCalls`, `memoryWrites`); when omitted, [defaultBudget]
-  /// applies.
+  /// `send` is the low-level completion entry of the prompt-configuration
+  /// routing seam: the `llm:` setting selects an LLM route by *name* (§8), and
+  /// `send` dispatches over that route's resolved chain. [llmRoute] is resolved
+  /// to a `List<RouteEntry>` by the injected [RouteChainResolver]
+  /// ([_routeChainOf]); the resolved chain rides onto [LlmCall.routeChain] so
+  /// the substrate routes over it (substrate §7.4 seam). The [role] still
+  /// assembles the wire prompt — persona + anchor + provenance — so route
+  /// selection is the only thing decoupled from the role and the anchor
+  /// invariant (PE-7) is preserved unchanged.
   ///
-  /// [tools] is an optional tool catalogue in the `tool.list` wire shape —
-  /// a list of `{name, description?, input_schema?}` maps (Extension F
-  /// step 10, § 21.1). When supplied, it rides onto [LlmOptions.toolCatalogue]
-  /// so the role may propose tool calls. A malformed entry (missing `name`,
-  /// non-map entry, wrong field types) surfaces a located [FormatException]
-  /// (PE-1) — d4rt is an untrusted boundary.
-  ///
-  /// [channel] declares where this completion's text streams (§ 9.2 Todo 6):
-  /// `'answer'` (the channel the user reads) or `'thinking'` (an out-of-band
-  /// notice channel). When omitted it defaults by [role] — a deliberation role
-  /// (`analyser` / `sub_thinker` / `evaluator`) streams to thinking, every
-  /// other role (including [defaultRole]) to the answer channel. A tools-bearing
-  /// call is buffered and routed at completion regardless of channel: a
-  /// resolved tool call (the model *working*) always streams to thinking so its
-  /// `call:NAME{…}` text never reaches the answer; a tools-bearing plain answer
-  /// on the answer channel is left for the body to deliver via `emit`.
+  /// [transcript] is the prompt body (the role template's `prompt` input).
+  /// [tools] is the optional tool catalogue in the `tool.list` wire shape — a
+  /// list of `{name, description?, input_schema?}` maps (§ 21.1); a malformed
+  /// entry surfaces a located [FormatException] (PE-1). [temperature] /
+  /// [maxOutputTokens] / [responseFormat] ride onto [LlmOptions] — `send` is
+  /// where a procedure pins decoding knobs a role answer would otherwise leave
+  /// at provider/role defaults. [channel] forces the stream channel (§9.2):
+  /// `null` defaults by [role] (a deliberation role streams to `thinking`,
+  /// every other role to `answer`), `'thinking'` routes the completion to the
+  /// out-of-band channel so it never reaches the user-visible answer (the lever
+  /// `sub.run` threads from a prompt's `channel:` setting).
   ///
   /// The returned `toolCalls` is uniform regardless of provider (Q-F.4): the
   /// substrate's wire protocol is hidden behind the resolved provider's
   /// [ToolProtocol] (selected by the injected [ToolProtocolResolver],
-  /// defaulting to [ToolProtocol.openai]):
-  ///
-  ///   - [ToolProtocol.openai] — the provider emits native
-  ///     [LlmStreamToolCallProposed] events; they are collected verbatim into
-  ///     the uniform shape.
-  ///   - [ToolProtocol.jsonText] — a non-tool-calling model emits a simple
-  ///     JSON tool-call object (`{"tool": …, "arguments": {…}}`, optionally
-  ///     markdown-fenced) in the completion text; it is parsed into the *same*
-  ///     uniform shape. A completion that is plain prose yields an empty
-  ///     `toolCalls`; a malformed JSON tool-call object yields an empty
-  ///     `toolCalls` plus an `llm.toolcall.parse.failed` note, and the text
-  ///     falls through as the no-tool answer.
-  ///
-  /// This is the *only* widening of the low-level surface; it adds no turn
-  /// loop — that lives entirely in `call_llm_v1` (step 11).
-  ///
-  /// Returns `{'text': …, 'toolCalls': [{id, name, arguments}…],
-  /// 'unresolvedToolCall': bool, 'report': {...}}` — `text` is the concatenated
-  /// answer, `toolCalls` is empty when none, `unresolvedToolCall` is `true` only
-  /// when the text looked like a tool call but resolved to zero executable calls
-  /// (§ 9.1 Todo 8 — the answer loop's signal to feed an error turn back), and
-  /// the report mirrors [LlmCallReport]. Throws [LlmCompletionFailure] when the
-  /// stream terminates with [LlmStreamFailed].
-  // `async` so a synchronous validation throw from `_buildToolCatalogue`
-  // (e.g. a tool entry missing its `name`) surfaces as a Future rejection
-  // rather than escaping the call synchronously — the d4rt bridge invokes and
-  // awaits this method, so its error contract is "the returned Future fails".
-  Future<Map<String, Object?>> llm(
-    String prompt, {
-    String role = defaultRole,
-    List<Object?>? tools,
-    Map<String, Object?>? budget,
-    String? channel,
-  }) async =>
-      _completeOnce(
-        primitive: 'llm',
-        recordInput: <String, Object?>{'prompt': prompt, 'role': role},
-        prompt: prompt,
-        role: role,
-        options: LlmOptions(toolCatalogue: _buildToolCatalogue(tools)),
-        budget: budget,
-        channel: channel,
-      );
-
-  // ── send ──────────────────────────────────────────────────────────
-
-  /// Runs one completion over an **explicitly named LLM route** (§7.4) and
-  /// returns the same `{text, toolCalls, unresolvedToolCall, report}` shape as
-  /// [llm].
-  ///
-  /// This is the low-level half of the prompt-configuration routing seam: the
-  /// `llm:` setting selects an LLM route by *name* (§8), and `send` dispatches
-  /// over that route's chain instead of the role-keyed chain [llm] uses.
-  /// [llmRoute] is resolved to a `List<RouteEntry>` by the injected
-  /// [RouteChainResolver] ([_routeChainOf]); the resolved chain rides onto
-  /// [LlmCall.routeChain] so the substrate routes over it (substrate §7.4
-  /// seam). The [role] still assembles the wire prompt — persona + anchor +
-  /// provenance — exactly as for [llm]; only *route selection* moves off the
-  /// role, so the anchor invariant (PE-7) is preserved unchanged.
-  ///
-  /// [transcript] is the prompt body (the role template's `prompt` input).
-  /// [tools] is the optional tool catalogue (same `tool.list` wire shape as
-  /// [llm]). [temperature] / [maxOutputTokens] / [responseFormat] ride onto
-  /// [LlmOptions] — `send` is where a procedure pins decoding knobs a plain
-  /// `llm` answer leaves at provider/role defaults. [channel] forces the stream
-  /// channel (§9.2): `null` defaults by [role], `'thinking'` routes the
-  /// completion to the out-of-band channel so it never reaches the user-visible
-  /// answer (the lever `sub.run` threads from a prompt's `channel:` setting).
+  /// defaulting to [ToolProtocol.openai]). A non-tool-calling model emitting a
+  /// markdown-fenced JSON tool-call object is parsed into the same shape; a
+  /// malformed object yields an empty `toolCalls` plus an
+  /// `llm.toolcall.parse.failed` note and the text falls through as the
+  /// no-tool answer.
   ///
   /// Throws [StateError] when no [RouteChainResolver] is bound (a wiring bug —
   /// `send` cannot route without one). A resolver that does not know [llmRoute]
   /// throws its own error; an empty resolved chain surfaces the substrate's
   /// `EmptyRouteChain`.
-  // `async` for the same reason as [llm]: a synchronous validation throw (an
-  // unbound `RouteChainResolver`, or a malformed tool entry from
-  // `_buildToolCatalogue`) must surface as a Future rejection, since the d4rt
-  // bridge awaits this method.
+  // `async` so a synchronous validation throw (an unbound [RouteChainResolver],
+  // or a malformed tool entry from `_buildToolCatalogue`) surfaces as a Future
+  // rejection rather than escaping synchronously — the d4rt bridge awaits this
+  // method, so its error contract is "the returned Future fails".
   Future<Map<String, Object?>> send(
     String transcript, {
     required String llmRoute,
@@ -710,17 +651,18 @@ class SubstrateBridge {
 
   // ── shared completion core ─────────────────────────────────────────
 
-  /// The build-and-drain core shared by [llm] and [send].
+  /// The build-and-drain core shared by [send] and [retrievalRole].
   ///
-  /// Both primitives issue exactly one substrate completion and return the
+  /// Both callers issue exactly one substrate completion and return the
   /// uniform `{text, toolCalls, unresolvedToolCall, report}` map; they differ
-  /// only in *how the route is chosen*. [llm] routes by [role] (leaving
-  /// [routeChain] null so the substrate consults `roleRoutes[role]`); [send]
-  /// routes over the explicit [routeChain] resolved from a route name. Every
-  /// other concern — anchor-preserving role assembly, the budget gate / trail
-  /// record (via [_record]), per-call channel routing (§9.2), tool-call
-  /// resolution (§9.1), turn correlation, and the raw-LLM-trail observation —
-  /// is identical, so it lives here once rather than duplicated across the two.
+  /// only in *how the route is chosen*. A role-keyed completion (the path
+  /// [retrievalRole] takes) leaves [routeChain] null so the substrate consults
+  /// `roleRoutes[role]`; [send] routes over the explicit [routeChain] resolved
+  /// from a route name. Every other concern — anchor-preserving role assembly,
+  /// the budget gate / trail record (via [_record]), per-call channel routing
+  /// (§9.2), tool-call resolution (§9.1), turn correlation, and the
+  /// raw-LLM-trail observation — is identical, so it lives here once rather
+  /// than duplicated across callers.
   ///
   /// [primitive] is the recorder/ledger name (`'llm'` or `'send'` — both
   /// charged as llm calls, §8 accountant). [recordInput] is the argument map
@@ -962,7 +904,7 @@ class SubstrateBridge {
   ///
   /// The `unresolvedAttempt` flag is the § 9.1 Todo 8 guard signal: the answer
   /// loop reads it to feed an error turn back instead of returning the raw
-  /// `call:NAME{…}` text as the user's answer, and [llm] routes that text to the
+  /// `call:NAME{…}` text as the user's answer, and [send] routes that text to the
   /// thinking channel (never the answer) at completion.
   Future<_ResolvedToolCalls> _resolveToolCalls(
     ToolProtocol protocol,
@@ -1112,9 +1054,10 @@ class SubstrateBridge {
   /// `hypothesis_writer`, `query_term_writer`, `category_selector`,
   /// `retrieval_reranker`, `profile_selector`); [prompt] is the role input.
   /// The role is asked to answer with a JSON object matching its schema; this
-  /// method routes through [llm] (so the anchor and budget gate still apply),
-  /// reads the completion text, `jsonDecode`s it, and lifts it into the role's
-  /// typed shape via `parseRetrievalRoleOutput`.
+  /// method runs one role-keyed completion through the shared [_completeOnce]
+  /// core (so the anchor and budget gate still apply, charged under the `llm`
+  /// effort class), reads the completion text, `jsonDecode`s it, and lifts it
+  /// into the role's typed shape via `parseRetrievalRoleOutput`.
   ///
   /// Returns a primitive map the conductor / `recall_*` procedures consume:
   ///
@@ -1135,7 +1078,14 @@ class SubstrateBridge {
     String prompt, {
     Map<String, Object?>? budget,
   }) async {
-    final completion = await llm(prompt, role: roleId, budget: budget);
+    final completion = await _completeOnce(
+      primitive: 'llm',
+      recordInput: <String, Object?>{'prompt': prompt, 'role': roleId},
+      prompt: prompt,
+      role: roleId,
+      options: LlmOptions(toolCatalogue: _buildToolCatalogue(null)),
+      budget: budget,
+    );
     final text = completion['text'];
     if (text is! String) {
       return _retrievalDegraded('role "$roleId" produced no text');

@@ -52,7 +52,11 @@ void main() {
         resolver: ProcedureResolver(procedures),
         memory: memory,
         memoryBridge: MemoryBridge(memory),
-        substrateBridge: SubstrateBridge(substrate),
+        substrateBridge: SubstrateBridge(
+          substrate,
+          routeChainOf: (_) =>
+              const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+        ),
         now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
         memoryAccessSink: memoryAccessSink,
       );
@@ -66,7 +70,7 @@ import '${BridgeLibraries.substrateLibrary}';
 import '${BridgeLibraries.memoryLibrary}';
 
 Future<Object?> run(inputs) async {
-  await sub.llm('hello');
+  await sub.send('hello', llmRoute: 'fast');
   await mem.recall('q', modes: ['bm25'], k: 4);
   final id = await mem.persist('Conclusion', {'text': 'x'}, producer: 'p');
   await mem.stackPush('recent', id, priority: 1.0, producer: 'p');

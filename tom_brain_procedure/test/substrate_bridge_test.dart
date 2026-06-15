@@ -18,13 +18,20 @@ import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:test/test.dart';
 
+/// A trivial [RouteChainResolver] every `send` in this file routes over — the
+/// low-level `llm` method was retired (Phase 5, step 12), so the bridge's
+/// completion entry is now `send`, which selects a route by name and needs a
+/// resolver bound. The fake client ignores the chain; only its presence matters.
+List<RouteEntry> _fastRoute(String _) =>
+    const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')];
+
 void main() {
   late _FakeSubstrateClient client;
   late SubstrateBridge bridge;
 
   setUp(() {
     client = _FakeSubstrateClient();
-    bridge = SubstrateBridge(client);
+    bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
   });
 
   group('C.13 SubstrateBridge — construction', () {
@@ -33,7 +40,7 @@ void main() {
     });
   });
 
-  group('C.13 SubstrateBridge.llm', () {
+  group('C.13 SubstrateBridge.send', () {
     test('builds an LlmCall, concatenates chunk text, flattens report',
         () async {
       client.streamEvents = <LlmStreamEvent>[
@@ -62,7 +69,7 @@ void main() {
         ),
       ];
 
-      final out = await bridge.llm('what is X?');
+      final out = await bridge.send('what is X?', llmRoute: 'fast');
 
       // (a) Inbound conversion — role default + prompt input + budget.
       final call = client.lastCall!;
@@ -89,18 +96,24 @@ void main() {
 
     test('passes the caller-supplied role through', () async {
       client.streamEvents = _completedStream('ok');
-      await bridge.llm('q', role: 'analyser');
+      await bridge.send('q', llmRoute: 'fast', role: 'analyser');
       expect(client.lastCall!.roleId, 'analyser');
     });
 
+    // The per-call `budget:` map survives only on [retrievalRole] (the one
+    // surviving entry that still takes a primitive budget); [send] grants the
+    // default envelope. So the budget-building behaviour (`_buildBudget`) is
+    // proven through `retrievalRole`, which routes by role and asserts on
+    // `client.lastCall!.budget` regardless of what the role text decodes to.
     test('builds the budget from a primitive map, falling back per field',
         () async {
       client.streamEvents = _completedStream('ok');
-      await bridge.llm('q', budget: const <String, Object?>{
-        'wallClockMs': 5000,
-        'tokenSpend': 200,
-        // toolCalls + memoryWrites omitted → default fallback.
-      });
+      await bridge.retrievalRole('recall_planner', 'q',
+          budget: const <String, Object?>{
+            'wallClockMs': 5000,
+            'tokenSpend': 200,
+            // toolCalls + memoryWrites omitted → default fallback.
+          });
       final b = client.lastCall!.budget;
       expect(b.wallClockMs, 5000);
       expect(b.tokenSpend, 200);
@@ -112,7 +125,8 @@ void main() {
         () async {
       client.streamEvents = _completedStream('ok');
       await expectLater(
-        bridge.llm('q', budget: const <String, Object?>{'wallClockMs': 'lots'}),
+        bridge.retrievalRole('recall_planner', 'q',
+            budget: const <String, Object?>{'wallClockMs': 'lots'}),
         throwsA(isA<FormatException>().having(
           (e) => e.message,
           'message',
@@ -137,7 +151,7 @@ void main() {
           ),
         ),
       ];
-      final out = await bridge.llm('q');
+      final out = await bridge.send('q', llmRoute: 'fast');
       final report = out['report']! as Map<String, Object?>;
       expect(report.containsKey('cost'), isFalse);
       expect(report.containsKey('templateSha'), isFalse);
@@ -164,7 +178,7 @@ void main() {
       ];
 
       await expectLater(
-        bridge.llm('q'),
+        bridge.send('q', llmRoute: 'fast'),
         throwsA(
           isA<LlmCompletionFailure>()
               .having((e) => e.classCode, 'classCode', 'timeout')
@@ -179,15 +193,17 @@ void main() {
       client.streamEvents = <LlmStreamEvent>[
         const LlmStreamChunk(callId: 'c1', text: 'orphan'),
       ];
-      await expectLater(bridge.llm('q'), throwsA(isA<StateError>()));
+      await expectLater(
+          bridge.send('q', llmRoute: 'fast'), throwsA(isA<StateError>()));
     });
   });
 
-  group('C.13 SubstrateBridge.llm — streaming token sink (P1.3 #7)', () {
+  group('C.13 SubstrateBridge.send — streaming token sink (P1.3 #7)', () {
     test('forwards each chunk to the bound sink as it arrives, still '
         'returning the concatenated text', () async {
       final tokens = <String>[];
-      final streaming = SubstrateBridge(client, onToken: (delta) async {
+      final streaming = SubstrateBridge(client, routeChainOf: _fastRoute,
+          onToken: (delta) async {
         tokens.add(delta);
       });
       client.streamEvents = <LlmStreamEvent>[
@@ -213,7 +229,7 @@ void main() {
         ),
       ];
 
-      final out = await streaming.llm('what is X?');
+      final out = await streaming.send('what is X?', llmRoute: 'fast');
 
       // The sink saw each token delta in order — the external path streams
       // instead of only buffering.
@@ -225,7 +241,8 @@ void main() {
 
     test('forwards the partial deltas before a stream failure', () async {
       final tokens = <String>[];
-      final streaming = SubstrateBridge(client, onToken: (delta) async {
+      final streaming = SubstrateBridge(client, routeChainOf: _fastRoute,
+          onToken: (delta) async {
         tokens.add(delta);
       });
       client.streamEvents = <LlmStreamEvent>[
@@ -248,7 +265,7 @@ void main() {
       ];
 
       await expectLater(
-        streaming.llm('q'),
+        streaming.send('q', llmRoute: 'fast'),
         throwsA(isA<LlmCompletionFailure>()),
       );
       expect(tokens, <String>['par', 'tial']);
@@ -258,14 +275,14 @@ void main() {
         () async {
       // The default bridge (no onToken) must behave exactly as before — the
       // internal/free-time path stays non-streaming. Proven by the existing
-      // llm tests; this asserts the construction default explicitly.
+      // send tests; this asserts the construction default explicitly.
       client.streamEvents = _completedStream('ok');
-      final out = await bridge.llm('q');
+      final out = await bridge.send('q', llmRoute: 'fast');
       expect(out['text'], 'ok');
     });
   });
 
-  group('C.13 SubstrateBridge.llm — labeled thinking stages (§ 9.2 Todo 7)', () {
+  group('C.13 SubstrateBridge.send — labeled thinking stages (§ 9.2 Todo 7)', () {
     // When a deliberation turn streams on the thinking channel, the notice the
     // user follows is prefixed with a short stage label keyed on the turn's
     // role, so the live process reads as `🧠 analysing… <text>` rather than a
@@ -275,11 +292,11 @@ void main() {
 
     test('an analyser turn is labeled 🧠 analysing…', () async {
       final notices = <String>[];
-      final thinking =
-          SubstrateBridge(client, onThinking: (text) => notices.add(text));
+      final thinking = SubstrateBridge(client,
+          routeChainOf: _fastRoute, onThinking: (text) => notices.add(text));
       client.streamEvents = _completedStream('the analysis');
 
-      final out = await thinking.llm('q', role: 'analyser');
+      final out = await thinking.send('q', llmRoute: 'fast', role: 'analyser');
 
       expect(notices, hasLength(1));
       expect(notices.single, startsWith('🧠 analysing…'));
@@ -290,11 +307,11 @@ void main() {
 
     test('a sub_thinker turn is labeled 🧩 reasoning…', () async {
       final notices = <String>[];
-      final thinking =
-          SubstrateBridge(client, onThinking: (text) => notices.add(text));
+      final thinking = SubstrateBridge(client,
+          routeChainOf: _fastRoute, onThinking: (text) => notices.add(text));
       client.streamEvents = _completedStream('a sub-answer');
 
-      await thinking.llm('q', role: 'sub_thinker');
+      await thinking.send('q', llmRoute: 'fast', role: 'sub_thinker');
 
       expect(notices.single, startsWith('🧩 reasoning…'));
       expect(notices.single, contains('a sub-answer'));
@@ -302,11 +319,11 @@ void main() {
 
     test('an evaluator turn is labeled 🔎 critiquing…', () async {
       final notices = <String>[];
-      final thinking =
-          SubstrateBridge(client, onThinking: (text) => notices.add(text));
+      final thinking = SubstrateBridge(client,
+          routeChainOf: _fastRoute, onThinking: (text) => notices.add(text));
       client.streamEvents = _completedStream('the critique');
 
-      await thinking.llm('q', role: 'evaluator');
+      await thinking.send('q', llmRoute: 'fast', role: 'evaluator');
 
       expect(notices.single, startsWith('🔎 critiquing…'));
       expect(notices.single, contains('the critique'));
@@ -315,14 +332,15 @@ void main() {
     test('a thinking-channel turn with no stage role falls back to 🤔 thinking…',
         () async {
       final notices = <String>[];
-      final thinking =
-          SubstrateBridge(client, onThinking: (text) => notices.add(text));
+      final thinking = SubstrateBridge(client,
+          routeChainOf: _fastRoute, onThinking: (text) => notices.add(text));
       client.streamEvents = _completedStream('working it out');
 
       // `assistant_to_user` is not a deliberation stage; routed to thinking by
       // an explicit channel, it gets the generic fallback label.
-      final out = await thinking.llm(
+      final out = await thinking.send(
         'q',
+        llmRoute: 'fast',
         role: 'assistant_to_user',
         channel: 'thinking',
       );

@@ -53,10 +53,11 @@ final class BridgedPrimitiveCatalog {
   /// Substrate primitives (C.13), re-exposed by `SubstrateBridge`.
   ///
   /// `send` (prompt_configuration.md §7.4) is the low-level explicit-route
-  /// completion: where `llm` routes by the role's chain, `send` routes over the
-  /// chain a named route resolves to. The role still assembles the wire prompt,
-  /// so `send` is a substrate method on the `sub` global (`sub.send`) and a
-  /// procedure that calls it declares `send` in `requires`.
+  /// completion: it routes over the chain a named route resolves to, while the
+  /// role still assembles the wire prompt. It is a substrate method on the
+  /// `sub` global (`sub.send`) and a procedure that calls it declares `send` in
+  /// `requires`. With the low-level `llm` method retired (Phase 5, step 12),
+  /// `send` and `run` are the only substrate completion entry points.
   ///
   /// `run` (prompt_configuration.md §7.1 / §7.4) is the high-level, ID-driven
   /// entry point: it resolves a registered prompt by id (settings + loaded,
@@ -65,8 +66,10 @@ final class BridgedPrimitiveCatalog {
   /// `tool_loop_v1`. A procedure that calls `sub.run(...)` declares `run` in
   /// `requires`. It is distinct from the engine-native `runProcedure`: `run`
   /// resolves a *prompt*, `runProcedure` resolves a *procedure*.
+  ///
+  /// `render` (prompt_configuration.md §7.1) is the LLM-free sibling of `run`:
+  /// it resolves + renders a registered prompt without issuing a completion.
   static const Set<String> substrate = {
-    'llm',
     'send',
     'run',
     'render',
@@ -115,10 +118,14 @@ final class BridgedPrimitiveCatalog {
   /// server's advertised tools; `mcp.call` runs one MCP tool by name.
   static const Set<String> mcp = {'mcp.servers', 'mcp.list', 'mcp.call'};
 
-  /// The high-level scripted-LLM sugar (Extension F step 9). `sub.llm` is an
-  /// implicit nested `runProcedure(procedure ?? 'call_llm_v1', …)` call
-  /// (§ 21.1); the body spells it `subLlm` (the dotted→camel call-token of
-  /// the canonical `requires` name), which [callTokensFor] also accepts.
+  /// The high-level scripted-LLM sugar (Extension F step 9). Its canonical
+  /// `requires` name is `sub.llm`, an implicit nested
+  /// `runProcedure(procedure ?? 'call_llm_v1', …)` call (§ 21.1); the body
+  /// spells it `subLlm` (the dotted→camel call-token of the canonical name),
+  /// which is the *only* call spelling [callTokensFor] accepts for it. With the
+  /// low-level substrate `llm` method retired (Phase 5, step 12), the dotted
+  /// `sub.llm(...)` spelling is no longer a callable substrate primitive — only
+  /// the bare `subLlm(...)` sugar reaches this nested-procedure path.
   static const Set<String> scriptedLlm = {'sub.llm'};
 
   /// VS Code scripting-API primitive (Extension F step 14), re-exposed by
@@ -151,7 +158,7 @@ final class BridgedPrimitiveCatalog {
   static const String memoryReceiver = 'mem';
 
   /// The d4rt global the substrate bridge is bound to: substrate primitives
-  /// are invoked as `sub.llm(...)` (`D4rtDcliHost.substrateGlobal`).
+  /// are invoked as `sub.send(...)` (`D4rtDcliHost.substrateGlobal`).
   static const String substrateReceiver = 'sub';
 
   /// The call-site spellings a procedure body may use to invoke the
@@ -166,12 +173,14 @@ final class BridgedPrimitiveCatalog {
   ///     `mem.proposeNodeType`). The stack surface is flat on `mem`
   ///     (Q-C.12.2), so there is no dotted `stack.` spelling at the call site.
   ///   - **substrate** primitives are methods on the bound `sub` global, so
-  ///     the accepted call is `sub.<flatMethod>` (`llm` → `sub.llm`,
+  ///     the accepted call is `sub.<flatMethod>` (`send` → `sub.send`,
   ///     `retrievalRole` → `sub.retrievalRole`).
   ///   - the **scripted-LLM sugar** `sub.llm` is the bare top-level `subLlm`
-  ///     (§ 21.1): `sub.llm(...)` itself is the *raw substrate `llm` method*,
-  ///     so the sugar claims only its camelCase form and never collides with
-  ///     it.
+  ///     (§ 21.1): its canonical `requires` name resolves *only* to the
+  ///     camelCase `subLlm` spelling — the dotted `sub.llm(...)` is no longer a
+  ///     callable substrate primitive (the low-level `llm` method was retired
+  ///     in Phase 5, step 12), so there is nothing for the sugar to collide
+  ///     with.
   ///   - **engine-native** primitives and **sugar** verbs are bare top-level
   ///     functions (`note`, `runProcedure`, `validate`, `think`), so the
   ///     canonical name is itself the spelling.

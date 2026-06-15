@@ -27,7 +27,7 @@
 //   /// outputs:
 //   ///   - { name: answer, type: String }
 //   /// budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 12 }
-//   /// requires: [ recall, llm, persist ]
+//   /// requires: [ recall, send, persist ]
 
 import 'package:yaml/yaml.dart';
 

@@ -45,7 +45,7 @@
 //   - C.12 / C.13 (`memory_bridge_test.dart`, `substrate_bridge_test.dart`)
 //     assert the *native* primitive⇄domain conversion field-by-field.
 //   - C.15 (`bridge_roundtrip_test.dart`) drives three methods (recall,
-//     llm, persist) through the interpreter as a generator-output smoke.
+//     send, persist) through the interpreter as a generator-output smoke.
 // C.47 is neither: it does not re-assert every field (that is C.12/C.13's
 // job) — it proves *completeness* (every method, no gaps) and *drift*
 // (the signature surface is pinned). The field-level detail lives one
@@ -113,16 +113,15 @@ const Map<String, String> _expectedMemorySignatures = <String, String>{
       'Future<List<String>> findUncertain(String forKey, {required double low, required double high, int limit = 200})',
 };
 
-/// The authoritative substrate surface: eight rows — `llm` (with the
-/// `prompt_configuration.md` §7.4 `channel` knob), the increment-5 routing
-/// seam pair `send` (low-level: one completion over a named route, also
-/// carrying the §9.2 `channel` knob) and `run` (high-level: ID-driven prompt →
+/// The authoritative substrate surface: seven rows — the increment-5 routing
+/// seam pair `send` (low-level: one completion over a named route, carrying the
+/// §9.2 `channel` knob) and `run` (high-level: ID-driven prompt →
 /// `tool_loop_v1` delegation), the step-11 no-LLM resolution sibling `render`
 /// (resolve + catalogue-render a registered prompt with no completion), the
-/// Extension-H `retrievalRole` (§ 6.2a), `embed`, `search`, `fetch`.
+/// Extension-H `retrievalRole` (§ 6.2a), `embed`, `search`, `fetch`. The
+/// low-level `llm` method was retired (Phase 5, step 12) — `send` / `run` are
+/// the only substrate completion entry points.
 const Map<String, String> _expectedSubstrateSignatures = <String, String>{
-  'llm':
-      'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, List<Object?>? tools, Map<String, Object?>? budget, String? channel})',
   'send':
       'Future<Map<String, Object?>> send(String transcript, {required String llmRoute, String role = defaultRole, List<Object?>? tools, double? temperature, int? maxOutputTokens, Map<String, Object?>? responseFormat, String? channel})',
   'run':
@@ -213,7 +212,7 @@ void main() {
       );
     });
 
-    test('SubstrateBridge registers exactly the 8 audited substrate methods',
+    test('SubstrateBridge registers exactly the 7 audited substrate methods',
         () {
       final registered =
           bridgeClassNamed('SubstrateBridge').methods.keys.toSet();
@@ -255,7 +254,7 @@ void main() {
 
   group('C.47 bridge audit — every bridged method roundtrips end-to-end', () {
     test(
-        'each of the 25 methods runs through the interpreter and is recorded',
+        'each of the 24 methods runs through the interpreter and is recorded',
         () async {
       // Seed canned domain results so every outbound flattening leg has
       // something to read. Inbound legs are observed via the doubles'
@@ -334,7 +333,6 @@ void main() {
             "await mem.findUncertain('Claim', low: 0.0, high: 1.0);",
       };
       const substrateBodies = <String, String>{
-        'llm': "await sub.llm('q');",
         'send': "await sub.send('q', llmRoute: 'fast');",
         'run': "await sub.run('assist_user.answer_with_memory.assembly');",
         'render': "await sub.render('assist_user.answer_with_memory.todo_list');",
@@ -592,10 +590,11 @@ class _AuditSubstrateClient implements TomBrainSubstrateClient {
   List<LlmStreamEvent> streamEvents = const <LlmStreamEvent>[];
 
   /// The six Extension-H retrieval roles (substrate § 6.2a). `retrievalRole`
-  /// is a composite bridge method that routes through `llm` →
-  /// `completeStream`, so the double tells the two apart by the call's
-  /// `roleId`: a retrieval-role completion records the composite method that
-  /// actually ran, a plain completion records `llm`.
+  /// is a composite bridge method that routes through the shared completion
+  /// core → `completeStream`, so the double tells the two completion shapes
+  /// apart by the call's `roleId`: a retrieval-role completion records the
+  /// composite method that actually ran, while a route-bearing completion
+  /// records `send`.
   static const Set<String> _retrievalRoles = <String>{
     'recall_planner',
     'hypothesis_writer',
@@ -608,9 +607,13 @@ class _AuditSubstrateClient implements TomBrainSubstrateClient {
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
     // `send` is the only completion that carries a resolved `routeChain` (§7.4 —
-    // route selection moves off the role onto the chain); plain `llm` and the
-    // composite `retrievalRole` leave it null. `run` never reaches here — it
-    // delegates the loop to the `ProcedureRunner` double, which records 'run'.
+    // route selection moves off the role onto the chain); the composite
+    // `retrievalRole` routes by role and leaves it null. `run` never reaches
+    // here — it delegates the loop to the `ProcedureRunner` double, which
+    // records 'run'. A route-less completion under a non-retrieval role would
+    // record the retired `'llm'` (never registered), so the audit's
+    // covered==registered equality would catch any completion that slips past
+    // the `send`/`retrievalRole` shapes.
     called.add(call.routeChain != null
         ? 'send'
         : _retrievalRoles.contains(call.roleId)

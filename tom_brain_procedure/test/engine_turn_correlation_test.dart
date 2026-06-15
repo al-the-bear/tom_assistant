@@ -3,7 +3,7 @@
 //
 // `ProcedureEngine.invoke` builds one [TurnContext] per turn from the
 // invocation's `turnId` and threads it into every (possibly nested) run's
-// substrate bridge. Every `sub.llm(...)` the turn issues is therefore stamped
+// substrate bridge. Every `sub.send(...)` the turn issues is therefore stamped
 // with the turn's `turnId` and a `callSeq` that increments across the whole
 // turn — including across sub-procedures, since the one counter is shared.
 //
@@ -35,7 +35,13 @@ void main() {
         resolver: ProcedureResolver(procedures),
         memory: memory,
         memoryBridge: MemoryBridge(memory),
-        substrateBridge: SubstrateBridge(substrate),
+        substrateBridge: SubstrateBridge(
+          substrate,
+          // Every script here completes through `sub.send`, which selects a
+          // route by name (§ 7.4) and so needs a resolver bound.
+          routeChainOf: (_) =>
+              const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+        ),
         now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
       );
 
@@ -60,8 +66,8 @@ void main() {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
-  await sub.llm('first');
-  await sub.llm('second');
+  await sub.send('first', llmRoute: 'fast');
+  await sub.send('second', llmRoute: 'fast');
   return 1;
 }
 ''',
@@ -91,7 +97,7 @@ import '${BridgeLibraries.substrateLibrary}';
 import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {
-  await sub.llm('parent call');
+  await sub.send('parent call', llmRoute: 'fast');
   return await runProcedure('child_v1', inputs);
 }
 ''',
@@ -102,7 +108,7 @@ Future<Object?> run(inputs) async {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
-  await sub.llm('child call');
+  await sub.send('child call', llmRoute: 'fast');
   return {'v': 1};
 }
 ''',
@@ -132,7 +138,7 @@ Future<Object?> run(inputs) async {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
-  await sub.llm('internal');
+  await sub.send('internal', llmRoute: 'fast');
   return 1;
 }
 ''',
@@ -169,7 +175,7 @@ $body
 }
 
 /// A `TomBrainSubstrateClient` that records every [LlmCall] and returns a
-/// trivial one-chunk completed stream so each `sub.llm(...)` resolves.
+/// trivial one-chunk completed stream so each `sub.send(...)` resolves.
 class _RecordingSubstrate implements TomBrainSubstrateClient {
   final List<LlmCall> calls = <LlmCall>[];
 

@@ -79,7 +79,7 @@ void main() {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
-  await sub.llm('hang forever');
+  await sub.send('hang forever', llmRoute: 'fast');
   return 1;
 }
 ''',

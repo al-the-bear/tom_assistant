@@ -34,7 +34,11 @@ void main() {
         resolver: ProcedureResolver(procedures),
         memory: memory,
         memoryBridge: MemoryBridge(memory),
-        substrateBridge: SubstrateBridge(substrate),
+        substrateBridge: SubstrateBridge(
+          substrate,
+          routeChainOf: (_) =>
+              const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+        ),
         now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
         llmTrailSink: llmTrailSink,
       );
@@ -51,8 +55,8 @@ void main() {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
-  await sub.llm('first');
-  await sub.llm('second');
+  await sub.send('first', llmRoute: 'fast');
+  await sub.send('second', llmRoute: 'fast');
   return 1;
 }
 ''',
@@ -100,7 +104,7 @@ Future<Object?> run(inputs) async {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
-  await sub.llm('only');
+  await sub.send('only', llmRoute: 'fast');
   return 1;
 }
 ''',

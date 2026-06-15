@@ -150,7 +150,7 @@ void main() {
           AllBridge.bridgeClasses().firstWhere((b) => b.name == 'SubstrateBridge');
       expect(
         substrate.methods.keys,
-        containsAll(<String>['llm', 'embed', 'search', 'fetch']),
+        containsAll(<String>['send', 'embed', 'search', 'fetch']),
       );
     });
 

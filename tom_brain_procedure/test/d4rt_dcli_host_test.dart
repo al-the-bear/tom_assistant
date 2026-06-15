@@ -57,7 +57,11 @@ void main() {
     memoryClient = _RecordingMemoryClient(stacks);
     substrateClient = _RecordingSubstrateClient();
     memoryBridge = MemoryBridge(memoryClient);
-    substrateBridge = SubstrateBridge(substrateClient);
+    substrateBridge = SubstrateBridge(
+      substrateClient,
+      routeChainOf: (_) =>
+          const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+    );
   });
 
   group('C.16 host boots + composes D4rtCliApi', () {
@@ -197,7 +201,7 @@ Future<Map<String, Object?>> run(String question) async {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<String> run(String prompt) async {
-  final answer = await sub.llm(prompt);
+  final answer = await sub.send(prompt, llmRoute: 'fast');
   return answer['text'];
 }
 ''',
@@ -252,7 +256,7 @@ import '${BridgeLibraries.substrateLibrary}';
 
 Future<Map<String, Object?>> run(String question) async {
   final recall = await mem.recall(question);
-  final answer = await sub.llm('use the recalled context');
+  final answer = await sub.send('use the recalled context', llmRoute: 'fast');
   return {
     'recalledId': recall['nodes'][0]['id'],
     'answer': answer['text'],

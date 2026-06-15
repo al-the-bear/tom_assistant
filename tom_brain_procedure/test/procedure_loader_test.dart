@@ -35,7 +35,7 @@ const String _validSource = '''
 /// outputs:
 ///   - { name: answer, type: String }
 /// budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 12, memoryWrites: 6 }
-/// requires: [ recall, llm, persist, edge, note, stack.push ]
+/// requires: [ recall, send, persist, edge, note, stack.push ]
 Future<ProcedureResult> run(ProcedureInputs inputs) async {
   return ProcedureResult.ok();
 }
@@ -89,7 +89,7 @@ void main() {
     test('parses the requires primitive list', () {
       expect(
         header.requires,
-        ['recall', 'llm', 'persist', 'edge', 'note', 'stack.push'],
+        ['recall', 'send', 'persist', 'edge', 'note', 'stack.push'],
       );
     });
   });
@@ -366,7 +366,7 @@ class Foo {
         'outputs:\n'
         '  - { name: answer, type: String }\n'
         'budget: { wallClockMs: 60000, tokenSpend: 8000, toolCalls: 12, memoryWrites: 6 }\n'
-        'requires: [ recall, llm, persist, edge, note, stack.push ]\n',
+        'requires: [ recall, send, persist, edge, note, stack.push ]\n',
       );
       expect(viaYaml, equals(viaParse));
     });

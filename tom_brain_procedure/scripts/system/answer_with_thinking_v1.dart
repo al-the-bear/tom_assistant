@@ -40,7 +40,7 @@
 //
 // Before increment 7 each of the four deliberation stages built its own prompt
 // with an inline string builder (`_analysisPrompt` / `_subThinkPrompt` /
-// `_synthesisPrompt` / `_critiquePrompt`) and called `sub.llm(role:)` with the
+// `_synthesisPrompt` / `_critiquePrompt`) and ran a role completion with the
 // pre-assembled wire prompt. Increment 7 deletes every one of those builders and
 // runs each stage through a **registered prompt** instead:
 // `sub.run('assist_user.answer_with_thinking.<stage>', inputs:)`. The prompt's

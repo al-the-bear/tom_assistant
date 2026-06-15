@@ -46,7 +46,11 @@ void main() {
     memory = _StatefulMemory();
     substrate = _ControllableSubstrate();
     memoryBridge = MemoryBridge(memory);
-    substrateBridge = SubstrateBridge(substrate);
+    substrateBridge = SubstrateBridge(
+      substrate,
+      routeChainOf: (_) =>
+          const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+    );
   });
 
   ProcedureEngine engineFor(
@@ -66,7 +70,7 @@ void main() {
         now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
       );
 
-  /// A procedure whose only step awaits a never-completing `sub.llm(...)`, so
+  /// A procedure whose only step awaits a never-completing `sub.send(...)`, so
   /// the step never settles on its own — the C.39 cancel / timeout path must
   /// be what closes it (mirrors the deadline test's runaway step).
   LoadedProcedure hangingProcedure(String id) => _procedure(
@@ -75,7 +79,7 @@ void main() {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
-  await sub.llm('hang forever');
+  await sub.send('hang forever', llmRoute: 'fast');
   return 1;
 }
 ''',
@@ -209,7 +213,7 @@ Object? run(inputs) {
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
-  await sub.llm('think forever');
+  await sub.send('think forever', llmRoute: 'fast');
   return 1;
 }
 ''',
@@ -583,9 +587,9 @@ Future<Object?> run(inputs) async {
     });
   });
 
-  group('P1.3 #8 the per-run token sink streams sub.llm + emit deltas', () {
+  group('P1.3 #8 the per-run token sink streams sub.send + emit deltas', () {
     // A procedure that authors a delta with `emit`, then pulls a two-chunk
-    // substrate completion through `sub.llm`. The whole answer is still
+    // substrate completion through `sub.send`. The whole answer is still
     // returned (the bridge concatenates), so the route can mark the stream
     // end without re-sending text.
     ProcedureEngine streamingEngine(_StreamingSubstrate streaming) =>
@@ -599,7 +603,7 @@ import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {
   await emit('[start] ');
-  final res = await sub.llm('prompt');
+  final res = await sub.send('prompt', llmRoute: 'fast');
   return {'answer': res['text']};
 }
 ''',
@@ -607,12 +611,16 @@ Future<Object?> run(inputs) async {
           ]),
           memory: memory,
           memoryBridge: memoryBridge,
-          substrateBridge: SubstrateBridge(streaming),
+          substrateBridge: SubstrateBridge(
+            streaming,
+            routeChainOf: (_) =>
+                const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+          ),
           now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
         );
 
     test('an external run (tokenSink supplied) forwards both the emit delta '
-        'and each sub.llm chunk in body order', () async {
+        'and each sub.send chunk in body order', () async {
       final engine = streamingEngine(_StreamingSubstrate(<String>['He', 'llo']));
 
       final deltas = <String>[];
@@ -701,7 +709,7 @@ final class _FakeTimer implements Timer {
 //
 // `completeStream` returns a never-completing stream by default (a
 // `StreamController` that is never closed), so a procedure that awaits
-// `sub.llm(...)` hangs — exactly the runaway step the deadline test needs.
+// `sub.send(...)` hangs — exactly the runaway step the deadline test needs.
 class _ControllableSubstrate implements TomBrainSubstrateClient {
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) =>
@@ -726,7 +734,7 @@ class _ControllableSubstrate implements TomBrainSubstrateClient {
 // ── A streaming `TomBrainSubstrateClient` ───────────────────────────
 //
 // `completeStream` emits one `LlmStreamChunk` per configured chunk and then
-// completes — so a procedure that awaits `sub.llm(...)` gets the concatenated
+// completes — so a procedure that awaits `sub.send(...)` gets the concatenated
 // text back while each chunk is forwarded live to the per-run token sink
 // (P1.3 #8). Used by the token-sink streaming tests.
 class _StreamingSubstrate implements TomBrainSubstrateClient {
