@@ -134,25 +134,34 @@ const String _catalogueToken = r'${tools.catalogue}';
 
 /// The input keys that map onto a *purpose-built* block renderer rather than the
 /// generic `${<key>}` → literal-string path: `priorTurns` renders the labelled
-/// `${history}` conversation block, `recall` the `${recall}` memory preamble, and
-/// `open_todo_reminder` the `${open_todo_reminder}` suffix. Every other input key
-/// `k` binds `${k}` to its literal string value (§6 context bindings).
+/// `${history}` conversation block, `recall` the `${recall}` memory preamble,
+/// `open_todo_reminder` the `${open_todo_reminder}` suffix, and `todos` the
+/// `${todo_entries}` checklist (the `todo_list` fragment, §10). Every other input
+/// key `k` binds `${k}` (and the optional `${k?}` form) to its literal string
+/// value (§6 context bindings).
 const Set<String> _speciallyRenderedKeys = {
   'priorTurns',
   'recall',
   'open_todo_reminder',
+  'todos',
 };
 
 /// Builds the protected restore map for one prompt's [inputs].
 ///
-/// The three [_speciallyRenderedKeys] map onto their own `${…}` tokens through
-/// the block renderers (`priorTurns`→`${history}`, `recall`→`${recall}`,
-/// `open_todo_reminder`→`${open_todo_reminder}`); the `${tools.catalogue}` marker
-/// restores to itself for `SubstrateBridge.run`. Every *other* input key `k`
-/// binds `${k}` to its literal string value, so the §6 thinking bindings
-/// (`${text}` / `${analysis}` / `${sub_reasoning}` / `${draft}` /
-/// `${rejection_context}`) — and any future per-call binding — resolve generically
-/// without a bespoke renderer. All values are restored after resolution, so
+/// The [_speciallyRenderedKeys] map onto their own `${…}` tokens through the
+/// block renderers (`priorTurns`→`${history}`, `recall`→`${recall}`,
+/// `open_todo_reminder`→`${open_todo_reminder}`, `todos`→`${todo_entries}`); the
+/// `${tools.catalogue}` marker restores to itself for `SubstrateBridge.run`. Every
+/// *other* input key `k` binds **both** `${k}` and the optional `${k?}` form to
+/// its literal string value, so the §6 thinking bindings (`${text}` /
+/// `${analysis}` / `${sub_reasoning}` / `${draft}` / `${rejection_context}`) — and
+/// any future per-call binding, whether the template writes the required or the
+/// optional placeholder form — resolve generically without a bespoke renderer
+/// (§10: the `completion_check` template's `${todo_list?}` slot). When the key is
+/// *absent* from [inputs] the optional `${k?}` form is left for the resolver,
+/// which renders it empty (its §1 optional-placeholder contract); the required
+/// `${k}` form surfaces as an unbound-built-in error, the intended signal for a
+/// missing required input. All bound values are restored after resolution, so
 /// user-controlled `${…}` inside them is never re-scanned.
 Map<String, String> _buildRestoreMap(Map<String, Object?> inputs) {
   final restore = <String, String>{
@@ -160,10 +169,13 @@ Map<String, String> _buildRestoreMap(Map<String, Object?> inputs) {
     r'${history}': _renderPriorTurns(inputs['priorTurns']),
     r'${recall}': _renderRecall(inputs['recall']),
     r'${open_todo_reminder}': _renderReminder(inputs['open_todo_reminder']),
+    r'${todo_entries}': _renderTodoEntries(inputs['todos']),
   };
   for (final entry in inputs.entries) {
     if (_speciallyRenderedKeys.contains(entry.key)) continue;
-    restore['\${${entry.key}}'] = _stringOf(entry.value);
+    final value = _stringOf(entry.value);
+    restore['\${${entry.key}}'] = value;
+    restore['\${${entry.key}?}'] = value;
   }
   return restore;
 }
@@ -282,6 +294,24 @@ String _renderRecall(Object? recall) {
 /// `_appendOpenTodoReminder` framing (`\n<reminder>\n`, or empty).
 String _renderReminder(Object? reminder) =>
     (reminder is String && reminder.isNotEmpty) ? '\n$reminder\n' : '';
+
+/// Renders the live session todo store as the `${todo_entries}` checklist for the
+/// `todo_list` fragment (§10). [todos] is the `todo.list` result list — each
+/// entry a `{text, done}` map rendered as `[x]`/`[ ] <text>`, joined by newlines.
+/// An empty or malformed listing renders the **empty string** (§10: "renders an
+/// empty string for no todos"), replacing the pre-§10 Dart builder's
+/// `(your task list is currently empty)` sentinel — the fragment now owns the
+/// rendering, and the caller frames the empty case.
+String _renderTodoEntries(Object? todos) {
+  if (todos is! List || todos.isEmpty) return '';
+  final lines = <String>[];
+  for (final entry in todos) {
+    if (entry is! Map) continue;
+    final box = entry['done'] == true ? '[x]' : '[ ]';
+    lines.add('$box ${entry['text']}');
+  }
+  return lines.join('\n');
+}
 
 /// Stringifies a prompt input, rendering `null` as the empty string.
 String _stringOf(Object? value) => value == null ? '' : '$value';

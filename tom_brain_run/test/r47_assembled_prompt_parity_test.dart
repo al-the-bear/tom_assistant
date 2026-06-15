@@ -138,12 +138,14 @@ void main() {
   });
 
   group('§9 assembled-prompt parity — the system/user split contract', () {
-    test('there is a migrated prompt to check (and no fragments yet)', () {
+    test('there is a migrated prompt to check (and §10 fragments now exist)',
+        () {
       final ids = _migratedPromptIds(cfg);
       expect(ids, isNotEmpty);
-      // §10 fragments have not arrived; every registered prompt is a full
-      // `kind: prompt`, so the migrated set is the whole roster.
-      expect(ids.length, cfg.promptIds.length);
+      // §10 registered the first `kind: fragment` templates (the `todo_list` /
+      // `continuation_hint` pair, shared by the memory and thinking loops), so
+      // the `kind: prompt` roster is now a strict subset of the whole.
+      expect(ids.length, lessThan(cfg.promptIds.length));
     });
 
     test('every migrated prompt assembles into anchor-led system + user body',

@@ -36,10 +36,27 @@ prompt_analyzer:
       tools: none
       role: analyser
 
+# The `answer_with_memory` sub-procedure also carries the three migrated ad-hoc
+# templates (`prompt_configuration.md` §13.2 / plan step 10): the
+# `completion_check` confirmation prompt the loop's DONE/CONTINUE turn runs (a
+# no-tool prompt under the inherited `assistant_to_user` role — its system half is
+# role-supplied per §9, so only the `.user.md` half exists), and the two fragments
+# `continuation_hint` (the static "resume unfinished work" reminder) and
+# `todo_list` (the `${todo_entries}` checklist the resolver renders from the live
+# `todo.list` result).
 answer_with_memory:
   prompts:
     assembly:
       template: answer_with_memory.assembly
+    completion_check:
+      template: answer_with_memory.completion_check
+      tools: none
+    continuation_hint:
+      template: answer_with_memory.continuation_hint
+      kind: fragment
+    todo_list:
+      template: answer_with_memory.todo_list
+      kind: fragment
 
 # The `research` sub-procedure (`prompt_configuration.md` §10) carries the single
 # `claim_extraction` prompt the migrated `research_v1` runs: it distils the
@@ -149,3 +166,17 @@ answer_with_thinking:
       template: answer_with_thinking.critique
       tools: none
       role: evaluator
+    # The recursive thinking loop shares the completion-check / continuation-hint /
+    # todo-list machinery with `answer_with_memory` — the procedures shared the
+    # Dart string builders (plan step 10), so the registrations point `template:`
+    # at the same `answer_with_memory.*` stems (both sub-procedures resolve under
+    # the `assist_user/` folder).
+    completion_check:
+      template: answer_with_memory.completion_check
+      tools: none
+    continuation_hint:
+      template: answer_with_memory.continuation_hint
+      kind: fragment
+    todo_list:
+      template: answer_with_memory.todo_list
+      kind: fragment
