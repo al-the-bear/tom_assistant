@@ -211,6 +211,46 @@ void main() {
       expect(afterAnchor, contains('SCAFFOLD-PERSONA'));
     });
 
+    test('anchor leads system even when the scaffold omits \${role.anchor} '
+        '(ensurePrefix re-prepends — plan step 4 obligation)', () {
+      // The plan requires the assembled `system` to begin with the anchor
+      // block *even when the `.system.md` template omits `${role.anchor}`*.
+      // The scaffold carries the placeholder today, so simulate an operator
+      // who deleted it: strip the leading anchor from a real rendered body and
+      // feed the remainder through the exact primitive `assemble` uses
+      // (`AssistantDedicationAnchor.ensurePrefix`). The lead must be restored —
+      // and exactly once, never doubled. This is the structural guarantee that
+      // makes the anchor impossible to defeat by editing the template
+      // (Postulate 3, invariant 1) — load-bearing, hence tested, not just
+      // asserted in prose.
+      final assembled = makeRole(personaText: 'NO-ANCHOR-PERSONA').assemble();
+      final scaffoldWithoutAnchor =
+          assembled.system.substring(AssistantDedicationAnchor.text.length);
+
+      // Precondition: the stripped body faithfully simulates a `.system.md`
+      // template that omits `${role.anchor}` — it does NOT lead with the
+      // anchor and does not contain it anywhere.
+      expect(scaffoldWithoutAnchor.startsWith(AssistantDedicationAnchor.text),
+          isFalse,
+          reason: 'simulated template body must omit the anchor lead');
+      expect(scaffoldWithoutAnchor.contains(AssistantDedicationAnchor.text),
+          isFalse,
+          reason: 'simulated template body must not contain the anchor at all');
+
+      // The guarantee: ensurePrefix restores the dropped lead...
+      final guaranteed =
+          AssistantDedicationAnchor.ensurePrefix(scaffoldWithoutAnchor);
+      expect(guaranteed.startsWith(AssistantDedicationAnchor.text), isTrue,
+          reason: 'ensurePrefix must re-prepend the anchor the template '
+              'dropped');
+      // ...exactly once (no double-anchor when it was already missing).
+      expect(
+        AssistantDedicationAnchor.text.allMatches(guaranteed).length,
+        equals(1),
+        reason: 'the anchor must lead exactly once, never doubled',
+      );
+    });
+
     test('returned WirePrompt anchorHash equals AnchorRegistry.currentHash', () {
       final r = makeRole();
       final p = r.assemble();
