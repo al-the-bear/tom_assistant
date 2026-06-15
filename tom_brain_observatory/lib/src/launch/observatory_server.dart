@@ -29,6 +29,7 @@ import '../api/trail_read_api.dart';
 import '../memory/http_mcp_read_connection.dart';
 import '../memory/memory_read_client.dart';
 import '../parse/trail_host.dart';
+import 'runtime_snapshot.dart';
 
 /// A narration sink for the assembly — one informational or warning line. The
 /// caller routes it (console for the standalone bin, the handshake port for the
@@ -78,6 +79,13 @@ final class ObservatoryOptions {
   /// The bind port.
   final int port;
 
+  /// The live in-process values the running brain bound (gateway ports, the
+  /// Telegram toggle, the resolved roots), threaded by `brain_serve` for the
+  /// Runtime tab's "currently running" display (§ 6.4, § 8.3(13)). `null` when
+  /// the observatory is launched standalone (no live brain to ask) — the
+  /// `GET /api/runtime` route then `503`s "runtime unavailable".
+  final RuntimeSnapshot? runtime;
+
   /// Binds the options. Only [trailRoot] is required; the rest carry the same
   /// defaults `bin/observatory.dart` applied.
   const ObservatoryOptions({
@@ -90,6 +98,7 @@ final class ObservatoryOptions {
     this.memoryMcpToken,
     this.host = defaultHost,
     this.port = defaultPort,
+    this.runtime,
   });
 
   /// Parses the CLI form: exactly one positional `<trail-host-root>` plus the
@@ -227,6 +236,7 @@ Future<ObservatoryServer> startObservatoryServer(
     cognitionRoot: cognitionRoot,
     runConfigRoot: runConfigRoot,
     memory: memory,
+    runtime: options.runtime,
   );
 
   final server = await shelf_io.serve(api.handler, options.host, options.port);

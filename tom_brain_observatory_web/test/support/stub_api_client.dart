@@ -9,6 +9,7 @@ import 'package:tom_brain_observatory_web/src/model/catalogue.dart';
 import 'package:tom_brain_observatory_web/src/model/live_step.dart';
 import 'package:tom_brain_observatory_web/src/model/llm_call_detail.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
+import 'package:tom_brain_observatory_web/src/model/runtime.dart';
 
 class StubApiClient implements TraceApiClient {
   final List<PromptListRow> rows;
@@ -34,6 +35,10 @@ class StubApiClient implements TraceApiClient {
   /// The `GET /api/catalogue` body (§ 6.4); `null` models the host `503`
   /// "config unavailable".
   final CognitionCatalogue? catalogueData;
+
+  /// The `GET /api/runtime` body (§ 8.3(13)); `null` models the host `503`
+  /// "runtime unavailable" the Runtime tab turns into a standalone notice.
+  final RuntimeSnapshot? runtimeData;
 
   /// Keyed by `<wireKind>/<name>` — the registered config file's verbatim text
   /// (§ 6.4). A save through [writeConfigFile] mutates this map. A missing key
@@ -66,6 +71,7 @@ class StubApiClient implements TraceApiClient {
     Map<String, String>? prompts,
     this.rejectWrites,
     this.catalogueData,
+    this.runtimeData,
     Map<String, String>? configs,
     this.turnStreams = const <String, Stream<LiveStep>>{},
     this.changes,
@@ -117,6 +123,9 @@ class StubApiClient implements TraceApiClient {
 
   @override
   Future<CognitionCatalogue?> catalogue() async => catalogueData;
+
+  @override
+  Future<RuntimeSnapshot?> runtime() async => runtimeData;
 
   @override
   Future<String?> readConfigFile(String kind, String name) async =>

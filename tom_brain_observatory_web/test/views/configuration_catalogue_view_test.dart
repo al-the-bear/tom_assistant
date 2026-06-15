@@ -1,12 +1,15 @@
 // Plan step 19 (widget) — the gear-icon general configuration editor (§ 6.4).
-// Asserts the catalogue renders the three sections (Prompt configuration &
-// templates / Provider settings / Model settings), that opening a template
-// fetches its prose into the editor, and that a `503` catalogue degrades to an
+// Asserts the catalogue renders as four tabs (Prompt / Providers / Models /
+// Runtime), that opening a template fetches its prose into the editor, that the
+// Runtime tab shows the live `/api/runtime` values beside the editable on-disk
+// run config (and degrades to a "runtime unavailable" notice when standalone,
+// while still offering the editor), and that a `503` catalogue degrades to an
 // "unavailable" notice rather than an error.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tom_brain_observatory_web/src/model/catalogue.dart';
+import 'package:tom_brain_observatory_web/src/model/runtime.dart';
 import 'package:tom_brain_observatory_web/src/views/configuration_catalogue_view.dart';
 
 import '../support/stub_api_client.dart';
@@ -46,20 +49,31 @@ Future<void> _pump(WidgetTester tester, StubApiClient client) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> _openTab(WidgetTester tester, String label) async {
+  await tester.tap(find.widgetWithText(Tab, label));
+  await tester.pumpAndSettle();
+}
+
 void main() {
-  testWidgets('renders the three §6.4 sections', (tester) async {
+  testWidgets('renders the four §6.4 tabs and routes config files by kind',
+      (tester) async {
     await _pump(tester, StubApiClient(catalogueData: _catalogue));
 
-    expect(find.text('Prompt configuration & templates'), findsOneWidget);
-    expect(find.text('Provider settings'), findsOneWidget);
-    expect(find.text('Model settings'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Prompt'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Providers'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Models'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Runtime'), findsOneWidget);
 
-    // A template part, a role, and the kind-routed config files appear.
+    // Prompt tab (default): a template part, a role, the prompt-kind config.
     expect(find.text('answer.user · system'), findsOneWidget);
     expect(find.text('role analyser · persona'), findsOneWidget);
-    expect(find.text('registry · registry'), findsOneWidget); // prompt section
-    expect(find.text('substrate · substrate'), findsOneWidget); // provider
-    expect(find.text('llm · default'), findsOneWidget); // model section
+    expect(find.text('registry · registry'), findsOneWidget);
+
+    await _openTab(tester, 'Providers');
+    expect(find.text('substrate · substrate'), findsOneWidget);
+
+    await _openTab(tester, 'Models');
+    expect(find.text('llm · default'), findsOneWidget);
   });
 
   testWidgets('opening a template fetches it into the editor', (tester) async {
@@ -79,6 +93,64 @@ void main() {
     expect(find.text('prompt · answer.user.system'), findsOneWidget);
     final field = find.byType(TextField);
     expect(tester.widget<TextField>(field).controller!.text, 'system prose');
+  });
+
+  testWidgets('Runtime tab shows the live values beside the run-config editor',
+      (tester) async {
+    await _pump(
+      tester,
+      StubApiClient(
+        catalogueData: _catalogue,
+        runtimeData: const RuntimeSnapshot(
+          gateways: <RuntimeGateway>[
+            RuntimeGateway(name: 'openai', port: 8841, basePath: '/v1'),
+          ],
+          telegramEnabled: true,
+          memoryRoot: '/srv/brain/mem',
+        ),
+      ),
+    );
+
+    await _openTab(tester, 'Runtime');
+
+    // The currently-running values, the "requires restart" framing, and the
+    // editable on-disk run config tile.
+    expect(find.textContaining('modification requires restart'), findsOneWidget);
+    expect(find.textContaining('running on port 8841'), findsOneWidget);
+    expect(find.text('/srv/brain/mem'), findsOneWidget);
+    expect(find.text('Edit run configuration (brain_run.yaml)'),
+        findsOneWidget);
+  });
+
+  testWidgets(
+      'Runtime tab degrades to a notice when standalone but keeps the editor',
+      (tester) async {
+    // catalogueData present (so the other tabs render), runtimeData null → 503.
+    await _pump(tester, StubApiClient(catalogueData: _catalogue));
+
+    await _openTab(tester, 'Runtime');
+
+    expect(find.textContaining('Runtime unavailable'), findsOneWidget);
+    expect(find.text('Edit run configuration (brain_run.yaml)'),
+        findsOneWidget);
+  });
+
+  testWidgets('opening the run config from the Runtime tab targets brain_run',
+      (tester) async {
+    await _pump(
+      tester,
+      StubApiClient(
+        catalogueData: _catalogue,
+        configs: <String, String>{'run/brain_run': 'substrate: {}'},
+      ),
+    );
+
+    await _openTab(tester, 'Runtime');
+    await tester.tap(find.text('Edit run configuration (brain_run.yaml)'));
+    await tester.pumpAndSettle();
+
+    // The config editor opens on the `run` kind / `brain_run` name.
+    expect(find.text('config · run/brain_run'), findsOneWidget);
   });
 
   testWidgets('degrades to an unavailable notice on a 503 catalogue',

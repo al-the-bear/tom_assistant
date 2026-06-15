@@ -148,9 +148,26 @@ Future<void> main(List<String> args) async {
       ObservatoryOptions(
         trailRoot: config.trail!.root,
         cognitionDir: config.cognition?.root,
+        runConfigDir: File(configPath).parent.path,
         memoryMcpUrl: memoryMcp?.url.toString(),
         host: observatoryHost,
         port: observatoryPort,
+        // The live values the process actually bound, for the Runtime tab's
+        // "currently running" display (prompt_tracing.md § 6.4, § 8.3(13)).
+        // `process.port` is the bound OpenAI edge port; the rest come from the
+        // parsed config the brain booted from.
+        runtime: RuntimeSnapshot(
+          openAiPort: process.port,
+          openAiBasePath: config.access.openAiBasePath,
+          ollamaPort: config.access.ollamaPort,
+          ollamaBasePath: config.access.ollamaBasePath,
+          anthropicPort: config.access.anthropicPort,
+          anthropicBasePath: config.access.anthropicBasePath,
+          telegramEnabled: config.access.hasTelegram,
+          memoryRoot: config.memory.root,
+          trailRoot: config.trail?.root,
+          cognitionRoot: config.cognition?.root,
+        ),
       ),
       onInfo: (m) => tomLog.status('[tom_brain.observatory] $m'),
       onWarning: (m) => tomLog.status('[tom_brain.observatory] $m'),

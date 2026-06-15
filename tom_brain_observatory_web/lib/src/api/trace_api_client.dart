@@ -17,6 +17,7 @@ import '../model/catalogue.dart';
 import '../model/live_step.dart';
 import '../model/llm_call_detail.dart';
 import '../model/prompt_trace.dart';
+import '../model/runtime.dart';
 import 'sse.dart';
 
 /// The read-only Trail Read API surface the UI depends on.
@@ -86,6 +87,13 @@ abstract interface class TraceApiClient {
   /// `403`/`503` throws.
   Future<AuthoringResult> writeConfigFile(
       String kind, String name, String content);
+
+  /// `GET /api/runtime` — the live, in-process values the running brain bound
+  /// (§ 6.4 Runtime tab, § 8.3(13)): gateway ports + base paths, the Telegram
+  /// toggle, the resolved roots. `null` when the observatory was launched
+  /// standalone (the host answers `503` "runtime unavailable" — there is no live
+  /// brain to ask, so the Runtime tab shows only the on-disk config).
+  Future<RuntimeSnapshot?> runtime();
 
   /// `GET /api/traces/{turnId}/stream` — the SSE live-tail of a turn (§ 4.8):
   /// one [LiveStep] per cognitive step as the brain appends it, the stream
@@ -237,6 +245,17 @@ class HttpTraceApiClient implements TraceApiClient {
       ]);
     }
     throw http.ClientException('PUT $uri → ${res.statusCode}', uri);
+  }
+
+  @override
+  Future<RuntimeSnapshot?> runtime() async {
+    final uri = _resolve('api/runtime', const <String, String>{});
+    final res = await _http.get(uri);
+    if (res.statusCode == 503) return null;
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return RuntimeSnapshot.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
   /// Maps a source-authoring `PUT` response into an [AuthoringResult]: `200` →

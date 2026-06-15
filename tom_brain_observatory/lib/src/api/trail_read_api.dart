@@ -25,6 +25,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show ProcedureValidationChain;
 import 'package:tom_brain_run/tom_brain_run.dart'
     show
+        BrainRunConfigLoader,
         CatalogueConfigFile,
         CatalogueConfigKind,
         CataloguePart,
@@ -35,6 +36,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfigException, SubstrateConfigLoader;
 
 import '../live/live_tail.dart';
+import '../launch/runtime_snapshot.dart';
 import '../memory/memory_read_client.dart';
 import '../model/prompt_trace.dart';
 import '../parse/prompt_list_builder.dart';
@@ -106,6 +108,12 @@ final class TrailReadApi {
   /// always exists, so the UI gets a clean signal, never a 404.
   final CatalogueReadApi _catalogueApi;
 
+  /// The live runtime snapshot the running brain threaded in (§ 8.3(13)),
+  /// served by `GET /api/runtime` for the Runtime tab's "currently running"
+  /// display (§ 6.4). `null` when the observatory runs standalone (no live brain
+  /// to ask) — the route then `503`s "runtime unavailable".
+  final RuntimeSnapshot? runtime;
+
   TrailReadApi({
     required this.host,
     this.listLimit = 10,
@@ -116,6 +124,7 @@ final class TrailReadApi {
     Directory? runConfigRoot,
     MemoryReadClient? memory,
     this.substrateConfigFile = 'brain_run.yaml',
+    this.runtime,
   })  : runConfigRoot = runConfigRoot ?? cognitionRoot,
         _memoryApi = MemoryReadApi(client: memory),
         _catalogueApi = CatalogueReadApi(
@@ -181,7 +190,8 @@ final class TrailReadApi {
       ..get('/api/templates', _readTemplateFile)
       ..put('/api/templates', _writeTemplateFile)
       ..get('/api/config', _readConfigFile)
-      ..put('/api/config', _writeConfigFile);
+      ..put('/api/config', _writeConfigFile)
+      ..get('/api/runtime', _runtimeSnapshot);
     _memoryApi.registerRoutes(router); // /api/memory/* (§ 8.4)
     _catalogueApi.registerRoutes(router); // /api/catalogue (§ 8.3, step 14)
     return router;
@@ -546,7 +556,8 @@ final class TrailReadApi {
 
   /// `GET /api/config?kind=<kind>&name=<name>` — the verbatim text of a
   /// registered config file (§ 6.3, § 8.3(10)): `kind ∈ {registry, procedure,
-  /// llm_route, substrate}`. The registered set comes from the cognition
+  /// llm_route, substrate, run}` (`run` is the whole `brain_run.yaml`, § 6.4
+  /// Runtime tab). The registered set comes from the cognition
   /// catalogue (route 12), so an unregistered kind/name — or a path that escapes
   /// its containment root — is `403`, never an arbitrary file read. Served
   /// `text/plain`.
@@ -643,6 +654,21 @@ final class TrailReadApi {
     });
   }
 
+  /// `GET /api/runtime` — the live in-process snapshot the running brain bound
+  /// (§ 8.3(13)): the gateway ports + base paths, the Telegram toggle, and the
+  /// resolved roots, for the Runtime tab's "currently running" display (§ 6.4).
+  /// `503` "runtime unavailable" when the observatory runs standalone (no live
+  /// brain threaded a snapshot in) — the tab then shows only the on-disk config,
+  /// never a wrong "running" value.
+  Response _runtimeSnapshot(Request request) {
+    final snapshot = runtime;
+    if (snapshot == null) {
+      return _json(<String, Object?>{'error': 'runtime unavailable'},
+          status: HttpStatus.serviceUnavailable);
+    }
+    return _json(snapshot.toJson());
+  }
+
   /// Resolves the on-disk path of the registered config file for [kind]/[name]
   /// via the cognition catalogue (route 12, the authoritative inventory), or
   /// `null` when [kind] is not a config wire kind, [kind]/[name] is not a
@@ -655,6 +681,10 @@ final class TrailReadApi {
     final config = cognition;
     final cognitionDir = cognitionRoot;
     if (config == null || cognitionDir == null) return null;
+    // The `run` kind is the whole `brain_run.yaml` document (§ 6.4 Runtime tab),
+    // which is the same file the `substrate:` block lives in — it resolves
+    // against the run-config root, independent of the cognition catalogue.
+    if (kind == 'run') return _runConfigFilePath(name);
     final wanted = _kindFromWire(kind);
     if (wanted == null) return null;
 
@@ -675,6 +705,25 @@ final class TrailReadApi {
     if (root == null) return null;
     final rootPath = p.normalize(root.absolute.path);
     final resolved = p.normalize(p.join(rootPath, entry.path));
+    if (!p.isWithin(rootPath, resolved) || !resolved.endsWith('.yaml')) {
+      return null;
+    }
+    return resolved;
+  }
+
+  /// Resolves the on-disk path of the whole-process run config for the `run`
+  /// kind (§ 6.4 Runtime tab, § 8.3(10)): the `brain_run.yaml` file under the
+  /// run-config root. [name] must be that file's stem (default `brain_run`) —
+  /// the AUTH-2 stem guard — and the resolved path must stay within the
+  /// run-config root and carry the `.yaml` extension. Returns `null` (refused
+  /// `403` by the caller) when no run-config root is wired, the name does not
+  /// match, or containment fails.
+  String? _runConfigFilePath(String name) {
+    final root = runConfigRoot;
+    if (root == null) return null;
+    if (name != _stemOf(substrateConfigFile)) return null;
+    final rootPath = p.normalize(root.absolute.path);
+    final resolved = p.normalize(p.join(rootPath, substrateConfigFile));
     if (!p.isWithin(rootPath, resolved) || !resolved.endsWith('.yaml')) {
       return null;
     }
@@ -720,6 +769,23 @@ final class TrailReadApi {
   /// edited one is replaced in memory, then the pure `parse` is run — the same
   /// boot-time fail-fast, with no temp tree to copy or delete.
   String? _validateConfig(String kind, String name, String body) {
+    // The `run` kind validates the whole `brain_run.yaml` through the full
+    // run-config loader — the same fail-fast the brain applies at boot. Each
+    // section loader throws its own located exception (substrate / memory /
+    // access / trail / tools); the broad `on Exception` carries that located
+    // message for the sections whose exception types this package does not
+    // import. Env tokens (`${env:…}`) are expanded from the process environment
+    // so a config that resolves at boot also resolves at validation.
+    if (kind == 'run') {
+      try {
+        BrainRunConfigLoader.parse(body, envVars: Platform.environment);
+        return null;
+      } on SubstrateConfigException catch (e) {
+        return e.message;
+      } on Exception catch (e) {
+        return e.toString();
+      }
+    }
     final wanted = _kindFromWire(kind);
     if (wanted == null) return 'unknown config kind "$kind"';
     try {

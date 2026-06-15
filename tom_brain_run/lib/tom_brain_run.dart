@@ -139,7 +139,7 @@ export 'src/memory_mcp_isolate_host.dart'
 // Re-exported so callers configure the in-process observatory without importing
 // the observatory package directly (the run layer owns its lifecycle).
 export 'package:tom_brain_observatory/tom_brain_observatory.dart'
-    show ObservatoryOptions;
+    show ObservatoryOptions, RuntimeSnapshot;
 export 'src/tools_config.dart' show ToolsConfig, ToolsConfigException;
 export 'src/tools_config_loader.dart' show ToolsConfigLoader;
 export 'src/trail_config.dart' show TrailConfig, TrailConfigException, TrailMode;
