@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tom_brain_observatory_web/src/app.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
+import 'package:tom_brain_observatory_web/src/views/configuration_catalogue_view.dart';
 import 'package:tom_brain_observatory_web/src/views/outcome_chip.dart';
 import 'package:tom_brain_observatory_web/src/views/prompt_list_view.dart';
 import 'package:tom_brain_observatory_web/src/views/prompt_trace_detail_view.dart';
@@ -96,6 +97,23 @@ void main() {
     expect(find.descendant(of: find.byType(OutcomeChip), matching: find.text('in-flight')),
         findsOneWidget);
     expect(find.text('—'), findsOneWidget);
+  });
+
+  testWidgets('the gear icon opens the general configuration editor (step 19)',
+      (tester) async {
+    await tester.pumpWidget(ObservatoryApp(
+      memoryClient: StubMemoryApiClient(),
+      client: StubApiClient(rows: [stubRow('260101-120000.000001')]),
+    ));
+    await tester.pumpAndSettle();
+
+    // The §6.4 gear affordance is on the main-page app bar.
+    final gear = find.widgetWithIcon(IconButton, Icons.settings);
+    expect(gear, findsOneWidget);
+
+    await tester.tap(gear);
+    await tester.pumpAndSettle();
+    expect(find.byType(ConfigurationCatalogueView), findsOneWidget);
   });
 
   testWidgets('selecting a row opens its PromptTrace detail', (tester) async {
