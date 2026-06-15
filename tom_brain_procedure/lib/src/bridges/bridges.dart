@@ -27,7 +27,7 @@
 //     injection wiring shared by the host, validator, and tests.
 //
 // Hard invariant (PE-7): every prompt the machinery issues carries the
-// assistant-dedication anchor because `SubstrateBridge.llm(...)` always
+// assistant-dedication anchor because `SubstrateBridge.send(...)` always
 // routes through the substrate client.
 //
 // Wiring across later Phase C steps:

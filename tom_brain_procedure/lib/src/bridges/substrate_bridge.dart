@@ -1321,7 +1321,7 @@ class SubstrateBridge {
 /// [calls] is the uniform `{id, name, arguments}` list (empty when none).
 /// [unresolvedAttempt] is `true` only when the completion *looked* like a
 /// tool-call attempt yet resolved to zero executable calls (a tool name not on
-/// offer, or args that failed every parse) — the signal [SubstrateBridge.llm]
+/// offer, or args that failed every parse) — the signal [SubstrateBridge.send]
 /// surfaces as `unresolvedToolCall` so the answer loop feeds an error turn back
 /// instead of returning the raw `call:NAME{…}` text as the answer.
 class _ResolvedToolCalls {
@@ -1331,7 +1331,7 @@ class _ResolvedToolCalls {
   final bool unresolvedAttempt;
 }
 
-/// Receives each generated text delta from [SubstrateBridge.llm] as it
+/// Receives each generated text delta from [SubstrateBridge.send] as it
 /// streams (P1.3 #7 — the end-to-end token-streaming seam).
 ///
 /// The engine binds a per-run instance only for an **external/user** request;
@@ -1343,7 +1343,7 @@ class _ResolvedToolCalls {
 /// ordering and backpressure.
 typedef SubstrateTokenSink = Future<void> Function(String textDelta);
 
-/// Receives a low-level tool-protocol diagnostic from [SubstrateBridge.llm]
+/// Receives a low-level tool-protocol diagnostic from [SubstrateBridge.send]
 /// (Extension F step 10).
 ///
 /// The only category emitted today is `llm.toolcall.parse.failed` — a
@@ -1358,7 +1358,7 @@ typedef SubstrateNoteSink = Future<void> Function(
   Map<String, Object?> payload,
 );
 
-/// Receives the **thinking** channel text from [SubstrateBridge.llm]
+/// Receives the **thinking** channel text from [SubstrateBridge.send]
 /// (`agent_loop_completion.md` § 9.2 Todo 6).
 ///
 /// Fired once per buffered turn that routes to thinking — a tool-deciding
@@ -1421,7 +1421,7 @@ typedef ProcedureRunner = Future<ProcedureResult> Function(
   ProcedureInputs inputs,
 );
 
-/// Thrown by [SubstrateBridge.llm] when the substrate stream terminates
+/// Thrown by [SubstrateBridge.send] when the substrate stream terminates
 /// with [LlmStreamFailed].
 ///
 /// Carries the substrate failure taxonomy's [classCode] (kebab-case;

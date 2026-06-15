@@ -184,8 +184,8 @@ final class EffortAccountant {
 
   /// Reads a non-negative token count from `result['report'][key]`,
   /// defaulting to zero when the report or field is missing or malformed.
-  /// The `llm` bridge returns `{'text': …, 'report': {tokensIn, tokensOut,
-  /// …}}` (see `SubstrateBridge.llm`); a substrate that reports negative
+  /// A completion call returns `{'text': …, 'report': {tokensIn, tokensOut,
+  /// …}}` (see `SubstrateBridge.send`); a substrate that reports negative
   /// or non-numeric tokens degrades to zero rather than corrupting the
   /// run's tally.
   static int _reportToken(Map<String, Object?> result, String key) {

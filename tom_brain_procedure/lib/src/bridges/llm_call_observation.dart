@@ -3,7 +3,7 @@
 //
 // The §5.2 raw LLM trail (`llm/<role>/…raw.json`) needs the **full wire
 // body** plus the answer and the call's provenance/metrics. Those three
-// facts only ever coexist in one place: [SubstrateBridge.llm], which
+// facts only ever coexist in one place: [SubstrateBridge.send], which
 // drains the substrate stream — it holds the captured wire
 // ([CapturedWirePrompt], on the terminal `LlmStreamCompleted`), the
 // concatenated [answer], and the terminal [LlmCallReport]. This value
