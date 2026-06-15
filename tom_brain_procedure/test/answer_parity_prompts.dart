@@ -82,6 +82,32 @@ class AnswerParityPrompts {
   /// stages). The inputs are the §6 placeholder bindings the procedures pass.
   PromptResolver get resolver => (String promptId, Map<String, Object?> inputs) async {
         requests.add((id: promptId, inputs: Map<String, Object?>.of(inputs)));
+        // The plan-step-11 fragments / completion-check are tool-less prompts
+        // (the `none` profile) rendered through the `todo_list` / `completion_check`
+        // / `continuation_hint` registrations. They are resolved the same way the
+        // config-backed resolver resolves them: a fragment/template body with no
+        // `${tools.catalogue}` marker and an empty tool set.
+        final fragmentBody = _fragmentBodyFor(promptId, inputs);
+        if (fragmentBody != null) {
+          // The completion_check runs through `sub.run` → `tool_loop_v1` →
+          // `sub.send`, so its DONE/CONTINUE completion *streams*. The live
+          // config pins it to `channel: thinking` (assist_user.yaml) so the
+          // confirmation turn never leaks onto the user-visible answer stream;
+          // the parity resolver mirrors that. The `todo_list` /
+          // `continuation_hint` fragments are `sub.render`-only (no completion),
+          // so they carry no channel.
+          final channel =
+              promptId.endsWith('.completion_check') ? 'thinking' : null;
+          return ResolvedPrompt(
+            role: role,
+            llmRoute: route,
+            templateBody: fragmentBody,
+            tools: const <Object?>[],
+            maxToolLoops: maxToolLoops,
+            temperature: temperature,
+            channel: channel,
+          );
+        }
         final text = inputs['text'];
         final recall = inputs['recall'];
         final priorTurns = inputs['priorTurns'];
@@ -95,6 +121,58 @@ class AnswerParityPrompts {
           temperature: temperature,
         );
       };
+
+  /// Reproduces the rendered body of the three plan-step-11 registrations —
+  /// `todo_list`, `completion_check`, `continuation_hint` — keyed off the prompt
+  /// id suffix, mirroring the live config templates
+  /// (`config/bomber/cognition/assist_user/answer_with_memory.{todo_list,
+  /// completion_check.user,continuation_hint}.md`). Returns `null` for every other
+  /// id (the assembly / thinking-stage prompts), which fall through to the parity
+  /// transcript. The `completion_check` body begins with [confirmationSentinel]
+  /// and embeds the `todo_list` input, so the scripted substrate detects the
+  /// confirmation turn and the live todo list surfaces in the prompt it sees.
+  static String? _fragmentBodyFor(String promptId, Map<String, Object?> inputs) {
+    if (promptId.endsWith('.todo_list')) {
+      return _renderTodoEntries(inputs['todos']);
+    }
+    if (promptId.endsWith('.completion_check')) {
+      final text = inputs['text'];
+      final todoList = inputs['todo_list'];
+      return '$confirmationSentinel Before it is delivered, confirm whether '
+          'your work is complete.\n\n'
+          'The user asked:\n$text\n\n'
+          'Your current task list:\n${todoList ?? ''}\n\n'
+          'If your latest answer fully satisfies the request and no task still '
+          'needs doing, reply with DONE as the first word. If there is still '
+          'work to do, reply with CONTINUE as the first word.';
+    }
+    if (promptId.endsWith('.continuation_hint')) {
+      return 'You indicated your previous answer was not yet complete. Review '
+          'your task list, continue the outstanding work, and mark each task '
+          'done with todo.update as you finish it.';
+    }
+    return null;
+  }
+
+  /// The opening sentinel of the `completion_check` template — the scripted
+  /// substrate keys the DONE/CONTINUE confirmation turn off it (kept in sync with
+  /// `answer_with_memory.completion_check.user.md`).
+  static const String confirmationSentinel =
+      'You have just produced an answer for the user.';
+
+  /// Reproduces the live resolver's `${todo_entries}` rendering (the `todo_list`
+  /// fragment): each `{text, done}` entry as `[x]`/`[ ] <text>`, joined by
+  /// newlines; the empty string for an empty or malformed listing.
+  static String _renderTodoEntries(Object? todos) {
+    if (todos is! List || todos.isEmpty) return '';
+    final lines = <String>[];
+    for (final entry in todos) {
+      if (entry is! Map) continue;
+      final box = entry['done'] == true ? '[x]' : '[ ]';
+      lines.add('$box ${entry['text']}');
+    }
+    return lines.join('\n');
+  }
 
   /// Maps a thinking-stage prompt id onto the substrate role its config assigns
   /// (`prompt_configuration.md` §5.3): the analysis stages run as `analyser`,

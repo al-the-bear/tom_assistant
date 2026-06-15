@@ -28,7 +28,7 @@
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: incomplete, type: bool }
-/// requires: [ runProcedure, run, llm, embed, persist, edge, tool.invoke ]
+/// requires: [ runProcedure, run, render, embed, persist, edge, tool.invoke ]
 //
 // answer_with_thinking_v1 — the thinking branch of the entry router
 // (`tom_brain_completion_plan.md` Todo 6, gaps G-T1 / G-T4 / C-2;
@@ -98,8 +98,9 @@
 // There is **no iteration cap**. A REJECT always re-enters directly (the
 // critique is the inner gate). On ACCEPT the loop runs the **completion
 // confirmation** (§ 3.1 revision 2026-06-14): it asks the model — in its normal
-// `assistant_to_user` profile, presenting the live todo list (`_renderTodoList`)
-// — whether this is the final answer (`DONE`) or work still remains
+// `assistant_to_user` profile, presenting the live todo list (the `todo_list`
+// fragment, rendered through `sub.render` over the live `todo.list` result) —
+// whether this is the final answer (`DONE`) or work still remains
 // (`CONTINUE`). `_isFinished` reads the first word: `CONTINUE` re-enters (the
 // draft + the are-you-done exchange join `history`), anything else (`DONE`, an
 // empty or unparseable reply — the never-hang default) finishes. The
@@ -153,6 +154,18 @@ import 'package:tom_brain_procedure/src/primitives_native/primitives_native.dart
 /// appends its `<prompt_name>` — `analysis` / `analysis_reentry` / `sub_think` /
 /// `synthesis` / `synthesis_reentry` / `critique`.
 const String _thinkingBase = 'assist_user.answer_with_thinking';
+
+/// The DONE/CONTINUE completion-confirmation prompt the loop runs after an ACCEPT
+/// (plan step 11). Registered under the thinking sub-procedure but sharing the
+/// `answer_with_memory` template files, and `channel: thinking` (§ 9.2) so its
+/// verdict never reaches the user.
+const String _completionCheckPromptId =
+    '$_thinkingBase.completion_check';
+
+/// The `todo_list` fragment (plan step 11): `sub.render` turns the live
+/// `todo.list` result into the `[x]`/`[ ]` checklist the completion check
+/// presents.
+const String _todoListPromptId = '$_thinkingBase.todo_list';
 
 Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final text = inputs.get('text');
@@ -269,9 +282,19 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       // answer. On `CONTINUE` the accepted draft and the are-you-done exchange
       // join `history` and the loop re-enters; on `DONE` (the never-hang
       // default) it exits.
-      final todoList = await _renderTodoList();
-      final question = _confirmationQuestion(text, todoList);
-      final reply = await _confirmCompletion(question);
+      // Both the live todo list and the confirmation question are registered
+      // templates now (plan step 11), rendered through the no-LLM `sub.render`
+      // seam; the DONE/CONTINUE turn itself runs via `sub.run` over the
+      // `completion_check` prompt (registered `channel: thinking`).
+      final todos = await _todoEntries();
+      final todoList =
+          await sub.render(_todoListPromptId, inputs: {'todos': todos});
+      final question = await sub.render(_completionCheckPromptId,
+          inputs: <String, Object?>{'text': text, 'todo_list': todoList});
+      final completion = await sub.run(_completionCheckPromptId,
+          inputs: <String, Object?>{'text': text, 'todo_list': todoList});
+      final replyText = completion['answer'];
+      final reply = replyText is String ? replyText : '';
       finished = _isFinished(reply);
       if (!finished) {
         history.add(<String, Object?>{'user': text, 'assistant': draft});
@@ -368,62 +391,20 @@ String _appendRejection(
   return '${history}Attempt $attempt:\nDraft:\n$draft\nCritique:\n$verdict\n\n';
 }
 
-/// Renders the live session todo store as a human-readable checklist for the
-/// completion-confirmation turn (§ 3.1 revision). `tool.invoke('todo.list', {})`
-/// returns `{ok, result: {todos: […]}}`, each todo a `{id, text, done}` map;
-/// each is rendered as `[x]`/`[ ] <text>`. A malformed or empty listing renders
-/// the explicit "empty" line, so the confirmation turn always has a concrete
-/// task list to reason over (never a silent gap).
+/// Reads the live session todo store as the raw `{id, text, done}` entry list,
+/// the input the `todo_list` fragment renders into a checklist (plan step 11).
+/// `tool.invoke('todo.list', {})` returns `{ok, result: {todos: […]}}`; a
+/// malformed or absent listing yields the empty list, which the fragment renders
+/// as the empty string.
 //
 // Keep in sync with answer_with_memory_v1.
-Future<String> _renderTodoList() async {
+Future<List<Object?>> _todoEntries() async {
   final Object? listed = await tool.invoke('todo.list', <String, Object?>{});
-  if (listed is! Map) return _emptyTodoList;
+  if (listed is! Map) return const <Object?>[];
   final result = listed['result'];
-  if (result is! Map) return _emptyTodoList;
+  if (result is! Map) return const <Object?>[];
   final todos = result['todos'];
-  if (todos is! List || todos.isEmpty) return _emptyTodoList;
-  final lines = <String>[];
-  for (final entry in todos) {
-    if (entry is! Map) continue;
-    final box = entry['done'] == true ? '[x]' : '[ ]';
-    lines.add('$box ${entry['text']}');
-  }
-  return lines.isEmpty ? _emptyTodoList : lines.join('\n');
-}
-
-/// The rendered task list shown when the session store holds no todos.
-const String _emptyTodoList = '(your task list is currently empty)';
-
-/// Builds the completion-confirmation prompt (§ 3.1 revision): it presents the
-/// user request and the live [todoList] and asks the model — in its normal
-/// `assistant_to_user` profile — to declare `DONE` or `CONTINUE`. The first-word
-/// contract makes `_isFinished` cheap and unambiguous.
-//
-// Keep in sync with answer_with_memory_v1.
-String _confirmationQuestion(Object? text, String todoList) {
-  return 'You have just produced an answer for the user. Before it is delivered, '
-      'confirm whether your work is complete.\n\n'
-      'The user asked:\n$text\n\n'
-      'Your current task list:\n$todoList\n\n'
-      'If your latest answer fully satisfies the request and no task still needs '
-      'doing, reply with DONE as the first word. If there is still work to do '
-      '(an open task, or the answer is incomplete), reply with CONTINUE as the '
-      'first word, then one sentence on what remains.';
-}
-
-/// Issues the confirmation turn through the substrate in the normal
-/// `assistant_to_user` profile, routed to the **thinking** channel (§ 9.2) so its
-/// `DONE`/`CONTINUE` text surfaces as an out-of-band notice and never reaches the
-/// user-visible answer. Returns the reply text (`''` on a non-string result).
-//
-// Keep in sync with answer_with_memory_v1.
-Future<String> _confirmCompletion(String question) async {
-  final Object? completion =
-      await sub.llm(question, role: 'assistant_to_user', channel: 'thinking');
-  if (completion is! Map) return '';
-  final reply = completion['text'];
-  return reply is String ? reply : '';
+  return todos is List ? todos : const <Object?>[];
 }
 
 /// Whether the confirmation [reply] declares the work finished (§ 3.1 revision).

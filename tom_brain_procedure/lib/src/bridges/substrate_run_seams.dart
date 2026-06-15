@@ -40,6 +40,7 @@ final class ResolvedPrompt {
     this.maxToolLoops = 6,
     this.temperature,
     this.responseFormat,
+    this.channel,
   });
 
   /// The role the prompt assumes — assembles persona + the assistant-dedication
@@ -65,6 +66,12 @@ final class ResolvedPrompt {
 
   /// The structured-output `response_format`, or `null` for free-form text.
   final Map<String, Object?>? responseFormat;
+
+  /// The delivery channel the loop's `sub.send` streams over (§9.2): `thinking`
+  /// keeps tokens off the user channel, the default (`null`) routes by role. A
+  /// `tools: none`, answer-role completion turn (the DONE/CONTINUE confirmation)
+  /// sets `thinking` so its verdict does not leak to the user stream.
+  final String? channel;
 }
 
 /// Thrown by `SubstrateBridge.run` when its prompt id is not registered

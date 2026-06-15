@@ -168,6 +168,12 @@ final class PromptSettings {
   /// Optional generation stop sequences.
   final List<String>? stopSequences;
 
+  /// Optional delivery channel (§9.2): `thinking` keeps the prompt's tokens off
+  /// the user stream; `null` (the default) lets the engine route by role. A
+  /// no-tool, answer-role completion turn (the DONE/CONTINUE confirmation) sets
+  /// `thinking` so its verdict does not leak to the user.
+  final String? channel;
+
   /// Binds the resolved settings. [role] defaults to `assistant_to_user` (the
   /// §5.4 chain fallback).
   const PromptSettings({
@@ -178,6 +184,7 @@ final class PromptSettings {
     this.role = 'assistant_to_user',
     this.responseFormat,
     this.stopSequences,
+    this.channel,
   });
 }
 

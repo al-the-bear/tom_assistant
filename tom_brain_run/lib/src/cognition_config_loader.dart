@@ -46,6 +46,7 @@ abstract final class CognitionConfigLoader {
     'role',
     'response_format',
     'stop_sequences',
+    'channel',
   };
 
   /// Keys a sub-procedure block may carry: the settings plus `prompts`.
@@ -57,6 +58,7 @@ abstract final class CognitionConfigLoader {
     'role',
     'response_format',
     'stop_sequences',
+    'channel',
     'prompts',
   };
 
@@ -69,6 +71,7 @@ abstract final class CognitionConfigLoader {
     'role',
     'response_format',
     'stop_sequences',
+    'channel',
     'template',
     'kind',
   };
@@ -308,6 +311,7 @@ abstract final class CognitionConfigLoader {
             role: merged.role ?? 'assistant_to_user',
             responseFormat: merged.responseFormat,
             stopSequences: merged.stopSequences,
+            channel: merged.channel,
           ),
         );
       }
@@ -380,6 +384,7 @@ abstract final class CognitionConfigLoader {
         stopSequences:
             _readStringList(map, 'stop_sequences', '$path.stop_sequences',
                 envReader),
+        channel: _readString(map, 'channel', '$path.channel', envReader),
       );
 
   static _SettingsLayer _merge(_SettingsLayer base, _SettingsLayer override) =>
@@ -391,6 +396,7 @@ abstract final class CognitionConfigLoader {
         role: override.role ?? base.role,
         responseFormat: override.responseFormat ?? base.responseFormat,
         stopSequences: override.stopSequences ?? base.stopSequences,
+        channel: override.channel ?? base.channel,
       );
 
   static double? _readDouble(
@@ -644,6 +650,7 @@ final class _SettingsLayer {
   final String? role;
   final Map<String, Object?>? responseFormat;
   final List<String>? stopSequences;
+  final String? channel;
 
   const _SettingsLayer({
     this.temperature,
@@ -653,5 +660,6 @@ final class _SettingsLayer {
     this.role,
     this.responseFormat,
     this.stopSequences,
+    this.channel,
   });
 }

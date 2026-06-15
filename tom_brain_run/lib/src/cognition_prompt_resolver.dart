@@ -100,6 +100,7 @@ proc.PromptResolver buildPromptResolver(
       maxToolLoops: settings.maxToolLoops ?? 6,
       temperature: settings.temperature,
       responseFormat: settings.responseFormat,
+      channel: settings.channel,
     );
   };
 }

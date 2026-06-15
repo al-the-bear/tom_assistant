@@ -69,6 +69,7 @@ final class BridgedPrimitiveCatalog {
     'llm',
     'send',
     'run',
+    'render',
     'embed',
     'search',
     'fetch',

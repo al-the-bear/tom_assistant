@@ -440,7 +440,10 @@ class SubstrateBridge {
   /// [tools] is the optional tool catalogue (same `tool.list` wire shape as
   /// [llm]). [temperature] / [maxOutputTokens] / [responseFormat] ride onto
   /// [LlmOptions] — `send` is where a procedure pins decoding knobs a plain
-  /// `llm` answer leaves at provider/role defaults.
+  /// `llm` answer leaves at provider/role defaults. [channel] forces the stream
+  /// channel (§9.2): `null` defaults by [role], `'thinking'` routes the
+  /// completion to the out-of-band channel so it never reaches the user-visible
+  /// answer (the lever `sub.run` threads from a prompt's `channel:` setting).
   ///
   /// Throws [StateError] when no [RouteChainResolver] is bound (a wiring bug —
   /// `send` cannot route without one). A resolver that does not know [llmRoute]
@@ -458,6 +461,7 @@ class SubstrateBridge {
     double? temperature,
     int? maxOutputTokens,
     Map<String, Object?>? responseFormat,
+    String? channel,
   }) async {
     final resolver = _routeChainOf;
     if (resolver == null) {
@@ -483,6 +487,13 @@ class SubstrateBridge {
         responseFormat: responseFormat,
       ),
       routeChain: chain,
+      // Per-call stream routing (§9.2). `null` ⇒ the §9.2 default by [role]
+      // (an `assistant_to_user` answer streams to the user). An explicit
+      // `'thinking'` forces the out-of-band channel — the lever a registered
+      // prompt's `channel:` setting pulls through `sub.run`/`tool_loop_v1` so a
+      // deliberation turn under the user-facing role (e.g. the answer loop's
+      // DONE/CONTINUE `completion_check`, §13.2) never leaks to the answer.
+      channel: channel,
     );
   }
 
@@ -555,6 +566,12 @@ class SubstrateBridge {
       'tools': resolved.tools,
       'maxToolLoops': resolved.maxToolLoops,
       if (resolved.temperature != null) 'temperature': resolved.temperature,
+      // The prompt's resolved stream channel (§9.2). Forwarded so `tool_loop_v1`
+      // can pin its `sub.send` to the out-of-band thinking channel for a
+      // deliberation prompt run under the user-facing role (the answer loop's
+      // DONE/CONTINUE `completion_check`, §13.2). Absent ⇒ the §9.2 default by
+      // role, so every existing answering prompt is unaffected.
+      if (resolved.channel != null) 'channel': resolved.channel,
     });
     final result = await runner(toolLoopProcedureId, loopInputs);
 
@@ -564,6 +581,50 @@ class SubstrateBridge {
       'answer': answer,
       'toolLoopExhausted': exhausted,
     };
+  }
+
+  /// Resolves a registered prompt or fragment to its **rendered template body**,
+  /// *without* issuing any LLM call (§7.1 / §13.2). [render] is the no-LLM
+  /// sibling of [run]: it performs the identical Dart-side resolution through
+  /// the injected [PromptResolver] — registry lookup, settings inheritance,
+  /// template loading, placeholder + `${tools.catalogue}` rendering — but stops
+  /// before the tool loop. There is no `send`, no role assembly, no route.
+  ///
+  /// It is how a procedure turns a `kind: fragment` template into a string to
+  /// inject into another prompt's input slot, replacing the deleted inline Dart
+  /// string builders (`_renderTodoList` / `_continueReminderText`, plan step
+  /// 11): the answer loops render `assist_user.*.todo_list` (over the live
+  /// `todo.list` result) and `assist_user.*.continuation_hint` here, then pass
+  /// the results as the `todo_list` / `open_todo_reminder` inputs of the next
+  /// `sub.run`.
+  ///
+  /// [promptId] names the registered template; [inputs] are the placeholder
+  /// bindings the resolver resolves against (plus the §6 built-ins). Returns the
+  /// fully rendered body (`${tools.catalogue}` rendered from the prompt's
+  /// resolved tool set, a no-op for the marker-less fragments).
+  ///
+  /// Throws [UnregisteredPromptException] when [promptId] is not registered and
+  /// [StateError] when no [PromptResolver] is bound (a wiring bug — `render`
+  /// cannot resolve without one).
+  Future<String> render(
+    String promptId, {
+    Map<String, Object?> inputs = const <String, Object?>{},
+  }) async {
+    final resolver = _promptResolver;
+    if (resolver == null) {
+      throw StateError(
+        'sub.render requires a PromptResolver but none was bound on the '
+        'SubstrateBridge (prompt "$promptId").',
+      );
+    }
+    final resolved = await resolver(promptId, inputs);
+    if (resolved == null) {
+      throw UnregisteredPromptException(promptId);
+    }
+    return _renderToolCataloguePlaceholder(
+      resolved.templateBody,
+      resolved.tools,
+    );
   }
 
   /// The id of the shared tool-loop procedure [run] delegates to (§7.2).

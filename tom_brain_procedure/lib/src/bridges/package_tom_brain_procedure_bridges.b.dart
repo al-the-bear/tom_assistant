@@ -481,12 +481,13 @@ BridgedClass _createSubstrateBridgeBridge() {
         final temperature = D4.getOptionalNamedArg<double?>(named, 'temperature');
         final maxOutputTokens = D4.getOptionalNamedArg<int?>(named, 'maxOutputTokens');
         final responseFormat = D4.coerceMapOrNull<String, Object?>(named['responseFormat'], 'responseFormat');
+        final channel = D4.getOptionalNamedArg<String?>(named, 'channel');
         if (!named.containsKey('role')) {
-          return t.send(transcript, llmRoute: llmRoute, tools: tools, temperature: temperature, maxOutputTokens: maxOutputTokens, responseFormat: responseFormat);
+          return t.send(transcript, llmRoute: llmRoute, tools: tools, temperature: temperature, maxOutputTokens: maxOutputTokens, responseFormat: responseFormat, channel: channel);
         }
         if (named.containsKey('role')) {
           final role = D4.getRequiredNamedArg<String>(named, 'role', 'send');
-          return t.send(transcript, llmRoute: llmRoute, tools: tools, temperature: temperature, maxOutputTokens: maxOutputTokens, responseFormat: responseFormat, role: role);
+          return t.send(transcript, llmRoute: llmRoute, tools: tools, temperature: temperature, maxOutputTokens: maxOutputTokens, responseFormat: responseFormat, channel: channel, role: role);
         }
         throw StateError('Unreachable: all named parameter combinations should be covered');
       },
@@ -498,6 +499,15 @@ BridgedClass _createSubstrateBridgeBridge() {
             ? D4.coerceMap<String, Object?>(named['inputs'], 'inputs')
             : const <String, Object?>{};
         return t.run(promptId, inputs: inputs);
+      },
+      'render': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_7.SubstrateBridge>(target, 'SubstrateBridge');
+        D4.requireMinArgs(positional, 1, 'render');
+        final promptId = D4.getRequiredArg<String>(positional, 0, 'promptId', 'render');
+        final inputs = named.containsKey('inputs') && named['inputs'] != null
+            ? D4.coerceMap<String, Object?>(named['inputs'], 'inputs')
+            : const <String, Object?>{};
+        return t.render(promptId, inputs: inputs);
       },
       'retrievalRole': (visitor, target, positional, named, typeArgs) {
         final t = D4.validateTarget<$tom_brain_procedure_7.SubstrateBridge>(target, 'SubstrateBridge');
@@ -539,8 +549,9 @@ BridgedClass _createSubstrateBridgeBridge() {
     },
     methodSignatures: {
       'llm': 'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, List<Object?>? tools, Map<String, Object?>? budget, String? channel})',
-      'send': 'Future<Map<String, Object?>> send(String transcript, {required String llmRoute, String role = defaultRole, List<Object?>? tools, double? temperature, int? maxOutputTokens, Map<String, Object?>? responseFormat})',
+      'send': 'Future<Map<String, Object?>> send(String transcript, {required String llmRoute, String role = defaultRole, List<Object?>? tools, double? temperature, int? maxOutputTokens, Map<String, Object?>? responseFormat, String? channel})',
       'run': 'Future<Map<String, Object?>> run(String promptId, {Map<String, Object?> inputs = const <String, Object?>{}})',
+      'render': 'Future<String> render(String promptId, {Map<String, Object?> inputs = const <String, Object?>{}})',
       'retrievalRole': 'Future<Map<String, Object?>> retrievalRole(String roleId, String prompt, {Map<String, Object?>? budget})',
       'embed': 'Future<Map<String, Object?>> embed(String text)',
       'search': 'Future<Map<String, Object?>> search(String query, {String? provider, int k = 10})',

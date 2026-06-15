@@ -18,7 +18,7 @@
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: incomplete, type: bool }
-/// requires: [ runProcedure, run, llm, embed, classify, persist, edge, stack.push, note, tool.invoke ]
+/// requires: [ runProcedure, run, render, embed, classify, persist, edge, stack.push, note, tool.invoke ]
 //
 // answer_with_memory_v1 — the prototype's one real system procedure
 // (`prototype_implementation_plan.md` D.10 / D.36–D.42;
@@ -137,6 +137,24 @@ import 'package:tom_brain_procedure/src/primitives_native/primitives_native.dart
 /// and delegates the tool loop to `tool_loop_v1`.
 const String _answerPromptId = 'assist_user.answer_with_memory.assembly';
 
+/// The DONE/CONTINUE completion-confirmation prompt (plan step 11). A no-tool
+/// prompt registered `channel: thinking` (§ 9.2): its `${text}` / `${todo_list?}`
+/// slots carry the user request and the rendered checklist, and its verdict
+/// streams out-of-band so it never reaches the user.
+const String _completionCheckPromptId =
+    'assist_user.answer_with_memory.completion_check';
+
+/// The `todo_list` fragment (plan step 11). `sub.render` turns the live
+/// `todo.list` result (passed as the `todos` input) into the `[x]`/`[ ]`
+/// checklist — empty string for no todos.
+const String _todoListPromptId = 'assist_user.answer_with_memory.todo_list';
+
+/// The `continuation_hint` fragment (plan step 11): the static "resume the
+/// outstanding work" reminder folded into the next pass's `open_todo_reminder`
+/// slot after a CONTINUE verdict.
+const String _continuationHintPromptId =
+    'assist_user.answer_with_memory.continuation_hint';
+
 Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final text = inputs.get('text');
 
@@ -197,19 +215,31 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     }
 
     // Completion confirmation — ask the model, presenting its live todo list,
-    // whether the work is done. The reply text is captured both to decide
-    // termination and to record the exchange in history on a continue.
-    final todoList = await _renderTodoList();
-    final question = _confirmationQuestion(text, todoList);
-    final reply = await _confirmCompletion(question);
+    // whether the work is done. Both the live todo list and the confirmation
+    // question are now *registered templates*, rendered through the substrate's
+    // no-LLM `sub.render` seam (plan step 11): the `todo_list` fragment renders
+    // the live `todo.list` result, and the `completion_check` prompt folds the
+    // user request and that checklist into the DONE/CONTINUE turn. The turn is
+    // issued with `sub.run` — the prompt is registered `channel: thinking`
+    // (§ 9.2), so its verdict streams out-of-band and never reaches the user.
+    final todos = await _todoEntries();
+    final todoList =
+        await sub.render(_todoListPromptId, inputs: {'todos': todos});
+    final question = await sub.render(_completionCheckPromptId,
+        inputs: <String, Object?>{'text': text, 'todo_list': todoList});
+    final confirmation = await sub.run(_completionCheckPromptId,
+        inputs: <String, Object?>{'text': text, 'todo_list': todoList});
+    final replyText = confirmation['answer'];
+    final reply = replyText is String ? replyText : '';
     finished = _isFinished(reply);
     if (!finished) {
       // The model wants to keep going. Record the draft and the are-you-done
-      // exchange as ordinary chat turns, fold a continue reminder into the next
-      // pass's prompt, then re-enter (§ 3.1 revision).
+      // exchange as ordinary chat turns, fold the `continuation_hint` reminder
+      // (also a registered fragment now) into the next pass's prompt, then
+      // re-enter (§ 3.1 revision).
       history.add(<String, Object?>{'user': text, 'assistant': answer});
       history.add(<String, Object?>{'user': question, 'assistant': reply});
-      reminder = _continueReminderText();
+      reminder = await sub.render(_continuationHintPromptId);
     }
   }
 
@@ -323,62 +353,18 @@ bool _isRepeatPrompt(Object? recall, Object? text) {
   return false;
 }
 
-/// Renders the live session todo store as a human-readable checklist for the
-/// completion-confirmation turn (§ 3.1 revision). `tool.invoke('todo.list', {})`
-/// returns `{ok, result: {todos: […]}}`, each todo a `{id, text, done}` map;
-/// each is rendered as `[x]`/`[ ] <text>`. A malformed or empty listing renders
-/// the explicit "empty" line, so the confirmation turn always has a concrete
-/// task list to reason over (never a silent gap).
-//
-// Keep in sync with answer_with_thinking_v1.
-Future<String> _renderTodoList() async {
+/// Reads the live session todo store as the raw `{id, text, done}` entry list,
+/// the input the `todo_list` fragment renders into a checklist (plan step 11).
+/// `tool.invoke('todo.list', {})` returns `{ok, result: {todos: […]}}`; a
+/// malformed or absent listing yields the empty list, which the fragment renders
+/// as the empty string.
+Future<List<Object?>> _todoEntries() async {
   final Object? listed = await tool.invoke('todo.list', <String, Object?>{});
-  if (listed is! Map) return _emptyTodoList;
+  if (listed is! Map) return const <Object?>[];
   final result = listed['result'];
-  if (result is! Map) return _emptyTodoList;
+  if (result is! Map) return const <Object?>[];
   final todos = result['todos'];
-  if (todos is! List || todos.isEmpty) return _emptyTodoList;
-  final lines = <String>[];
-  for (final entry in todos) {
-    if (entry is! Map) continue;
-    final box = entry['done'] == true ? '[x]' : '[ ]';
-    lines.add('$box ${entry['text']}');
-  }
-  return lines.isEmpty ? _emptyTodoList : lines.join('\n');
-}
-
-/// The rendered task list shown when the session store holds no todos.
-const String _emptyTodoList = '(your task list is currently empty)';
-
-/// Builds the completion-confirmation prompt (§ 3.1 revision): it presents the
-/// user request and the live [todoList] and asks the model — in its normal
-/// `assistant_to_user` profile — to declare `DONE` or `CONTINUE`. The first-word
-/// contract makes `_isFinished` cheap and unambiguous.
-//
-// Keep in sync with answer_with_thinking_v1.
-String _confirmationQuestion(Object? text, String todoList) {
-  return 'You have just produced an answer for the user. Before it is delivered, '
-      'confirm whether your work is complete.\n\n'
-      'The user asked:\n$text\n\n'
-      'Your current task list:\n$todoList\n\n'
-      'If your latest answer fully satisfies the request and no task still needs '
-      'doing, reply with DONE as the first word. If there is still work to do '
-      '(an open task, or the answer is incomplete), reply with CONTINUE as the '
-      'first word, then one sentence on what remains.';
-}
-
-/// Issues the confirmation turn through the substrate in the normal
-/// `assistant_to_user` profile, routed to the **thinking** channel (§ 9.2) so its
-/// `DONE`/`CONTINUE` text surfaces as an out-of-band notice and never reaches the
-/// user-visible answer. Returns the reply text (`''` on a non-string result).
-//
-// Keep in sync with answer_with_thinking_v1.
-Future<String> _confirmCompletion(String question) async {
-  final Object? completion =
-      await sub.llm(question, role: 'assistant_to_user', channel: 'thinking');
-  if (completion is! Map) return '';
-  final reply = completion['text'];
-  return reply is String ? reply : '';
+  return todos is List ? todos : const <Object?>[];
 }
 
 /// Whether the confirmation [reply] declares the work finished (§ 3.1 revision).
@@ -391,15 +377,6 @@ Future<String> _confirmCompletion(String question) async {
 // Keep in sync with answer_with_thinking_v1.
 bool _isFinished(String reply) {
   return !reply.trim().toUpperCase().startsWith('CONTINUE');
-}
-
-/// The reminder folded into the next pass's prompt (via the `open_todo_reminder`
-/// template binding) after the model asked to continue, so the next answer pass
-/// knows it is resuming unfinished work rather than starting fresh.
-String _continueReminderText() {
-  return 'You indicated your previous answer was not yet complete. Review your '
-      'task list, continue the outstanding work, and mark each task done with '
-      'todo.update as you finish it.';
 }
 
 /// Collects the ids of the recalled nodes that fed the answer prompt — the

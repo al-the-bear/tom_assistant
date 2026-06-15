@@ -23,7 +23,7 @@
 //  2. **Bridge-surface signature guard.** The generated `BridgedClass`
 //     carries a `methodSignatures` string per bridged method — the exact
 //     d4rt-facing contract a procedure script binds to. This audit pins
-//     all 24 of them (17 memory + 7 substrate, the § 5.1 surface) to
+//     all 25 of them (17 memory + 8 substrate, the § 5.1 surface) to
 //     literal expected strings. Any edit to a bridge method's d4rt-facing
 //     signature (a param added, removed, retyped, or re-defaulted, then
 //     re-reflected into the `*.b.dart`) drifts the generated string away
@@ -113,18 +113,22 @@ const Map<String, String> _expectedMemorySignatures = <String, String>{
       'Future<List<String>> findUncertain(String forKey, {required double low, required double high, int limit = 200})',
 };
 
-/// The authoritative substrate surface: seven rows — `llm` (with the
+/// The authoritative substrate surface: eight rows — `llm` (with the
 /// `prompt_configuration.md` §7.4 `channel` knob), the increment-5 routing
-/// seam pair `send` (low-level: one completion over a named route) and `run`
-/// (high-level: ID-driven prompt → `tool_loop_v1` delegation), the Extension-H
-/// `retrievalRole` (§ 6.2a), `embed`, `search`, `fetch`.
+/// seam pair `send` (low-level: one completion over a named route, also
+/// carrying the §9.2 `channel` knob) and `run` (high-level: ID-driven prompt →
+/// `tool_loop_v1` delegation), the step-11 no-LLM resolution sibling `render`
+/// (resolve + catalogue-render a registered prompt with no completion), the
+/// Extension-H `retrievalRole` (§ 6.2a), `embed`, `search`, `fetch`.
 const Map<String, String> _expectedSubstrateSignatures = <String, String>{
   'llm':
       'Future<Map<String, Object?>> llm(String prompt, {String role = defaultRole, List<Object?>? tools, Map<String, Object?>? budget, String? channel})',
   'send':
-      'Future<Map<String, Object?>> send(String transcript, {required String llmRoute, String role = defaultRole, List<Object?>? tools, double? temperature, int? maxOutputTokens, Map<String, Object?>? responseFormat})',
+      'Future<Map<String, Object?>> send(String transcript, {required String llmRoute, String role = defaultRole, List<Object?>? tools, double? temperature, int? maxOutputTokens, Map<String, Object?>? responseFormat, String? channel})',
   'run':
       'Future<Map<String, Object?>> run(String promptId, {Map<String, Object?> inputs = const <String, Object?>{}})',
+  'render':
+      'Future<String> render(String promptId, {Map<String, Object?> inputs = const <String, Object?>{}})',
   'retrievalRole':
       'Future<Map<String, Object?>> retrievalRole(String roleId, String prompt, {Map<String, Object?>? budget})',
   'embed': 'Future<Map<String, Object?>> embed(String text)',
@@ -148,17 +152,29 @@ void main() {
     memoryBridge = MemoryBridge(memoryClient);
     // The increment-5 routing seams (§7.4): `send` resolves a route name to a
     // chain via `routeChainOf`; `run` resolves a prompt id via `promptResolver`
-    // and delegates the loop via `runProcedure`. All three are bound here so the
-    // two new bridged methods roundtrip end-to-end like the rest.
+    // and delegates the loop via `runProcedure`. The step-11 `render` seam also
+    // resolves via `promptResolver` but performs no completion. All are bound
+    // here so the bridged methods roundtrip end-to-end like the rest.
+    //
+    // `render` and `run` share the resolver, so the resolver alone cannot tell
+    // them apart. They roundtrip over distinct prompt ids (`render` → the
+    // `.todo_list` fragment, `run` → the `.assembly` prompt), and the resolver
+    // records `render` coverage only for the render-specific id — `run`'s own
+    // coverage comes from the `runProcedure` double below. Keeping the marker
+    // id-specific is what makes the guard real: drop the `render` roundtrip and
+    // `render` is never recorded, so covered ≠ registered.
     substrateBridge = SubstrateBridge(
       substrateClient,
       routeChainOf: (routeName) =>
           const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
-      promptResolver: (id, inputs) async => const ResolvedPrompt(
-        role: 'assistant_to_user',
-        llmRoute: 'fast',
-        templateBody: 'body',
-      ),
+      promptResolver: (id, inputs) async {
+        if (id.endsWith('.todo_list')) substrateClient.called.add('render');
+        return const ResolvedPrompt(
+          role: 'assistant_to_user',
+          llmRoute: 'fast',
+          templateBody: 'body',
+        );
+      },
       runProcedure: (procedureId, inputs) async {
         substrateClient.called.add('run');
         return ProcedureResult.succeeded(
@@ -197,7 +213,7 @@ void main() {
       );
     });
 
-    test('SubstrateBridge registers exactly the 7 audited substrate methods',
+    test('SubstrateBridge registers exactly the 8 audited substrate methods',
         () {
       final registered =
           bridgeClassNamed('SubstrateBridge').methods.keys.toSet();
@@ -239,7 +255,7 @@ void main() {
 
   group('C.47 bridge audit — every bridged method roundtrips end-to-end', () {
     test(
-        'each of the 24 methods runs through the interpreter and is recorded',
+        'each of the 25 methods runs through the interpreter and is recorded',
         () async {
       // Seed canned domain results so every outbound flattening leg has
       // something to read. Inbound legs are observed via the doubles'
@@ -321,6 +337,7 @@ void main() {
         'llm': "await sub.llm('q');",
         'send': "await sub.send('q', llmRoute: 'fast');",
         'run': "await sub.run('assist_user.answer_with_memory.assembly');",
+        'render': "await sub.render('assist_user.answer_with_memory.todo_list');",
         'retrievalRole': "await sub.retrievalRole('recall_planner', 'q');",
         'embed': "await sub.embed('t');",
         'search': "await sub.search('q');",

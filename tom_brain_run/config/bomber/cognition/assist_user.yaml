@@ -51,6 +51,7 @@ answer_with_memory:
     completion_check:
       template: answer_with_memory.completion_check
       tools: none
+      channel: thinking
     continuation_hint:
       template: answer_with_memory.continuation_hint
       kind: fragment
@@ -174,6 +175,7 @@ answer_with_thinking:
     completion_check:
       template: answer_with_memory.completion_check
       tools: none
+      channel: thinking
     continuation_hint:
       template: answer_with_memory.continuation_hint
       kind: fragment

@@ -17,6 +17,7 @@
 ///   - { name: role, type: String, required: false }
 ///   - { name: tools, type: List, required: false }
 ///   - { name: temperature, type: num, required: false }
+///   - { name: channel, type: String, required: false }
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: toolLoopExhausted, type: bool }
@@ -107,6 +108,13 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final tools = inputs.has('tools') ? inputs.get('tools') : null;
   final maxToolLoops = _asPositiveInt(inputs.get('maxToolLoops'));
 
+  // The resolved stream channel (§9.2). Forwarded to every `sub.send` so a
+  // prompt registered with `channel: thinking` (e.g. the no-tool DONE/CONTINUE
+  // completion turn) keeps its tokens off the user-visible answer stream. A
+  // `null`/absent channel lets the substrate route by role, the default.
+  final channel =
+      inputs.has('channel') ? '${inputs.get('channel')}' : null;
+
   // `temperature` is forwarded only when supplied; a `num` from the input bag is
   // narrowed to the `double?` the bridge expects (a bare `int` like `0` arrives
   // as `int`, not `double`).
@@ -132,6 +140,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       role: role,
       tools: tools is List ? tools : null,
       temperature: temperature,
+      channel: channel,
     );
     loops += 1;
 

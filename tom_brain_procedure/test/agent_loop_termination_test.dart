@@ -61,14 +61,17 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
 import 'answer_parity_prompts.dart';
 
-/// The opening of the procedures' `_confirmationQuestion` — the double keys the
-/// completion-confirmation call off it (kept in sync with the two procedures'
-/// helper text). Matched as a **prefix** of the raw `sub.llm` prompt: the
-/// confirmation question is passed verbatim, so it *starts* with this line,
-/// whereas an answer/synthesis prompt only ever *embeds* the question inside its
-/// folded-in conversation history. A prefix match therefore never mistakes a
-/// re-entry's answer prompt (which carries the prior confirmation turn) for a
-/// fresh confirmation call.
+/// The opening of the `completion_check` template — the double keys the
+/// completion-confirmation call off it (kept in sync with the registered
+/// `…answer_with_memory.completion_check` template and the
+/// `AnswerParityPrompts.confirmationSentinel` the resolver double renders). Since
+/// plan step 11 the confirmation runs via `sub.run('…completion_check', …)`, so
+/// the resolved template body reaches the substrate as the `sub.send` transcript.
+/// Matched as a **prefix** of that transcript: the completion-check body *starts*
+/// with this line, whereas an answer/synthesis prompt only ever *embeds* the
+/// question inside its folded-in conversation history. A prefix match therefore
+/// never mistakes a re-entry's answer prompt (which carries the prior
+/// confirmation turn) for a fresh confirmation call.
 const String _confirmationSentinel =
     'You have just produced an answer for the user.';
 

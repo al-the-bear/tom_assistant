@@ -103,17 +103,19 @@ void main() {
       // the inline prompt assembly + send/`tool.list` loop are gone — the answer
       // step now names the registered prompt via `run` and delegates the inner
       // tool loop (which still resolves `tool.invoke`) to `tool_loop_v1`. So the
-      // header adds `run`. The completion-confirmation contract (agent-loop
-      // completion plan § 3, revision 2026-06-14) re-introduces a direct `sub.llm`
-      // call: after each accepted draft the body asks the model — in its normal
-      // `assistant_to_user` profile, presenting the live todo list — whether it is
-      // `DONE` or wants to `CONTINUE`, so `llm` is back in the requires set.
+      // header adds `run`. Plan step 11 (`prompt_restructuring_and_configuration_
+      // plan.md`) moves the completion-confirmation onto the registered prompt
+      // surface: the live todo list and the DONE/CONTINUE question are *rendered*
+      // through the no-LLM `sub.render` seam, and the confirmation turn itself runs
+      // via `sub.run` (already declared) over the `completion_check` prompt. The
+      // direct `sub.llm` call is gone, so `llm` is replaced by `render` in the
+      // requires set.
       expect(
           loaded.header.requires,
           <String>[
             'runProcedure',
             'run',
-            'llm',
+            'render',
             'embed',
             'classify',
             'persist',
@@ -156,10 +158,13 @@ void main() {
       // (the recorder is the sole writer for every run, top-level and nested,
       // spec § 8). Increment 6 (`prompt_configuration.md` §6) added one more:
       // the answer step's `sub.run` delegates its inner tool loop to a nested
-      // `tool_loop_v1` run (§7.2), so the single prompt now produces seven
-      // recorded runs.
+      // `tool_loop_v1` run (§7.2). Plan step 11 adds one more nested `tool_loop_v1`
+      // run: the completion-confirmation now runs via `sub.run` over the
+      // `completion_check` prompt (the `sub.render` calls that build the todo list
+      // and the question are pure resolution and record no run), so the single
+      // prompt now produces eight recorded runs.
       final recent = await memory.stacks.peek(recentRunsStackName);
-      expect(recent, hasLength(7));
+      expect(recent, hasLength(8));
     });
   });
 
