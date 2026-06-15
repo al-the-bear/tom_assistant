@@ -131,6 +131,11 @@ export 'src/trail_banner.dart' show TrailBanner;
 export 'src/observatory_banner.dart' show ObservatoryBanner;
 export 'src/observatory_isolate_host.dart'
     show ObservatoryHostLog, ObservatoryIsolateHost, spawnObservatoryIsolate;
+// The in-process memory MCP server the observatory's /api/memory/* routes
+// connect to — hosted alongside the observatory so the whole inspection surface
+// comes up in one process.
+export 'src/memory_mcp_isolate_host.dart'
+    show MemoryMcpHostLog, MemoryMcpIsolateHost, spawnMemoryMcpIsolate;
 // Re-exported so callers configure the in-process observatory without importing
 // the observatory package directly (the run layer owns its lifecycle).
 export 'package:tom_brain_observatory/tom_brain_observatory.dart'

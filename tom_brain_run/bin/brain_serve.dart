@@ -128,12 +128,27 @@ Future<void> main(List<String> args) async {
   // tree is configured (there is nothing for the mirror to read). It binds its
   // own loopback socket; a failure to come up is non-fatal — the brain keeps
   // serving and the banner falls back to the hand-launch hint.
+  //
+  // The observatory's `/api/memory/*` routes connect to the read-mostly memory
+  // MCP server, so we host that in-process too (a third isolate, an ephemeral
+  // loopback port) and thread its URL into the observatory. Hosting it here is
+  // what lets `run_tom_brain.sh` start the whole inspection surface in one
+  // process — no separate `memory_mcp_server.dart`. It opens its own WAL
+  // concurrent handle on the same store root; a failure to come up is non-fatal
+  // (the observatory then 503s the memory routes).
+  MemoryMcpIsolateHost? memoryMcp;
   ObservatoryIsolateHost? observatory;
   if (observatoryEnabled && config.trail != null) {
+    memoryMcp = await spawnMemoryMcpIsolate(
+      configPath,
+      onInfo: (m) => tomLog.status('[tom_brain.memory.mcp] $m'),
+      onWarning: (m) => tomLog.status('[tom_brain.memory.mcp] $m'),
+    );
     observatory = await spawnObservatoryIsolate(
       ObservatoryOptions(
         trailRoot: config.trail!.root,
         cognitionDir: config.cognition?.root,
+        memoryMcpUrl: memoryMcp?.url.toString(),
         host: observatoryHost,
         port: observatoryPort,
       ),
@@ -158,15 +173,18 @@ Future<void> main(List<String> args) async {
   stdout.writeln('Press Ctrl-C to stop.');
   await stdout.flush();
 
-  // Graceful teardown: stop the observatory isolate, then the access channels
-  // and the booted cognition (drain foreground, dispose the memory isolate,
-  // close the substrate) on a signal.
+  // Graceful teardown: stop the observatory isolate and its memory MCP server,
+  // then the access channels and the booted cognition (drain foreground, dispose
+  // the memory isolate, close the substrate) on a signal. The observatory is
+  // stopped before the memory MCP server it reads from, so no request outlives
+  // the store handle behind it.
   bool stopping = false;
   Future<void> shutdown(ProcessSignal signal) async {
     if (stopping) return;
     stopping = true;
     stdout.writeln('brain_serve: $signal — stopping…');
     await observatory?.stop();
+    await memoryMcp?.stop();
     await process.stop();
   }
 

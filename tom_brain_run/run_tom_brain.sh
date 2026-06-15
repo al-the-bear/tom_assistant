@@ -21,7 +21,10 @@
 # Anthropic on :8082/v1, and the Telegram channel pings the owner. The read-only
 # Trail Observatory is hosted in-process (a second isolate) on :8787 — enabled
 # here with the explicit `--observatory` switch; pass `--no-observatory` to skip
-# it, or `--observatory-port=N` to move its loopback bind.
+# it, or `--observatory-port=N` to move its loopback bind. Its memory-inspection
+# routes are fed by the read-mostly memory MCP server, which is also hosted
+# in-process (a third isolate, an ephemeral loopback port) — so everything
+# relevant comes up in this one process; no separate memory_mcp_server.dart.
 #
 # Ctrl-C (or `kill` of this script) cleanly stops the server: the server runs
 # as a child, and a SIGINT/SIGTERM trap forwards a graceful stop to it, waits,
