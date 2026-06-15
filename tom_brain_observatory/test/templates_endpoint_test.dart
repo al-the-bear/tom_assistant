@@ -222,6 +222,28 @@ void main() {
       expect(res.statusCode, 503);
     });
   });
+
+  // Principle 1 / the migration's cross-cutting completion gate: the old
+  // `/api/prompts/<roleId>/<part>` persona/objective route was *replaced* by
+  // `/api/templates`, not deprecated alongside it. This guard pins the removal
+  // so a future re-introduction is caught — the gate requires "no `/api/prompts/*`
+  // route survives" be verified by a test, not left as a comment. An unmatched
+  // `/api/*` path is dispatched to the API router (never the SPA fallback), so
+  // the retired route returns a real `404`.
+  group('the retired /api/prompts route is gone (principle 1)', () {
+    test('GET /api/prompts/<roleId>/<part> is not served as an API route',
+        () async {
+      final res = await obsGet(wired(), 'api/prompts/analyser/persona');
+      expect(res.statusCode, HttpStatus.notFound);
+    });
+
+    test('PUT /api/prompts/<roleId>/<part> is not served as an API route',
+        () async {
+      final res =
+          await obsPut(wired(), 'api/prompts/analyser/persona', body: 'x');
+      expect(res.statusCode, HttpStatus.notFound);
+    });
+  });
 }
 
 /// Writes a minimal cognition tree (mirrors `catalogue_endpoint_test.dart`):
