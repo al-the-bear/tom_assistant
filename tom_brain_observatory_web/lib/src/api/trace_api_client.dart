@@ -35,6 +35,13 @@ abstract interface class TraceApiClient {
   /// (§ 4.5 / PT-2.4).
   Future<LlmCallDetail?> llmCallDetail(String turnId, String rawPath);
 
+  /// `GET /api/procedures` — the ids of every procedure script the running brain
+  /// hosts under `scripts/system/*.dart` (§ 4.6 / § 8.3(5)), sorted. Feeds the
+  /// gear editor's Procedures tab so each script is offerable beside its yaml
+  /// config — the same scripts the Run Tree opens by id. Empty when no script
+  /// root is configured (absence is not an error).
+  Future<List<String>> listProcedureScripts();
+
   /// `GET /api/procedures/{procedureId}` — the verbatim d4rt source of a
   /// procedure script (§ 4.6 / PT-3.1), or `null` when the host exposes no such
   /// script (no script root, or the id is unknown — absence is not an error).
@@ -154,6 +161,18 @@ class HttpTraceApiClient implements TraceApiClient {
       throw http.ClientException('GET $uri → ${res.statusCode}', uri);
     }
     return LlmCallDetail.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<String>> listProcedureScripts() async {
+    final uri = _resolve('api/procedures', const <String, String>{});
+    final res = await _http.get(uri);
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return <String>[
+      for (final id in jsonDecode(res.body) as List<dynamic>) id as String,
+    ];
   }
 
   @override

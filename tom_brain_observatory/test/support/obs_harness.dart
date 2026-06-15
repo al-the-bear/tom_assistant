@@ -102,6 +102,7 @@ Future<void> exerciseEveryEndpoint(TrailReadApi api) async {
     'api/llm?turn=$fixtureFinishedTurn'
         '&path=${Uri.encodeQueryComponent(fixtureLlmLink)}',
   );
+  await obsGet(api, 'api/procedures');
   await obsGet(api, 'api/procedures/answer_with_memory_v1');
 
   // Static root + an asset + an SPA fallback (§ 8.5).

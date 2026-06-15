@@ -22,6 +22,11 @@ class StubApiClient implements TraceApiClient {
   /// [writeProcedureScript] mutates this map, so a re-fetch sees the edit.
   final Map<String, String> scripts;
 
+  /// The procedure-script ids `GET /api/procedures` lists (§ 8.3(5)). When unset
+  /// it defaults to the [scripts] keys (sorted), so a test that seeds sources
+  /// gets a matching listing for free.
+  final List<String>? procedureIds;
+
   /// Keyed by `<roleId>/<part>` — the externalized override prose (PT-4.x). A
   /// save through [writePromptFile] mutates this map. A missing key is the
   /// `404` "no override yet" the editor turns into a create-override start.
@@ -68,6 +73,7 @@ class StubApiClient implements TraceApiClient {
     this.traces = const <String, PromptTrace>{},
     this.llmCalls = const <String, LlmCallDetail>{},
     Map<String, String>? scripts,
+    this.procedureIds,
     Map<String, String>? prompts,
     this.rejectWrites,
     this.catalogueData,
@@ -94,6 +100,10 @@ class StubApiClient implements TraceApiClient {
   @override
   Future<LlmCallDetail?> llmCallDetail(String turnId, String rawPath) async =>
       llmCalls[rawPath];
+
+  @override
+  Future<List<String>> listProcedureScripts() async =>
+      procedureIds ?? (scripts.keys.toList()..sort());
 
   @override
   Future<String?> procedureScript(String procedureId) async =>

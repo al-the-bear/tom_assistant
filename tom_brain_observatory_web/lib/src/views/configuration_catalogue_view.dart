@@ -1,16 +1,21 @@
 // Plan step 19 — the gear-icon general configuration editor (§ 6.4). A catalogue
-// browser over `GET /api/catalogue` plus the live `GET /api/runtime` snapshot,
-// laid out as four tabs:
+// browser over `GET /api/catalogue` + the procedure-script listing
+// (`GET /api/procedures`) + the live `GET /api/runtime` snapshot, laid out as
+// five tabs:
 //
-//   • Prompt — the registered prompt/fragment templates, the role persona/
-//     objective prose, and the registry + per-procedure config files. Templates
-//     and roles open the `PromptFileEditorView` (`/api/templates`); config files
-//     open the `ConfigFileEditorView` (`/api/config`).
-//   • Providers — the `substrate:` block (provider routing + failover), opened
-//     via `/api/config?kind=substrate` (a `next boot` edit).
-//   • Models — the per-route llm configs (model selection per route), opened via
-//     `/api/config?kind=llm_route` (the catalogue's `llm` kind is translated by
-//     `CatalogueConfigFile.configWireKind`).
+//   • Templates+Fragments — the registered prompt/fragment template files and
+//     the role persona/objective prose. Opens the `PromptFileEditorView`
+//     (`/api/templates`).
+//   • Procedures — the cognition registry index, the per-procedure yaml configs,
+//     and each procedure's d4rt **script**. The registry/procedure yaml open the
+//     `ConfigFileEditorView` (`/api/config`); a script opens the validated
+//     `ProcedureScriptConfigView` (`/api/procedures/<id>`) — the same scripts the
+//     Run Tree opens by id, here reachable by id alone for authoring.
+//   • Provider settings — the `substrate:` block (provider routing + failover),
+//     opened via `/api/config?kind=substrate` (a `next boot` edit).
+//   • Model settings — the per-route llm configs (model selection per route),
+//     opened via `/api/config?kind=llm_route` (the catalogue's `llm` kind is
+//     translated by `CatalogueConfigFile.configWireKind`).
 //   • Runtime — the whole-process `brain_run.yaml` run config (ports, roots, the
 //     access/memory/trail/tools/mcp sections). The tab shows the *currently
 //     running* values the live brain bound beside an editor for the on-disk
@@ -19,9 +24,9 @@
 //     unavailable" notice when the observatory was launched standalone; the
 //     on-disk editor stays available either way.
 //
-// A registered-but-empty template appears as an empty editable document (the
-// editor turns an absent file into a create-override). When no cognition config
-// is wired the catalogue is `null` (host `503`) and the prompt/provider/model
+// A registered-but-empty template (or an absent procedure script) appears as an
+// empty editable document — the first save materialises it. When no cognition
+// config is wired the catalogue is `null` (host `503`) and the catalogue-backed
 // tabs degrade to an "unavailable" notice rather than an error.
 
 import 'package:flutter/material.dart';
@@ -30,10 +35,11 @@ import '../api/trace_api_client.dart';
 import '../model/catalogue.dart';
 import '../model/runtime.dart';
 import 'config_file_editor_view.dart';
+import 'procedure_script_config_view.dart';
 import 'prompt_file_editor_view.dart';
 
-/// The §6.4 catalogue browser over [client]. Loads the catalogue and the live
-/// runtime snapshot lazily on open.
+/// The §6.4 catalogue browser over [client]. Loads the catalogue, the procedure
+/// script listing, and the live runtime snapshot lazily on open.
 class ConfigurationCatalogueView extends StatefulWidget {
   final TraceApiClient client;
 
@@ -47,12 +53,14 @@ class ConfigurationCatalogueView extends StatefulWidget {
 class _ConfigurationCatalogueViewState
     extends State<ConfigurationCatalogueView> {
   late Future<CognitionCatalogue?> _catalogue;
+  late Future<List<String>> _procedureScripts;
   late Future<RuntimeSnapshot?> _runtime;
 
   @override
   void initState() {
     super.initState();
     _catalogue = widget.client.catalogue();
+    _procedureScripts = widget.client.listProcedureScripts();
     _runtime = widget.client.runtime();
   }
 
@@ -76,24 +84,36 @@ class _ConfigurationCatalogueViewState
     ));
   }
 
+  void _openScript(String procedureId) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ProcedureScriptConfigView(
+        client: widget.client,
+        procedureId: procedureId,
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) => DefaultTabController(
-        length: 4,
+        length: 5,
         child: Scaffold(
           appBar: AppBar(
             title: const Text('Configuration'),
             bottom: const TabBar(
+              isScrollable: true,
               tabs: <Widget>[
-                Tab(text: 'Prompt'),
-                Tab(text: 'Providers'),
-                Tab(text: 'Models'),
+                Tab(text: 'Templates+Fragments'),
+                Tab(text: 'Procedures'),
+                Tab(text: 'Provider settings'),
+                Tab(text: 'Model settings'),
                 Tab(text: 'Runtime'),
               ],
             ),
           ),
           body: TabBarView(
             children: <Widget>[
-              _catalogueTab((c) => _promptTab(c)),
+              _catalogueTab(_templatesTab),
+              _catalogueTab(_proceduresTab),
               _catalogueTab((c) => _configListTab(
                     <CatalogueConfigFile>[
                       for (final f in c.configFiles)
@@ -139,39 +159,89 @@ class _ConfigurationCatalogueViewState
         },
       );
 
-  Widget _promptTab(CognitionCatalogue catalogue) {
-    final promptConfigs = <CatalogueConfigFile>[
+  /// Templates+Fragments: every prompt/fragment template file and every role's
+  /// persona/objective prose. No config files — those live on their own tabs.
+  Widget _templatesTab(CognitionCatalogue catalogue) => ListView(
+        children: <Widget>[
+          for (final t in catalogue.templates)
+            for (final file in t.files)
+              ListTile(
+                leading: const Icon(Icons.description_outlined),
+                title: Text('${t.id} · ${file.part}'),
+                subtitle: Text(file.present ? file.path : '(empty — create)'),
+                onTap: () => _openTemplatePart(t.id, file.part),
+              ),
+          for (final r in catalogue.roles) ...<Widget>[
+            ListTile(
+              leading: const Icon(Icons.badge_outlined),
+              title: Text('role ${r.name} · persona'),
+              subtitle: Text(r.personaPath ?? '(empty — create)'),
+              onTap: () => _openTemplatePart(r.name, 'persona'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.badge_outlined),
+              title: Text('role ${r.name} · objective'),
+              subtitle: Text(r.objectivePath ?? '(empty — create)'),
+              onTap: () => _openTemplatePart(r.name, 'objective'),
+            ),
+          ],
+        ],
+      );
+
+  /// Procedures: the registry index + the per-procedure yaml configs (opened as
+  /// config files), then each procedure's d4rt script (opened in the validated
+  /// source editor). The script listing is its own future so a config-only host
+  /// still renders the yaml section.
+  Widget _proceduresTab(CognitionCatalogue catalogue) {
+    final procedureConfigs = <CatalogueConfigFile>[
       for (final f in catalogue.configFiles)
-        if (f.isPromptConfig) f,
+        if (f.isPromptConfig) f, // registry + per-procedure yaml
     ];
     return ListView(
       children: <Widget>[
-        for (final t in catalogue.templates)
-          for (final file in t.files)
-            ListTile(
-              leading: const Icon(Icons.description_outlined),
-              title: Text('${t.id} · ${file.part}'),
-              subtitle: Text(file.present ? file.path : '(empty — create)'),
-              onTap: () => _openTemplatePart(t.id, file.part),
-            ),
-        for (final r in catalogue.roles) ...<Widget>[
-          ListTile(
-            leading: const Icon(Icons.badge_outlined),
-            title: Text('role ${r.name} · persona'),
-            subtitle: Text(r.personaPath ?? '(empty — create)'),
-            onTap: () => _openTemplatePart(r.name, 'persona'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.badge_outlined),
-            title: Text('role ${r.name} · objective'),
-            subtitle: Text(r.objectivePath ?? '(empty — create)'),
-            onTap: () => _openTemplatePart(r.name, 'objective'),
-          ),
-        ],
-        for (final f in promptConfigs) _configTile(f),
+        for (final f in procedureConfigs) _configTile(f),
+        const Divider(height: 1),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Text('Procedure scripts (d4rt)'),
+        ),
+        _procedureScriptList(),
       ],
     );
   }
+
+  /// The procedure-script tiles, from `GET /api/procedures`. Each opens the
+  /// validated `ProcedureScriptConfigView` — the same source the Run Tree shows,
+  /// reachable here by id alone.
+  Widget _procedureScriptList() => FutureBuilder<List<String>>(
+        future: _procedureScripts,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final scripts = snapshot.data ?? const <String>[];
+          if (scripts.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('(no procedure scripts hosted)'),
+            );
+          }
+          return Column(
+            children: <Widget>[
+              for (final id in scripts)
+                ListTile(
+                  leading: const Icon(Icons.code),
+                  title: Text(id),
+                  subtitle: Text('scripts/system/$id.dart'),
+                  onTap: () => _openScript(id),
+                ),
+            ],
+          );
+        },
+      );
 
   Widget _configListTab(List<CatalogueConfigFile> files) {
     if (files.isEmpty) {

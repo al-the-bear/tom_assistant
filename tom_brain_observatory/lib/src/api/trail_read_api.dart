@@ -185,6 +185,7 @@ final class TrailReadApi {
       ..get('/api/traces/<turnId>/stream', _turnStream)
       ..get('/api/traces/<turnId>', _singleTrace)
       ..get('/api/llm', _llmRaw)
+      ..get('/api/procedures', _listProcedureScripts)
       ..get('/api/procedures/<procedureId>', _procedureScript)
       ..put('/api/procedures/<procedureId>', _writeProcedureScript)
       ..get('/api/templates', _readTemplateFile)
@@ -284,6 +285,27 @@ final class TrailReadApi {
       file.readAsStringSync(),
       headers: <String, String>{'content-type': 'application/json; charset=utf-8'},
     );
+  }
+
+  /// `GET /api/procedures` — the ids of every procedure script the running brain
+  /// hosts under [scriptRoot] (`scripts/system/<id>.dart`, § 4.6 / § 8.3(5)), as
+  /// a sorted JSON array of stems. Feeds the gear editor's Procedures tab so each
+  /// script is offerable for inspection/authoring beside its yaml config — the
+  /// same scripts the Run Tree opens by id.
+  ///
+  /// Only top-level `.dart` files are listed (their stem, without the suffix);
+  /// any other file is ignored. When [scriptRoot] is `null` (no script root
+  /// configured) the list is empty — absence is never an error, mirroring the
+  /// `503`-free degradation of the catalogue route.
+  Response _listProcedureScripts(Request request) {
+    final root = scriptRoot;
+    final ids = <String>[
+      if (root != null && root.existsSync())
+        for (final entity in root.listSync())
+          if (entity is File && entity.path.endsWith('.dart'))
+            p.basenameWithoutExtension(entity.path),
+    ]..sort();
+    return _json(ids);
   }
 
   /// `GET /api/procedures/{procedureId}` — the verbatim d4rt source of the

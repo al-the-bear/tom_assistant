@@ -1,10 +1,13 @@
-// Plan step 19 (widget) — the gear-icon general configuration editor (§ 6.4).
-// Asserts the catalogue renders as four tabs (Prompt / Providers / Models /
-// Runtime), that opening a template fetches its prose into the editor, that the
-// Runtime tab shows the live `/api/runtime` values beside the editable on-disk
-// run config (and degrades to a "runtime unavailable" notice when standalone,
-// while still offering the editor), and that a `503` catalogue degrades to an
-// "unavailable" notice rather than an error.
+// Plan step 19 (widget) — the gear-icon general configuration editor (§ 6.4),
+// laid out as five tabs: Templates+Fragments (prompt/fragment template files +
+// role prose), Procedures (the registry index, the per-procedure yaml configs,
+// AND each procedure's d4rt script — the same scripts the Run Tree opens by id),
+// Provider settings (the `substrate:` block), Model settings (the per-route llm
+// configs), and Runtime (the live bound values beside the on-disk run-config
+// editor). Asserts each tab routes its files by kind, that a template fetches
+// its prose into the editor, that a procedure script opens the validated source
+// editor, and that the catalogue / runtime degrade to notices rather than
+// errors.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,6 +40,8 @@ const _catalogue = CognitionCatalogue(
     CatalogueConfigFile(
         kind: 'registry', name: 'registry', path: 'registry.yaml'),
     CatalogueConfigFile(
+        kind: 'procedure', name: 'assist_user', path: 'assist_user.yaml'),
+    CatalogueConfigFile(
         kind: 'substrate', name: 'substrate', path: 'brain_run.yaml'),
     CatalogueConfigFile(kind: 'llm', name: 'default', path: 'llm/default.yaml'),
   ],
@@ -50,29 +55,48 @@ Future<void> _pump(WidgetTester tester, StubApiClient client) async {
 }
 
 Future<void> _openTab(WidgetTester tester, String label) async {
-  await tester.tap(find.widgetWithText(Tab, label));
+  // The TabBar is scrollable (five tabs); a trailing tab can sit off the test
+  // viewport, so bring it into view before tapping.
+  final tab = find.widgetWithText(Tab, label);
+  await tester.ensureVisible(tab);
+  await tester.pumpAndSettle();
+  await tester.tap(tab);
   await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('renders the four §6.4 tabs and routes config files by kind',
+  testWidgets('renders the five §6.4 tabs and routes config files by kind',
       (tester) async {
-    await _pump(tester, StubApiClient(catalogueData: _catalogue));
+    await _pump(
+      tester,
+      StubApiClient(
+        catalogueData: _catalogue,
+        procedureIds: const <String>['answer_with_memory_v1'],
+      ),
+    );
 
-    expect(find.widgetWithText(Tab, 'Prompt'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Providers'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Models'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Templates+Fragments'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Procedures'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Provider settings'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Model settings'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Runtime'), findsOneWidget);
 
-    // Prompt tab (default): a template part, a role, the prompt-kind config.
+    // Templates+Fragments tab (default): a template part and a role — no config
+    // files (those live on their own tabs).
     expect(find.text('answer.user · system'), findsOneWidget);
     expect(find.text('role analyser · persona'), findsOneWidget);
-    expect(find.text('registry · registry'), findsOneWidget);
+    expect(find.text('registry · registry'), findsNothing);
 
-    await _openTab(tester, 'Providers');
+    await _openTab(tester, 'Procedures');
+    expect(find.text('registry · registry'), findsOneWidget);
+    expect(find.text('procedure · assist_user'), findsOneWidget);
+    // The procedure's d4rt script, listed beside the yaml.
+    expect(find.text('answer_with_memory_v1'), findsOneWidget);
+
+    await _openTab(tester, 'Provider settings');
     expect(find.text('substrate · substrate'), findsOneWidget);
 
-    await _openTab(tester, 'Models');
+    await _openTab(tester, 'Model settings');
     expect(find.text('llm · default'), findsOneWidget);
   });
 
@@ -93,6 +117,44 @@ void main() {
     expect(find.text('prompt · answer.user.system'), findsOneWidget);
     final field = find.byType(TextField);
     expect(tester.widget<TextField>(field).controller!.text, 'system prose');
+  });
+
+  testWidgets('opening a procedure script fetches its source into the editor',
+      (tester) async {
+    await _pump(
+      tester,
+      StubApiClient(
+        catalogueData: _catalogue,
+        scripts: <String, String>{'answer_with_memory_v1': 'void main() {}'},
+      ),
+    );
+
+    await _openTab(tester, 'Procedures');
+    await tester.tap(find.text('answer_with_memory_v1'));
+    await tester.pumpAndSettle();
+
+    // The validated source editor opens on the procedure id, seeded with the
+    // fetched d4rt source.
+    expect(find.text('script · answer_with_memory_v1'), findsOneWidget);
+    final field = find.byType(TextField);
+    expect(tester.widget<TextField>(field).controller!.text, 'void main() {}');
+  });
+
+  testWidgets('opening a procedure yaml config targets the procedure kind',
+      (tester) async {
+    await _pump(
+      tester,
+      StubApiClient(
+        catalogueData: _catalogue,
+        configs: <String, String>{'procedure/assist_user': 'temperature: 1.0'},
+      ),
+    );
+
+    await _openTab(tester, 'Procedures');
+    await tester.tap(find.text('procedure · assist_user'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('config · procedure/assist_user'), findsOneWidget);
   });
 
   testWidgets('Runtime tab shows the live values beside the run-config editor',

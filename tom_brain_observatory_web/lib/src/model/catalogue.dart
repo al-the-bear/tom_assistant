@@ -107,8 +107,9 @@ class CatalogueConfigFile {
   /// other kind passes through unchanged.
   String get configWireKind => kind == 'llm' ? 'llm_route' : kind;
 
-  /// True for the registry / per-procedure / per-route entries that belong in
-  /// the "Prompt configuration & templates" section.
+  /// True for the registry index and the per-procedure yaml configs — the
+  /// config files that belong on the gear editor's "Procedures" tab beside the
+  /// procedure scripts.
   bool get isPromptConfig => kind == 'registry' || kind == 'procedure';
 }
 
