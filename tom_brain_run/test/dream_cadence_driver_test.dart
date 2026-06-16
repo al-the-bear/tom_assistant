@@ -45,8 +45,10 @@ void main() {
     DreamCadenceDriver driverAt(
       MutableTestClock clock, {
       CadenceSchedule? schedule,
+      DreamThrottle? throttle,
     }) =>
-        DreamCadenceDriver(clock: clock, fire: fire, schedule: schedule);
+        DreamCadenceDriver(
+            clock: clock, fire: fire, schedule: schedule, throttle: throttle);
 
     // Lane lookup helpers — the schedule is now a list of named lanes.
     Duration interval(CadenceSchedule s, String laneId) =>
@@ -450,6 +452,132 @@ void main() {
       // Default schedule lanes carry no per-lane override.
       expect(CadenceSchedule.defaults().laneById('fast')!.maxLlmCallsPerWindow,
           isNull);
+    });
+
+    // ── Dream throttle (dream-redesign part d) ──────────────────────────
+    //
+    // The driver paces LLM-using agents through an injected [DreamThrottle]:
+    // an agent fires only after acquiring a token; when the budget is spent
+    // the lane defers (re-enqueued, like a busy slot) so the work is paced,
+    // not dropped. Embedding-only agents bypass the throttle.
+
+    // A single-lane schedule of three LLM-using agents, used to watch the
+    // throttle gate fires within one lane.
+    CadenceSchedule threeLlmLane() => CadenceSchedule(
+          lanes: <DreamLaneSpec>[
+            const DreamLaneSpec(
+              id: 'fast',
+              interval: Duration(minutes: 5),
+              agents: <String>['llm_a_v1', 'llm_b_v1', 'llm_c_v1'],
+            ),
+          ],
+        );
+
+    test('DC-TH1: the throttle caps LLM-using fires per window; the lane '
+        'defers once the budget is spent', () async {
+      final clock = MutableTestClock(BrainTime.fromMs(0));
+      final schedule = threeLlmLane();
+      final throttle = DreamThrottle(
+        maxCallsPerWindow: 2,
+        window: const Duration(minutes: 30),
+      );
+      final driver = driverAt(clock, schedule: schedule, throttle: throttle);
+
+      clock.advance(interval(schedule, 'fast'));
+      final ran = await driver.tick();
+
+      // Only two of the three agents fit the budget; the third deferred.
+      expect(ran, <String>['llm_a_v1', 'llm_b_v1']);
+      expect(fired, <String>['llm_a_v1', 'llm_b_v1']);
+    });
+
+    test('DC-TH2: an exhausted budget refills as the window passes, and the '
+        'deferred lane completes on a later tick', () async {
+      final clock = MutableTestClock(BrainTime.fromMs(0));
+      final schedule = threeLlmLane();
+      final throttle = DreamThrottle(
+        maxCallsPerWindow: 2,
+        window: const Duration(minutes: 30),
+      );
+      final driver = driverAt(clock, schedule: schedule, throttle: throttle);
+
+      clock.advance(interval(schedule, 'fast'));
+      final firstRan = await driver.tick(); // fires a + b, defers at c
+      expect(firstRan, <String>['llm_a_v1', 'llm_b_v1']);
+
+      // The window passes: the two tokens age out, budget is free again.
+      clock.advance(const Duration(minutes: 30));
+      final ran = await driver.tick();
+
+      // The lane resumes from where it deferred — only the remaining agent runs
+      // (no re-fire, no double-charge), so across both ticks each agent ran once.
+      expect(ran, <String>['llm_c_v1']);
+      expect(fired, <String>['llm_a_v1', 'llm_b_v1', 'llm_c_v1']);
+    });
+
+    test('DC-TH3: embedding-only agents bypass the throttle entirely', () async {
+      final clock = MutableTestClock(BrainTime.fromMs(0));
+      // A lane mixing an embedding-only agent with an LLM-using one.
+      final schedule = CadenceSchedule(
+        lanes: <DreamLaneSpec>[
+          const DreamLaneSpec(
+            id: 'fast',
+            interval: Duration(minutes: 5),
+            agents: <String>['dream_recentroid_v1', 'llm_a_v1'],
+          ),
+        ],
+      );
+      // A zero-room-after-one budget: only one LLM-using fire is allowed.
+      final throttle = DreamThrottle(
+        maxCallsPerWindow: 1,
+        window: const Duration(minutes: 30),
+      );
+      final driver = driverAt(clock, schedule: schedule, throttle: throttle);
+
+      clock.advance(interval(schedule, 'fast'));
+      final ran = await driver.tick();
+
+      // The embedding-only agent ran without spending budget; the lone LLM
+      // token then admitted the LLM-using agent.
+      expect(ran, <String>['dream_recentroid_v1', 'llm_a_v1']);
+    });
+
+    test('DC-TH4: a per-lane cap bounds one lane below the global budget',
+        () async {
+      final clock = MutableTestClock(BrainTime.fromMs(0));
+      final schedule = CadenceSchedule(
+        lanes: <DreamLaneSpec>[
+          const DreamLaneSpec(
+            id: 'noisy',
+            interval: Duration(minutes: 5),
+            agents: <String>['llm_a_v1', 'llm_b_v1'],
+            maxLlmCallsPerWindow: 1,
+          ),
+        ],
+      );
+      final throttle = DreamThrottle(
+        maxCallsPerWindow: 100,
+        window: const Duration(minutes: 30),
+        perLaneMaxCallsPerWindow: <String, int>{'noisy': 1},
+      );
+      final driver = driverAt(clock, schedule: schedule, throttle: throttle);
+
+      clock.advance(interval(schedule, 'noisy'));
+      final ran = await driver.tick();
+
+      // Despite a generous global budget, the lane's own cap admits just one.
+      expect(ran, <String>['llm_a_v1']);
+    });
+
+    test('DC-TH5: a null throttle leaves the cadence unthrottled', () async {
+      final clock = MutableTestClock(BrainTime.fromMs(0));
+      final schedule = threeLlmLane();
+      final driver = driverAt(clock, schedule: schedule); // no throttle
+
+      clock.advance(interval(schedule, 'fast'));
+      final ran = await driver.tick();
+
+      expect(ran, <String>['llm_a_v1', 'llm_b_v1', 'llm_c_v1']);
     });
   });
 }

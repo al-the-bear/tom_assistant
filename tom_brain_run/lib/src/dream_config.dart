@@ -26,6 +26,7 @@
 // never re-serialised.
 
 import 'dream_cadence_driver.dart';
+import 'dream_throttle.dart';
 import 'dream_window_schedule.dart';
 
 /// Thrown when a `dream:` block is structurally invalid (an unknown key, a
@@ -61,6 +62,7 @@ final class DreamConfig {
     required this.schedule,
     this.heartbeat,
     this.cadence,
+    this.throttle,
   });
 
   /// Whether the run assembly starts the dream loop at boot. A `false` here
@@ -78,4 +80,9 @@ final class DreamConfig {
   /// uses [CadenceSchedule.defaults]; present ⇒ it replaces the defaults
   /// wholesale.
   final CadenceSchedule? cadence;
+
+  /// The optional dream LLM-call throttle settings (part d). `null` ⇒ dreaming
+  /// is unthrottled (the behaviour before part d); present ⇒ the run assembly
+  /// builds a [DreamThrottle] the cadence driver paces LLM-using agents through.
+  final DreamThrottleSettings? throttle;
 }

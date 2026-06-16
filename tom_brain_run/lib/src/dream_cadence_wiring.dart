@@ -24,6 +24,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock, SystemClock;
 
 import 'dream_cadence_driver.dart';
+import 'dream_throttle.dart';
 
 /// Builds a [MaintenanceFire] that fires each agent through [scheduler]'s
 /// background slot.
@@ -54,11 +55,13 @@ DreamCadenceDriver dreamCadenceDriverOverScheduler(
   FreeTimeScheduler scheduler, {
   Clock clock = const SystemClock(),
   CadenceSchedule? schedule,
+  DreamThrottle? throttle,
 }) =>
     DreamCadenceDriver(
       clock: clock,
       fire: fireThroughScheduler(scheduler),
       schedule: schedule,
+      throttle: throttle,
     );
 
 /// The wall-clock heartbeat that drives a [DreamCadenceDriver]

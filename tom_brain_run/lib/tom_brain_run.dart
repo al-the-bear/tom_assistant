@@ -118,6 +118,8 @@ export 'src/dream_cadence_wiring.dart'
         DreamCadenceLoop,
         dreamCadenceDriverOverScheduler,
         fireThroughScheduler;
+export 'src/dream_throttle.dart'
+    show DreamThrottle, DreamThrottleSettings;
 export 'src/dream_window_schedule.dart'
     show DreamWindow, DreamWindowSchedule;
 export 'src/dream_controller.dart'

@@ -21,6 +21,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart'
 
 import 'dream_cadence_driver.dart';
 import 'dream_config.dart';
+import 'dream_throttle.dart';
 import 'dream_window_schedule.dart';
 
 /// Parses the `dream:` section of the whole-process YAML into a [DreamConfig],
@@ -37,6 +38,13 @@ abstract final class DreamConfigLoader {
     'windows',
     'heartbeatSeconds',
     'lanes',
+    'throttle',
+  };
+
+  /// The keys a `dream.throttle` block may carry (part d).
+  static const Set<String> _allowedThrottleKeys = <String>{
+    'maxLlmCallsPerWindow',
+    'windowSeconds',
   };
 
   /// The keys a single `dream.windows[i]` slot may carry.
@@ -94,11 +102,60 @@ abstract final class DreamConfigLoader {
 
     final CadenceSchedule? cadence = _parseLanes(dream);
 
+    final DreamThrottleSettings? throttle = _parseThrottle(dream);
+
     return DreamConfig(
       enabled: enabled,
       schedule: schedule,
       heartbeat: heartbeat,
       cadence: cadence,
+      throttle: throttle,
+    );
+  }
+
+  /// Parses the optional `dream.throttle` block into [DreamThrottleSettings]
+  /// (part d), or `null` when absent (dreaming is then unthrottled).
+  ///
+  /// The block is `{maxLlmCallsPerWindow, windowSeconds}`; both are required and
+  /// must be strictly positive. A non-positive bound surfaces as a located
+  /// [DreamConfigException].
+  static DreamThrottleSettings? _parseThrottle(Map<Object?, Object?> dream) {
+    final Map<Object?, Object?>? throttle =
+        _reader.optionalMap(dream, 'throttle', 'dream.throttle');
+    if (throttle == null) {
+      return null;
+    }
+    _rejectUnknownKeys(throttle, _allowedThrottleKeys, 'dream.throttle');
+
+    final num? maxCalls = _reader.optionalNum(
+        throttle, 'maxLlmCallsPerWindow', 'dream.throttle.maxLlmCallsPerWindow');
+    if (maxCalls == null) {
+      throw const DreamConfigException(
+        'Missing required field: dream.throttle.maxLlmCallsPerWindow',
+      );
+    }
+    if (maxCalls <= 0) {
+      throw const DreamConfigException(
+        'dream.throttle.maxLlmCallsPerWindow must be a positive integer.',
+      );
+    }
+
+    final num? windowSeconds = _reader.optionalNum(
+        throttle, 'windowSeconds', 'dream.throttle.windowSeconds');
+    if (windowSeconds == null) {
+      throw const DreamConfigException(
+        'Missing required field: dream.throttle.windowSeconds',
+      );
+    }
+    if (windowSeconds <= 0) {
+      throw const DreamConfigException(
+        'dream.throttle.windowSeconds must be a positive number of seconds.',
+      );
+    }
+
+    return DreamThrottleSettings(
+      maxCallsPerWindow: maxCalls.toInt(),
+      window: Duration(milliseconds: (windowSeconds * 1000).round()),
     );
   }
 

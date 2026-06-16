@@ -291,4 +291,64 @@ dream:
       );
     });
   });
+
+  // Part d — the dream LLM-call throttle. An absent `throttle:` block leaves
+  // dreaming unthrottled; a present block parses into typed
+  // DreamThrottleSettings; both bounds are required and must be positive.
+  group('DreamConfigLoader.parse — dream.throttle (part d)', () {
+    test('an absent throttle block leaves throttle null', () {
+      final config = DreamConfigLoader.parse('dream: {}\n')!;
+      expect(config.throttle, isNull);
+    });
+
+    test('a throttle block parses maxLlmCallsPerWindow and windowSeconds', () {
+      const yaml = '''
+dream:
+  throttle:
+    maxLlmCallsPerWindow: 20
+    windowSeconds: 600
+''';
+      final settings = DreamConfigLoader.parse(yaml)!.throttle!;
+      expect(settings.maxCallsPerWindow, 20);
+      expect(settings.window, const Duration(seconds: 600));
+    });
+
+    test('a throttle missing maxLlmCallsPerWindow is a located error', () {
+      const yaml = 'dream:\n  throttle:\n    windowSeconds: 600\n';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>().having((e) => e.message, 'message',
+            contains('dream.throttle.maxLlmCallsPerWindow'))),
+      );
+    });
+
+    test('a throttle missing windowSeconds is a located error', () {
+      const yaml = 'dream:\n  throttle:\n    maxLlmCallsPerWindow: 20\n';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>().having((e) => e.message, 'message',
+            contains('dream.throttle.windowSeconds'))),
+      );
+    });
+
+    test('a non-positive throttle bound is a located error', () {
+      const yaml =
+          'dream:\n  throttle:\n    maxLlmCallsPerWindow: 0\n    windowSeconds: 600\n';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>().having((e) => e.message, 'message',
+            contains('dream.throttle.maxLlmCallsPerWindow'))),
+      );
+    });
+
+    test('an unknown key under throttle is a located error', () {
+      const yaml =
+          'dream:\n  throttle:\n    maxLlmCallsPerWindow: 20\n    windowSeconds: 600\n    bogus: 1\n';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>()
+            .having((e) => e.message, 'message', contains('bogus'))),
+      );
+    });
+  });
 }

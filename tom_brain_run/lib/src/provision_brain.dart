@@ -97,9 +97,11 @@ import 'cognition_config.dart' show CognitionConfig;
 import 'cognition_config_loader.dart' show CognitionConfigLoader;
 import 'cognition_prompt_resolver.dart'
     show buildPromptResolver, buildRouteChainResolver;
+import 'dream_cadence_driver.dart' show CadenceSchedule;
 import 'dream_cadence_wiring.dart' show dreamCadenceDriverOverScheduler;
 import 'dream_config.dart' show DreamConfig;
 import 'dream_controller.dart' show DreamController;
+import 'dream_throttle.dart' show DreamThrottle;
 import 'late_dream_surface.dart' show LateDreamSurface;
 import 'mcp_channel_factory.dart' show productionMcpChannelFactory;
 import 'mcp_liveness_monitor.dart' show McpLivenessMonitor;
@@ -356,8 +358,28 @@ DreamController _startDreamLoop(BootedBrain booted, DreamConfig dream) {
     workFactory: (_) => null,
     engine: booted.engine,
   );
+  // Part d: when a throttle is configured, build it over the active schedule so
+  // its per-lane caps (`DreamLaneSpec.maxLlmCallsPerWindow`) are honoured on top
+  // of the global budget. Absent ⇒ unthrottled.
+  final CadenceSchedule schedule =
+      dream.cadence ?? CadenceSchedule.defaults();
+  final DreamThrottle? throttle = dream.throttle == null
+      ? null
+      : DreamThrottle(
+          maxCallsPerWindow: dream.throttle!.maxCallsPerWindow,
+          window: dream.throttle!.window,
+          perLaneMaxCallsPerWindow: <String, int>{
+            for (final lane in schedule.lanes)
+              if (lane.maxLlmCallsPerWindow != null)
+                lane.id: lane.maxLlmCallsPerWindow!,
+          },
+        );
   final controller = DreamController(
-    driver: dreamCadenceDriverOverScheduler(scheduler, schedule: dream.cadence),
+    driver: dreamCadenceDriverOverScheduler(
+      scheduler,
+      schedule: schedule,
+      throttle: throttle,
+    ),
     schedule: dream.schedule,
     heartbeat: dream.heartbeat ?? const Duration(minutes: 1),
   );

@@ -47,13 +47,18 @@
 // while it waits its turn, then pumps. [_pump] runs at most one agent at a time
 // — it dequeues the head lane, fires its agents in order (each awaited to
 // completion before the next), and only then moves to the next lane. A deferred
-// agent (busy background slot) re-enqueues its lane at the tail and stops the
-// pump until the next tick, so no dream work is lost and the slot is never
-// busy-spun.
+// agent (busy background slot, or — part d — a spent throttle budget)
+// re-enqueues its lane at the tail and stops the pump until the next tick, so no
+// dream work is lost and the slot is never busy-spun. The lane resumes from the
+// agent that did not run (a per-lane cursor), so the already-run prefix is never
+// re-fired on the retry — the property that lets the throttle *pace* a lane
+// rather than livelock one whose LLM-using agents outnumber its window budget.
 
 import 'dart:collection';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock;
+
+import 'dream_throttle.dart';
 
 /// One timed lane a [DreamCadenceDriver] fires on a cadence.
 ///
@@ -230,6 +235,7 @@ final class DreamCadenceDriver {
     required this.clock,
     required this.fire,
     CadenceSchedule? schedule,
+    this.throttle,
   }) : schedule = schedule ?? CadenceSchedule.defaults() {
     final start = clock.nowMs();
     for (final lane in this.schedule.lanes) {
@@ -246,6 +252,12 @@ final class DreamCadenceDriver {
   /// The ordered lane set fired by.
   final CadenceSchedule schedule;
 
+  /// The optional dream LLM-call throttle (part d). `null` ⇒ unthrottled. When
+  /// present, an LLM-using agent must acquire a token before it fires; a denied
+  /// acquire defers its lane (re-enqueued, like a busy slot) so no dream work is
+  /// dropped — only paced.
+  final DreamThrottle? throttle;
+
   /// Per-lane last-fired instant (ms since epoch), seeded at construction and
   /// advanced when a lane is enqueued (so a waiting lane is not re-enqueued on
   /// every heartbeat).
@@ -254,6 +266,16 @@ final class DreamCadenceDriver {
   /// The durable serial run queue (lane ids, in-order). Survives across ticks
   /// so a deferred lane retries on a later tick.
   final Queue<String> _laneQueue = Queue<String>();
+
+  /// Per-lane resume cursor: the agent index a mid-pass lane resumes from after
+  /// a defer. Absent ⇒ start from the first agent. A lane that defers part-way
+  /// (busy slot or spent throttle budget) records the index of the agent that
+  /// did *not* run, so the retry continues from there rather than re-firing —
+  /// and, for the throttle, re-charging — the agents that already ran this pass.
+  /// Cleared when the lane completes a full pass. This is what makes the
+  /// throttle pace (not livelock) a lane with more LLM-using agents than its
+  /// per-window budget.
+  final Map<String, int> _laneResumeIndex = <String, int>{};
 
   /// Guards the pump so lanes never run in parallel even if [tick] is re-entered
   /// (e.g. a heartbeat firing while a slow lane is still pumping).
@@ -297,10 +319,22 @@ final class DreamCadenceDriver {
         final laneId = _laneQueue.removeFirst();
         final lane = schedule.laneById(laneId);
         if (lane == null) {
+          _laneResumeIndex.remove(laneId);
           continue;
         }
         var deferred = false;
-        for (final procedureId in lane.agents) {
+        var i = _laneResumeIndex[laneId] ?? 0;
+        for (; i < lane.agents.length; i++) {
+          final procedureId = lane.agents[i];
+          // Part d: an LLM-using agent must acquire a throttle token before it
+          // fires. Embedding-only agents are exempt. A denied acquire defers the
+          // lane (re-enqueued below) so the paced work is retried, not lost.
+          if (throttle != null &&
+              !throttle!.isExempt(procedureId) &&
+              !throttle!.tryAcquire(laneId, clock.nowMs())) {
+            deferred = true;
+            break;
+          }
           final outcome = await fire(procedureId);
           if (outcome == FireOutcome.deferred) {
             deferred = true;
@@ -309,11 +343,17 @@ final class DreamCadenceDriver {
           ran.add(procedureId);
         }
         if (deferred) {
+          // Resume from the agent that did not run (index [i]) on the retry, so
+          // the already-run prefix is neither re-fired nor re-charged.
+          _laneResumeIndex[laneId] = i;
           if (!_laneQueue.contains(laneId)) {
             _laneQueue.add(laneId);
           }
           break;
         }
+        // A full pass completed: drop the cursor so the lane restarts cleanly
+        // on its next due interval.
+        _laneResumeIndex.remove(laneId);
       }
     } finally {
       _running = false;
