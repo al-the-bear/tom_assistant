@@ -33,9 +33,12 @@ export 'config/memory_config.dart'
     show
         BudgetsConfig,
         ClassificationConfig,
+        DecayConfig,
+        DecayDemoteConfig,
         DefaultWriteBudgetConfig,
         McpServerConfig,
         MemoryConfig,
+        RankingConfig,
         ReplicationConfig,
         ReplicationRole,
         RetrievalConfig,

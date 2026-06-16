@@ -44,9 +44,13 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
         BudgetsConfig,
         ClassificationConfig,
+        DecayConfig,
+        DecayDemoteConfig,
         DefaultWriteBudgetConfig,
         McpServerConfig,
         MemoryConfig,
+        RankingConfig,
+        RecallRanking,
         ReplicationConfig,
         ReplicationRole,
         RetrievalConfig,
@@ -152,6 +156,7 @@ abstract final class MemoryConfigLoader {
     final retrieval = _parseRetrieval(
       _optionalMap(node, 'retrieval'),
     );
+    final decay = _parseDecay(_optionalMap(node, 'decay'));
     final trails = _parseTrails(_optionalMap(node, 'trails'));
     final classification = _parseClassification(
       _optionalMap(node, 'classification'),
@@ -170,6 +175,7 @@ abstract final class MemoryConfigLoader {
       root: root,
       sqliteVec: sqliteVec,
       retrieval: retrieval,
+      decay: decay,
       trails: trails,
       classification: classification,
       budgets: budgets,
@@ -245,7 +251,137 @@ abstract final class MemoryConfigLoader {
         );
       }
     }
-    return RetrievalConfig(rrfK: rrfK, mmrLambda: mmrLambda);
+    final ranking = _parseRanking(_optionalMap(node, 'ranking'));
+    return RetrievalConfig(
+      rrfK: rrfK,
+      mmrLambda: mmrLambda,
+      ranking: ranking,
+    );
+  }
+
+  static RankingConfig _parseRanking(YamlMap? node) {
+    if (node == null) return const RankingConfig();
+    var defaultRanking = RecallRanking.relevance;
+    final defaultRaw = _optionalString(
+      node,
+      'default',
+      'memory.retrieval.ranking.default',
+    );
+    if (defaultRaw != null) {
+      defaultRanking = _parseRecallRanking(defaultRaw);
+    }
+    final recencyWeight = _optionalDouble(
+          node,
+          'recencyWeight',
+          'memory.retrieval.ranking.recencyWeight',
+        ) ??
+        1.0;
+    if (recencyWeight < 0.0) {
+      throw const MemoryConfigException(
+        'memory.retrieval.ranking.recencyWeight must be >= 0.',
+      );
+    }
+    return RankingConfig(
+      defaultRanking: defaultRanking,
+      recencyWeight: recencyWeight,
+    );
+  }
+
+  static RecallRanking _parseRecallRanking(String raw) {
+    for (final r in RecallRanking.values) {
+      if (r.name == raw) return r;
+    }
+    final names = RecallRanking.values.map((r) => '`${r.name}`').join(', ');
+    throw MemoryConfigException(
+      'memory.retrieval.ranking.default must be one of $names (got `$raw`).',
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // decay block (§ 6.6, § 9.7, § 14): per-type recency half-lives with
+  // a `default` fallback, plus the `dream_decay_v1` demotion knobs.
+  // ---------------------------------------------------------------
+
+  static DecayConfig _parseDecay(YamlMap? node) {
+    if (node == null) return const DecayConfig();
+    final (halfLives, defaultHalfLife) = _parseHalfLifeDays(
+      _optionalMap(node, 'halfLifeDays'),
+    );
+    final demote = _parseDecayDemote(_optionalMap(node, 'demote'));
+    return DecayConfig(
+      halfLifeDays: halfLives,
+      defaultHalfLifeDays: defaultHalfLife,
+      demote: demote,
+    );
+  }
+
+  /// Parses the `halfLifeDays` map. The `default:` key is split out into
+  /// the typed fallback so it never leaks into the per-type override map
+  /// (`DecayConfig.halfLifeDaysFor` reads the map first, the fallback
+  /// second). Every value must be a positive integer (a half-life of
+  /// zero or below has no meaning for the `2^(-age/halfLife)` decay).
+  static (Map<String, int>, int) _parseHalfLifeDays(YamlMap? node) {
+    if (node == null) return (const {}, 90);
+    final overrides = <String, int>{};
+    var defaultDays = 90;
+    for (final entry in node.entries) {
+      final key = entry.key;
+      if (key is! String) {
+        throw MemoryConfigException(
+          'memory.decay.halfLifeDays keys must be node-type names '
+          '(got a non-string key `$key`).',
+        );
+      }
+      final path = 'memory.decay.halfLifeDays.$key';
+      final days = _optionalInt(node, key, path);
+      if (days == null || days <= 0) {
+        throw MemoryConfigException('$path must be a positive integer.');
+      }
+      if (key == 'default') {
+        defaultDays = days;
+      } else {
+        overrides[key] = days;
+      }
+    }
+    return (Map.unmodifiable(overrides), defaultDays);
+  }
+
+  static DecayDemoteConfig _parseDecayDemote(YamlMap? node) {
+    if (node == null) return const DecayDemoteConfig();
+    final maxPerPass = _optionalInt(
+          node,
+          'maxPerPass',
+          'memory.decay.demote.maxPerPass',
+        ) ??
+        200;
+    final minAccessCount = _optionalInt(
+          node,
+          'minAccessCount',
+          'memory.decay.demote.minAccessCount',
+        ) ??
+        1;
+    final coldnessFloorDays = _optionalInt(
+          node,
+          'coldnessFloorDays',
+          'memory.decay.demote.coldnessFloorDays',
+        ) ??
+        30;
+    for (final pair in [
+      ('maxPerPass', maxPerPass),
+      ('minAccessCount', minAccessCount),
+      ('coldnessFloorDays', coldnessFloorDays),
+    ]) {
+      if (pair.$2 < 0) {
+        throw MemoryConfigException(
+          'memory.decay.demote.${pair.$1} must be >= 0.',
+        );
+      }
+    }
+    return DecayDemoteConfig(
+      maxPerPass: maxPerPass,
+      minAccessCount: minAccessCount,
+      coldnessFloorDays: coldnessFloorDays,
+    );
   }
 
   static TrailsConfig _parseTrails(YamlMap? node) {

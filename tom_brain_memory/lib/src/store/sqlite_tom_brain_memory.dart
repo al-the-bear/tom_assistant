@@ -398,6 +398,13 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
       nodeReader: _reader,
       embedder: _embedder,
       clock: _clock,
+      // § 6.2.1 / § 14: the `recencyBoosted` re-score reads its weight
+      // and the per-type half-life from config. `halfLifeDaysFor` owns
+      // the `default` fallback (§ 6.6), so a type without an override
+      // gets the configured default rather than the executor's built-in.
+      recencyWeight: config.retrieval.ranking.recencyWeight,
+      halfLifeForType: (typeName) =>
+          Duration(days: config.decay.halfLifeDaysFor(typeName)),
     );
 
     // 10. Wire the remaining data-plane owners — edges, classification,

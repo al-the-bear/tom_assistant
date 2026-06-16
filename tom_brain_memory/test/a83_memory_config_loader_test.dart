@@ -179,6 +179,103 @@ memory:
 ''');
       expect(cfg.retrieval.mmrLambda, 1.0);
     });
+
+    // § 12 — the `retrieval.ranking` and `decay` blocks (§ 14).
+    test('parses the retrieval.ranking and decay blocks', () {
+      final cfg = MemoryConfigLoader.parse('''
+memory:
+  root: /tmp/x
+  sqliteVec:
+    extensionPath: /opt/vec0.so
+  retrieval:
+    ranking:
+      default: recencyBoosted
+      recencyWeight: 2.5
+  decay:
+    halfLifeDays:
+      Event: 14
+      Claim: 90
+      Conclusion: 180
+      Concept: 365
+      Procedure: 365
+      default: 60
+    demote:
+      maxPerPass: 200
+      minAccessCount: 1
+      coldnessFloorDays: 30
+  replication:
+    role: authority
+    writeLogDir: /tmp/write-log
+''');
+
+      expect(cfg.retrieval.ranking.defaultRanking, RecallRanking.recencyBoosted);
+      expect(cfg.retrieval.ranking.recencyWeight, 2.5);
+
+      // The per-type overrides land in the map; the `default:` key is
+      // split out into the typed fallback (and never leaks into the map).
+      expect(cfg.decay.halfLifeDays, {
+        'Event': 14,
+        'Claim': 90,
+        'Conclusion': 180,
+        'Concept': 365,
+        'Procedure': 365,
+      });
+      expect(cfg.decay.halfLifeDays.containsKey('default'), isFalse);
+      expect(cfg.decay.defaultHalfLifeDays, 60);
+
+      // The half-life lookup honours overrides and falls back to default.
+      expect(cfg.decay.halfLifeDaysFor('Event'), 14);
+      expect(cfg.decay.halfLifeDaysFor('Procedure'), 365);
+      expect(cfg.decay.halfLifeDaysFor('SomethingElse'), 60);
+
+      expect(cfg.decay.demote.maxPerPass, 200);
+      expect(cfg.decay.demote.minAccessCount, 1);
+      expect(cfg.decay.demote.coldnessFloorDays, 30);
+    });
+
+    test('omitted ranking/decay blocks fall back to typed defaults', () {
+      final cfg = MemoryConfigLoader.parse('''
+memory:
+  root: /tmp/x
+  sqliteVec:
+    extensionPath: /opt/vec0.so
+  replication:
+    role: authority
+    writeLogDir: /tmp/write-log
+''');
+
+      expect(cfg.retrieval.ranking.defaultRanking, RecallRanking.relevance);
+      expect(cfg.retrieval.ranking.recencyWeight, 1.0);
+      expect(cfg.decay.halfLifeDays, isEmpty);
+      // No overrides, no `default:` key → the typed 90-day fallback.
+      expect(cfg.decay.defaultHalfLifeDays, 90);
+      expect(cfg.decay.halfLifeDaysFor('Event'), 90);
+      expect(cfg.decay.demote.maxPerPass, 200);
+      expect(cfg.decay.demote.minAccessCount, 1);
+      expect(cfg.decay.demote.coldnessFloorDays, 30);
+    });
+
+    test('a partial decay block keeps untouched knobs at their defaults', () {
+      final cfg = MemoryConfigLoader.parse('''
+memory:
+  root: /tmp/x
+  sqliteVec:
+    extensionPath: /opt/vec0.so
+  decay:
+    halfLifeDays:
+      Event: 7
+  replication:
+    role: authority
+    writeLogDir: /tmp/write-log
+''');
+
+      expect(cfg.decay.halfLifeDays, {'Event': 7});
+      // No `default:` given → 90-day fallback; the `demote` block is
+      // absent → all-default knobs.
+      expect(cfg.decay.defaultHalfLifeDays, 90);
+      expect(cfg.decay.halfLifeDaysFor('Claim'), 90);
+      expect(cfg.decay.demote.coldnessFloorDays, 30);
+    });
   });
 
   group('MemoryConfigLoader.parse — env substitution', () {
@@ -690,6 +787,85 @@ memory:
             (e) => e.message,
             'message',
             contains('YAML map'),
+          ),
+        ),
+      );
+    });
+
+    // § 12 — ranking / decay validation.
+    String wrap(String block) => '''
+memory:
+  root: /tmp/x
+  sqliteVec:
+    extensionPath: /opt/vec0.so
+$block
+  replication:
+    role: authority
+    writeLogDir: /tmp/write-log
+''';
+
+    test('an unknown ranking.default names the valid set', () {
+      expect(
+        () => MemoryConfigLoader.parse(wrap('''
+  retrieval:
+    ranking:
+      default: nonsense''')),
+        throwsA(
+          isA<MemoryConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('memory.retrieval.ranking.default'),
+              contains('recencyBoosted'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('a negative recencyWeight raises', () {
+      expect(
+        () => MemoryConfigLoader.parse(wrap('''
+  retrieval:
+    ranking:
+      recencyWeight: -0.5''')),
+        throwsA(
+          isA<MemoryConfigException>().having(
+            (e) => e.message,
+            'message',
+            contains('recencyWeight must be >= 0'),
+          ),
+        ),
+      );
+    });
+
+    test('a non-positive half-life raises naming the type key', () {
+      expect(
+        () => MemoryConfigLoader.parse(wrap('''
+  decay:
+    halfLifeDays:
+      Event: 0''')),
+        throwsA(
+          isA<MemoryConfigException>().having(
+            (e) => e.message,
+            'message',
+            contains('memory.decay.halfLifeDays.Event must be a positive'),
+          ),
+        ),
+      );
+    });
+
+    test('a negative demote knob raises', () {
+      expect(
+        () => MemoryConfigLoader.parse(wrap('''
+  decay:
+    demote:
+      maxPerPass: -1''')),
+        throwsA(
+          isA<MemoryConfigException>().having(
+            (e) => e.message,
+            'message',
+            contains('memory.decay.demote.maxPerPass must be >= 0'),
           ),
         ),
       );

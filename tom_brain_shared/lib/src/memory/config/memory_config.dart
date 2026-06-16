@@ -18,6 +18,8 @@
 // `MemoryConfigPaths` extension in `tom_brain_memory`
 // (`config/memory_config_paths.dart`), where `dart:io` is allowed.
 
+import '../retrieval/recall_query.dart' show RecallRanking;
+
 /// sqlite-vec FFI extension configuration.
 ///
 /// Two ways to point at the `vec0` binary, checked in this order by the
@@ -53,6 +55,29 @@ final class SqliteVecConfig {
   });
 }
 
+/// Post-fusion ranking tunables (§ 6.1.1, § 6.2.1, § 14).
+///
+/// These tune the re-score step that runs *after* RRF fusion + MMR
+/// diversity, not the fusion itself (design decision 3 = A: recency /
+/// frequency enter as a post-fusion re-score, never a new RRF term).
+final class RankingConfig {
+  /// The default [RecallRanking] strategy applied when a [RecallQuery]
+  /// does not pin one. The query's own `ranking` always wins when set;
+  /// this is only the fallback for callers that leave it at the schema
+  /// default. The answer recall overrides to `recencyBoosted` (§ 6.1.1).
+  final RecallRanking defaultRanking;
+
+  /// `w_recency` — the weight of the recency factor in the
+  /// `recencyBoosted` boost `relevance * (1 + w_recency * recencyFactor)`
+  /// (§ 6.2.1). Must be `>= 0`. Default 1.0.
+  final double recencyWeight;
+
+  const RankingConfig({
+    this.defaultRanking = RecallRanking.relevance,
+    this.recencyWeight = 1.0,
+  });
+}
+
 /// Retrieval tunables (§ 6.2, § 14).
 final class RetrievalConfig {
   /// RRF smoothing constant. Default 60.
@@ -61,9 +86,13 @@ final class RetrievalConfig {
   /// MMR lambda. Default 0.7.
   final double mmrLambda;
 
+  /// Post-fusion ranking tunables (§ 6.1.1, § 6.2.1).
+  final RankingConfig ranking;
+
   const RetrievalConfig({
     this.rrfK = 60,
     this.mmrLambda = 0.7,
+    this.ranking = const RankingConfig(),
   });
 }
 
@@ -129,6 +158,71 @@ final class BudgetsConfig {
   const BudgetsConfig({
     this.defaultWriteBudget = const DefaultWriteBudgetConfig(),
   });
+}
+
+/// `dream_decay_v1` demotion knobs (§ 9.7, § 14).
+///
+/// The deep-lane recalibration agent is the only writer that turns
+/// sustained coldness into a *status* change (active → demoted). These
+/// knobs keep it gradual, floored, and reversible (principle 6: it
+/// demotes, never deletes).
+final class DecayDemoteConfig {
+  /// Write budget per deep-lane pass — at most this many demotions
+  /// happen in one `dream_decay_v1` run. Must be `>= 0`. Default 200.
+  final int maxPerPass;
+
+  /// A node used at least this many times is never demoted by decay
+  /// alone. Must be `>= 0`. Default 1.
+  final int minAccessCount;
+
+  /// Only nodes untouched for at least this many days are even
+  /// considered for demotion. Must be `>= 0`. Default 30.
+  final int coldnessFloorDays;
+
+  const DecayDemoteConfig({
+    this.maxPerPass = 200,
+    this.minAccessCount = 1,
+    this.coldnessFloorDays = 30,
+  });
+}
+
+/// Usage-decay tunables (§ 6.6, § 9.7, § 14).
+///
+/// Recency is decayed per node *type* via a configurable half-life:
+/// episodic `Event`s fade fast; abstractions (`Concept`, `Conclusion`,
+/// `Procedure`) fade slowly; bootstrap / `NodeType` nodes effectively
+/// never. The half-life is applied at *read* time in the ranking
+/// re-score (§ 6.2.1) — never as a background write — and at the
+/// deep-lane `dream_decay_v1` recalibration that turns coldness into a
+/// status change (§ 9.7).
+final class DecayConfig {
+  /// Per-node-type recency half-life in days. A type absent from this
+  /// map falls back to [defaultHalfLifeDays]; the YAML `default:` key is
+  /// folded into [defaultHalfLifeDays] by the loader and never appears
+  /// here. Every value is `> 0`.
+  final Map<String, int> halfLifeDays;
+
+  /// Half-life in days for any type not present in [halfLifeDays]
+  /// (the YAML `default:` entry). Must be `> 0`. Default 90.
+  final int defaultHalfLifeDays;
+
+  /// `dream_decay_v1` demotion knobs.
+  final DecayDemoteConfig demote;
+
+  const DecayConfig({
+    this.halfLifeDays = const {},
+    this.defaultHalfLifeDays = 90,
+    this.demote = const DecayDemoteConfig(),
+  });
+
+  /// Returns the recency half-life in days for [typeName], falling back
+  /// to [defaultHalfLifeDays] when the type has no explicit override.
+  ///
+  /// This is the single lookup the read-time recency re-score (§ 6.2.1)
+  /// and `dream_decay_v1` (§ 9.7) consult, so the `default` fallback
+  /// lives here rather than at each call site.
+  int halfLifeDaysFor(String typeName) =>
+      halfLifeDays[typeName] ?? defaultHalfLifeDays;
 }
 
 /// MCP server tunables (§ 3.2, § 14).
@@ -221,6 +315,9 @@ final class MemoryConfig {
   /// Retrieval tunables.
   final RetrievalConfig retrieval;
 
+  /// Usage-decay tunables (§ 6.6, § 9.7).
+  final DecayConfig decay;
+
   /// Trail-storage tunables.
   final TrailsConfig trails;
 
@@ -241,6 +338,7 @@ final class MemoryConfig {
     required this.sqliteVec,
     this.profile,
     this.retrieval = const RetrievalConfig(),
+    this.decay = const DecayConfig(),
     this.trails = const TrailsConfig(),
     this.classification = const ClassificationConfig(),
     this.budgets = const BudgetsConfig(),
@@ -260,6 +358,7 @@ final class MemoryConfig {
         sqliteVec: sqliteVec,
         profile: profile,
         retrieval: retrieval,
+        decay: decay,
         trails: trails,
         classification: classification,
         budgets: budgets,
