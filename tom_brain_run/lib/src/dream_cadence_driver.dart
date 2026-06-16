@@ -45,7 +45,9 @@ enum DreamLane {
   /// question-raising, centroid + repetition maintenance.
   slow,
 
-  /// Deep sleep — expensive autonomous research and demotion/pruning.
+  /// Deep sleep — expensive autonomous research, redundancy pruning, and the
+  /// usage-recalibration decay pass (`dream_decay_v1`, § 9.7) that demotes the
+  /// coldest active nodes past their per-type half-life.
   deep,
 
   /// Long-running, checkpointed schema/centroid re-migration.
@@ -110,7 +112,11 @@ final class CadenceSchedule {
             'dream_recentroid_v1',
             'dream_repetition_detect_v1',
           ],
-          DreamLane.deep: <String>['research_v1', 'dream_prune_v1'],
+          DreamLane.deep: <String>[
+            'research_v1',
+            'dream_prune_v1',
+            'dream_decay_v1',
+          ],
           DreamLane.monthly: <String>['restructure_tree_v1'],
         },
       );

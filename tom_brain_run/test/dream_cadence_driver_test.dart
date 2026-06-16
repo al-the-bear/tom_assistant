@@ -212,7 +212,8 @@ void main() {
         'dream_recentroid_v1',
         'dream_repetition_detect_v1',
       ]);
-      expect(schedule.agents[DreamLane.deep], ['research_v1', 'dream_prune_v1']);
+      expect(schedule.agents[DreamLane.deep],
+          ['research_v1', 'dream_prune_v1', 'dream_decay_v1']);
       expect(schedule.agents[DreamLane.monthly], ['restructure_tree_v1']);
       expect(schedule.shakingAgent, 'dream_reconsolidate_v1');
 
@@ -273,6 +274,38 @@ void main() {
       // never on a timed lane — it is reachable only through the event-driven
       // shaking path, and even there only through the same scoped fire seam.
       expect(fired, isNot(contains(schedule.shakingAgent)));
+    });
+
+    test('DC-12: the deep lane carries the usage-recalibration decay pass '
+        '(dream_decay_v1, § 14) and fires it on the deep interval, after '
+        'research/prune, and in no faster lane', () async {
+      final clock = MutableTestClock(BrainTime.fromMs(0));
+      final schedule = CadenceSchedule.defaults();
+      final driver = driverAt(clock, schedule: schedule);
+
+      // The decay pass belongs to the deep lane only — never fast / slow /
+      // monthly (a lane it appeared in twice would demote on two cadences).
+      expect(schedule.agents[DreamLane.deep], contains('dream_decay_v1'));
+      for (final lane in const [
+        DreamLane.fast,
+        DreamLane.slow,
+        DreamLane.monthly,
+      ]) {
+        expect(schedule.agents[lane], isNot(contains('dream_decay_v1')));
+      }
+
+      clock.advance(schedule.intervals[DreamLane.deep]!);
+      final result = await driver.tick();
+
+      // It fired this deep tick, through the same fire seam as its lane-mates,
+      // and after research/prune (deep-lane fire order).
+      expect(result, contains('dream_decay_v1'));
+      expect(fired, contains('dream_decay_v1'));
+      expect(
+        result.indexOf('dream_decay_v1'),
+        greaterThan(result.indexOf('dream_prune_v1')),
+        reason: 'decay fires after the prune pass in deep-lane order',
+      );
     });
   });
 }
