@@ -20,8 +20,15 @@
 # (inherits `assistant_to_user` + `tools: all`), and `critique` is a no-tool
 # `evaluator` verdict.
 
+# Inherited default: every sub-procedure/prompt beneath runs on the local mbp
+# `assistant` route (omlx/Gemma) — free, low-latency, used for all the memory
+# evaluation / analysis / planning / authoring sub-judgements. ONLY the
+# user-facing *answer* prompts (`answer_with_memory.assembly` and
+# `answer_with_thinking.synthesis`/`synthesis_reentry`) pin themselves back to
+# `assistant_claude_brain` (Claude, session-threaded). Flip a sub-judgement to
+# Claude by adding an `llm: assistant_claude_brain` override on its prompt.
 tools: all
-llm: assistant_claude_brain
+llm: assistant
 role: assistant_to_user
 
 # The `prompt_analyzer` sub-procedure (`prompt_configuration.md` §10) carries the
@@ -48,6 +55,8 @@ answer_with_memory:
   prompts:
     assembly:
       template: answer_with_memory.assembly
+      # The user-facing answer — pinned to Claude (overrides the gemma default).
+      llm: assistant_claude_brain
     completion_check:
       template: answer_with_memory.completion_check
       tools: none
@@ -160,9 +169,13 @@ answer_with_thinking:
     synthesis:
       template: answer_with_thinking.synthesis
       tools: all
+      # The user-facing answer (thinking branch) — pinned to Claude.
+      llm: assistant_claude_brain
     synthesis_reentry:
       template: answer_with_thinking.synthesis_reentry
       tools: all
+      # The user-facing answer on re-entry — pinned to Claude.
+      llm: assistant_claude_brain
     critique:
       template: answer_with_thinking.critique
       tools: none

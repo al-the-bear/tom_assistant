@@ -201,6 +201,9 @@ substrate:
         sessionKey: default
         questHistoryRoot: /srv/repos/al_the_bear/_ai/quests
   roleRoutes:
+    # The user-facing answer role stays on Claude; every other role below is
+    # repointed to the local mbp Gemma (omlx) — the free substrate for memory
+    # evaluation / retrieval / reasoning sub-judgements.
     assistant_to_user:
       - providerId: claude:haiku:none
         model: claude-haiku-4-5-20251001
@@ -211,23 +214,23 @@ substrate:
     # Claude Haiku in session mode `none` (fresh per call — these are stateless
     # sub-judgements that must NOT share the answer's `:brain` session).
     recall_planner:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     hypothesis_writer:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     query_term_writer:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     category_selector:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     retrieval_reranker:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     profile_selector:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     # Core thinking-loop roles. `prompt_analyzer_v1` dispatches `analyser`;
     # `answer_with_thinking_v1` dispatches `analyser` (analyse), `sub_thinker`
     # (sub-prompt), `assistant_to_user` (synthesise, above), and `evaluator`
@@ -235,83 +238,83 @@ substrate:
     # `RoleNotFound` on the first analyse — so they are mandatory for step 9.
     # `recaller` and `researcher` complete the six-role core roster.
     analyser:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     sub_thinker:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     recaller:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     evaluator:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     researcher:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     # Procedure-authoring roles (`author_new_procedure_v1`): draft / critique /
     # select an authored procedure.
     procedure_author:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     procedure_critic:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     procedure_selector:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     # Creation-loop roles (`create_v1`): draft / test / review an artifact.
     creator:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     tester:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     reviewer:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     # Planning-loop roles (`plan_v1`): frame / decompose / order / critique /
     # re-plan.
     planner:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     decomposer:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     estimator:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     plan_evaluator:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     re_planner:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     # Dreaming-agent roles (`dream_*_v1`, gated by the `dream:` block below —
     # off by default). Each dreaming pass makes one LLM judgement under its
     # role; an unrouted role would throw `RoleNotFound` the moment dreaming is
     # enabled.
     extractor:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     connector:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     synthesiser:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     inquisitor:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     pruner:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     reconsolidator:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
     repetition_detector:
-      - providerId: claude:haiku:none
-        model: claude-haiku-4-5-20251001
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
   embedding:
     providerId: ollama
     model: nomic-embed-text
