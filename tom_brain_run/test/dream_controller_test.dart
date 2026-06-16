@@ -40,7 +40,7 @@ void main() {
       },
     );
     // Keep the fast lane perpetually due.
-    cadenceClock.advance(cadence.intervals[DreamLane.fast]!);
+    cadenceClock.advance(cadence.laneById('fast')!.interval);
     return DreamController(
       driver: driver,
       schedule: schedule,

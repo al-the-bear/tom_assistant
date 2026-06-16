@@ -110,7 +110,7 @@ export 'src/dream_cadence_driver.dart'
     show
         CadenceSchedule,
         DreamCadenceDriver,
-        DreamLane,
+        DreamLaneSpec,
         FireOutcome,
         MaintenanceFire;
 export 'src/dream_cadence_wiring.dart'

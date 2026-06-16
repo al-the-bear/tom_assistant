@@ -1,6 +1,7 @@
 // DreamConfig — the typed `dream:` section of the whole-process config: whether
-// the scheduled dream cadence runs at boot, the daily windows it runs in, and an
-// optional heartbeat override (item b).
+// the scheduled dream cadence runs at boot, the daily windows it runs in, an
+// optional heartbeat override (item b), and the optional config-defined lane set
+// (dream-redesign parts b + e).
 //
 // The block is optional. Its absence (a `null` on `BrainRunConfig`) means the
 // run assembly stands up *no* dream loop — the prototype's many deterministic
@@ -14,10 +15,17 @@
 //                         "always active" — dream whenever otherwise idle.
 //   * `heartbeatSeconds`— an optional override for how often the loop polls its
 //                         window/mode gate (default the loop's one-minute beat).
+//   * `lanes`           — the optional config-defined lane set (parts b + e):
+//                         each `{id, intervalSeconds, agents, maxLlmCallsPerWindow?}`.
+//                         Absent ⇒ `cadence` is `null` and the driver uses
+//                         `CadenceSchedule.defaults()`. Present ⇒ the config's
+//                         lanes *replace* the defaults wholesale (HP1: the config
+//                         is the lane set, no merge).
 //
 // This value type is read-only — parsed once at boot by `DreamConfigLoader` and
 // never re-serialised.
 
+import 'dream_cadence_driver.dart';
 import 'dream_window_schedule.dart';
 
 /// Thrown when a `dream:` block is structurally invalid (an unknown key, a
@@ -47,11 +55,12 @@ final class DreamConfig {
   ///
   /// [enabled] defaults to `false` (a dormant but well-formed block); [schedule]
   /// defaults to an empty (always-active) schedule; [heartbeat] is `null` unless
-  /// overridden.
+  /// overridden; [cadence] is `null` unless a `lanes:` block defines one.
   const DreamConfig({
     required this.enabled,
     required this.schedule,
     this.heartbeat,
+    this.cadence,
   });
 
   /// Whether the run assembly starts the dream loop at boot. A `false` here
@@ -64,4 +73,9 @@ final class DreamConfig {
   /// The optional heartbeat override — how often the gated loop polls its
   /// window/mode gate. `null` ⇒ the loop's one-minute default.
   final Duration? heartbeat;
+
+  /// The optional config-defined lane set (parts b + e). `null` ⇒ the driver
+  /// uses [CadenceSchedule.defaults]; present ⇒ it replaces the defaults
+  /// wholesale.
+  final CadenceSchedule? cadence;
 }

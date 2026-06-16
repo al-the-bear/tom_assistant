@@ -349,13 +349,14 @@ AgentRegistration _extractorAgent(Set<String> scopes) => AgentRegistration(
       writeScopes: scopes,
     );
 
-/// Builds a fast-lane-only Extractor cadence driver over [scheduler]: the fast
-/// lane carries just `dream_extract_v1`, while the slower lanes are present (a
-/// [CadenceSchedule] must map every [DreamLane]) but never elapse in a single
-/// tick. This is the real production [DreamCadenceDriver] — the only test-local
-/// concession is the fire seam threading the [source] argument the prototype
-/// script requires (the production no-arg `fireThroughScheduler` adapter, where
-/// the agents recall on their own, is a separate prototype concern).
+/// Builds a fast-lane-only Extractor cadence driver over [scheduler]: the only
+/// configured lane carries just `dream_extract_v1`. Lanes are config-defined
+/// (dream-redesign parts b + e), so the slower default lanes are simply not
+/// declared here. This is the real production [DreamCadenceDriver] — the only
+/// test-local concession is the fire seam threading the [source] argument the
+/// prototype script requires (the production no-arg `fireThroughScheduler`
+/// adapter, where the agents recall on their own, is a separate prototype
+/// concern).
 DreamCadenceDriver _extractorCadenceDriver(
   MutableTestClock clock,
   FreeTimeScheduler scheduler,
@@ -363,19 +364,14 @@ DreamCadenceDriver _extractorCadenceDriver(
 ) =>
     DreamCadenceDriver(
       clock: clock,
-      schedule: const CadenceSchedule(
-        intervals: <DreamLane, Duration>{
-          DreamLane.fast: Duration(minutes: 5),
-          DreamLane.slow: Duration(hours: 1),
-          DreamLane.deep: Duration(days: 1),
-          DreamLane.monthly: Duration(days: 30),
-        },
-        agents: <DreamLane, List<String>>{
-          DreamLane.fast: <String>[_extractorId],
-          DreamLane.slow: <String>[],
-          DreamLane.deep: <String>[],
-          DreamLane.monthly: <String>[],
-        },
+      schedule: CadenceSchedule(
+        lanes: <DreamLaneSpec>[
+          const DreamLaneSpec(
+            id: 'fast',
+            interval: Duration(minutes: 5),
+            agents: <String>[_extractorId],
+          ),
+        ],
       ),
       fire: (String procedureId) async {
         try {

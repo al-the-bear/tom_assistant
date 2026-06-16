@@ -19,6 +19,7 @@
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show MapFieldReader, loadYamlAsMap;
 
+import 'dream_cadence_driver.dart';
 import 'dream_config.dart';
 import 'dream_window_schedule.dart';
 
@@ -35,10 +36,19 @@ abstract final class DreamConfigLoader {
     'enabled',
     'windows',
     'heartbeatSeconds',
+    'lanes',
   };
 
   /// The keys a single `dream.windows[i]` slot may carry.
   static const Set<String> _allowedSlotKeys = <String>{'start', 'end'};
+
+  /// The keys a single `dream.lanes[i]` entry may carry (parts b + e).
+  static const Set<String> _allowedLaneKeys = <String>{
+    'id',
+    'intervalSeconds',
+    'agents',
+    'maxLlmCallsPerWindow',
+  };
 
   static const MapFieldReader _reader = MapFieldReader(DreamConfigException.new);
 
@@ -82,11 +92,91 @@ abstract final class DreamConfigLoader {
         ? null
         : Duration(milliseconds: (heartbeatSeconds * 1000).round());
 
+    final CadenceSchedule? cadence = _parseLanes(dream);
+
     return DreamConfig(
       enabled: enabled,
       schedule: schedule,
       heartbeat: heartbeat,
+      cadence: cadence,
     );
+  }
+
+  /// Parses the optional `dream.lanes` list into a [CadenceSchedule] (parts b +
+  /// e), or `null` when absent (the driver then uses
+  /// [CadenceSchedule.defaults]).
+  ///
+  /// Each entry is a `{id, intervalSeconds, agents, maxLlmCallsPerWindow?}` map.
+  /// The lanes *replace* the defaults wholesale (HP1: the config is the lane
+  /// set). Structural validity — non-empty unique ids, positive intervals,
+  /// non-empty agents — is enforced by the [CadenceSchedule] constructor; an
+  /// `ArgumentError` from it is rewrapped into a located [DreamConfigException].
+  static CadenceSchedule? _parseLanes(Map<Object?, Object?> dream) {
+    final List<Object?>? rawLanes =
+        _reader.optionalList(dream, 'lanes', 'dream.lanes');
+    if (rawLanes == null) {
+      return null;
+    }
+
+    final List<DreamLaneSpec> lanes = <DreamLaneSpec>[];
+    for (var i = 0; i < rawLanes.length; i++) {
+      final String lanePath = 'dream.lanes[$i]';
+      final Map<Object?, Object?> lane =
+          _reader.mapValue(rawLanes[i], lanePath)!;
+      _rejectUnknownKeys(lane, _allowedLaneKeys, lanePath);
+
+      final String id = _reader.requireString(lane, 'id', '$lanePath.id');
+
+      final num? intervalSeconds = _reader.optionalNum(
+          lane, 'intervalSeconds', '$lanePath.intervalSeconds');
+      if (intervalSeconds == null) {
+        throw DreamConfigException(
+          'Missing required field: $lanePath.intervalSeconds',
+        );
+      }
+      if (intervalSeconds <= 0) {
+        throw DreamConfigException(
+          '$lanePath.intervalSeconds must be a positive number of seconds.',
+        );
+      }
+
+      final List<Object?>? rawAgents =
+          _reader.optionalList(lane, 'agents', '$lanePath.agents');
+      if (rawAgents == null) {
+        throw DreamConfigException('Missing required field: $lanePath.agents');
+      }
+      final List<String> agents = <String>[];
+      for (var j = 0; j < rawAgents.length; j++) {
+        final Object? raw = rawAgents[j];
+        if (raw is! String || raw.isEmpty) {
+          throw DreamConfigException(
+            '$lanePath.agents[$j] must be a non-empty procedure id.',
+          );
+        }
+        agents.add(raw);
+      }
+
+      final num? maxLlmCallsPerWindow = _reader.optionalNum(
+          lane, 'maxLlmCallsPerWindow', '$lanePath.maxLlmCallsPerWindow');
+      if (maxLlmCallsPerWindow != null && maxLlmCallsPerWindow <= 0) {
+        throw DreamConfigException(
+          '$lanePath.maxLlmCallsPerWindow must be a positive integer.',
+        );
+      }
+
+      lanes.add(DreamLaneSpec(
+        id: id,
+        interval: Duration(milliseconds: (intervalSeconds * 1000).round()),
+        agents: agents,
+        maxLlmCallsPerWindow: maxLlmCallsPerWindow?.toInt(),
+      ));
+    }
+
+    try {
+      return CadenceSchedule(lanes: lanes);
+    } on ArgumentError catch (e) {
+      throw DreamConfigException('dream.lanes is invalid: ${e.message}');
+    }
   }
 
   /// Parses the optional `dream.windows` list into a [DreamWindowSchedule].

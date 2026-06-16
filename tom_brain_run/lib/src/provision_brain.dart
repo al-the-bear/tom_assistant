@@ -357,7 +357,7 @@ DreamController _startDreamLoop(BootedBrain booted, DreamConfig dream) {
     engine: booted.engine,
   );
   final controller = DreamController(
-    driver: dreamCadenceDriverOverScheduler(scheduler),
+    driver: dreamCadenceDriverOverScheduler(scheduler, schedule: dream.cadence),
     schedule: dream.schedule,
     heartbeat: dream.heartbeat ?? const Duration(minutes: 1),
   );

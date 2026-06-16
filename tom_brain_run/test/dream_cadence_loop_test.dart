@@ -28,7 +28,7 @@ void main() {
         },
       );
       // Past the fast interval, so the very next pump fires the fast lane.
-      clock.advance(schedule.intervals[DreamLane.fast]!);
+      clock.advance(schedule.laneById('fast')!.interval);
 
       final loop = DreamCadenceLoop(
         driver: driver,
@@ -40,7 +40,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 40));
       await loop.stop();
 
-      expect(fired, containsAll(schedule.agents[DreamLane.fast]!));
+      expect(fired, containsAll(schedule.laneById('fast')!.agents));
     });
 
     test('DL-2: start is idempotent and stop halts the heartbeat', () async {
@@ -52,14 +52,14 @@ void main() {
         clock: clock,
         schedule: schedule,
         fire: (id) async {
-          if (id == schedule.agents[DreamLane.fast]!.first) {
+          if (id == schedule.laneById('fast')!.agents.first) {
             ticks++;
-            clock.advance(schedule.intervals[DreamLane.fast]!);
+            clock.advance(schedule.laneById('fast')!.interval);
           }
           return FireOutcome.fired;
         },
       );
-      clock.advance(schedule.intervals[DreamLane.fast]!);
+      clock.advance(schedule.laneById('fast')!.interval);
 
       final loop = DreamCadenceLoop(
         driver: driver,
@@ -89,15 +89,15 @@ void main() {
         schedule: schedule,
         fire: (id) async {
           // Keep the fast lane perpetually due so every beat attempts a fire.
-          if (id == schedule.agents[DreamLane.fast]!.first) {
+          if (id == schedule.laneById('fast')!.agents.first) {
             attempts++;
-            clock.advance(schedule.intervals[DreamLane.fast]!);
+            clock.advance(schedule.laneById('fast')!.interval);
             throw StateError('boom');
           }
           return FireOutcome.fired;
         },
       );
-      clock.advance(schedule.intervals[DreamLane.fast]!);
+      clock.advance(schedule.laneById('fast')!.interval);
 
       final loop = DreamCadenceLoop(
         driver: driver,
@@ -132,7 +132,7 @@ void main() {
       );
       // The fast lane is perpetually due, so only the gate decides whether it
       // fires.
-      clock.advance(schedule.intervals[DreamLane.fast]!);
+      clock.advance(schedule.laneById('fast')!.interval);
 
       final loop = DreamCadenceLoop(
         driver: driver,
@@ -150,7 +150,7 @@ void main() {
       gateOpen = true;
       await Future<void>.delayed(const Duration(milliseconds: 40));
       await loop.stop();
-      expect(fired, containsAll(schedule.agents[DreamLane.fast]!));
+      expect(fired, containsAll(schedule.laneById('fast')!.agents));
     });
 
     test('DL-4: stop before start is a harmless no-op', () async {

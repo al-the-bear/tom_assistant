@@ -28,38 +28,72 @@
 // ids and nothing else. That is the G-S2 guarantee for Todo 10 — the cadence
 // introduces no embedding call site; the agents own embedding access through
 // the substrate `EmbeddingService` interface, unchanged.
+//
+// ── Config-defined named lanes (dream-redesign parts b + e) ─────────────
+//
+// Lanes are no longer a closed Dart enum. A lane is a [DreamLaneSpec] value
+// object keyed by a `String` id, and a [CadenceSchedule] is an ordered list of
+// them. This makes both the per-lane interval (part b) and the lane set itself
+// (part e) deployment configuration: a new lane is "author the
+// `scripts/system/<agent>_v1.dart`, add a `lanes:` entry naming it" — no enum,
+// no Dart change. `CadenceSchedule.defaults()` reproduces the canonical four
+// lanes (`memory_specification.md` § 9.7).
+//
+// ── Serial lane queue (dream-redesign part c) ───────────────────────────
+//
+// Dreaming lanes never run in parallel. [tick] no longer fires inline: it
+// *enqueues* every due lane whose id is not already queued (dedupe), advancing
+// each enqueued lane's baseline so it is not re-enqueued on every heartbeat
+// while it waits its turn, then pumps. [_pump] runs at most one agent at a time
+// — it dequeues the head lane, fires its agents in order (each awaited to
+// completion before the next), and only then moves to the next lane. A deferred
+// agent (busy background slot) re-enqueues its lane at the tail and stops the
+// pump until the next tick, so no dream work is lost and the slot is never
+// busy-spun.
+
+import 'dart:collection';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock;
 
-/// The timed lanes a [DreamCadenceDriver] fires on a cadence.
+/// One timed lane a [DreamCadenceDriver] fires on a cadence.
 ///
-/// Each lane groups the cognitive agents that share an interval. The
-/// shaking-event reconsolidation path is deliberately *not* a lane — it is
-/// event-driven (see [DreamCadenceDriver.handleShakingEvent]), not on a timer.
-enum DreamLane {
-  /// Cheap, continuous consolidation — turns fresh trails/events into
-  /// `Claim` / `Concept` nodes and edges.
-  fast,
+/// A lane groups the cognitive agents that share an interval, keyed by a stable
+/// string [id] (`fast` / `slow` / `deep` / `monthly` in the default schedule,
+/// but any id a deployment configures). The shaking-event reconsolidation path
+/// is deliberately *not* a lane — it is event-driven (see
+/// [DreamCadenceDriver.handleShakingEvent]), not on a timer.
+final class DreamLaneSpec {
+  /// Builds a lane that fires [agents] (in order) every [interval].
+  ///
+  /// [maxLlmCallsPerWindow] is the optional per-lane override the dream
+  /// throttle (dream-redesign part d) consults; `null` means "use the global
+  /// throttle budget" (or unthrottled when no global budget is configured).
+  const DreamLaneSpec({
+    required this.id,
+    required this.interval,
+    required this.agents,
+    this.maxLlmCallsPerWindow,
+  });
 
-  /// The periodic sleep cycle — consolidation, procedure promotion/demotion,
-  /// question-raising, centroid + repetition maintenance.
-  slow,
+  /// The stable lane id (the durable queue key and the config handle).
+  final String id;
 
-  /// Deep sleep — expensive autonomous research, redundancy pruning, and the
-  /// usage-recalibration decay pass (`dream_decay_v1`, § 9.7) that demotes the
-  /// coldest active nodes past their per-type half-life.
-  deep,
+  /// How long the lane waits between fires.
+  final Duration interval;
 
-  /// Long-running, checkpointed schema/centroid re-migration.
-  monthly,
+  /// The agents the lane fires, in fire order.
+  final List<String> agents;
+
+  /// Optional per-lane LLM-call budget for the dream throttle (part d).
+  final int? maxLlmCallsPerWindow;
 }
 
 /// Whether a fired agent actually ran or was deferred this cycle.
 ///
 /// The production fire seam maps a busy background slot (`RunSlotBusy`) to
-/// [deferred]; the driver treats a deferred agent as "not run this tick" and
-/// does not advance the lane's clock, so the lane retries on the next tick
-/// without waiting another full interval.
+/// [deferred]; the driver treats a deferred agent as "not run this cycle",
+/// re-enqueues its lane, and retries on a later tick without waiting another
+/// full interval.
 enum FireOutcome {
   /// The agent ran (was submitted to the background slot).
   fired,
@@ -74,73 +108,112 @@ enum FireOutcome {
 /// `RunSlotBusy` to [FireOutcome.deferred]; tests inject a recording seam.
 typedef MaintenanceFire = Future<FireOutcome> Function(String procedureId);
 
-/// The lane → interval and lane → agent mapping the driver fires by
-/// (`memory_specification.md` § 9.7).
+/// The ordered set of timed [DreamLaneSpec]s the driver fires by, plus the
+/// off-timer [shakingAgent] (`memory_specification.md` § 9.7).
 ///
-/// The mapping is the contract; the intervals are deployment configuration.
-/// The procedure-metrics promotion/demotion pass (`dream_procedure_metrics_v1`,
-/// G-PR5) lives in the [DreamLane.slow] lane — it is the Synthesiser sleep
-/// cadence the procedure spec names (`procedure_specification.md` § 6.4), so it
-/// shares the slow interval rather than carrying its own.
+/// The lanes are the contract; intervals and the lane set are deployment
+/// configuration (dream-redesign parts b + e). The procedure-metrics
+/// promotion/demotion pass (`dream_procedure_metrics_v1`, G-PR5) lives in the
+/// `slow` lane — it is the Synthesiser sleep cadence the procedure spec names
+/// (`procedure_specification.md` § 6.4), so it shares the slow interval rather
+/// than carrying its own.
 final class CadenceSchedule {
-  /// Builds a schedule from explicit [intervals] and [agents] maps plus the
-  /// off-timer [shakingAgent].
+  /// Builds a schedule from an ordered [lanes] list plus the off-timer
+  /// [shakingAgent].
   ///
-  /// Both maps must name every [DreamLane]; [DreamCadenceDriver]'s constructor
-  /// asserts completeness so a missing lane is a construction-time error, not a
-  /// silent no-fire.
-  const CadenceSchedule({
-    required this.intervals,
-    required this.agents,
+  /// Validates the lane set up front so a malformed schedule is a
+  /// construction-time error, not a silent no-fire: at least one lane, unique
+  /// non-empty ids, a strictly positive interval per lane, and at least one
+  /// agent per lane.
+  CadenceSchedule({
+    required this.lanes,
     this.shakingAgent = 'dream_reconsolidate_v1',
-  });
+  }) {
+    if (lanes.isEmpty) {
+      throw ArgumentError.value(lanes, 'lanes', 'must name at least one lane');
+    }
+    final seen = <String>{};
+    for (final lane in lanes) {
+      if (lane.id.isEmpty) {
+        throw ArgumentError.value(lane.id, 'lane.id', 'must be non-empty');
+      }
+      if (!seen.add(lane.id)) {
+        throw ArgumentError.value(lane.id, 'lane.id', 'duplicate lane id');
+      }
+      if (lane.interval <= Duration.zero) {
+        throw ArgumentError.value(
+            lane.interval, 'lane.interval', 'must be positive for "${lane.id}"');
+      }
+      if (lane.agents.isEmpty) {
+        throw ArgumentError.value(
+            lane.agents, 'lane.agents', 'must be non-empty for "${lane.id}"');
+      }
+    }
+  }
 
-  /// The § 9.7 default schedule.
-  factory CadenceSchedule.defaults() => const CadenceSchedule(
-        intervals: <DreamLane, Duration>{
-          DreamLane.fast: Duration(minutes: 5),
-          DreamLane.slow: Duration(hours: 1),
-          DreamLane.deep: Duration(days: 1),
-          DreamLane.monthly: Duration(days: 30),
-        },
-        agents: <DreamLane, List<String>>{
-          DreamLane.fast: <String>['dream_extract_v1', 'dream_connect_v1'],
-          DreamLane.slow: <String>[
-            'dream_synthesise_v1',
-            'dream_procedure_metrics_v1',
-            'dream_inquisitor_v1',
-            'dream_recentroid_v1',
-            'dream_repetition_detect_v1',
-          ],
-          DreamLane.deep: <String>[
-            'research_v1',
-            'dream_prune_v1',
-            'dream_decay_v1',
-          ],
-          DreamLane.monthly: <String>['restructure_tree_v1'],
-        },
+  /// The § 9.7 default schedule — the canonical four lanes.
+  factory CadenceSchedule.defaults() => CadenceSchedule(
+        lanes: <DreamLaneSpec>[
+          const DreamLaneSpec(
+            id: 'fast',
+            interval: Duration(minutes: 5),
+            agents: <String>['dream_extract_v1', 'dream_connect_v1'],
+          ),
+          const DreamLaneSpec(
+            id: 'slow',
+            interval: Duration(hours: 1),
+            agents: <String>[
+              'dream_synthesise_v1',
+              'dream_procedure_metrics_v1',
+              'dream_inquisitor_v1',
+              'dream_recentroid_v1',
+              'dream_repetition_detect_v1',
+            ],
+          ),
+          const DreamLaneSpec(
+            id: 'deep',
+            interval: Duration(days: 1),
+            agents: <String>[
+              'research_v1',
+              'dream_prune_v1',
+              'dream_decay_v1',
+            ],
+          ),
+          const DreamLaneSpec(
+            id: 'monthly',
+            interval: Duration(days: 30),
+            agents: <String>['restructure_tree_v1'],
+          ),
+        ],
       );
 
-  /// How long a lane waits between fires.
-  final Map<DreamLane, Duration> intervals;
-
-  /// The agents a lane fires, in fire order.
-  final Map<DreamLane, List<String>> agents;
+  /// The timed lanes, in fire order.
+  final List<DreamLaneSpec> lanes;
 
   /// The agent the off-timer shaking-event path fires
   /// (`memory_specification.md` § 9.4 / § 9.7).
   final String shakingAgent;
+
+  /// The lane with [id], or `null` when no lane carries it.
+  DreamLaneSpec? laneById(String id) {
+    for (final lane in lanes) {
+      if (lane.id == id) {
+        return lane;
+      }
+    }
+    return null;
+  }
 }
 
 /// Fires the dreaming agents on their cadence (`memory_specification.md`
-/// § 9.7).
+/// § 9.7), one lane — and within a lane, one agent — at a time.
 ///
 /// One [tick] is one heartbeat: every lane whose interval has elapsed since it
-/// last fired runs its agents, in lane order (fast → slow → deep → monthly),
-/// each through the [fire] seam. A lane that defers (busy background slot) does
-/// not advance — it retries on the next tick. The shaking-event path is off the
-/// timer: [handleShakingEvent] fires the reconsolidator on demand, routed from
-/// memory's `ShakingEvent` stream.
+/// last fired is *enqueued* (deduped), then the queue is pumped serially. Lanes
+/// never run in parallel; a lane that defers (busy background slot) is
+/// re-enqueued at the tail and retried on a later tick. The shaking-event path
+/// is off the timer: [handleShakingEvent] fires the reconsolidator on demand,
+/// routed from memory's `ShakingEvent` stream.
 ///
 /// The driver is pure timing: it reads [clock], decides which lanes are due,
 /// and calls [fire]. It holds no store, no substrate, and no write path, so it
@@ -159,13 +232,8 @@ final class DreamCadenceDriver {
     CadenceSchedule? schedule,
   }) : schedule = schedule ?? CadenceSchedule.defaults() {
     final start = clock.nowMs();
-    for (final lane in DreamLane.values) {
-      assert(
-        this.schedule.intervals.containsKey(lane) &&
-            this.schedule.agents.containsKey(lane),
-        'CadenceSchedule must map every DreamLane; missing $lane',
-      );
-      _lastFiredMs[lane] = start;
+    for (final lane in this.schedule.lanes) {
+      _lastFiredMs[lane.id] = start;
     }
   }
 
@@ -175,49 +243,87 @@ final class DreamCadenceDriver {
   /// The seam each due agent is fired through.
   final MaintenanceFire fire;
 
-  /// The lane → interval / lane → agent mapping fired by.
+  /// The ordered lane set fired by.
   final CadenceSchedule schedule;
 
-  /// Per-lane last-fired instant (ms since epoch), seeded at construction.
-  final Map<DreamLane, int> _lastFiredMs = <DreamLane, int>{};
+  /// Per-lane last-fired instant (ms since epoch), seeded at construction and
+  /// advanced when a lane is enqueued (so a waiting lane is not re-enqueued on
+  /// every heartbeat).
+  final Map<String, int> _lastFiredMs = <String, int>{};
 
-  /// Runs one heartbeat: fires every due lane's agents and returns the ids that
-  /// actually ran this cycle, in fire order.
+  /// The durable serial run queue (lane ids, in-order). Survives across ticks
+  /// so a deferred lane retries on a later tick.
+  final Queue<String> _laneQueue = Queue<String>();
+
+  /// Guards the pump so lanes never run in parallel even if [tick] is re-entered
+  /// (e.g. a heartbeat firing while a slow lane is still pumping).
+  bool _running = false;
+
+  /// Runs one heartbeat: enqueues every due lane (deduped, in lane order),
+  /// advancing each enqueued lane's baseline, then pumps the queue serially and
+  /// returns the agent ids that actually ran this cycle, in fire order.
   ///
-  /// A lane is due when `clock - lastFired >= interval`. Its agents fire in
-  /// order; if any defers (busy slot) the lane stops there, records no fire
-  /// (so the elapsed interval still counts next tick), and the remaining agents
-  /// do not run. A lane that fires every agent records the current instant.
+  /// A lane is due when `clock - lastFired >= interval`. Enqueuing advances the
+  /// baseline immediately, so a lane awaiting its turn is not re-enqueued on the
+  /// next heartbeat; the queue dedupes by id regardless.
   Future<List<String>> tick() async {
     final now = clock.nowMs();
-    final ran = <String>[];
-    for (final lane in DreamLane.values) {
-      if (!_isDue(lane, now)) {
+    for (final lane in schedule.lanes) {
+      if (!_isDue(lane.id, now)) {
         continue;
       }
-      var laneComplete = true;
-      for (final procedureId in schedule.agents[lane]!) {
-        final outcome = await fire(procedureId);
-        if (outcome == FireOutcome.deferred) {
-          laneComplete = false;
+      _lastFiredMs[lane.id] = now;
+      if (!_laneQueue.contains(lane.id)) {
+        _laneQueue.add(lane.id);
+      }
+    }
+    return _pump();
+  }
+
+  /// Drains the lane queue one lane — and within a lane, one agent — at a time.
+  ///
+  /// Re-entrant calls return immediately (the [_running] guard), so a heartbeat
+  /// that fires mid-pump never starts a parallel drain. A lane whose agent
+  /// defers (busy slot) is re-enqueued at the tail and the pump stops until the
+  /// next tick, so the busy slot is never spun on.
+  Future<List<String>> _pump() async {
+    if (_running) {
+      return const <String>[];
+    }
+    _running = true;
+    final ran = <String>[];
+    try {
+      while (_laneQueue.isNotEmpty) {
+        final laneId = _laneQueue.removeFirst();
+        final lane = schedule.laneById(laneId);
+        if (lane == null) {
+          continue;
+        }
+        var deferred = false;
+        for (final procedureId in lane.agents) {
+          final outcome = await fire(procedureId);
+          if (outcome == FireOutcome.deferred) {
+            deferred = true;
+            break;
+          }
+          ran.add(procedureId);
+        }
+        if (deferred) {
+          if (!_laneQueue.contains(laneId)) {
+            _laneQueue.add(laneId);
+          }
           break;
         }
-        ran.add(procedureId);
       }
-      if (laneComplete) {
-        _lastFiredMs[lane] = now;
-      }
+    } finally {
+      _running = false;
     }
     return ran;
   }
 
-  /// Whether [lane]'s interval has elapsed since it last fired, as of [nowMs].
-  ///
-  /// A lane is due the moment `now - lastFired >= interval`; a deferred lane
-  /// keeps its old last-fired baseline, so the elapsed interval still counts on
-  /// the next tick rather than restarting the wait.
-  bool _isDue(DreamLane lane, int nowMs) =>
-      nowMs - _lastFiredMs[lane]! >= schedule.intervals[lane]!.inMilliseconds;
+  /// Whether [laneId]'s interval has elapsed since it last fired, as of [nowMs].
+  bool _isDue(String laneId, int nowMs) =>
+      nowMs - _lastFiredMs[laneId]! >= schedule.laneById(laneId)!.interval.inMilliseconds;
 
   /// Fires the reconsolidator for a raised `ShakingEvent`
   /// (`memory_specification.md` § 9.4) — the event-driven path, off the timer.

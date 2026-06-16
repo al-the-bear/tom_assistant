@@ -105,4 +105,190 @@ dream:
       );
     });
   });
+
+  // Parts b + e — the configurable, named dream lanes. An absent `lanes:`
+  // block leaves `cadence` null (the driver falls back to
+  // `CadenceSchedule.defaults`); a present block replaces the lane set
+  // wholesale (HP1) and is validated by the `CadenceSchedule` constructor.
+  group('DreamConfigLoader.parse — dream.lanes (parts b + e)', () {
+    test('an absent lanes block leaves cadence null', () {
+      final config = DreamConfigLoader.parse('dream: {}\n')!;
+      expect(config.cadence, isNull);
+    });
+
+    test('a lanes block parses into a CadenceSchedule with the given ids, '
+        'intervals, and agents', () {
+      const yaml = '''
+dream:
+  lanes:
+    - id: fast
+      intervalSeconds: 300
+      agents: [dream_extract_v1, dream_connect_v1]
+    - id: nightly
+      intervalSeconds: 86400
+      agents: [research_v1]
+      maxLlmCallsPerWindow: 5
+''';
+      final config = DreamConfigLoader.parse(yaml)!;
+      final cadence = config.cadence!;
+      expect(cadence.lanes, hasLength(2));
+
+      final fast = cadence.laneById('fast')!;
+      expect(fast.interval, const Duration(seconds: 300));
+      expect(fast.agents, <String>['dream_extract_v1', 'dream_connect_v1']);
+      expect(fast.maxLlmCallsPerWindow, isNull);
+
+      final nightly = cadence.laneById('nightly')!;
+      expect(nightly.interval, const Duration(seconds: 86400));
+      expect(nightly.agents, <String>['research_v1']);
+      expect(nightly.maxLlmCallsPerWindow, 5);
+    });
+
+    test('a lane missing its id is a located error', () {
+      const yaml = '''
+dream:
+  lanes:
+    - intervalSeconds: 300
+      agents: [dream_extract_v1]
+''';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('dream.lanes[0].id'),
+        )),
+      );
+    });
+
+    test('a lane missing its intervalSeconds is a located error', () {
+      const yaml = '''
+dream:
+  lanes:
+    - id: fast
+      agents: [dream_extract_v1]
+''';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('dream.lanes[0].intervalSeconds'),
+        )),
+      );
+    });
+
+    test('a non-positive lane interval is a located error', () {
+      const yaml = '''
+dream:
+  lanes:
+    - id: fast
+      intervalSeconds: 0
+      agents: [dream_extract_v1]
+''';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('dream.lanes[0].intervalSeconds'),
+        )),
+      );
+    });
+
+    test('a lane missing its agents is a located error', () {
+      const yaml = '''
+dream:
+  lanes:
+    - id: fast
+      intervalSeconds: 300
+''';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('dream.lanes[0].agents'),
+        )),
+      );
+    });
+
+    test('an empty agent id inside a lane is a located error', () {
+      const yaml = '''
+dream:
+  lanes:
+    - id: fast
+      intervalSeconds: 300
+      agents: ['']
+''';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('dream.lanes[0].agents[0]'),
+        )),
+      );
+    });
+
+    test('a non-positive maxLlmCallsPerWindow is a located error', () {
+      const yaml = '''
+dream:
+  lanes:
+    - id: fast
+      intervalSeconds: 300
+      agents: [dream_extract_v1]
+      maxLlmCallsPerWindow: 0
+''';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('dream.lanes[0].maxLlmCallsPerWindow'),
+        )),
+      );
+    });
+
+    test('an unknown key under a lane is a located error', () {
+      const yaml = '''
+dream:
+  lanes:
+    - id: fast
+      intervalSeconds: 300
+      agents: [dream_extract_v1]
+      bogus: 1
+''';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('bogus'),
+        )),
+      );
+    });
+
+    test('duplicate lane ids surface the CadenceSchedule validation as a '
+        'located error', () {
+      const yaml = '''
+dream:
+  lanes:
+    - id: fast
+      intervalSeconds: 300
+      agents: [dream_extract_v1]
+    - id: fast
+      intervalSeconds: 600
+      agents: [dream_connect_v1]
+''';
+      expect(
+        () => DreamConfigLoader.parse(yaml),
+        throwsA(isA<DreamConfigException>().having(
+          (e) => e.message,
+          'message',
+          contains('dream.lanes is invalid'),
+        )),
+      );
+    });
+  });
 }
