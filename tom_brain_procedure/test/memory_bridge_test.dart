@@ -83,6 +83,10 @@ void main() {
       // § 10 — the three date/usage fields are always present.
       expect(n0['updatedAt'], '2026-01-03T04:05:06.000Z');
       expect(n0['lastAccess'], '2026-01-04T05:06:07.000Z');
+      // § 9.7 — the numeric last-access column an LLM-free decay pass scores
+      // coldness against; the same instant as `lastAccess` in epoch ms.
+      expect(n0['lastAccessMs'],
+          DateTime.utc(2026, 1, 4, 5, 6, 7).millisecondsSinceEpoch);
       expect(n0['accessCount'], 9);
       // § 10 decision 4 — the embedding vector is never serialized, even
       // when the node carries one.

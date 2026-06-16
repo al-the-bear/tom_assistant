@@ -1079,6 +1079,12 @@ class MemoryBridge {
   ///   - `createdAt` / `updatedAt` / `lastAccess` are the three temporal
   ///     signals a procedure reasons over ("is this stale? recently
   ///     touched?"), each as the canonical `…Z` ISO string via [_isoUtc].
+  ///   - `lastAccessMs` is the same last-access instant as epoch
+  ///     milliseconds — the numeric form of the `last_access_ms` usage
+  ///     column. An LLM-free procedure that scores coldness arithmetically
+  ///     (`dream_decay_v1`, § 9.7) subtracts it from the pass's `nowMs`;
+  ///     the ISO string above cannot be subtracted, so the numeric column
+  ///     is carried alongside it. The two are the same instant.
   ///   - `accessCount` is the frequency signal that pairs with
   ///     `lastAccess`.
   ///   - The `embedding` vector is **deliberately never emitted** (plan
@@ -1096,6 +1102,7 @@ class MemoryBridge {
         'createdAt': _isoUtc(node.createdAt),
         'updatedAt': _isoUtc(node.updatedAt),
         'lastAccess': _isoUtc(node.lastAccess),
+        'lastAccessMs': node.lastAccess.millisecondsSinceEpoch,
         'accessCount': node.accessCount,
       };
 
