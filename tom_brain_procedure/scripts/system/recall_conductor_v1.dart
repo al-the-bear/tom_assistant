@@ -23,6 +23,7 @@
 ///   - { name: conductorPromptId, type: String, required: false }
 /// outputs:
 ///   - { name: curatedIds, type: List }
+///   - { name: curatedNodes, type: List }
 ///   - { name: rationale, type: Map }
 ///   - { name: degraded, type: bool }
 ///   - { name: searches, type: int }
@@ -109,11 +110,15 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 
   // The de-duped, insertion-ordered catalogue of everything surfaced so far —
   // the seed plus every re-search hit. `summaries` is the id → one-line digest
-  // the LLM judges and KEEP rationales attach to; iterating `surfacedIds`
-  // fixes a stable order for the catalogue and the degrade fallback.
+  // the LLM judges and KEEP rationales attach to; `nodesById` retains the full
+  // node map per id so the answer layer (§ 16) can be handed the curated nodes'
+  // content (including the cold/old finds the default retrieval missed), not
+  // just their ids; iterating `surfacedIds` fixes a stable order for the
+  // catalogue, the curated-node list, and the degrade fallback.
   final surfacedIds = <String>[];
   final summaries = <String, String>{};
-  _absorb(seed['nodes'], surfacedIds, summaries);
+  final nodesById = <String, Map<String, Object?>>{};
+  _absorb(seed['nodes'], surfacedIds, summaries, nodesById);
 
   final curatedIds = <String>[];
   final rationale = <String, String>{};
@@ -221,7 +226,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       } else {
         res = await mem.recall(query, k: searchK, countsAsAccess: false);
       }
-      _absorb(res['nodes'], surfacedIds, summaries);
+      _absorb(res['nodes'], surfacedIds, summaries, nodesById);
     }
     if (!ranAny) break;
   }
@@ -237,6 +242,17 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     }
   }
 
+  // The full node maps for the curated ids, in curated order — the set the
+  // answer layer (§ 16) hands to its answer prompt as the recall context. Built
+  // from `nodesById` so a curated node the seed missed (a cold/old re-search
+  // hit) still carries its content downstream; an id with no retained map
+  // (defensive) is skipped rather than emitted as a hole.
+  final curatedNodes = <Map<String, Object?>>[];
+  for (final id in curatedIds) {
+    final node = nodesById[id];
+    if (node != null) curatedNodes.add(node);
+  }
+
   note('progress', {
     'agent': 'recall_conductor_v1',
     'curated': curatedIds.length,
@@ -246,6 +262,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 
   return <String, Object?>{
     'curatedIds': curatedIds,
+    'curatedNodes': curatedNodes,
     'rationale': rationale,
     'degraded': degraded,
     'searches': searches,
@@ -253,12 +270,15 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 }
 
 /// Merges every node in [nodes] into the surfaced catalogue, preserving
-/// insertion order in [surfacedIds] and de-duping by id. A non-list, a
-/// non-map entry, or a node without a String id is skipped.
+/// insertion order in [surfacedIds] and de-duping by id. Records the one-line
+/// digest in [summaries] (the LLM catalogue) and retains the full node map in
+/// [nodesById] (the content the answer layer is handed for the curated set,
+/// § 16). A non-list, a non-map entry, or a node without a String id is skipped.
 void _absorb(
   Object? nodes,
   List<String> surfacedIds,
   Map<String, String> summaries,
+  Map<String, Map<String, Object?>> nodesById,
 ) {
   if (nodes is! List) return;
   for (final node in nodes) {
@@ -268,6 +288,7 @@ void _absorb(
     if (summaries.containsKey(id)) continue;
     surfacedIds.add(id);
     summaries[id] = _summaryOf(node);
+    nodesById[id] = Map<String, Object?>.from(node);
   }
 }
 

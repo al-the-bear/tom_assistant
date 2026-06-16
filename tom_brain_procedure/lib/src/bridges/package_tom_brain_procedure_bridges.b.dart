@@ -440,6 +440,13 @@ BridgedClass _createMemoryBridgeBridge() {
         final reason = D4.getRequiredArg<String>(positional, 1, 'reason', 'promote');
         return t.promote(nodeId, reason);
       },
+      'recordAccess': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_6.MemoryBridge>(target, 'MemoryBridge');
+        D4.requireMinArgs(positional, 1, 'recordAccess');
+        final ids = D4.coerceList<String>(positional[0], 'ids');
+        final producer = D4.getOptionalNamedArg<String?>(named, 'producer');
+        return t.recordAccess(ids, producer: producer);
+      },
       'updateProcedureMetrics': (visitor, target, positional, named, typeArgs) {
         final t = D4.validateTarget<$tom_brain_procedure_6.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 1, 'updateProcedureMetrics');
@@ -493,6 +500,7 @@ BridgedClass _createMemoryBridgeBridge() {
       'stackRemove': 'Future<void> stackRemove(String name, String nodeId)',
       'demote': 'Future<void> demote(String nodeId, String reason)',
       'promote': 'Future<void> promote(String nodeId, String reason)',
+      'recordAccess': 'Future<void> recordAccess(List<String> ids, {String? producer})',
       'updateProcedureMetrics': 'Future<void> updateProcedureMetrics(String nodeId, {String? status, num? successRate, int? runCount, String? lastRunAt})',
       'updateCentroid': 'Future<void> updateCentroid(String forKey, List<double> centroid)',
       'findUncertain': 'Future<List<String>> findUncertain(String forKey, {required double low, required double high, int limit = 200})',

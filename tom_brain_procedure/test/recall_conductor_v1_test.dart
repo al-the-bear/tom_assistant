@@ -121,6 +121,18 @@ void main() {
       for (final id in curated) {
         expect(rationale.containsKey(id), isTrue);
       }
+
+      // The answer layer (§ 16) is handed the curated nodes' full content, not
+      // just their ids: one node map per curated id, in curated order, each
+      // carrying the `id` the answer's `recordAccess` call later marks.
+      final curatedNodes = result.output<List>('curatedNodes')!;
+      expect(curatedNodes.length, curated.length,
+          reason: 'one node map per curated id');
+      for (var i = 0; i < curated.length; i++) {
+        final node = curatedNodes[i] as Map;
+        expect(node['id'], curated[i],
+            reason: 'curatedNodes are in curated order and carry their id');
+      }
     });
   });
 

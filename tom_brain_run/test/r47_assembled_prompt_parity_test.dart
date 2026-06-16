@@ -77,6 +77,9 @@ BrainBuiltins _builtins(String configRoot) => BrainBuiltins(
 /// (`recall` / `priorTurns` / `open_todo_reminder`).
 Map<String, Object?> _stubInputs() => <String, Object?>{
       'text': 'How does memory consolidate?',
+      // The recall-conductor curation prompt's slots (§16).
+      'prompt': 'How does memory consolidate?',
+      'surfaced': 'n_01 :: a surfaced node summary\nn_02 :: another summary',
       'intent': 'answer',
       'goal': 'Produce the best possible answer.',
       'successCriterion': 'covers X and Y',

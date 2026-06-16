@@ -25,10 +25,11 @@
 /// inputs:
 ///   - { name: text, type: String, required: true }
 ///   - { name: priorTurns, type: List, required: false }
+///   - { name: curate, type: bool, required: false }
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: incomplete, type: bool }
-/// requires: [ runProcedure, run, render, embed, persist, edge, tool.invoke ]
+/// requires: [ runProcedure, run, render, embed, persist, edge, tool.invoke, recordAccess ]
 //
 // answer_with_thinking_v1 — the thinking branch of the entry router
 // (`tom_brain_completion_plan.md` Todo 6, gaps G-T1 / G-T4 / C-2;
@@ -177,7 +178,24 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // across iterations, so it is dispatched once and reused; `inputs` already
   // carries `text` and is forwarded straight through.
   final retrieval = await runProcedure('retrieve_for_prompt_v1', inputs);
-  final recall = retrieval.output('recall');
+  var recall = retrieval.output('recall');
+
+  // Optional pre-answer curation (memory § 6.7 / optimization plan § 16). When
+  // the caller sets `curate: true`, the cheap-local-LLM recall conductor runs
+  // before the loop, judges the surfaced set, and curates a small high-signal
+  // subset. The loop then deliberates over ONLY the curated nodes (not the broad
+  // surfaced union), and the used (cited) nodes are marked via `recordAccess`
+  // after the answer is produced — so a curated/used node's `access_count` rises
+  // while a merely-surfaced node's does not. Default off: existing callers are
+  // byte-for-byte unchanged.
+  final curate = inputs.has('curate') && inputs.get('curate') == true;
+  if (curate) {
+    final curation = await runProcedure('recall_conductor_v1', inputs);
+    final curatedNodes = curation.output('curatedNodes');
+    if (curatedNodes is List && curatedNodes.isNotEmpty) {
+      recall = <String, Object?>{'nodes': curatedNodes};
+    }
+  }
 
   // Termination (§ 3, revision 2026-06-14): no iteration cap. The self-critique
   // (stage D) is the inner gate — a REJECT always re-enters directly — and the
@@ -329,6 +347,17 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // Persist the exchange (§ 4.1). The body has no run id, so writes carry the
   // procedure id as the producer (Q-D.39.3).
   final producer = 'answer_with_thinking_v1';
+
+  // Usage tracking (optimization plan § 16). When curation ran, mark the nodes
+  // the answer actually cited as used — the sole way `access_count` /
+  // `last_access_ms` advance. Only the curated/cited nodes are bumped; the
+  // broad surfaced set the conductor dropped never is.
+  if (curate) {
+    final usedIds = _citedNodeIds(recall);
+    if (usedIds.isNotEmpty) {
+      await mem.recordAccess(usedIds, producer: producer);
+    }
+  }
 
   // The real store does not embed lazily — embed before each persist. The
   // prompt embedding feeds the Event (whose `summary` is the prompt); the

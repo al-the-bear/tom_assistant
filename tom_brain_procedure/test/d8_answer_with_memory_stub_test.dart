@@ -123,6 +123,8 @@ void main() {
             'stack.push',
             'note',
             'tool.invoke',
+            // § 16 — the curation overlay marks the cited nodes as used.
+            'recordAccess',
           ]);
       // The only declared cap is the wall-clock deadline (§ 5.4): the
       // user-facing answer budget is "virtually unlimited" on every count

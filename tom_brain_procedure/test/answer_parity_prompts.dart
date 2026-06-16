@@ -187,6 +187,10 @@ class AnswerParityPrompts {
     }
     if (promptId.endsWith('.sub_think')) return 'sub_thinker';
     if (promptId.endsWith('.critique')) return 'evaluator';
+    // The recall conductor's curation prompt runs read-only under the
+    // `recaller` persona (assist_user.yaml `recall_conductor.curate`), so the
+    // curation suites can key the conductor turn off the resolved role.
+    if (promptId.endsWith('.curate')) return 'recaller';
     return role;
   }
 

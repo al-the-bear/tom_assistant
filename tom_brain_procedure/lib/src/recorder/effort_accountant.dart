@@ -33,12 +33,14 @@
 //     `stack.create` / `.push` /
 //     `.pop` / `.update` /
 //     `.remove` / `demote` /
-//     `updateCentroid`            → +1 memoryWrite (any call that
+//     `updateCentroid` /
+//     `recordAccess`              → +1 memoryWrite (any call that
 //                                    mutates the store; `pop` mutates by
 //                                    removing the top entry, `demote` by
 //                                    changing lifecycle status,
 //                                    `updateCentroid` by replacing a
-//                                    centroid row).
+//                                    centroid row, `recordAccess` by bumping
+//                                    the usage columns).
 //   - `runProcedure` / `note` /
 //     `yield_if_foreground_waiting`→ zero (engine-native control flow has
 //                                    no direct substrate/memory cost; a
@@ -104,6 +106,10 @@ final class EffortAccountant {
     'demote',
     'promote',
     'updateCentroid',
+    // `recordAccess` is the sole writer of the usage columns (`access_count` /
+    // `last_access_ms`, § 6.6 / § 6.7) — the answer layer's mark that a recalled
+    // node was actually used. It mutates the store, so it charges one memoryWrite.
+    'recordAccess',
     // `updateProcedureMetrics` rewrites a Procedure node's derived metric/status
     // cache (§ 6.4 / § 7.1, G-PR5). It changes the store, so it charges one
     // memoryWrite — the metrics-pass agent's writes are budgeted like any other.

@@ -15,10 +15,11 @@
 /// inputs:
 ///   - { name: text, type: String, required: true }
 ///   - { name: priorTurns, type: List, required: false }
+///   - { name: curate, type: bool, required: false }
 /// outputs:
 ///   - { name: answer, type: String }
 ///   - { name: incomplete, type: bool }
-/// requires: [ runProcedure, run, render, embed, classify, persist, edge, stack.push, note, tool.invoke ]
+/// requires: [ runProcedure, run, render, embed, classify, persist, edge, stack.push, note, tool.invoke, recordAccess ]
 //
 // answer_with_memory_v1 — the prototype's one real system procedure
 // (`prototype_implementation_plan.md` D.10 / D.36–D.42;
@@ -164,7 +165,25 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // returning `{nodes, report, provenance}`. `inputs` is forwarded straight
   // through (it already carries `text`).
   final retrieval = await runProcedure('retrieve_for_prompt_v1', inputs);
-  final recall = retrieval.output('recall');
+  var recall = retrieval.output('recall');
+
+  // Step 1b — optional cheap-LLM curation overlay (§ 16; memory § 6.7), gated by
+  // the `curate` input. Default off, so every existing caller's recall path and
+  // usage signal stay byte-for-byte unchanged. When on, the recall conductor
+  // (cheap local route) judges sufficiency, re-searches the cold/old corners the
+  // broad fusion buries, and hands back a small curated set; the answer prompt
+  // is then shown ONLY those nodes (not the raw fusion union), and below it marks
+  // exactly the ones it cited via `recordAccess` — so a merely-surfaced node's
+  // usage counters never move. An empty curated set leaves the fused recall in
+  // place (the conductor degraded), never blanks the answer's context.
+  final curate = inputs.has('curate') && inputs.get('curate') == true;
+  if (curate) {
+    final curation = await runProcedure('recall_conductor_v1', inputs);
+    final curatedNodes = curation.output('curatedNodes');
+    if (curatedNodes is List && curatedNodes.isNotEmpty) {
+      recall = <String, Object?>{'nodes': curatedNodes};
+    }
+  }
 
   // The dispatcher route threads the answering session's earlier turns under
   // `priorTurns` (access spec § 7.2 / § 21.5), each a `{user, assistant}` map.
@@ -246,6 +265,19 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // D.39 — persist the exchange. The body has no run id, so its writes carry
   // the procedure id as the producer (Q-D.39.3).
   final producer = 'answer_with_memory_v1';
+
+  // § 16 — mark the nodes the answer actually used. `recordAccess` is the sole
+  // writer of the usage columns (`access_count` / `last_access_ms`); the cited
+  // nodes are the ones the Conclusion is `derived_from`, i.e. the ones the answer
+  // drew on. Gated with the curation overlay: only the curated set the answer saw
+  // is marked, so a merely-surfaced node's counters stay put. Off the curation
+  // path the recall path and its usage signal are exactly as before.
+  if (curate) {
+    final usedIds = _citedNodeIds(recall);
+    if (usedIds.isNotEmpty) {
+      await mem.recordAccess(usedIds, producer: producer);
+    }
+  }
 
   // The real memory store does not embed lazily — every node type that declares
   // an embedding policy requires the *writer* to supply a dimension-correct

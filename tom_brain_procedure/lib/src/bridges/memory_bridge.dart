@@ -824,6 +824,30 @@ class MemoryBridge {
         ),
       );
 
+  // ── record_access ───────────────────────────────────────────────
+
+  /// Marks [ids] as used — the sole writer of the usage columns
+  /// (`access_count` / `last_access_ms`) the recency/frequency signal and the
+  /// decay pass read (memory § 3.1, § 6.6; `node_access_recorder.dart`).
+  ///
+  /// Answer-only by intent (§ 6.7): a `recordAccess` is the judgement that a
+  /// recalled node was *actually used* in a produced answer — the curation
+  /// conductor, producing no answer, never calls it (its recalls all pass
+  /// `countsAsAccess: false`). The answer procedure calls it once, with exactly
+  /// the curated nodes the answer cited, so a merely-surfaced node's counters
+  /// never move. [producer] records who marked the access (the answer procedure
+  /// id). A store mutation, so it charges one memoryWrite like every other write
+  /// (`EffortAccountant._writePrimitives`).
+  Future<void> recordAccess(List<String> ids, {String? producer}) =>
+      _recordVoid(
+        'recordAccess',
+        <String, Object?>{'ids': ids, 'producer': producer},
+        () => client.recordAccess(
+          ids.map(NodeId.fromString).toList(),
+          producer: producer,
+        ),
+      );
+
   // ── update_procedure_metrics ────────────────────────────────────
 
   /// Rewrites a `Procedure` node's derived metric/status cache (memory § 6.4 /

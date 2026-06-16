@@ -23,7 +23,7 @@
 //  2. **Bridge-surface signature guard.** The generated `BridgedClass`
 //     carries a `methodSignatures` string per bridged method — the exact
 //     d4rt-facing contract a procedure script binds to. This audit pins
-//     all 29 of them (22 memory + 7 substrate, the § 5.1 surface) to
+//     all 30 of them (23 memory + 7 substrate, the § 5.1 surface) to
 //     literal expected strings. Any edit to a bridge method's d4rt-facing
 //     signature (a param added, removed, retyped, or re-defaulted, then
 //     re-reflected into the `*.b.dart`) drifts the generated string away
@@ -75,7 +75,7 @@ import 'package:tom_brain_procedure/src/bridges/brain_bridges.b.dart';
 
 /// The authoritative § 5.1 memory surface: bridged method name → the
 /// exact d4rt-facing signature string the generated `BridgedClass`
-/// records. Twenty-two rows — `recall` (now carrying the § 3.2.1
+/// records. Twenty-three rows — `recall` (now carrying the § 3.2.1
 /// `ranking` / `types` / `countsAsAccess` knobs), the powerful-recall
 /// specialisations `recallOld` / `recallCold` / `recallPrompts` /
 /// `recallAnswers` (memory_optimization_plan § 9 / spec § 3.2.1), the
@@ -83,6 +83,8 @@ import 'package:tom_brain_procedure/src/bridges/brain_bridges.b.dart';
 /// `persist`, `edge`, `propose_node_type`, the seven `stack.*` operations
 /// (exposed as `stackList` … `stackRemove` because Dart method names
 /// cannot contain a dot), the lifecycle pair `demote` / `promote` (§ 6.6),
+/// the usage-tracking write `recordAccess` (the answer layer's mark that a
+/// recalled node was used, § 6.6 / § 6.7),
 /// the classifier-maintenance methods `updateCentroid` and `findUncertain`,
 /// and the procedure metrics-pass cache write `updateProcedureMetrics`
 /// (Todo 7 / G-PR5).
@@ -118,6 +120,8 @@ const Map<String, String> _expectedMemorySignatures = <String, String>{
   'stackRemove': 'Future<void> stackRemove(String name, String nodeId)',
   'demote': 'Future<void> demote(String nodeId, String reason)',
   'promote': 'Future<void> promote(String nodeId, String reason)',
+  'recordAccess':
+      'Future<void> recordAccess(List<String> ids, {String? producer})',
   'updateProcedureMetrics':
       'Future<void> updateProcedureMetrics(String nodeId, {String? status, num? successRate, int? runCount, String? lastRunAt})',
   'updateCentroid':
@@ -267,7 +271,7 @@ void main() {
 
   group('C.47 bridge audit — every bridged method roundtrips end-to-end', () {
     test(
-        'each of the 29 methods runs through the interpreter and is recorded',
+        'each of the 30 methods runs through the interpreter and is recorded',
         () async {
       // Seed canned domain results so every outbound flattening leg has
       // something to read. Inbound legs are observed via the doubles'
@@ -345,6 +349,8 @@ void main() {
             "'prunerDecision');",
         'promote': "await mem.promote('n_00000000000000000000000010', "
             "'renewedRelevance');",
+        'recordAccess': "await mem.recordAccess("
+            "['n_00000000000000000000000011'], producer: 'answer');",
         'updateProcedureMetrics':
             "await mem.updateProcedureMetrics('n_00000000000000000000000009', "
                 "status: 'preferred', successRate: 0.9, runCount: 5);",
@@ -522,6 +528,11 @@ class _AuditMemoryClient implements TomBrainMemory {
   @override
   Future<void> promote(NodeId id, PromotionReason reason) async {
     called.add('promote');
+  }
+
+  @override
+  Future<void> recordAccess(List<NodeId> ids, {String? producer}) async {
+    called.add('recordAccess');
   }
 
   @override

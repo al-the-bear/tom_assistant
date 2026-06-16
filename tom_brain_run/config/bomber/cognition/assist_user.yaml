@@ -68,6 +68,23 @@ answer_with_memory:
       template: answer_with_memory.todo_list
       kind: fragment
 
+# The `recall_conductor` sub-procedure (memory § 6.7) carries the single
+# `curate` prompt the `recall_conductor_v1` pre-answer curation loop runs: it
+# judges whether the surfaced memory is enough, requests targeted re-searches
+# when it is not, and curates a small high-signal set for the answer stage. It
+# runs read-only (no tools) under the existing `recaller` persona (whose remit —
+# "re-rank the recalled items, drop low-signal items, compose the recall context
+# the answer stage quotes from" — is exactly this curation act, so no new role is
+# minted) and — deliberately — stays on the inherited cheap local `assistant`
+# (Gemma) route: the curation judgement is exactly the kind of low-stakes
+# sub-judgement the free route handles, leaving Claude for the user-facing answer.
+recall_conductor:
+  prompts:
+    curate:
+      template: recall_conductor.curate
+      tools: none
+      role: recaller
+
 # The `research` sub-procedure (`prompt_configuration.md` §10) carries the single
 # `claim_extraction` prompt the migrated `research_v1` runs: it distils the
 # fetched page text (`${body}`) into one atomic factual Claim. It runs read-only
