@@ -265,6 +265,7 @@ class MemoryBridge {
     String ranking = 'relevance',
     List<String> types = const <String>[],
     bool countsAsAccess = false,
+    bool relations = false,
   }) =>
       _recallWith(
         'recall',
@@ -274,6 +275,7 @@ class MemoryBridge {
         ranking: ranking,
         typeNames: types.toSet(),
         countsAsAccess: countsAsAccess,
+        relations: relations,
       );
 
   // ── recallOld ───────────────────────────────────────────────────
@@ -290,6 +292,7 @@ class MemoryBridge {
     List<String> modes = const <String>['bm25', 'vector'],
     int k = 8,
     String? before,
+    bool relations = false,
   }) =>
       _recallWith(
         'recallOld',
@@ -298,6 +301,7 @@ class MemoryBridge {
         k: k,
         ranking: 'oldest',
         before: before,
+        relations: relations,
       );
 
   // ── recallCold ──────────────────────────────────────────────────
@@ -310,6 +314,7 @@ class MemoryBridge {
     String text, {
     List<String> modes = const <String>['bm25', 'vector'],
     int k = 8,
+    bool relations = false,
   }) =>
       _recallWith(
         'recallCold',
@@ -317,6 +322,7 @@ class MemoryBridge {
         modes: modes,
         k: k,
         ranking: 'coldest',
+        relations: relations,
       );
 
   // ── recallPrompts ───────────────────────────────────────────────
@@ -331,6 +337,7 @@ class MemoryBridge {
     List<String> modes = const <String>['bm25', 'vector'],
     int k = 8,
     String ranking = 'relevance',
+    bool relations = false,
   }) =>
       _recallWith(
         'recallPrompts',
@@ -339,6 +346,7 @@ class MemoryBridge {
         k: k,
         ranking: ranking,
         typeNames: const <String>{'Event'},
+        relations: relations,
       );
 
   // ── recallAnswers ───────────────────────────────────────────────
@@ -354,6 +362,7 @@ class MemoryBridge {
     List<String> modes = const <String>['bm25', 'vector'],
     int k = 8,
     String ranking = 'relevance',
+    bool relations = false,
   }) =>
       _recallWith(
         'recallAnswers',
@@ -362,6 +371,7 @@ class MemoryBridge {
         k: k,
         ranking: ranking,
         typeNames: const <String>{'Conclusion'},
+        relations: relations,
       );
 
   /// Shared body for [recall] and the `recall*` specialisations.
@@ -381,6 +391,7 @@ class MemoryBridge {
     bool countsAsAccess = false,
     Set<String> typeNames = const <String>{},
     String? before,
+    bool relations = false,
   }) =>
       _record<Map<String, Object?>>(
         primitive,
@@ -392,6 +403,7 @@ class MemoryBridge {
           'countsAsAccess': countsAsAccess,
           if (typeNames.isNotEmpty) 'types': typeNames.toList(),
           'before': before,
+          'relations': relations,
         },
         () async {
           final filter = (typeNames.isEmpty && before == null)
@@ -411,7 +423,7 @@ class MemoryBridge {
           );
           final result = await client.recall(query);
           return <String, Object?>{
-            'nodes': result.nodes.map(_nodeToMap).toList(),
+            'nodes': await _mapNodes(result.nodes, relations: relations),
             'report': _reportToMap(result.report),
           };
         },
@@ -448,6 +460,7 @@ class MemoryBridge {
     int k = 20,
     int rrfK = 60,
     double lambda = 0.7,
+    bool relations = false,
   }) =>
       _record<Map<String, Object?>>(
         'recallMulti',
@@ -456,6 +469,7 @@ class MemoryBridge {
           'k': k,
           'rrfK': rrfK,
           'lambda': lambda,
+          'relations': relations,
         },
         () async {
           final query = MultiRecallQuery(
@@ -466,7 +480,7 @@ class MemoryBridge {
           );
           final result = await client.recallMulti(query);
           return <String, Object?>{
-            'nodes': result.nodes.map(_nodeToMap).toList(),
+            'nodes': await _mapNodes(result.nodes, relations: relations),
             'report': _reportToMap(result.report),
             'provenance':
                 (result.provenance ?? const <RecallProvenanceEntry>[])
@@ -1056,15 +1070,75 @@ class MemoryBridge {
         'fusedScore': e.fusedScore,
       };
 
+  /// Flattens a [Node] to the prompt-facing map every recall surface
+  /// returns (memory-optimization plan § 10; spec § 12.2.1).
+  ///
+  /// The serialization is shaped for the LLM that reads it, not for
+  /// round-tripping the store:
+  ///
+  ///   - `createdAt` / `updatedAt` / `lastAccess` are the three temporal
+  ///     signals a procedure reasons over ("is this stale? recently
+  ///     touched?"), each as the canonical `…Z` ISO string via [_isoUtc].
+  ///   - `accessCount` is the frequency signal that pairs with
+  ///     `lastAccess`.
+  ///   - The `embedding` vector is **deliberately never emitted** (plan
+  ///     decision 4): it is hundreds of opaque floats that cost prompt
+  ///     tokens, carry no meaning the LLM can use, and the bridge owns no
+  ///     path that would round-trip it back into a write.
+  ///
+  /// Edges are bundled under `relations` only by [_mapNodes] when the
+  /// caller opts in — see that method; the bare map carries none.
   static Map<String, Object?> _nodeToMap(Node node) => <String, Object?>{
         'id': node.id.value,
         'typeName': node.typeName,
         'values': node.values,
         'status': node.status.name,
         'createdAt': _isoUtc(node.createdAt),
-        if (node.embedding != null)
-          'embedding': node.embedding!.values.toList(),
+        'updatedAt': _isoUtc(node.updatedAt),
+        'lastAccess': _isoUtc(node.lastAccess),
+        'accessCount': node.accessCount,
       };
+
+  /// Flattens an [Edge] to the prompt-facing map bundled under a node's
+  /// `relations` (plan § 10). Mirrors the memory MCP server's
+  /// `_encodeEdge` (mcp_tools.dart) so the two read surfaces present an
+  /// edge identically: `from` / `type` (wire name) / `to` / `weight` /
+  /// `attrs`. The synthetic [EdgeId] is omitted — it is a store-internal
+  /// handle the prompt has no use for, matching the MCP encoding.
+  static Map<String, Object?> _edgeToMap(Edge edge) => <String, Object?>{
+        'from': edge.from.value,
+        'type': edge.type.wireName,
+        'to': edge.to.value,
+        'weight': edge.weight,
+        'attrs': edge.attrs,
+      };
+
+  /// Maps a recall result's [nodes] to their prompt-facing maps, bundling
+  /// each node's edges under a `relations` key only when [relations] is
+  /// set (plan § 10's opt-in flag).
+  ///
+  /// When off, this is byte-identical to `nodes.map(_nodeToMap)` and makes
+  /// no extra store calls — the historical default. When on, it fetches
+  /// `client.edgesOf(node.id)` per node (the `both`-direction adjacency)
+  /// and folds the results in via [_edgeToMap]. Those sub-calls are part of
+  /// the recall primitive's own accounting — they are not separately
+  /// metered (PE-10: the bridge stays transport-blind on [client]).
+  Future<List<Map<String, Object?>>> _mapNodes(
+    List<Node> nodes, {
+    required bool relations,
+  }) async {
+    if (!relations) {
+      return nodes.map(_nodeToMap).toList();
+    }
+    final out = <Map<String, Object?>>[];
+    for (final node in nodes) {
+      final map = _nodeToMap(node);
+      final edges = await client.edgesOf(node.id);
+      map['relations'] = edges.map(_edgeToMap).toList();
+      out.add(map);
+    }
+    return out;
+  }
 
   static Map<String, Object?> _reportToMap(RecallReport report) =>
       <String, Object?>{

@@ -88,17 +88,17 @@ import 'package:tom_brain_procedure/src/bridges/brain_bridges.b.dart';
 /// (Todo 7 / G-PR5).
 const Map<String, String> _expectedMemorySignatures = <String, String>{
   'recall':
-      "Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String ranking = 'relevance', List<String> types = const <String>[], bool countsAsAccess = false})",
+      "Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String ranking = 'relevance', List<String> types = const <String>[], bool countsAsAccess = false, bool relations = false})",
   'recallOld':
-      "Future<Map<String, Object?>> recallOld(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String? before})",
+      "Future<Map<String, Object?>> recallOld(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String? before, bool relations = false})",
   'recallCold':
-      "Future<Map<String, Object?>> recallCold(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8})",
+      "Future<Map<String, Object?>> recallCold(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, bool relations = false})",
   'recallPrompts':
-      "Future<Map<String, Object?>> recallPrompts(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String ranking = 'relevance'})",
+      "Future<Map<String, Object?>> recallPrompts(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String ranking = 'relevance', bool relations = false})",
   'recallAnswers':
-      "Future<Map<String, Object?>> recallAnswers(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String ranking = 'relevance'})",
+      "Future<Map<String, Object?>> recallAnswers(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String ranking = 'relevance', bool relations = false})",
   'recallMulti':
-      'Future<Map<String, Object?>> recallMulti(List<Object?> seeds, {int k = 20, int rrfK = 60, double lambda = 0.7})',
+      'Future<Map<String, Object?>> recallMulti(List<Object?> seeds, {int k = 20, int rrfK = 60, double lambda = 0.7, bool relations = false})',
   'classify':
       "Future<Map<String, Object?>> classify(List<double> embedding, {String target = 'nodeType'})",
   'persist':

@@ -40,6 +40,10 @@ void main() {
         typeName: 'Conclusion',
         values: const <String, Object?>{'text': 'the answer'},
         createdAt: DateTime.utc(2026, 1, 2, 3, 4, 5),
+        updatedAt: DateTime.utc(2026, 1, 3, 4, 5, 6),
+        lastAccess: DateTime.utc(2026, 1, 4, 5, 6, 7),
+        accessCount: 9,
+        embedding: Vec.fromList(const <double>[0.1, 0.2, 0.3]),
       );
       client.recallResult = RecallResult(
         nodes: <Node>[node],
@@ -76,6 +80,16 @@ void main() {
       expect(n0['values'], <String, Object?>{'text': 'the answer'});
       expect(n0['status'], 'active');
       expect(n0['createdAt'], '2026-01-02T03:04:05.000Z');
+      // § 10 — the three date/usage fields are always present.
+      expect(n0['updatedAt'], '2026-01-03T04:05:06.000Z');
+      expect(n0['lastAccess'], '2026-01-04T05:06:07.000Z');
+      expect(n0['accessCount'], 9);
+      // § 10 decision 4 — the embedding vector is never serialized, even
+      // when the node carries one.
+      expect(n0.containsKey('embedding'), isFalse);
+      // § 10 — edges only when relations:true (default off here).
+      expect(n0.containsKey('relations'), isFalse);
+      expect(client.edgesOfCalls, 0);
 
       final report = out['report']! as Map<String, Object?>;
       expect(report['candidatesPerMode'],
@@ -109,6 +123,111 @@ void main() {
         () => bridge.recall('q', modes: const <String>['nope']),
         throwsA(isA<FormatException>()),
       );
+    });
+  });
+
+  // memory_optimization_plan § 10 / memory_specification § 12.2.1 — the
+  // opt-in `relations` flag bundles each recalled node's edges
+  // (`edgesOf(id)`) into the serialized map. Off by default; on demand it
+  // fetches the both-direction adjacency and flattens it via `_edgeToMap`.
+  group('C.12 MemoryBridge — § 10 relations flag', () {
+    setUp(() {
+      client.recallResult = RecallResult(
+        nodes: <Node>[
+          Node(
+            id: NodeId.fromString('n_00000000000000000000000001'),
+            typeName: 'Conclusion',
+            values: const <String, Object?>{'text': 'the answer'},
+            createdAt: DateTime.utc(2026, 1, 2, 3, 4, 5),
+          ),
+        ],
+        report: const RecallReport(
+          candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 1},
+          fusionStrategy: FusionStrategy.rrf,
+          diversityStrategy: DiversityStrategy.mmr,
+          elapsedMs: 1,
+        ),
+      );
+      client.edgesResult = <Edge>[
+        Edge(
+          id: EdgeId.fromString('e_00000000000000000000000001'),
+          from: NodeId.fromString('n_00000000000000000000000001'),
+          type: EdgeType.fromWireName('derived_from'),
+          to: NodeId.fromString('n_00000000000000000000000002'),
+          weight: 0.5,
+          attrs: const <String, Object?>{'kind': 'depends_on'},
+        ),
+      ];
+    });
+
+    test('recall omits relations and never calls edgesOf when off', () async {
+      final out = await bridge.recall('q');
+      final nodes = out['nodes']! as List<Object?>;
+      final n0 = nodes.first! as Map<String, Object?>;
+      expect(n0.containsKey('relations'), isFalse);
+      expect(client.edgesOfCalls, 0);
+    });
+
+    test('recall bundles edgesOf(id) under relations when on', () async {
+      final out = await bridge.recall('q', relations: true);
+      final nodes = out['nodes']! as List<Object?>;
+      final n0 = nodes.first! as Map<String, Object?>;
+
+      // Each recalled node's adjacency was queried exactly once.
+      expect(client.edgesOfCalls, 1);
+      expect(client.edgesOfQueried.single,
+          NodeId.fromString('n_00000000000000000000000001'));
+
+      // The edge is flattened in the MCP `_encodeEdge` shape.
+      final relations = n0['relations']! as List<Object?>;
+      expect(relations, hasLength(1));
+      final e0 = relations.first! as Map<String, Object?>;
+      expect(e0['from'], 'n_00000000000000000000000001');
+      expect(e0['type'], 'derived_from');
+      expect(e0['to'], 'n_00000000000000000000000002');
+      expect(e0['weight'], 0.5);
+      expect(e0['attrs'], <String, Object?>{'kind': 'depends_on'});
+      // The synthetic edge id is not exposed (mirrors MCP).
+      expect(e0.containsKey('id'), isFalse);
+    });
+
+    test('relations:true records the flag on the recall trail input',
+        () async {
+      await bridge.recall('q', relations: true);
+      // The flag is recorded in the primitive's input map regardless of
+      // value — proven here for the on case via the side effect (edgesOf
+      // ran); the recorded-input shape is covered structurally by the
+      // C.47 audit roundtrip.
+      expect(client.edgesOfCalls, 1);
+    });
+
+    test('recallMulti bundles relations per node when on', () async {
+      client.recallMultiResult = RecallResult(
+        nodes: <Node>[
+          Node(
+            id: NodeId.fromString('n_00000000000000000000000001'),
+            typeName: 'Conclusion',
+            values: const <String, Object?>{'text': 'a'},
+            createdAt: DateTime.utc(2026, 1, 2, 3, 4, 5),
+          ),
+        ],
+        report: const RecallReport(
+          candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 1},
+          fusionStrategy: FusionStrategy.rrf,
+          diversityStrategy: DiversityStrategy.mmr,
+          elapsedMs: 1,
+        ),
+      );
+      final out = await bridge.recallMulti(
+        <Object?>[
+          <String, Object?>{'mode': 'bm25', 'text': 'q'},
+        ],
+        relations: true,
+      );
+      final nodes = out['nodes']! as List<Object?>;
+      final n0 = nodes.first! as Map<String, Object?>;
+      expect(client.edgesOfCalls, 1);
+      expect((n0['relations']! as List<Object?>), hasLength(1));
     });
   });
 
@@ -825,11 +944,37 @@ class _FakeMemoryClient implements TomBrainMemoryClient {
   NodeId? lastPromoteId;
   PromotionReason? lastPromoteReason;
 
+  /// `edgesOf` capture (§ 10 `relations` flag). Records every node the
+  /// bridge queries and returns the configured adjacency.
+  int edgesOfCalls = 0;
+  final List<NodeId> edgesOfQueried = <NodeId>[];
+  List<Edge> edgesResult = const <Edge>[];
+
+  RecallResult? recallMultiResult;
+  MultiRecallQuery? lastMultiRecallQuery;
+
   @override
   Future<RecallResult> recall(RecallQuery query) async {
     recallCalls++;
     lastRecallQuery = query;
     return recallResult;
+  }
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async {
+    lastMultiRecallQuery = query;
+    return recallMultiResult ?? recallResult;
+  }
+
+  @override
+  Future<List<Edge>> edgesOf(
+    NodeId id, {
+    EdgeDirection direction = EdgeDirection.both,
+    Set<EdgeType>? types,
+  }) async {
+    edgesOfCalls++;
+    edgesOfQueried.add(id);
+    return edgesResult;
   }
 
   @override
