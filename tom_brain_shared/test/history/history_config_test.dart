@@ -116,6 +116,62 @@ void main() {
     });
   });
 
+  // Todo #6: the lane-aware resolver `sizingFor(laneId)` returns
+  // `lane override ?? defaults ?? HistorySizing.standard()`. These tests prove
+  // the three resolution arms directly on the resolver (the parser-resolution
+  // tests above exercise it incidentally; this group is its dedicated proof).
+  group('HistoryConfig.sizingFor — lane resolution', () {
+    test('a set lane wins over the defaults', () {
+      final config = HistoryConfig.fromConfigMap(<String, Object?>{
+        'defaults': <String, Object?>{'rawCount': 12},
+        'lanes': <String, Object?>{
+          'foreground': <String, Object?>{'rawCount': 30},
+        },
+      });
+
+      expect(config.sizingFor('foreground').rawCount, 30);
+    });
+
+    test('an unset lane inherits the defaults', () {
+      final config = HistoryConfig.fromConfigMap(<String, Object?>{
+        'defaults': <String, Object?>{'rawCount': 12},
+        'lanes': <String, Object?>{
+          'foreground': <String, Object?>{'rawCount': 30},
+        },
+      });
+
+      // A lane with no override returns the exact defaults sizing.
+      expect(config.sizingFor('dream_fast'), same(config.defaults));
+      expect(config.sizingFor('dream_fast').rawCount, 12);
+    });
+
+    test('with no defaults block, an unset lane resolves to the code default', () {
+      // Exercises the `?? HistorySizing.standard()` arm: when the block carries
+      // no `defaults`, `defaults` IS the standard sizing, so an unset lane
+      // resolves to it.
+      final config = HistoryConfig.fromConfigMap(<String, Object?>{
+        'lanes': <String, Object?>{
+          'foreground': <String, Object?>{'rawCount': 30},
+        },
+      });
+
+      expect(config.sizingFor('absent'), const HistorySizing.standard());
+      expect(config.sizingFor('foreground').rawCount, 30);
+    });
+
+    test('resolves over a directly-constructed config (no parse)', () {
+      const config = HistoryConfig(
+        defaults: HistorySizing(rawCount: 14),
+        lanes: <String, HistorySizing>{
+          'dream_slow': HistorySizing(rawCount: 40),
+        },
+      );
+
+      expect(config.sizingFor('dream_slow').rawCount, 40);
+      expect(config.sizingFor('foreground'), const HistorySizing(rawCount: 14));
+    });
+  });
+
   group('HistoryConfig.fromConfigMap — below-floor rejection', () {
     test('a defaults rawCount below 10 is rejected, not clamped', () {
       expect(

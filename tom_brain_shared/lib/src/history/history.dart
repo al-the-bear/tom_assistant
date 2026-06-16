@@ -354,7 +354,12 @@ final class HistoryConfig {
     }
   }
 
-  /// The sizing for [laneId]: its override when present, else [defaults].
+  /// The lane-aware sizing resolution for [laneId]: its override when present,
+  /// else [defaults] (which already carries the code default when the block had
+  /// no `defaults`). So the full resolution is
+  /// `lane override ?? defaults ?? HistorySizing.standard()` — the
+  /// `historySizingFor` resolver the access/session path consumes
+  /// (history-compaction quest, todo #6).
   HistorySizing sizingFor(String laneId) => lanes[laneId] ?? defaults;
 
   @override
