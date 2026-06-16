@@ -88,12 +88,13 @@ void main() {
       );
     });
 
-    test('the roster is the full thirty-role live cognition (regression on '
+    test('the roster is the full thirty-one-role live cognition (regression on '
         'silent roster shrinkage)', () {
       // The number is load-bearing only as a tripwire: if a future roster
       // change adds or drops roles, this forces a deliberate update here and a
-      // matching prose-file change, rather than a silent coverage gap.
-      expect(liveRoster.length, equals(30));
+      // matching prose-file change, rather than a silent coverage gap. The
+      // thirty-first role is `memory_curator` (dream-subsystem redesign part f).
+      expect(liveRoster.length, equals(31));
     });
   });
 

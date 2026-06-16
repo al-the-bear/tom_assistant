@@ -79,6 +79,9 @@ Map<String, Object?> _stubInputs() => <String, Object?>{
       'text': 'How does memory consolidate?',
       // The recall-conductor curation prompt's slots (§16).
       'prompt': 'How does memory consolidate?',
+      // The memory-curator worth-storing prompt's slots (dream redesign part f).
+      'answer': 'Memory consolidates during the dream cadences.',
+      'known': '- the user works in dark mode',
       'surfaced': 'n_01 :: a surfaced node summary\nn_02 :: another summary',
       'intent': 'answer',
       'goal': 'Produce the best possible answer.',

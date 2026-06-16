@@ -85,3 +85,15 @@ repetition_detect:
       template: repetition_detect.pattern
       tools: none
       role: repetition_detector
+
+# curator — the memory curator (`memorize_exchange_v1`, dream-subsystem redesign
+# part f): given a finished exchange (`${prompt}` + `${answer}`) and what memory
+# already knows (`${known}`), decide what is worth committing to long-term
+# memory and emit it as a `TYPE :: statement` list. Runs under the
+# `memory_curator` persona.
+curator:
+  prompts:
+    worth_storing:
+      template: curator.worth_storing
+      tools: none
+      role: memory_curator

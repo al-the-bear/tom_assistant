@@ -1,9 +1,9 @@
-// The seven dreaming-agent roles (`memory_specification.md` § 9, the eight
-// dreaming cognitive agents).
+// The eight dreaming-agent roles (`memory_specification.md` § 9, the eight
+// dreaming cognitive agents, plus the dream-subsystem redesign's curator).
 //
-// The dream procedures (`scripts/system/dream_*_v1.dart`) each run one
-// dedicated role, one per agent, to do the single LLM judgement at the heart
-// of the agent's pass:
+// The dream procedures (`scripts/system/dream_*_v1.dart` and
+// `memorize_exchange_v1.dart`) each run one dedicated role, one per agent, to do
+// the single LLM judgement at the heart of the agent's pass:
 //
 //   | Role id                | Agent / dream procedure          | LLM judgement |
 //   |------------------------|----------------------------------|---------------|
@@ -14,12 +14,13 @@
 //   | `pruner`               | dream_prune_v1                   | per-Claim: is it redundant against the canonical one? |
 //   | `reconsolidator`       | dream_reconsolidate_v1           | name the conflict between two Claims |
 //   | `repetition_detector`  | dream_repetition_detect_v1       | name the recurring activity across recalled Events |
+//   | `memory_curator`       | memorize_exchange_v1             | per exchange: what is worth committing to long-term memory? |
 //
-// (The eighth dreaming agent, the long-running `restructure_tree_*` migration,
-// has no per-pass LLM role — it advances a structural migration, not a text
-// judgement — so it is not in this roster.)
+// (The long-running `restructure_tree_*` migration has no per-pass LLM role —
+// it advances a structural migration, not a text judgement — so it is not in
+// this roster.)
 //
-// All seven carry the assistant-dedication anchor — `assemble()` injects it
+// All eight carry the assistant-dedication anchor — `assemble()` injects it
 // exactly as for every other role, like the core / procedure / creation /
 // planning rosters.
 //
@@ -40,7 +41,7 @@
 // ── Why a *separate* roster ──────────────────────────────────────────
 //
 // Same rationale as the retrieval / procedure / creation / planning rosters:
-// `bootstrapRoleRegistry()` is pinned at exactly six core roles. The seven
+// `bootstrapRoleRegistry()` is pinned at exactly six core roles. The eight
 // dreaming roles are a distinct, optional roster — a deployment that never
 // dreams (the `dream:` config is off by default) need not register them.
 // Composing them onto the full live roster is the job of
@@ -53,10 +54,15 @@ import '../role_budget_defaults.dart';
 import '../role_registry.dart';
 import '../role_template.dart';
 
-/// The seven dreaming-agent role ids, in canonical pipeline order
-/// (`memory_specification.md` § 9): extract → connect → synthesise →
-/// inquire, then the maintenance agents prune → reconsolidate →
-/// detect-repetition.
+/// The eight dreaming-agent role ids.
+///
+/// The first seven are the § 9 cognitive agents in canonical pipeline order
+/// (`memory_specification.md` § 9): extract → connect → synthesise → inquire,
+/// then the maintenance agents prune → reconsolidate → detect-repetition. The
+/// eighth, `memory_curator`, is the post-exchange curator added by the
+/// dream-subsystem redesign (part f): it is not a § 9 pipeline stage but a
+/// dreaming role in its own right — `memorize_exchange_v1` runs it to decide,
+/// per prompt+answer, what is worth committing to long-term memory.
 ///
 /// Iteration order of [dreamRoleTemplates] and [bootstrapDreamRoleRegistry]
 /// follows this list verbatim, so the trail / observability layer sees a
@@ -69,6 +75,7 @@ const List<String> dreamRoleIds = <String>[
   'pruner',
   'reconsolidator',
   'repetition_detector',
+  'memory_curator',
 ];
 
 /// The actions every dreaming role forbids. None speaks to the user (its
@@ -94,9 +101,10 @@ List<RoleTemplate> dreamRoleTemplates() => <RoleTemplate>[
       _pruner(),
       _reconsolidator(),
       _repetitionDetector(),
+      _memoryCurator(),
     ];
 
-/// A [RoleRegistry] holding exactly the seven dreaming roles.
+/// A [RoleRegistry] holding exactly the eight dreaming roles.
 ///
 /// Use this when only the dreaming roster is needed (e.g. a dream-agent eval
 /// harness). The full live roster is
@@ -106,17 +114,18 @@ RoleRegistry bootstrapDreamRoleRegistry() =>
 
 /// The full live roster: the twenty-three roles of
 /// [bootstrapRoleRegistryWithRetrievalProcedureCreationAndPlanning] (core +
-/// retrieval + procedure + creation + planning) plus the seven dreaming roles
-/// (thirty total), in that layer order.
+/// retrieval + procedure + creation + planning) plus the eight dreaming roles
+/// (thirty-one total), in that layer order.
 ///
 /// This is the registry the run assembly composes once dreaming is enabled —
 /// every role any system procedure dispatches must be registered (the boot's
 /// `open()` validates that each *routed* role is in the registry, and
 /// `complete()` resolves it). It extends the planning roster with the
 /// `extractor` / `connector` / `synthesiser` / `inquisitor` / `pruner` /
-/// `reconsolidator` / `repetition_detector` roles the `dream_*_v1` procedures
-/// dispatch; the bootstrap roster is unchanged — `bootstrapRoleRegistry()`
-/// still returns exactly the six core roles, so the b22 contract holds.
+/// `reconsolidator` / `repetition_detector` / `memory_curator` roles the
+/// `dream_*_v1` and `memorize_exchange_v1` procedures dispatch; the bootstrap
+/// roster is unchanged — `bootstrapRoleRegistry()` still returns exactly the
+/// six core roles, so the b22 contract holds.
 RoleRegistry
     bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream() {
   final withPlanning =
@@ -232,6 +241,40 @@ RoleTemplate _pruner() {
         'information the canonical claim does not already carry. Answer with a '
         'clear yes or no. Say yes only for genuine redundancy, not for a claim '
         'that refines, qualifies, or extends the canonical one.',
+    allowedActions: const {AllowedAction.llmCall},
+    forbiddenActions: const {..._dreamForbidden},
+    budgetDefaults: RoleBudgetDefaults.empty,
+  );
+}
+
+// ----- `memory_curator` -----
+//
+// memorize_exchange_v1 (dream-subsystem redesign part f): reads a finished
+// prompt+answer exchange alongside what memory already knows, and decides what
+// is worth committing to long-term memory — durable user facts, stable
+// preferences, reusable conclusions, open questions, and corrections — while
+// discarding ephemeral chit-chat and anything already stored. Like every other
+// dreaming role it is a *pure text transformer*: it emits a line-per-item list
+// (`TYPE :: statement`) as plain text, and the host procedure does every
+// `recall` (the check) and `persist`/`edge` (the store), under the agent's
+// scoped identity. "Use the memory tools to check and store" is realised by the
+// procedure's bridged `mem.recall` / `mem.persist` / `mem.edge`, not by the role
+// — so the role stays `llmCall`-only with no memory or tool surface.
+RoleTemplate _memoryCurator() {
+  return RoleTemplate(
+    id: 'memory_curator',
+    personaText: 'I am the memory curator. After an exchange I decide what is '
+        'genuinely worth remembering for the user I exist to help — keeping '
+        'durable knowledge and letting the ephemeral go.',
+    objective: 'Read the exchange and the memory that is already known, and '
+        'list only what is worth storing long-term: durable user facts, stable '
+        'preferences, reusable conclusions, open questions worth pursuing, and '
+        'corrections of prior beliefs — never ephemeral chit-chat and never '
+        'anything the known memory already holds. Emit one item per line as '
+        '"TYPE :: statement", where TYPE is Claim (a durable fact) or Question '
+        '(an open question worth pursuing) and the statement is a single '
+        'self-contained sentence; write exactly NONE when nothing should be '
+        'stored. The surrounding agent embeds, persists, and links each item.',
     allowedActions: const {AllowedAction.llmCall},
     forbiddenActions: const {..._dreamForbidden},
     budgetDefaults: RoleBudgetDefaults.empty,
