@@ -1,3 +1,8 @@
+// This file now owns only `LlmCall`. `LlmOptions`, `ToolCatalogue`,
+// `ToolDescriptor`, and `LlmCallReport` were migrated to `tom_core_agentic`
+// (TomSpecs editor §20 step 3 / §19 T3) and are re-exported below; the
+// historical B.9–B.13 narrative that follows documents their original design.
+//
 // B.9  — `LlmCall`, `LlmOptions`, `LlmCallReport`, `ToolCatalogue`.
 // B.12 — extended `LlmOptions` with the `model` field per plan text
 //        (model, temperature, max tokens, stop sequences, tool catalogue).
@@ -66,9 +71,20 @@
 //     a single-line aliasing change that does not propagate.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget, TurnId;
+// LlmOptions / ToolCatalogue / ToolDescriptor / LlmCallReport migrated to
+// `tom_core_agentic` (TomSpecs editor §20 step 3 / §19 T3). `LlmCall` keeps
+// living here because it couples to brain-domain types (`Budget`, `TurnId`,
+// `RouteEntry`) that sit above the generic agent layer; it imports the migrated
+// value types from `tom_core_agentic` for its own surface.
+import 'package:tom_core_agentic/tom_core_agentic.dart' show LlmOptions;
 
 import '../router/route_entry.dart';
 import 'cancellation.dart';
+
+// Re-export the migrated value types so the `api/llm_call.dart` import path and
+// the `api/` barrel surface stay unchanged for every consumer.
+export 'package:tom_core_agentic/tom_core_agentic.dart'
+    show LlmOptions, ToolCatalogue, ToolDescriptor, LlmCallReport;
 
 /// One submission to the substrate's LLM path.
 ///
@@ -162,272 +178,13 @@ final class LlmCall {
   });
 }
 
-/// Per-call provider-tunable knobs.
-///
-/// Every field is optional. The router resolves unset fields against
-/// the role's `budgetDefaults` (spec § 6.1). Providers that do not
-/// support a given knob downgrade gracefully and append a note to
-/// [LlmCallReport.notes]; substrate does not fail the call just
-/// because a knob did not apply.
-///
-/// At plan step B.12 the field set landed as
-/// `(model, temperature, maxOutputTokens, stopSequences, toolCatalogue,
-/// responseFormat)`. `responseFormat` is an additive extension of the
-/// plan-text list — it was already shipped at B.9 and is kept because
-/// it does not collide with any other knob and consumers that do not
-/// supply it pay zero cost.
-final class LlmOptions {
-  /// Optional override of the route-resolved model id.
-  ///
-  /// Resolution order at the router (B.18+):
-  ///
-  ///   1. If [model] is non-null, the router uses it verbatim, subject
-  ///      to availability on the selected provider's route chain. A
-  ///      route chain that does not expose this model surfaces a typed
-  ///      `ModelNotAvailableInRoute` (no silent fallback).
-  ///   2. If [model] is null, the router consults the role's
-  ///      `budgetDefaults.modelPreference` (spec § 6.1) — a list of
-  ///      preferred model ids, in priority order, the first
-  ///      route-available one wins.
-  ///   3. If neither yields a model, the route's provider default
-  ///      (e.g. Ollama's `OLLAMA_DEFAULT_MODEL`) applies.
-  ///
-  /// The resolved model id is stamped onto [LlmCallReport.modelId]
-  /// for trail attribution regardless of which step in the
-  /// resolution chain produced it.
-  ///
-  /// Stored as `String?` (not a stronger `ModelId` type) for the same
-  /// reason [LlmCall.roleId] is `String`: model ids are configured
-  /// (`providers[*].models[*].id`), not enumerated in code, and a
-  /// per-provider registry would force a substrate rebuild every time
-  /// a new model becomes available.
-  ///
-  /// Plan step B.12 named this field "model" verbatim; the public
-  /// getter follows that name. Equivalent terms ("modelId",
-  /// "modelName") deliberately do not exist on this surface to keep
-  /// one canonical spelling across config, trail, and code.
-  final String? model;
-
-  /// Sampling temperature in `[0.0, 2.0]`. `null` ⇒ provider /
-  /// role default.
-  final double? temperature;
-
-  /// Hard cap on the response token count. `null` ⇒ provider /
-  /// role default.
-  ///
-  /// The plan text at B.12 says "max tokens"; the field keeps the
-  /// fuller name `maxOutputTokens` because every prototype provider
-  /// (Ollama `/api/chat`'s `num_predict`, OpenAI `max_tokens`)
-  /// applies the cap to output only — input-token bounding lives on
-  /// [LlmCall.budget] (token-spend ceiling), not on this knob.
-  final int? maxOutputTokens;
-
-  /// Generation halts when any of these strings appears in the
-  /// emitted text. Always treated as an unordered set (the provider
-  /// may reorder for prefix matching).
-  ///
-  /// Defaults to `const <String>[]` (no stop sequences). Consumers
-  /// that pass `null` for this field would defeat the const default;
-  /// the constructor signature therefore makes it non-nullable with
-  /// an empty-list default rather than accepting `null`.
-  final List<String> stopSequences;
-
-  /// Tools the role is allowed to call during this completion.
-  /// Empty ⇒ no tool calls permitted. The provider must surface
-  /// proposed tool calls as `LlmStreamEvent.toolCallProposed`
-  /// events and wait for the dispatcher's tool-call adapter to
-  /// resolve them.
-  final ToolCatalogue toolCatalogue;
-
-  /// Optional structured-response declaration. Currently a JSON
-  /// schema as a `Map<String, Object?>`; later phases may swap to
-  /// a stronger type. `null` ⇒ free-form text response.
-  ///
-  /// Not named by the B.12 plan text but additive; see the class
-  /// docstring on why it stays.
-  final Map<String, Object?>? responseFormat;
-
-  /// The live tom_brain session id (`Access.session.sessionId`) this call
-  /// belongs to, stamped by the procedure engine's per-run
-  /// `SubstrateBridge` from the inbound `Access` for user-turn calls;
-  /// `null` for dream / free-time / boot paths that run outside a session.
-  ///
-  /// This is a single additive per-call knob that flows call → router →
-  /// provider unchanged. Every HTTP / stub provider **ignores** it — it
-  /// exists solely so the run-layer `AgentSdkLlmProvider` in its
-  /// `sessionMode: brain` can key the persisted Claude-Code session id by
-  /// the tom_brain session (agent-SDK design spec § 1.5). Threading it
-  /// here, rather than via a separate per-call binding, keeps the seam to
-  /// one optional field and costs nothing for every provider that does
-  /// not read it.
-  final String? brainSessionId;
-
-  const LlmOptions({
-    this.model,
-    this.temperature,
-    this.maxOutputTokens,
-    this.stopSequences = const <String>[],
-    this.toolCatalogue = ToolCatalogue.empty,
-    this.responseFormat,
-    this.brainSessionId,
-  });
-
-  /// The all-defaults instance. Used as the default value on
-  /// [LlmCall.options]; consumers that need to tweak one field
-  /// build a new instance.
-  ///
-  /// Equivalent to `const LlmOptions()` — every field is at its
-  /// "router resolves" default ([model]/[temperature]/[maxOutputTokens]
-  /// null, [stopSequences] empty, [toolCatalogue] empty,
-  /// [responseFormat] null).
-  static const LlmOptions empty = LlmOptions();
-
-  /// Returns a copy of this instance with selected fields replaced.
-  ///
-  /// The B.12 plan text does not name `copyWith`; it is added here
-  /// because the conformance test for `LlmOptions` (and the router's
-  /// future field-merge logic at B.18+) need a zero-allocation path
-  /// to override one knob without re-listing the rest. Naming the
-  /// sentinel `_unset` (private) prevents callers from passing it by
-  /// accident: passing `null` for [model], [temperature],
-  /// [maxOutputTokens], or [responseFormat] explicitly clears the
-  /// field (sets it to null), while omitting the parameter leaves
-  /// the existing value untouched.
-  LlmOptions copyWith({
-    Object? model = _unset,
-    Object? temperature = _unset,
-    Object? maxOutputTokens = _unset,
-    List<String>? stopSequences,
-    ToolCatalogue? toolCatalogue,
-    Object? responseFormat = _unset,
-    Object? brainSessionId = _unset,
-  }) {
-    return LlmOptions(
-      model: identical(model, _unset) ? this.model : model as String?,
-      temperature: identical(temperature, _unset)
-          ? this.temperature
-          : temperature as double?,
-      maxOutputTokens: identical(maxOutputTokens, _unset)
-          ? this.maxOutputTokens
-          : maxOutputTokens as int?,
-      stopSequences: stopSequences ?? this.stopSequences,
-      toolCatalogue: toolCatalogue ?? this.toolCatalogue,
-      responseFormat: identical(responseFormat, _unset)
-          ? this.responseFormat
-          : responseFormat as Map<String, Object?>?,
-      brainSessionId: identical(brainSessionId, _unset)
-          ? this.brainSessionId
-          : brainSessionId as String?,
-    );
-  }
-
-  /// Private sentinel used by [copyWith] to distinguish "omit" from
-  /// "explicitly set to null" on nullable fields. Not exported.
-  static const Object _unset = Object();
-}
-
-/// The catalogue of tools a role may invoke during a completion.
-///
-/// A separate type rather than a `List<ToolDescriptor>` so the
-/// substrate can later attach catalogue-level metadata (provenance
-/// hash, supported-by-provider matrix, etc.) without churning every
-/// call site.
-final class ToolCatalogue {
-  /// The tools available, in declaration order. Provider adapters
-  /// translate these into provider-native tool schemas.
-  final List<ToolDescriptor> tools;
-
-  const ToolCatalogue(this.tools);
-
-  /// The catalogue with zero tools. Use this when the role is not
-  /// allowed to invoke any tool during the completion.
-  static const ToolCatalogue empty = ToolCatalogue(<ToolDescriptor>[]);
-
-  bool get isEmpty => tools.isEmpty;
-  bool get isNotEmpty => tools.isNotEmpty;
-}
-
-/// One tool the LLM may propose calling during a completion.
-///
-/// Mirrors the OpenAI-compatible tool-use shape (`{name, description,
-/// parameters}` with a JSON schema for parameters) rather than the
-/// MCP `Tool` shape, because the LLM-facing surface speaks the
-/// OpenAI dialect at every passthrough provider. The
-/// `procedure_dispatcher` adapts MCP tools to this shape at submission.
-final class ToolDescriptor {
-  /// Canonical tool name. The LLM proposes calls keyed by this name;
-  /// the dispatcher resolves the name back to a callable tool.
-  final String name;
-
-  /// Human-readable description fed to the LLM as part of the
-  /// system prompt. Tone is "what the tool does and when to call
-  /// it", not "how it is implemented".
-  final String description;
-
-  /// JSON-schema-shaped parameter spec. Pass `{}` for parameter-less
-  /// tools (rare).
-  final Map<String, Object?> parametersSchema;
-
-  const ToolDescriptor({
-    required this.name,
-    required this.description,
-    required this.parametersSchema,
-  });
-}
-
-/// Report produced when an LLM call completes (successfully or with
-/// failure that the router could classify).
-///
-/// Carries enough provenance for the trail (`memory_specification.md`
-/// § 8) to attribute every byte of LLM activity:
-///
-///   - `providerId` / `modelId` — which route served the call.
-///   - `anchorHash` — content hash of the anchor block that was
-///     prepended. Compared against `AnchorRegistry.currentHash` on
-///     every report; a mismatch is `AnchorViolation` (spec § 12)
-///     and is the substrate's structural proof of Postulate 3.
-///   - `promptHash` — content hash of the assembled wire prompt
-///     (anchor + role text + inputs). Lets the trail correlate
-///     prompts across runs without storing the body.
-///   - `tokensIn` / `tokensOut` — when the provider returns usage
-///     fields; else estimated via the per-model-family tokeniser
-///     (B.13 / spec § 4.4).
-///   - `retries` — how many in-router retries happened before this
-///     report. 0 on a first-shot success.
-///   - `wallClockMs` — total wall-clock between submission and
-///     completion (includes retry waits).
-///   - `cost` — `null` when the price table has no entry for
-///     `(providerId, modelId)`; never silently zero.
-///   - `templateSha` — git sha of the role template that produced
-///     the prompt (spec § 6.1). Lets the trail tie a call back to
-///     the exact template version.
-///   - `notes` — free-form provider-side notes the router may
-///     attach (e.g. "response_format downgraded to text"). Carried
-///     verbatim into the trail.
-final class LlmCallReport {
-  final String providerId;
-  final String modelId;
-  final String anchorHash;
-  final String promptHash;
-  final int tokensIn;
-  final int tokensOut;
-  final int retries;
-  final int wallClockMs;
-  final double? cost;
-  final String? templateSha;
-  final List<String> notes;
-
-  const LlmCallReport({
-    required this.providerId,
-    required this.modelId,
-    required this.anchorHash,
-    required this.promptHash,
-    required this.tokensIn,
-    required this.tokensOut,
-    required this.retries,
-    required this.wallClockMs,
-    this.cost,
-    this.templateSha,
-    this.notes = const <String>[],
-  });
-}
+// ─── Migrated to tom_core_agentic ────────────────────────────────────────────
+//
+// `LlmOptions`, `ToolCatalogue`, `ToolDescriptor`, and `LlmCallReport` were
+// moved verbatim into `tom_core_agentic` (the generic agent layer) so the LLM
+// provider seam is reusable outside the brain. They are imported above for
+// `LlmCall`'s own surface and re-exported above so this file's public surface is
+// unchanged. The definitions live in:
+//   - llm_options.dart      (LlmOptions, ToolCatalogue, ToolDescriptor)
+//   - llm_call_report.dart  (LlmCallReport)
+// inside `tom_core_agentic/lib/src/llm/`.

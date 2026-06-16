@@ -117,10 +117,8 @@ import 'dart:async';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
-import '../api/captured_wire.dart';
 import '../api/embedding_result.dart';
 import '../api/llm_call.dart';
-import '../api/llm_stream_event.dart';
 import '../api/mcp_endpoint.dart';
 import '../api/substrate_event.dart';
 import '../api/substrate_stats.dart';
@@ -129,8 +127,6 @@ import '../api/web_results.dart';
 import '../config/substrate_config.dart';
 import '../embed/embedding_service.dart';
 import '../llm/anchor_registry.dart';
-import '../llm/llm_provider.dart';
-import '../llm/wire_prompt.dart';
 import '../mcp_client/mcp_client.dart';
 import '../obs/substrate_event_bus.dart';
 import '../roles/reloading_role_registry.dart';
