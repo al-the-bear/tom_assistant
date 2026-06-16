@@ -1129,6 +1129,50 @@ final class RecallExecutor {
     return reordered;
   }
 
+  // ─── Internal: post-fusion ranking re-score (plan § 7) ───────────
+
+  /// Re-orders [nodes] per [ranking] using the post-fusion recency /
+  /// frequency re-score (spec § 6.2.1). [relevanceByNodeId] maps a
+  /// node's id value to its fused relevance score `r(d)`; a node absent
+  /// from the map (defensive — the materialised set is a subset of the
+  /// fused set) is treated as relevance 0.
+  ///
+  /// For [RecallRanking.relevance] the function returns [nodes]
+  /// unchanged (the fusion+MMR order is the answer).
+  List<Node> _applyRanking(
+    RecallRanking ranking,
+    List<Node> nodes,
+    Map<String, double> relevanceByNodeId,
+  ) {
+    if (ranking == RecallRanking.relevance || nodes.isEmpty) return nodes;
+    final candidates = <RankingCandidate<Node>>[
+      for (final n in nodes)
+        RankingCandidate<Node>(
+          item: n,
+          relevance: relevanceByNodeId[n.id.value] ?? 0.0,
+          typeName: n.typeName,
+          lastAccessMs: n.lastAccess.millisecondsSinceEpoch,
+          accessCount: n.accessCount,
+        ),
+    ];
+    return rescoreByRanking<Node>(
+      ranking: ranking,
+      candidates: candidates,
+      now: _clock.now(),
+      halfLifeForType: _halfLifeForType,
+      recencyWeight: _recencyWeight,
+    );
+  }
+
+  /// Projects the RRF-fused candidate list onto an `id → relevance` map
+  /// for [_applyRanking]. The fused list survives the diversify step
+  /// (which only re-orders / truncates), so every materialised node has
+  /// an entry here.
+  static Map<String, double> _relevanceFromRrf(
+    List<RrfFusedCandidate> fused,
+  ) =>
+      <String, double>{for (final c in fused) c.nodeId.value: c.score};
+
   // ─── Internal: shaking events (A.69) ─────────────────────────────
 
   /// Detects `RetrievalConflict` and emits onto [_eventSink] when
@@ -1233,3 +1277,10 @@ final class _ModeResult {
     this.embeddingsCallouts = 0,
   });
 }
+
+/// Fallback recency half-life used by the `recencyBoosted` re-score
+/// until the `decay` config block lands (plan § 12): a flat 30 days for
+/// every node type. [typeName] is accepted to match [HalfLifeForType]
+/// but is not consulted yet — per-type half-lives arrive with the config
+/// wiring.
+Duration _defaultHalfLifeForType(String typeName) => const Duration(days: 30);
