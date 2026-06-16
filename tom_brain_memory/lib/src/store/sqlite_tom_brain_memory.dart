@@ -790,13 +790,39 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   @override
   Future<RecallResult> recall(RecallQuery query) async {
     _ensureOpen('recall');
-    return _recallExecutor.recall(query);
+    final result = await _recallExecutor.recall(query);
+    await _maybeRecordAccess(query.countsAsAccess, result);
+    return result;
   }
 
   @override
   Future<RecallResult> recallMulti(MultiRecallQuery query) async {
     _ensureOpen('recallMulti');
-    return _recallExecutor.recallMulti(query);
+    final result = await _recallExecutor.recallMulti(query);
+    await _maybeRecordAccess(query.countsAsAccess, result);
+    return result;
+  }
+
+  /// Records usage for the nodes a recall returned when the query opted
+  /// in via `countsAsAccess` (memory_optimization_plan § 8; spec § 6.6).
+  ///
+  /// The default ([countsAsAccess] `false`) is a no-op: most recalls are
+  /// read-only inspections that must not perturb the recency / frequency
+  /// signal the [RecallRanking] strategies read. When `true`, the
+  /// returned node ids are stamped through the same [recordAccess] write
+  /// any other consumer uses — bumping `last_access_ms` / `access_count`
+  /// by one. The returned [result] is the pre-bump materialised snapshot;
+  /// the usage write is a side effect, so a *subsequent* read reflects
+  /// the raised values. An empty result list is itself a no-op inside
+  /// [NodeAccessRecorder].
+  Future<void> _maybeRecordAccess(
+    bool countsAsAccess,
+    RecallResult result,
+  ) async {
+    if (!countsAsAccess || result.nodes.isEmpty) return;
+    await _accessRecorder.recordAccess(
+      [for (final node in result.nodes) node.id],
+    );
   }
 
   @override
