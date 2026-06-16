@@ -97,6 +97,28 @@ enum DemotionReason {
   operatorOverride,
 }
 
+/// Reason supplied to `TomBrainMemory.promote`.
+///
+/// Promotion is the reversible inverse of [DemotionReason] demotion: it
+/// flips a `demoted` row back to `active` so it surfaces in retrieval
+/// again (`memory_optimization_plan.md` § 4). It never touches a
+/// forgotten / tombstoned node — those are gone from the live table and
+/// cannot be revived through this path.
+enum PromotionReason {
+  /// A `Reconsolidator` agent re-validated a previously demoted node and
+  /// returned it to active circulation (§ 9.4 reconsolidation — the
+  /// inverse of [DemotionReason.supersession]).
+  reconsolidation,
+
+  /// A node demoted by a `Pruner` proved relevant again (it was cited by
+  /// an answer, matched a fresh recall) — the usage-aware re-score
+  /// rescued it from the cold tier (`memory_optimization_plan.md` § 6.6).
+  renewedRelevance,
+
+  /// Operator UI override.
+  operatorOverride,
+}
+
 /// Reason supplied to `TomBrainMemory.forget`.
 ///
 /// `forget` is the user-explicit, irreversible deletion path — it

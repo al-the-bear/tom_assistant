@@ -154,9 +154,40 @@ abstract class TomBrainMemoryClient {
   /// the caller already has a batch of ids.
   Future<List<Node>> getMany(List<NodeId> ids);
 
+  /// Records that the given nodes were *used* — the sole writer of the
+  /// usage columns (`last_access_ms` / `access_count`,
+  /// `memory_specification.md` § 3.1, § 6.6). One transaction sets
+  /// `last_access_ms` to "now" and increments `access_count` for each id;
+  /// missing ids are skipped (a concurrent forget is not a failure).
+  ///
+  /// This is *not* triggered by reads — `get` / `getMany` / a default
+  /// `recall` never bump usage. Only an explicit consumer act (an answer
+  /// that cited a node, a `countsAsAccess: true` recall) calls this, so
+  /// recency/frequency reflect real use rather than inspection traffic.
+  ///
+  /// Wire-capable (carries no closures), so it lives on the client per the
+  /// H.30 split. The optional [producer] tags the writing actor for trail
+  /// attribution.
+  Future<void> recordAccess(List<NodeId> ids, {String? producer});
+
   /// Demotes a node — hides it from retrieval, keeps it
-  /// addressable by id. Reversible by `dream_reconsolidate_v1`.
+  /// addressable by id. Reversible by [promote].
   Future<void> demote(NodeId id, DemotionReason reason);
+
+  /// Promotes a node — the reversible inverse of [demote]. Flips a
+  /// `demoted` row back to `active` so it surfaces in retrieval again
+  /// (`memory_optimization_plan.md` § 4).
+  ///
+  /// Contract:
+  ///   * Only `demoted → active` transitions. A promote against an
+  ///     already-`active` node, an `archived` node, an unknown id, or a
+  ///     forgotten / tombstoned id is a no-op (the live row is gone or
+  ///     already where it should be).
+  ///   * Emits a `NodePromoted` memory event on the successful
+  ///     transition only, mirroring `demote`'s no-op-is-silent
+  ///     convention.
+  ///   * Reversible: a promoted node can be demoted again.
+  Future<void> promote(NodeId id, PromotionReason reason);
 
   /// User-explicit deletion — writes a `Tombstone` (§ 4.1) and
   /// removes the live row.

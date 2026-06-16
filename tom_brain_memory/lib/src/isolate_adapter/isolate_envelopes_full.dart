@@ -38,7 +38,7 @@
 //   that carry a non-null `reRank` with `ArgumentError.value` before
 //   constructing the envelope (see `tom_brain_memory_isolate_client.dart`).
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MigrationCursor, MigrationDecl, MigrationStatus, MultiRecallQuery, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, ProcedureStatus, RecallQuery, RecallResult, Scope, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackInfo, StackPolicy, StackSummary, StreamQuery, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MigrationCursor, MigrationDecl, MigrationStatus, MultiRecallQuery, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, ProcedureStatus, PromotionReason, RecallQuery, RecallResult, Scope, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackInfo, StackPolicy, StackSummary, StreamQuery, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show IsolateCancellationToken;
 
@@ -125,6 +125,19 @@ final class GetManyResponse extends IsolateResponse {
   const GetManyResponse(this.nodes);
 }
 
+/// Round-trips the usage-tracking write (`recordAccess`). The id list and
+/// optional producer carry no closures, so the whole call is sendable.
+final class RecordAccessRequest extends IsolateRequest {
+  final List<NodeId> ids;
+  final String? producer;
+  RecordAccessRequest({required List<NodeId> ids, this.producer})
+      : ids = List<NodeId>.unmodifiable(ids);
+}
+
+final class RecordAccessResponse extends IsolateResponse {
+  const RecordAccessResponse();
+}
+
 final class DemoteRequest extends IsolateRequest {
   final NodeId id;
   final DemotionReason reason;
@@ -133,6 +146,18 @@ final class DemoteRequest extends IsolateRequest {
 
 final class DemoteResponse extends IsolateResponse {
   const DemoteResponse();
+}
+
+/// Round-trips the reversible `promote` inverse of `demote`. The id and
+/// the categorical reason carry no closures, so the call is sendable.
+final class PromoteRequest extends IsolateRequest {
+  final NodeId id;
+  final PromotionReason reason;
+  const PromoteRequest({required this.id, required this.reason});
+}
+
+final class PromoteResponse extends IsolateResponse {
+  const PromoteResponse();
 }
 
 final class ForgetRequest extends IsolateRequest {

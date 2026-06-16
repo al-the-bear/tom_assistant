@@ -84,6 +84,9 @@ abstract class RecordingMemoryBase implements TomBrainMemory {
       <Node>[for (final id in ids) if (nodes[id] != null) nodes[id]!];
 
   @override
+  Future<void> recordAccess(List<NodeId> ids, {String? producer}) async {}
+
+  @override
   StackApi get stacks => recordingStacks;
 
   @override
@@ -151,6 +154,9 @@ abstract class RecordingMemoryBase implements TomBrainMemory {
 
   @override
   Future<void> demote(NodeId id, DemotionReason reason) async {}
+
+  @override
+  Future<void> promote(NodeId id, PromotionReason reason) async {}
 
   @override
   Future<void> forget(NodeId id, ForgetReason reason) async {}

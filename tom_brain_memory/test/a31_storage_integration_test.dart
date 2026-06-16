@@ -100,8 +100,9 @@ void main() {
 
   group('A.31 open/close idempotency (on-disk memory.db)', () {
     test(
-        'open → schema v1 → close → re-open → still v1 → close → re-open '
-        '→ still v1 (no migration applied on the later opens)', () {
+        'open → schema latest → close → re-open → still latest → close '
+        '→ re-open → still latest (no migration applied on the later opens)',
+        () {
       final parent = _tempParent('tbm_a31_oc_');
       final root = '${parent.path}${Platform.pathSeparator}brain';
       final cfg = MemoryConfig.forTesting(root: root);
@@ -112,12 +113,13 @@ void main() {
       expect(dir1.isFresh, isTrue,
           reason: 'no DB files yet — the first open must report fresh');
 
-      // First DB open: bring the file up to v1 via the migrator.
+      // First DB open: bring the file up to the latest version via the
+      // migrator (v0 → v1 → v2).
       final db1 = sqlite3.open(dir1.memoryDbPath);
       try {
         final report1 = SchemaMigrator().migrate(db1);
         expect(report1.fromVersion, equals(0));
-        expect(report1.toVersion, equals(1));
+        expect(report1.toVersion, equals(2));
         expect(report1.didApplyAny, isTrue);
         expect(_tableNames(db1), containsAll(_v1Tables));
       } finally {
@@ -143,17 +145,18 @@ void main() {
       final db2 = sqlite3.open(dir2.memoryDbPath);
       try {
         final report2 = SchemaMigrator().migrate(db2);
-        expect(report2.fromVersion, equals(1));
-        expect(report2.toVersion, equals(1));
+        expect(report2.fromVersion, equals(2));
+        expect(report2.toVersion, equals(2));
         expect(report2.applied, isEmpty);
         expect(report2.didApplyAny, isFalse,
-            reason: 'a re-open of a v1 file must not apply any migration');
+            reason: 'a re-open of an up-to-date file must not apply any '
+                'migration');
 
-        // The migrations table still has exactly one row.
+        // The migrations table still has exactly two rows (v1 + v2).
         final count = db2
             .select('SELECT COUNT(*) AS c FROM migrations')
             .first['c'] as int;
-        expect(count, equals(1));
+        expect(count, equals(2));
 
         // All ten tables still present.
         expect(_tableNames(db2), containsAll(_v1Tables));
@@ -170,7 +173,7 @@ void main() {
 
       final db3 = sqlite3.open(dir3.memoryDbPath);
       try {
-        expect(readSchemaVersion(db3), equals(1));
+        expect(readSchemaVersion(db3), equals(2));
         final report3 = SchemaMigrator().migrate(db3);
         expect(report3.didApplyAny, isFalse);
         expect(_tableNames(db3), containsAll(_v1Tables));
@@ -244,14 +247,14 @@ void main() {
 
         final report = SchemaMigrator().migrate(db);
         expect(report.fromVersion, equals(0));
-        expect(report.toVersion, equals(1));
-        expect(report.applied.map((m) => m.version), equals(<int>[1]));
+        expect(report.toVersion, equals(2));
+        expect(report.applied.map((m) => m.version), equals(<int>[1, 2]));
         expect(report.didApplyAny, isTrue);
 
-        // Exactly one row was written to the migrations table.
-        final rows = db.select('SELECT version FROM migrations');
-        expect(rows.length, equals(1));
-        expect(rows.first['version'], equals(1));
+        // Both version rows were written to the migrations table.
+        final rows =
+            db.select('SELECT version FROM migrations ORDER BY version');
+        expect(rows.map((r) => r['version'] as int).toList(), equals(<int>[1, 2]));
 
         // All ten v1 tables present.
         expect(_tableNames(db), containsAll(_v1Tables));
@@ -263,14 +266,14 @@ void main() {
       // process-local handle and confirm the bump survived.
       final db2 = sqlite3.open(dir.memoryDbPath);
       try {
-        expect(readSchemaVersion(db2), equals(1),
-            reason: 'the v0 → v1 bump must survive a close+reopen');
+        expect(readSchemaVersion(db2), equals(2),
+            reason: 'the v0 → latest bump must survive a close+reopen');
         expect(_tableNames(db2), containsAll(_v1Tables));
-        // A second migration call on the already-v1 file is a no-op.
+        // A second migration call on the up-to-date file is a no-op.
         final report = SchemaMigrator().migrate(db2);
         expect(report.didApplyAny, isFalse);
-        expect(report.fromVersion, equals(1));
-        expect(report.toVersion, equals(1));
+        expect(report.fromVersion, equals(2));
+        expect(report.toVersion, equals(2));
       } finally {
         db2.dispose();
       }
@@ -304,7 +307,7 @@ void main() {
         final report = check.run(memoryDb: db, directory: dir, config: cfg);
 
         expect(report.schemaMigration.fromVersion, equals(0));
-        expect(report.schemaMigration.toVersion, equals(1));
+        expect(report.schemaMigration.toVersion, equals(2));
         expect(report.schemaMigration.didApplyAny, isTrue);
 
         // throwIfFailed must not throw — the failure path is the next
@@ -357,8 +360,8 @@ void main() {
         // Migration still ran: probes come *after* migration, so a
         // probe failure does not prevent the schema bump (the bump is
         // still observable in the DB).
-        expect(report.schemaMigration.toVersion, equals(1));
-        expect(readSchemaVersion(db), equals(1));
+        expect(report.schemaMigration.toVersion, equals(2));
+        expect(readSchemaVersion(db), equals(2));
 
         // The report knows there is a failure.
         expect(report.hasFailures, isTrue);

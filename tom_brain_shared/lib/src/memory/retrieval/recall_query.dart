@@ -48,6 +48,42 @@ enum RecallMode {
   symbolic,
 }
 
+/// How the fused candidate list is ordered before the result is
+/// returned (memory_optimization_plan § 6.2.1 / § 7).
+///
+/// [relevance] is the default and preserves the historical behaviour:
+/// the order produced by fusion (RRF/weighted) and the diversity step
+/// (MMR) is returned unchanged. The other four re-score or re-sort that
+/// list using the usage columns (`last_access_ms` / `access_count`)
+/// populated by `recordAccess`:
+///
+///   * [recencyBoosted] — multiply each candidate's fused score by a
+///     recency factor (newer last-access wins), then re-order.
+///   * [frequencyBoosted] — multiply by a frequency factor (higher
+///     `access_count` wins), then re-order.
+///   * [oldest] — discard the fused scores and sort ascending by
+///     `last_access_ms` (least-recently-accessed first). The retrieval
+///     primitive a forgetting / reconsolidation pass uses to find cold
+///     candidates by time.
+///   * [coldest] — discard the fused scores and sort ascending by
+///     `access_count` (least-frequently-accessed first).
+enum RecallRanking {
+  /// Fusion + diversity order, unchanged. The default.
+  relevance,
+
+  /// Fused score weighted by a recency factor over `last_access_ms`.
+  recencyBoosted,
+
+  /// Fused score weighted by a frequency factor over `access_count`.
+  frequencyBoosted,
+
+  /// Pure ascending sort on `last_access_ms` (least recent first).
+  oldest,
+
+  /// Pure ascending sort on `access_count` (least frequent first).
+  coldest,
+}
+
 // `SymbolicOp`, `AttrClause`, and `SymbolicFilter` are re-exported below
 // so that callers importing `package:tom_brain_memory/...recall_query.dart`
 // continue to see the same surface as before the A.88 move. The runtime
@@ -228,6 +264,20 @@ final class RecallQuery {
   /// Optional LLM re-rank hook.
   final ReRankHook? reRank;
 
+  /// How the fused list is ordered before it is returned
+  /// (memory_optimization_plan § 6.2.1 / § 7). Defaults to
+  /// [RecallRanking.relevance] — the historical fusion + diversity
+  /// order.
+  final RecallRanking ranking;
+
+  /// Whether the nodes this recall returns should be marked as accessed
+  /// (their usage columns bumped via `recordAccess`). Defaults to
+  /// `false`: most recalls are read-only inspections that must not
+  /// perturb the recency / frequency signal the [ranking] strategies
+  /// read. A recall that genuinely represents "the system used these
+  /// memories" sets this to `true`.
+  final bool countsAsAccess;
+
   const RecallQuery({
     required this.modes,
     this.text,
@@ -240,5 +290,7 @@ final class RecallQuery {
     this.diversity = DiversityPolicy.defaultMmr,
     this.graphWalk = GraphWalkPolicy.defaultPolicy,
     this.reRank,
+    this.ranking = RecallRanking.relevance,
+    this.countsAsAccess = false,
   });
 }

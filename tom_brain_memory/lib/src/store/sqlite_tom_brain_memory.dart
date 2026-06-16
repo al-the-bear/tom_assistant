@@ -92,6 +92,7 @@ import '../edges/edge_reader.dart';
 import '../edges/edge_writer.dart';
 import '../migrations/json_file_migration_api.dart';
 import '../nodes/critique_hook.dart';
+import '../nodes/node_access_recorder.dart';
 import '../nodes/node_lifecycle.dart';
 import '../nodes/node_persister.dart';
 import '../nodes/node_reader.dart';
@@ -211,6 +212,10 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
 
   /// Owner of the node-lifecycle transitions ([demote] / [forget]).
   late NodeLifecycleManager _lifecycle;
+
+  /// Owner of the usage-tracking write ([recordAccess]) — sole writer of
+  /// the `last_access_ms` / `access_count` columns.
+  late NodeAccessRecorder _accessRecorder;
 
   /// Owner of the Procedure metric/status cache write ([updateProcedureMetrics]).
   late ProcedureMetricsWriter _procedureMetrics;
@@ -412,6 +417,10 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
       memoryDb: memoryDb,
       now: _clock.now,
       eventSink: _eventBus.emit,
+    );
+    _accessRecorder = NodeAccessRecorder(
+      memoryDb: memoryDb,
+      now: _clock.now,
     );
     _procedureMetrics = ProcedureMetricsWriter(
       memoryDb: memoryDb,
@@ -689,9 +698,21 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   }
 
   @override
+  Future<void> recordAccess(List<NodeId> ids, {String? producer}) async {
+    _ensureOpen('recordAccess');
+    return _accessRecorder.recordAccess(ids, producer: producer);
+  }
+
+  @override
   Future<void> demote(NodeId id, DemotionReason reason) async {
     _ensureOpen('demote');
     return _lifecycle.demote(id, reason);
+  }
+
+  @override
+  Future<void> promote(NodeId id, PromotionReason reason) async {
+    _ensureOpen('promote');
+    return _lifecycle.promote(id, reason);
   }
 
   @override

@@ -49,6 +49,7 @@ void main() {
     setUp(() async {
       db = sqlite3.openInMemory();
       applySchemaV1(db);
+      applySchemaV2(db); // NodeReader reads the v2 usage columns.
       idCounter = 0;
       fakeNow = DateTime.utc(2026, 6, 1, 9, 0, 0);
       coordinator = TwoDbCoordinator(

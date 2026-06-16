@@ -91,6 +91,30 @@ void main() {
       expect(compiled.bindings, equals(<Object?>[t.toMs()]));
     });
 
+    test('lastAccessAfter compiles to COALESCE(...) >= ? with epoch-ms', () {
+      final t = BrainTime.utc(2026, 5, 30, 14, 0, 0);
+      final compiled = compileSymbolicFilter(
+        SymbolicFilter(lastAccessAfter: t),
+      );
+      expect(
+        compiled.whereSql,
+        equals('COALESCE(last_access_ms, created_at_ms) >= ?'),
+      );
+      expect(compiled.bindings, equals(<Object?>[t.toMs()]));
+    });
+
+    test('lastAccessBefore compiles to COALESCE(...) < ? with epoch-ms', () {
+      final t = BrainTime.utc(2026, 5, 30, 15, 0, 0);
+      final compiled = compileSymbolicFilter(
+        SymbolicFilter(lastAccessBefore: t),
+      );
+      expect(
+        compiled.whereSql,
+        equals('COALESCE(last_access_ms, created_at_ms) < ?'),
+      );
+      expect(compiled.bindings, equals(<Object?>[t.toMs()]));
+    });
+
     test('producer compiles to produced_by = ?', () {
       final compiled = compileSymbolicFilter(
         const SymbolicFilter(producer: 'thinker-1'),
@@ -690,6 +714,155 @@ void main() {
     test('empty corpus returns empty', () async {
       final hits = recall.recall(filter: const SymbolicFilter());
       expect(hits, isEmpty);
+    });
+  });
+
+  // ─── memory_optimization_plan §6 — last_access_ms window ──────────
+  //
+  // A symbolic recall with a `last_access_ms` window returns exactly the
+  // nodes whose *effective last access* falls in the half-open range.
+  // The compiler reads `COALESCE(last_access_ms, created_at_ms)`, so a
+  // never-accessed node is filtered by its creation time; an accessed
+  // node (stamped by `recordAccess`) is filtered by its real access time.
+  group('A.56 SymbolicRecall last_access_ms window', () {
+    late Database memoryDb;
+    late TwoDbCoordinator coordinator;
+    late NodeTypeRegistry registry;
+    late NodePersister persister;
+    late NodeAccessRecorder recorder;
+    late SymbolicRecall recall;
+    late int idCounter;
+    late DateTime fakeNow;
+    late _RecordingVectorApplier applier;
+
+    NodeId mintId() {
+      idCounter += 1;
+      final randomness = List<int>.generate(16, (i) => (idCounter + i) & 31);
+      return NodeId.generate(at: fakeNow, randomness: randomness);
+    }
+
+    setUp(() async {
+      memoryDb = sqlite3.openInMemory();
+      applySchemaV1(memoryDb);
+      applySchemaV2(memoryDb); // the last_access_ms window needs v2.
+      applier = _RecordingVectorApplier();
+      coordinator = TwoDbCoordinator(
+        memoryDb: memoryDb,
+        applier: applier,
+        clock: FixedClock(BrainTime.utc(2026, 5, 30, 14, 0, 0)),
+      );
+
+      idCounter = 0;
+      fakeNow = DateTime.utc(2026, 5, 30, 14, 0, 0);
+
+      var regIdCounter = 2000;
+      NodeId mintRegistryId() {
+        regIdCounter += 1;
+        return NodeId.generate(
+          at: fakeNow,
+          randomness:
+              List<int>.generate(16, (i) => (regIdCounter + i) & 31),
+        );
+      }
+
+      const catalog = Fts5Catalog();
+      registry = NodeTypeRegistry(
+        memoryDb: memoryDb,
+        critiqueHook: (proposal, existing) async => const CritiqueApproved(),
+        idMint: mintRegistryId,
+        now: () => fakeNow,
+        ftsCatalog: catalog,
+      );
+      await registry.registerNodeType(_claimType());
+
+      persister = NodePersister(
+        memoryDb: memoryDb,
+        coordinator: coordinator,
+        registry: registry,
+        idMint: mintId,
+        now: () => fakeNow,
+        ftsWriter: const Fts5Writer(catalog: catalog),
+      );
+      recorder = NodeAccessRecorder(memoryDb: memoryDb, now: () => fakeNow);
+      recall = SymbolicRecall(memoryDb: memoryDb);
+    });
+
+    tearDown(() {
+      memoryDb.dispose();
+    });
+
+    test('window returns exactly the nodes whose last access falls in range',
+        () async {
+      // All three claims are created at the same instant (14:00) so the
+      // window discriminates on *access* time, not creation time.
+      final a = await _persistClaim(
+        persister: persister,
+        text: 'a',
+        confidence: 0.1,
+        key: 'k-a',
+      );
+      final b = await _persistClaim(
+        persister: persister,
+        text: 'b',
+        confidence: 0.2,
+        key: 'k-b',
+      );
+      final c = await _persistClaim(
+        persister: persister,
+        text: 'c',
+        confidence: 0.3,
+        key: 'k-c',
+      );
+
+      // Stamp distinct last-access times: a@10:00, b@12:00, c@16:00.
+      fakeNow = DateTime.utc(2026, 5, 30, 10, 0, 0);
+      await recorder.recordAccess(<NodeId>[a]);
+      fakeNow = DateTime.utc(2026, 5, 30, 12, 0, 0);
+      await recorder.recordAccess(<NodeId>[b]);
+      fakeNow = DateTime.utc(2026, 5, 30, 16, 0, 0);
+      await recorder.recordAccess(<NodeId>[c]);
+
+      // Half-open window [11:00, 14:00): includes b (accessed 12:00),
+      // excludes a (accessed before) and c (accessed after).
+      final hits = recall.recall(
+        filter: SymbolicFilter(
+          lastAccessAfter: BrainTime.utc(2026, 5, 30, 11, 0, 0),
+          lastAccessBefore: BrainTime.utc(2026, 5, 30, 14, 0, 0),
+        ),
+      );
+      final ids = hits.map((h) => h.nodeId).toSet();
+      expect(ids, equals(<NodeId>{b}));
+    });
+
+    test('never-accessed node is filtered by its creation time', () async {
+      // Created at 14:00; never accessed → last_access_ms is NULL, so the
+      // COALESCE falls back to created_at_ms = 14:00.
+      final fresh = await _persistClaim(
+        persister: persister,
+        text: 'fresh',
+        confidence: 0.5,
+        key: 'k-fresh',
+      );
+
+      // Window [13:00, 15:00) covers the creation time → matches.
+      final inRange = recall.recall(
+        filter: SymbolicFilter(
+          lastAccessAfter: BrainTime.utc(2026, 5, 30, 13, 0, 0),
+          lastAccessBefore: BrainTime.utc(2026, 5, 30, 15, 0, 0),
+        ),
+      );
+      expect(inRange.map((h) => h.nodeId).toSet(), contains(fresh));
+
+      // Window after the creation time → excludes the never-accessed node.
+      final outOfRange = recall.recall(
+        filter: SymbolicFilter(
+          lastAccessAfter: BrainTime.utc(2026, 5, 30, 15, 0, 0),
+        ),
+      );
+      expect(
+        outOfRange.map((h) => h.nodeId).toSet(),
+        isNot(contains(fresh)),
+      );
     });
   });
 }

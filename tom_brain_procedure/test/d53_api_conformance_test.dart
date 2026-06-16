@@ -206,7 +206,13 @@ final class ProbeMemory implements TomBrainMemory {
   Future<List<Node>> getMany(List<NodeId> ids) async => const <Node>[];
 
   @override
+  Future<void> recordAccess(List<NodeId> ids, {String? producer}) async {}
+
+  @override
   Future<void> demote(NodeId id, DemotionReason reason) async {}
+
+  @override
+  Future<void> promote(NodeId id, PromotionReason reason) async {}
 
   @override
   Future<void> updateProcedureMetrics(

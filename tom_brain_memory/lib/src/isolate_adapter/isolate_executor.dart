@@ -231,9 +231,17 @@ class MemoryIsolateExecutor extends TomExecutor {
           final ns = await _requireOpenMemory().getMany(ids);
           return GetManyResponse(ns);
 
+        case RecordAccessRequest(:final ids, :final producer):
+          await _requireOpenMemory().recordAccess(ids, producer: producer);
+          return const RecordAccessResponse();
+
         case DemoteRequest(:final id, :final reason):
           await _requireOpenMemory().demote(id, reason);
           return const DemoteResponse();
+
+        case PromoteRequest(:final id, :final reason):
+          await _requireOpenMemory().promote(id, reason);
+          return const PromoteResponse();
 
         case ForgetRequest(:final id, :final reason):
           await _requireOpenMemory().forget(id, reason);

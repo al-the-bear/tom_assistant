@@ -85,7 +85,7 @@ void main() {
         // Schema applied transitively by BootIntegrityCheck's migrator.
         expect(
           readSchemaVersion(store.debugMemoryDatabase),
-          equals(schemaV1Version),
+          equals(schemaV2Version),
         );
 
         // Bootstrap tables present after open.

@@ -37,7 +37,9 @@ export 'package:tom_brain_shared/tom_brain_shared.dart'
         RetentionPolicy;
 export 'critique_hook.dart'
     show CritiqueApproved, CritiqueHook, CritiqueOutcome, CritiqueRefused;
-export 'node_events.dart' show NodeDemoted, NodeForgotten, NodePersisted;
+export 'node_access_recorder.dart' show NodeAccessRecorder;
+export 'node_events.dart'
+    show NodeDemoted, NodeForgotten, NodePersisted, NodePromoted;
 export 'node_lifecycle.dart'
     show NodeLifecycleManager, TombstoneIndexEntry, lookupTombstone;
 export 'node_persist_exception.dart'

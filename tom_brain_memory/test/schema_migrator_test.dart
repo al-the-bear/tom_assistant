@@ -119,27 +119,27 @@ void main() {
 
     tearDown(() => db.dispose());
 
-    test('default registry exposes v1 as the latest known version', () {
+    test('default registry exposes v2 as the latest known version', () {
       final mig = SchemaMigrator();
-      expect(mig.latestKnownVersion, equals(1));
-      expect(mig.migrationCount, equals(1));
+      expect(mig.latestKnownVersion, equals(2));
+      expect(mig.migrationCount, equals(2));
     });
 
-    test('kSchemaMigrations carries exactly one entry today', () {
+    test('kSchemaMigrations carries v1 + v2 today', () {
       // Sanity-check the registry constant directly — the migrator's
       // public surface is symmetrical with this fact.
-      expect(kSchemaMigrations, hasLength(1));
-      expect(kSchemaMigrations.first.version, equals(1));
+      expect(kSchemaMigrations, hasLength(2));
+      expect(kSchemaMigrations.map((m) => m.version), equals(<int>[1, 2]));
     });
 
-    test('migrate on a fresh DB applies v1 and reports it', () {
+    test('migrate on a fresh DB applies v1 + v2 and reports them', () {
       final mig = SchemaMigrator();
       final report = mig.migrate(db);
 
-      expect(readSchemaVersion(db), equals(1));
+      expect(readSchemaVersion(db), equals(2));
       expect(report.fromVersion, equals(0));
-      expect(report.toVersion, equals(1));
-      expect(report.applied.map((m) => m.version), equals(<int>[1]));
+      expect(report.toVersion, equals(2));
+      expect(report.applied.map((m) => m.version), equals(<int>[1, 2]));
       expect(report.didApplyAny, isTrue);
 
       // v1 tables landed.
@@ -157,22 +157,22 @@ void main() {
       }));
     });
 
-    test('migrate on an already-at-v1 DB is a no-op', () {
+    test('migrate on an already-at-latest DB is a no-op', () {
       final mig = SchemaMigrator();
-      mig.migrate(db); // first apply
+      mig.migrate(db); // first apply — goes to v2
       final report = mig.migrate(db); // second apply — must no-op
 
-      expect(report.fromVersion, equals(1));
-      expect(report.toVersion, equals(1));
+      expect(report.fromVersion, equals(2));
+      expect(report.toVersion, equals(2));
       expect(report.applied, isEmpty);
       expect(report.didApplyAny, isFalse);
 
-      // The migrations table still has exactly one row — the second
+      // The migrations table still has exactly two rows — the second
       // call did not duplicate.
       final count = db
           .select('SELECT COUNT(*) AS c FROM migrations')
           .first['c'] as int;
-      expect(count, equals(1));
+      expect(count, equals(2));
     });
   });
 
@@ -253,8 +253,10 @@ void main() {
     });
 
     test('already-at-v1 DB → only v2 applied', () {
-      // Bootstrap to v1 with the production migrator first.
-      SchemaMigrator().migrate(db);
+      // Bootstrap to v1 directly (the production migrator now reaches v2,
+      // which would carry its own real v2 — here we want a DB pinned at v1
+      // so the chained migrator's fake v2 is the only step left to apply).
+      applySchemaV1(db);
       expect(readSchemaVersion(db), equals(1));
 
       // Now run the chained migrator — only v2 should apply.
@@ -309,7 +311,7 @@ void main() {
         () => SchemaMigrator().migrate(db),
         throwsA(isA<SchemaVersionAhead>()
             .having((e) => e.databaseVersion, 'databaseVersion', 99)
-            .having((e) => e.latestKnownVersion, 'latestKnownVersion', 1)),
+            .having((e) => e.latestKnownVersion, 'latestKnownVersion', 2)),
       );
     });
 

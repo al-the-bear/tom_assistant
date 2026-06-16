@@ -54,6 +54,7 @@ export 'package:tom_brain_shared/tom_brain_shared.dart'
         LatencyHistogram,
         MemoryEvent,
         MemoryStats,
+        PromotionReason,
         Scope,
         TomBrainMemoryClient;
 export 'tom_brain_memory.dart' show TomBrainMemory;

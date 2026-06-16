@@ -63,6 +63,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show defaultNowUtc;
 
 import '../observability/memory_log.dart';
 import 'schema_v1.dart';
+import 'schema_v2.dart';
 
 /// A single registered schema-version migration.
 ///
@@ -126,6 +127,11 @@ const List<SchemaMigration> kSchemaMigrations = <SchemaMigration>[
     version: schemaV1Version,
     summary: schemaV1Summary,
     apply: applySchemaV1,
+  ),
+  SchemaMigration(
+    version: schemaV2Version,
+    summary: schemaV2Summary,
+    apply: applySchemaV2,
   ),
 ];
 

@@ -138,6 +138,7 @@ void main() {
     setUp(() async {
       db = sqlite3.openInMemory();
       applySchemaV1(db);
+      applySchemaV2(db); // NodeReader reads the v2 usage columns.
       applier = _RecordingVectorApplier();
       coordinator = TwoDbCoordinator(
         memoryDb: db,

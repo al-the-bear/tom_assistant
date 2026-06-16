@@ -128,7 +128,7 @@
 
 import 'dart:math' as math;
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock, DiversityStrategy, FusionStrategy, GraphWalkPolicy, MemoryEvent, MultiRecallQuery, Node, NodeId, RecallBudget, RecallMode, RecallProvenanceEntry, RecallQuery, RecallReport, RecallResult, RecallSeed, ReRankHook, Scope, SymbolicFilter, SystemClock, Vec;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock, DiversityStrategy, FusionStrategy, GraphWalkPolicy, MemoryEvent, MultiRecallQuery, Node, NodeId, RecallBudget, RecallMode, RecallProvenanceEntry, RecallQuery, RecallRanking, RecallReport, RecallResult, RecallSeed, ReRankHook, Scope, SymbolicFilter, SystemClock, Vec;
 
 import '../cognitive_agents/shaking_events.dart';
 
@@ -137,6 +137,7 @@ import '../observability/memory_log.dart';
 import 'bm25_recall.dart';
 import 'graph_walk_recall.dart';
 import 'mmr.dart';
+import 'ranking_rescore.dart';
 import 'recall_events.dart';
 
 import 'rrf.dart';
@@ -190,6 +191,15 @@ typedef GraphWalkModeFn = List<GraphWalkRecallCandidate> Function({
 /// Matches `NodeReader.getMany`. Tests inject a fake that resolves from
 /// an in-memory map; production wires the method tear-off.
 typedef NodeBulkReader = Future<List<Node>> Function(List<NodeId> ids);
+
+/// Per-type recency half-life lookup used by the post-fusion
+/// `recencyBoosted` re-score (spec § 6.1.1 / § 6.2.1, § 6.6).
+///
+/// Returns the half-life over which a node's recency factor decays to
+/// 0.5 for a given `typeName`. The `decay` config block (plan § 12) will
+/// supply the real per-type values; until then the executor passes
+/// [_defaultHalfLifeForType].
+typedef HalfLifeForType = Duration Function(String typeName);
 
 /// The storage-stack embedding model, as seen by [RecallExecutor].
 ///
@@ -259,6 +269,17 @@ final class RecallExecutor {
   /// pass a list-backed sink to inspect emissions.
   final void Function(MemoryEvent)? _eventSink;
 
+  /// `w_recency` — the recency weight applied by the `recencyBoosted`
+  /// re-score (spec § 6.2.1). Defaults to 1.0 until the `retrieval.ranking`
+  /// config block lands (plan § 12). Ignored by every other ranking.
+  final double _recencyWeight;
+
+  /// Per-type recency half-life lookup for the `recencyBoosted` re-score.
+  /// Defaults to [_defaultHalfLifeForType] (a flat 30 days) until the
+  /// `decay` config block lands (plan § 12). Ignored by every other
+  /// ranking.
+  final HalfLifeForType _halfLifeForType;
+
   /// Cap on the per-mode top-K window used for the empty-intersection
   /// disagreement check (A.69; see Q-A.69.3). The window the executor
   /// actually uses is `min(_retrievalConflictTopK, perModeK)`.
@@ -291,6 +312,8 @@ final class RecallExecutor {
     RecallEmbedder? embedder,
     Clock clock = const SystemClock(),
     void Function(MemoryEvent)? eventSink,
+    double recencyWeight = 1.0,
+    HalfLifeForType halfLifeForType = _defaultHalfLifeForType,
   }) : this.fromCallables(
           bm25: bm25.recall,
           vector: vector?.recall,
@@ -300,6 +323,8 @@ final class RecallExecutor {
           embedder: embedder,
           clock: clock,
           eventSink: eventSink,
+          recencyWeight: recencyWeight,
+          halfLifeForType: halfLifeForType,
         );
 
   /// Callable-injecting constructor. Production prefers the concrete-
@@ -318,6 +343,8 @@ final class RecallExecutor {
     RecallEmbedder? embedder,
     Clock clock = const SystemClock(),
     void Function(MemoryEvent)? eventSink,
+    double recencyWeight = 1.0,
+    HalfLifeForType halfLifeForType = _defaultHalfLifeForType,
   })  : _bm25 = bm25,
         _vector = vector,
         _symbolic = symbolic,
@@ -325,7 +352,9 @@ final class RecallExecutor {
         _nodeReader = nodeReader,
         _embedder = embedder,
         _clock = clock,
-        _eventSink = eventSink;
+        _eventSink = eventSink,
+        _recencyWeight = recencyWeight,
+        _halfLifeForType = halfLifeForType;
 
   // ─── Public surface ──────────────────────────────────────────────
 
@@ -419,13 +448,21 @@ final class RecallExecutor {
     // preserves input order and elides missing ids; we keep its order.
     final materialised = await _nodeReader(selectedIds);
 
+    // Post-fusion recency/frequency re-score (spec § 6.2.1; plan § 7).
+    // The usage columns live on the materialised nodes, so the re-score
+    // runs here — after fusion+MMR, before the optional re-rank hook —
+    // threading each node's fused relevance from `fused`. For the
+    // default `RecallRanking.relevance` this is a no-op pass-through.
+    final reordered =
+        _applyRanking(query.ranking, materialised, _relevanceFromRrf(fused));
+
     // Optional re-rank.
     List<Node> finalNodes;
-    if (query.reRank != null && materialised.isNotEmpty) {
-      finalNodes = await _applyReRank(query.reRank!, materialised);
+    if (query.reRank != null && reordered.isNotEmpty) {
+      finalNodes = await _applyReRank(query.reRank!, reordered);
       reRankInvoked = true;
     } else {
-      finalNodes = materialised;
+      finalNodes = reordered;
     }
 
     // Final truncate to query.k. MMR already truncated; this is the
@@ -583,6 +620,16 @@ final class RecallExecutor {
     // order and elides missing ids.
     final materialised = await _nodeReader(selectedIds);
 
+    // Post-fusion recency/frequency re-score (spec § 6.2.1; plan § 7).
+    // Re-order the materialised nodes before building provenance, so the
+    // index-aligned provenance follows the re-ordered node list. For the
+    // default `RecallRanking.relevance` this is a no-op pass-through.
+    final reordered = _applyRanking(
+      query.ranking,
+      materialised,
+      <String, double>{for (final c in selected) c.nodeId.value: c.score},
+    );
+
     // Build provenance aligned with the *returned* node list (a node
     // elided by `getMany` drops out of both the node list and its
     // provenance entry).
@@ -590,7 +637,7 @@ final class RecallExecutor {
       for (final c in selected) c.nodeId.value: c,
     };
     final provenance = <RecallProvenanceEntry>[];
-    for (final node in materialised) {
+    for (final node in reordered) {
       final c = candidateByNode[node.id.value];
       if (c == null) continue; // defensive: getMany never invents ids
       provenance.add(
@@ -650,7 +697,7 @@ final class RecallExecutor {
     }
 
     return RecallResult(
-      nodes: List<Node>.unmodifiable(materialised),
+      nodes: List<Node>.unmodifiable(reordered),
       report: report,
       provenance: List<RecallProvenanceEntry>.unmodifiable(provenance),
     );

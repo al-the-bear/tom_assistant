@@ -97,6 +97,7 @@ export 'package:tom_brain_shared/tom_brain_shared.dart'
         RecallMode,
         RecallProvenanceEntry,
         RecallQuery,
+        RecallRanking,
         RecallReport,
         RecallResult,
         RecallSeed,
@@ -107,6 +108,7 @@ export 'package:tom_brain_shared/tom_brain_shared.dart'
         SymbolicOp;
 export 'mmr.dart'
     show MmrInput, MmrSelected, kDefaultMmrLambda, mmrDiversify;
+export 'ranking_rescore.dart' show RankingCandidate, rescoreByRanking;
 export 'rrf.dart'
     show
         RrfFusedCandidate,

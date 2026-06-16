@@ -74,6 +74,23 @@ final class SymbolicFilter {
   /// A [BrainTime], for the same reason as [createdAfter].
   final BrainTime? createdBefore;
 
+  /// Lower bound (inclusive) on the node's last-access time. `null` =
+  /// open.
+  ///
+  /// Compiles against `COALESCE(last_access_ms, created_at_ms)` — the
+  /// same "effective last access" reading the node reader exposes via
+  /// its `lastAccess` getter — so a never-accessed node's last access
+  /// is its creation time. A [BrainTime] for the same zone-coercion-free
+  /// reason as [createdAfter].
+  final BrainTime? lastAccessAfter;
+
+  /// Upper bound (exclusive) on the node's last-access time. `null` =
+  /// open.
+  ///
+  /// A [BrainTime]; compiles against `COALESCE(last_access_ms,
+  /// created_at_ms)` like [lastAccessAfter].
+  final BrainTime? lastAccessBefore;
+
   /// Producer-scope filter (a `Scope.producer` value).
   final String? producer;
 
@@ -87,6 +104,8 @@ final class SymbolicFilter {
     this.typeNames = const <String>{},
     this.createdAfter,
     this.createdBefore,
+    this.lastAccessAfter,
+    this.lastAccessBefore,
     this.producer,
     this.attributes = const <AttrClause>[],
   });
@@ -98,6 +117,8 @@ final class SymbolicFilter {
       typeNames.isEmpty &&
       createdAfter == null &&
       createdBefore == null &&
+      lastAccessAfter == null &&
+      lastAccessBefore == null &&
       producer == null &&
       attributes.isEmpty;
 
@@ -107,6 +128,8 @@ final class SymbolicFilter {
     if (other is! SymbolicFilter) return false;
     if (createdAfter != other.createdAfter) return false;
     if (createdBefore != other.createdBefore) return false;
+    if (lastAccessAfter != other.lastAccessAfter) return false;
+    if (lastAccessBefore != other.lastAccessBefore) return false;
     if (producer != other.producer) return false;
     if (!setEquals(typeNames, other.typeNames)) return false;
     return listEquals(attributes, other.attributes);
@@ -121,6 +144,8 @@ final class SymbolicFilter {
       Object.hashAllUnordered(typeNames),
       createdAfter,
       createdBefore,
+      lastAccessAfter,
+      lastAccessBefore,
       producer,
       Object.hashAll(attributes),
     );
@@ -132,6 +157,10 @@ final class SymbolicFilter {
     if (typeNames.isNotEmpty) parts.add('types=$typeNames');
     if (createdAfter != null) parts.add('after=$createdAfter');
     if (createdBefore != null) parts.add('before=$createdBefore');
+    if (lastAccessAfter != null) parts.add('accessedAfter=$lastAccessAfter');
+    if (lastAccessBefore != null) {
+      parts.add('accessedBefore=$lastAccessBefore');
+    }
     if (producer != null) parts.add('producer=$producer');
     if (attributes.isNotEmpty) parts.add('attrs=$attributes');
     return 'SymbolicFilter(${parts.join(', ')})';

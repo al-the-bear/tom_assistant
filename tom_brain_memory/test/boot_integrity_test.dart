@@ -130,7 +130,7 @@ void main() {
 
     tearDown(() => db.dispose());
 
-    test('fresh DB migrates to v1; all real probes converge', () {
+    test('fresh DB migrates to latest; all real probes converge', () {
       final report = BootIntegrityCheck().run(
         memoryDb: db,
         directory: dir,
@@ -139,7 +139,7 @@ void main() {
 
       // Migration record.
       expect(report.schemaMigration.fromVersion, equals(0));
-      expect(report.schemaMigration.toVersion, equals(1));
+      expect(report.schemaMigration.toVersion, equals(2));
       expect(report.schemaMigration.didApplyAny, isTrue);
 
       // Exactly four probes, in the order the plan lists them.
@@ -163,9 +163,9 @@ void main() {
       expect(byName['loadExtensionCapable']!.isSkipped, isFalse);
     });
 
-    test('already-at-v1 DB → migration no-op, probes unchanged', () {
-      // Bring DB to v1 in a separate migrator call so the second
-      // run() sees an already-migrated DB.
+    test('already-at-latest DB → migration no-op, probes unchanged', () {
+      // Bring DB to the latest version in a separate migrator call so
+      // the second run() sees an already-migrated DB.
       SchemaMigrator().migrate(db);
 
       final report = BootIntegrityCheck().run(
@@ -174,8 +174,8 @@ void main() {
         config: cfg,
       );
 
-      expect(report.schemaMigration.fromVersion, equals(1));
-      expect(report.schemaMigration.toVersion, equals(1));
+      expect(report.schemaMigration.fromVersion, equals(2));
+      expect(report.schemaMigration.toVersion, equals(2));
       expect(report.schemaMigration.didApplyAny, isFalse);
 
       // Probes still run and report identically.
@@ -225,7 +225,7 @@ void main() {
         ),
         throwsA(isA<SchemaVersionAhead>()
             .having((e) => e.databaseVersion, 'databaseVersion', 99)
-            .having((e) => e.latestKnownVersion, 'latestKnownVersion', 1)),
+            .having((e) => e.latestKnownVersion, 'latestKnownVersion', 2)),
       );
     });
   });
@@ -265,7 +265,7 @@ void main() {
 
       // Migration still ran (it precedes the probes); only the
       // probes themselves failed.
-      expect(report.schemaMigration.toVersion, equals(1));
+      expect(report.schemaMigration.toVersion, equals(2));
 
       // schemaVersion (the static probe) is ok; the three injected
       // probes are failed.

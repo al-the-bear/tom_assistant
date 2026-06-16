@@ -123,6 +123,8 @@ export 'schema_migrator.dart'
 export 'schema_v1.dart'
     show applySchemaV1, readSchemaVersion, schemaV1Statements,
         schemaV1Summary, schemaV1Version;
+export 'schema_v2.dart'
+    show applySchemaV2, schemaV2Summary, schemaV2Version;
 export 'two_db_coordinator.dart'
     show
         PendingVectorWrite,

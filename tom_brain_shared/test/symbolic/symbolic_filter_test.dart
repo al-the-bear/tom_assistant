@@ -84,6 +84,8 @@ void main() {
       expect(f.typeNames, isEmpty);
       expect(f.createdAfter, isNull);
       expect(f.createdBefore, isNull);
+      expect(f.lastAccessAfter, isNull);
+      expect(f.lastAccessBefore, isNull);
       expect(f.producer, isNull);
       expect(f.attributes, isEmpty);
       expect(f.isEmpty, isTrue);
@@ -94,6 +96,12 @@ void main() {
       expect(SymbolicFilter(createdAfter: BrainTime.utc(2026)).isEmpty, isFalse);
       expect(
           SymbolicFilter(createdBefore: BrainTime.utc(2026)).isEmpty, isFalse);
+      expect(
+          SymbolicFilter(lastAccessAfter: BrainTime.utc(2026)).isEmpty,
+          isFalse);
+      expect(
+          SymbolicFilter(lastAccessBefore: BrainTime.utc(2026)).isEmpty,
+          isFalse);
       expect(SymbolicFilter(producer: 'agent.x').isEmpty, isFalse);
       expect(
         SymbolicFilter(attributes: [AttrClause('k', SymbolicOp.eq, 1)])
@@ -117,11 +125,13 @@ void main() {
       expect(f.isEmpty, isTrue);
     });
 
-    test('equality is structural across all six fields', () {
+    test('equality is structural across all fields', () {
       final a = SymbolicFilter(
         typeNames: {'Claim', 'Conclusion'},
         createdAfter: BrainTime.utc(2026, 1, 1),
         createdBefore: BrainTime.utc(2026, 6, 1),
+        lastAccessAfter: BrainTime.utc(2026, 2, 1),
+        lastAccessBefore: BrainTime.utc(2026, 5, 1),
         producer: 'agent.researcher',
         attributes: [AttrClause('priority', SymbolicOp.gte, 5)],
       );
@@ -130,6 +140,8 @@ void main() {
         typeNames: {'Conclusion', 'Claim'},
         createdAfter: BrainTime.utc(2026, 1, 1),
         createdBefore: BrainTime.utc(2026, 6, 1),
+        lastAccessAfter: BrainTime.utc(2026, 2, 1),
+        lastAccessBefore: BrainTime.utc(2026, 5, 1),
         producer: 'agent.researcher',
         attributes: [AttrClause('priority', SymbolicOp.gte, 5)],
       );
@@ -197,6 +209,29 @@ void main() {
           attributes: [AttrClause('priority', SymbolicOp.gt, 5)],
         ))),
       );
+      // The last-access window fields are part of filter identity too.
+      expect(
+        base(),
+        isNot(equals(SymbolicFilter(
+          typeNames: {'Claim'},
+          createdAfter: BrainTime.utc(2026, 1, 1),
+          createdBefore: BrainTime.utc(2026, 6, 1),
+          lastAccessAfter: BrainTime.utc(2026, 3, 1),
+          producer: 'agent.x',
+          attributes: [AttrClause('priority', SymbolicOp.gte, 5)],
+        ))),
+      );
+      expect(
+        base(),
+        isNot(equals(SymbolicFilter(
+          typeNames: {'Claim'},
+          createdAfter: BrainTime.utc(2026, 1, 1),
+          createdBefore: BrainTime.utc(2026, 6, 1),
+          lastAccessBefore: BrainTime.utc(2026, 3, 1),
+          producer: 'agent.x',
+          attributes: [AttrClause('priority', SymbolicOp.gte, 5)],
+        ))),
+      );
     });
 
     test('toString omits unset narrowing for legibility', () {
@@ -208,6 +243,16 @@ void main() {
       expect(
         SymbolicFilter(producer: 'agent.x').toString(),
         equals('SymbolicFilter(producer=agent.x)'),
+      );
+      expect(
+        SymbolicFilter(
+          lastAccessAfter: BrainTime.utc(2026, 2, 1),
+          lastAccessBefore: BrainTime.utc(2026, 5, 1),
+        ).toString(),
+        equals(
+          'SymbolicFilter(accessedAfter=${BrainTime.utc(2026, 2, 1)}, '
+          'accessedBefore=${BrainTime.utc(2026, 5, 1)})',
+        ),
       );
     });
   });

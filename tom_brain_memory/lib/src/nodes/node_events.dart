@@ -3,6 +3,9 @@
 //     persist commit.
 //   * `NodeDemoted` (Plan step A.38) — successful `active → demoted`
 //     status flip.
+//   * `NodePromoted` (memory_optimization_plan § 4) — successful
+//     `demoted → active` status flip (the reversible inverse of
+//     `NodeDemoted`).
 //   * `NodeForgotten` (Plan step A.38) — successful Tombstone-and-
 //     delete commit.
 //
@@ -27,7 +30,7 @@
 // `memory.node-forgotten`) follow the per-component convention
 // documented on `MemoryEvent`.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show DemotionReason, ForgetReason, MemoryEvent, NodeId;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show DemotionReason, ForgetReason, MemoryEvent, NodeId, PromotionReason;
 
 /// Emitted when `NodePersister.persist` successfully commits a fresh
 /// node (idempotency miss).
@@ -128,6 +131,48 @@ final class NodeDemoted extends MemoryEvent {
 
   @override
   String get kind => 'memory.node-demoted';
+
+  @override
+  Map<String, Object?> payloadJson() => <String, Object?>{
+        'nodeId': nodeId.toString(),
+        'typeName': typeName,
+        'reason': reason.name,
+      };
+}
+
+/// Emitted when `NodeLifecycleManager.promote` flips a row from
+/// `demoted → active` — the reversible inverse of [NodeDemoted]
+/// (`memory_optimization_plan.md` § 4). Idempotent re-promotes and
+/// promotes against unknown / already-active / forgotten ids emit
+/// nothing, mirroring the demote no-op convention (see file header).
+///
+/// Carries the same shape as [NodeDemoted] so a subscriber can pair the
+/// two halves of a demote → promote round-trip by node id: the affected
+/// node id, its registered type name (resolved at the moment of the
+/// transition), and the categorical reason supplied by the caller.
+///
+/// `runId` / `causedBy` are absent for the same reason as [NodeDemoted]:
+/// the abstract `TomBrainMemory.promote` signature carries no `Scope`.
+final class NodePromoted extends MemoryEvent {
+  /// Stable id of the promoted node.
+  final NodeId nodeId;
+
+  /// Canonical type name resolved from the live row at the moment of
+  /// the transition.
+  final String typeName;
+
+  /// Categorical reason supplied to `promote`.
+  final PromotionReason reason;
+
+  const NodePromoted({
+    required this.nodeId,
+    required this.typeName,
+    required this.reason,
+    required super.occurredAt,
+  });
+
+  @override
+  String get kind => 'memory.node-promoted';
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{

@@ -132,6 +132,12 @@ final class CompiledSymbolicFilter {
 ///     (inclusive lower bound, in epoch ms).
 ///   * [SymbolicFilter.createdBefore] → `created_at_ms < ?`
 ///     (exclusive upper bound, in epoch ms).
+///   * [SymbolicFilter.lastAccessAfter] →
+///     `COALESCE(last_access_ms, created_at_ms) >= ?` (inclusive lower
+///     bound, in epoch ms; never-accessed nodes use creation time).
+///   * [SymbolicFilter.lastAccessBefore] →
+///     `COALESCE(last_access_ms, created_at_ms) < ?` (exclusive upper
+///     bound, in epoch ms).
 ///   * [SymbolicFilter.producer] → `produced_by = ?`.
 ///   * [SymbolicFilter.attributes] → one
 ///     `json_extract(attrs_json, '$.field') op ?` clause per
@@ -180,6 +186,20 @@ CompiledSymbolicFilter compileSymbolicFilter(SymbolicFilter filter) {
   if (filter.createdBefore != null) {
     clauses.add('created_at_ms < ?');
     bindings.add(filter.createdBefore!.toMs());
+  }
+
+  // Last-access window. Compiled against the same
+  // `COALESCE(last_access_ms, created_at_ms)` "effective last access"
+  // reading the node reader exposes, so a never-accessed node
+  // (NULL last_access_ms) is filtered by its creation time.
+  if (filter.lastAccessAfter != null) {
+    clauses.add('COALESCE(last_access_ms, created_at_ms) >= ?');
+    bindings.add(filter.lastAccessAfter!.toMs());
+  }
+
+  if (filter.lastAccessBefore != null) {
+    clauses.add('COALESCE(last_access_ms, created_at_ms) < ?');
+    bindings.add(filter.lastAccessBefore!.toMs());
   }
 
   if (filter.producer != null) {

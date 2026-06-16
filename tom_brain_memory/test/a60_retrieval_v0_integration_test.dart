@@ -86,6 +86,7 @@ void main() {
       memoryDb = sqlite3.openInMemory();
       vectorsDb = sqlite3.openInMemory();
       applySchemaV1(memoryDb);
+      applySchemaV2(memoryDb); // NodeReader reads the v2 usage columns.
 
       final fixedClock = FixedClock(BrainTime.utc(2026, 5, 30, 14, 0, 0));
       vectorTable = VectorTable(

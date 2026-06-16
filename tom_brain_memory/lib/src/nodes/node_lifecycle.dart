@@ -1,9 +1,10 @@
-// NodeLifecycleManager — the in-process owner of the `demote` and
-// `forget` paths for `SqliteTomBrainMemory`.
+// NodeLifecycleManager — the in-process owner of the `demote`,
+// `promote`, and `forget` paths for `SqliteTomBrainMemory`.
 //
 // Plan step A.35:
 //   "Implement `get`, `getMany`, `demote`, `forget` (Tombstone
 //    path)."
+// memory_optimization_plan § 4 adds the reversible `promote` inverse.
 //
 // What this file owns:
 //
@@ -15,6 +16,15 @@
 //     not persisted on the row — there is no column for it on
 //     `nodes`, and the audit trail belongs in the trail JSONL the
 //     producing run writes, not in the live table.
+//
+//   - `promote(NodeId, PromotionReason)` — the reversible inverse of
+//     `demote` (memory_optimization_plan § 4). Flips a `demoted` row
+//     back to `active` and emits `NodePromoted`. Only ever lifts
+//     `demoted → active`; it never touches `forgotten`/tombstoned
+//     rows (those are gone from the live table) and a node that is
+//     already `active` or unknown is a no-op that emits nothing,
+//     mirroring the demote convergence convention. Like `demote`, the
+//     reason is carried on the event, not persisted on the row.
 //
 //   - `forget(NodeId, ForgetReason)` — the **only** path that
 //     removes a row from the live `nodes` table (spec § 4.1 "the
@@ -86,7 +96,7 @@
 import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
-import 'package:tom_brain_shared/tom_brain_shared.dart' show DemotionReason, ForgetReason, MemoryEvent, NodeId, NodeStatus;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show DemotionReason, ForgetReason, MemoryEvent, NodeId, NodeStatus, PromotionReason;
 
 import '../store/transaction_support.dart';
 
@@ -203,6 +213,63 @@ final class NodeLifecycleManager {
 
     _eventSink?.call(
       NodeDemoted(
+        nodeId: id,
+        typeName: typeName,
+        reason: reason,
+        occurredAt: now,
+      ),
+    );
+  }
+
+  /// Flips the lifecycle status of [id] from `demoted` back to
+  /// `active` — the reversible inverse of [demote]
+  /// (`memory_optimization_plan.md` § 4).
+  ///
+  /// Contract:
+  ///
+  ///   * Only the `demoted → active` transition fires. A promote
+  ///     against an already-`active` row, an `archived` row, an unknown
+  ///     id, or a forgotten / tombstoned id is a no-op — the live row is
+  ///     gone or already where it should be. The status filter in the
+  ///     WHERE clause makes this safe even against a concurrent writer.
+  ///   * Reversible: a promoted node can be demoted again.
+  ///
+  /// [reason] is captured for the emitted `NodePromoted` event but is
+  /// not persisted on the row — symmetric with [demote].
+  Future<void> promote(NodeId id, PromotionReason reason) async {
+    final idStr = id.toString();
+
+    // Resolve the type name (for the event) and gate emission on the
+    // actual `demoted → active` transition. Mirrors `demote` exactly,
+    // with the status guard inverted.
+    final pre = _db.select(
+      'SELECT type_name, status FROM nodes WHERE id = ? LIMIT 1',
+      <Object?>[idStr],
+    );
+    if (pre.isEmpty) return;
+    final preStatus = pre.first['status'] as String;
+    if (preStatus != NodeStatus.demoted.name) return;
+    final typeName = pre.first['type_name'] as String;
+
+    final now = _now().toUtc();
+    final nowMs = now.millisecondsSinceEpoch;
+    final nowIso = now.toIso8601String();
+
+    _db.execute(
+      'UPDATE nodes SET status = ?, updated_at_ms = ?, '
+      'updated_at_iso = ? '
+      'WHERE id = ? AND status = ?',
+      <Object?>[
+        NodeStatus.active.name,
+        nowMs,
+        nowIso,
+        idStr,
+        NodeStatus.demoted.name,
+      ],
+    );
+
+    _eventSink?.call(
+      NodePromoted(
         nodeId: id,
         typeName: typeName,
         reason: reason,

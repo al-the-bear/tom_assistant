@@ -115,7 +115,10 @@ final class NodeReader {
   Future<Node?> get(NodeId id) async {
     final rows = _db.select(
       'SELECT id, type_name, attrs_json, status, '
-      'created_at_ms FROM nodes WHERE id = ? LIMIT 1',
+      'created_at_ms, updated_at_ms, '
+      'COALESCE(last_access_ms, created_at_ms) AS last_access_ms, '
+      'COALESCE(access_count, 0) AS access_count '
+      'FROM nodes WHERE id = ? LIMIT 1',
       <Object?>[id.toString()],
     );
     if (rows.isEmpty) return null;
@@ -156,7 +159,10 @@ final class NodeReader {
     final placeholders = sqlPlaceholders(orderedKeys.length);
     final rows = _db.select(
       'SELECT id, type_name, attrs_json, status, '
-      'created_at_ms FROM nodes WHERE id IN ($placeholders)',
+      'created_at_ms, updated_at_ms, '
+      'COALESCE(last_access_ms, created_at_ms) AS last_access_ms, '
+      'COALESCE(access_count, 0) AS access_count '
+      'FROM nodes WHERE id IN ($placeholders)',
       <Object?>[...orderedKeys],
     );
 
@@ -181,6 +187,12 @@ final class NodeReader {
     final attrsJson = row['attrs_json'] as String;
     final statusName = row['status'] as String;
     final createdAtMs = row['created_at_ms'] as int;
+    final updatedAtMs = row['updated_at_ms'] as int;
+    // The SELECTs COALESCE these so an un-accessed node (post-v2 rows
+    // are written with a NULL `last_access_ms`) reports its creation
+    // time and a zero count — see `Node.lastAccess` / `accessCount`.
+    final lastAccessMs = row['last_access_ms'] as int;
+    final accessCount = row['access_count'] as int;
 
     // At A.35 this is a thin defensive decode. No type-driven
     // rehydration happens — see file header **Q-A.35.2**. A future
@@ -190,12 +202,19 @@ final class NodeReader {
     final status = _decodeStatus(statusName);
     final createdAt =
         DateTime.fromMillisecondsSinceEpoch(createdAtMs, isUtc: true);
+    final updatedAt =
+        DateTime.fromMillisecondsSinceEpoch(updatedAtMs, isUtc: true);
+    final lastAccess =
+        DateTime.fromMillisecondsSinceEpoch(lastAccessMs, isUtc: true);
 
     return Node(
       id: id,
       typeName: typeName,
       values: values,
       createdAt: createdAt,
+      updatedAt: updatedAt,
+      lastAccess: lastAccess,
+      accessCount: accessCount,
       // A.35 has no read path to vectors.db; see file header
       // (Q-A.35.1). The Node API permits null here and callers that
       // need the embedding must wait for the vectors-store readback.

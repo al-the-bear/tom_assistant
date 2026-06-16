@@ -29,7 +29,7 @@ import '../../ids/ids.dart' show NodeId;
 import '../../symbolic/symbolic.dart' show SymbolicFilter;
 
 import 'recall_query.dart'
-    show DiversityPolicy, FusionPolicy, RecallBudget, RecallMode;
+    show DiversityPolicy, FusionPolicy, RecallBudget, RecallMode, RecallRanking;
 
 /// One seed in a [MultiRecallQuery] (§ 6.5).
 ///
@@ -120,6 +120,17 @@ final class MultiRecallQuery {
   /// Diversity policy (MMR by default), applied to the fused list.
   final DiversityPolicy diversity;
 
+  /// How the fused list is ordered before it is returned
+  /// (memory_optimization_plan § 6.2.1 / § 7). Defaults to
+  /// [RecallRanking.relevance]. Applies to the single fused list the
+  /// seeds produce, exactly as on [RecallQuery].
+  final RecallRanking ranking;
+
+  /// Whether the nodes this recall returns should be marked as accessed
+  /// (usage columns bumped via `recordAccess`). Defaults to `false` for
+  /// the same read-only reason as on [RecallQuery].
+  final bool countsAsAccess;
+
   const MultiRecallQuery({
     required this.seeds,
     this.scope,
@@ -127,5 +138,7 @@ final class MultiRecallQuery {
     this.budget = const RecallBudget(),
     this.fusion = FusionPolicy.defaultRrf,
     this.diversity = DiversityPolicy.defaultMmr,
+    this.ranking = RecallRanking.relevance,
+    this.countsAsAccess = false,
   });
 }

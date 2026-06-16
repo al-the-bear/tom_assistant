@@ -47,7 +47,7 @@
 
 import 'dart:async';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MemoryConfig, MemoryEvent, MemoryStats, MigrationApi, MigrationCursor, MigrationDecl, MigrationStatus, MultiRecallQuery, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, ProcedureStatus, RecallQuery, RecallResult, Scope, StackApi, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackEvent, StackInfo, StackPolicy, StackSummary, StreamQuery, TomBrainMemoryClient, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, DemotionReason, Edge, EdgeDirection, EdgeId, EdgeType, ForgetReason, MemoryConfig, MemoryEvent, MemoryStats, MigrationApi, MigrationCursor, MigrationDecl, MigrationStatus, MultiRecallQuery, Node, NodeDraft, NodeId, NodeTypeDecl, ProcedureRunRef, ProcedureStatus, PromotionReason, RecallQuery, RecallResult, Scope, StackApi, StackDecl, StackEntry, StackEntryId, StackEntryStatus, StackEvent, StackInfo, StackPolicy, StackSummary, StreamQuery, TomBrainMemoryClient, TrailEntry, TrailId, TrailOutcome, Vec, WriteBudget;
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show IsolateCancellationToken;
 
@@ -168,9 +168,25 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
   }
 
   @override
+  Future<void> recordAccess(List<NodeId> ids, {String? producer}) async {
+    // Wire-sendable: List<NodeId> + an optional String carry no closures,
+    // so the whole call crosses the boundary intact.
+    await host.send<RecordAccessResponse>(
+      RecordAccessRequest(ids: ids, producer: producer),
+    );
+  }
+
+  @override
   Future<void> demote(NodeId id, DemotionReason reason) async {
     await host.send<DemoteResponse>(
       DemoteRequest(id: id, reason: reason),
+    );
+  }
+
+  @override
+  Future<void> promote(NodeId id, PromotionReason reason) async {
+    await host.send<PromoteResponse>(
+      PromoteRequest(id: id, reason: reason),
     );
   }
 

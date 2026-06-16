@@ -145,17 +145,29 @@ final class _IsolateSideFakeMemoryA82 implements TomBrainMemory {
     ];
   }
 
+  @override
+  Future<void> recordAccess(List<NodeId> ids, {String? producer}) async {
+    _lastRecordAccess = 'n=${ids.length}:producer=${producer ?? ''}';
+  }
+
   // Tracks the most recent demote/forget call so the test can check that
   // the reason crossed correctly. Inspected via `stats()` (we hijack
   // `stats()` here as a generic introspection channel since the A.80
   // path already proved it round-trips).
   String _lastDemoteReason = '';
+  String _lastPromoteReason = '';
   String _lastForgetReason = '';
   String _lastProcedureMetrics = '';
+  String _lastRecordAccess = '';
 
   @override
   Future<void> demote(NodeId id, DemotionReason reason) async {
     _lastDemoteReason = reason.name;
+  }
+
+  @override
+  Future<void> promote(NodeId id, PromotionReason reason) async {
+    _lastPromoteReason = reason.name;
   }
 
   @override
@@ -240,6 +252,10 @@ final class _IsolateSideFakeMemoryA82 implements TomBrainMemory {
           values: <String, Object?>{
             'k': query.k,
             'modes': query.modes.map((m) => m.name).toList(),
+            // Echo the § 5 ranking / countsAsAccess fields so the
+            // round-trip test can prove they crossed the boundary.
+            'ranking': query.ranking.name,
+            'countsAsAccess': query.countsAsAccess,
           },
           createdAt: DateTime.utc(2026, 1, 3),
         ),
@@ -374,9 +390,11 @@ final class _IsolateSideFakeMemoryA82 implements TomBrainMemory {
     return MemoryStats(
       nodeCountByType: <String, int>{
         if (_lastDemoteReason.isNotEmpty) 'demote:$_lastDemoteReason': 1,
+        if (_lastPromoteReason.isNotEmpty) 'promote:$_lastPromoteReason': 1,
         if (_lastForgetReason.isNotEmpty) 'forget:$_lastForgetReason': 1,
         if (_lastProcedureMetrics.isNotEmpty)
           'procMetrics:$_lastProcedureMetrics': 1,
+        if (_lastRecordAccess.isNotEmpty) 'recordAccess:$_lastRecordAccess': 1,
         if (_lastCentroidKey.isNotEmpty)
           'centroid:$_lastCentroidKey:dims=$_lastCentroidDims': 1,
         if (_lastAppendedNote.isNotEmpty) 'note:$_lastAppendedNote': 1,
@@ -396,10 +414,21 @@ final class _IsolateSideFakeMemoryA82 implements TomBrainMemory {
   }
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
-      const RecallResult(
-        nodes: <Node>[],
-        report: RecallReport(
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async => RecallResult(
+        nodes: <Node>[
+          // Echo the § 5 ranking / countsAsAccess fields plus the seed
+          // count so the round-trip test can prove the query crossed.
+          Node(
+            id: NodeId.generate(),
+            typeName: 'RecalledMultiFor:${query.seeds.length}',
+            values: <String, Object?>{
+              'ranking': query.ranking.name,
+              'countsAsAccess': query.countsAsAccess,
+            },
+            createdAt: DateTime.utc(2026, 1, 3),
+          ),
+        ],
+        report: const RecallReport(
           candidatesPerMode: <RecallMode, int>{},
           fusionStrategy: FusionStrategy.rrf,
           diversityStrategy: DiversityStrategy.mmr,
@@ -719,10 +748,23 @@ void main() {
         expect(bulk[0].id, equals(ids[0]));
         expect(bulk[2].values['pos'], equals(2));
 
+        // recordAccess — the usage-tracking write (id list + producer
+        // cross the boundary; verified via the stats introspection channel).
+        await client.recordAccess(ids, producer: 'answer:run-7');
+        var sAccess = await client.stats();
+        expect(sAccess.nodeCountByType,
+            contains('recordAccess:n=3:producer=answer:run-7'));
+
         // demote
         await client.demote(id, DemotionReason.prunerDecision);
         var s = await client.stats();
         expect(s.nodeCountByType, contains('demote:prunerDecision'));
+
+        // promote — the reversible inverse of demote (the reason crosses
+        // the boundary just like demote's does).
+        await client.promote(id, PromotionReason.reconsolidation);
+        s = await client.stats();
+        expect(s.nodeCountByType, contains('promote:reconsolidation'));
 
         // forget
         await client.forget(id, ForgetReason.userRequested);
@@ -822,11 +864,17 @@ void main() {
             text: 'hello world',
             modes: <RecallMode>{RecallMode.bm25, RecallMode.vector},
             k: 5,
+            ranking: RecallRanking.coldest,
+            countsAsAccess: true,
           ),
         );
         expect(result.nodes, hasLength(1));
         expect(result.nodes.first.typeName, equals('RecalledFor:hello world'));
         expect(result.nodes.first.values['k'], equals(5));
+        // The § 5 ranking / countsAsAccess fields crossed the isolate
+        // boundary intact (enum + bool are sendable, no codec needed).
+        expect(result.nodes.first.values['ranking'], equals('coldest'));
+        expect(result.nodes.first.values['countsAsAccess'], isTrue);
         expect(result.report.candidatesPerMode.keys.toSet(), equals(<RecallMode>{
           RecallMode.bm25,
           RecallMode.vector,
@@ -864,6 +912,33 @@ void main() {
         }
       },
     );
+
+    test('recallMulti() round-trips the § 5 ranking / countsAsAccess fields',
+        () async {
+      final host = TomBrainMemoryIsolateHost(factory: spawnFakeMemoryForA82);
+      final client = TomBrainMemoryIsolateClient(host);
+      try {
+        await host.spawn();
+        await client.open(_fakeConfig());
+
+        final result = await client.recallMulti(
+          const MultiRecallQuery(
+            seeds: <RecallSeed>[
+              RecallSeed(mode: RecallMode.bm25, text: 'a'),
+              RecallSeed(mode: RecallMode.vector, text: 'b'),
+            ],
+            ranking: RecallRanking.oldest,
+            countsAsAccess: true,
+          ),
+        );
+        expect(result.nodes, hasLength(1));
+        expect(result.nodes.first.typeName, equals('RecalledMultiFor:2'));
+        expect(result.nodes.first.values['ranking'], equals('oldest'));
+        expect(result.nodes.first.values['countsAsAccess'], isTrue);
+      } finally {
+        await host.shutdown();
+      }
+    });
   });
 
   group('A.82 classification round-trip', () {

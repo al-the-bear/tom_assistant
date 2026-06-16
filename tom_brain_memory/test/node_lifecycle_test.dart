@@ -59,6 +59,7 @@ void main() {
     late NodePersister persister;
     late NodeReader reader;
     late NodeLifecycleManager lifecycle;
+    late NodeAccessRecorder recorder;
     late List<MemoryEvent> events;
     late int idCounter;
     late DateTime fakeNow;
@@ -81,6 +82,7 @@ void main() {
     setUp(() async {
       db = sqlite3.openInMemory();
       applySchemaV1(db);
+      applySchemaV2(db); // NodeReader reads the v2 usage columns.
       applier = _RecordingVectorApplier();
       coordinator = TwoDbCoordinator(
         memoryDb: db,
@@ -124,6 +126,10 @@ void main() {
         idMint: mintLifecycleId,
         now: () => fakeNow,
         eventSink: events.add,
+      );
+      recorder = NodeAccessRecorder(
+        memoryDb: db,
+        now: () => fakeNow,
       );
     });
 
@@ -228,6 +234,134 @@ void main() {
       expect(out, hasLength(2));
       expect(out[0].status, equals(NodeStatus.active));
       expect(out[1].status, equals(NodeStatus.demoted));
+    });
+
+    // ─── NodeReader usage fields (memory_optimization_plan §2) ─────
+    //
+    // The reader surfaces the v2 usage columns on the materialised
+    // `Node`: `updatedAt`, `lastAccess`, `accessCount`. A freshly
+    // persisted node has never been mutated or accessed, so the reader
+    // mirrors `createdAt` (the persister writes a NULL `last_access_ms`,
+    // which the SELECT COALESCEs to `created_at_ms`) and reports a zero
+    // count. Once real usage is recorded on the columns, the reader
+    // surfaces those values verbatim.
+
+    test('getMany populates updatedAt/lastAccess/accessCount; a fresh '
+        'node mirrors createdAt with a zero count', () async {
+      final id = await persistClaim(text: 'fresh', key: 'k-fresh');
+
+      final out = await reader.getMany(<NodeId>[id]);
+      expect(out, hasLength(1));
+      final node = out.single;
+
+      expect(node.createdAt, equals(fakeNow));
+      expect(node.updatedAt, equals(fakeNow));
+      expect(node.lastAccess, equals(fakeNow));
+      expect(node.lastAccess.isUtc, isTrue);
+      expect(node.accessCount, equals(0));
+    });
+
+    test('get surfaces advanced updated_at / last_access / access_count '
+        'from the columns', () async {
+      final id = await persistClaim(text: 'used', key: 'k-used');
+
+      // Simulate a later mutation + access recorded directly on the row
+      // (the recordAccess write path lands in §3; here we prove the
+      // reader faithfully surfaces whatever the columns hold).
+      final updatedAt = fakeNow.add(const Duration(hours: 1));
+      final lastAccess = fakeNow.add(const Duration(days: 2));
+      db.execute(
+        'UPDATE nodes SET updated_at_ms = ?, last_access_ms = ?, '
+        'last_access_iso = ?, access_count = ? WHERE id = ?',
+        <Object?>[
+          updatedAt.millisecondsSinceEpoch,
+          lastAccess.millisecondsSinceEpoch,
+          lastAccess.toIso8601String(),
+          5,
+          id.toString(),
+        ],
+      );
+
+      final node = await reader.get(id);
+      expect(node, isNotNull);
+      expect(node!.createdAt, equals(fakeNow));
+      expect(node.updatedAt, equals(updatedAt));
+      expect(node.lastAccess, equals(lastAccess));
+      expect(node.accessCount, equals(5));
+    });
+
+    // ─── NodeAccessRecorder.recordAccess (memory_optimization_plan §3) ─
+    //
+    // `recordAccess` is the sole writer of the usage columns: one
+    // transaction stamps `last_access_ms`/`last_access_iso` to "now" and
+    // bumps `access_count` for each id. It is not a content edit, so it
+    // leaves `updated_at_*` untouched. Missing ids are skipped; duplicates
+    // bump once per distinct id.
+
+    test('recordAccess bumps last_access and access_count for two nodes',
+        () async {
+      final id1 = await persistClaim(text: 'a', key: 'k-a', seed: 1);
+      final id2 = await persistClaim(text: 'b', key: 'k-b', seed: 2);
+
+      // Both start at the persist-time defaults (lastAccess == createdAt,
+      // count == 0).
+      final before = await reader.getMany(<NodeId>[id1, id2]);
+      expect(before.every((n) => n.lastAccess == fakeNow), isTrue);
+      expect(before.every((n) => n.accessCount == 0), isTrue);
+
+      // Record access at a later instant.
+      final accessAt = fakeNow.add(const Duration(hours: 3));
+      fakeNow = accessAt;
+      await recorder.recordAccess(<NodeId>[id1, id2], producer: 'answer:r1');
+
+      final after = await reader.getMany(<NodeId>[id1, id2]);
+      for (final node in after) {
+        expect(node.lastAccess, equals(accessAt));
+        expect(node.lastAccess.isUtc, isTrue);
+        expect(node.accessCount, equals(1));
+      }
+
+      // A second recordAccess increments again — frequency accrues.
+      fakeNow = accessAt.add(const Duration(hours: 1));
+      await recorder.recordAccess(<NodeId>[id1]);
+      final reread = (await reader.getMany(<NodeId>[id1])).single;
+      expect(reread.accessCount, equals(2));
+      expect(reread.lastAccess, equals(fakeNow));
+    });
+
+    test('recordAccess does not touch updated_at', () async {
+      final id = await persistClaim(text: 'x', key: 'k-upd');
+      final before = (await reader.get(id))!.updatedAt;
+
+      fakeNow = fakeNow.add(const Duration(days: 1));
+      await recorder.recordAccess(<NodeId>[id]);
+
+      final after = (await reader.get(id))!;
+      // Usage is a separate axis: the content/lifecycle stamp is unchanged.
+      expect(after.updatedAt, equals(before));
+      expect(after.lastAccess, equals(fakeNow));
+    });
+
+    test('recordAccess skips missing ids and counts duplicates once',
+        () async {
+      final id = await persistClaim(text: 'x', key: 'k-dup');
+      final missing = NodeId.generate();
+
+      fakeNow = fakeNow.add(const Duration(hours: 2));
+      // Duplicate id + a missing id in one call.
+      await recorder.recordAccess(<NodeId>[id, id, missing]);
+
+      final node = (await reader.get(id))!;
+      // Bumped once despite appearing twice.
+      expect(node.accessCount, equals(1));
+      expect(node.lastAccess, equals(fakeNow));
+      // The missing id created nothing.
+      expect(await reader.get(missing), isNull);
+    });
+
+    test('recordAccess on an empty list is a no-op', () async {
+      // Should not throw and should open no transaction.
+      await recorder.recordAccess(const <NodeId>[]);
     });
 
     // ─── NodeLifecycleManager.demote ───────────────────────────────
@@ -559,6 +693,57 @@ void main() {
       // status — demote changes status, not type_name.
       expect(forgotten.forgottenType, equals('Claim'));
       expect(forgotten.reason, equals(ForgetReason.legalErasure));
+    });
+
+    // ─── memory_optimization_plan § 4 — promote (reversible inverse) ───
+
+    test('demote → promote round-trip restores active and emits NodePromoted',
+        () async {
+      final id = await persistClaim(text: 'p', key: 'k-p');
+      await lifecycle.demote(id, DemotionReason.prunerDecision);
+      expect((await reader.get(id))!.status, equals(NodeStatus.demoted));
+      final beforePromote = events.length;
+
+      fakeNow = DateTime.utc(2026, 5, 30, 18, 0, 0);
+      await lifecycle.promote(id, PromotionReason.reconsolidation);
+
+      // The status is back to active — the round-trip is reversible.
+      final node = await reader.get(id);
+      expect(node!.status, equals(NodeStatus.active));
+      expect(node.updatedAt, equals(fakeNow));
+
+      // Exactly one NodePromoted observed on the event stream.
+      final lifecycleEvents = events.sublist(beforePromote);
+      expect(lifecycleEvents, hasLength(1));
+      final ev = lifecycleEvents.single;
+      expect(ev, isA<NodePromoted>());
+      final promoted = ev as NodePromoted;
+      expect(promoted.nodeId, equals(id));
+      expect(promoted.typeName, equals('Claim'));
+      expect(promoted.reason, equals(PromotionReason.reconsolidation));
+      expect(promoted.occurredAt, equals(fakeNow));
+      expect(promoted.kind, equals('memory.node-promoted'));
+      expect(
+        promoted.payloadJson(),
+        equals(<String, Object?>{
+          'nodeId': id.toString(),
+          'typeName': 'Claim',
+          'reason': 'reconsolidation',
+        }),
+      );
+    });
+
+    test('promote is silent on no-op (already-active, missing)', () async {
+      // Promote of an active node — no demoted → active transition.
+      final id = await persistClaim(text: 'a', key: 'k-p-noop');
+      final afterPersist = events.length;
+      await lifecycle.promote(id, PromotionReason.reconsolidation);
+      expect(events.length, equals(afterPersist));
+
+      // Promote against a never-existed id — also silent.
+      final unknown = NodeId.generate();
+      await lifecycle.promote(unknown, PromotionReason.reconsolidation);
+      expect(events.length, equals(afterPersist));
     });
   });
 }

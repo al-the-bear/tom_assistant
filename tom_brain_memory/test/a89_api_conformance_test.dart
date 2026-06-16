@@ -196,6 +196,9 @@ final class ConformanceFakeMemory implements TomBrainMemory {
       ];
 
   @override
+  Future<void> recordAccess(List<NodeId> ids, {String? producer}) async {}
+
+  @override
   Future<void> demote(NodeId id, DemotionReason reason) async {
     final n = _nodes[id];
     if (n == null) return;
@@ -206,6 +209,20 @@ final class ConformanceFakeMemory implements TomBrainMemory {
       createdAt: n.createdAt,
       embedding: n.embedding,
       status: NodeStatus.demoted,
+    );
+  }
+
+  @override
+  Future<void> promote(NodeId id, PromotionReason reason) async {
+    final n = _nodes[id];
+    if (n == null || n.status != NodeStatus.demoted) return;
+    _nodes[id] = Node(
+      id: n.id,
+      typeName: n.typeName,
+      values: n.values,
+      createdAt: n.createdAt,
+      embedding: n.embedding,
+      status: NodeStatus.active,
     );
   }
 
