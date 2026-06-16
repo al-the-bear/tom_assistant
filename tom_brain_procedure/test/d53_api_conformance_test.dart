@@ -142,6 +142,8 @@ final class ProbeMemory implements TomBrainMemory {
         recallLatencyPerMode: const <String, LatencyHistogram>{},
         classificationConfidenceHistogram: const <String, int>{},
         migrationProgress: const <String, double>{},
+        lifecycleEventCounts: const <String, int>{},
+        accessCountHistogram: const <String, int>{},
       );
 
   @override

@@ -100,6 +100,7 @@ import '../nodes/node_type_registry.dart';
 import '../nodes/node_type_yaml_loader.dart';
 import '../observability/memory_event_bus.dart';
 import '../observability/memory_stats_collector.dart';
+import '../observability/node_lifecycle_event_counter.dart';
 import '../procedures/procedure_metrics_writer.dart';
 import '../profiles/sqlite_memory_profile_registry.dart';
 import '../retrieval/bm25_recall.dart';
@@ -242,6 +243,15 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   /// Assembles the [stats] snapshot from per-subsystem source tear-offs.
   late MemoryStatsCollector _statsCollector;
 
+  /// Running tally of node-lifecycle transitions (persist / promote /
+  /// demote / forget), feeding [MemoryStats.lifecycleEventCounts]
+  /// (§ 17). Fed synchronously by [_emitLifecycleCounted] — the sink
+  /// the node-lifecycle producers emit through — so the count is exact
+  /// at the moment [stats] reads it, with no race against the async
+  /// [events] broadcast feed. Lives for the store's whole life.
+  final NodeLifecycleEventCounter _lifecycleCounter =
+      NodeLifecycleEventCounter();
+
   /// The profile-administration surface ([profiles]) over the
   /// `<memory-root>/profiles/` tier (memory § 2.5). Built in [open]
   /// from the profile-unbound base config, a child-store factory, and
@@ -366,7 +376,9 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
       // so BM25 recall (step below) can find them. The writer is a no-op
       // for types without FTS fields.
       ftsWriter: const Fts5Writer(catalog: _ftsCatalog),
-      eventSink: _eventBus.emit,
+      // Node-lifecycle producer: route through the counting tap so the
+      // `node-persisted` tally is exact for `stats()` (§ 17).
+      eventSink: _emitLifecycleCounted,
       budgetTracker: _budgetTracker,
       agentRegistry: _agentRegistry,
     );
@@ -423,7 +435,9 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
     _lifecycle = NodeLifecycleManager(
       memoryDb: memoryDb,
       now: _clock.now,
-      eventSink: _eventBus.emit,
+      // Node-lifecycle producer: promote / demote / forget transitions
+      // are counted through the tap so `stats()` is exact (§ 17).
+      eventSink: _emitLifecycleCounted,
     );
     _accessRecorder = NodeAccessRecorder(
       memoryDb: memoryDb,
@@ -469,6 +483,8 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
       edgeCounts: _countEdgesByType,
       stackSizes: _stackSizes,
       migrationProgress: _migrationProgress,
+      lifecycleEventCounts: _lifecycleEventCounts,
+      accessCountHistogram: _accessCountHistogram,
     );
 
     // 11. Profile administration (memory § 2.5). The registry operates
@@ -1103,6 +1119,47 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
     return <String, double>{
       for (final status in statuses) status.migrationId: status.progress,
     };
+  }
+
+  /// Node-lifecycle transition tally since the store opened. Backs
+  /// [MemoryStats.lifecycleEventCounts] (§ 17). Read off the synchronous
+  /// counter the two lifecycle producers feed through
+  /// [_emitLifecycleCounted], so the value is exact at the moment
+  /// [stats] is called — no race against the async [events] feed.
+  Future<Map<String, int>> _lifecycleEventCounts() async =>
+      _lifecycleCounter.snapshot();
+
+  /// Histogram of live (active) nodes bucketed by `access_count`. Backs
+  /// [MemoryStats.accessCountHistogram] (§ 17) — the usage signal
+  /// `recordAccess` writes when an answer cites a node. Buckets are the
+  /// fixed labels `"0"`, `"1-2"`, `"3-5"`, `"6-10"`, `"11+"`; a bucket
+  /// with no nodes is absent (not present-with-zero), matching the
+  /// other count slices. `COALESCE` defends against a NULL column on a
+  /// row written before the v2 backfill default applied.
+  Future<Map<String, int>> _accessCountHistogram() async {
+    final rows = _memoryDb.select(
+      'SELECT CASE '
+      "WHEN COALESCE(access_count, 0) = 0 THEN '0' "
+      "WHEN COALESCE(access_count, 0) BETWEEN 1 AND 2 THEN '1-2' "
+      "WHEN COALESCE(access_count, 0) BETWEEN 3 AND 5 THEN '3-5' "
+      "WHEN COALESCE(access_count, 0) BETWEEN 6 AND 10 THEN '6-10' "
+      "ELSE '11+' END AS bucket, COUNT(*) AS n "
+      'FROM nodes WHERE status = ? GROUP BY bucket',
+      <Object?>[NodeStatus.active.name],
+    );
+    return <String, int>{
+      for (final row in rows) row['bucket'] as String: row['n'] as int,
+    };
+  }
+
+  /// Event sink for the two node-lifecycle producers (the [NodePersister]
+  /// and the [NodeLifecycleManager]). Tallies the transition on the
+  /// synchronous [_lifecycleCounter] *before* forwarding to the bus, so a
+  /// `promote()` immediately followed by `stats()` reads the fresh count
+  /// even though [events] delivers on a later microtask (§ 17).
+  void _emitLifecycleCounted(MemoryEvent event) {
+    _lifecycleCounter.observe(event);
+    _eventBus.emit(event);
   }
 
   /// Count of live (active) `nodes` rows of [typeName]. Used by

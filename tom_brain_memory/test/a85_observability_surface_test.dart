@@ -337,6 +337,8 @@ void main() {
       expect(stats.recallLatencyPerMode, isEmpty);
       expect(stats.classificationConfidenceHistogram, isEmpty);
       expect(stats.migrationProgress, isEmpty);
+      expect(stats.lifecycleEventCounts, isEmpty);
+      expect(stats.accessCountHistogram, isEmpty);
     });
 
     test('all sources wired → every slice populated', () async {
@@ -355,6 +357,12 @@ void main() {
         classificationConfidence: () async =>
             <String, int>{'0.5-0.6': 2, '0.9-1.0': 5},
         migrationProgress: () async => <String, double>{'restructure_v1': 0.5},
+        lifecycleEventCounts: () async => <String, int>{
+          'memory.node-persisted': 9,
+          'memory.node-promoted': 1,
+        },
+        accessCountHistogram: () async =>
+            <String, int>{'0': 4, '1-2': 3, '11+': 1},
       );
 
       final stats = await collector.snapshot();
@@ -374,6 +382,14 @@ void main() {
           equals(<String, int>{'0.5-0.6': 2, '0.9-1.0': 5}));
       expect(stats.migrationProgress,
           equals(<String, double>{'restructure_v1': 0.5}));
+      expect(
+          stats.lifecycleEventCounts,
+          equals(<String, int>{
+            'memory.node-persisted': 9,
+            'memory.node-promoted': 1,
+          }));
+      expect(stats.accessCountHistogram,
+          equals(<String, int>{'0': 4, '1-2': 3, '11+': 1}));
     });
 
     test('snapshot returns unmodifiable slice maps', () async {
@@ -418,6 +434,52 @@ void main() {
         collector.snapshot(),
         throwsA(isA<StateError>()),
       );
+    });
+  });
+
+  group('§17 NodeLifecycleEventCounter', () {
+    test('empty counter snapshots to an empty map', () {
+      final counter = NodeLifecycleEventCounter();
+      expect(counter.snapshot(), isEmpty);
+    });
+
+    test('counts each of the four node-lifecycle kinds', () {
+      final counter = NodeLifecycleEventCounter();
+      counter.observe(_StubEvent(kindName: 'memory.node-persisted'));
+      counter.observe(_StubEvent(kindName: 'memory.node-persisted'));
+      counter.observe(_StubEvent(kindName: 'memory.node-promoted'));
+      counter.observe(_StubEvent(kindName: 'memory.node-demoted'));
+      counter.observe(_StubEvent(kindName: 'memory.node-forgotten'));
+
+      expect(
+        counter.snapshot(),
+        equals(<String, int>{
+          'memory.node-persisted': 2,
+          'memory.node-promoted': 1,
+          'memory.node-demoted': 1,
+          'memory.node-forgotten': 1,
+        }),
+      );
+    });
+
+    test('ignores non-lifecycle events (kinds absent, not zero)', () {
+      final counter = NodeLifecycleEventCounter();
+      counter.observe(_StubEvent(kindName: 'memory.edge-written'));
+      counter.observe(_StubEvent(kindName: 'memory.recall-completed'));
+      counter.observe(_StubEvent(kindName: 'memory.node-promoted'));
+
+      final snap = counter.snapshot();
+      expect(snap, equals(<String, int>{'memory.node-promoted': 1}));
+      expect(snap.containsKey('memory.edge-written'), isFalse);
+    });
+
+    test('snapshot is a defensive copy (mutating it leaves the tally)', () {
+      final counter = NodeLifecycleEventCounter();
+      counter.observe(_StubEvent(kindName: 'memory.node-persisted'));
+      final snap = counter.snapshot();
+      snap['memory.node-persisted'] = 999;
+      counter.observe(_StubEvent(kindName: 'memory.node-persisted'));
+      expect(counter.snapshot()['memory.node-persisted'], 2);
     });
   });
 

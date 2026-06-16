@@ -745,6 +745,90 @@ void main() {
       await lifecycle.promote(unknown, PromotionReason.reconsolidation);
       expect(events.length, equals(afterPersist));
     });
+
+    // ─── memory_optimization_plan § 17 — lifecycle + access stats ──────
+    //
+    // The two stats slices §17 adds ride the same producers exercised
+    // above: `lifecycleEventCounts` is a synchronous tally of the four
+    // node-lifecycle events (here fed from the `events` list the
+    // persister + lifecycle manager already emit onto), and
+    // `accessCountHistogram` buckets the live (active) corpus by the
+    // `access_count` column `recordAccess` writes. This test wires both
+    // exactly as the composition root does and proves the resulting
+    // `MemoryStats` reflects a known sequence of transitions + accesses.
+
+    test('lifecycleEventCounts + accessCountHistogram reflect the '
+        'persist/demote/promote/recordAccess sequence', () async {
+      // The synchronous counter the store taps onto the lifecycle sink.
+      final counter = NodeLifecycleEventCounter();
+      // Replay the real events the producers emitted into it. (The store
+      // feeds it inline; here we drive it from the recorded list so the
+      // test stays decoupled from the store's wiring.)
+      void replay() {
+        for (final ev in events) {
+          counter.observe(ev);
+        }
+      }
+
+      // 3 persists → 3 `memory.node-persisted`.
+      final idA = await persistClaim(text: 'a', key: 'k-A', seed: 1);
+      final idB = await persistClaim(text: 'b', key: 'k-B', seed: 2);
+      final idC = await persistClaim(text: 'c', key: 'k-C', seed: 3);
+
+      // Usage: A accessed twice (count 2 → '1-2'), B once (count 1 →
+      // '1-2'), C never (count 0 → '0'). recordAccess emits no lifecycle
+      // events, so it does not perturb the tally.
+      fakeNow = fakeNow.add(const Duration(hours: 1));
+      await recorder.recordAccess(<NodeId>[idA, idB]);
+      fakeNow = fakeNow.add(const Duration(hours: 1));
+      await recorder.recordAccess(<NodeId>[idA]);
+
+      // One demote + one promote round-trip on C: C ends active again.
+      fakeNow = fakeNow.add(const Duration(hours: 1));
+      await lifecycle.demote(idC, DemotionReason.prunerDecision);
+      fakeNow = fakeNow.add(const Duration(hours: 1));
+      await lifecycle.promote(idC, PromotionReason.reconsolidation);
+
+      replay();
+
+      // Build the collector exactly as the store does: the lifecycle
+      // slice off the counter, the access slice off the live-node SQL.
+      final collector = MemoryStatsCollector(
+        lifecycleEventCounts: () async => counter.snapshot(),
+        accessCountHistogram: () async {
+          final rows = db.select(
+            'SELECT CASE '
+            "WHEN COALESCE(access_count, 0) = 0 THEN '0' "
+            "WHEN COALESCE(access_count, 0) BETWEEN 1 AND 2 THEN '1-2' "
+            "WHEN COALESCE(access_count, 0) BETWEEN 3 AND 5 THEN '3-5' "
+            "WHEN COALESCE(access_count, 0) BETWEEN 6 AND 10 THEN '6-10' "
+            "ELSE '11+' END AS bucket, COUNT(*) AS n "
+            'FROM nodes WHERE status = ? GROUP BY bucket',
+            <Object?>[NodeStatus.active.name],
+          );
+          return <String, int>{
+            for (final row in rows) row['bucket'] as String: row['n'] as int,
+          };
+        },
+      );
+
+      final stats = await collector.snapshot();
+
+      expect(
+        stats.lifecycleEventCounts,
+        equals(<String, int>{
+          'memory.node-persisted': 3,
+          'memory.node-demoted': 1,
+          'memory.node-promoted': 1,
+        }),
+      );
+      // A (2) and B (1) → '1-2' = 2 nodes; C (0) → '0' = 1 node. All
+      // three are active after the demote → promote round-trip.
+      expect(
+        stats.accessCountHistogram,
+        equals(<String, int>{'1-2': 2, '0': 1}),
+      );
+    });
   });
 }
 

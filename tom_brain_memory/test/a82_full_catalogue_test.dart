@@ -410,6 +410,8 @@ final class _IsolateSideFakeMemoryA82 implements TomBrainMemory {
       recallLatencyPerMode: <String, LatencyHistogram>{},
       classificationConfidenceHistogram: <String, int>{},
       migrationProgress: <String, double>{},
+      lifecycleEventCounts: <String, int>{},
+      accessCountHistogram: <String, int>{},
     );
   }
 

@@ -44,6 +44,25 @@ final class MemoryStats {
   /// [0.0, 1.0].
   final Map<String, double> migrationProgress;
 
+  /// Count of node-lifecycle transitions observed since the store
+  /// opened, keyed by the event `kind` discriminator
+  /// (`memory.node-persisted`, `memory.node-promoted`,
+  /// `memory.node-demoted`, `memory.node-forgotten`).
+  ///
+  /// Surfaces the promote/demote/persist/forget rates to the
+  /// Observatory without replaying the whole `events()` feed
+  /// (memory_optimization_plan.md § 17). A kind with no observed
+  /// transition is absent (not present-with-zero).
+  final Map<String, int> lifecycleEventCounts;
+
+  /// Histogram of live (active) nodes bucketed by `access_count` — the
+  /// usage signal `recordAccess` writes when an answer cites a node
+  /// (§ 16). Keys are bucket labels (`"0"`, `"1-2"`, `"3-5"`, `"6-10"`,
+  /// `"11+"`); the Observatory reads it to see how recall usage is
+  /// distributed across the live corpus. An empty corpus yields an
+  /// empty map.
+  final Map<String, int> accessCountHistogram;
+
   const MemoryStats({
     required this.nodeCountByType,
     required this.edgeCountByType,
@@ -53,6 +72,8 @@ final class MemoryStats {
     required this.recallLatencyPerMode,
     required this.classificationConfidenceHistogram,
     required this.migrationProgress,
+    required this.lifecycleEventCounts,
+    required this.accessCountHistogram,
   });
 
   /// Empty snapshot — useful as a baseline before any work has
@@ -66,5 +87,7 @@ final class MemoryStats {
     recallLatencyPerMode: <String, LatencyHistogram>{},
     classificationConfidenceHistogram: <String, int>{},
     migrationProgress: <String, double>{},
+    lifecycleEventCounts: <String, int>{},
+    accessCountHistogram: <String, int>{},
   );
 }

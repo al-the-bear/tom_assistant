@@ -35,6 +35,11 @@
 // A.85 — `memory_stats_collector.dart`: assembles `MemoryStats`
 // from pluggable per-slice source callbacks supplied by the
 // composition root.
+//
+// § 17 — `node_lifecycle_event_counter.dart`: synchronous tally of the
+// four node-lifecycle `MemoryEvent`s (persist/promote/demote/forget)
+// that the composition root taps into the lifecycle producers' event
+// sink, feeding `MemoryStats.lifecycleEventCounts`.
 
 export 'classification_confidence_tracker.dart'
     show ClassificationConfidenceTracker;
@@ -48,4 +53,5 @@ export 'memory_stats_collector.dart'
         IntSource,
         LatencyMapSource,
         MemoryStatsCollector;
+export 'node_lifecycle_event_counter.dart' show NodeLifecycleEventCounter;
 export 'recall_latency_tracker.dart' show RecallLatencyTracker;

@@ -434,6 +434,8 @@ void main() {
           },
           classificationConfidenceHistogram: {},
           migrationProgress: {'restructure_x': 0.42},
+          lifecycleEventCounts: {},
+          accessCountHistogram: {},
         )),
       );
 

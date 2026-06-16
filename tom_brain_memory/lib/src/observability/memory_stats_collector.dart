@@ -16,6 +16,11 @@
 //                                 — `ClassificationConfidenceTracker.snapshot()`.
 //   - `migrationProgress`         — `MigrationApi.status()` per
 //                                   migration → `processed / total`.
+//   - `lifecycleEventCounts`      — `NodeLifecycleEventCounter`
+//                                   tally of persist/promote/demote/
+//                                   forget transitions (§ 17).
+//   - `accessCountHistogram`      — SQLite `nodes` table bucketed by
+//                                   `access_count` (live rows; § 17).
 //
 // None of those sources can be reached without crossing a layer
 // boundary; baking the queries into one monolith would create import
@@ -82,6 +87,8 @@ final class MemoryStatsCollector {
   final LatencyMapSource? _recallLatency;
   final IntMapSource? _classificationConfidence;
   final DoubleMapSource? _migrationProgress;
+  final IntMapSource? _lifecycleEventCounts;
+  final IntMapSource? _accessCountHistogram;
 
   /// Constructs a collector. Every source is optional; omitted slices
   /// contribute their empty / zero default to the snapshot.
@@ -97,6 +104,8 @@ final class MemoryStatsCollector {
     LatencyMapSource? recallLatency,
     IntMapSource? classificationConfidence,
     DoubleMapSource? migrationProgress,
+    IntMapSource? lifecycleEventCounts,
+    IntMapSource? accessCountHistogram,
   })  : _nodeCounts = nodeCounts,
         _edgeCounts = edgeCounts,
         _stackSizes = stackSizes,
@@ -104,7 +113,9 @@ final class MemoryStatsCollector {
         _trailBytes = trailBytes,
         _recallLatency = recallLatency,
         _classificationConfidence = classificationConfidence,
-        _migrationProgress = migrationProgress;
+        _migrationProgress = migrationProgress,
+        _lifecycleEventCounts = lifecycleEventCounts,
+        _accessCountHistogram = accessCountHistogram;
 
   /// Returns a fresh `MemoryStats` snapshot.
   ///
@@ -125,6 +136,10 @@ final class MemoryStatsCollector {
           Future<Map<String, int>>.value(<String, int>{}),
       _migrationProgress?.call() ??
           Future<Map<String, double>>.value(<String, double>{}),
+      _lifecycleEventCounts?.call() ??
+          Future<Map<String, int>>.value(<String, int>{}),
+      _accessCountHistogram?.call() ??
+          Future<Map<String, int>>.value(<String, int>{}),
     ]);
 
     return MemoryStats(
@@ -142,6 +157,10 @@ final class MemoryStatsCollector {
           results[6] as Map<String, int>),
       migrationProgress: Map<String, double>.unmodifiable(
           results[7] as Map<String, double>),
+      lifecycleEventCounts: Map<String, int>.unmodifiable(
+          results[8] as Map<String, int>),
+      accessCountHistogram: Map<String, int>.unmodifiable(
+          results[9] as Map<String, int>),
     );
   }
 }

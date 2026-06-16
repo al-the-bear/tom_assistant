@@ -59,6 +59,8 @@ const MemoryStats _richStats = MemoryStats(
   recallLatencyPerMode: <String, LatencyHistogram>{},
   classificationConfidenceHistogram: <String, int>{},
   migrationProgress: <String, double>{},
+  lifecycleEventCounts: <String, int>{},
+  accessCountHistogram: <String, int>{},
 );
 
 /// A fake `TomBrainMemory` that records its `open`/`close` lifecycle

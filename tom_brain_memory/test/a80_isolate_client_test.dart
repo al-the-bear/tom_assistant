@@ -43,6 +43,11 @@ final class _IsolateSideFakeMemory implements TomBrainMemory {
           recallLatencyPerMode: <String, LatencyHistogram>{},
           classificationConfidenceHistogram: <String, int>{},
           migrationProgress: <String, double>{},
+          lifecycleEventCounts: <String, int>{
+            'memory.node-persisted': 7,
+            'memory.node-promoted': 2,
+          },
+          accessCountHistogram: <String, int>{'0': 6, '1-2': 3},
         );
 
   // Methods A.79 dispatches.
@@ -143,6 +148,11 @@ void main() {
         expect(stats.stackSizes, equals({'questions_open': 4}));
         expect(stats.trailCount, equals(5));
         expect(stats.trailBytes, equals(2048));
+        expect(
+          stats.lifecycleEventCounts,
+          equals({'memory.node-persisted': 7, 'memory.node-promoted': 2}),
+        );
+        expect(stats.accessCountHistogram, equals({'0': 6, '1-2': 3}));
       } finally {
         await host.shutdown();
       }
