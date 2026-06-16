@@ -29,21 +29,21 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show Vec;
+import 'package:tom_brain_memory/tom_brain_memory.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show EdgeId, NodeId, StackEntryId, TrailId, Vec;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
-import 'support/conductor_fake_memory.dart';
-
 void main() {
-  late ConductorFakeMemory memory;
+  late _ConductorMemory memory;
   late _ScriptedSubstrate substrate;
   late MemoryBridge memoryBridge;
   late SubstrateBridge substrateBridge;
 
   setUp(() {
-    memory = ConductorFakeMemory();
+    memory = _ConductorMemory();
     substrate = _ScriptedSubstrate();
     memoryBridge = MemoryBridge(memory);
     // `sub.run` needs a PromptResolver; the conductor prompt resolves to a
@@ -208,11 +208,12 @@ String _keepBlock(List<String> ids) {
   return lines.join('\n');
 }
 
-// The recall-capturing `TomBrainMemory` and its in-memory `StackApi` live in
-// `support/conductor_fake_memory.dart` (shared with the §19 live-verification
-// suite, which drives the same real conductor against a live local route).
-
-// ── A scripted `TomBrainSubstrateClient` placeholder removed below ──
+// ── A recall-capturing `TomBrainMemory` ─────────────────────────────
+//
+// Returns a fixed five-node seed for every recall (seed + every re-search),
+// captures every `RecallQuery` the bridge builds (so the suite can assert the
+// read-only invariant and the ranking the loop drove), and models just enough
+// of the store for the run recorder's writes to succeed.
 class _ConductorMemory implements TomBrainMemory {
   final _InMemoryStacks _stacks = _InMemoryStacks();
   final Map<NodeId, Node> _nodes = <NodeId, Node>{};
