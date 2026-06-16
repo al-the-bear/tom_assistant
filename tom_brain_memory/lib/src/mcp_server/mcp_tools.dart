@@ -92,7 +92,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResult, ClassificationTarget, Edge, EdgeDirection, EdgeType, MultiRecallQuery, Node, NodeDraft, NodeId, RecallBudget, RecallMode, RecallQuery, RecallResult, RecallSeed, Scope, StackEntry, StackSummary, TomBrainMemoryClient, Vec;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainTime, ClassificationResult, ClassificationTarget, Edge, EdgeDirection, EdgeType, MultiRecallQuery, Node, NodeDraft, NodeId, RecallBudget, RecallMode, RecallQuery, RecallRanking, RecallResult, RecallSeed, Scope, StackEntry, StackSummary, SymbolicFilter, TomBrainMemoryClient, Vec;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomPrincipal;
 
 import '../api/tom_brain_memory.dart';
@@ -236,6 +236,30 @@ final _recallTool = Tool(
         description: 'Wall-clock budget in milliseconds. '
             'Default: $_defaultRecallWallClockMs.',
         minimum: 1,
+      ),
+      'ranking': Schema.string(
+        description:
+            'Post-fusion re-score strategy. One of {relevance, '
+            'recencyBoosted, frequencyBoosted, oldest, coldest}. '
+            'Default: relevance (fusion+diversity order unchanged).',
+      ),
+      'countsAsAccess': Schema.bool(
+        description:
+            'When true, the recalled nodes have their usage columns '
+            '(access_count / last_access_ms) bumped. Default: false — '
+            'an MCP inspection read never perturbs the recency/frequency '
+            'signal.',
+      ),
+      'lastAccessAfter': Schema.string(
+        description:
+            'Symbolic filter lower bound (inclusive) on a node\'s last '
+            'access, as an ISO-8601 UTC timestamp ("…Z"). Effective last '
+            'access falls back to creation time for never-accessed nodes.',
+      ),
+      'lastAccessBefore': Schema.string(
+        description:
+            'Symbolic filter upper bound (exclusive) on a node\'s last '
+            'access, as an ISO-8601 UTC timestamp ("…Z").',
       ),
       'profile': _profileArg(),
     },
@@ -788,14 +812,82 @@ RecallQuery _parseRecallQuery(Map<String, Object?> args) {
       _logDefaulted('k', args['k'], _defaultRecallK);
   final wallClockMs = _coerceIntArg(args['wallClockMs']) ??
       _logDefaulted('wallClockMs', args['wallClockMs'], _defaultRecallWallClockMs);
+  // The post-fusion re-score strategy (todo 7). An unknown value falls
+  // back to relevance (no re-order) and is logged, mirroring the
+  // best-effort k / wallClockMs defaulting above.
+  final ranking = _parseRanking(args['ranking']);
+  // `countsAsAccess` is opt-in and strict: only a literal `true` bumps the
+  // usage columns. The default (`false`) keeps an MCP inspection read
+  // read-only — it never perturbs the recency/frequency signal the
+  // ranking strategies read (§ 6.6). The store (`SqliteTomBrainMemory`)
+  // owns the actual bump; the tool only carries the flag.
+  final countsAsAccess = args['countsAsAccess'] == true;
   return RecallQuery(
     modes: modes,
     text: text,
     embedding: embedding,
     seeds: seeds,
+    filter: _parseLastAccessFilter(args),
     k: k,
     budget: RecallBudget(wallClockMs: wallClockMs),
+    ranking: ranking,
+    countsAsAccess: countsAsAccess,
   );
+}
+
+/// Maps the `ranking` argument string onto a [RecallRanking].
+///
+/// Absent → [RecallRanking.relevance] (the fusion+diversity order, the
+/// historical default). A present-but-unknown value falls back to
+/// `relevance` and is logged — `recall` is best-effort and has no error
+/// channel here, but the drift should not vanish silently.
+RecallRanking _parseRanking(Object? raw) {
+  if (raw == null) return RecallRanking.relevance;
+  if (raw is String) {
+    for (final r in RecallRanking.values) {
+      if (r.name == raw) return r;
+    }
+  }
+  MemoryLog.mcp.warn(
+    () => 'recall: argument "ranking" is not a known RecallRanking '
+        '($raw); using relevance.',
+  );
+  return RecallRanking.relevance;
+}
+
+/// Builds the recall [SymbolicFilter] from the optional `last_access_ms`
+/// window arguments (`lastAccessAfter` / `lastAccessBefore`, ISO-8601
+/// "…Z"), or returns `null` when neither is supplied (no symbolic
+/// constraint — the historical default).
+///
+/// A present-but-malformed bound is ignored (and logged), matching the
+/// best-effort parsing convention of the rest of this tool. Compiling
+/// against the COALESCE(last_access_ms, created_at_ms) reading means a
+/// never-accessed node is windowed by its creation time (todo 6).
+SymbolicFilter? _parseLastAccessFilter(Map<String, Object?> args) {
+  final after = _parseTimestampArg(args['lastAccessAfter'], 'lastAccessAfter');
+  final before =
+      _parseTimestampArg(args['lastAccessBefore'], 'lastAccessBefore');
+  if (after == null && before == null) return null;
+  return SymbolicFilter(lastAccessAfter: after, lastAccessBefore: before);
+}
+
+/// Parses an ISO-8601 timestamp argument into a [BrainTime], or `null`
+/// when absent or malformed (malformed is logged, not fatal).
+BrainTime? _parseTimestampArg(Object? raw, String argName) {
+  if (raw == null) return null;
+  if (raw is String) {
+    try {
+      return BrainTime.parse(raw);
+    } on FormatException {
+      // Fall through to the warn below.
+    }
+  }
+  MemoryLog.mcp.warn(
+    () => 'recall: argument "$argName" is not an ISO-8601 timestamp '
+        '($raw); ignoring.',
+  );
+  return null;
 }
 
 /// Parses a `memory.recall.multi` argument map into a

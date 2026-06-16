@@ -62,7 +62,14 @@ import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, StackEntryId, Vec;
+    show
+        BrainTime,
+        EdgeId,
+        NodeId,
+        RecallRanking,
+        StackEntryId,
+        SymbolicFilter,
+        Vec;
 import 'package:tom_core_kernel/tom_core_kernel.dart'
     show TomPrincipal, TomUser;
 
@@ -150,6 +157,99 @@ void main() {
       expect(fake.recallCalls.single.text, equals('why does the sky shine blue'));
       expect(fake.recallCalls.single.k, equals(5));
       expect(fake.recallCalls.single.modes, equals({RecallMode.bm25}));
+      // § 11 defaults — a plain recall is a read-only inspection: the
+      // forwarded query keeps the relevance order, never bumps usage, and
+      // carries no symbolic window.
+      expect(fake.recallCalls.single.ranking, equals(RecallRanking.relevance));
+      expect(fake.recallCalls.single.countsAsAccess, isFalse);
+      expect(fake.recallCalls.single.filter, isNull);
+    });
+
+    // § 11 — the recall tool exposes ranking, countsAsAccess and a
+    // last-access window. The read-only invariant (countsAsAccess
+    // defaults to false) is the load-bearing one: an MCP inspection
+    // read must never perturb the recency/frequency signal.
+    group('§ 11 recall ranking / read-only invariant / last-access window', () {
+      Future<_RecallCall> recallWith(Map<String, Object?> arguments) async {
+        final fake = _FakeMemory()
+          ..nextRecallResult = RecallResult(
+            nodes: [_node('0001', 'Question')],
+            report: const RecallReport(
+              candidatesPerMode: {RecallMode.bm25: 1},
+              fusionStrategy: FusionStrategy.rrf,
+              diversityStrategy: DiversityStrategy.mmr,
+              diversityLambda: 0.7,
+              elapsedMs: 1,
+            ),
+          );
+        final env = _TestEnv(memory: fake);
+        addTearDown(env.shutdown);
+        await env.initializeHandshake();
+        final result = await env.serverConnection.callTool(
+          mcp_server.CallToolRequest(
+            name: 'memory.recall',
+            arguments: {'text': 'x', 'modes': ['bm25'], ...arguments},
+          ),
+        );
+        expect(result.isError, isNot(isTrue));
+        return fake.recallCalls.single;
+      }
+
+      test('ranking is honoured (oldest forwarded as RecallRanking.oldest)',
+          () async {
+        final call = await recallWith({'ranking': 'oldest'});
+        expect(call.ranking, equals(RecallRanking.oldest));
+      });
+
+      test('an unknown ranking falls back to relevance', () async {
+        final call = await recallWith({'ranking': 'nonsense'});
+        expect(call.ranking, equals(RecallRanking.relevance));
+      });
+
+      test('countsAsAccess:true is forwarded verbatim', () async {
+        final call = await recallWith({'countsAsAccess': true});
+        expect(call.countsAsAccess, isTrue);
+      });
+
+      test('read-only invariant — countsAsAccess defaults to false', () async {
+        final call = await recallWith({});
+        expect(call.countsAsAccess, isFalse);
+      });
+
+      test('last-access window builds a SymbolicFilter with both bounds',
+          () async {
+        final call = await recallWith({
+          'lastAccessAfter': '2026-01-01T00:00:00.000Z',
+          'lastAccessBefore': '2026-02-01T00:00:00.000Z',
+        });
+        expect(call.filter, isNotNull);
+        expect(
+          call.filter!.lastAccessAfter,
+          equals(BrainTime.parse('2026-01-01T00:00:00.000Z')),
+        );
+        expect(
+          call.filter!.lastAccessBefore,
+          equals(BrainTime.parse('2026-02-01T00:00:00.000Z')),
+        );
+      });
+
+      test('a one-sided window builds a filter with only the given bound',
+          () async {
+        final call = await recallWith({
+          'lastAccessAfter': '2026-01-01T00:00:00.000Z',
+        });
+        expect(call.filter, isNotNull);
+        expect(
+          call.filter!.lastAccessAfter,
+          equals(BrainTime.parse('2026-01-01T00:00:00.000Z')),
+        );
+        expect(call.filter!.lastAccessBefore, isNull);
+      });
+
+      test('a malformed timestamp is ignored, leaving no filter', () async {
+        final call = await recallWith({'lastAccessAfter': 'not-a-time'});
+        expect(call.filter, isNull);
+      });
     });
 
     test('memory.get fetches nodes by id', () async {
@@ -634,7 +734,17 @@ class _RecallCall {
   final String? text;
   final int k;
   final Set<RecallMode> modes;
-  _RecallCall(this.text, this.k, this.modes);
+  final RecallRanking ranking;
+  final bool countsAsAccess;
+  final SymbolicFilter? filter;
+  _RecallCall(
+    this.text,
+    this.k,
+    this.modes,
+    this.ranking,
+    this.countsAsAccess,
+    this.filter,
+  );
 }
 
 class _EdgesOfCall {
@@ -690,7 +800,8 @@ class _FakeMemory implements TomBrainMemory {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async {
-    recallCalls.add(_RecallCall(query.text, query.k, query.modes));
+    recallCalls.add(_RecallCall(query.text, query.k, query.modes,
+        query.ranking, query.countsAsAccess, query.filter));
     return nextRecallResult ??
         RecallResult(
           nodes: const [],
