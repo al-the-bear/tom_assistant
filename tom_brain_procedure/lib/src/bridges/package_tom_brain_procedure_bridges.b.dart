@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Sources: 6 files
-// Generated: 2026-06-12T17:25:36.085871
+// Generated: 2026-06-16T15:32:34.915828
 
 // ignore_for_file: unused_import, deprecated_member_use, prefer_function_declarations_over_variables, implementation_imports, sort_child_properties_last, non_constant_identifier_names, avoid_function_literals_in_foreach_calls, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member
 
@@ -233,12 +233,76 @@ BridgedClass _createMemoryBridgeBridge() {
         D4.requireMinArgs(positional, 1, 'recall');
         final text = D4.getRequiredArg<String>(positional, 0, 'text', 'recall');
         final k = D4.getNamedArgWithDefault<int>(named, 'k', 8);
+        final ranking = D4.getNamedArgWithDefault<String>(named, 'ranking', 'relevance');
+        final types = named.containsKey('types') && named['types'] != null
+            ? D4.coerceList<String>(named['types'], 'types')
+            : const <String>[];
+        final countsAsAccess = D4.getNamedArgWithDefault<bool>(named, 'countsAsAccess', false);
         if (!named.containsKey('modes')) {
-          return t.recall(text, k: k);
+          return t.recall(text, k: k, ranking: ranking, types: types, countsAsAccess: countsAsAccess);
         }
         if (named.containsKey('modes')) {
           final modes = D4.coerceList<String>(named['modes'], 'modes');
-          return t.recall(text, k: k, modes: modes);
+          return t.recall(text, k: k, ranking: ranking, types: types, countsAsAccess: countsAsAccess, modes: modes);
+        }
+        throw StateError('Unreachable: all named parameter combinations should be covered');
+      },
+      'recallOld': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_6.MemoryBridge>(target, 'MemoryBridge');
+        D4.requireMinArgs(positional, 1, 'recallOld');
+        final text = D4.getRequiredArg<String>(positional, 0, 'text', 'recallOld');
+        final k = D4.getNamedArgWithDefault<int>(named, 'k', 8);
+        final before = D4.getOptionalNamedArg<String?>(named, 'before');
+        if (!named.containsKey('modes')) {
+          return t.recallOld(text, k: k, before: before);
+        }
+        if (named.containsKey('modes')) {
+          final modes = D4.coerceList<String>(named['modes'], 'modes');
+          return t.recallOld(text, k: k, before: before, modes: modes);
+        }
+        throw StateError('Unreachable: all named parameter combinations should be covered');
+      },
+      'recallCold': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_6.MemoryBridge>(target, 'MemoryBridge');
+        D4.requireMinArgs(positional, 1, 'recallCold');
+        final text = D4.getRequiredArg<String>(positional, 0, 'text', 'recallCold');
+        final k = D4.getNamedArgWithDefault<int>(named, 'k', 8);
+        if (!named.containsKey('modes')) {
+          return t.recallCold(text, k: k);
+        }
+        if (named.containsKey('modes')) {
+          final modes = D4.coerceList<String>(named['modes'], 'modes');
+          return t.recallCold(text, k: k, modes: modes);
+        }
+        throw StateError('Unreachable: all named parameter combinations should be covered');
+      },
+      'recallPrompts': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_6.MemoryBridge>(target, 'MemoryBridge');
+        D4.requireMinArgs(positional, 1, 'recallPrompts');
+        final text = D4.getRequiredArg<String>(positional, 0, 'text', 'recallPrompts');
+        final k = D4.getNamedArgWithDefault<int>(named, 'k', 8);
+        final ranking = D4.getNamedArgWithDefault<String>(named, 'ranking', 'relevance');
+        if (!named.containsKey('modes')) {
+          return t.recallPrompts(text, k: k, ranking: ranking);
+        }
+        if (named.containsKey('modes')) {
+          final modes = D4.coerceList<String>(named['modes'], 'modes');
+          return t.recallPrompts(text, k: k, ranking: ranking, modes: modes);
+        }
+        throw StateError('Unreachable: all named parameter combinations should be covered');
+      },
+      'recallAnswers': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_6.MemoryBridge>(target, 'MemoryBridge');
+        D4.requireMinArgs(positional, 1, 'recallAnswers');
+        final text = D4.getRequiredArg<String>(positional, 0, 'text', 'recallAnswers');
+        final k = D4.getNamedArgWithDefault<int>(named, 'k', 8);
+        final ranking = D4.getNamedArgWithDefault<String>(named, 'ranking', 'relevance');
+        if (!named.containsKey('modes')) {
+          return t.recallAnswers(text, k: k, ranking: ranking);
+        }
+        if (named.containsKey('modes')) {
+          final modes = D4.coerceList<String>(named['modes'], 'modes');
+          return t.recallAnswers(text, k: k, ranking: ranking, modes: modes);
         }
         throw StateError('Unreachable: all named parameter combinations should be covered');
       },
@@ -363,6 +427,13 @@ BridgedClass _createMemoryBridgeBridge() {
         final reason = D4.getRequiredArg<String>(positional, 1, 'reason', 'demote');
         return t.demote(nodeId, reason);
       },
+      'promote': (visitor, target, positional, named, typeArgs) {
+        final t = D4.validateTarget<$tom_brain_procedure_6.MemoryBridge>(target, 'MemoryBridge');
+        D4.requireMinArgs(positional, 2, 'promote');
+        final nodeId = D4.getRequiredArg<String>(positional, 0, 'nodeId', 'promote');
+        final reason = D4.getRequiredArg<String>(positional, 1, 'reason', 'promote');
+        return t.promote(nodeId, reason);
+      },
       'updateProcedureMetrics': (visitor, target, positional, named, typeArgs) {
         final t = D4.validateTarget<$tom_brain_procedure_6.MemoryBridge>(target, 'MemoryBridge');
         D4.requireMinArgs(positional, 1, 'updateProcedureMetrics');
@@ -397,7 +468,11 @@ BridgedClass _createMemoryBridgeBridge() {
       '': 'MemoryBridge(TomBrainMemoryClient client, {BridgeCallRecorder? onCall, BudgetLedger? budget, String? agentName, MemoryWriteGuard? writeGuard, MemoryWriteSkipSink? onWriteSkipped})',
     },
     methodSignatures: {
-      'recall': 'Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8})',
+      'recall': 'Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8, String ranking = \'relevance\', List<String> types = const <String>[], bool countsAsAccess = false})',
+      'recallOld': 'Future<Map<String, Object?>> recallOld(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8, String? before})',
+      'recallCold': 'Future<Map<String, Object?>> recallCold(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8})',
+      'recallPrompts': 'Future<Map<String, Object?>> recallPrompts(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8, String ranking = \'relevance\'})',
+      'recallAnswers': 'Future<Map<String, Object?>> recallAnswers(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8, String ranking = \'relevance\'})',
       'recallMulti': 'Future<Map<String, Object?>> recallMulti(List<Object?> seeds, {int k = 20, int rrfK = 60, double lambda = 0.7})',
       'classify': 'Future<Map<String, Object?>> classify(List<double> embedding, {String target = \'nodeType\'})',
       'persist': 'Future<String> persist(String typeName, Map<String, Object?> values, {required String producer, String? idempotencyKey, String? causedBy, String? runId, List<double>? embedding})',
@@ -411,6 +486,7 @@ BridgedClass _createMemoryBridgeBridge() {
       'stackUpdate': 'Future<void> stackUpdate(String name, String nodeId, {double? priority, String? status, Map<String, Object?>? attrs})',
       'stackRemove': 'Future<void> stackRemove(String name, String nodeId)',
       'demote': 'Future<void> demote(String nodeId, String reason)',
+      'promote': 'Future<void> promote(String nodeId, String reason)',
       'updateProcedureMetrics': 'Future<void> updateProcedureMetrics(String nodeId, {String? status, num? successRate, int? runCount, String? lastRunAt})',
       'updateCentroid': 'Future<void> updateCentroid(String forKey, List<double> centroid)',
       'findUncertain': 'Future<List<String>> findUncertain(String forKey, {required double low, required double high, int limit = 200})',

@@ -97,10 +97,12 @@ final class EffortAccountant {
     'stackPop',
     'stackUpdate',
     'stackRemove',
-    // `demote` mutates a node's lifecycle status (§ 9.5); `updateCentroid`
-    // replaces a centroid row (§ 7.3). Both change the store, so each charges
-    // one memoryWrite.
+    // `demote` mutates a node's lifecycle status (§ 9.5); `promote` is its
+    // reversible inverse, flipping `demoted → active` (§ 6.6);
+    // `updateCentroid` replaces a centroid row (§ 7.3). All three change the
+    // store, so each charges one memoryWrite.
     'demote',
+    'promote',
     'updateCentroid',
     // `updateProcedureMetrics` rewrites a Procedure node's derived metric/status
     // cache (§ 6.4 / § 7.1, G-PR5). It changes the store, so it charges one

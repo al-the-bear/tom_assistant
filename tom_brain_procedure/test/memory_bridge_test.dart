@@ -112,6 +112,127 @@ void main() {
     });
   });
 
+  // memory_optimization_plan § 9 / memory_specification § 3.2.1 — the
+  // powerful `mem.*` recall surface and the lifecycle pair. Each test
+  // proves the bridge maps its fixed knobs onto the single `RecallQuery`
+  // (or the lifecycle method) — the "one call per primitive, no logic"
+  // contract.
+  group('C.12 MemoryBridge — powerful recall + lifecycle (§ 3.2.1)', () {
+    test('recall threads ranking / types / countsAsAccess onto the query',
+        () async {
+      await bridge.recall(
+        'q',
+        ranking: 'recencyBoosted',
+        types: const <String>['Conclusion', 'Event'],
+        countsAsAccess: true,
+      );
+
+      final q = client.lastRecallQuery!;
+      expect(q.ranking, RecallRanking.recencyBoosted);
+      expect(q.countsAsAccess, isTrue);
+      expect(q.filter, isNotNull);
+      expect(q.filter!.typeNames, <String>{'Conclusion', 'Event'});
+    });
+
+    test('recall defaults: relevance ranking, no filter, no access bump',
+        () async {
+      await bridge.recall('q');
+
+      final q = client.lastRecallQuery!;
+      expect(q.ranking, RecallRanking.relevance);
+      expect(q.countsAsAccess, isFalse);
+      expect(q.filter, isNull,
+          reason: 'no types and no before window means no SymbolicFilter');
+    });
+
+    test('recall rejects an unknown ranking name', () {
+      expect(
+        () => bridge.recall('q', ranking: 'fastest'),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('recallOld fixes oldest ranking and windows on before', () async {
+      await bridge.recallOld('q', before: '2026-06-01T00:00:00.000Z');
+
+      final q = client.lastRecallQuery!;
+      expect(q.ranking, RecallRanking.oldest);
+      expect(q.filter, isNotNull);
+      expect(q.filter!.lastAccessBefore,
+          BrainTime.parse('2026-06-01T00:00:00.000Z'));
+    });
+
+    test('recallOld without before carries oldest ranking and no filter',
+        () async {
+      await bridge.recallOld('q');
+
+      final q = client.lastRecallQuery!;
+      expect(q.ranking, RecallRanking.oldest);
+      expect(q.filter, isNull);
+    });
+
+    test('recallCold fixes coldest ranking', () async {
+      await bridge.recallCold('q');
+
+      final q = client.lastRecallQuery!;
+      expect(q.ranking, RecallRanking.coldest);
+      expect(q.filter, isNull);
+    });
+
+    test('recallPrompts fixes the type filter to Event', () async {
+      await bridge.recallPrompts('q');
+
+      final q = client.lastRecallQuery!;
+      expect(q.filter, isNotNull);
+      expect(q.filter!.typeNames, <String>{'Event'});
+      expect(q.ranking, RecallRanking.relevance);
+    });
+
+    test('recallPrompts still honours a caller ranking', () async {
+      await bridge.recallPrompts('q', ranking: 'recencyBoosted');
+
+      final q = client.lastRecallQuery!;
+      expect(q.ranking, RecallRanking.recencyBoosted);
+      expect(q.filter!.typeNames, <String>{'Event'});
+    });
+
+    test('recallAnswers fixes the type filter to Conclusion', () async {
+      await bridge.recallAnswers('q');
+
+      final q = client.lastRecallQuery!;
+      expect(q.filter, isNotNull);
+      expect(q.filter!.typeNames, <String>{'Conclusion'});
+      expect(q.ranking, RecallRanking.relevance);
+    });
+
+    test('promote converts id + reason and calls the client', () async {
+      await bridge.promote(
+          'n_00000000000000000000000010', 'renewedRelevance');
+
+      expect(client.promoteCalls, 1);
+      expect(client.lastPromoteId,
+          NodeId.fromString('n_00000000000000000000000010'));
+      expect(client.lastPromoteReason, PromotionReason.renewedRelevance);
+    });
+
+    test('promote rejects an unknown reason name', () {
+      expect(
+        () => bridge.promote('n_00000000000000000000000010', 'nope'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('demote converts id + reason and calls the client', () async {
+      await bridge.demote(
+          'n_00000000000000000000000008', 'prunerDecision');
+
+      expect(client.demoteCalls, 1);
+      expect(client.lastDemoteId,
+          NodeId.fromString('n_00000000000000000000000008'));
+      expect(client.lastDemoteReason, DemotionReason.prunerDecision);
+    });
+  });
+
   group('C.12 MemoryBridge.classify', () {
     test('converts embedding + target and flattens a confident result',
         () async {
@@ -696,11 +817,33 @@ class _FakeMemoryClient implements TomBrainMemoryClient {
   ClassificationTarget? lastClassifyTarget;
   ClassificationResult classifyResult = const ClassificationResult.unknown();
 
+  int demoteCalls = 0;
+  NodeId? lastDemoteId;
+  DemotionReason? lastDemoteReason;
+
+  int promoteCalls = 0;
+  NodeId? lastPromoteId;
+  PromotionReason? lastPromoteReason;
+
   @override
   Future<RecallResult> recall(RecallQuery query) async {
     recallCalls++;
     lastRecallQuery = query;
     return recallResult;
+  }
+
+  @override
+  Future<void> demote(NodeId id, DemotionReason reason) async {
+    demoteCalls++;
+    lastDemoteId = id;
+    lastDemoteReason = reason;
+  }
+
+  @override
+  Future<void> promote(NodeId id, PromotionReason reason) async {
+    promoteCalls++;
+    lastPromoteId = id;
+    lastPromoteReason = reason;
   }
 
   @override

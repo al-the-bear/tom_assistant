@@ -46,7 +46,14 @@
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show BrainTime, BrainVersion, DemotionReason, NodeId, ProcedureStatus, Vec;
+    show
+        BrainTime,
+        BrainVersion,
+        DemotionReason,
+        NodeId,
+        ProcedureStatus,
+        PromotionReason,
+        Vec;
 import 'package:tom_core_agentic/tom_core_agentic.dart' show MapFieldReader;
 
 import '../budget/budget_ledger.dart' show BudgetLedger;
@@ -230,13 +237,23 @@ class MemoryBridge {
 
   // ── recall ──────────────────────────────────────────────────────
 
-  /// Runs the four-mode retrieval pipeline.
+  /// Runs the four-mode retrieval pipeline (memory § 3.2.1
+  /// `mem.recall(text, {ranking, k, types, countsAsAccess})`).
   ///
   /// [text] is the query text (BM25 + memory-side embedded vector mode).
   /// [modes] names the modes to run by wire name (`bm25`, `vector`,
   /// `graph_walk`, `symbolic`); defaults to `['bm25', 'vector']` — the
   /// pair `answer_with_memory_v1` uses. [k] caps the post-fusion result
   /// list.
+  ///
+  /// [ranking] steers the order the fused list is returned in by
+  /// [RecallRanking] wire name (`relevance` (default), `recencyBoosted`,
+  /// `frequencyBoosted`, `oldest`, `coldest`). [types] restricts every
+  /// mode's candidate set to the named node types (a `SymbolicFilter`
+  /// applied across all modes). [countsAsAccess] marks the returned nodes
+  /// as used — bumping their usage columns via `recordAccess`; defaults to
+  /// `false` (a read-only inspection that must not perturb the
+  /// recency/frequency signal).
   ///
   /// Returns `{'nodes': [...], 'report': {...}}` where each node is the
   /// flattened map from [_nodeToMap] and the report mirrors
@@ -245,15 +262,152 @@ class MemoryBridge {
     String text, {
     List<String> modes = const <String>['bm25', 'vector'],
     int k = 8,
+    String ranking = 'relevance',
+    List<String> types = const <String>[],
+    bool countsAsAccess = false,
+  }) =>
+      _recallWith(
+        'recall',
+        text,
+        modes: modes,
+        k: k,
+        ranking: ranking,
+        typeNames: types.toSet(),
+        countsAsAccess: countsAsAccess,
+      );
+
+  // ── recallOld ───────────────────────────────────────────────────
+
+  /// "Deliberately reach for old/cold memories" (memory § 3.2.1
+  /// `mem.recallOld(text, {k, before})` → `recall(ranking: oldest)`).
+  ///
+  /// Fixes [RecallRanking.oldest] (least-recently-accessed first) and,
+  /// when [before] is supplied (an ISO-8601 `…Z` timestamp), windows the
+  /// candidate set to `last_access_ms < before` via the filter's
+  /// `lastAccessBefore`.
+  Future<Map<String, Object?>> recallOld(
+    String text, {
+    List<String> modes = const <String>['bm25', 'vector'],
+    int k = 8,
+    String? before,
+  }) =>
+      _recallWith(
+        'recallOld',
+        text,
+        modes: modes,
+        k: k,
+        ranking: 'oldest',
+        before: before,
+      );
+
+  // ── recallCold ──────────────────────────────────────────────────
+
+  /// "Surface rarely-used memories the default order buries" (memory
+  /// § 3.2.1 `mem.recallCold(text, {k})` → `recall(ranking: coldest)`).
+  ///
+  /// Fixes [RecallRanking.coldest] (least-frequently-accessed first).
+  Future<Map<String, Object?>> recallCold(
+    String text, {
+    List<String> modes = const <String>['bm25', 'vector'],
+    int k = 8,
+  }) =>
+      _recallWith(
+        'recallCold',
+        text,
+        modes: modes,
+        k: k,
+        ranking: 'coldest',
+      );
+
+  // ── recallPrompts ───────────────────────────────────────────────
+
+  /// Search only past **user prompts** — `Event` nodes (memory § 3.2.1
+  /// `mem.recallPrompts(text, {k, ranking})` →
+  /// `recall(filter: type=Event)`).
+  ///
+  /// Fixes the type filter to `{Event}`; [ranking] is still caller-steerable.
+  Future<Map<String, Object?>> recallPrompts(
+    String text, {
+    List<String> modes = const <String>['bm25', 'vector'],
+    int k = 8,
+    String ranking = 'relevance',
+  }) =>
+      _recallWith(
+        'recallPrompts',
+        text,
+        modes: modes,
+        k: k,
+        ranking: ranking,
+        typeNames: const <String>{'Event'},
+      );
+
+  // ── recallAnswers ───────────────────────────────────────────────
+
+  /// Search only past **answers** — `Conclusion` nodes (memory § 3.2.1
+  /// `mem.recallAnswers(text, {k, ranking})` →
+  /// `recall(filter: type=Conclusion)`).
+  ///
+  /// Fixes the type filter to `{Conclusion}`; [ranking] is still
+  /// caller-steerable.
+  Future<Map<String, Object?>> recallAnswers(
+    String text, {
+    List<String> modes = const <String>['bm25', 'vector'],
+    int k = 8,
+    String ranking = 'relevance',
+  }) =>
+      _recallWith(
+        'recallAnswers',
+        text,
+        modes: modes,
+        k: k,
+        ranking: ranking,
+        typeNames: const <String>{'Conclusion'},
+      );
+
+  /// Shared body for [recall] and the `recall*` specialisations.
+  ///
+  /// Each public method delegates here with its fixed knobs — keeping the
+  /// "one call per primitive, no logic" rule while building a single
+  /// [RecallQuery] in one place. [primitive] is the recording name; the
+  /// `SymbolicFilter` is built only when [typeNames] is non-empty or
+  /// [before] is set (otherwise the query carries no filter, matching the
+  /// historical default).
+  Future<Map<String, Object?>> _recallWith(
+    String primitive,
+    String text, {
+    List<String> modes = const <String>['bm25', 'vector'],
+    int k = 8,
+    String ranking = 'relevance',
+    bool countsAsAccess = false,
+    Set<String> typeNames = const <String>{},
+    String? before,
   }) =>
       _record<Map<String, Object?>>(
-        'recall',
-        <String, Object?>{'text': text, 'modes': modes, 'k': k},
+        primitive,
+        <String, Object?>{
+          'text': text,
+          'modes': modes,
+          'k': k,
+          'ranking': ranking,
+          'countsAsAccess': countsAsAccess,
+          if (typeNames.isNotEmpty) 'types': typeNames.toList(),
+          'before': before,
+        },
         () async {
+          final filter = (typeNames.isEmpty && before == null)
+              ? null
+              : SymbolicFilter(
+                  typeNames: typeNames,
+                  lastAccessBefore:
+                      before == null ? null : BrainTime.parse(before),
+                );
           final query = RecallQuery(
             text: text,
             modes: modes.map(_parseMode).toSet(),
             k: k,
+            ranking: _parseRanking(ranking),
+            countsAsAccess: countsAsAccess,
+            filter: filter,
           );
           final result = await client.recall(query);
           return <String, Object?>{
@@ -633,6 +787,29 @@ class MemoryBridge {
         ),
       );
 
+  // ── promote ─────────────────────────────────────────────────────
+
+  /// Re-activates a demoted node — the reversible inverse of [demote]
+  /// (memory § 3.2.1 `mem.promote(id)` → `promote()`; § 6.6). Flips a
+  /// `demoted` row back to `active` so it surfaces in retrieval again.
+  /// [reason] is the [PromotionReason] wire name (`reconsolidation`,
+  /// `renewedRelevance`, `operatorOverride`).
+  ///
+  /// Answer-only by intent (the spec's "answer only" availability row): a
+  /// promote is a judgement that a previously demoted memory proved useful
+  /// in a produced answer, which the curation conductor — producing no
+  /// answer — is not positioned to make. Only `demoted → active`
+  /// transitions; a promote against an already-active, archived, unknown,
+  /// or forgotten id is a silent no-op (the client's contract).
+  Future<void> promote(String nodeId, String reason) => _recordVoid(
+        'promote',
+        <String, Object?>{'nodeId': nodeId, 'reason': reason},
+        () => client.promote(
+          NodeId.fromString(nodeId),
+          PromotionReason.values.byName(reason),
+        ),
+      );
+
   // ── update_procedure_metrics ────────────────────────────────────
 
   /// Rewrites a `Procedure` node's derived metric/status cache (memory § 6.4 /
@@ -742,6 +919,20 @@ class MemoryBridge {
           'Unknown recall mode "$wire" — expected one of '
           'bm25, vector, graph_walk, symbolic.',
         );
+    }
+  }
+
+  /// Maps a [RecallRanking] wire name to the enum, throwing a
+  /// [FormatException] on an unknown token (the same shape [_parseMode]
+  /// uses). Accepts exactly the five enum names.
+  static RecallRanking _parseRanking(String wire) {
+    try {
+      return RecallRanking.values.byName(wire);
+    } on ArgumentError {
+      throw FormatException(
+        'Unknown recall ranking "$wire" — expected one of '
+        'relevance, recencyBoosted, frequencyBoosted, oldest, coldest.',
+      );
     }
   }
 

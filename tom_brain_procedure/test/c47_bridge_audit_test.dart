@@ -23,7 +23,7 @@
 //  2. **Bridge-surface signature guard.** The generated `BridgedClass`
 //     carries a `methodSignatures` string per bridged method — the exact
 //     d4rt-facing contract a procedure script binds to. This audit pins
-//     all 25 of them (17 memory + 8 substrate, the § 5.1 surface) to
+//     all 29 of them (22 memory + 7 substrate, the § 5.1 surface) to
 //     literal expected strings. Any edit to a bridge method's d4rt-facing
 //     signature (a param added, removed, retyped, or re-defaulted, then
 //     re-reflected into the `*.b.dart`) drifts the generated string away
@@ -59,7 +59,7 @@ import 'package:tom_d4rt/d4rt.dart';
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, NodeId, ProcedureStatus, StackEntryId, Vec;
+    show EdgeId, NodeId, ProcedureStatus, PromotionReason, StackEntryId, Vec;
 
 // `ProcedureStatus` is hidden here: the procedure layer's run-result enum
 // (succeeded/failed) collides by name with the shared lifecycle enum
@@ -75,16 +75,28 @@ import 'package:tom_brain_procedure/src/bridges/brain_bridges.b.dart';
 
 /// The authoritative § 5.1 memory surface: bridged method name → the
 /// exact d4rt-facing signature string the generated `BridgedClass`
-/// records. Seventeen rows — `recall`, the Extension-H multi-seed
-/// `recallMulti` (§ 6.5 / § 23.2), `classify`, `persist`, `edge`,
-/// `propose_node_type`, the seven `stack.*` operations (exposed as
-/// `stackList` … `stackRemove` because Dart method names cannot contain a
-/// dot), the three dreaming-agent lifecycle/classifier maintenance methods
-/// `demote`, `updateCentroid`, and `findUncertain`, and the procedure
-/// metrics-pass cache write `updateProcedureMetrics` (Todo 7 / G-PR5).
+/// records. Twenty-two rows — `recall` (now carrying the § 3.2.1
+/// `ranking` / `types` / `countsAsAccess` knobs), the powerful-recall
+/// specialisations `recallOld` / `recallCold` / `recallPrompts` /
+/// `recallAnswers` (memory_optimization_plan § 9 / spec § 3.2.1), the
+/// Extension-H multi-seed `recallMulti` (§ 6.5 / § 23.2), `classify`,
+/// `persist`, `edge`, `propose_node_type`, the seven `stack.*` operations
+/// (exposed as `stackList` … `stackRemove` because Dart method names
+/// cannot contain a dot), the lifecycle pair `demote` / `promote` (§ 6.6),
+/// the classifier-maintenance methods `updateCentroid` and `findUncertain`,
+/// and the procedure metrics-pass cache write `updateProcedureMetrics`
+/// (Todo 7 / G-PR5).
 const Map<String, String> _expectedMemorySignatures = <String, String>{
   'recall':
-      "Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8})",
+      "Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String ranking = 'relevance', List<String> types = const <String>[], bool countsAsAccess = false})",
+  'recallOld':
+      "Future<Map<String, Object?>> recallOld(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String? before})",
+  'recallCold':
+      "Future<Map<String, Object?>> recallCold(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8})",
+  'recallPrompts':
+      "Future<Map<String, Object?>> recallPrompts(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String ranking = 'relevance'})",
+  'recallAnswers':
+      "Future<Map<String, Object?>> recallAnswers(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String ranking = 'relevance'})",
   'recallMulti':
       'Future<Map<String, Object?>> recallMulti(List<Object?> seeds, {int k = 20, int rrfK = 60, double lambda = 0.7})',
   'classify':
@@ -105,6 +117,7 @@ const Map<String, String> _expectedMemorySignatures = <String, String>{
       'Future<void> stackUpdate(String name, String nodeId, {double? priority, String? status, Map<String, Object?>? attrs})',
   'stackRemove': 'Future<void> stackRemove(String name, String nodeId)',
   'demote': 'Future<void> demote(String nodeId, String reason)',
+  'promote': 'Future<void> promote(String nodeId, String reason)',
   'updateProcedureMetrics':
       'Future<void> updateProcedureMetrics(String nodeId, {String? status, num? successRate, int? runCount, String? lastRunAt})',
   'updateCentroid':
@@ -201,7 +214,7 @@ void main() {
   }
 
   group('C.47 bridge audit — registered method set is the § 5.1 surface', () {
-    test('MemoryBridge registers exactly the 17 audited memory methods', () {
+    test('MemoryBridge registers exactly the 22 audited memory methods', () {
       final registered = bridgeClassNamed('MemoryBridge').methods.keys.toSet();
       expect(
         registered,
@@ -254,7 +267,7 @@ void main() {
 
   group('C.47 bridge audit — every bridged method roundtrips end-to-end', () {
     test(
-        'each of the 24 methods runs through the interpreter and is recorded',
+        'each of the 29 methods runs through the interpreter and is recorded',
         () async {
       // Seed canned domain results so every outbound flattening leg has
       // something to read. Inbound legs are observed via the doubles'
@@ -305,6 +318,11 @@ void main() {
       // bridged method executed under the interpreter — the roundtrip.
       const memoryBodies = <String, String>{
         'recall': "await mem.recall('q');",
+        'recallOld':
+            "await mem.recallOld('q', before: '2026-06-01T00:00:00.000Z');",
+        'recallCold': "await mem.recallCold('q');",
+        'recallPrompts': "await mem.recallPrompts('q');",
+        'recallAnswers': "await mem.recallAnswers('q');",
         'recallMulti':
             "await mem.recallMulti([{'mode': 'bm25', 'text': 'q'}]);",
         'classify': "await mem.classify([0.1, 0.2], target: 'nodeType');",
@@ -325,6 +343,8 @@ void main() {
             "'n_00000000000000000000000007');",
         'demote': "await mem.demote('n_00000000000000000000000008', "
             "'prunerDecision');",
+        'promote': "await mem.promote('n_00000000000000000000000010', "
+            "'renewedRelevance');",
         'updateProcedureMetrics':
             "await mem.updateProcedureMetrics('n_00000000000000000000000009', "
                 "status: 'preferred', successRate: 0.9, runCount: 5);",
@@ -432,7 +452,26 @@ class _AuditMemoryClient implements TomBrainMemory {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async {
-    called.add('recall');
+    // The five recall* bridge methods (`recall`, `recallOld`, `recallCold`,
+    // `recallPrompts`, `recallAnswers`) all delegate to `client.recall`, so
+    // the double attributes coverage by reading the query the bridge built —
+    // which doubles as proof each specialisation set the knobs the spec
+    // § 3.2.1 mandates: `oldest`/`coldest` ranking, or a type=Event /
+    // type=Conclusion filter.
+    final types = query.filter?.typeNames ?? const <String>{};
+    final String method;
+    if (query.ranking == RecallRanking.oldest) {
+      method = 'recallOld';
+    } else if (query.ranking == RecallRanking.coldest) {
+      method = 'recallCold';
+    } else if (types.contains('Event')) {
+      method = 'recallPrompts';
+    } else if (types.contains('Conclusion')) {
+      method = 'recallAnswers';
+    } else {
+      method = 'recall';
+    }
+    called.add(method);
     return _emptyResult;
   }
 
@@ -478,6 +517,11 @@ class _AuditMemoryClient implements TomBrainMemory {
   @override
   Future<void> demote(NodeId id, DemotionReason reason) async {
     called.add('demote');
+  }
+
+  @override
+  Future<void> promote(NodeId id, PromotionReason reason) async {
+    called.add('promote');
   }
 
   @override

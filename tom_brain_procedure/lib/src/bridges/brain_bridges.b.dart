@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Delegating barrel for all
-// Generated: 2026-06-12T17:25:36.126270
+// Generated: 2026-06-16T15:32:34.981347
 
 // ignore_for_file: unused_import, deprecated_member_use, sort_child_properties_last, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member
 
