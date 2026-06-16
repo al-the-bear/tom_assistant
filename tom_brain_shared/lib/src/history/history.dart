@@ -15,10 +15,16 @@
 //                               round between them (so replay is faithful on
 //                               both sides). An immutable value.
 //     * `HistorySizing`       — the four window/summary knobs with their
-//                               documented defaults. Sized off the model's
-//                               context budget (hub § 22.6b); parsed from the
-//                               model config at a later step — this module
-//                               carries only the value type + defaults.
+//                               documented defaults. Sized per cognition
+//                               *lane* (hub § 22.6b/c); parsed from the
+//                               `history:` config block by [HistoryConfig] —
+//                               this module carries the value type, the
+//                               defaults, and the lane-resolution parser.
+//     * `HistoryConfig`       — the parsed `history:` block: a `defaults`
+//                               sizing plus per-lane overrides keyed by
+//                               laneId, with the lane → defaults → code-default
+//                               resolution and the rawCount >= 10 floor
+//                               (hub § 22.6c; decisions HC-1 / HC-2).
 //     * `ConversationHistory` — the store: append-with-eviction, the
 //                               `needsCompaction` flag, and `applyCompaction`
 //                               (the success path of the engine-side
@@ -41,7 +47,7 @@
 //     memory nodes feed recall).
 
 import 'package:tom_core_agentic/tom_core_agentic.dart'
-    show listEquals, textPreview;
+    show listEquals, mapEquals, textPreview;
 
 /// One exchange in a conversation history: the user prompt, the brain's
 /// answer, and — when present — the tool-call/tool-result round that ran
@@ -109,10 +115,17 @@ final class HistoryTurn {
 /// The four sizing knobs that shape a [ConversationHistory] (hub § 22.6b).
 ///
 /// Immutable value object with the documented defaults. The brain scales the
-/// window with the model's context budget, so these are parsed from the model
-/// config (`models/<id>.yaml`) at a later step; a missing block falls back to
-/// these defaults (hub § 22.6, "not an error").
+/// window per cognition *lane*, so a resolved sizing is produced by
+/// [HistoryConfig] from the `history:` config block (hub § 22.6b/c); a missing
+/// block or knob falls back to these defaults (hub § 22.6, "not an error").
 final class HistorySizing {
+  /// The hard floor on [rawCount] (decision HC-2; schema `minimum: 10`).
+  ///
+  /// A raw window below this cannot hold enough recent turns for the brain to
+  /// stay coherent across a compaction, so [HistoryConfig] *rejects* a
+  /// configured value below it rather than silently clamping.
+  static const int rawCountFloor = 10;
+
   /// The number of newest turns kept verbatim in the raw window (default 10).
   final int rawCount;
 
@@ -183,6 +196,187 @@ final class HistorySizing {
       'compactionThreshold: $compactionThreshold, '
       'maxCompactedTokens: $maxCompactedTokens, '
       'maxCompactedChars: $maxCompactedChars)';
+}
+
+/// Raised by [HistoryConfig.fromConfigMap] when a configured sizing knob falls
+/// below its minimum (hub § 22.6c; decision HC-2).
+///
+/// The parser fails fast rather than clamping: a below-floor value is almost
+/// always a typo or a misunderstanding, and a silently-clamped window hides it.
+/// The message names the offending location (`history.defaults` or
+/// `history.lanes.<laneId>`), the knob, the offending value, and the minimum,
+/// so the operator can fix the config without reading the parser source.
+final class HistoryConfigError implements Exception {
+  /// The lane whose override carried the bad value, or `null` when the bad
+  /// value was in the `defaults` block.
+  final String? laneId;
+
+  /// The name of the offending knob (e.g. `'rawCount'`).
+  final String knob;
+
+  /// The configured value that failed validation.
+  final int value;
+
+  /// The minimum the [knob] must satisfy.
+  final int minimum;
+
+  /// Builds an error for a [knob] at [value] below its [minimum], in the
+  /// `defaults` block ([laneId] null) or a named lane override.
+  const HistoryConfigError({
+    required this.laneId,
+    required this.knob,
+    required this.value,
+    required this.minimum,
+  });
+
+  /// The config location the bad value came from — `history.defaults` or
+  /// `history.lanes.<laneId>`.
+  String get where =>
+      laneId == null ? 'history.defaults' : 'history.lanes.$laneId';
+
+  @override
+  String toString() => 'HistoryConfigError: $where.$knob = $value is below the '
+      'minimum of $minimum';
+}
+
+/// The parsed `history:` config block — a `defaults` sizing plus per-lane
+/// overrides keyed by laneId (hub § 22.6b/c; decision HC-1).
+///
+/// Sizing belongs to the cognition *lane* (the foreground answer lane(s) and
+/// each dreaming lane), not to the model, so the brain reads it once from the
+/// `history:` block and resolves each lane's sizing through
+/// **lane override → defaults → code default**. A lane with no entry inherits
+/// [defaults]; a lane entry may override any subset of the four knobs, with the
+/// rest inherited from [defaults] (and any still-unset knob from the code
+/// default, [HistorySizing.standard]).
+///
+/// Immutable value object. Parsing is pure (no I/O); the caller supplies the
+/// already-decoded `history:` map (or `null` when the block is absent).
+final class HistoryConfig {
+  /// The sizing applied to every lane that carries no override.
+  final HistorySizing defaults;
+
+  /// The per-lane sizing overrides, keyed by laneId. A lane absent from this
+  /// map resolves to [defaults] via [sizingFor].
+  final Map<String, HistorySizing> lanes;
+
+  /// Builds a config from a resolved [defaults] sizing and a [lanes] override
+  /// map (both defaulting to "no customization": the standard sizing and an
+  /// empty override map).
+  const HistoryConfig({
+    this.defaults = const HistorySizing.standard(),
+    this.lanes = const <String, HistorySizing>{},
+  });
+
+  /// The standard config — code defaults for every lane, no overrides.
+  const HistoryConfig.standard() : this();
+
+  /// Parses a `history:` config block into a [HistoryConfig].
+  ///
+  /// [block] is the already-decoded value of the `history:` key, or `null` when
+  /// the block is absent. A `null` (or non-map) block yields
+  /// [HistoryConfig.standard] — a missing block is "not an error" (hub § 22.6).
+  ///
+  /// Resolution per knob is **lane → defaults → code default** (hub § 22.6c):
+  /// the `defaults` sub-block is resolved over the code defaults
+  /// ([HistorySizing.standard]); each `lanes.<laneId>` entry is resolved over
+  /// the already-resolved [defaults]. [rawCount] has a hard floor of
+  /// [HistorySizing.rawCountFloor]; the other three knobs must be positive. A
+  /// value below its minimum is **rejected** with a [HistoryConfigError] naming
+  /// the lane and knob (decision HC-2) — never silently clamped.
+  ///
+  /// Unknown keys are ignored (consistent with [HistorySizing.fromJson]); the
+  /// `history.schema.json` validation (decision HC-16) is the layer that
+  /// rejects typos, so the runtime parser stays lenient.
+  factory HistoryConfig.fromConfigMap(Map<String, Object?>? block) {
+    if (block == null) return const HistoryConfig.standard();
+
+    final defaultsRaw = block['defaults'];
+    final defaults = defaultsRaw is Map<String, Object?>
+        ? _resolveSizing(defaultsRaw, const HistorySizing.standard(), null)
+        : const HistorySizing.standard();
+
+    final lanesRaw = block['lanes'];
+    final lanes = <String, HistorySizing>{};
+    if (lanesRaw is Map<String, Object?>) {
+      for (final entry in lanesRaw.entries) {
+        final laneRaw = entry.value;
+        if (laneRaw is! Map<String, Object?>) continue;
+        lanes[entry.key] = _resolveSizing(laneRaw, defaults, entry.key);
+      }
+    }
+
+    return HistoryConfig(defaults: defaults, lanes: Map.unmodifiable(lanes));
+  }
+
+  /// Resolves one sizing block [raw] over a [fallback] sizing, validating each
+  /// knob against its minimum. [laneId] names the lane for error reporting
+  /// (`null` for the `defaults` block).
+  static HistorySizing _resolveSizing(
+    Map<String, Object?> raw,
+    HistorySizing fallback,
+    String? laneId,
+  ) {
+    final rawCount =
+        (raw['rawCount'] as num?)?.toInt() ?? fallback.rawCount;
+    final compactionThreshold =
+        (raw['compactionThreshold'] as num?)?.toInt() ??
+            fallback.compactionThreshold;
+    final maxCompactedTokens =
+        (raw['maxCompactedTokens'] as num?)?.toInt() ??
+            fallback.maxCompactedTokens;
+    final maxCompactedChars =
+        (raw['maxCompactedChars'] as num?)?.toInt() ??
+            fallback.maxCompactedChars;
+
+    _requireMin(laneId, 'rawCount', rawCount, HistorySizing.rawCountFloor);
+    _requireMin(laneId, 'compactionThreshold', compactionThreshold, 1);
+    _requireMin(laneId, 'maxCompactedTokens', maxCompactedTokens, 1);
+    _requireMin(laneId, 'maxCompactedChars', maxCompactedChars, 1);
+
+    return HistorySizing(
+      rawCount: rawCount,
+      compactionThreshold: compactionThreshold,
+      maxCompactedTokens: maxCompactedTokens,
+      maxCompactedChars: maxCompactedChars,
+    );
+  }
+
+  /// Throws a [HistoryConfigError] when [value] is below [minimum].
+  static void _requireMin(String? laneId, String knob, int value, int minimum) {
+    if (value < minimum) {
+      throw HistoryConfigError(
+        laneId: laneId,
+        knob: knob,
+        value: value,
+        minimum: minimum,
+      );
+    }
+  }
+
+  /// The sizing for [laneId]: its override when present, else [defaults].
+  HistorySizing sizingFor(String laneId) => lanes[laneId] ?? defaults;
+
+  @override
+  bool operator ==(Object other) =>
+      other is HistoryConfig &&
+      other.defaults == defaults &&
+      mapEquals(other.lanes, lanes);
+
+  @override
+  int get hashCode => Object.hash(
+        defaults,
+        Object.hashAll(
+          lanes.entries
+              .map((e) => Object.hash(e.key, e.value))
+              .toList(growable: false)
+            ..sort(),
+        ),
+      );
+
+  @override
+  String toString() =>
+      'HistoryConfig(defaults: $defaults, lanes: ${lanes.keys.toList()})';
 }
 
 /// The brain's running record of one conversation — the local history of a

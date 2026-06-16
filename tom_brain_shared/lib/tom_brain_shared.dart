@@ -300,6 +300,8 @@ export 'src/planning/planning.dart'
 export 'src/history/history.dart'
     show
         ConversationHistory,
+        HistoryConfig,
+        HistoryConfigError,
         HistorySizing,
         HistoryTurn,
         conversationHistoriesEqual;
