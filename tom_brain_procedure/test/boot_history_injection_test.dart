@@ -27,6 +27,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         Access,
         ConversationHistory,
         EdgeId,
+        HistorySizing,
         HistoryTurn,
         InboundRequest,
         NodeId,
@@ -132,6 +133,72 @@ void main() {
     final last = history.durableRecord.last;
     expect(last.userPrompt, 'What is my name?');
     expect(last.brainAnswer, 'Your name is Alexis.');
+  });
+
+  test(
+      'the default window (>=10 raw turns) and the compacted summary both reach '
+      'the substrate prompt', () async {
+    substrate.answerChunks = <String>['Acknowledged.'];
+
+    // Seed a session that has compacted at least once: a non-empty summary for
+    // everything older than the window, plus a full default raw window. The
+    // standard sizing keeps the newest 10 turns verbatim — 9 answered prior
+    // turns and the 10th, answer-less, live prompt the assembler just appended.
+    const summary =
+        'Earlier, the user introduced themselves as Alexis and described '
+        'their work on the Tom Brain memory engine.';
+
+    final priorTurns = <HistoryTurn>[
+      for (var i = 1; i <= 9; i++)
+        HistoryTurn(
+          userPrompt: 'Prior question $i',
+          brainAnswer: 'Prior answer $i',
+        ),
+    ];
+    const liveTurn = HistoryTurn(userPrompt: 'What did we discuss?', brainAnswer: '');
+    final allTurns = <HistoryTurn>[...priorTurns, liveTurn];
+
+    final history = ConversationHistory.restore(
+      sizing: const HistorySizing.standard(),
+      compactedSummary: summary,
+      // rawWindow holds the full default window: 9 prior + the live turn = 10.
+      rawWindow: allTurns,
+      pending: const <HistoryTurn>[],
+      durableRecord: allTurns,
+    );
+    // Guard the premise: the default window is exactly the standard raw count.
+    expect(history.sizing.rawCount, 10);
+    expect(history.rawWindow.length, 10);
+    expect(history.compactedSummary, isNotEmpty);
+
+    final booted = await BrainProcessBoot.boot(config());
+    addTearDown(booted.shutdown);
+
+    await booted.dispatcher
+        .accept(promptWithHistory('What did we discuss?', history));
+
+    final prompt = substrate.lastPrompt!;
+
+    // The compacted summary reached the LLM, under its labelled block.
+    expect(prompt, contains('Summary of earlier conversation:'));
+    expect(prompt, contains('the user introduced themselves as Alexis'));
+
+    // All 9 prior verbatim turns reached the LLM (window minus the live turn).
+    for (var i = 1; i <= 9; i++) {
+      expect(prompt, contains('Prior question $i'),
+          reason: 'prior user turn $i must be sent verbatim');
+      expect(prompt, contains('Prior answer $i'),
+          reason: 'prior assistant turn $i must be sent verbatim');
+    }
+    // The live prompt is the 10th verbatim turn, carried as the user prompt.
+    expect(prompt, contains('What did we discuss?'));
+
+    // Count the rendered verbatim turns: 9 prior `User:` lines plus the live
+    // prompt = 10 turns minimum, the enforced default floor.
+    final userLines = 'User:'.allMatches(prompt).length;
+    expect(userLines, greaterThanOrEqualTo(9),
+        reason: '>=9 prior User: lines render; the live turn makes 10 verbatim '
+            'turns reaching the LLM alongside the summary');
   });
 
   test('a cold first turn threads no prior turns', () async {

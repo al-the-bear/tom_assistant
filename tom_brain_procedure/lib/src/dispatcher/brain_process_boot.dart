@@ -138,6 +138,19 @@ const String inboundTextArgumentKey = 'text';
 /// procedure treats a missing key as "no history" (PE-9).
 const String priorTurnsArgumentKey = 'priorTurns';
 
+/// The compacted-summary argument key the routed procedure
+/// (`answer_with_memory_v1`, § 11) reads as `compactedSummary` (hub spec
+/// § 22.5 / § 22.7).
+///
+/// Boot's route binds the answering session's `compactedSummary` — the bounded
+/// prose for everything older than the verbatim window — under this key, so the
+/// procedure renders it ahead of the raw turns in the answer prompt and context
+/// that has rolled past the window stays reachable. Absent until a session has
+/// compacted at least once (empty summary), so the procedure treats a missing
+/// key as "nothing compacted yet" and the prompt is byte-stable with the
+/// pre-compaction rendering (todo 10 / HC-38).
+const String compactedSummaryArgumentKey = 'compactedSummary';
+
 /// The tool-catalogue argument key the routed procedure
 /// (`answer_with_memory_v1`, § 11) reads as `toolCatalogue` (procedure spec
 /// § 21.4).
@@ -892,6 +905,14 @@ abstract final class BrainProcessBoot {
       // with this turn's answer afterwards (below) so the next turn sees it.
       final priorTurns = _priorTurnsFrom(access.history);
 
+      // Alongside the verbatim window, thread the session's `compactedSummary`
+      // — the bounded prose for everything older than the raw window (hub
+      // § 22.5). Empty until the session has compacted at least once; bound onto
+      // the answer invocation only when non-empty so a never-compacted turn's
+      // prompt is byte-stable with today (the procedure renders an absent key as
+      // "nothing compacted yet").
+      final compactedSummary = access.history?.compactedSummary ?? '';
+
       ProcedureOutcome? outcome;
       try {
         // The route is two-phase within ONE foreground admission (§ 4.0.1, b):
@@ -944,6 +965,8 @@ abstract final class BrainProcessBoot {
                       inboundTextArgumentKey: access.envelope.text,
                       if (priorTurns.isNotEmpty)
                         priorTurnsArgumentKey: priorTurns,
+                      if (compactedSummary.isNotEmpty)
+                        compactedSummaryArgumentKey: compactedSummary,
                       toolCatalogueArgumentKey: toolCatalogue,
                     },
                     // Carry the access-edge-minted turn id (logging-spec §3)
