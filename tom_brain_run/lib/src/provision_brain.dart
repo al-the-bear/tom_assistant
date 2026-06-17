@@ -78,7 +78,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         TurnSummary,
         TurnSummarySink;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show TomBrainMemoryClient;
+    show HistoryConfig, TomBrainMemoryClient;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show
         InProcessTomBrainSubstrate,
@@ -216,6 +216,7 @@ Future<ProvisionedBrain> provisionBrain({
   ToolAccessSink? toolAccessSink,
   ProcedureTreeSink? procedureTreeSink,
   DreamConfig? dream,
+  HistoryConfig history = const HistoryConfig.standard(),
   PromptResolver? promptResolver,
   RouteChainResolver? routeChainOf,
   McpClient? mcpClient,
@@ -286,7 +287,7 @@ Future<ProvisionedBrain> provisionBrain({
   // with no background cadence — the prototype's deterministic live tests never
   // spin one (so r30 / r32 / r35 / r36 stay deterministic).
   final DreamController? dreamController =
-      dreamEnabled ? _startDreamLoop(booted, dream) : null;
+      dreamEnabled ? _startDreamLoop(booted, dream, history) : null;
   // Bind the holder to the live controller so the `dream.control` tool drives
   // the running cadence (item c). `dreamHolder` is non-null exactly when the
   // controller is.
@@ -351,12 +352,20 @@ Future<ProvisionedBrain> provisionBrain({
 /// configured windows; its heartbeat is the config's override or the loop's
 /// one-minute default. Returns the started controller so the caller can compose
 /// its `stop()` into the cognition teardown.
-DreamController _startDreamLoop(BootedBrain booted, DreamConfig dream) {
+DreamController _startDreamLoop(
+  BootedBrain booted,
+  DreamConfig dream,
+  HistoryConfig history,
+) {
   final scheduler = FreeTimeScheduler(
     coordinator: booted.coordinator,
     memory: booted.memory.client,
     workFactory: (_) => null,
     engine: booted.engine,
+    // Each dreaming lane resolves its own prior-run window from the shared
+    // `history:` block (todo #14): `history.lanes.<dreamLaneId>` sizes a lane's
+    // `recentRuns` context independently of the foreground answer lane.
+    historyConfig: history,
   );
   // Part d: when a throttle is configured, build it over the active schedule so
   // its per-lane caps (`DreamLaneSpec.maxLlmCallsPerWindow`) are honoured on top
@@ -471,6 +480,7 @@ Future<BrainProcess> standUpBrainProcess({
   ToolAccessSink? toolAccessSink,
   ProcedureTreeSink? procedureTreeSink,
   DreamConfig? dream,
+  HistoryConfig history = const HistoryConfig.standard(),
   PromptResolver? promptResolver,
   RouteChainResolver? routeChainOf,
   CognitionConfig? cognitionConfig,
@@ -496,6 +506,7 @@ Future<BrainProcess> standUpBrainProcess({
     toolAccessSink: toolAccessSink,
     procedureTreeSink: procedureTreeSink,
     dream: dream,
+    history: history,
     promptResolver: promptResolver,
     routeChainOf: routeChainOf,
     mcpClient: mcpClient,
@@ -814,6 +825,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     toolAccessSink: sinks.toolAccessSink,
     procedureTreeSink: sinks.procedureTreeSink,
     dream: runConfig.dream,
+    history: runConfig.history,
     promptResolver: promptResolver,
     routeChainOf: routeChainOf,
     cognitionConfig: cognitionConfig,

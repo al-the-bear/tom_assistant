@@ -30,8 +30,9 @@ import 'package:test/test.dart';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, EdgeType, NodeDraft, NodeId, ProcedureRunRef, Scope, StackEntry,
-        StackEntryId, TrailEntry, TrailId, TrailOutcome;
+    show EdgeId, EdgeType, HistoryConfig, HistorySizing, NodeDraft, NodeId,
+        ProcedureRunRef, Scope, StackEntry, StackEntryId, TrailEntry, TrailId,
+        TrailOutcome, foregroundAnswerLaneId;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show TomBrainSubstrateClient;
 
@@ -56,12 +57,16 @@ void main() {
         now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
       );
 
-  FreeTimeScheduler schedulerWith(LoadedProcedure procedure) =>
+  FreeTimeScheduler schedulerWith(
+    LoadedProcedure procedure, {
+    HistoryConfig historyConfig = const HistoryConfig.standard(),
+  }) =>
       FreeTimeScheduler(
         coordinator: RunCoordinator(),
         memory: memory,
         workFactory: (_) => null,
         engine: engineWith(procedure),
+        historyConfig: historyConfig,
       );
 
   /// Seeds one completed `ProcedureRun` node for [procedureId] with [summary]
@@ -127,6 +132,67 @@ void main() {
       expect(outcome.result!.output<int>('priorRunCount'), 0);
       expect(outcome.result!.output<bool>('skipped'), isFalse);
       expect(outcome.result!.output<bool>('didWork'), isTrue);
+    });
+  });
+
+  group('todo 14 — a dreaming lane sizes its own prior-run window', () {
+    /// Seeds [count] completed runs for the firing lane so the cap (not the
+    /// seed count) is what bounds the window the lane is handed.
+    Future<void> seedLaneRuns(int count) async {
+      for (var i = 0; i < count; i++) {
+        await seedPriorRun(procedureId: _laneId, summary: 'run #$i');
+      }
+    }
+
+    test(
+        "a lane's configured rawCount caps its window — honoured independently "
+        'of the answer lane', () async {
+      // 15 prior runs exist for the firing lane …
+      await seedLaneRuns(15);
+
+      // … but the lane configures its own window at 12, while the answer lane
+      // is sized at 50 and the code default is 10. The lane must see exactly
+      // its own 12 — not the answer lane's 50, not the default 10, and not the
+      // uncapped 15.
+      final outcome = await schedulerWith(
+        _laneStub(),
+        historyConfig: const HistoryConfig(
+          lanes: <String, HistorySizing>{
+            foregroundAnswerLaneId: HistorySizing(rawCount: 50),
+            _laneId: HistorySizing(rawCount: 12),
+          },
+        ),
+      ).triggerMaintenance(
+        _laneId,
+        arguments: const <String, Object?>{'source': 'gamma'},
+      );
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(outcome.result!.output<int>('priorRunCount'), 12);
+    });
+
+    test(
+        'a lane with no override inherits the defaults window, ignoring the '
+        'answer lane override', () async {
+      await seedLaneRuns(15);
+
+      // The lane has no entry of its own; only the answer lane is overridden
+      // (to 50). The lane must fall back to the code-default window (10) — the
+      // answer lane's 50 must not bleed across.
+      final outcome = await schedulerWith(
+        _laneStub(),
+        historyConfig: const HistoryConfig(
+          lanes: <String, HistorySizing>{
+            foregroundAnswerLaneId: HistorySizing(rawCount: 50),
+          },
+        ),
+      ).triggerMaintenance(
+        _laneId,
+        arguments: const <String, Object?>{'source': 'gamma'},
+      );
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(outcome.result!.output<int>('priorRunCount'), 10);
     });
   });
 }

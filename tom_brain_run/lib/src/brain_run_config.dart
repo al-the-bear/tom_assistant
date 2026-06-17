@@ -27,6 +27,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
 import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryConfig;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show McpServersConfig;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show HistoryConfig;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig;
 
@@ -91,6 +92,16 @@ final class BrainRunConfig {
   /// in which case the run assembly builds no MCP client at all.
   final McpServersConfig mcpServers;
 
+  /// The parsed top-level `history:` block (history-compaction quest; hub
+  /// § 22.6b/c). Carries the `defaults` sizing plus per-lane overrides for every
+  /// cognition lane. The access section resolves the `foreground` answer lane
+  /// from the same block into [AccessConfig.answerLaneSizing]; the run assembly
+  /// hands this whole config to the dream cadence's `FreeTimeScheduler` so each
+  /// dreaming lane resolves its own prior-run window (todo #14). Never `null`:
+  /// an absent block yields [HistoryConfig.standard] (every lane on the
+  /// code-default sizing).
+  final HistoryConfig history;
+
   /// Assembles the parsed sections into the run configuration.
   ///
   /// [trail], [tools], [dream] and [cognition] are optional: an absent `trail:`
@@ -108,6 +119,7 @@ final class BrainRunConfig {
     this.dream,
     this.cognition,
     McpServersConfig? mcpServers,
+    this.history = const HistoryConfig.standard(),
   }) : mcpServers = mcpServers ?? McpServersConfig(const []);
 
   /// The active trail mode, derived from whether a `trail:` block was

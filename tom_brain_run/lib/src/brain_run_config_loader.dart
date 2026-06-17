@@ -54,8 +54,11 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
     show MemoryConfig, MemoryConfigLoader;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show McpServersConfig;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show HistoryConfig, HistoryConfigError;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfig, SubstrateConfigLoader;
+import 'package:tom_core_agentic/tom_core_agentic.dart' show loadYamlAsMap;
 
 import 'brain_run_config.dart';
 import 'cognition_run_config.dart';
@@ -107,6 +110,7 @@ abstract final class BrainRunConfigLoader {
         CognitionRunConfigLoader.parse(content, envVars: envVars);
     final McpServersConfig mcpServers =
         McpServersConfig.fromYamlString(content);
+    final HistoryConfig history = _parseHistory(content);
     return BrainRunConfig(
       substrate: substrate,
       memory: memory,
@@ -116,7 +120,32 @@ abstract final class BrainRunConfigLoader {
       dream: dream,
       cognition: cognition,
       mcpServers: mcpServers,
+      history: history,
     );
+  }
+
+  /// Parses the top-level `history:` block into a [HistoryConfig] (hub
+  /// § 22.6b/c). An absent block yields [HistoryConfig.standard]; a below-floor
+  /// knob surfaces the located [HistoryConfigError]'s message as a
+  /// [BrainRunConfigException]. The access loader resolves the `foreground` lane
+  /// from the same block independently (decision HC-3); this whole config sizes
+  /// the dreaming lanes' prior-run windows (todo #14).
+  static HistoryConfig _parseHistory(String content) {
+    final Map<String, Object?> doc = loadYamlAsMap(
+      content,
+      errorFactory: BrainRunConfigException.new,
+    );
+    final block = doc['history'];
+    if (block != null && block is! Map<String, Object?>) {
+      throw const BrainRunConfigException(
+        'Top-level `history:` must be a map when present.',
+      );
+    }
+    try {
+      return HistoryConfig.fromConfigMap(block as Map<String, Object?>?);
+    } on HistoryConfigError catch (e) {
+      throw BrainRunConfigException(e.toString());
+    }
   }
 
   /// Loads the YAML file at [path] and parses it via [parse].

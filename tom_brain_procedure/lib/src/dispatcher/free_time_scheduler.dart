@@ -75,6 +75,8 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
         TomBrainMemoryClient,
         procedureRunNodeType,
         recentRunsStackName;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show HistoryConfig, HistorySizing;
 
 import '../api/procedure_engine.dart' show ProcedureEngine;
 import '../api/procedure_invocation.dart' show ProcedureInvocation;
@@ -95,10 +97,14 @@ import 'run_coordinator.dart' show RunBody, RunCoordinator, RunSlotBusy;
 /// procedure that does not read the key is unaffected.
 const String recentRunsArgumentKey = 'recentRuns';
 
-/// How many `recent_runs` entries [FreeTimeScheduler.triggerMaintenance]
-/// inspects when building a lane's prior-run context. The stack is global
-/// across all procedures, so this caps the scan before filtering to the firing
-/// lane's own runs.
+/// The *floor* on how many `recent_runs` entries
+/// [FreeTimeScheduler.triggerMaintenance] scans when building a lane's prior-run
+/// context. The stack is global across all procedures, so the firing lane's own
+/// runs are interleaved with every other lane's; scanning at least this deep
+/// gives the per-lane filter enough entries to surface a lane's window even when
+/// other lanes have run more recently. A lane whose configured `rawCount`
+/// (history-compaction quest, todo #14) exceeds this floor widens the scan to
+/// `rawCount` so its window can be filled.
 const int recentRunsContextDepth = 32;
 
 /// A stack is *hot* when its size is strictly greater than this threshold
@@ -263,6 +269,7 @@ final class FreeTimeScheduler {
     List<String> schedulableStacks = defaultSchedulableStacks,
     this.hotSizeThreshold = defaultHotSizeThreshold,
     this.hotPriorityThreshold = defaultHotPriorityThreshold,
+    this.historyConfig = const HistoryConfig.standard(),
   }) : schedulableStacks = List<String>.unmodifiable(schedulableStacks);
 
   /// The coordinator the scheduler submits background runs to and reads the
@@ -291,6 +298,19 @@ final class FreeTimeScheduler {
 
   /// A stack is priority-hot when its top priority is at or above this.
   final double hotPriorityThreshold;
+
+  /// The parsed `history:` block used to size each dreaming lane's own
+  /// prior-run window (history-compaction quest, todo #14; hub § 22.6b/c).
+  ///
+  /// [triggerMaintenance] resolves the firing lane's [HistorySizing] through
+  /// `historyConfig.sizingFor(procedureId)` (the Phase-B
+  /// `lane override → defaults → code default` resolver), and uses its
+  /// `rawCount` as the cap on the prior-run records the lane is handed — so a
+  /// `history.lanes.<dreamLaneId>` override sizes a dream lane's window
+  /// independently of the foreground answer lane. Defaults to
+  /// [HistoryConfig.standard] (every lane on the code-default sizing) when no
+  /// `history:` block is configured.
+  final HistoryConfig historyConfig;
 
   /// Runs one scheduler cycle (§ 5.3, Plan D.33).
   ///
@@ -431,7 +451,17 @@ final class FreeTimeScheduler {
 
   /// Reads the global `recent_runs` stack and distils the completed
   /// `ProcedureRun` records that belong to [procedureId] (the firing lane)
-  /// into compact "what was already done" maps, most recent first.
+  /// into compact "what was already done" maps, most recent first — capped at
+  /// the lane's own configured window.
+  ///
+  /// The window size is the lane's [HistorySizing.rawCount], resolved through
+  /// [historyConfig] (`lane override → defaults → code default`), so each
+  /// dreaming lane sizes its prior-run history independently of the answer lane
+  /// (history-compaction quest, todo #14). The global stack interleaves every
+  /// lane's runs, so the scan reaches at least [recentRunsContextDepth] entries
+  /// — widened to `rawCount` when a lane configures a larger window — before the
+  /// per-lane filter, and stops collecting once `rawCount` of the firing lane's
+  /// own runs have been gathered.
   ///
   /// Best-effort: a stack-read failure or a dangling / wrong-type entry yields
   /// no context rather than failing the dream run — prior-run history is an
@@ -439,17 +469,24 @@ final class FreeTimeScheduler {
   Future<List<Map<String, Object?>>> _recentRunsForLane(
     String procedureId,
   ) async {
+    final HistorySizing sizing = historyConfig.sizingFor(procedureId);
+    final int scanDepth = sizing.rawCount > recentRunsContextDepth
+        ? sizing.rawCount
+        : recentRunsContextDepth;
     final List<StackEntry> entries;
     try {
       entries = await memory.stacks.peek(
         recentRunsStackName,
-        k: recentRunsContextDepth,
+        k: scanDepth,
       );
     } on Object {
       return const <Map<String, Object?>>[];
     }
     final laneRuns = <Map<String, Object?>>[];
     for (final entry in entries) {
+      if (laneRuns.length >= sizing.rawCount) {
+        break;
+      }
       final node = await memory.get(entry.nodeId);
       if (node == null || node.typeName != procedureRunNodeType) {
         continue;
