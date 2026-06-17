@@ -78,7 +78,10 @@ void main() {
   /// the assembler hands it to the route. Small sizing keeps the pending batch
   /// past threshold with few turns (the rawCount floor of 10 is enforced only at
   /// config parse, so the direct constructor accepts these test values).
-  ConversationHistory seededHistory({required int answeredTurns}) {
+  ConversationHistory seededHistory({
+    required int answeredTurns,
+    String livePrompt = 'live prompt',
+  }) {
     final h = ConversationHistory(
       sizing: const HistorySizing(
         rawCount: 2,
@@ -90,13 +93,15 @@ void main() {
     for (var i = 0; i < answeredTurns; i++) {
       h.append(HistoryTurn(userPrompt: 'q$i', brainAnswer: 'a$i'));
     }
-    h.append(HistoryTurn(userPrompt: 'live prompt', brainAnswer: ''));
+    h.append(HistoryTurn(userPrompt: livePrompt, brainAnswer: ''));
     return h;
   }
 
-  Access promptWithHistory(ConversationHistory history) => Access(
+  Access promptWithHistory(ConversationHistory history,
+          {String text = 'live prompt'}) =>
+      Access(
         envelope: InboundRequest(
-            text: 'live prompt', kindHint: SystemProcedures.promptAnalyzerV1),
+            text: text, kindHint: SystemProcedures.promptAnalyzerV1),
         identity: ResolvedIdentity(principalId: 'p1'),
         session: Session(sessionId: 's1'),
         persona: Persona.assistant(),
@@ -125,6 +130,38 @@ void main() {
     expect(history.needsCompaction, isFalse);
     // The live turn was still back-filled (the existing § 7.2 #4 behaviour).
     expect(history.rawWindow.last.brainAnswer, 'the answer');
+  });
+
+  test(
+      'the thinking lane (second pipeline entry) also compacts after back-fill',
+      () async {
+    // The compaction check lives in the single two-phase route's post-back-fill
+    // step (`_maybeCompact`), which runs for whichever answer branch produced
+    // the answer — so it is branch-agnostic. This pins the *second* foreground
+    // answer lane: a deliberation-cued prompt routes to `answer_with_thinking_v1`
+    // (not `answer_with_memory_v1`), and the same over-threshold session still
+    // folds and clears its pending batch.
+    substrate.answerChunks = <String>['the thoughtful answer'];
+    final history = seededHistory(
+        answeredTurns: 5, livePrompt: 'think about how memory consolidates');
+    expect(history.needsCompaction, isTrue,
+        reason: 'precondition: the seeded batch is over threshold');
+
+    final booted = await BrainProcessBoot.boot(
+        config(historyCompactor: compactorReturning('distilled')));
+    addTearDown(booted.shutdown);
+
+    // "think about …" trips the deterministic cue floor, so the route selects
+    // the thinking branch even though the fake router classifies `normal`.
+    await booted.dispatcher.accept(
+        promptWithHistory(history, text: 'think about how memory consolidates'));
+
+    // The recursive-loop lane compacted exactly like the normal lane.
+    expect(history.compactedSummary, 'distilled');
+    expect(history.pending, isEmpty);
+    expect(history.needsCompaction, isFalse);
+    // The thinking loop's accepted draft was back-filled into the live turn.
+    expect(history.rawWindow.last.brainAnswer, 'the thoughtful answer');
   });
 
   test('a session below threshold is not compacted', () async {
@@ -296,6 +333,12 @@ class _BootMemory implements TomBrainMemory {
 }
 
 // ─── Prompt-answering substrate (returns chunks, terminates the loop). ────
+//
+// Role-aware so the *same* double serves both foreground answer lanes: the
+// normal `answer_with_memory_v1` branch (whose agent loop terminates on the
+// `assistant_to_user` completion-confirmation) and the recursive
+// `answer_with_thinking_v1` branch (whose `evaluator` self-critique must ACCEPT
+// on the first pass for the loop to terminate, mirroring gt3's substrate).
 class _AnsweringSubstrate implements TomBrainSubstrateClient {
   List<String> answerChunks = <String>['ok'];
 
@@ -312,6 +355,13 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
+    // The thinking lane's self-critique (§ 4.x stage D): ACCEPT on the first
+    // pass so the recursive loop exits after one iteration. The synthesis draft
+    // is still drawn from `answerChunks`, so the back-filled answer (and the
+    // compaction assertion) match the normal lane.
+    if (call.roleId == 'evaluator') {
+      return _single('ACCEPT');
+    }
     final rawPrompt = call.inputs['prompt'] as String?;
     final isConfirmation = call.roleId == 'assistant_to_user' &&
         rawPrompt != null &&
@@ -352,6 +402,26 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
       ),
     ]);
   }
+
+  /// A one-chunk completion carrying [text] — the role-keyed short replies
+  /// (`ACCEPT`) the thinking loop reads.
+  Stream<LlmStreamEvent> _single(String text) =>
+      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
+        LlmStreamChunk(callId: 'c', text: text),
+        const LlmStreamCompleted(
+          callId: 'c',
+          report: LlmCallReport(
+            providerId: 'p',
+            modelId: 'm',
+            anchorHash: 'a',
+            promptHash: 'pr',
+            tokensIn: 1,
+            tokensOut: 1,
+            retries: 0,
+            wallClockMs: 1,
+          ),
+        ),
+      ]);
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
