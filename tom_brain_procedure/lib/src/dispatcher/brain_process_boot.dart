@@ -74,6 +74,7 @@ import '../api/procedure_outcome.dart';
 import '../bridges/memory_bridge.dart';
 import '../bridges/substrate_bridge.dart';
 import '../budget/budget.dart' show MemoryWriteLimits;
+import '../history/history_compactor.dart' show HistoryCompactor;
 import '../procedure_store/disk_procedure_store.dart';
 import '../procedure_store/procedure_store_interface.dart' show ProcedureStore;
 import '../recorder/llm_trail_record.dart' show LlmTrailSink;
@@ -393,6 +394,17 @@ final class BrainProcessConfig {
   /// the same mount the brain-mode agent-SDK session store uses.
   final String? sessionTodoStoreRoot;
 
+  /// The engine-side conversation-history compactor the dispatch route runs
+  /// after a turn's answer is back-filled (Phase-C; hub § 22.4 / § 22.10), or
+  /// `null` to skip compaction (the prototype default — the answer path runs
+  /// exactly as before). When non-null, the route checks
+  /// [ConversationHistory.needsCompaction] on the answered session and, when the
+  /// pending batch has crossed the threshold, folds it into the bounded summary;
+  /// the compactor owns `applyCompaction` and the retry-next-turn-on-failure /
+  /// never-silent-loss behaviour. Production supplies one once the anchored
+  /// `sub.llm` compaction seam is wired; tests inject a stub-substrate compactor.
+  final HistoryCompactor? historyCompactor;
+
   /// Builds a boot config.
   BrainProcessConfig({
     required this.substrate,
@@ -417,6 +429,7 @@ final class BrainProcessConfig {
     this.mcpTools = const <McpToolDefinition>[],
     this.mcpOffered,
     this.sessionTodoStoreRoot,
+    this.historyCompactor,
   }) : systemScriptsDir = systemScriptsDir ?? Directory('scripts/system');
 }
 
@@ -756,6 +769,7 @@ abstract final class BrainProcessBoot {
           coordinator: coordinator,
           engine: engine,
           turnSummarySink: config.turnSummarySink,
+          historyCompactor: config.historyCompactor,
         ),
       );
 
@@ -790,6 +804,7 @@ abstract final class BrainProcessBoot {
     required RunCoordinator coordinator,
     required ProcedureEngine engine,
     required TurnSummarySink? turnSummarySink,
+    required HistoryCompactor? historyCompactor,
   }) {
     // The default tool catalogue is process-stable, so build it once and thread
     // the same list into every routed invocation (procedure spec § 21.4). The
@@ -971,6 +986,13 @@ abstract final class BrainProcessBoot {
           await access
               .deliver(OutboundChunk(textDelta: '', isFinal: true))
               .drain<void>();
+
+          // With the answer back-filled, fold the session's pending batch into
+          // its bounded summary if it has crossed `compactionThreshold` (hub
+          // § 22.4). Runs after the terminator so it never delays the streamed
+          // answer; serialized with the turn (not fire-and-forget) so it cannot
+          // race the next turn's history read.
+          await _maybeCompact(historyCompactor, access.history);
         }
       } finally {
         // Emit the per-turn summary (§5.4 / §5.5 / §10 step #5) whether the run
@@ -1026,6 +1048,31 @@ abstract final class BrainProcessBoot {
           'assistant': turn.brainAnswer,
         },
     ];
+  }
+
+  /// Folds the answered session's pending batch into its bounded summary when it
+  /// has crossed the compaction threshold (hub § 22.4 / § 22.10).
+  ///
+  /// A no-op when no [compactor] is wired, the [history] is absent (a synthetic
+  /// conformance `Access`), or the batch is below threshold. The [compactor]
+  /// owns `applyCompaction` and the retry-next-turn-on-failure behaviour; a
+  /// substrate failure is already swallowed inside it (keeping `pending` for the
+  /// next turn). A *config*-level throw (e.g. a missing `compact_history_v1`
+  /// template) is caught here so a compaction problem never crashes an answered
+  /// turn — `pending` is untouched on any throw, so it is retried next turn,
+  /// never silent data loss.
+  static Future<void> _maybeCompact(
+    HistoryCompactor? compactor,
+    ConversationHistory? history,
+  ) async {
+    if (compactor == null || history == null || !history.needsCompaction) {
+      return;
+    }
+    try {
+      await compactor.compact(history);
+    } on Object {
+      // Best-effort: leave `pending` for the next turn's retry (hub § 22.10).
+    }
   }
 
   /// Fires the per-turn [TurnSummary] for a completed turn (§5.4 / §5.5 / §10
