@@ -56,6 +56,7 @@
 import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show AccessLayerInstaller, AccessLayerShutdown, Dispatcher;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show HistorySizing;
 
 import '../delivery/chunk_stream_delivery.dart';
 import '../delivery/delivery_registry.dart';
@@ -94,6 +95,15 @@ final class BrainAccessConfig {
   /// The persona-as-model vocabulary (E.26), or `null` for the shared default
   /// (`OpenAiPersonaMapping.knownModels`).
   final List<String>? personaVocabulary;
+
+  /// The history sizing applied to the foreground answer lane's conversation
+  /// histories (history-compaction quest, todo #7; hub § 22.6b). Resolved by
+  /// the access loader from the top-level `history:` block's
+  /// `foreground` lane (`HistoryConfig.sizingFor(foregroundAnswerLaneId)`) and
+  /// handed to the [SessionManager]. Defaults to [HistorySizing.standard] so a
+  /// process with no `history:` block keeps the original window — replacing the
+  /// previously hardcoded `SessionManager` default (HP1).
+  final HistorySizing answerLaneSizing;
 
   /// Short-horizon burst-throttle policy (E.29).
   final RateLimitPolicy rateLimitPolicy;
@@ -171,6 +181,7 @@ final class BrainAccessConfig {
     this.bearerTokenBindings = const {},
     this.telegramUserIdBindings = const {},
     this.personaVocabulary,
+    this.answerLaneSizing = const HistorySizing.standard(),
     this.bearerAuthenticator,
     this.kindHintEmbedder,
     this.kindHintClassifier,
@@ -253,6 +264,7 @@ abstract final class BrainAccessBoot {
         telegramUserIdBindings: config.telegramUserIdBindings,
       ),
       sessionManager: SessionManager(
+        sizing: config.answerLaneSizing,
         now: config.clock,
         historyStore: config.historyStore,
         markdownSink:

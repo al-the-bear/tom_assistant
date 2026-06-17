@@ -304,4 +304,5 @@ export 'src/history/history.dart'
         HistoryConfigError,
         HistorySizing,
         HistoryTurn,
-        conversationHistoriesEqual;
+        conversationHistoriesEqual,
+        foregroundAnswerLaneId;

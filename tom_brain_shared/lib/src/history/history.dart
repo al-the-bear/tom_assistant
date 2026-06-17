@@ -239,6 +239,18 @@ final class HistoryConfigError implements Exception {
       'minimum of $minimum';
 }
 
+/// The canonical laneId of the foreground answer lane — the cognition pipeline
+/// that answers an inbound user prompt (hub § 22.6b; "the foreground answer
+/// lane(s)").
+///
+/// The access layer resolves each session's [ConversationHistory] sizing from
+/// this lane's entry in the `history:` config block
+/// ([HistoryConfig.sizingFor]). Dreaming lanes carry their own ids
+/// (`DreamLaneSpec.id`) in the same lane namespace (decision HC-3), so a
+/// `history.lanes.foreground` override sizes answers while
+/// `history.lanes.<dreamLaneId>` overrides size dream activity independently.
+const String foregroundAnswerLaneId = 'foreground';
+
 /// The parsed `history:` config block — a `defaults` sizing plus per-lane
 /// overrides keyed by laneId (hub § 22.6b/c; decision HC-1).
 ///

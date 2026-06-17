@@ -72,6 +72,8 @@
 // `MemoryConfigLoader`: the loader never reads `Platform.environment`
 // itself, so it stays deterministic for tests.
 
+import 'package:tom_brain_shared/tom_brain_shared.dart' show HistorySizing;
+
 import '../adapters/openai_http_sse/openai_http_sse_adapter.dart'
     show OpenAiHttpSseAdapter;
 import '../edge_security/anchor_precheck.dart';
@@ -262,6 +264,16 @@ final class AccessConfig {
   /// default (`OpenAiPersonaMapping.knownModels`).
   final List<String>? personaVocabulary;
 
+  /// The history sizing for the foreground answer lane (history-compaction
+  /// quest, todo #7; hub § 22.6b). The loader resolves it from the
+  /// whole-process document's top-level `history:` block —
+  /// `HistoryConfig.sizingFor(foregroundAnswerLaneId)` — so a
+  /// `history.lanes.foreground` override (or the `history.defaults`) sizes the
+  /// conversation histories the `SessionManager` creates. Defaults to
+  /// [HistorySizing.standard] when no `history:` block is present, replacing the
+  /// formerly hardcoded `SessionManager` default (HP1).
+  final HistorySizing answerLaneSizing;
+
   /// The embedding-cache TTL (E.34). Strictly positive.
   final Duration embeddingCacheTtl;
 
@@ -299,6 +311,7 @@ final class AccessConfig {
     Map<String, IdentityBinding> bearerTokenBindings = const {},
     Map<String, IdentityBinding> telegramUserIdBindings = const {},
     this.personaVocabulary,
+    this.answerLaneSizing = const HistorySizing.standard(),
     this.embeddingCacheTtl = const Duration(minutes: 5),
     this.edgeStateDirectory,
     this.historyDirectory,

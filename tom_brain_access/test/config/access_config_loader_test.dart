@@ -33,6 +33,8 @@
 
 import 'package:test/test.dart';
 import 'package:tom_brain_access/tom_brain_access.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show HistorySizing, foregroundAnswerLaneId;
 
 /// A complete, well-formed whole-process document. The four sibling
 /// sections are present-but-ignored stand-ins, proving the access loader
@@ -463,6 +465,133 @@ access:
 
     test('no edgeState section ⇒ null (in-process state)', () {
       expect(config.edgeStateDirectory, isNull);
+    });
+
+    test('no history block ⇒ answer lane uses the standard sizing', () {
+      // todo #7: the foreground answer lane resolves to HistorySizing.standard()
+      // when the document carries no top-level `history:` block.
+      expect(config.answerLaneSizing, const HistorySizing.standard());
+    });
+  });
+
+  // todo #7: the top-level `history:` block sizes the foreground answer lane.
+  // The loader resolves `history.lanes.foreground ?? history.defaults` into
+  // `AccessConfig.answerLaneSizing`; boot hands it to the SessionManager,
+  // replacing the formerly hardcoded `HistorySizing.standard()` (HP1).
+  group('todo #7 — top-level history: block sizes the answer lane', () {
+    test('the defaults block sizes the foreground answer lane', () {
+      const doc = '''
+history:
+  defaults:
+    rawCount: 20
+    compactionThreshold: 55
+    maxCompactedTokens: 2048
+    maxCompactedChars: 8000
+access:
+  openai: { port: 9090 }
+  rateLimit: { capacity: 10, refillTokens: 5, refillPeriodSeconds: 30 }
+  quota: { dailyCap: 100 }
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.answerLaneSizing.rawCount, 20);
+      expect(config.answerLaneSizing.compactionThreshold, 55);
+      expect(config.answerLaneSizing.maxCompactedTokens, 2048);
+      expect(config.answerLaneSizing.maxCompactedChars, 8000);
+    });
+
+    test('a foreground lane override wins over the defaults', () {
+      const doc = '''
+history:
+  defaults:
+    rawCount: 12
+  lanes:
+    foreground:
+      rawCount: 30
+    dream_slow:
+      rawCount: 50
+access:
+  openai: { port: 9090 }
+  rateLimit: { capacity: 10, refillTokens: 5, refillPeriodSeconds: 30 }
+  quota: { dailyCap: 100 }
+''';
+      final config = AccessConfigLoader.parse(doc);
+      // The foreground lane wins; the dream lane override is irrelevant here.
+      expect(config.answerLaneSizing.rawCount, 30);
+    });
+
+    test('with a history block but no foreground lane ⇒ the defaults size it',
+        () {
+      const doc = '''
+history:
+  defaults:
+    rawCount: 18
+  lanes:
+    dream_fast:
+      rawCount: 40
+access:
+  openai: { port: 9090 }
+  rateLimit: { capacity: 10, refillTokens: 5, refillPeriodSeconds: 30 }
+  quota: { dailyCap: 100 }
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.answerLaneSizing.rawCount, 18);
+    });
+
+    test('a below-floor rawCount is rejected with a located message', () {
+      const doc = '''
+history:
+  lanes:
+    foreground:
+      rawCount: 4
+access:
+  openai: { port: 9090 }
+  rateLimit: { capacity: 10, refillTokens: 5, refillPeriodSeconds: 30 }
+  quota: { dailyCap: 100 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(
+          isA<AccessConfigException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('history.lanes.foreground.rawCount'),
+              contains('minimum of 10'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('a non-map top-level history block is rejected', () {
+      const doc = '''
+history: not-a-map
+access:
+  openai: { port: 9090 }
+  rateLimit: { capacity: 10, refillTokens: 5, refillPeriodSeconds: 30 }
+  quota: { dailyCap: 100 }
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>()),
+      );
+    });
+
+    test('the resolved lane id is the foreground answer lane constant', () {
+      // Guards the wiring: the loader resolves exactly `foregroundAnswerLaneId`,
+      // so naming the lane by that constant in the config sizes the answer lane.
+      final doc = '''
+history:
+  lanes:
+    $foregroundAnswerLaneId:
+      rawCount: 27
+access:
+  openai: { port: 9090 }
+  rateLimit: { capacity: 10, refillTokens: 5, refillPeriodSeconds: 30 }
+  quota: { dailyCap: 100 }
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.answerLaneSizing.rawCount, 27);
     });
   });
 

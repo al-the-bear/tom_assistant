@@ -1014,4 +1014,54 @@ void main() {
       expect(booted.eventBus.isClosed, isTrue);
     });
   });
+
+  // todo #7: the SessionManager the boot composes uses the config-resolved
+  // answer-lane sizing, replacing the formerly hardcoded
+  // `HistorySizing.standard()` (HP1). These prove the boot wiring threads
+  // `BrainAccessConfig.answerLaneSizing` onto `SessionManager.sizing`.
+  group('BrainAccessBoot.install — answer-lane history sizing (todo #7)', () {
+    test('the SessionManager reflects a configured answer-lane sizing', () {
+      final d = _recordingDispatcher();
+      const configured = HistorySizing(
+        rawCount: 24,
+        compactionThreshold: 60,
+        maxCompactedTokens: 2048,
+        maxCompactedChars: 8000,
+      );
+      final booted = BrainAccessBoot.install(
+        dispatcher: d.dispatcher,
+        config: BrainAccessConfig(
+          bearerTokenBindings: _oneBearer(),
+          rateLimitPolicy: _openPolicy(),
+          dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: 100),
+          anchorPolicy: AnchorPolicy(disallowedSignatures: const []),
+          answerLaneSizing: configured,
+          clock: _fixedNow,
+        ),
+      );
+      addTearDown(booted.shutdown);
+
+      expect(booted.assembler.sessionManager.sizing, configured);
+    });
+
+    test('absent answer-lane sizing falls back to the standard sizing', () {
+      final d = _recordingDispatcher();
+      final booted = BrainAccessBoot.install(
+        dispatcher: d.dispatcher,
+        config: BrainAccessConfig(
+          bearerTokenBindings: _oneBearer(),
+          rateLimitPolicy: _openPolicy(),
+          dailyQuotaPolicy: DailyQuotaPolicy(dailyCap: 100),
+          anchorPolicy: AnchorPolicy(disallowedSignatures: const []),
+          clock: _fixedNow,
+        ),
+      );
+      addTearDown(booted.shutdown);
+
+      expect(
+        booted.assembler.sessionManager.sizing,
+        const HistorySizing.standard(),
+      );
+    });
+  });
 }

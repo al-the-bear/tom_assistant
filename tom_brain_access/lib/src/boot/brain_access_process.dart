@@ -583,6 +583,7 @@ BrainAccessConfig _toBrainAccessConfig(
     bearerTokenBindings: config.bearerTokenBindings,
     telegramUserIdBindings: config.telegramUserIdBindings,
     personaVocabulary: config.personaVocabulary,
+    answerLaneSizing: config.answerLaneSizing,
     bearerAuthenticator: bearerAuthenticator,
     kindHintEmbedder: kindHintEmbedder,
     kindHintClassifier: kindHintClassifier,

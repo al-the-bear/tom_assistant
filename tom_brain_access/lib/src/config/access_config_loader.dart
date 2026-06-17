@@ -45,7 +45,10 @@
 
 import 'dart:io';
 
-import 'package:tom_core_agentic/tom_core_agentic.dart' show YamlConfigReader;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show HistoryConfig, HistoryConfigError, HistorySizing, foregroundAnswerLaneId;
+import 'package:tom_core_agentic/tom_core_agentic.dart'
+    show YamlConfigReader, loadYamlAsMap;
 import 'package:yaml/yaml.dart';
 
 import '../edge_security/anchor_precheck.dart';
@@ -83,10 +86,19 @@ abstract final class AccessConfigLoader {
     'dream',
     'cognition',
     'mcpServers',
+    _historyKey,
     _accessKey,
   };
 
   static const String _accessKey = 'access';
+
+  /// The top-level history-sizing block (history-compaction quest, todo #7;
+  /// hub § 22.6b). Distinct from `access.history` (which carries the durable
+  /// `directory`): this block carries the per-lane [HistorySizing] knobs. This
+  /// loader owns it because the access layer is the lane's sizing consumer (it
+  /// resolves `foreground` into [AccessConfig.answerLaneSizing]); dream-lane
+  /// consumers read the same block independently as they ship (todos #13-15).
+  static const String _historyKey = 'history';
 
   /// Parses the YAML [content] and returns the typed [AccessConfig].
   ///
@@ -118,7 +130,39 @@ abstract final class AccessConfigLoader {
         'Missing top-level `access:` map.',
       );
     }
-    return _parseAccess(node, envVars);
+    // Resolve the foreground answer lane's history sizing from the top-level
+    // `history:` block (todo #7). The block's lane namespace is shared with the
+    // dreaming lanes (decision HC-3); the access layer reads only the
+    // `foreground` lane here. Reuses the canonical YAML→plain-map entry point
+    // (the `history:` value is already a plain `Map<String, Object?>`).
+    final answerLaneSizing = _resolveAnswerLaneSizing(content);
+    return _parseAccess(node, envVars, answerLaneSizing);
+  }
+
+  /// Resolves the foreground answer lane's [HistorySizing] from the document's
+  /// top-level `history:` block (todo #7). An absent block yields
+  /// [HistorySizing.standard] (via [HistoryConfig.fromConfigMap]'s null arm); a
+  /// below-floor value surfaces as an [AccessConfigException] carrying the
+  /// [HistoryConfigError]'s located message.
+  static HistorySizing _resolveAnswerLaneSizing(String content) {
+    final plain = loadYamlAsMap(
+      content,
+      errorFactory: AccessConfigException.new,
+    );
+    final block = plain[_historyKey];
+    if (block != null && block is! Map<String, Object?>) {
+      throw const AccessConfigException(
+        'Top-level `history:` must be a map when present.',
+      );
+    }
+    try {
+      final config = HistoryConfig.fromConfigMap(
+        block as Map<String, Object?>?,
+      );
+      return config.sizingFor(foregroundAnswerLaneId);
+    } on HistoryConfigError catch (e) {
+      throw AccessConfigException(e.toString());
+    }
   }
 
   /// Loads the YAML file at [path] and parses it via [parse].
@@ -151,7 +195,11 @@ abstract final class AccessConfigLoader {
     }
   }
 
-  static AccessConfig _parseAccess(YamlMap node, Map<String, String> env) {
+  static AccessConfig _parseAccess(
+    YamlMap node,
+    Map<String, String> env,
+    HistorySizing answerLaneSizing,
+  ) {
     _rejectUnknownKeys(
       node,
       const <String>{
@@ -241,6 +289,7 @@ abstract final class AccessConfigLoader {
       dailyQuotaPolicy: quota,
       anchorPolicy: anchor,
       personaVocabulary: personas,
+      answerLaneSizing: answerLaneSizing,
       embeddingCacheTtl: cacheTtl,
       edgeStateDirectory: edgeStateDir,
       historyDirectory: historyDir,
