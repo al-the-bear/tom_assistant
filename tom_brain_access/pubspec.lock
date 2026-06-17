@@ -986,7 +986,7 @@ packages:
       path: "../../tom_ai/core/tom_core_agentic"
       relative: true
     source: path
-    version: "1.4.0"
+    version: "1.7.0"
   tom_core_d4rt:
     dependency: transitive
     description:
@@ -1007,7 +1007,7 @@ packages:
       path: "../../tom_ai/core/tom_core_server"
       relative: true
     source: path
-    version: "1.0.0"
+    version: "1.1.0"
   tom_crypto:
     dependency: transitive
     description:
@@ -1086,10 +1086,10 @@ packages:
     dependency: transitive
     description:
       name: tom_vscode_scripting_api
-      sha256: da82cbcdbebb3eddaacfae795be9e8cebd2d171d6720bd0c07137d4544287e9b
+      sha256: "56861952848be9e04776da35d2848c5dd0b0dc464664ca6988ecfb538806ca7e"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.1"
+    version: "1.1.0"
   tuple:
     dependency: transitive
     description:
