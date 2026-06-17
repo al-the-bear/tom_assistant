@@ -329,6 +329,29 @@ memory:
   root: /srv/repos/al_the_bear/_ai/tom_brain/bomber/memory
   sqliteVec:
     binariesRoot: /srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_binaries/sqlite_vec
+# Per-lane conversation/activity-history sizing (hub spec § 22.6b/c). This is a
+# TOP-LEVEL block (sibling of `access:`), distinct from the nested
+# `access.history.directory` above which only sets the durable history path.
+# The four knobs are resolved per lane as `lane override -> defaults -> code
+# default (HistorySizing.standard())`; `rawCount` has a hard floor of 10 (a
+# value below 10 is rejected, not clamped). `defaults` applies to every lane —
+# the foreground answer lane and each dreaming lane — that carries no override.
+# Validates against .tom/json-schema/tom_brain/history.schema.json.
+history:
+  defaults:
+    rawCount: 10
+    compactionThreshold: 40
+    maxCompactedTokens: 1024
+    maxCompactedChars: 6000
+  # Optional per-lane overrides keyed by laneId. A lane with no entry inherits
+  # `defaults`; an entry may set any subset of the four knobs. Examples:
+  # lanes:
+  #   foreground:            # the interactive answer lane (foregroundAnswerLaneId)
+  #     rawCount: 16         # keep more verbatim turns for live conversation
+  #     compactionThreshold: 60
+  #   dream_consolidate:     # the slow consolidation dreaming lane
+  #     rawCount: 10
+  #     maxCompactedTokens: 2048
 access:
   openai:
     port: 8080
