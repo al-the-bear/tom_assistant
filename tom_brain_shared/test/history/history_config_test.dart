@@ -237,4 +237,58 @@ void main() {
       expect(error.toString(), contains('minimum of 10'));
     });
   });
+
+  group('HistoryConfig.toJson — the resolved-sizing wire shape (todo #16)', () {
+    test('emits defaults and per-lane overrides as nested sizing maps', () {
+      final config = HistoryConfig(
+        defaults: const HistorySizing(),
+        lanes: const <String, HistorySizing>{
+          foregroundAnswerLaneId:
+              HistorySizing(rawCount: 20, compactionThreshold: 60),
+          'dream_deep': HistorySizing(rawCount: 15),
+        },
+      );
+
+      final json = config.toJson();
+      expect(json['defaults'], const HistorySizing().toJson());
+      final lanes = (json['lanes'] as Map).cast<String, Object?>();
+      expect(
+        lanes[foregroundAnswerLaneId],
+        const HistorySizing(rawCount: 20, compactionThreshold: 60).toJson(),
+      );
+      expect(lanes['dream_deep'],
+          const HistorySizing(rawCount: 15).toJson());
+    });
+
+    test('a config with no lane overrides emits an empty lanes map', () {
+      final json = const HistoryConfig.standard().toJson();
+      expect(json['defaults'], const HistorySizing.standard().toJson());
+      expect((json['lanes'] as Map), isEmpty);
+    });
+
+    test('the JSON round-trips the effective per-lane sizing', () {
+      final config = HistoryConfig(
+        defaults: const HistorySizing(rawCount: 12),
+        lanes: const <String, HistorySizing>{
+          'dream_light': HistorySizing(rawCount: 30),
+        },
+      );
+
+      final json = config.toJson();
+      // A consumer (the Observatory) reconstructs `sizingFor` losslessly: a lane
+      // present in `lanes` shows its override; any other lane resolves to
+      // `defaults`.
+      final lanes = (json['lanes'] as Map).cast<String, Object?>();
+      expect(
+        HistorySizing.fromJson(
+            (lanes['dream_light'] as Map).cast<String, Object?>()),
+        config.sizingFor('dream_light'),
+      );
+      expect(
+        HistorySizing.fromJson(
+            (json['defaults'] as Map).cast<String, Object?>()),
+        config.sizingFor('an_unlisted_lane'),
+      );
+    });
+  });
 }

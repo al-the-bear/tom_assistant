@@ -374,6 +374,23 @@ final class HistoryConfig {
   /// (history-compaction quest, todo #6).
   HistorySizing sizingFor(String laneId) => lanes[laneId] ?? defaults;
 
+  /// The config as a JSON-encodable map — the resolved-sizing wire shape: a
+  /// `defaults` sizing plus a `lanes` map of laneId → that lane's override
+  /// sizing (the clean complement to [HistoryConfig.fromConfigMap]).
+  ///
+  /// This fully describes the effective per-lane sizing the brain bound: a lane
+  /// present in `lanes` carries its override; any other lane resolves to
+  /// `defaults`. A consumer reconstructs [sizingFor] losslessly. Used by the
+  /// run assembly to surface the bound sizing through the observatory's
+  /// `GET /api/runtime` live view (history-compaction quest, todo #16;
+  /// `prompt_tracing.md` § 6.4 Runtime tab).
+  Map<String, Object?> toJson() => <String, Object?>{
+        'defaults': defaults.toJson(),
+        'lanes': <String, Object?>{
+          for (final entry in lanes.entries) entry.key: entry.value.toJson(),
+        },
+      };
+
   @override
   bool operator ==(Object other) =>
       other is HistoryConfig &&

@@ -15,8 +15,9 @@
 // live process, never a control path (OBS-4): the snapshot is a value copied at
 // boot, holding no port, socket, or callback back into the brain.
 //
-// Sendable across isolates by construction — every field is a primitive or a
-// nullable primitive, so `Isolate.spawn` deep-copies it cleanly.
+// Sendable across isolates by construction — every field is a primitive, a
+// nullable primitive, or a JSON-ready map of such (the resolved [history]
+// sizing), so `Isolate.spawn` deep-copies it cleanly.
 
 /// The live runtime values the running brain bound, for `GET /api/runtime`.
 final class RuntimeSnapshot {
@@ -54,8 +55,18 @@ final class RuntimeSnapshot {
   /// no cognition tree was configured.
   final String? cognitionRoot;
 
+  /// The resolved conversation-history sizing the brain bound, as the JSON-ready
+  /// `{defaults: {…4 knobs}, lanes: {laneId: {…4 knobs}}}` map produced by
+  /// `HistoryConfig.toJson()` (the `lane → defaults → code default` resolution
+  /// of `brain_run.yaml`'s `history:` block), or `null` when no live brain
+  /// threaded one in (standalone). Pre-serialized to a map of primitives so the
+  /// snapshot stays isolate-sendable; it surfaces the effective per-lane sizing
+  /// in the Runtime tab (todo #16; `prompt_tracing.md` § 6.4, § 8.3(13)).
+  final Map<String, Object?>? history;
+
   /// Binds the snapshot. Only the always-present OpenAI gateway values are
-  /// required; the optional channels and roots are `null` when absent.
+  /// required; the optional channels, roots, and resolved [history] sizing are
+  /// `null` when absent.
   const RuntimeSnapshot({
     required this.openAiPort,
     required this.openAiBasePath,
@@ -67,6 +78,7 @@ final class RuntimeSnapshot {
     this.memoryRoot,
     this.trailRoot,
     this.cognitionRoot,
+    this.history,
   });
 
   /// The wire form served by `GET /api/runtime`. The web Runtime tab reads each
@@ -94,5 +106,8 @@ final class RuntimeSnapshot {
           'trail': trailRoot,
           'cognition': cognitionRoot,
         },
+        // The resolved per-lane history sizing, omitted standalone (no live
+        // brain threaded one in) so the no-snapshot case is byte-stable.
+        if (history != null) 'history': history,
       };
 }

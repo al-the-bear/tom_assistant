@@ -167,6 +167,10 @@ Future<void> main(List<String> args) async {
           memoryRoot: config.memory.root,
           trailRoot: config.trail?.root,
           cognitionRoot: config.cognition?.root,
+          // The resolved per-lane conversation-history sizing the brain bound
+          // (lane → defaults → code default), for the Runtime tab's effective
+          // sizing display (history-compaction quest, todo #16).
+          history: config.history.toJson(),
         ),
       ),
       onInfo: (m) => tomLog.status('[tom_brain.observatory] $m'),

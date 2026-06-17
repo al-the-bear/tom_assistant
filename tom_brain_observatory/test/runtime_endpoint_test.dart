@@ -160,6 +160,57 @@ access:
       expect(gateways.containsKey('anthropic'), isFalse);
       expect(body['telegramEnabled'], false);
     });
+
+    test('reports the resolved per-lane history sizing when wired (todo #16)',
+        () async {
+      // The effective sizing the brain bound: a `defaults` block plus a
+      // `foreground` lane override that widens the raw window and threshold.
+      // `brain_serve` threads `config.history.toJson()` in here; the wire must
+      // round-trip it under the `history` key so the Runtime tab can report the
+      // effective sizing per lane.
+      // The `{defaults, lanes}` shape `HistoryConfig.toJson()` produces (proven
+      // in tom_brain_shared); the wire must round-trip it under `history`.
+      final api = wired(
+        runtime: const RuntimeSnapshot(
+          openAiPort: 8841,
+          openAiBasePath: '/v1',
+          history: <String, Object?>{
+            'defaults': <String, Object?>{
+              'rawCount': 10,
+              'compactionThreshold': 40,
+              'maxCompactedTokens': 1024,
+              'maxCompactedChars': 6000,
+            },
+            'lanes': <String, Object?>{
+              'foreground': <String, Object?>{
+                'rawCount': 20,
+                'compactionThreshold': 60,
+                'maxCompactedTokens': 1024,
+                'maxCompactedChars': 6000,
+              },
+            },
+          },
+        ),
+      );
+      final body = await jsonBody(await obsGet(api, 'api/runtime'));
+      final history = (body['history'] as Map).cast<String, Object?>();
+      final defaults = (history['defaults'] as Map).cast<String, Object?>();
+      expect(defaults['rawCount'], 10);
+      expect(defaults['compactionThreshold'], 40);
+      final lanes = (history['lanes'] as Map).cast<String, Object?>();
+      final foreground = (lanes['foreground'] as Map).cast<String, Object?>();
+      expect(foreground['rawCount'], 20);
+      expect(foreground['compactionThreshold'], 60);
+    });
+
+    test('omits history when no sizing was threaded in (standalone-byte-stable)',
+        () async {
+      final api = wired(
+        runtime: const RuntimeSnapshot(openAiPort: 9001, openAiBasePath: '/v1'),
+      );
+      final body = await jsonBody(await obsGet(api, 'api/runtime'));
+      expect(body.containsKey('history'), isFalse);
+    });
   });
 
   group('GET /api/config?kind=run — the on-disk run config', () {
