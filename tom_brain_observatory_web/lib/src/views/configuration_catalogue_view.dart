@@ -325,8 +325,9 @@ class _ConfigurationCatalogueViewState
                 leading: const Icon(Icons.settings_outlined),
                 title: const Text('Edit run configuration (brain_run.yaml)'),
                 subtitle: const Text(
-                  'Ports, roots, and the access / memory / trail / tools / mcp '
-                  'sections. Saved edits take effect at next boot.',
+                  'Ports, roots, the access / memory / trail / tools / mcp '
+                  'sections, and the conversation-history sizing. Saved edits '
+                  'take effect at next boot.',
                 ),
                 onTap: () => _openConfig('run', 'brain_run'),
               ),

@@ -195,6 +195,27 @@ class AllBridge {
     ];
   }
 
+  /// Returns the import block for scripts.
+  ///
+  /// One `import '<uri>';` line per canonical source library. Consumed by the
+  /// dartscript helper (`dartscript.b.dart`) to assemble a script's import
+  /// preamble.
+  static String getImportBlock() {
+    final buffer = StringBuffer();
+    for (final uri in sourceLibraries()) {
+      buffer.writeln("import '$uri';");
+    }
+    return buffer.toString();
+  }
+
+  /// Returns barrel import URIs for sub-packages with bridged content.
+  ///
+  /// This barrel inlines every source library directly (single-package
+  /// strategy), so there are no sub-package barrels to register.
+  static List<String> subPackageBarrels() {
+    return const [];
+  }
+
 }
 
 // =============================================================================

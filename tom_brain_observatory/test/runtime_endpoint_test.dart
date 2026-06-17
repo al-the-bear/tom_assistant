@@ -232,6 +232,21 @@ access:
     });
   });
 
+  // A run config that adds a valid top-level `history:` block (defaults plus a
+  // foreground-lane override) to the otherwise-complete config above. Edited
+  // through the Runtime tab, this is how an operator resizes conversation
+  // history (history-compaction quest, todo #17).
+  const String validRunConfigWithHistory = '''
+$validRunConfig
+history:
+  defaults:
+    rawCount: 12
+    compactionThreshold: 50
+  lanes:
+    foreground:
+      rawCount: 24
+''';
+
   group('PUT /api/config?kind=run — a loader-accepted write round-trips', () {
     test('a complete valid run config saves and reports next-boot', () async {
       final api = wired();
@@ -244,6 +259,25 @@ access:
 
       final get = await getConfig(api, 'run', 'brain_run');
       expect(await get.readAsString(), validRunConfig);
+    });
+
+    // Todo #17: editing the conversation-history sizing through the Runtime tab.
+    // A valid `history:` block is accepted by the full loader (floors satisfied),
+    // saved verbatim, and reported `next-boot` (the brain re-reads it on the next
+    // start — the config-reload model). The byte-for-byte round-trip proves the
+    // edit lands on disk for that subsequent run to pick up.
+    test('a valid history block saves and reports next-boot', () async {
+      final api = wired();
+      final put = await putConfig(api, 'run', 'brain_run',
+          body: validRunConfigWithHistory);
+      expect(put.statusCode, 200);
+      final body = await jsonBody(put);
+      expect(body['effect'], 'next-boot');
+      expect(body['kind'], 'run');
+      expect(at('brain_run.yaml').readAsStringSync(), validRunConfigWithHistory);
+
+      final get = await getConfig(api, 'run', 'brain_run');
+      expect(await get.readAsString(), validRunConfigWithHistory);
     });
   });
 
@@ -313,6 +347,22 @@ access:
       final res = await putConfig(wired(), 'run', '../../escape',
           body: validRunConfig);
       expect(res.statusCode, HttpStatus.forbidden);
+    });
+
+    // Todo #17: the Phase-A floor enforcement applies on the write path too.
+    // `rawCount` floor is 10; a `history.defaults.rawCount: 5` is rejected by the
+    // full loader (the access loader's answer-lane resolver enforces the floor),
+    // so the edit is 422 and the on-disk config is left byte-for-byte untouched.
+    test('a below-floor history knob is 422 (file untouched)', () async {
+      final before = at('brain_run.yaml').readAsStringSync();
+      final res = await putConfig(wired(), 'run', 'brain_run', body: '''
+$validRunConfig
+history:
+  defaults:
+    rawCount: 5
+''');
+      expect(res.statusCode, HttpStatus.unprocessableEntity);
+      expect(at('brain_run.yaml').readAsStringSync(), before);
     });
   });
 }

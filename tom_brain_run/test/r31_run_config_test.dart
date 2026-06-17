@@ -338,6 +338,68 @@ substrate:
         throwsA(isA<BrainRunConfigException>()),
       );
     });
+
+    // ── The top-level `history:` block (history-compaction quest) ──────
+    //
+    // The run loader threads `history:` through `HistoryConfig.fromConfigMap`,
+    // which enforces the per-knob floors. These two tests pin that the
+    // Observatory write path (`/api/config?kind=run` → `BrainRunConfigLoader
+    // .parse`) accepts a valid block into `config.history` and rejects a
+    // below-floor knob with a *located* `BrainRunConfigException` — the
+    // 422-on-write the Observatory surfaces (todo #17).
+    test('a valid history block parses into config.history (defaults + lane '
+        'override)', () {
+      final String doc = '$_substrateSection\n'
+          'memory:\n'
+          '  root: /tmp/x\n'
+          '  sqliteVec:\n'
+          '    binariesRoot: /opt/vec\n'
+          '$_accessSection\n'
+          'history:\n'
+          '  defaults:\n'
+          '    rawCount: 12\n'
+          '    compactionThreshold: 50\n'
+          '  lanes:\n'
+          '    foreground:\n'
+          '      rawCount: 24\n';
+
+      final BrainRunConfig config = BrainRunConfigLoader.parse(doc);
+      expect(config.history.defaults.rawCount, 12);
+      expect(config.history.defaults.compactionThreshold, 50);
+      // The lane override resolves through `sizingFor`; the default backs the
+      // knobs the lane did not restate.
+      expect(config.history.sizingFor('foreground').rawCount, 24);
+      expect(config.history.sizingFor('foreground').compactionThreshold, 50);
+    });
+
+    test('a below-floor history knob fails with a located config error', () {
+      // `rawCount` floor is 10 (HistorySizing.rawCountFloor); 5 is rejected.
+      // Two loaders read the top-level `history:` block and enforce the floor:
+      // the access loader resolves the foreground answer-lane sizing from it
+      // (feeding the SessionManager) and the run loader parses it into
+      // `config.history`. The access loader runs first, so its located
+      // `AccessConfigException` (naming the offending knob and the floor) is
+      // what surfaces. Either way it is an `Exception`, so the Observatory
+      // write path (`_validateConfig(kind=run)`) turns it into a 422 with the
+      // config file left byte-for-byte untouched (todo #17 / AUTH-3).
+      final String doc = '$_substrateSection\n'
+          'memory:\n'
+          '  root: /tmp/x\n'
+          '  sqliteVec:\n'
+          '    binariesRoot: /opt/vec\n'
+          '$_accessSection\n'
+          'history:\n'
+          '  defaults:\n'
+          '    rawCount: 5\n';
+
+      expect(
+        () => BrainRunConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>()
+            .having((e) => e.toString(), 'toString', contains('rawCount'))
+            .having((e) => e.toString(), 'toString',
+                contains('below the minimum'))),
+      );
+    });
   });
 
   group('#31 buildSubstrate — SubstrateConfig → live facade', () {
