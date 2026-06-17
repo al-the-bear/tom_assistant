@@ -88,15 +88,18 @@ void main() {
       devBlock = pubspec.substring(devIdx);
     });
 
-    test('tom_d4rt_generator is a dev-dep pinned ^1.9.1 (plan-2 item #13a)', () {
+    test('tom_d4rt_generator is a dev-dep pinned ^1.9.6 (barrel-template fix)',
+        () {
       expect(
         devBlock.contains(
-            RegExp(r'^  tom_d4rt_generator:\s*\^1\.9\.1', multiLine: true)),
+            RegExp(r'^  tom_d4rt_generator:\s*\^1\.9\.6', multiLine: true)),
         isTrue,
-        reason: 'Plan-2 item #13a re-pinned tom_d4rt_generator to ^1.9.1 (from '
-            'the ^1.9.0 of plan-2 item 1), which fixed the dartscript template '
-            'so generateDartscript could be re-enabled; dev_dependencies must '
-            'adopt it verbatim.',
+        reason: 'tom_d4rt_generator was bumped to ^1.9.6: 1.9.2..1.9.7 fixed '
+            'the dartscript/AllBridge template desync (the barrel surface — '
+            'sourceLibraries/getImportBlock/subPackageBarrels — is now emitted '
+            'by the generator again), retiring the temporary hand-patch of '
+            'brain_bridges.b.dart (HC-71). dev_dependencies must adopt it '
+            'verbatim.',
       );
     });
 

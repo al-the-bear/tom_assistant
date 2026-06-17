@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Sources: 6 files
-// Generated: 2026-06-16T23:31:11.211157
+// Generated: 2026-06-17T14:15:05.219899
 
 // ignore_for_file: unused_import, deprecated_member_use, prefer_function_declarations_over_variables, implementation_imports, sort_child_properties_last, non_constant_identifier_names, avoid_function_literals_in_foreach_calls, invalid_use_of_protected_member, unnecessary_non_null_assertion, invalid_use_of_visible_for_testing_member, unnecessary_cast, unused_local_variable, no_leading_underscores_for_local_identifiers, prefer_is_empty, unnecessary_question_mark, unreachable_switch_case, unintended_html_in_doc_comment, empty_constructor_bodies, prefer_const_constructors_in_immutables, prefer_final_fields, unused_field, must_call_super, no_logic_in_create_state, use_key_in_widget_constructors, annotate_overrides, unnecessary_import
 
@@ -28,6 +28,11 @@ import 'package:tom_brain_procedure/src/tools/tool_context.dart' as $tom_brain_p
 import 'package:tom_brain_procedure/src/tools/tool_event.dart' as $tom_brain_procedure_18;
 import 'package:tom_brain_procedure/src/tools/tool_policy.dart' as $tom_brain_procedure_19;
 import 'package:tom_brain_procedure/src/tools/tool_registry.dart' as $tom_brain_procedure_20;
+import 'package:tom_brain_shared/src/budget/budget.dart' as $tom_brain_shared_1;
+import 'package:tom_brain_shared/src/correlation/turn_context.dart' as $tom_brain_shared_2;
+import 'package:tom_brain_shared/src/memory/api/tom_brain_memory_client.dart' as $tom_brain_shared_3;
+import 'package:tom_brain_substrate/src/api/tom_brain_substrate_client.dart' as $tom_brain_substrate_1;
+import 'package:tom_brain_substrate/src/router/route_entry.dart' as $tom_brain_substrate_2;
 
 /// Bridge class for all module.
 class AllBridge {
@@ -195,25 +200,27 @@ class AllBridge {
     ];
   }
 
-  /// Returns the import block for scripts.
+  /// Returns the import statement needed for D4rt scripts.
   ///
-  /// One `import '<uri>';` line per canonical source library. Consumed by the
-  /// dartscript helper (`dartscript.b.dart`) to assemble a script's import
-  /// preamble.
+  /// Use this in your D4rt initialization script to make all
+  /// bridged classes available to scripts.
   static String getImportBlock() {
-    final buffer = StringBuffer();
-    for (final uri in sourceLibraries()) {
-      buffer.writeln("import '$uri';");
-    }
-    return buffer.toString();
+    final imports = StringBuffer();
+    imports.writeln("import 'package:tom_brain_procedure/src/bridges/mcp_bridge.dart';");
+    imports.writeln("import 'package:tom_brain_procedure/src/bridges/memory_bridge.dart';");
+    imports.writeln("import 'package:tom_brain_procedure/src/bridges/substrate_bridge.dart';");
+    imports.writeln("import 'package:tom_brain_procedure/src/bridges/tool_bridge.dart';");
+    imports.writeln("import 'package:tom_brain_procedure/src/bridges/vscode_scripting_bridge.dart';");
+    imports.writeln("import 'package:tom_brain_procedure/src/budget/budget_view.dart';");
+    return imports.toString();
   }
 
-  /// Returns barrel import URIs for sub-packages with bridged content.
+  /// Returns barrel import URIs for sub-packages discovered through re-exports.
   ///
-  /// This barrel inlines every source library directly (single-package
-  /// strategy), so there are no sub-package barrels to register.
+  /// This configuration uses the single-package inline strategy and
+  /// therefore has no sub-package barrels.
   static List<String> subPackageBarrels() {
-    return const [];
+    return [];
   }
 
 }
@@ -230,7 +237,7 @@ BridgedClass _createMemoryBridgeBridge() {
     constructors: {
       '': (visitor, positional, named) {
         D4.requireMinArgs(positional, 1, 'MemoryBridge');
-        final client = D4.getRequiredArg<dynamic>(positional, 0, 'client', 'MemoryBridge');
+        final client = D4.getRequiredArg<$tom_brain_shared_3.TomBrainMemoryClient>(positional, 0, 'client', 'MemoryBridge');
         final onCallRaw = named['onCall'];
         final budget = D4.getOptionalNamedArg<$tom_brain_procedure_12.BudgetLedger?>(named, 'budget');
         final agentName = D4.getOptionalNamedArg<String?>(named, 'agentName');
@@ -497,7 +504,7 @@ BridgedClass _createMemoryBridgeBridge() {
       },
     },
     constructorSignatures: {
-      '': 'MemoryBridge(InvalidType client, {BridgeCallRecorder? onCall, BudgetLedger? budget, String? agentName, MemoryWriteGuard? writeGuard, MemoryWriteSkipSink? onWriteSkipped})',
+      '': 'MemoryBridge(TomBrainMemoryClient client, {BridgeCallRecorder? onCall, BudgetLedger? budget, String? agentName, MemoryWriteGuard? writeGuard, MemoryWriteSkipSink? onWriteSkipped})',
     },
     methodSignatures: {
       'recall': 'Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>[\'bm25\', \'vector\'], int k = 8, String ranking = \'relevance\', List<String> types = const <String>[], bool countsAsAccess = false, bool relations = false})',
@@ -525,7 +532,7 @@ BridgedClass _createMemoryBridgeBridge() {
       'findUncertain': 'Future<List<String>> findUncertain(String forKey, {required double low, required double high, int limit = 200})',
     },
     getterSignatures: {
-      'client': 'InvalidType get client',
+      'client': 'TomBrainMemoryClient get client',
       'agentName': 'String? get agentName',
     },
   );
@@ -543,7 +550,7 @@ BridgedClass _createSubstrateBridgeBridge() {
     constructors: {
       '': (visitor, positional, named) {
         D4.requireMinArgs(positional, 1, 'SubstrateBridge');
-        final client = D4.getRequiredArg<dynamic>(positional, 0, 'client', 'SubstrateBridge');
+        final client = D4.getRequiredArg<$tom_brain_substrate_1.TomBrainSubstrateClient>(positional, 0, 'client', 'SubstrateBridge');
         final onCallRaw = named['onCall'];
         final onTokenRaw = named['onToken'];
         final budget = D4.getOptionalNamedArg<$tom_brain_procedure_12.BudgetLedger?>(named, 'budget');
@@ -553,15 +560,9 @@ BridgedClass _createSubstrateBridgeBridge() {
         final routeChainOfRaw = named['routeChainOf'];
         final promptResolverRaw = named['promptResolver'];
         final runProcedureRaw = named['runProcedure'];
+        final turn = D4.getOptionalNamedArg<$tom_brain_shared_2.TurnContext?>(named, 'turn');
         final onLlmTrailRaw = named['onLlmTrail'];
-        if (!named.containsKey('turn')) {
-          return $tom_brain_procedure_7.SubstrateBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return Future.value(D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs})); }, onToken: onTokenRaw == null ? null : ((String p0) { return Future.value(D4.callInterpreterCallback(visitor!, onTokenRaw, [p0])); }) as Future<void> Function(String), budget: budget, onNote: onNoteRaw == null ? null : ((String p0, Map<String, Object?> p1) { return Future.value(D4.callInterpreterCallback(visitor!, onNoteRaw, [p0, p1])); }) as Future<void> Function(String, Map<String, Object?>), onThinking: onThinkingRaw == null ? null : (String p0) { D4.callInterpreterCallback(visitor!, onThinkingRaw, [p0]); }, toolProtocolOf: toolProtocolOfRaw == null ? null : ((String p0) { return D4.extractBridgedArg<$tom_brain_procedure_15.ToolProtocol>(D4.callInterpreterCallback(visitor!, toolProtocolOfRaw, [p0]), 'callback', visitor) as $tom_brain_procedure_15.ToolProtocol; }) as $tom_brain_procedure_15.ToolProtocol Function(String), routeChainOf: routeChainOfRaw == null ? null : (String p0) { return D4.castCallbackResult<dynamic>(D4.callInterpreterCallback(visitor!, routeChainOfRaw, [p0])); }, promptResolver: promptResolverRaw == null ? null : ((String p0, Map<String, Object?> p1) { return Future.value(D4.callInterpreterCallback(visitor!, promptResolverRaw, [p0, p1])).then((v) => v as $tom_brain_procedure_8.ResolvedPrompt); }) as Future<$tom_brain_procedure_8.ResolvedPrompt> Function(String, Map<String, Object?>), runProcedure: runProcedureRaw == null ? null : ((String p0, $tom_brain_procedure_1.ProcedureInputs p1) { return Future.value(D4.callInterpreterCallback(visitor!, runProcedureRaw, [p0, p1])).then((v) => v as $tom_brain_procedure_2.ProcedureResult); }) as Future<$tom_brain_procedure_2.ProcedureResult> Function(String, $tom_brain_procedure_1.ProcedureInputs), onLlmTrail: onLlmTrailRaw == null ? null : ($tom_brain_procedure_4.LlmCallObservation p0) { D4.callInterpreterCallback(visitor!, onLlmTrailRaw, [p0]); });
-        }
-        if (named.containsKey('turn')) {
-          final turn = D4.getRequiredNamedArg<dynamic>(named, 'turn', 'SubstrateBridge');
-          return $tom_brain_procedure_7.SubstrateBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return Future.value(D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs})); }, onToken: onTokenRaw == null ? null : ((String p0) { return Future.value(D4.callInterpreterCallback(visitor!, onTokenRaw, [p0])); }) as Future<void> Function(String), budget: budget, onNote: onNoteRaw == null ? null : ((String p0, Map<String, Object?> p1) { return Future.value(D4.callInterpreterCallback(visitor!, onNoteRaw, [p0, p1])); }) as Future<void> Function(String, Map<String, Object?>), onThinking: onThinkingRaw == null ? null : (String p0) { D4.callInterpreterCallback(visitor!, onThinkingRaw, [p0]); }, toolProtocolOf: toolProtocolOfRaw == null ? null : ((String p0) { return D4.extractBridgedArg<$tom_brain_procedure_15.ToolProtocol>(D4.callInterpreterCallback(visitor!, toolProtocolOfRaw, [p0]), 'callback', visitor) as $tom_brain_procedure_15.ToolProtocol; }) as $tom_brain_procedure_15.ToolProtocol Function(String), routeChainOf: routeChainOfRaw == null ? null : (String p0) { return D4.castCallbackResult<dynamic>(D4.callInterpreterCallback(visitor!, routeChainOfRaw, [p0])); }, promptResolver: promptResolverRaw == null ? null : ((String p0, Map<String, Object?> p1) { return Future.value(D4.callInterpreterCallback(visitor!, promptResolverRaw, [p0, p1])).then((v) => v as $tom_brain_procedure_8.ResolvedPrompt); }) as Future<$tom_brain_procedure_8.ResolvedPrompt> Function(String, Map<String, Object?>), runProcedure: runProcedureRaw == null ? null : ((String p0, $tom_brain_procedure_1.ProcedureInputs p1) { return Future.value(D4.callInterpreterCallback(visitor!, runProcedureRaw, [p0, p1])).then((v) => v as $tom_brain_procedure_2.ProcedureResult); }) as Future<$tom_brain_procedure_2.ProcedureResult> Function(String, $tom_brain_procedure_1.ProcedureInputs), onLlmTrail: onLlmTrailRaw == null ? null : ($tom_brain_procedure_4.LlmCallObservation p0) { D4.callInterpreterCallback(visitor!, onLlmTrailRaw, [p0]); }, turn: turn);
-        }
-        throw StateError('Unreachable: all named parameter combinations should be covered');
+        return $tom_brain_procedure_7.SubstrateBridge(client, onCall: onCallRaw == null ? null : (String p0, Map<String, Object?> p1, Map<String, Object?> p2, {int? elapsedMs}) { return Future.value(D4.callInterpreterCallback(visitor!, onCallRaw, [p0, p1, p2], {'elapsedMs': elapsedMs})); }, onToken: onTokenRaw == null ? null : ((String p0) { return Future.value(D4.callInterpreterCallback(visitor!, onTokenRaw, [p0])); }) as Future<void> Function(String), budget: budget, onNote: onNoteRaw == null ? null : ((String p0, Map<String, Object?> p1) { return Future.value(D4.callInterpreterCallback(visitor!, onNoteRaw, [p0, p1])); }) as Future<void> Function(String, Map<String, Object?>), onThinking: onThinkingRaw == null ? null : (String p0) { D4.callInterpreterCallback(visitor!, onThinkingRaw, [p0]); }, toolProtocolOf: toolProtocolOfRaw == null ? null : ((String p0) { return D4.extractBridgedArg<$tom_brain_procedure_15.ToolProtocol>(D4.callInterpreterCallback(visitor!, toolProtocolOfRaw, [p0]), 'callback', visitor) as $tom_brain_procedure_15.ToolProtocol; }) as $tom_brain_procedure_15.ToolProtocol Function(String), routeChainOf: routeChainOfRaw == null ? null : ((String p0) { return D4.coerceList<$tom_brain_substrate_2.RouteEntry>(D4.callInterpreterCallback(visitor!, routeChainOfRaw, [p0]), 'callback'); }) as List<$tom_brain_substrate_2.RouteEntry> Function(String), promptResolver: promptResolverRaw == null ? null : ((String p0, Map<String, Object?> p1) { return Future.value(D4.callInterpreterCallback(visitor!, promptResolverRaw, [p0, p1])).then((v) => v as $tom_brain_procedure_8.ResolvedPrompt); }) as Future<$tom_brain_procedure_8.ResolvedPrompt> Function(String, Map<String, Object?>), runProcedure: runProcedureRaw == null ? null : ((String p0, $tom_brain_procedure_1.ProcedureInputs p1) { return Future.value(D4.callInterpreterCallback(visitor!, runProcedureRaw, [p0, p1])).then((v) => v as $tom_brain_procedure_2.ProcedureResult); }) as Future<$tom_brain_procedure_2.ProcedureResult> Function(String, $tom_brain_procedure_1.ProcedureInputs), turn: turn, onLlmTrail: onLlmTrailRaw == null ? null : ($tom_brain_procedure_4.LlmCallObservation p0) { D4.callInterpreterCallback(visitor!, onLlmTrailRaw, [p0]); });
       },
     },
     getters: {
@@ -644,7 +645,7 @@ BridgedClass _createSubstrateBridgeBridge() {
       'defaultBudget': (visitor) => $tom_brain_procedure_7.SubstrateBridge.defaultBudget,
     },
     constructorSignatures: {
-      '': 'SubstrateBridge(InvalidType client, {BridgeCallRecorder? onCall, SubstrateTokenSink? onToken, BudgetLedger? budget, SubstrateNoteSink? onNote, SubstrateThinkingSink? onThinking, ToolProtocolResolver? toolProtocolOf, RouteChainResolver? routeChainOf, PromptResolver? promptResolver, ProcedureRunner? runProcedure, InvalidType turn, LlmTrailObserver? onLlmTrail})',
+      '': 'SubstrateBridge(TomBrainSubstrateClient client, {BridgeCallRecorder? onCall, SubstrateTokenSink? onToken, BudgetLedger? budget, SubstrateNoteSink? onNote, SubstrateThinkingSink? onThinking, ToolProtocolResolver? toolProtocolOf, RouteChainResolver? routeChainOf, PromptResolver? promptResolver, ProcedureRunner? runProcedure, TurnContext? turn, LlmTrailObserver? onLlmTrail})',
     },
     methodSignatures: {
       'send': 'Future<Map<String, Object?>> send(String transcript, {required String llmRoute, String role = defaultRole, List<Object?>? tools, double? temperature, int? maxOutputTokens, Map<String, Object?>? responseFormat, String? channel})',
@@ -656,7 +657,7 @@ BridgedClass _createSubstrateBridgeBridge() {
       'fetch': 'Future<Map<String, Object?>> fetch(String url, {int? budgetBytes})',
     },
     getterSignatures: {
-      'client': 'InvalidType get client',
+      'client': 'TomBrainSubstrateClient get client',
       'routeChainOf': 'RouteChainResolver? get routeChainOf',
       'promptResolver': 'PromptResolver? get promptResolver',
       'procedureRunner': 'ProcedureRunner? get procedureRunner',
@@ -664,7 +665,7 @@ BridgedClass _createSubstrateBridgeBridge() {
     staticGetterSignatures: {
       'defaultRole': 'String get defaultRole',
       'toolLoopProcedureId': 'String get toolLoopProcedureId',
-      'defaultBudget': 'InvalidType get defaultBudget',
+      'defaultBudget': 'Budget get defaultBudget',
     },
   );
 }

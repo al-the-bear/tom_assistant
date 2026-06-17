@@ -88,7 +88,7 @@ environment:
 #                           that barrel yet.
 #   - tom_d4rt            — the sandboxed D4rt interpreter (`D4rt`) the
 #                           host (C.16) runs procedure scripts on. Hosted
-#                           `^1.8.20` — the version published to pub.dev
+#                           `^1.8.24` — the version published to pub.dev
 #                           and matching the workspace project, keeping
 #                           the d4rt runtime uniform with the hosted
 #                           `tom_d4rt_dcli` below (which pulls `tom_d4rt`
@@ -137,7 +137,7 @@ environment:
 #
 # Forward steps:
 #   - C.8  — `lib/src/` folder layout. ✅
-#   - C.9  — `dev_dependencies` gain `tom_d4rt_generator: ^1.9.1`
+#   - C.9  — `dev_dependencies` gain `tom_d4rt_generator: ^1.9.6`
 #            (the bridge-generation toolchain). ✅ (see the
 #            dev-dependency-discipline block below). The generator runs
 #            via its `d4rtgen` CLI reading `buildkit.yaml`, so no
@@ -163,7 +163,7 @@ dependencies:
     path: ../../tom_ai/core/tom_core_kernel
   tom_core_d4rt:
     path: ../../tom_ai/core/tom_core_d4rt
-  tom_d4rt: ^1.8.20
+  tom_d4rt: ^1.8.24
   tom_d4rt_dcli: ^1.1.3
   # C.24 procedure loader — the structured header (§ 4.4) is a YAML
   # doc-comment block; the loader parses it with the canonical `yaml`
@@ -202,14 +202,14 @@ dependencies:
 # bridges. It is not a runtime dependency: no `lib/` source imports it, so
 # it cannot leak into the engine's shipped surface.
 #
-#   - tom_d4rt_generator — `^1.9.1`, the latest *published* version (so
-#                          the constraint resolves from pub.dev) and the
-#                          version matching the workspace project. `1.9.1`
-#                          fixed the dartscript template (it now writes
-#                          `relaxers.b.dart` and emits
-#                          `AllBridge.subPackageBarrels()`), which let
-#                          plan-2 item #13a re-enable `generateDartscript`
-#                          and delete the hand-authored registrar. The
+#   - tom_d4rt_generator — `^1.9.6`, the latest *published* line (so
+#                          the constraint resolves from pub.dev). `1.9.2`..`1.9.7`
+#                          fixed the dartscript/AllBridge template desync: the
+#                          generator again emits the barrel surface on AllBridge
+#                          (`sourceLibraries()` / `getImportBlock()` /
+#                          `subPackageBarrels()`) that `dartscript.b.dart`
+#                          calls, retiring the temporary hand-patch of
+#                          `brain_bridges.b.dart` (HC-71). The
 #                          caret admits any `1.x` uptake while a `2.0.0` major
 #                          bump trips a re-verify of the `buildkit.yaml`
 #                          `d4rtgen:` option schema and the C.12–C.13
@@ -227,4 +227,4 @@ dependencies:
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
-  tom_d4rt_generator: ^1.9.1
+  tom_d4rt_generator: ^1.9.6
