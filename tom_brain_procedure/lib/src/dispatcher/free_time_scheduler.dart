@@ -76,12 +76,15 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
         procedureRunNodeType,
         recentRunsStackName;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show HistoryConfig, HistorySizing;
+    show HistoryConfig, HistorySizing, HistoryTurn;
 
 import '../api/procedure_engine.dart' show ProcedureEngine;
 import '../api/procedure_invocation.dart' show ProcedureInvocation;
 import '../api/procedure_outcome.dart' show ProcedureOutcome;
+import '../history/dream_lane_sessions.dart' show DreamLaneSessions;
 import '../recorder/run_records.dart' show producedNodeIdsOutputKey;
+import 'brain_process_boot.dart'
+    show compactedSummaryArgumentKey, priorTurnsArgumentKey;
 import 'run_coordinator.dart' show RunBody, RunCoordinator, RunSlotBusy;
 
 /// Procedure-input key under which [FreeTimeScheduler.triggerMaintenance]
@@ -270,6 +273,7 @@ final class FreeTimeScheduler {
     this.hotSizeThreshold = defaultHotSizeThreshold,
     this.hotPriorityThreshold = defaultHotPriorityThreshold,
     this.historyConfig = const HistoryConfig.standard(),
+    this.dreamSessions,
   }) : schedulableStacks = List<String>.unmodifiable(schedulableStacks);
 
   /// The coordinator the scheduler submits background runs to and reads the
@@ -311,6 +315,20 @@ final class FreeTimeScheduler {
   /// [HistoryConfig.standard] (every lane on the code-default sizing) when no
   /// `history:` block is configured.
   final HistoryConfig historyConfig;
+
+  /// The per-dreaming-lane *activity* histories — a dreaming lane is one long
+  /// session that remembers what it did across firings (history-compaction
+  /// quest, todo 15; memory spec § 9.8). When supplied, [triggerMaintenance]
+  /// feeds the firing lane its accumulated session turns (`priorTurns` + the
+  /// bounded `compactedSummary`) *before* the run and records the firing as a
+  /// new turn *after* it, compacting the lane's own history when it crosses its
+  /// threshold.
+  ///
+  /// `null` in the stack-harvest [tick] suites and any caller that does not want
+  /// per-lane session memory — the seam is byte-stable when absent (no
+  /// `priorTurns` / `compactedSummary` bound, nothing recorded), mirroring the
+  /// answer lane before its history store is wired.
+  final DreamLaneSessions? dreamSessions;
 
   /// Runs one scheduler cycle (§ 5.3, Plan D.33).
   ///
@@ -410,8 +428,9 @@ final class FreeTimeScheduler {
     // slot decision synchronous and the memory read off the hot path.
     return coordinator.submitBackground<ProcedureOutcome>(
       () async {
-        final enriched = await _withRecentRunsContext(procedureId, arguments);
-        return engine
+        var enriched = await _withRecentRunsContext(procedureId, arguments);
+        enriched = _withLaneSessionContext(procedureId, enriched);
+        final outcome = await engine
             .invoke(
               ProcedureInvocation(
                 procedureId: procedureId,
@@ -420,10 +439,105 @@ final class FreeTimeScheduler {
               ),
             )
             .outcome;
+        await _recordLaneFiring(procedureId, outcome);
+        return outcome;
       },
       procedureId: procedureId,
       version: version,
     );
+  }
+
+  /// Returns [arguments] augmented with the firing lane's own *session* history
+  /// — its accumulated firing turns under [priorTurnsArgumentKey] and the
+  /// bounded [compactedSummaryArgumentKey] — or [arguments] unchanged when no
+  /// [dreamSessions] registry is wired or the lane has no session yet (todo 15).
+  ///
+  /// A dreaming lane is one long session: each prior firing is rendered as a
+  /// `{user, assistant}` map (the trigger and the run's summary), most-recent
+  /// last, exactly as the answer lane renders its `priorTurns`. The *full* raw
+  /// window is rendered — unlike the answer lane, which drops its last
+  /// (in-flight, answer-less) turn, a dream lane's firing turn is recorded
+  /// *after* the run, so every turn already in the window is a completed firing.
+  /// A caller that already supplied either key wins — the seam never clobbers an
+  /// explicit context. A first-ever firing (no session) is byte-stable with the
+  /// no-registry case.
+  Map<String, Object?> _withLaneSessionContext(
+    String procedureId,
+    Map<String, Object?> arguments,
+  ) {
+    final sessions = dreamSessions;
+    if (sessions == null) {
+      return arguments;
+    }
+    final history = sessions.peek(procedureId);
+    if (history == null) {
+      return arguments;
+    }
+    final window = history.rawWindow;
+    final summary = history.compactedSummary;
+    final bindTurns =
+        window.isNotEmpty && !arguments.containsKey(priorTurnsArgumentKey);
+    final bindSummary =
+        summary.isNotEmpty && !arguments.containsKey(compactedSummaryArgumentKey);
+    if (!bindTurns && !bindSummary) {
+      return arguments;
+    }
+    return <String, Object?>{
+      ...arguments,
+      if (bindTurns)
+        priorTurnsArgumentKey: <Map<String, Object?>>[
+          for (final HistoryTurn turn in window)
+            <String, Object?>{
+              'user': turn.userPrompt,
+              'assistant': turn.brainAnswer,
+            },
+        ],
+      if (bindSummary) compactedSummaryArgumentKey: summary,
+    };
+  }
+
+  /// Records one firing of [procedureId] as a turn in the lane's own session
+  /// history (todo 15), so the *next* firing remembers it.
+  ///
+  /// A no-op when no [dreamSessions] registry is wired. The turn's "assistant"
+  /// answer is the run's summary — read best-effort from the persisted
+  /// `ProcedureRun` node ([ProcedureOutcome.record]), falling back to the run's
+  /// status name when the node is unreadable or carries no summary. Recording a
+  /// firing (and any threshold compaction it triggers) never fails the dream
+  /// run: a session-store problem is swallowed, since the lane's narrative
+  /// memory is an enhancement, never a precondition.
+  Future<void> _recordLaneFiring(
+    String procedureId,
+    ProcedureOutcome outcome,
+  ) async {
+    final sessions = dreamSessions;
+    if (sessions == null) {
+      return;
+    }
+    try {
+      await sessions.recordFiring(
+        procedureId,
+        trigger: 'dream cycle ${outcome.runId}',
+        outcome: await _firingSummary(outcome),
+      );
+    } on Object {
+      // Narrative memory is best-effort — never crash a dream run over it.
+    }
+  }
+
+  /// The summary text recorded for a firing: the persisted `ProcedureRun`
+  /// node's `summary`, or the run's status name when no usable summary exists.
+  Future<String> _firingSummary(ProcedureOutcome outcome) async {
+    try {
+      final node = await memory.get(outcome.record.runNodeId);
+      final summary = node?.values['summary'];
+      if (summary is String && summary.isNotEmpty) {
+        return summary;
+      }
+    } on Object {
+      // Fall through to the status name.
+    }
+    return outcome.status.name;
   }
 
   /// Returns [arguments] augmented with the firing lane's own prior-run

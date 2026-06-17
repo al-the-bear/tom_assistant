@@ -7,6 +7,7 @@
 // records. The `ConversationHistory` store the compactor reads + mutates lives
 // in `tom_brain_shared` (two components, one contract); the substrate call is
 // an injectable seam wired through `sub.llm` at G.23.
+export 'dream_lane_sessions.dart' show DreamLaneSessions;
 export 'history_compaction_template.dart'
     show
         HistoryCompactionTemplate,

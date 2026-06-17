@@ -58,6 +58,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         BrainProcessBoot,
         BrainProcessConfig,
         ClassifyFallback,
+        DreamLaneSessions,
         FileScope,
         DartMcpConnector,
         FreeTimeScheduler,
@@ -366,6 +367,13 @@ DreamController _startDreamLoop(
     // `history:` block (todo #14): `history.lanes.<dreamLaneId>` sizes a lane's
     // `recentRuns` context independently of the foreground answer lane.
     historyConfig: history,
+    // A dreaming lane is one long session that remembers what it did across
+    // firings (todo #15): each lane keeps its own compactable activity history,
+    // sized through the same `history:` block. No compactor is wired yet —
+    // mirroring the foreground answer lane, whose `sub.llm` compaction seam is
+    // also still gated (HC-64) — so a lane's `pending` batch grows without
+    // folding for now; nothing is lost (the durable record keeps every firing).
+    dreamSessions: DreamLaneSessions(historyConfig: history),
   );
   // Part d: when a throttle is configured, build it over the active schedule so
   // its per-lane caps (`DreamLaneSpec.maxLlmCallsPerWindow`) are honoured on top

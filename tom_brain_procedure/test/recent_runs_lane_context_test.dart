@@ -1,12 +1,13 @@
 // Todos 13–15 (history_compaction_plan.md) — dreaming lanes are fed their own
 // "what has already been done" history so a dream procedure can skip work a
-// prior run already did (13), each lane sizes its own window (14), and that
-// window bounds by drop-oldest rather than by compaction (15).
+// prior run already did (13), each lane sizes its own window (14), and a
+// dreaming lane is *one long session* that keeps its own persistent,
+// compactable activity history across firings (15).
 //
 // `FreeTimeScheduler.triggerMaintenance(procedureId)` is the single seam every
 // dream firing flows through (the production `dream_cadence_wiring`'s `fire`
-// callback and the r34 live cognitive-agent test both call it). Before this
-// step it fired each dream with empty inputs; now it reads the global
+// callback and the r34 live cognitive-agent test both call it). Before todos
+// 13/14 it fired each dream with empty inputs; now it reads the global
 // `recent_runs` stack, keeps only the completed `ProcedureRun` records that
 // belong to the *firing lane* (same `procedureId`), and binds them into the
 // invocation under `recentRunsArgumentKey` — but only when the lane has a
@@ -14,18 +15,34 @@
 // no-history case (mirroring the answer lane's `priorTurns` / `compactedSummary`
 // discipline).
 //
+// Todo 15 adds the *narrative* half on top of that run-bookkeeping view: a
+// dreaming lane carries its own [ConversationHistory] in a [DreamLaneSessions]
+// registry. Each firing appends one turn (its trigger + the run's summary), the
+// next firing is fed the accumulated turns under `priorTurns` (and the bounded
+// `compactedSummary` once the lane has folded), and when the lane's `pending`
+// batch crosses its `compactionThreshold` the lane compacts its own activity
+// history through the same [HistoryCompactor] the answer lane uses. The two
+// views answer different questions and are not a second source of truth:
+// `recentRuns` is "which runs already touched this source" (bookkeeping over
+// the graph); the session history is "what have I been doing while dreaming"
+// (a continuous narrative). See decisions HC-60…HC-65 (supersede HC-57…HC-59).
+//
 // ── What this suite proves ──────────────────────────────────────────────
 //
-//   1. A lane with a prior run that already handled the source receives that
-//      run under `inputs.get('recentRuns')` and the procedure *skips* the work.
-//   2. A first-ever run of a lane receives no `recentRuns` context — and a
-//      prior run belonging to a *different* lane is filtered out, so the lane
-//      does the work rather than skipping on another lane's history.
+//   1. (todo 13) A lane with a prior run that already handled the source
+//      receives it under `inputs.get('recentRuns')` and *skips* the work; a
+//      first-ever run and another lane's history are filtered out.
+//   2. (todo 14) A lane's configured `rawCount` caps its prior-run window,
+//      independently of the answer lane.
+//   3. (todo 15) A lane remembers prior firings (persistence across firings),
+//      compacts its own activity history at the threshold, and the registry
+//      round-trips through `toJson` / `restore`.
 //
 // These run on the in-memory `_StatefulMemory` double (mirroring c51 /
 // procedure_engine_test), so the suite needs no on-disk vec0 store.
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:test/test.dart';
 
@@ -33,7 +50,7 @@ import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show EdgeId, EdgeType, HistoryConfig, HistorySizing, NodeDraft, NodeId,
         ProcedureRunRef, Scope, StackEntry, StackEntryId, TrailEntry, TrailId,
-        TrailOutcome, foregroundAnswerLaneId;
+        TrailOutcome, conversationHistoriesEqual, foregroundAnswerLaneId;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show TomBrainSubstrateClient;
 
@@ -61,6 +78,7 @@ void main() {
   FreeTimeScheduler schedulerWith(
     LoadedProcedure procedure, {
     HistoryConfig historyConfig = const HistoryConfig.standard(),
+    DreamLaneSessions? dreamSessions,
   }) =>
       FreeTimeScheduler(
         coordinator: RunCoordinator(),
@@ -68,6 +86,7 @@ void main() {
         workFactory: (_) => null,
         engine: engineWith(procedure),
         historyConfig: historyConfig,
+        dreamSessions: dreamSessions,
       );
 
   /// Seeds one completed `ProcedureRun` node for [procedureId] with [summary]
@@ -197,46 +216,161 @@ void main() {
     });
   });
 
-  // Todo 15 (history_compaction_plan.md) — a dreaming lane's activity history is
-  // a bounded drop-oldest window, NOT a compactable `ConversationHistory`. The
-  // answer lane compacts because its `pending` batch grows unbounded and older
-  // turns carry irreplaceable context; a dreaming lane reads a window over the
-  // already-bounded `recent_runs` stack, so crossing a "threshold" drops the
-  // oldest runs rather than folding them — and nothing is lost, because what a
-  // dream produced lives durably in the graph. Activity-history compaction is
-  // therefore declined by design (memory_specification.md § 9.8 "Resolved
-  // (Phase D todo 15)"). This group is the tripwire that pins that decision.
-  group('todo 15 — a dreaming lane bounds activity history by drop-oldest, '
-      'never by compaction', () {
-    Future<void> seedLaneRuns(int count) async {
-      for (var i = 0; i < count; i++) {
-        await seedPriorRun(procedureId: _laneId, summary: 'run #$i');
-      }
-    }
+  // Todo 15 (history_compaction_plan.md) — a dreaming lane is *one long
+  // session* that continues whenever the lane is fired again. It carries its
+  // own persistent [ConversationHistory] in a [DreamLaneSessions] registry: each
+  // firing appends one turn (the trigger + the run's summary), the next firing
+  // is fed the accumulated turns under `priorTurns`, and when the lane's
+  // `pending` batch crosses its `compactionThreshold` the lane compacts its own
+  // activity history through the same [HistoryCompactor] the answer lane uses —
+  // derivation, not deletion (the durable record keeps every firing). This is
+  // the narrative complement to todo 13/14's `recentRuns` run-bookkeeping view;
+  // the two answer different questions (see HC-60…HC-65, supersede HC-57…59).
+  group('todo 15 — a dreaming lane is one long session with its own '
+      'persistent, compactable activity history', () {
+    test(
+        'a lane remembers prior firings: a firing is recorded and the next '
+        'firing receives it under priorTurns', () async {
+      final sessions = DreamLaneSessions();
+      final scheduler =
+          schedulerWith(_laneSessionStub(), dreamSessions: sessions);
+
+      // First firing: no prior session history, so `priorTurns` is absent and
+      // the lane sees a cold start (byte-stable with the no-session case).
+      final first = await scheduler.triggerMaintenance(
+        _laneId,
+        arguments: const <String, Object?>{'source': 'alpha'},
+      );
+      expect(first.status, TrailOutcomeStatus.accepted);
+      expect(first.result!.output<int>('priorTurnCount'), 0);
+
+      // … and the firing was recorded as one turn in the lane's own history.
+      final history = sessions.peek(_laneId);
+      expect(history, isNotNull);
+      expect(history!.rawWindow, hasLength(1));
+
+      // Second firing: the lane now remembers the first firing as a prior turn.
+      final second = await scheduler.triggerMaintenance(
+        _laneId,
+        arguments: const <String, Object?>{'source': 'beta'},
+      );
+      expect(second.status, TrailOutcomeStatus.accepted);
+      expect(second.result!.output<int>('priorTurnCount'), 1);
+    });
 
     test(
-        'crossing both rawCount and compactionThreshold stays bounded to '
-        'rawCount and yields no compacted activity summary', () async {
-      // 50 runs — far past both the default rawCount (10) and the default
-      // compactionThreshold (40). If the lane modelled a compactable history it
-      // would fold the older 40 into a summary; instead it drops them.
-      await seedLaneRuns(50);
+        'a lane crossing its compactionThreshold compacts its own activity '
+        'history, and the next firing receives the compacted summary',
+        () async {
+      // Size this lane tiny so a few firings cross the threshold: a window of
+      // one verbatim turn, fold once two pending turns accumulate.
+      const tiny = HistoryConfig(
+        lanes: <String, HistorySizing>{
+          _laneId: HistorySizing(rawCount: 1, compactionThreshold: 2),
+        },
+      );
+      final sessions = DreamLaneSessions(
+        historyConfig: tiny,
+        compactor: _stubCompactor('folded earlier dreaming'),
+      );
+      final scheduler = schedulerWith(_laneSessionStub(),
+          dreamSessions: sessions);
 
-      final outcome = await schedulerWith(_laneStub()).triggerMaintenance(
+      // Fire enough times to push `pending` past the threshold (rawCount 1 +
+      // compactionThreshold 2 ⇒ the third firing's append crosses it).
+      for (var i = 0; i < 3; i++) {
+        await scheduler.triggerMaintenance(
+          _laneId,
+          arguments: <String, Object?>{'source': 'src-$i'},
+        );
+      }
+
+      // The lane folded its pending batch into a bounded summary — derivation,
+      // not deletion: the durable record still holds every firing.
+      final history = sessions.peek(_laneId)!;
+      expect(history.compactedSummary, 'folded earlier dreaming');
+      expect(history.pending, isEmpty);
+      expect(history.durableRecord, hasLength(3));
+
+      // The next firing receives that compacted summary.
+      final next = await scheduler.triggerMaintenance(
         _laneId,
-        arguments: const <String, Object?>{'source': 'gamma'},
+        arguments: const <String, Object?>{'source': 'src-next'},
+      );
+      expect(next.result!.output<String?>('compactedSummary'),
+          'folded earlier dreaming');
+    });
+
+    test('the registry round-trips through toJson / restore', () async {
+      final sessions = DreamLaneSessions();
+      final scheduler =
+          schedulerWith(_laneSessionStub(), dreamSessions: sessions);
+      await scheduler.triggerMaintenance(
+        _laneId,
+        arguments: const <String, Object?>{'source': 'alpha'},
       );
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      // Bounded by the window, not grown toward a fold: exactly rawCount.
-      expect(outcome.result!.output<int>('priorRunCount'), 10);
-      // No activity-history compaction path exists: the lane is handed no
-      // compacted/activity summary, however many runs it has accumulated. If
-      // this flips, someone wired activity compaction — revisit the § 9.8
-      // decision deliberately rather than let it land silently.
-      expect(outcome.result!.output<bool>('hasActivitySummary'), isFalse);
+      final restored = DreamLaneSessions()..restore(sessions.toJson());
+
+      final original = sessions.peek(_laneId)!;
+      final rehydrated = restored.peek(_laneId)!;
+      expect(conversationHistoriesEqual(original, rehydrated), isTrue);
     });
   });
+}
+
+/// A [HistoryCompactor] whose substrate folds the pending batch into a fixed
+/// [summary] — the engine-side compaction seam, stubbed so the suite proves a
+/// dreaming lane compacts its *own* activity history without a live model.
+HistoryCompactor _stubCompactor(String summary) {
+  final dir = Directory.systemTemp.createTempSync('dream_lane_tpl_');
+  addTearDown(() => dir.deleteSync(recursive: true));
+  File('${dir.path}${Platform.pathSeparator}compact_history_v1.yaml')
+      .writeAsStringSync(
+    'system: |\n  fold \${history.compacted}\n'
+    'user: |\n  \${history.batch}\n',
+  );
+  return HistoryCompactor(
+    templates: HistoryCompactionTemplateStore(dir),
+    substrate: (_) async => summary,
+  );
+}
+
+/// A stub dreaming procedure that reports the *session-history* context it was
+/// handed — the count of `priorTurns` (the lane's own accumulated firings) and
+/// the `compactedSummary` (set once the lane has folded). This is how the suite
+/// proves a dreaming lane remembers across firings and feeds back its compacted
+/// activity history; it writes nothing.
+LoadedProcedure _laneSessionStub() {
+  const body = r'''
+Future<Object?> run(inputs) async {
+  final priorTurns = inputs.getOrNull('priorTurns');
+  final turns = priorTurns is List ? priorTurns : const [];
+  return {
+    'priorTurnCount': turns.length,
+    'compactedSummary': inputs.getOrNull('compactedSummary'),
+  };
+}
+''';
+  final source = '''
+/// @procedure
+/// id: $_laneId
+/// version: 1
+/// summary: a stub dreaming lane that reports its session history
+/// successCriterion: returns its prior-turn count
+/// budget: { wallClockMs: 60000 }
+/// inputs:
+///   - { name: source, type: String, required: true }
+///   - { name: priorTurns, type: List }
+///   - { name: compactedSummary, type: String }
+$body
+''';
+  return ProcedureLoader.shared.load(
+    ProcedureSource(
+      ref: ProcedureRef.system('/procedures/${_laneId}_session.dart'),
+      source: source,
+    ),
+  );
 }
 
 /// A stub dreaming procedure that consults `recentRuns` (the lane's own
