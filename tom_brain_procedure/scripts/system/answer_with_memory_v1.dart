@@ -15,6 +15,7 @@
 /// inputs:
 ///   - { name: text, type: String, required: true }
 ///   - { name: priorTurns, type: List, required: false }
+///   - { name: compactedSummary, type: String, required: false }
 ///   - { name: curate, type: bool, required: false }
 /// outputs:
 ///   - { name: answer, type: String }
@@ -190,6 +191,16 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   // Absent on a cold first turn, so default to empty.
   final priorTurns = inputs.has('priorTurns') ? inputs.get('priorTurns') : null;
 
+  // Alongside the verbatim window, the route threads the session's
+  // `compactedSummary` — the distilled prose for everything older than the raw
+  // window (§ 22.5). The answer prompt's `${history}` block renders it *before*
+  // the verbatim turns so the older context stays reachable once the window has
+  // rolled past it. Empty/absent until a session has compacted at least once, so
+  // the no-summary case renders exactly as before. It stays constant across the
+  // outer re-entry passes (only `priorTurns`/`history` grows).
+  final compactedSummary =
+      inputs.has('compactedSummary') ? inputs.get('compactedSummary') : null;
+
   // Step 2 — answer the user through the registered prompt, running the inner
   // tool-calling loop (`tool_loop_v1`, delegated by `sub.run`) under
   // **LLM-driven completion confirmation** as the outer loop (§ 7.2 /
@@ -225,6 +236,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
         'text': text,
         'recall': recall,
         'priorTurns': List<Object?>.of(history),
+        'compactedSummary': compactedSummary,
         'open_todo_reminder': reminder,
       },
     );

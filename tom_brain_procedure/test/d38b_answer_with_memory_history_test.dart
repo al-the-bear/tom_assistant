@@ -72,6 +72,7 @@ void main() {
   Future<ProcedureOutcome> runWith(
     String text, {
     List<Map<String, Object?>>? priorTurns,
+    String? compactedSummary,
   }) async {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
@@ -81,6 +82,7 @@ void main() {
           arguments: <String, Object?>{
             'text': text,
             'priorTurns': ?priorTurns,
+            'compactedSummary': ?compactedSummary,
           },
         ))
         .outcome;
@@ -122,6 +124,50 @@ void main() {
       final prompt = substrate.lastCall!.inputs['prompt']! as String;
       expect(prompt.indexOf('My name is Alexis'),
           lessThan(prompt.indexOf('what is my name?')));
+    });
+  });
+
+  group('D.38b-3 the compacted summary reaches the prompt before the window',
+      () {
+    // The session's `compactedSummary` carries everything older than the raw
+    // window (hub § 22.5). The procedure threads it alongside `priorTurns`, and
+    // the answer prompt renders it *first* so context that has rolled past the
+    // verbatim window stays reachable.
+    test('the summary surfaces ahead of the verbatim turns', () async {
+      await runWith(
+        'what is my name?',
+        priorTurns: <Map<String, Object?>>[
+          <String, Object?>{
+            'user': 'My name is Alexis',
+            'assistant': 'Nice to meet you, Alexis.',
+          },
+        ],
+        compactedSummary:
+            'Earlier the user shared they work on the Tom Brain project.',
+      );
+
+      final prompt = substrate.lastCall!.inputs['prompt']! as String;
+      expect(prompt, contains('Summary of earlier conversation:'));
+      expect(prompt, contains('work on the Tom Brain project'));
+      // Summary precedes the verbatim window, which precedes the live prompt.
+      final summaryAt = prompt.indexOf('Summary of earlier conversation:');
+      final turnsAt = prompt.indexOf('User: My name is Alexis');
+      final liveAt = prompt.indexOf('what is my name?');
+      expect(summaryAt, lessThan(turnsAt));
+      expect(turnsAt, lessThan(liveAt));
+    });
+
+    test('a summary with no prior turns still reaches the prompt', () async {
+      await runWith(
+        'continue please',
+        compactedSummary: 'The user is mid-way through reviewing a design doc.',
+      );
+
+      final prompt = substrate.lastCall!.inputs['prompt']! as String;
+      expect(prompt, contains('Summary of earlier conversation:'));
+      expect(prompt, contains('reviewing a design doc'));
+      // No verbatim turns, so the window convention never appears.
+      expect(prompt, isNot(contains('User:')));
     });
   });
 

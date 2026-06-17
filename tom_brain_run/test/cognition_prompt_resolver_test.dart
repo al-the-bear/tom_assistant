@@ -39,9 +39,10 @@ String _expectedBody({
   required Object? text,
   required Object? priorTurns,
   required Object? reminder,
+  Object? compactedSummary,
 }) {
   const catalogueMarker = r'${tools.catalogue}';
-  final history = _renderPriorTurns(priorTurns);
+  final history = _renderHistory(compactedSummary, priorTurns);
 
   var context = '';
   if (recall is Map) {
@@ -77,6 +78,15 @@ String _todoDisciplineBlock() =>
     'todo.add. As you complete each step, mark it done with todo.update. You '
     'are NOT finished until every todo is done; do not claim completion while '
     'open todos remain.\n\n';
+
+String _renderHistory(Object? compactedSummary, Object? priorTurns) =>
+    '${_renderCompactedSummary(compactedSummary)}'
+    '${_renderPriorTurns(priorTurns)}';
+
+String _renderCompactedSummary(Object? compactedSummary) =>
+    (compactedSummary is String && compactedSummary.isNotEmpty)
+        ? 'Summary of earlier conversation:\n$compactedSummary\n\n'
+        : '';
 
 String _renderPriorTurns(Object? priorTurns) {
   if (priorTurns is! List || priorTurns.isEmpty) return '';
@@ -181,6 +191,89 @@ void main() {
           reminder: '',
         ),
       );
+    });
+
+    test('renders the compacted summary before the verbatim prior turns',
+        () async {
+      final cfg = CognitionConfigLoader.loadFromDir(configRoot);
+      final resolve = buildPromptResolver(cfg, _builtins(configRoot));
+
+      final priorTurns = <Object?>[
+        <String, Object?>{'user': 'newest q', 'assistant': 'newest a'},
+      ];
+      const summary = 'Earlier the user introduced project Apollo and its '
+          'three milestones.';
+      const text = 'What is next?';
+
+      final ResolvedPrompt? resolved = await resolve(promptId, {
+        'text': text,
+        'recall': const <String, Object?>{'nodes': <Object?>[]},
+        'priorTurns': priorTurns,
+        'compactedSummary': summary,
+        'open_todo_reminder': '',
+      });
+
+      expect(resolved, isNotNull);
+      final body = resolved!.templateBody;
+      // Parity with the fake + the byte-stable assembly.
+      expect(
+        body,
+        _expectedBody(
+          recall: const <String, Object?>{'nodes': <Object?>[]},
+          text: text,
+          priorTurns: priorTurns,
+          reminder: '',
+          compactedSummary: summary,
+        ),
+      );
+      // The done-when ordering invariant: the summary block precedes the
+      // verbatim window inside the assembled prompt.
+      final summaryAt = body.indexOf('Summary of earlier conversation:');
+      final turnsAt = body.indexOf('Conversation so far:');
+      expect(summaryAt, greaterThanOrEqualTo(0));
+      expect(turnsAt, greaterThanOrEqualTo(0));
+      expect(summaryAt, lessThan(turnsAt));
+      expect(body, contains(summary));
+      expect(body, contains('newest q'));
+    });
+
+    test('an empty compacted summary renders exactly as today', () async {
+      final cfg = CognitionConfigLoader.loadFromDir(configRoot);
+      final resolve = buildPromptResolver(cfg, _builtins(configRoot));
+
+      final priorTurns = <Object?>[
+        <String, Object?>{'user': 'hello', 'assistant': 'hi there'},
+      ];
+      const text = 'What is the plan?';
+
+      // The byte-stable inputs — once with no summary key at all, once with an
+      // explicit empty summary — must both reproduce the pre-compaction body.
+      final ResolvedPrompt? withoutKey = await resolve(promptId, {
+        'text': text,
+        'recall': const <String, Object?>{'nodes': <Object?>[]},
+        'priorTurns': priorTurns,
+        'open_todo_reminder': '',
+      });
+      final ResolvedPrompt? withEmpty = await resolve(promptId, {
+        'text': text,
+        'recall': const <String, Object?>{'nodes': <Object?>[]},
+        'priorTurns': priorTurns,
+        'compactedSummary': '',
+        'open_todo_reminder': '',
+      });
+
+      final expected = _expectedBody(
+        recall: const <String, Object?>{'nodes': <Object?>[]},
+        text: text,
+        priorTurns: priorTurns,
+        reminder: '',
+      );
+      expect(withoutKey, isNotNull);
+      expect(withEmpty, isNotNull);
+      expect(withoutKey!.templateBody, expected);
+      expect(withEmpty!.templateBody, expected);
+      expect(withEmpty.templateBody,
+          isNot(contains('Summary of earlier conversation:')));
     });
 
     test('does not re-interpret a \${...} token inside user text', () async {

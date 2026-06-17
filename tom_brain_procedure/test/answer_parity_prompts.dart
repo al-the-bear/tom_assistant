@@ -111,11 +111,13 @@ class AnswerParityPrompts {
         final text = inputs['text'];
         final recall = inputs['recall'];
         final priorTurns = inputs['priorTurns'];
+        final compactedSummary = inputs['compactedSummary'];
         final reminder = inputs['open_todo_reminder'];
         return ResolvedPrompt(
           role: _roleForId(promptId),
           llmRoute: route,
-          templateBody: _assemble(recall, text, priorTurns, reminder),
+          templateBody:
+              _assemble(recall, text, priorTurns, reminder, compactedSummary),
           tools: _toolsForId(promptId),
           maxToolLoops: maxToolLoops,
           temperature: temperature,
@@ -209,15 +211,19 @@ class AnswerParityPrompts {
       (String routeName) => const <RouteEntry>[];
 
   /// Reproduces the pre-increment-6 `_assemblePrompt` output, leaving the
-  /// `${tools.catalogue}` marker for `SubstrateBridge.run` to render.
+  /// `${tools.catalogue}` marker for `SubstrateBridge.run` to render. The
+  /// `${history}` block carries the compacted summary first, then the verbatim
+  /// turns (`tom_brain_procedure_specification.md` § 22.5), mirroring the
+  /// production `cognition_prompt_resolver`.
   static String _assemble(
     Object? recall,
     Object? text,
     Object? priorTurns,
     Object? reminder,
+    Object? compactedSummary,
   ) {
     const catalogueMarker = r'${tools.catalogue}';
-    final history = _renderPriorTurns(priorTurns);
+    final history = _renderHistory(compactedSummary, priorTurns);
 
     var context = '';
     if (recall is Map) {
@@ -257,6 +263,21 @@ class AnswerParityPrompts {
         'are NOT finished until every todo is done; do not claim completion while '
         'open todos remain.\n\n';
   }
+
+  /// Reproduces the production `_renderHistory`: the compacted summary first
+  /// (when a session has compacted at least once), then the verbatim turns.
+  /// Byte-identical to the bare prior-turns block when [compactedSummary] is
+  /// empty.
+  static String _renderHistory(Object? compactedSummary, Object? priorTurns) =>
+      '${_renderCompactedSummary(compactedSummary)}'
+      '${_renderPriorTurns(priorTurns)}';
+
+  /// Reproduces the production `_renderCompactedSummary`: the labelled summary
+  /// block, or the empty string when nothing has been compacted yet.
+  static String _renderCompactedSummary(Object? compactedSummary) =>
+      (compactedSummary is String && compactedSummary.isNotEmpty)
+          ? 'Summary of earlier conversation:\n$compactedSummary\n\n'
+          : '';
 
   /// Reproduces the pre-increment-6 `_renderPriorTurns`.
   static String _renderPriorTurns(Object? priorTurns) {

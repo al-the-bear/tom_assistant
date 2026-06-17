@@ -134,14 +134,16 @@ proc.RouteChainResolver buildRouteChainResolver(CognitionConfig config) {
 const String _catalogueToken = r'${tools.catalogue}';
 
 /// The input keys that map onto a *purpose-built* block renderer rather than the
-/// generic `${<key>}` → literal-string path: `priorTurns` renders the labelled
-/// `${history}` conversation block, `recall` the `${recall}` memory preamble,
-/// `open_todo_reminder` the `${open_todo_reminder}` suffix, and `todos` the
-/// `${todo_entries}` checklist (the `todo_list` fragment, §10). Every other input
-/// key `k` binds `${k}` (and the optional `${k?}` form) to its literal string
-/// value (§6 context bindings).
+/// generic `${<key>}` → literal-string path: `priorTurns` and `compactedSummary`
+/// together render the labelled `${history}` conversation block (the summary
+/// first, then the verbatim turns — `tom_brain_procedure_specification.md` § 22.5
+/// / § 22.7), `recall` the `${recall}` memory preamble, `open_todo_reminder` the
+/// `${open_todo_reminder}` suffix, and `todos` the `${todo_entries}` checklist
+/// (the `todo_list` fragment, §10). Every other input key `k` binds `${k}` (and
+/// the optional `${k?}` form) to its literal string value (§6 context bindings).
 const Set<String> _speciallyRenderedKeys = {
   'priorTurns',
+  'compactedSummary',
   'recall',
   'open_todo_reminder',
   'todos',
@@ -150,8 +152,9 @@ const Set<String> _speciallyRenderedKeys = {
 /// Builds the protected restore map for one prompt's [inputs].
 ///
 /// The [_speciallyRenderedKeys] map onto their own `${…}` tokens through the
-/// block renderers (`priorTurns`→`${history}`, `recall`→`${recall}`,
-/// `open_todo_reminder`→`${open_todo_reminder}`, `todos`→`${todo_entries}`); the
+/// block renderers (`priorTurns` + `compactedSummary`→`${history}`,
+/// `recall`→`${recall}`, `open_todo_reminder`→`${open_todo_reminder}`,
+/// `todos`→`${todo_entries}`); the
 /// `${tools.catalogue}` marker restores to itself for `SubstrateBridge.run`. Every
 /// *other* input key `k` binds **both** `${k}` and the optional `${k?}` form to
 /// its literal string value, so the §6 thinking bindings (`${text}` /
@@ -167,7 +170,10 @@ const Set<String> _speciallyRenderedKeys = {
 Map<String, String> _buildRestoreMap(Map<String, Object?> inputs) {
   final restore = <String, String>{
     _catalogueToken: _catalogueToken,
-    r'${history}': _renderPriorTurns(inputs['priorTurns']),
+    r'${history}': _renderHistory(
+      inputs['compactedSummary'],
+      inputs['priorTurns'],
+    ),
     r'${recall}': _renderRecall(inputs['recall']),
     r'${open_todo_reminder}': _renderReminder(inputs['open_todo_reminder']),
     r'${todo_entries}': _renderTodoEntries(inputs['todos']),
@@ -249,6 +255,26 @@ Future<String> _resolveProtected(
   });
   return resolved;
 }
+
+/// Renders the full `${history}` block: the compacted summary first (whenever a
+/// session has compacted at least once), then the verbatim prior turns
+/// (`tom_brain_procedure_specification.md` § 22.5 / § 22.7 — `${history}` is the
+/// compacted summary + verbatim turns). When [compactedSummary] is empty the
+/// result is byte-identical to the pre-compaction block (just the prior turns),
+/// so the no-summary case renders exactly as before.
+String _renderHistory(Object? compactedSummary, Object? priorTurns) =>
+    '${_renderCompactedSummary(compactedSummary)}'
+    '${_renderPriorTurns(priorTurns)}';
+
+/// Renders the compacted-summary block — the distilled prose for everything
+/// older than the verbatim window, labelled and followed by a blank line so it
+/// reads above the `Conversation so far:` turns. The empty string when nothing
+/// has been compacted yet (the `${history}` block then carries only the raw
+/// turns, byte-stable with the pre-compaction rendering).
+String _renderCompactedSummary(Object? compactedSummary) =>
+    (compactedSummary is String && compactedSummary.isNotEmpty)
+        ? 'Summary of earlier conversation:\n$compactedSummary\n\n'
+        : '';
 
 /// Renders the prior-turn history block — byte-identical to the pre-§6
 /// `_renderPriorTurns` (`Conversation so far:` label + `User:` / `Assistant:`
