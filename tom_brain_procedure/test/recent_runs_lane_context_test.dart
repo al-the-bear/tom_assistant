@@ -1,6 +1,7 @@
-// Todo 13 (history_compaction_plan.md) — dreaming lanes are fed their own
+// Todos 13–15 (history_compaction_plan.md) — dreaming lanes are fed their own
 // "what has already been done" history so a dream procedure can skip work a
-// prior run already did.
+// prior run already did (13), each lane sizes its own window (14), and that
+// window bounds by drop-oldest rather than by compaction (15).
 //
 // `FreeTimeScheduler.triggerMaintenance(procedureId)` is the single seam every
 // dream firing flows through (the production `dream_cadence_wiring`'s `fire`
@@ -195,6 +196,47 @@ void main() {
       expect(outcome.result!.output<int>('priorRunCount'), 10);
     });
   });
+
+  // Todo 15 (history_compaction_plan.md) — a dreaming lane's activity history is
+  // a bounded drop-oldest window, NOT a compactable `ConversationHistory`. The
+  // answer lane compacts because its `pending` batch grows unbounded and older
+  // turns carry irreplaceable context; a dreaming lane reads a window over the
+  // already-bounded `recent_runs` stack, so crossing a "threshold" drops the
+  // oldest runs rather than folding them — and nothing is lost, because what a
+  // dream produced lives durably in the graph. Activity-history compaction is
+  // therefore declined by design (memory_specification.md § 9.8 "Resolved
+  // (Phase D todo 15)"). This group is the tripwire that pins that decision.
+  group('todo 15 — a dreaming lane bounds activity history by drop-oldest, '
+      'never by compaction', () {
+    Future<void> seedLaneRuns(int count) async {
+      for (var i = 0; i < count; i++) {
+        await seedPriorRun(procedureId: _laneId, summary: 'run #$i');
+      }
+    }
+
+    test(
+        'crossing both rawCount and compactionThreshold stays bounded to '
+        'rawCount and yields no compacted activity summary', () async {
+      // 50 runs — far past both the default rawCount (10) and the default
+      // compactionThreshold (40). If the lane modelled a compactable history it
+      // would fold the older 40 into a summary; instead it drops them.
+      await seedLaneRuns(50);
+
+      final outcome = await schedulerWith(_laneStub()).triggerMaintenance(
+        _laneId,
+        arguments: const <String, Object?>{'source': 'gamma'},
+      );
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      // Bounded by the window, not grown toward a fold: exactly rawCount.
+      expect(outcome.result!.output<int>('priorRunCount'), 10);
+      // No activity-history compaction path exists: the lane is handed no
+      // compacted/activity summary, however many runs it has accumulated. If
+      // this flips, someone wired activity compaction — revisit the § 9.8
+      // decision deliberately rather than let it land silently.
+      expect(outcome.result!.output<bool>('hasActivitySummary'), isFalse);
+    });
+  });
 }
 
 /// A stub dreaming procedure that consults `recentRuns` (the lane's own
@@ -217,10 +259,16 @@ Future<Object?> run(inputs) async {
       }
     }
   }
+  // A dreaming lane is never handed a compacted activity summary (todo #15:
+  // activity-history compaction is declined by design). The lane reports
+  // whether one reached it so the suite can pin that absence as a tripwire.
+  final activitySummary =
+      inputs.getOrNull('compactedSummary') ?? inputs.getOrNull('activitySummary');
   return {
     'priorRunCount': priorRuns.length,
     'skipped': alreadyDone,
     'didWork': !alreadyDone,
+    'hasActivitySummary': activitySummary != null,
   };
 }
 ''';
@@ -234,6 +282,8 @@ Future<Object?> run(inputs) async {
 /// inputs:
 ///   - { name: source, type: String, required: true }
 ///   - { name: recentRuns, type: List }
+///   - { name: compactedSummary, type: String }
+///   - { name: activitySummary, type: String }
 $body
 ''';
   return ProcedureLoader.shared.load(
