@@ -986,7 +986,7 @@ packages:
       path: "../../tom_ai/core/tom_core_agentic"
       relative: true
     source: path
-    version: "1.7.0"
+    version: "1.8.0"
   tom_core_d4rt:
     dependency: transitive
     description:
@@ -1020,10 +1020,10 @@ packages:
     dependency: transitive
     description:
       name: tom_d4rt
-      sha256: fcb988896276bfa78e7cd3f25a7e39541f6f526bac9d4a6e25f45979812ac7a5
+      sha256: "8868001fba81db0fd6fab6d025fa8439687aa286ae2c8b1adc0242224e36f7d1"
       url: "https://pub.dev"
     source: hosted
-    version: "1.8.20"
+    version: "1.8.24"
   tom_d4rt_dcli:
     dependency: transitive
     description:
