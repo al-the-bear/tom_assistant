@@ -69,12 +69,37 @@
 // owns, not work the scheduler should pop and "run").
 
 import 'package:tom_brain_memory/tom_brain_memory.dart'
-    show StackEntry, StackSummary, TomBrainMemoryClient;
+    show
+        StackEntry,
+        StackSummary,
+        TomBrainMemoryClient,
+        procedureRunNodeType,
+        recentRunsStackName;
 
 import '../api/procedure_engine.dart' show ProcedureEngine;
 import '../api/procedure_invocation.dart' show ProcedureInvocation;
 import '../api/procedure_outcome.dart' show ProcedureOutcome;
+import '../recorder/run_records.dart' show producedNodeIdsOutputKey;
 import 'run_coordinator.dart' show RunBody, RunCoordinator, RunSlotBusy;
+
+/// Procedure-input key under which [FreeTimeScheduler.triggerMaintenance]
+/// threads a dreaming lane's *own* prior-run history (todo 13).
+///
+/// A dream procedure that wants to avoid repeating work reads
+/// `inputs.get('recentRuns')` — a list of compact maps, most recent first,
+/// each describing one completed prior run of the *same procedure* (the lane):
+/// `{runId, status, summary, finishedAt, producedNodeIds}`. The key is bound
+/// only when the lane has at least one resolvable prior run, so a first-ever
+/// run's argument map is byte-identical to the no-history case (mirroring the
+/// answer lane's `priorTurns` / `compactedSummary` binding discipline). A
+/// procedure that does not read the key is unaffected.
+const String recentRunsArgumentKey = 'recentRuns';
+
+/// How many `recent_runs` entries [FreeTimeScheduler.triggerMaintenance]
+/// inspects when building a lane's prior-run context. The stack is global
+/// across all procedures, so this caps the scan before filtering to the firing
+/// lane's own runs.
+const int recentRunsContextDepth = 32;
 
 /// A stack is *hot* when its size is strictly greater than this threshold
 /// (§ 5.3: "size above threshold"). The prototype default `0` makes any
@@ -358,19 +383,91 @@ final class FreeTimeScheduler {
         '(stack-harvest tick mode only).',
       );
     }
+    // The lane's prior-run history is read *inside* the background body, not
+    // here: the `recent_runs` lookup is async, and reading it before
+    // `submitBackground` would defer the synchronous `RunSlotBusy` throw a
+    // busy-slot caller relies on (p2_23). Enriching within the body keeps the
+    // slot decision synchronous and the memory read off the hot path.
     return coordinator.submitBackground<ProcedureOutcome>(
-      () => engine
-          .invoke(
-            ProcedureInvocation(
-              procedureId: procedureId,
-              arguments: arguments,
-              version: version,
-            ),
-          )
-          .outcome,
+      () async {
+        final enriched = await _withRecentRunsContext(procedureId, arguments);
+        return engine
+            .invoke(
+              ProcedureInvocation(
+                procedureId: procedureId,
+                arguments: enriched,
+                version: version,
+              ),
+            )
+            .outcome;
+      },
       procedureId: procedureId,
       version: version,
     );
+  }
+
+  /// Returns [arguments] augmented with the firing lane's own prior-run
+  /// history under [recentRunsArgumentKey], or [arguments] unchanged when the
+  /// lane has no resolvable prior run (so a first-ever run is byte-stable).
+  ///
+  /// A caller that already supplied a `recentRuns` argument wins — the seam
+  /// never clobbers an explicit context.
+  Future<Map<String, Object?>> _withRecentRunsContext(
+    String procedureId,
+    Map<String, Object?> arguments,
+  ) async {
+    if (arguments.containsKey(recentRunsArgumentKey)) {
+      return arguments;
+    }
+    final priorRuns = await _recentRunsForLane(procedureId);
+    if (priorRuns.isEmpty) {
+      return arguments;
+    }
+    return <String, Object?>{
+      ...arguments,
+      recentRunsArgumentKey: priorRuns,
+    };
+  }
+
+  /// Reads the global `recent_runs` stack and distils the completed
+  /// `ProcedureRun` records that belong to [procedureId] (the firing lane)
+  /// into compact "what was already done" maps, most recent first.
+  ///
+  /// Best-effort: a stack-read failure or a dangling / wrong-type entry yields
+  /// no context rather than failing the dream run — prior-run history is an
+  /// optimisation (skip repeated work), never a precondition.
+  Future<List<Map<String, Object?>>> _recentRunsForLane(
+    String procedureId,
+  ) async {
+    final List<StackEntry> entries;
+    try {
+      entries = await memory.stacks.peek(
+        recentRunsStackName,
+        k: recentRunsContextDepth,
+      );
+    } on Object {
+      return const <Map<String, Object?>>[];
+    }
+    final laneRuns = <Map<String, Object?>>[];
+    for (final entry in entries) {
+      final node = await memory.get(entry.nodeId);
+      if (node == null || node.typeName != procedureRunNodeType) {
+        continue;
+      }
+      final values = node.values;
+      if (values['procedureId'] != procedureId) {
+        continue;
+      }
+      laneRuns.add(<String, Object?>{
+        'runId': values['runId'],
+        'status': values['status'],
+        'summary': values['summary'],
+        'finishedAt': values['finishedAt'],
+        producedNodeIdsOutputKey:
+            values[producedNodeIdsOutputKey] ?? const <String>[],
+      });
+    }
+    return List<Map<String, Object?>>.unmodifiable(laneRuns);
   }
 
   /// Picks the highest-priority hot stack among the [summaries], restricted to

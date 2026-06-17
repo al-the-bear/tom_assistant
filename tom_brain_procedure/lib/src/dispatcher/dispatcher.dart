@@ -471,7 +471,9 @@ export 'free_time_scheduler.dart'
         ScheduledPick,
         defaultHotPriorityThreshold,
         defaultHotSizeThreshold,
-        defaultSchedulableStacks;
+        defaultSchedulableStacks,
+        recentRunsArgumentKey,
+        recentRunsContextDepth;
 // `InboundKinds` moved to `tom_brain_shared` at the D.52 reuse-extraction
 // pass (Phase E produces the hint, Phase D consumes it); consumers import
 // it from `package:tom_brain_shared/tom_brain_shared.dart`.
