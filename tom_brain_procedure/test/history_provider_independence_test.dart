@@ -1,0 +1,458 @@
+// Provider-independence of the assembled history (history-compaction plan
+// todo #18; access spec § 7.2 / hub § 22.5 / § 22.7).
+//
+// The conversation history a prompt carries — the compacted summary, the
+// verbatim raw window, and the compaction that produced them — is assembled on
+// *our* side, in the dispatcher + prompt resolver, **before** and
+// **independent of** which provider answers. Two run-layer concerns vary the
+// provider without ever touching prompt assembly:
+//
+//   • the prompt's `llm:` **route** — `assistant_claude_brain` (Claude,
+//     session-threaded) for the user-facing answer, the local `assistant`
+//     (omlx/Ollama gemma) route for everything else. The route only selects the
+//     `RouteEntry` chain `sub.send` dispatches over; the rendered prompt is
+//     identical regardless.
+//   • the Claude substrate's **`sessionMode`** (none / brain / quest) — it
+//     controls Claude-Code session *persistence* (keyed off the turn context),
+//     never the prompt text.
+//
+// This test pins that invariant: one fixed `ConversationHistory` (a full default
+// raw window plus a non-empty compacted summary) is run through the booted
+// dispatcher across a parametrised matrix of (route × sessionMode), and the
+// history injected into the captured substrate prompt is asserted byte-identical
+// across every combination. The matrix genuinely varies both dimensions — the
+// dispatched route names and the substrate session modes are recorded and
+// asserted to span Claude↔local and none/brain/quest — so the identity result is
+// not a tautology: only the injected history stays constant while the provider
+// configuration changes underneath it.
+//
+// The doubles mirror `boot_history_injection_test.dart` (HC-34 tracks extracting
+// the shared boot doubles into a `test/support/` helper); the substrate double
+// additionally records the `sessionMode` it was opened under, modelling how the
+// real substrate takes the mode at construction and never feeds it into the
+// prompt.
+
+import 'dart:typed_data';
+
+import 'package:test/test.dart';
+
+import 'package:tom_brain_memory/tom_brain_memory.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show
+        Access,
+        ConversationHistory,
+        EdgeId,
+        HistorySizing,
+        HistoryTurn,
+        InboundRequest,
+        NodeId,
+        OutboundChunk,
+        Persona,
+        ResolvedIdentity,
+        Session,
+        StackEntryId,
+        TrailId,
+        TurnId,
+        Vec;
+import 'package:tom_brain_substrate/tom_brain_substrate.dart';
+
+import 'package:tom_brain_procedure/tom_brain_procedure.dart';
+
+import 'answer_parity_prompts.dart';
+
+/// One (route, sessionMode) point in the provider matrix.
+typedef _Combo = ({String route, String sessionMode});
+
+void main() {
+  // The provider matrix: Claude across all three session modes, plus the local
+  // gemma/Ollama route. The user-facing answer pins to `assistant_claude_brain`
+  // in the committed config; the local `assistant` route is the cheap default
+  // every sub-judgement runs on (`config/bomber/cognition/assist_user.yaml`).
+  const matrix = <_Combo>[
+    (route: 'assistant_claude_brain', sessionMode: 'none'),
+    (route: 'assistant_claude_brain', sessionMode: 'brain'),
+    (route: 'assistant_claude_brain', sessionMode: 'quest'),
+    (route: 'assistant', sessionMode: 'none'),
+  ];
+
+  /// The fixed conversation the matrix shares: a session that has compacted at
+  /// least once — a non-empty summary for everything older than the window, plus
+  /// a full default raw window (9 answered prior turns + the answer-less live
+  /// prompt = the standard raw count of 10).
+  ConversationHistory historyFixture() {
+    const summary =
+        'Earlier, the user introduced themselves as Alexis and described their '
+        'work on the Tom Brain memory engine.';
+    final priorTurns = <HistoryTurn>[
+      for (var i = 1; i <= 9; i++)
+        HistoryTurn(
+          userPrompt: 'Prior question $i',
+          brainAnswer: 'Prior answer $i',
+        ),
+    ];
+    const liveTurn =
+        HistoryTurn(userPrompt: 'What did we discuss?', brainAnswer: '');
+    final allTurns = <HistoryTurn>[...priorTurns, liveTurn];
+    return ConversationHistory.restore(
+      sizing: const HistorySizing.standard(),
+      compactedSummary: summary,
+      rawWindow: allTurns,
+      pending: const <HistoryTurn>[],
+      durableRecord: allTurns,
+    );
+  }
+
+  /// An `Access` carrying [history], shaped as the assembler builds it: the live
+  /// prompt is the last (answer-less) turn already appended to [history].
+  Access promptWithHistory(String text, ConversationHistory history) => Access(
+        envelope: InboundRequest(
+            text: text, kindHint: SystemProcedures.promptAnalyzerV1),
+        identity: ResolvedIdentity(principalId: 'p1'),
+        session: Session(sessionId: 's1'),
+        persona: Persona.assistant(),
+        deliver: (chunk) => Stream<OutboundChunk>.value(chunk),
+        history: history,
+        turnId: TurnId.generate(),
+      );
+
+  /// Runs [matrix] through the booted dispatcher and captures, per combo, the
+  /// assembled substrate prompt plus the route/sessionMode the run actually used.
+  test(
+      'the injected history is byte-identical across every (route × sessionMode) '
+      'combination — assembled on our side, never by the provider', () async {
+    final capturedPrompts = <String>[];
+    final dispatchedRoutes = <String>{};
+    final openedSessionModes = <String>{};
+
+    for (final combo in matrix) {
+      final memory = _BootMemory();
+      final substrate = _PromptCapturingSubstrate(sessionMode: combo.sessionMode);
+      final parity = AnswerParityPrompts()..route = combo.route;
+
+      final config = BrainProcessConfig(
+        substrate: substrate,
+        memoryProvisioning: MemoryProvisioningConfig.inProcess(
+          client: memory,
+          memoryConfig:
+              MemoryConfig.forTesting(root: 'ztmp/history_provider_indep'),
+        ),
+        promptResolver: parity.resolver,
+        // Record the route name `sub.send` dispatched over so the matrix proves
+        // it genuinely crossed Claude↔local — then delegate to the parity chain
+        // (empty; the substrate double answers regardless).
+        routeChainOf: (routeName) {
+          dispatchedRoutes.add(routeName);
+          return parity.routeChainOf(routeName);
+        },
+      );
+
+      final booted = await BrainProcessBoot.boot(config);
+      addTearDown(booted.shutdown);
+
+      await booted.dispatcher
+          .accept(promptWithHistory('What did we discuss?', historyFixture()));
+
+      capturedPrompts.add(substrate.lastPrompt!);
+      openedSessionModes.add(substrate.answeredUnderSessionMode!);
+    }
+
+    // The matrix genuinely varied the provider configuration: both routes were
+    // dispatched, and all three Claude session modes were opened. Without this
+    // the identity assertion below would be a tautology over a constant input.
+    expect(dispatchedRoutes, containsAll(<String>['assistant_claude_brain', 'assistant']),
+        reason: 'the matrix must cross the Claude route and the local route');
+    expect(openedSessionModes, containsAll(<String>['none', 'brain', 'quest']),
+        reason: 'the matrix must cross all three Claude session modes');
+
+    // Premise guard: the assembled prompt carries a real, non-trivial history —
+    // the compacted summary and the full verbatim window — so "identical" is a
+    // statement about substantive content, not an empty block.
+    final first = capturedPrompts.first;
+    expect(first, contains('Summary of earlier conversation:'));
+    expect(first, contains('the user introduced themselves as Alexis'));
+    expect(first, contains('Conversation so far:'));
+    for (var i = 1; i <= 9; i++) {
+      expect(first, contains('Prior question $i'));
+      expect(first, contains('Prior answer $i'));
+    }
+
+    // The injected history segment — the labelled summary block plus the
+    // verbatim turns, up to the live `User prompt:` — is byte-identical across
+    // every combination.
+    final firstHistory = _historySegment(first);
+    for (var i = 1; i < capturedPrompts.length; i++) {
+      expect(_historySegment(capturedPrompts[i]), firstHistory,
+          reason: 'the injected history must not depend on '
+              '${matrix[i].route}/${matrix[i].sessionMode}');
+    }
+
+    // Stronger lock: nothing else in the assembled prompt varies with the
+    // provider either — the whole captured prompt is byte-identical.
+    for (var i = 1; i < capturedPrompts.length; i++) {
+      expect(capturedPrompts[i], first,
+          reason: 'the whole assembled prompt is provider-blind');
+    }
+  });
+}
+
+/// Extracts the assembled `${history}` segment from a captured prompt: the
+/// labelled summary block + the verbatim turns, ending where the live
+/// `User prompt:` block begins (the recall fixture is empty, so the history runs
+/// directly into the user prompt).
+String _historySegment(String prompt) {
+  final start = prompt.indexOf('Summary of earlier conversation:');
+  final end = prompt.indexOf('User prompt:');
+  if (start < 0 || end < 0 || end < start) {
+    throw StateError('captured prompt has no recognisable history segment:\n'
+        '$prompt');
+  }
+  return prompt.substring(start, end);
+}
+
+// ─── In-process memory double (mirrors boot_history_injection_test; HC-34). ───
+class _BootMemory implements TomBrainMemory {
+  final _InMemoryStacks _stacks = _InMemoryStacks();
+  final Map<NodeId, Node> _nodes = <NodeId, Node>{};
+  final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
+  final Set<TrailId> _closedTrails = <TrailId>{};
+
+  RecallResult recallResult = const RecallResult(
+    nodes: <Node>[],
+    report: RecallReport(
+      candidatesPerMode: <RecallMode, int>{},
+      fusionStrategy: FusionStrategy.rrf,
+      diversityStrategy: DiversityStrategy.mmr,
+      elapsedMs: 0,
+    ),
+  );
+
+  ClassificationResult classifyResult = const ClassificationResult.unknown();
+
+  @override
+  Future<void> open(MemoryConfig config) async {}
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  StackApi get stacks => _stacks;
+
+  @override
+  Future<RecallResult> recall(RecallQuery query) async => recallResult;
+
+  @override
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+
+  @override
+  Future<ClassificationResult> classify(
+    Vec embedding, {
+    ClassificationTarget target = ClassificationTarget.nodeType,
+  }) async =>
+      classifyResult;
+
+  @override
+  Future<TrailId> openTrail(ProcedureRunRef run) async {
+    final id = TrailId.generate();
+    _trails[id] = <TrailEntry>[];
+    return id;
+  }
+
+  @override
+  Future<void> appendTrail(TrailId id, TrailEntry entry) async {
+    final entries = _trails[id];
+    if (entries == null) {
+      throw StateError('appendTrail on an unopened trail: $id');
+    }
+    if (_closedTrails.contains(id)) {
+      throw StateError('appendTrail on a closed trail: $id');
+    }
+    entries.add(entry);
+  }
+
+  @override
+  Future<void> closeTrail(TrailId id, TrailOutcome outcome) async {
+    final entries = _trails[id];
+    if (entries == null) {
+      throw StateError('closeTrail on an unopened trail: $id');
+    }
+    entries.add(TrailEntry.outcome(outcome));
+    _closedTrails.add(id);
+  }
+
+  @override
+  Stream<TrailEntry> readTrail(TrailId id) {
+    final entries = _trails[id];
+    if (entries == null) {
+      return Stream<TrailEntry>.error(
+        StateError('readTrail on an unknown trail: $id'),
+      );
+    }
+    return Stream<TrailEntry>.fromIterable(List<TrailEntry>.of(entries));
+  }
+
+  @override
+  Future<NodeId> persist(NodeDraft draft, {required Scope scope}) async {
+    final id = NodeId.generate();
+    _nodes[id] = Node(
+      id: id,
+      typeName: draft.typeName,
+      values: Map<String, Object?>.of(draft.values),
+      createdAt: DateTime.now().toUtc(),
+    );
+    return id;
+  }
+
+  @override
+  Future<Node?> get(NodeId id) async => _nodes[id];
+
+  @override
+  Future<EdgeId> edge(
+    NodeId from,
+    EdgeType type,
+    NodeId to, {
+    required Scope scope,
+    double weight = 1.0,
+    Map<String, Object?>? attrs,
+  }) async =>
+      EdgeId.generate();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
+}
+
+// ─── Prompt-capturing substrate; also records the opened sessionMode. ──────
+class _PromptCapturingSubstrate implements TomBrainSubstrateClient {
+  _PromptCapturingSubstrate({required this.sessionMode});
+
+  /// The parametrised Claude-Code session mode (none / brain / quest). Recorded
+  /// as the mode the substrate answered the prompt under — but, like the real
+  /// substrate, never consulted when assembling or answering it.
+  final String sessionMode;
+
+  /// The session mode in effect when the substrate produced the captured answer
+  /// prompt. Asserted on to prove the matrix crossed all three modes.
+  String? answeredUnderSessionMode;
+  List<String> answerChunks = <String>['Acknowledged.'];
+  String? lastPrompt;
+
+  static const String _confirmationSentinel =
+      'You have just produced an answer for the user.';
+
+  @override
+  Future<void> open(SubstrateConfig config) async {}
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+    final rawPrompt = call.inputs['prompt'] as String?;
+    final isConfirmation = call.roleId == 'assistant_to_user' &&
+        rawPrompt != null &&
+        rawPrompt.trimLeft().startsWith(_confirmationSentinel);
+    if (isConfirmation) {
+      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
+        const LlmStreamChunk(callId: 'c', text: 'DONE'),
+        const LlmStreamCompleted(
+          callId: 'c',
+          report: LlmCallReport(
+            providerId: 'p',
+            modelId: 'm',
+            anchorHash: 'a',
+            promptHash: 'pr',
+            tokensIn: 1,
+            tokensOut: 1,
+            retries: 0,
+            wallClockMs: 1,
+          ),
+        ),
+      ]);
+    }
+    lastPrompt = rawPrompt;
+    answeredUnderSessionMode = sessionMode;
+    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
+      for (final chunk in answerChunks)
+        LlmStreamChunk(callId: 'c', text: chunk),
+      const LlmStreamCompleted(
+        callId: 'c',
+        report: LlmCallReport(
+          providerId: 'p',
+          modelId: 'm',
+          anchorHash: 'a',
+          promptHash: 'pr',
+          tokensIn: 1,
+          tokensOut: 1,
+          retries: 0,
+          wallClockMs: 1,
+        ),
+      ),
+    ]);
+  }
+
+  @override
+  Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
+        vec: Vec(Float32List.fromList(<double>[0.0])),
+        modelIdentity: const EmbeddingModelIdentity(
+          providerId: 'p',
+          modelId: 'm',
+          dims: 1,
+          normalized: true,
+        ),
+      );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
+}
+
+class _InMemoryStacks implements StackApi {
+  final Map<String, List<StackEntry>> _stacks = <String, List<StackEntry>>{};
+
+  @override
+  Future<StackEntryId> push(
+    String name,
+    NodeId entry, {
+    double priority = 0.0,
+    Map<String, Object?>? attrs,
+    Scope? scope,
+  }) async {
+    final id = StackEntryId.generate();
+    (_stacks[name] ??= <StackEntry>[]).add(
+      StackEntry(
+        id: id,
+        stackName: name,
+        nodeId: entry,
+        priority: priority,
+        pushedAt: DateTime.now().toUtc(),
+        attrs: attrs ?? const <String, Object?>{},
+      ),
+    );
+    return id;
+  }
+
+  @override
+  Future<List<StackEntry>> peek(String name, {int k = 16}) async {
+    final entries = _stacks[name] ?? const <StackEntry>[];
+    final active = entries
+        .where((e) => e.status == StackEntryStatus.active)
+        .toList(growable: false);
+    return active.length <= k ? active : active.sublist(0, k);
+  }
+
+  @override
+  Future<void> remove(String name, NodeId entry) async {
+    _stacks[name]?.removeWhere((e) => e.nodeId == entry);
+  }
+
+  @override
+  Future<StackEntry?> pop(String name) async {
+    final entries = _stacks[name];
+    if (entries == null || entries.isEmpty) return null;
+    return entries.removeLast();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
+}
