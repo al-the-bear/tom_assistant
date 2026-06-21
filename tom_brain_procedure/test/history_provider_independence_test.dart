@@ -26,39 +26,31 @@
 // not a tautology: only the injected history stays constant while the provider
 // configuration changes underneath it.
 //
-// The doubles mirror `boot_history_injection_test.dart` (HC-34 tracks extracting
-// the shared boot doubles into a `test/support/` helper); the substrate double
-// additionally records the `sessionMode` it was opened under, modelling how the
-// real substrate takes the mode at construction and never feeds it into the
-// prompt.
-
-import 'dart:typed_data';
+// The doubles mirror `boot_history_injection_test.dart`; the shared boot doubles
+// now live in `support/boot_doubles.dart` (HC-34). `BootSubstrate` records the
+// `sessionMode` it was opened under, modelling how the real substrate takes the
+// mode at construction and never feeds it into the prompt.
 
 import 'package:test/test.dart';
 
-import 'package:tom_brain_memory/tom_brain_memory.dart';
+import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryConfig;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
         Access,
         ConversationHistory,
-        EdgeId,
         HistorySizing,
         HistoryTurn,
         InboundRequest,
-        NodeId,
         OutboundChunk,
         Persona,
         ResolvedIdentity,
         Session,
-        StackEntryId,
-        TrailId,
-        TurnId,
-        Vec;
-import 'package:tom_brain_substrate/tom_brain_substrate.dart';
+        TurnId;
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
 import 'answer_parity_prompts.dart';
+import 'support/boot_doubles.dart';
 
 /// One (route, sessionMode) point in the provider matrix.
 typedef _Combo = ({String route, String sessionMode});
@@ -125,8 +117,8 @@ void main() {
     final openedSessionModes = <String>{};
 
     for (final combo in matrix) {
-      final memory = _BootMemory();
-      final substrate = _PromptCapturingSubstrate(sessionMode: combo.sessionMode);
+      final memory = BootMemory();
+      final substrate = BootSubstrate(sessionMode: combo.sessionMode);
       final parity = AnswerParityPrompts()..route = combo.route;
 
       final config = BrainProcessConfig(
@@ -207,252 +199,4 @@ String _historySegment(String prompt) {
         '$prompt');
   }
   return prompt.substring(start, end);
-}
-
-// ─── In-process memory double (mirrors boot_history_injection_test; HC-34). ───
-class _BootMemory implements TomBrainMemory {
-  final _InMemoryStacks _stacks = _InMemoryStacks();
-  final Map<NodeId, Node> _nodes = <NodeId, Node>{};
-  final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
-  final Set<TrailId> _closedTrails = <TrailId>{};
-
-  RecallResult recallResult = const RecallResult(
-    nodes: <Node>[],
-    report: RecallReport(
-      candidatesPerMode: <RecallMode, int>{},
-      fusionStrategy: FusionStrategy.rrf,
-      diversityStrategy: DiversityStrategy.mmr,
-      elapsedMs: 0,
-    ),
-  );
-
-  ClassificationResult classifyResult = const ClassificationResult.unknown();
-
-  @override
-  Future<void> open(MemoryConfig config) async {}
-
-  @override
-  Future<void> close() async {}
-
-  @override
-  StackApi get stacks => _stacks;
-
-  @override
-  Future<RecallResult> recall(RecallQuery query) async => recallResult;
-
-  @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
-
-  @override
-  Future<ClassificationResult> classify(
-    Vec embedding, {
-    ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
-
-  @override
-  Future<TrailId> openTrail(ProcedureRunRef run) async {
-    final id = TrailId.generate();
-    _trails[id] = <TrailEntry>[];
-    return id;
-  }
-
-  @override
-  Future<void> appendTrail(TrailId id, TrailEntry entry) async {
-    final entries = _trails[id];
-    if (entries == null) {
-      throw StateError('appendTrail on an unopened trail: $id');
-    }
-    if (_closedTrails.contains(id)) {
-      throw StateError('appendTrail on a closed trail: $id');
-    }
-    entries.add(entry);
-  }
-
-  @override
-  Future<void> closeTrail(TrailId id, TrailOutcome outcome) async {
-    final entries = _trails[id];
-    if (entries == null) {
-      throw StateError('closeTrail on an unopened trail: $id');
-    }
-    entries.add(TrailEntry.outcome(outcome));
-    _closedTrails.add(id);
-  }
-
-  @override
-  Stream<TrailEntry> readTrail(TrailId id) {
-    final entries = _trails[id];
-    if (entries == null) {
-      return Stream<TrailEntry>.error(
-        StateError('readTrail on an unknown trail: $id'),
-      );
-    }
-    return Stream<TrailEntry>.fromIterable(List<TrailEntry>.of(entries));
-  }
-
-  @override
-  Future<NodeId> persist(NodeDraft draft, {required Scope scope}) async {
-    final id = NodeId.generate();
-    _nodes[id] = Node(
-      id: id,
-      typeName: draft.typeName,
-      values: Map<String, Object?>.of(draft.values),
-      createdAt: DateTime.now().toUtc(),
-    );
-    return id;
-  }
-
-  @override
-  Future<Node?> get(NodeId id) async => _nodes[id];
-
-  @override
-  Future<EdgeId> edge(
-    NodeId from,
-    EdgeType type,
-    NodeId to, {
-    required Scope scope,
-    double weight = 1.0,
-    Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
-}
-
-// ─── Prompt-capturing substrate; also records the opened sessionMode. ──────
-class _PromptCapturingSubstrate implements TomBrainSubstrateClient {
-  _PromptCapturingSubstrate({required this.sessionMode});
-
-  /// The parametrised Claude-Code session mode (none / brain / quest). Recorded
-  /// as the mode the substrate answered the prompt under — but, like the real
-  /// substrate, never consulted when assembling or answering it.
-  final String sessionMode;
-
-  /// The session mode in effect when the substrate produced the captured answer
-  /// prompt. Asserted on to prove the matrix crossed all three modes.
-  String? answeredUnderSessionMode;
-  List<String> answerChunks = <String>['Acknowledged.'];
-  String? lastPrompt;
-
-  static const String _confirmationSentinel =
-      'You have just produced an answer for the user.';
-
-  @override
-  Future<void> open(SubstrateConfig config) async {}
-
-  @override
-  Future<void> close() async {}
-
-  @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    final rawPrompt = call.inputs['prompt'] as String?;
-    final isConfirmation = call.roleId == 'assistant_to_user' &&
-        rawPrompt != null &&
-        rawPrompt.trimLeft().startsWith(_confirmationSentinel);
-    if (isConfirmation) {
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c', text: 'DONE'),
-        const LlmStreamCompleted(
-          callId: 'c',
-          report: LlmCallReport(
-            providerId: 'p',
-            modelId: 'm',
-            anchorHash: 'a',
-            promptHash: 'pr',
-            tokensIn: 1,
-            tokensOut: 1,
-            retries: 0,
-            wallClockMs: 1,
-          ),
-        ),
-      ]);
-    }
-    lastPrompt = rawPrompt;
-    answeredUnderSessionMode = sessionMode;
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
-        callId: 'c',
-        report: LlmCallReport(
-          providerId: 'p',
-          modelId: 'm',
-          anchorHash: 'a',
-          promptHash: 'pr',
-          tokensIn: 1,
-          tokensOut: 1,
-          retries: 0,
-          wallClockMs: 1,
-        ),
-      ),
-    ]);
-  }
-
-  @override
-  Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
-}
-
-class _InMemoryStacks implements StackApi {
-  final Map<String, List<StackEntry>> _stacks = <String, List<StackEntry>>{};
-
-  @override
-  Future<StackEntryId> push(
-    String name,
-    NodeId entry, {
-    double priority = 0.0,
-    Map<String, Object?>? attrs,
-    Scope? scope,
-  }) async {
-    final id = StackEntryId.generate();
-    (_stacks[name] ??= <StackEntry>[]).add(
-      StackEntry(
-        id: id,
-        stackName: name,
-        nodeId: entry,
-        priority: priority,
-        pushedAt: DateTime.now().toUtc(),
-        attrs: attrs ?? const <String, Object?>{},
-      ),
-    );
-    return id;
-  }
-
-  @override
-  Future<List<StackEntry>> peek(String name, {int k = 16}) async {
-    final entries = _stacks[name] ?? const <StackEntry>[];
-    final active = entries
-        .where((e) => e.status == StackEntryStatus.active)
-        .toList(growable: false);
-    return active.length <= k ? active : active.sublist(0, k);
-  }
-
-  @override
-  Future<void> remove(String name, NodeId entry) async {
-    _stacks[name]?.removeWhere((e) => e.nodeId == entry);
-  }
-
-  @override
-  Future<StackEntry?> pop(String name) async {
-    final entries = _stacks[name];
-    if (entries == null || entries.isEmpty) return null;
-    return entries.removeLast();
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
 }

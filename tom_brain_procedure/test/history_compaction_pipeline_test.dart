@@ -10,47 +10,44 @@
 //
 // The harness mirrors `boot_history_injection_test.dart`: an in-process memory
 // double + a prompt-answering substrate, with the live prompt riding as the last
-// (answer-less) turn of the seeded `ConversationHistory`. The compactor's own
-// substrate seam is a separate one-line stub (it is injected into the
-// `HistoryCompactor`, not the engine's substrate).
+// (answer-less) turn of the seeded `ConversationHistory`. The shared boot doubles
+// (`BootMemory` / `BootSubstrate`) live in `support/boot_doubles.dart` (HC-34);
+// `BootSubstrate` answers both foreground lanes (the `assistant_to_user`
+// confirmation → `DONE` and the thinking lane's `evaluator` → `ACCEPT`). The
+// compactor's own substrate seam is a separate one-line stub (it is injected into
+// the `HistoryCompactor`, not the engine's substrate).
 
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:test/test.dart';
 
-import 'package:tom_brain_memory/tom_brain_memory.dart';
+import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryConfig;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
         Access,
         ConversationHistory,
-        EdgeId,
         HistorySizing,
         HistoryTurn,
         InboundRequest,
-        NodeId,
         OutboundChunk,
         Persona,
         ResolvedIdentity,
         Session,
-        StackEntryId,
-        TrailId,
-        TurnId,
-        Vec;
-import 'package:tom_brain_substrate/tom_brain_substrate.dart';
+        TurnId;
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
 import 'answer_parity_prompts.dart';
+import 'support/boot_doubles.dart';
 
 void main() {
-  late _BootMemory memory;
-  late _AnsweringSubstrate substrate;
+  late BootMemory memory;
+  late BootSubstrate substrate;
   late AnswerParityPrompts parity;
 
   setUp(() {
-    memory = _BootMemory();
-    substrate = _AnsweringSubstrate();
+    memory = BootMemory();
+    substrate = BootSubstrate();
     parity = AnswerParityPrompts();
   });
 
@@ -218,274 +215,4 @@ user: |
   New turns: ${history.batch}
 ''');
   return HistoryCompactionTemplateStore(dir);
-}
-
-// ─── In-process memory double (mirrors boot_history_injection_test). ──────
-class _BootMemory implements TomBrainMemory {
-  final _InMemoryStacks _stacks = _InMemoryStacks();
-  final Map<NodeId, Node> _nodes = <NodeId, Node>{};
-  final Map<TrailId, List<TrailEntry>> _trails = <TrailId, List<TrailEntry>>{};
-  final Set<TrailId> _closedTrails = <TrailId>{};
-
-  RecallResult recallResult = const RecallResult(
-    nodes: <Node>[],
-    report: RecallReport(
-      candidatesPerMode: <RecallMode, int>{},
-      fusionStrategy: FusionStrategy.rrf,
-      diversityStrategy: DiversityStrategy.mmr,
-      elapsedMs: 0,
-    ),
-  );
-
-  ClassificationResult classifyResult = const ClassificationResult.unknown();
-
-  @override
-  Future<void> open(MemoryConfig config) async {}
-
-  @override
-  Future<void> close() async {}
-
-  @override
-  StackApi get stacks => _stacks;
-
-  @override
-  Future<RecallResult> recall(RecallQuery query) async => recallResult;
-
-  @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
-
-  @override
-  Future<ClassificationResult> classify(
-    Vec embedding, {
-    ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
-
-  @override
-  Future<TrailId> openTrail(ProcedureRunRef run) async {
-    final id = TrailId.generate();
-    _trails[id] = <TrailEntry>[];
-    return id;
-  }
-
-  @override
-  Future<void> appendTrail(TrailId id, TrailEntry entry) async {
-    final entries = _trails[id];
-    if (entries == null) {
-      throw StateError('appendTrail on an unopened trail: $id');
-    }
-    if (_closedTrails.contains(id)) {
-      throw StateError('appendTrail on a closed trail: $id');
-    }
-    entries.add(entry);
-  }
-
-  @override
-  Future<void> closeTrail(TrailId id, TrailOutcome outcome) async {
-    final entries = _trails[id];
-    if (entries == null) {
-      throw StateError('closeTrail on an unopened trail: $id');
-    }
-    entries.add(TrailEntry.outcome(outcome));
-    _closedTrails.add(id);
-  }
-
-  @override
-  Stream<TrailEntry> readTrail(TrailId id) {
-    final entries = _trails[id];
-    if (entries == null) {
-      return Stream<TrailEntry>.error(
-        StateError('readTrail on an unknown trail: $id'),
-      );
-    }
-    return Stream<TrailEntry>.fromIterable(List<TrailEntry>.of(entries));
-  }
-
-  @override
-  Future<NodeId> persist(NodeDraft draft, {required Scope scope}) async {
-    final id = NodeId.generate();
-    _nodes[id] = Node(
-      id: id,
-      typeName: draft.typeName,
-      values: Map<String, Object?>.of(draft.values),
-      createdAt: DateTime.now().toUtc(),
-    );
-    return id;
-  }
-
-  @override
-  Future<Node?> get(NodeId id) async => _nodes[id];
-
-  @override
-  Future<EdgeId> edge(
-    NodeId from,
-    EdgeType type,
-    NodeId to, {
-    required Scope scope,
-    double weight = 1.0,
-    Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
-}
-
-// ─── Prompt-answering substrate (returns chunks, terminates the loop). ────
-//
-// Role-aware so the *same* double serves both foreground answer lanes: the
-// normal `answer_with_memory_v1` branch (whose agent loop terminates on the
-// `assistant_to_user` completion-confirmation) and the recursive
-// `answer_with_thinking_v1` branch (whose `evaluator` self-critique must ACCEPT
-// on the first pass for the loop to terminate, mirroring gt3's substrate).
-class _AnsweringSubstrate implements TomBrainSubstrateClient {
-  List<String> answerChunks = <String>['ok'];
-
-  /// The opening line of the completion-confirmation prompt: that call must
-  /// terminate the agent loop with `DONE`, not contribute answer text.
-  static const String _confirmationSentinel =
-      'You have just produced an answer for the user.';
-
-  @override
-  Future<void> open(SubstrateConfig config) async {}
-
-  @override
-  Future<void> close() async {}
-
-  @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    // The thinking lane's self-critique (§ 4.x stage D): ACCEPT on the first
-    // pass so the recursive loop exits after one iteration. The synthesis draft
-    // is still drawn from `answerChunks`, so the back-filled answer (and the
-    // compaction assertion) match the normal lane.
-    if (call.roleId == 'evaluator') {
-      return _single('ACCEPT');
-    }
-    final rawPrompt = call.inputs['prompt'] as String?;
-    final isConfirmation = call.roleId == 'assistant_to_user' &&
-        rawPrompt != null &&
-        rawPrompt.trimLeft().startsWith(_confirmationSentinel);
-    if (isConfirmation) {
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c', text: 'DONE'),
-        const LlmStreamCompleted(
-          callId: 'c',
-          report: LlmCallReport(
-            providerId: 'p',
-            modelId: 'm',
-            anchorHash: 'a',
-            promptHash: 'pr',
-            tokensIn: 1,
-            tokensOut: 1,
-            retries: 0,
-            wallClockMs: 1,
-          ),
-        ),
-      ]);
-    }
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
-        callId: 'c',
-        report: LlmCallReport(
-          providerId: 'p',
-          modelId: 'm',
-          anchorHash: 'a',
-          promptHash: 'pr',
-          tokensIn: 1,
-          tokensOut: 1,
-          retries: 0,
-          wallClockMs: 1,
-        ),
-      ),
-    ]);
-  }
-
-  /// A one-chunk completion carrying [text] — the role-keyed short replies
-  /// (`ACCEPT`) the thinking loop reads.
-  Stream<LlmStreamEvent> _single(String text) =>
-      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        LlmStreamChunk(callId: 'c', text: text),
-        const LlmStreamCompleted(
-          callId: 'c',
-          report: LlmCallReport(
-            providerId: 'p',
-            modelId: 'm',
-            anchorHash: 'a',
-            promptHash: 'pr',
-            tokensIn: 1,
-            tokensOut: 1,
-            retries: 0,
-            wallClockMs: 1,
-          ),
-        ),
-      ]);
-
-  @override
-  Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
-}
-
-class _InMemoryStacks implements StackApi {
-  final Map<String, List<StackEntry>> _stacks = <String, List<StackEntry>>{};
-
-  @override
-  Future<StackEntryId> push(
-    String name,
-    NodeId entry, {
-    double priority = 0.0,
-    Map<String, Object?>? attrs,
-    Scope? scope,
-  }) async {
-    final id = StackEntryId.generate();
-    (_stacks[name] ??= <StackEntry>[]).add(
-      StackEntry(
-        id: id,
-        stackName: name,
-        nodeId: entry,
-        priority: priority,
-        pushedAt: DateTime.now().toUtc(),
-        attrs: attrs ?? const <String, Object?>{},
-      ),
-    );
-    return id;
-  }
-
-  @override
-  Future<List<StackEntry>> peek(String name, {int k = 16}) async {
-    final entries = _stacks[name] ?? const <StackEntry>[];
-    final active = entries
-        .where((e) => e.status == StackEntryStatus.active)
-        .toList(growable: false);
-    return active.length <= k ? active : active.sublist(0, k);
-  }
-
-  @override
-  Future<void> remove(String name, NodeId entry) async {
-    _stacks[name]?.removeWhere((e) => e.nodeId == entry);
-  }
-
-  @override
-  Future<StackEntry?> pop(String name) async {
-    final entries = _stacks[name];
-    if (entries == null || entries.isEmpty) return null;
-    return entries.removeLast();
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
 }
