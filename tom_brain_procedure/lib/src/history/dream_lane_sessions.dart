@@ -21,10 +21,15 @@
 // plain [ConversationHistory] sized through the same [HistoryConfig] resolver
 // the answer lane uses, and it compacts through the same engine-side
 // [HistoryCompactor] — there is no dream-specific history machinery. The
-// registry is pure (no memory / `dart:io`): persistence to disk so the session
-// survives a process restart rides the [toJson] / [restore] codec, mirroring
-// the access layer's `SessionHistoriesSnapshot` shape, and is wired durably by
-// a later phase (HC-64) exactly as the answer lane's store is.
+// registry stays pure (no memory / `dart:io`): durable persistence so the
+// session survives a process restart rides the [toJson] / [restore] codec
+// (mirroring the access layer's `SessionHistoriesSnapshot` shape) through two
+// injected function seams — [DreamLaneSessions.new]'s `loadSnapshot` rehydrates
+// on construction and `persistSnapshot` writes back after every firing, exactly
+// as the answer lane's `SessionManager` loads from and saves to its
+// `HistoryStore` (HC-82). The seams are plain functions so the store's
+// `dart:io` lives in the assembly layer (`tom_brain_run` wires a
+// `JsonFileHistoryStore`), not here.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show ConversationHistory, HistoryConfig, HistoryTurn;
@@ -52,10 +57,27 @@ final class DreamLaneSessions {
   /// is never folded; nothing is lost because the durable record holds every
   /// firing. When supplied, a lane that crosses its `compactionThreshold` folds
   /// its pending batch into the bounded summary on the next [recordFiring].
+  ///
+  /// [loadSnapshot] / [persistSnapshot] are the durable-persistence seams
+  /// (HC-82). When [loadSnapshot] is given it is invoked once now to rehydrate
+  /// every lane's history from the persisted [toJson] document, so a restart
+  /// resumes each dreaming lane mid-narrative; when [persistSnapshot] is given
+  /// it is invoked after every [recordFiring] with the current [toJson] snapshot
+  /// so the session survives the next restart. Both are plain functions — the
+  /// store's `dart:io` lives in the caller (`tom_brain_run` wires a
+  /// `JsonFileHistoryStore`), keeping this registry pure. Absent (the in-process
+  /// default), nothing is loaded and nothing is written.
   DreamLaneSessions({
     this.historyConfig = const HistoryConfig.standard(),
     HistoryCompactor? compactor,
-  }) : _compactor = compactor;
+    Map<String, Object?> Function()? loadSnapshot,
+    void Function(Map<String, Object?> snapshot)? persistSnapshot,
+  })  : _compactor = compactor,
+        _persistSnapshot = persistSnapshot {
+    if (loadSnapshot != null) {
+      restore(loadSnapshot());
+    }
+  }
 
   /// The sizing source for each lane's history — the same parsed `history:`
   /// block the scheduler and the answer lane resolve through, so a
@@ -64,6 +86,11 @@ final class DreamLaneSessions {
   final HistoryConfig historyConfig;
 
   final HistoryCompactor? _compactor;
+
+  /// The durable-write seam (HC-82): invoked with the [toJson] snapshot after
+  /// every [recordFiring], or `null` for the in-process (non-persisting)
+  /// default.
+  final void Function(Map<String, Object?> snapshot)? _persistSnapshot;
 
   final Map<String, ConversationHistory> _lanes = <String, ConversationHistory>{};
 
@@ -103,6 +130,13 @@ final class DreamLaneSessions {
   /// deletion, since the durable record keeps every firing. The compactor never
   /// throws out (it swallows a substrate failure and keeps `pending` for the
   /// next firing), so recording a firing never fails on a compaction problem.
+  ///
+  /// After the append (and any compaction), the post-state [toJson] snapshot is
+  /// handed to the `persistSnapshot` seam when one is wired (HC-82), so the
+  /// firing — and the folded summary — survive a restart. A persist failure
+  /// propagates: the production caller (`FreeTimeScheduler._recordLaneFiring`)
+  /// treats narrative memory as best-effort and swallows it, but the seam does
+  /// not hide the failure from a caller that does care.
   Future<void> recordFiring(
     String laneId, {
     required String trigger,
@@ -114,6 +148,7 @@ final class DreamLaneSessions {
     if (compactor != null && history.needsCompaction) {
       await compactor.compact(history);
     }
+    _persistSnapshot?.call(toJson());
   }
 
   /// The registry as a JSON-encodable map — the durable-persistence codec
