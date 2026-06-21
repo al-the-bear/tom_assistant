@@ -23,3 +23,8 @@ export 'history_compactor.dart'
         defaultCompactionTemplate,
         historyCompactionFailedCategory,
         historyCompactionTruncatedCategory;
+export 'substrate_history_compaction.dart'
+    show
+        HistoryCompactionSubstrateFailure,
+        SubstrateHistoryCompaction,
+        historyCompactionRoleId;

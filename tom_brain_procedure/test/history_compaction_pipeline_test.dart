@@ -130,6 +130,53 @@ void main() {
   });
 
   test(
+      'an over-threshold session compacts through the real anchored sub.llm seam',
+      () async {
+    // The done-when of open-end step 4: the foreground compactor routes its
+    // completion through the *production* `SubstrateHistoryCompaction` seam —
+    // the anchored, budgeted `sub.llm` path (PE-7/PE-8) — not the one-line
+    // stub the other tests inject. The summary is recovered from the streamed
+    // chunks of a real `TomBrainSubstrateClient` (the shared `BootSubstrate`),
+    // proving a real over-threshold session produces a non-empty
+    // `compactedSummary` through the substrate.
+    substrate.answerChunks = <String>['the answer'];
+
+    // A dedicated shared-double substrate for the compaction completion. Its
+    // `recaller`-routed call (the seam's default role) falls through to the
+    // answer branch, which streams these chunks; the seam concatenates them.
+    final compactionSubstrate = BootSubstrate()
+      ..answerChunks = <String>['distilled ', 'summary'];
+    final compactor = HistoryCompactor(
+      templates: _templates(),
+      substrate: SubstrateHistoryCompaction(client: compactionSubstrate).call,
+    );
+
+    final history = seededHistory(answeredTurns: 5);
+    expect(history.needsCompaction, isTrue,
+        reason: 'precondition: the seeded batch is over threshold');
+
+    final booted =
+        await BrainProcessBoot.boot(config(historyCompactor: compactor));
+    addTearDown(booted.shutdown);
+
+    await booted.dispatcher.accept(promptWithHistory(history));
+
+    // The rewritten summary arrived through the substrate stream (the two
+    // chunks concatenated) — a real completion, not a stubbed return.
+    expect(history.compactedSummary, 'distilled summary');
+    expect(history.pending, isEmpty);
+    expect(history.needsCompaction, isFalse);
+    // The compaction completion actually reached the substrate: the assembled
+    // `compact_history_v1` scaffolds were folded into the single `prompt`
+    // input the anchored role path consumes.
+    expect(compactionSubstrate.lastPrompt, isNotNull);
+    expect(compactionSubstrate.lastPrompt, contains('Fold the new turns'));
+    expect(compactionSubstrate.lastPrompt, contains('New turns:'));
+    // The live answer was still back-filled (the § 7.2 #4 behaviour).
+    expect(history.rawWindow.last.brainAnswer, 'the answer');
+  });
+
+  test(
       'the thinking lane (second pipeline entry) also compacts after back-fill',
       () async {
     // The compaction check lives in the single two-phase route's post-back-fill
