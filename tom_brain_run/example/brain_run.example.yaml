@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../.tom/json-schema/tom_brain/brain_run.schema.json
 # Example whole-process run config for the tom_brain prototype.
 #
 # Consumed by two launchers, both reading this one file:
@@ -138,6 +139,30 @@ memory:
   root: ${env:TOM_BRAIN_MEMORY_ROOT}               # a writable directory; created if absent
   sqliteVec:
     binariesRoot: ${env:TOM_BINARIES_ROOT}/sqlite_vec   # holds <platform>/vec0.<ext>
+
+# ── History: per-lane conversation/activity-history sizing — OPTIONAL ─────────
+# A TOP-LEVEL block (hub spec § 22.6b/c), distinct from the nested
+# `access.history.directory` below (which only sets the durable history path).
+# The four knobs resolve per lane as `lane override -> defaults -> code default
+# (HistorySizing.standard())`; `rawCount` has a hard floor of 10 (a value below
+# 10 is rejected, not clamped). Omit the whole block to take the code defaults.
+# Validates against .tom/json-schema/tom_brain/history.schema.json (wired via the
+# brain_run.schema.json modeline at the top of this file).
+history:
+  defaults:
+    rawCount: 10                # verbatim turns always kept (floor 10)
+    compactionThreshold: 40     # pending turns behind the window that trigger compaction
+    maxCompactedTokens: 1024    # upper bound on the compacted summary, in tokens
+    maxCompactedChars: 6000     # upper bound on the compacted summary, in characters
+  # Optional per-lane overrides keyed by laneId. A lane with no entry inherits
+  # `defaults`; an entry may set any subset of the four knobs. Examples:
+  # lanes:
+  #   foreground:               # the interactive answer lane (foregroundAnswerLaneId)
+  #     rawCount: 16            # keep more verbatim turns for live conversation
+  #     compactionThreshold: 60
+  #   dream_consolidate:        # the slow consolidation dreaming lane
+  #     rawCount: 10
+  #     maxCompactedTokens: 2048
 
 # ── Access: the channels prompts arrive on ───────────────────────────────────
 access:
