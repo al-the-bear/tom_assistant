@@ -70,6 +70,14 @@
 //          REVISE, ACCEPT writes and rolls back two drafts before keeping the
 //          third; only the accepted draft survives on disk (§ 4.4–§ 4.7).
 
+// @Timeout — heavy end-to-end d4rt integration test (full creation loop /
+// multiple drafts). Under the default parallel runner (one isolate per core) the
+// box is oversubscribed and this test can exceed the 30s package:test default
+// from CPU starvation alone; it passes in isolation. The generous ceiling removes
+// the false TimeoutException and only ever bites a genuine hang.
+@Timeout(Duration(minutes: 3))
+library;
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';

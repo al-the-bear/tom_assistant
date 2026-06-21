@@ -26,6 +26,14 @@
 // boot without the packaged vec0 binary (P1.1), so the group is skipped — not
 // failed — when no binary is present for the platform.
 
+// @Timeout — heavy end-to-end d4rt integration test (real store / vec0 / full
+// procedure). Under the default parallel runner (one isolate per core) the box
+// is oversubscribed and this test can exceed the 30s package:test default from
+// CPU starvation alone; it passes in isolation. The generous ceiling removes the
+// false TimeoutException and only ever bites a genuine hang.
+@Timeout(Duration(minutes: 3))
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 
