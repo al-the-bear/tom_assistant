@@ -40,7 +40,7 @@ import 'package:test/test.dart';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show RecallMode, RecallQuery, Vec;
+    show NodeDraft, RecallMode, RecallQuery, Scope, Vec;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
@@ -223,6 +223,182 @@ void main() {
         isNotEmpty,
         reason: 'alpha must recall its own Event from its own store',
       );
+    }, skip: skipNoBinary);
+  });
+
+  // ── Step 7 — auto-create-on-write for unknown profiles ─────────────────
+  // (`memory_session_profiles.md` § 8.2, decisions MSPP-24 / MSPP-25.)
+  //
+  // Done-when (plan step 7): "Write to a fresh profile creates its DB; read of
+  // a fresh profile returns empty; no exception in either path."
+  //
+  // Under Option B (MSPP-23) a non-default profile is *provisioned as its own
+  // transport*, and `SqliteTomBrainMemory.open(baseConfig.withProfile(name))`
+  // already builds the full `<root>/profiles/<name>/` layout and seeds the
+  // bootstrap catalogue idempotently. So "auto-create + seed on first touch" is
+  // structurally automatic — no `createProfile` / `seedProfile` call is needed
+  // (MSPP-24). These cases prove the three observable guarantees: a write to a
+  // never-seen profile materialises its DB and persists, a read of a never-seen
+  // profile returns empty, and a path-escaping name is rejected *before* any
+  // store is provisioned (MSPP-25).
+  group('unknown profiles auto-create on first touch (needs vec0)', () {
+    test('first write to a fresh profile creates its DB + catalogue and '
+        'persists; no exception', () async {
+      final root = Directory.systemTemp.createTempSync('tbm_autocreate_');
+      addTearDown(() {
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      final baseConfig =
+          MemoryConfig.forTesting(root: root.path, binariesRoot: vecRoot!);
+
+      final defaultStore = SqliteTomBrainMemory();
+      await defaultStore.open(baseConfig);
+      addTearDown(defaultStore.close);
+
+      final profileStores = <String, SqliteTomBrainMemory>{};
+      Future<ProvisionedMemory> provisionInProcess(MemoryConfig config) async {
+        final store = SqliteTomBrainMemory();
+        profileStores[config.profile!] = store;
+        return MemoryProvisioner(
+          MemoryProvisioningConfig.inProcess(
+            client: store,
+            memoryConfig: config,
+          ),
+        ).provision();
+      }
+
+      final profiled = ProfiledMemory(
+        baseConfig: baseConfig,
+        defaultClient: defaultStore,
+        provision: provisionInProcess,
+      );
+      addTearDown(profiled.dispose);
+
+      // The profile has never been touched: no directory exists for it yet.
+      const fresh = 'freshly_minted';
+      final profileDir = Directory(
+        '${root.path}${Platform.pathSeparator}profiles'
+        '${Platform.pathSeparator}$fresh',
+      );
+      expect(profileDir.existsSync(), isFalse,
+          reason: 'precondition: the profile must not exist before first touch');
+
+      // First touch resolves (and so provisions) the profile's transport.
+      final client = await profiled.forProfile(fresh);
+
+      // Auto-create: the profile DB now exists on disk with its bootstrap
+      // catalogue (the 21 node types are seeded by `open()`), and the in-process
+      // store was provisioned exactly once for this profile.
+      expect(profileDir.existsSync(), isTrue,
+          reason: 'first touch must materialise <root>/profiles/<name>/');
+      expect(profileStores.keys, contains(fresh));
+      final catalogue = await client.listNodeTypes();
+      expect(catalogue.map((t) => t.typeName), contains('Event'),
+          reason: 'open() seeds the bootstrap node-type catalogue');
+
+      // A write into the fresh profile persists without error and is readable.
+      final id = await client.persist(
+        NodeDraft(
+          typeName: 'Event',
+          values: const {
+            'summary': 'a note written into a fresh profile',
+            'payload': <String, Object?>{},
+          },
+          embedding: _v768(seed: 7),
+        ),
+        scope: const Scope.nonIdempotent(producer: 'test:autocreate'),
+      );
+      final readBack = await client.get(id);
+      expect(readBack, isNotNull,
+          reason: 'a write into a fresh profile must persist and read back');
+      expect(readBack!.values['summary'], 'a note written into a fresh profile');
+    }, skip: skipNoBinary);
+
+    test('read of a never-written profile returns empty; no exception',
+        () async {
+      final root = Directory.systemTemp.createTempSync('tbm_freshread_');
+      addTearDown(() {
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      final baseConfig =
+          MemoryConfig.forTesting(root: root.path, binariesRoot: vecRoot!);
+
+      final defaultStore = SqliteTomBrainMemory();
+      await defaultStore.open(baseConfig);
+      addTearDown(defaultStore.close);
+
+      Future<ProvisionedMemory> provisionInProcess(MemoryConfig config) async {
+        final store = SqliteTomBrainMemory();
+        return MemoryProvisioner(
+          MemoryProvisioningConfig.inProcess(
+            client: store,
+            memoryConfig: config,
+          ),
+        ).provision();
+      }
+
+      final profiled = ProfiledMemory(
+        baseConfig: baseConfig,
+        defaultClient: defaultStore,
+        provision: provisionInProcess,
+      );
+      addTearDown(profiled.dispose);
+
+      // A read against a never-written profile materialises an empty store and
+      // returns no nodes — empty, not an error (§ 8.2 done-when).
+      final client = await profiled.forProfile('never_written');
+      final recall = await client.recall(
+        const RecallQuery(
+          modes: {RecallMode.bm25},
+          text: 'anything at all',
+          k: 20,
+        ),
+      );
+      expect(recall.nodes, isEmpty,
+          reason: 'a fresh profile holds no user nodes, so recall is empty');
+    }, skip: skipNoBinary);
+
+    test('a path-escaping profile name is rejected before any provisioning',
+        () async {
+      final root = Directory.systemTemp.createTempSync('tbm_badname_');
+      addTearDown(() {
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      final baseConfig =
+          MemoryConfig.forTesting(root: root.path, binariesRoot: vecRoot!);
+
+      final defaultStore = SqliteTomBrainMemory();
+      await defaultStore.open(baseConfig);
+      addTearDown(defaultStore.close);
+
+      var provisionCalls = 0;
+      Future<ProvisionedMemory> provisionInProcess(MemoryConfig config) async {
+        provisionCalls++;
+        final store = SqliteTomBrainMemory();
+        return MemoryProvisioner(
+          MemoryProvisioningConfig.inProcess(
+            client: store,
+            memoryConfig: config,
+          ),
+        ).provision();
+      }
+
+      final profiled = ProfiledMemory(
+        baseConfig: baseConfig,
+        defaultClient: defaultStore,
+        provision: provisionInProcess,
+      );
+      addTearDown(profiled.dispose);
+
+      // The guard (MSPP-25) runs before any provisioning: a name carrying a
+      // path-traversal segment is rejected, and the provision callback is never
+      // invoked, so no store is opened outside `<root>/profiles/`.
+      await expectLater(
+        profiled.forProfile('../../escape'),
+        throwsArgumentError,
+      );
+      expect(provisionCalls, 0,
+          reason: 'a rejected name must never reach the provision callback');
     }, skip: skipNoBinary);
   });
 }

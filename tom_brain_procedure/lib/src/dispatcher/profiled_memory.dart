@@ -26,6 +26,8 @@
 
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show MemoryConfig, TomBrainMemoryClient;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show validateMemoryProfileName;
 
 import 'memory_provisioning.dart' show ProvisionedMemory;
 
@@ -100,12 +102,22 @@ final class ProfiledMemory {
   /// Returns the client bound to [profile], provisioning + caching it on first
   /// use. A `null` / empty / default-named profile resolves to the
   /// boot-provisioned default client.
+  ///
+  /// A non-default [profile] is validated as a safe profile name *before* any
+  /// provisioning (path-traversal guard, MSPP-25): under the per-profile
+  /// transport design this router maps the name straight to a
+  /// `<root>/profiles/<name>/` path without passing through the
+  /// `MemoryProfileRegistry`, so a name carrying a path separator or a `.`/`..`
+  /// segment is rejected here with an [ArgumentError] rather than allowed to
+  /// materialise a store outside the profiles directory. No directory is created
+  /// for a rejected name.
   Future<TomBrainMemoryClient> forProfile(String? profile) async {
     if (_disposed) {
       throw StateError('ProfiledMemory.forProfile after dispose()');
     }
     if (_isDefault(profile)) return _defaultClient;
     final key = profile!;
+    validateMemoryProfileName(key);
 
     final cached = _byProfile[key];
     if (cached != null) return cached.client;
