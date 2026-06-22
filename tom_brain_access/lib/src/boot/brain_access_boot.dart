@@ -58,6 +58,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show AccessLayerInstaller, AccessLayerShutdown, Dispatcher;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show HistorySizing;
 
+import '../config/api_key_config.dart';
 import '../delivery/chunk_stream_delivery.dart';
 import '../delivery/delivery_registry.dart';
 import '../delivery/sse_delivery.dart';
@@ -91,6 +92,15 @@ final class BrainAccessConfig {
   /// sender; the same person's OpenAI + Telegram bindings may map to one
   /// `principalId`.
   final Map<String, IdentityBinding> telegramUserIdBindings;
+
+  /// The configured `access.apiKeys[]` entries (memory_session_profiles.md
+  /// § 5). Each entry's secret namespaces the session + memory ids a token's
+  /// markers select (MSP-4); [BrainAccessBoot.install] folds them into the
+  /// `key → ApiKeyConfig` map the assembler consults on the token-keyed bearer
+  /// path. The loader (step 3) also folds each key's binding into
+  /// [bearerTokenBindings] so the residual authenticates; this list carries the
+  /// *namespace* the binding cannot. Empty (the default) applies no scope.
+  final List<ApiKeyConfig> apiKeys;
 
   /// The persona-as-model vocabulary (E.26), or `null` for the shared default
   /// (`OpenAiPersonaMapping.knownModels`).
@@ -180,6 +190,7 @@ final class BrainAccessConfig {
     required this.anchorPolicy,
     this.bearerTokenBindings = const {},
     this.telegramUserIdBindings = const {},
+    this.apiKeys = const [],
     this.personaVocabulary,
     this.answerLaneSizing = const HistorySizing.standard(),
     this.bearerAuthenticator,
@@ -248,6 +259,14 @@ abstract final class BrainAccessBoot {
   }) {
     final AccessEventBus eventBus = AccessEventBus();
 
+    // Index the configured API keys by their residual secret so the assembler's
+    // token-keyed bearer path can look a key's namespace up in O(1) (MSP-4). A
+    // later duplicate key wins — the loader rejects duplicates upstream, so this
+    // is only a defensive last-write.
+    final Map<String, ApiKeyConfig> apiKeysByKey = <String, ApiKeyConfig>{
+      for (final ApiKeyConfig apiKey in config.apiKeys) apiKey.key: apiKey,
+    };
+
     final DeliveryRegistry deliveryRegistry = DeliveryRegistry(
       onDelivered: eventBus.emit,
       clock: config.clock,
@@ -285,6 +304,7 @@ abstract final class BrainAccessBoot {
       deliveryRegistry: deliveryRegistry,
       eventBus: eventBus,
       bearerAuthenticator: config.bearerAuthenticator,
+      apiKeysByKey: apiKeysByKey,
       classifier: _buildClassifier(config),
       incomingTrailSink: config.incomingTrailSink,
       clock: config.clock,

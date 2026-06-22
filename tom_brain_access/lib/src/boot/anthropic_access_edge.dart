@@ -273,6 +273,13 @@ class AnthropicAccessEdge {
   /// `429` `rate_limit_error` (with `Retry-After`), anchor → `400`
   /// `invalid_request_error`, anything else → `500` `api_error`.
   Response _errorFor(Object error) {
+    if (error is ApiKeyMarkerException) {
+      return _errorResponse(
+        statusCode: 400,
+        type: 'invalid_request_error',
+        message: error.message,
+      );
+    }
     if (error is BearerAuthFailure) {
       return _errorResponse(
         statusCode: bearerAuthHttpStatus,

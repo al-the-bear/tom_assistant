@@ -67,6 +67,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
 import '../adapters/openai_http_sse/chat_completion_sse.dart';
+import '../config/api_key_config.dart';
 import '../delivery/channel_delivery.dart';
 import '../delivery/chunk_stream_delivery.dart';
 import '../delivery/delivery_registry.dart';
@@ -137,6 +138,16 @@ final class AccessAssembler {
   /// rejects an unbound token).
   final BearerTokenAuthenticator? bearerAuthenticator;
 
+  /// The configured API keys, indexed by their (residual) secret
+  /// (memory_session_profiles.md § 5 / § 3.2). When an authenticated residual
+  /// key has an entry here, its `sessionPrefix` / `memoryPrefix` namespace the
+  /// session + memory ids the token's markers selected ([ApiKeyConfig.resolveScope],
+  /// MSP-4). A key with no entry (or the no-authenticator default empty map)
+  /// applies no scope — the session resolves as it always did. Only consulted on
+  /// the token-keyed bearer path; the authenticator-wired (JWT) path skips marker
+  /// parsing entirely (base64url tokens contain `_`).
+  final Map<String, ApiKeyConfig> apiKeysByKey;
+
   /// The optional cheap kind-hint classifier (E.33–E.34). When non-null and the
   /// envelope carries no hint, [_classify] attaches a confident hint; a seam
   /// failure degrades gracefully to no hint (AC-9). `null` skips classification
@@ -178,6 +189,7 @@ final class AccessAssembler {
     required this.deliveryRegistry,
     required this.eventBus,
     this.bearerAuthenticator,
+    this.apiKeysByKey = const {},
     this.classifier,
     this.incomingTrailSink,
     DateTime Function()? clock,
@@ -205,7 +217,9 @@ final class AccessAssembler {
   }) async {
     String? principalId;
     try {
-      final ResolvedIdentity identity = authenticateOpenAi(bearerToken);
+      final ({ResolvedIdentity identity, ResolvedProfileScope? scope}) auth =
+          _authenticateBearerScoped(bearerToken, AccessChannel.openai);
+      final ResolvedIdentity identity = auth.identity;
       principalId = identity.principalId;
       final Persona persona = personaResolver.resolve(modelId);
       await _admit(
@@ -213,6 +227,7 @@ final class AccessAssembler {
         identity: identity,
         envelope: envelope,
         persona: persona,
+        scope: auth.scope,
         buildBinding: (resolvedIdentity, effectiveEnvelope) =>
             SseDeliveryBinding(
           identity: resolvedIdentity,
@@ -258,29 +273,61 @@ final class AccessAssembler {
   /// principal — the channel-blind auth → identity prefix the three HTTP bearer
   /// channels share (OpenAI E.28, Ollama #27, Anthropic #28).
   ///
-  /// Identity is channel-blind (E.24): all bearer channels share one
-  /// `bearerTokenBindings` map, so the only thing [channel] varies is the name
-  /// stamped onto an [IdentityResolutionException]. When a [bearerAuthenticator]
-  /// is wired it validates the credential and the principal is resolved through
-  /// [IdentityResolver.resolveBearerPrincipal]; otherwise the raw token is
-  /// resolved through [IdentityResolver.resolveBearer]. Either way an unbound
-  /// credential surfaces as a typed failure, never a fabricated identity.
+  /// Discards any profile scope; the scope-aware [_authenticateBearerScoped] is
+  /// the full path the cognition edges use. This thin wrapper is the auth-only
+  /// view the embeddings passthrough ([authenticateOpenAi]) reuses — embeddings
+  /// build no `Access`, so a session/memory selection has nowhere to land.
   ResolvedIdentity _authenticateBearer(
+    String bearerToken,
+    AccessChannel channel,
+  ) =>
+      _authenticateBearerScoped(bearerToken, channel).identity;
+
+  /// Validates a bearer credential over [channel] and resolves both the
+  /// principal *and* the (optional) profile scope its embedded markers select
+  /// (memory_session_profiles.md § 3 / § 4).
+  ///
+  /// Two paths, by whether a [bearerAuthenticator] is wired:
+  ///
+  ///   * **Authenticator-wired (JWT, MSP-3 carve-out).** The full token is
+  ///     authenticated as-is and the principal resolved through
+  ///     [IdentityResolver.resolveBearerPrincipal] — *no marker parse*. A
+  ///     base64url JWT legitimately contains `_`, so splitting it on `_` would
+  ///     corrupt the credential; a deployment that authenticates upstream opts
+  ///     out of credential-embedded selection. Scope is always `null`.
+  ///   * **Token-keyed (the API-key path).** The token is split into its
+  ///     markers + residual ([parseApiKeyMarkers], § 3.1); the residual (or the
+  ///     `no-key` substitute for an empty residual, § 6) is authenticated
+  ///     through [IdentityResolver.resolveBearer]. When that residual key has an
+  ///     [ApiKeyConfig] in [apiKeysByKey], its prefixes resolve the markers into
+  ///     a [ResolvedProfileScope] (MSP-4); a key with no entry applies no scope.
+  ///
+  /// Either way an unbound credential surfaces as a typed failure, never a
+  /// fabricated identity; a duplicate marker throws [ApiKeyMarkerException]
+  /// before authentication (the edge maps it to `400`, § 13).
+  ({ResolvedIdentity identity, ResolvedProfileScope? scope})
+      _authenticateBearerScoped(
     String bearerToken,
     AccessChannel channel,
   ) {
     final BearerTokenAuthenticator? authenticator = bearerAuthenticator;
-    if (authenticator == null) {
-      return identityResolver.resolveBearer(
-        bearerToken,
-        channel: channel.wireName,
+    if (authenticator != null) {
+      final TomPrincipal principal = authenticator.authenticate(bearerToken);
+      return (
+        identity: identityResolver.resolveBearerPrincipal(
+          principal,
+          channel: channel.wireName,
+        ),
+        scope: null,
       );
     }
-    final TomPrincipal principal = authenticator.authenticate(bearerToken);
-    return identityResolver.resolveBearerPrincipal(
-      principal,
+    final ApiKeyMarkers markers = parseApiKeyMarkers(bearerToken);
+    final ResolvedIdentity identity = identityResolver.resolveBearer(
+      markers.effectiveResidualKey,
       channel: channel.wireName,
     );
+    final ApiKeyConfig? keyConfig = apiKeysByKey[markers.effectiveResidualKey];
+    return (identity: identity, scope: keyConfig?.resolveScope(markers));
   }
 
   /// Admits one Telegram request.
@@ -395,8 +442,9 @@ final class AccessAssembler {
   }) async {
     String? principalId;
     try {
-      final ResolvedIdentity identity =
-          _authenticateBearer(bearerToken, channel);
+      final ({ResolvedIdentity identity, ResolvedProfileScope? scope}) auth =
+          _authenticateBearerScoped(bearerToken, channel);
+      final ResolvedIdentity identity = auth.identity;
       principalId = identity.principalId;
       final Persona persona = personaResolver.resolve(modelId);
       await _admit(
@@ -404,6 +452,7 @@ final class AccessAssembler {
         identity: identity,
         envelope: envelope,
         persona: persona,
+        scope: auth.scope,
         buildBinding: (resolvedIdentity, effectiveEnvelope) =>
             ChunkStreamDeliveryBinding(
           channel: channel,
@@ -426,12 +475,23 @@ final class AccessAssembler {
   /// A throw from any edge gate propagates to the public method's catch (which
   /// emits `AccessFailed` and rethrows); a classifier failure is swallowed in
   /// [_classify] and never reaches that catch.
+  ///
+  /// [scope] is the optional profile scope an API key's embedded markers
+  /// selected ([_authenticateBearerScoped], MSP-4). When present it is
+  /// *authoritative* over content-driven selection: the session resolves under
+  /// the scope's prefixed id ([SessionManager.resolve]'s `overrideSessionId`)
+  /// and the memory profile is stamped directly from `scope.memoryProfile`,
+  /// bypassing Extension H's [SessionManager.selectMemoryProfile] (MSP-5 — the
+  /// credential already named the profile; nothing past the edge re-derives it).
+  /// `null` (the JWT path, the no-scope key, every non-bearer channel) keeps the
+  /// existing resolve-then-select-profile flow.
   Future<void> _admit({
     required AccessChannel channel,
     required ResolvedIdentity identity,
     required InboundRequest envelope,
     required Persona persona,
     required _BuildBinding buildBinding,
+    ResolvedProfileScope? scope,
     Future<void> Function()? onAdmitted,
   }) async {
     final String principalId = identity.principalId;
@@ -450,24 +510,35 @@ final class AccessAssembler {
 
     // ── Session: resolve the conversation and record this turn against its
     //    histories (the request is now fully admitted, so it legitimately gets
-    //    a turn). The resolution carries the history the engine answers from. ──
+    //    a turn). The resolution carries the history the engine answers from.
+    //    A profile [scope] overrides the conversation id with its prefixed
+    //    session id (MSP-4) — the credential's `session-` marker, not the
+    //    request envelope, names the session. ──
     final SessionResolution session = sessionManager.resolve(
       identity: identity,
       channel: channel,
       envelope: envelope,
+      overrideSessionId: scope?.sessionId,
     );
 
-    // ── Memory-profile selection (Extension H, access spec § 7.4): pick the
-    //    profile this conversation recalls against and stamp it on the session
-    //    handle. Disabled / unwired → the process default (no pinned name); a
+    // ── Memory-profile selection. With a credential [scope] the memory profile
+    //    is already named (MSP-5): stamp the scope's prefixed profile directly
+    //    and bypass Extension H — nothing past the edge re-derives a profile the
+    //    credential chose. Without a scope, run the content-driven selection
+    //    (access spec § 7.4): disabled / unwired → the process default; a
     //    selector outage degrades gracefully (PE-6), it is not a failure. ──
-    final MemoryProfileSelectionOutcome profileOutcome =
-        await sessionManager.selectMemoryProfile(
-      resolution: session,
-      envelope: envelope,
-    );
-    final Session stampedSession =
-        session.session.withMemoryProfile(profileOutcome.profile);
+    final Session stampedSession;
+    if (scope != null) {
+      stampedSession = session.session.withMemoryProfile(scope.memoryProfile);
+    } else {
+      final MemoryProfileSelectionOutcome profileOutcome =
+          await sessionManager.selectMemoryProfile(
+        resolution: session,
+        envelope: envelope,
+      );
+      stampedSession =
+          session.session.withMemoryProfile(profileOutcome.profile);
+    }
 
     // ── Classify (graceful, AC-9): attach a confident kind-hint or leave the
     //    envelope untouched; a classifier outage is not a failure. ──
@@ -643,6 +714,9 @@ final class AccessAssembler {
   static String _failureKindFor(Object error) {
     if (error is BearerAuthFailure) {
       return 'access.auth.failed';
+    }
+    if (error is ApiKeyMarkerException) {
+      return 'access.auth.markers.invalid';
     }
     if (error is IdentityResolutionException) {
       return 'access.identity.unresolved';

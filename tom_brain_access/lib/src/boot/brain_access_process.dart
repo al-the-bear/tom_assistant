@@ -582,6 +582,7 @@ BrainAccessConfig _toBrainAccessConfig(
     anchorPolicy: config.anchorPolicy,
     bearerTokenBindings: config.bearerTokenBindings,
     telegramUserIdBindings: config.telegramUserIdBindings,
+    apiKeys: config.apiKeys,
     personaVocabulary: config.personaVocabulary,
     answerLaneSizing: config.answerLaneSizing,
     bearerAuthenticator: bearerAuthenticator,

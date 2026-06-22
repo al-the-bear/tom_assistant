@@ -458,6 +458,14 @@ class OpenAiAccessEdge {
   /// quota → `429`, anchor → `400`, anything else (a dispatch / engine
   /// failure) → `500`.
   Response _errorFor(Object error) {
+    if (error is ApiKeyMarkerException) {
+      return _errorResponse(
+        statusCode: 400,
+        message: error.message,
+        type: 'invalid_request_error',
+        code: error.code,
+      );
+    }
     if (error is BearerAuthFailure) {
       return _errorResponse(
         statusCode: bearerAuthHttpStatus,

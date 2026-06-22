@@ -271,6 +271,12 @@ class OllamaAccessEdge {
   /// bearer auth / identity → `401`, rate-limit / quota → `429` (with
   /// `Retry-After`), anchor → `400`, anything else → `500`.
   Response _errorFor(Object error) {
+    if (error is ApiKeyMarkerException) {
+      return _errorResponse(
+        statusCode: 400,
+        message: error.message,
+      );
+    }
     if (error is BearerAuthFailure) {
       return _errorResponse(
         statusCode: bearerAuthHttpStatus,
