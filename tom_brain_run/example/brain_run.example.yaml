@@ -190,6 +190,23 @@ access:
   # Telegram bot — OPTIONAL. Set botToken to enable long-polling intake.
   telegram:
     botToken: ${env:TELEGRAM_BOT_TOKEN}            # from @BotFather
+    # Per-chat session/memory namespacing — OPTIONAL (memory_session_profiles.md
+    # § 9.1, MSP-6). Each entry scopes a chat's session + memory commands to its
+    # prefixes; a chat with no entry uses the default prefixes and
+    # `default`/`default` selectors. Validated by the brain_run schema's
+    # `access.telegram.chats[]` sub-schema (each item requires `chatId`).
+    #
+    # NOTE: shown commented because the access loader does not parse this block
+    # yet (memory_session_profiles_plan.md step 3 wires it; step 1 only lands the
+    # schema + this documentation). Uncommenting before step 3 ships is rejected
+    # by AccessConfigLoader (unknown-key gate, AC-12).
+    # chats:
+    #   - chatId: ${env:TELEGRAM_OWNER_USER_ID}
+    #     principal: owner
+    #     sessionPrefix: tg_owner_        # default defaultsession_
+    #     memoryPrefix: tg_owner_         # default defaultmemory_
+    #     defaultSession: default         # default 'default'
+    #     defaultMemory: default          # default 'default'
 
   # Declarative identity source. A Telegram message is only admitted if its
   # sender's numeric id is whitelisted here; an OpenAI request is admitted if
@@ -209,6 +226,29 @@ access:
 
   quota:
     dailyCap: 1000
+
+  # Per-key session/memory namespacing — OPTIONAL (memory_session_profiles.md
+  # § 5.1). Each entry binds an API key to a session prefix and a memory prefix
+  # so two consumers cannot collide; identical prefixes are deliberate sharing.
+  # The reserved `no-key` entry (§ 6) defines the prefixes for keyless usage —
+  # present ⇒ keyless selection allowed; remove it to re-close keyless access.
+  # Runtime-appendable via the `/create_api_key` Telegram command (§ 7).
+  # Validated by the brain_run schema's `access.apiKeys[]` sub-schema (each item
+  # requires `key`).
+  #
+  # NOTE: shown commented because the access loader does not parse this block
+  # yet (memory_session_profiles_plan.md step 3 wires it; step 1 only lands the
+  # schema + this documentation). Uncommenting before step 3 ships is rejected
+  # by AccessConfigLoader (unknown-key gate, AC-12).
+  # apiKeys:
+  #   - key: ${env:ACME_API_KEY}          # the secret; ${env:…} expanded at boot
+  #     principal: owner                   # optional; defaults to a key-derived id
+  #     sessionPrefix: acme_               # optional; default defaultsession_
+  #     memoryPrefix: acme_                # optional; default defaultmemory_
+  #     displayName: ACME bot              # optional
+  #   - key: no-key                        # the well-known keyless selector entry
+  #     sessionPrefix: defaultsession_
+  #     memoryPrefix: defaultmemory_
 
 # ── Extensions ───────────────────────────────────────────────────────────────
 #
