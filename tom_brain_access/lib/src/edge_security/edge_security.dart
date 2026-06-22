@@ -46,6 +46,7 @@
 // `400` are distinct, and the first failing check short-circuits the rest. No
 // production change here — E.32 is purely tests; boot wiring is E.41+.
 
+export 'api_key_markers.dart';
 export 'bearer_auth.dart';
 export 'edge_state_store.dart';
 export 'rate_limiter.dart';
