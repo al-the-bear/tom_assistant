@@ -353,6 +353,58 @@ access:
       );
     });
 
+    test('a configured no-key entry admits keyless access under its prefixes '
+        '(§ 6, MSP-2)', () {
+      const withNoKey = '''
+access:
+  openai:
+    port: 9090
+  rateLimit:
+    capacity: 10
+    refillTokens: 5
+    refillPeriodSeconds: 30
+  quota:
+    dailyCap: 100
+  apiKeys:
+    - key: no-key
+      sessionPrefix: guest_
+      memoryPrefix: guest_
+''';
+      final config = AccessConfigLoader.parse(withNoKey);
+      // Folded into the bearer bindings ⇒ resolveBearer('no-key') will admit.
+      expect(config.bearerTokenBindings.containsKey(noKeyCredential), isTrue);
+      // A keyless (markers-only) request substitutes the no-key credential and
+      // resolves under its prefixes.
+      final markers = parseApiKeyMarkers('session-vip_memory-vip');
+      final entry = config.apiKeyFor(markers.effectiveResidualKey)!;
+      final scope = entry.resolveScope(markers);
+      expect(scope.sessionId, 'guest_vip');
+      expect(scope.memoryProfile, 'guest_vip');
+    });
+
+    test('without a no-key entry, keyless access is closed — the substituted '
+        'credential is unbound (§ 6, MSP-2)', () {
+      const noNoKey = '''
+access:
+  openai:
+    port: 9090
+  rateLimit:
+    capacity: 10
+    refillTokens: 5
+    refillPeriodSeconds: 30
+  quota:
+    dailyCap: 100
+  apiKeys:
+    - key: sk-real
+''';
+      final config = AccessConfigLoader.parse(noNoKey);
+      // No `no-key` binding ⇒ resolveBearer('no-key') finds nothing ⇒ 401 at
+      // the edge (step 5). Proven here at the config layer: the substituted
+      // credential has neither a binding nor an apiKeys entry.
+      expect(config.bearerTokenBindings.containsKey(noKeyCredential), isFalse);
+      expect(config.apiKeyFor(noKeyCredential), isNull);
+    });
+
     test('a missing key in an apiKeys entry is rejected', () {
       const noKeyField = '''
 access:

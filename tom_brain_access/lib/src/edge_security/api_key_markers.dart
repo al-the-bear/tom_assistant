@@ -39,6 +39,17 @@
 // segment, selector values are `_`-free by construction (D-1); a real key may
 // contain `_` (it survives as rejoined residual segments).
 
+/// The reserved credential value for keyless access (§ 6, MSP-2).
+///
+/// A request whose residual key is empty — the Bearer token carried only
+/// markers, or was effectively empty (§ 3.2) — is treated as **keyless** and
+/// authenticated under this well-known credential. It is an *ordinary*
+/// `apiKeys:` entry: keyless access is admitted only while a `no-key` entry is
+/// configured (so authenticating it succeeds), and removing that entry
+/// re-closes keyless access with no other change (MSP-2). Authentication is
+/// never bypassed — "keyless" is a *configured* key, not an absence of one.
+const String noKeyCredential = 'no-key';
+
 /// The result of [parseApiKeyMarkers]: the markers stripped from a Bearer
 /// token plus the residual key left for authentication.
 ///
@@ -67,6 +78,23 @@ final class ApiKeyMarkers {
     required this.sessionSelector,
     required this.memorySelector,
   });
+
+  /// Whether the token carried no real key — [residualKey] is empty, so the
+  /// request is keyless and resolves to [noKeyCredential] (§ 3.2 / § 6).
+  bool get isKeyless => residualKey.isEmpty;
+
+  /// The credential the edge actually authenticates (§ 3.2): [residualKey]
+  /// when the token carried a real key, else the well-known [noKeyCredential]
+  /// for the keyless case. The literal token `no-key` already equals
+  /// [noKeyCredential], so it maps to itself (with or without markers, e.g.
+  /// `session-demo_no-key_memory-demo`).
+  ///
+  /// `IdentityResolver.resolveBearer` validates this value: an empty residual
+  /// is admitted only when a `no-key` `apiKeys:` entry is configured, and is
+  /// rejected (`401`) otherwise (MSP-2). The substitution never fabricates
+  /// identity — it only names the credential to authenticate.
+  String get effectiveResidualKey =>
+      residualKey.isEmpty ? noKeyCredential : residualKey;
 
   @override
   String toString() => 'ApiKeyMarkers(residualKey: "$residualKey", '

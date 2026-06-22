@@ -105,6 +105,45 @@ void main() {
     });
   });
 
+  group('effectiveResidualKey / isKeyless — § 3.2 / § 6 (no-key)', () {
+    test('a real key authenticates verbatim and is not keyless', () {
+      final markers = parseApiKeyMarkers('session-foo_sk-real');
+      expect(markers.isKeyless, isFalse);
+      expect(markers.effectiveResidualKey, 'sk-real');
+    });
+
+    test('a markers-only token is keyless and resolves to no-key', () {
+      final markers = parseApiKeyMarkers('session-foo_memory-bar');
+      expect(markers.residualKey, isEmpty);
+      expect(markers.isKeyless, isTrue);
+      expect(markers.effectiveResidualKey, noKeyCredential);
+      expect(markers.effectiveResidualKey, 'no-key');
+    });
+
+    test('an empty token is keyless and resolves to no-key', () {
+      final markers = parseApiKeyMarkers('');
+      expect(markers.isKeyless, isTrue);
+      expect(markers.effectiveResidualKey, 'no-key');
+    });
+
+    test('the literal token `no-key` maps to itself (not keyless)', () {
+      final markers = parseApiKeyMarkers('no-key');
+      // `no-key` survives as the residual; it is a real (configured) key, so
+      // the request is not "keyless" but resolves to the same credential.
+      expect(markers.residualKey, 'no-key');
+      expect(markers.isKeyless, isFalse);
+      expect(markers.effectiveResidualKey, 'no-key');
+    });
+
+    test('the literal `no-key` with markers maps to itself', () {
+      final markers = parseApiKeyMarkers('session-demo_no-key_memory-demo');
+      expect(markers.residualKey, 'no-key');
+      expect(markers.sessionSelector, 'demo');
+      expect(markers.memorySelector, 'demo');
+      expect(markers.effectiveResidualKey, 'no-key');
+    });
+  });
+
   group('parseApiKeyMarkers — duplicate-marker error (§ 3.1 step 4)', () {
     test('two session markers throw duplicateMarker / code marker.duplicate',
         () {
