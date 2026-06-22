@@ -128,6 +128,32 @@ final class MemoryProvisioningConfig {
         isolateFactory = null,
         isolateNamePrefix = 'TomBrainMemory',
         isolateLogRootPath = null;
+
+  /// A config like this one but provisioning a *separate* transport for the
+  /// profile-bound [config] — the per-profile transport `ProfiledMemory` spawns
+  /// (`memory_session_profiles.md` § 8.3, MSPP-23).
+  ///
+  /// Only the [MemoryTransport.isolate] branch can produce a sibling: its
+  /// [isolateFactory] is a reusable top-level function, so a fresh isolate over
+  /// a different [MemoryConfig] is a straightforward respawn. The
+  /// [MemoryTransport.inProcess] branch holds a single-use [inProcessClient]
+  /// (one client opens exactly one config) with no factory to mint another, so
+  /// it returns `null` — an in-process boot cannot provision extra profiles and
+  /// stays single-store (tests construct `ProfiledMemory` directly with their
+  /// own in-process provision callback instead).
+  MemoryProvisioningConfig? forSiblingProfile(MemoryConfig config) {
+    switch (transport) {
+      case MemoryTransport.isolate:
+        return MemoryProvisioningConfig.isolate(
+          factory: isolateFactory!,
+          memoryConfig: config,
+          isolateNamePrefix: isolateNamePrefix,
+          isolateLogRootPath: isolateLogRootPath,
+        );
+      case MemoryTransport.inProcess:
+        return null;
+    }
+  }
 }
 
 /// A provisioned, opened memory client plus its teardown.

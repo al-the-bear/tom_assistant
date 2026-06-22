@@ -160,6 +160,17 @@ const String _budgetExceededKind = ProcedureBudgetExceeded.errorKind;
 /// The depth the top-level procedure of an `invoke` runs at (§ 5.1 / C.19).
 const int _topLevelDepth = 1;
 
+/// Resolves a run's `memoryProfile` to the [TomBrainMemoryClient] bound to that
+/// profile's database (`memory_session_profiles.md` § 8, D-4 / MSPP-23).
+///
+/// Supplied by the assembler (a `ProfiledMemory.forProfile`); `null` leaves the
+/// engine single-store — every run uses the captured [ProcedureEngine.memory] /
+/// [ProcedureEngine.memoryBridge] regardless of profile (today's behaviour and
+/// the in-process-boot path, which has no per-profile transport factory).
+typedef MemoryClientResolver = Future<TomBrainMemoryClient> Function(
+  String? profile,
+);
+
 /// Resolves, runs, records, and hands back procedure runs.
 ///
 /// One engine serves many invocations; it holds the shared, run-independent
@@ -192,6 +203,7 @@ final class ProcedureEngine {
     required this.memory,
     required this.memoryBridge,
     required this.substrateBridge,
+    this.memoryForProfile,
     this.validator = SandboxValidator.shared,
     this.toolDreamSurface,
     this.toolProcessSurface = const ProcessRunToolSurface(),
@@ -240,8 +252,18 @@ final class ProcedureEngine {
   /// the current snapshot held by [_resolverHandle].
   ProcedureResolver get resolver => _resolverHandle.current;
 
-  /// The memory client the recorder writes every run to.
+  /// The memory client the recorder writes every run to. The default-profile
+  /// client; a per-profile run rebinds to [memoryForProfile]'s client instead.
   final TomBrainMemoryClient memory;
+
+  /// Resolves a run's `memoryProfile` to its database-backed client (§ 8, D-4 /
+  /// MSPP-23), or `null` to stay single-store (every run uses [memory] /
+  /// [memoryBridge]). When set, [_runInternal] resolves the run's client once
+  /// (the profile is already threaded to every nested run) and binds both that
+  /// run's `RunRecorder` and `MemoryBridge` to it, so two requests with
+  /// different selectors write disjoint databases (the MSP-1 isolation
+  /// invariant).
+  final MemoryClientResolver? memoryForProfile;
 
   /// The process-lifetime per-session todo registry (§ 21.4). The engine binds
   /// each run's `ToolContext.todos` to the store of the run's
@@ -576,7 +598,21 @@ final class ProcedureEngine {
     // outcome error, with no run recorded (the procedure never started).
     validator.validate(loaded);
 
-    final recorder = RunRecorder(memory, now: _now, onEntry: onEntry);
+    // Per-profile memory routing (§ 8, D-4 / MSPP-23). Resolve this run's
+    // memory client once from its `profile`; the profile is already threaded to
+    // every nested run (`_executeNested`), so resolving here routes the whole
+    // run tree. With no resolver the engine stays single-store — the recorder
+    // keeps `memory` and the bridge keeps `memoryBridge.client`, byte-identical
+    // to the pre-routing behaviour (these are the same object in production,
+    // but kept distinct here so a directly-constructed engine that passed
+    // different instances is unchanged).
+    final TomBrainMemoryClient? routedClient =
+        memoryForProfile == null ? null : await memoryForProfile!(profile);
+    final TomBrainMemoryClient recorderClient = routedClient ?? memory;
+    final TomBrainMemoryClient bridgeClient =
+        routedClient ?? memoryBridge.client;
+
+    final recorder = RunRecorder(recorderClient, now: _now, onEntry: onEntry);
 
     // Combined per-procedure tree seam (§5.7 / §10 step #9). The tree is built
     // only when a sink is bound — every run (top-level or nested) under a bound
@@ -697,7 +733,7 @@ final class ProcedureEngine {
     // budget leaves the fatal `BudgetLedger` enforcing nothing.
     final writeGuard = MemoryWriteGuard(memoryWriteLimits);
     final runMemoryBridge = MemoryBridge(
-      memoryBridge.client,
+      bridgeClient,
       onCall: recordMemoryCall,
       budget: runBudget,
       agentName: memoryBridge.agentName,
