@@ -236,10 +236,11 @@ access:
   # Validated by the brain_run schema's `access.apiKeys[]` sub-schema (each item
   # requires `key`).
   #
-  # NOTE: shown commented because the access loader does not parse this block
-  # yet (memory_session_profiles_plan.md step 3 wires it; step 1 only lands the
-  # schema + this documentation). Uncommenting before step 3 ships is rejected
-  # by AccessConfigLoader (unknown-key gate, AC-12).
+  # NOTE: the access loader now parses this block (memory_session_profiles_plan.md
+  # step 3 shipped). It is kept commented because it is an OPTIONAL illustration
+  # that references an unset env var: uncomment it and export ACME_API_KEY to use
+  # the first entry. The `no-key` entry needs no env and may be uncommented on its
+  # own to open keyless access under the default prefixes (§ 6).
   # apiKeys:
   #   - key: ${env:ACME_API_KEY}          # the secret; ${env:…} expanded at boot
   #     principal: owner                   # optional; defaults to a key-derived id

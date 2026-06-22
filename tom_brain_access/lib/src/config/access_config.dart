@@ -80,6 +80,7 @@ import '../edge_security/anchor_precheck.dart';
 import '../edge_security/quota.dart';
 import '../edge_security/rate_limiter.dart';
 import '../identity/identity_resolver.dart';
+import 'api_key_config.dart';
 
 /// Raised when the whole-process YAML's `access:` section (or the
 /// document's top-level shape) is malformed (E.44).
@@ -250,6 +251,25 @@ final class AccessConfig {
   /// boot may set it directly.
   final Map<String, IdentityBinding> telegramUserIdBindings;
 
+  /// The per-key session/memory namespacing entries
+  /// (`memory_session_profiles.md` § 5.1, MSP-4). One [ApiKeyConfig] per
+  /// declared API key; the entry carries the credential the residual token is
+  /// matched against plus the `sessionPrefix` / `memoryPrefix` namespace that
+  /// turns a request's selectors into effective ids. Empty when no `apiKeys:`
+  /// block is configured.
+  ///
+  /// Each entry's [ApiKeyConfig.key] is also folded into [bearerTokenBindings]
+  /// by the loader, so an API key authenticates exactly like a user bearer
+  /// token; this list is the *namespace* side, looked up after authentication
+  /// via [apiKeyFor] to resolve the request's session + memory scope.
+  final List<ApiKeyConfig> apiKeys;
+
+  /// Index of [apiKeys] by [ApiKeyConfig.key], built once at construction so
+  /// the edge can resolve a freshly-authenticated residual key to its prefixes
+  /// in O(1) (step 5). Rejects a duplicate key (the same credential declared
+  /// twice is a configuration error, never a silent last-wins).
+  final Map<String, ApiKeyConfig> _apiKeysByKey;
+
   /// The short-horizon burst-throttle policy (E.29).
   final RateLimitPolicy rateLimitPolicy;
 
@@ -310,6 +330,7 @@ final class AccessConfig {
     List<AccessUser> users = const [],
     Map<String, IdentityBinding> bearerTokenBindings = const {},
     Map<String, IdentityBinding> telegramUserIdBindings = const {},
+    List<ApiKeyConfig> apiKeys = const [],
     this.personaVocabulary,
     this.answerLaneSizing = const HistorySizing.standard(),
     this.embeddingCacheTtl = const Duration(minutes: 5),
@@ -317,7 +338,9 @@ final class AccessConfig {
     this.historyDirectory,
   })  : users = List.unmodifiable(users),
         bearerTokenBindings = Map.unmodifiable(bearerTokenBindings),
-        telegramUserIdBindings = Map.unmodifiable(telegramUserIdBindings) {
+        telegramUserIdBindings = Map.unmodifiable(telegramUserIdBindings),
+        apiKeys = List.unmodifiable(apiKeys),
+        _apiKeysByKey = _indexApiKeys(apiKeys) {
     if (openAiPort <= 0) {
       throw ArgumentError.value(openAiPort, 'openAiPort', 'must be > 0');
     }
@@ -350,6 +373,60 @@ final class AccessConfig {
 
   /// Whether an Anthropic channel is configured (a listening port is present).
   bool get hasAnthropic => anthropicPort != null;
+
+  /// The [ApiKeyConfig] whose [ApiKeyConfig.key] is [residualKey], or `null`
+  /// when no `apiKeys:` entry declares that credential
+  /// (`memory_session_profiles.md` § 3.2).
+  ///
+  /// The edge calls this *after* the residual token authenticates against
+  /// [bearerTokenBindings] (step 5): a hit supplies the session/memory
+  /// prefixes; a miss means the credential authenticated as a plain user
+  /// bearer token (no per-key namespacing) and the default prefixes apply.
+  ApiKeyConfig? apiKeyFor(String residualKey) => _apiKeysByKey[residualKey];
+
+  /// Builds the immutable [ApiKeyConfig.key] → entry index, rejecting (with
+  /// [ArgumentError]) a key declared by two entries — a credential is declared
+  /// exactly once.
+  static Map<String, ApiKeyConfig> _indexApiKeys(Iterable<ApiKeyConfig> keys) {
+    final byKey = <String, ApiKeyConfig>{};
+    for (final cfg in keys) {
+      if (byKey.containsKey(cfg.key)) {
+        throw ArgumentError.value(
+          cfg.key,
+          'apiKeys',
+          'duplicate API key — each credential is declared once',
+        );
+      }
+      byKey[cfg.key] = cfg;
+    }
+    return Map.unmodifiable(byKey);
+  }
+
+  /// Projects [apiKeys] onto the bearer-token binding contributions the loader
+  /// folds into [bearerTokenBindings] (`memory_session_profiles.md` § 5.1) —
+  /// the API-key analogue of [bindingsForUsers].
+  ///
+  /// Each entry's [ApiKeyConfig.key] maps to its [ApiKeyConfig.toBinding] (the
+  /// `principalId` is the entry's [ApiKeyConfig.effectivePrincipalId]), so an
+  /// API key authenticates exactly like a user bearer token. A key declared by
+  /// two entries is rejected (with [ArgumentError]) — a credential identifies
+  /// exactly one principal, never a silent last-wins.
+  static Map<String, IdentityBinding> bindingsForApiKeys(
+    Iterable<ApiKeyConfig> apiKeys,
+  ) {
+    final bearer = <String, IdentityBinding>{};
+    for (final cfg in apiKeys) {
+      if (bearer.containsKey(cfg.key)) {
+        throw ArgumentError.value(
+          cfg.key,
+          'apiKeys',
+          'duplicate API key — each credential is declared once',
+        );
+      }
+      bearer[cfg.key] = cfg.toBinding();
+    }
+    return bearer;
+  }
 
   /// Projects a list of declared [users] onto the two runtime binding maps
   /// `(bearerTokenBindings, telegramUserIdBindings)` (Q-E.24.2).

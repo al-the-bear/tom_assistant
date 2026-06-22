@@ -56,6 +56,7 @@ import '../edge_security/quota.dart';
 import '../edge_security/rate_limiter.dart';
 import '../identity/identity_resolver.dart';
 import 'access_config.dart';
+import 'api_key_config.dart';
 
 /// Parses + materialises [AccessConfig] from the whole-process YAML.
 ///
@@ -208,6 +209,7 @@ abstract final class AccessConfigLoader {
         'anthropic',
         'telegram',
         'users',
+        'apiKeys',
         'rateLimit',
         'quota',
         'anchor',
@@ -250,7 +252,17 @@ abstract final class AccessConfigLoader {
       _optionalList(node, 'users', 'access.users'),
       env,
     );
-    final (bearerBindings, telegramBindings) = _projectUserBindings(users);
+    final (userBearerBindings, telegramBindings) = _projectUserBindings(users);
+
+    // The per-key namespacing entries (memory_session_profiles.md § 5.1). Each
+    // entry's secret `key` is folded into the bearer-token map (so an API key
+    // authenticates like a user token); the entries themselves carry the
+    // session/memory prefixes the edge resolves after authentication.
+    final apiKeys = _parseApiKeys(
+      _optionalList(node, 'apiKeys', 'access.apiKeys'),
+      env,
+    );
+    final bearerBindings = _mergeApiKeyBindings(userBearerBindings, apiKeys);
 
     final rateLimit = _parseRateLimit(
       _requireMap(node, 'rateLimit', 'access.rateLimit'),
@@ -285,6 +297,7 @@ abstract final class AccessConfigLoader {
       users: users,
       bearerTokenBindings: bearerBindings,
       telegramUserIdBindings: telegramBindings,
+      apiKeys: apiKeys,
       rateLimitPolicy: rateLimit,
       dailyQuotaPolicy: quota,
       anchorPolicy: anchor,
@@ -472,6 +485,113 @@ abstract final class AccessConfigLoader {
     } on ArgumentError catch (e) {
       throw AccessConfigException('access.users: ${e.message ?? e.toString()}');
     }
+  }
+
+  /// Parses `access.apiKeys` → the per-key namespacing entries
+  /// (`memory_session_profiles.md` § 5.1).
+  ///
+  /// Each list entry is one [ApiKeyConfig]: a required secret `key` (the
+  /// credential the residual token authenticates against, `${ENV}`-expanded
+  /// like every other secret), an optional `principal`, the optional
+  /// `sessionPrefix` / `memoryPrefix` namespace (defaulting to
+  /// [defaultSessionPrefix] / [defaultMemoryPrefix], MSP-4), and an optional
+  /// `displayName`. The well-known `no-key` entry (§ 6) is an ordinary entry
+  /// whose key happens to be `no-key`.
+  static List<ApiKeyConfig> _parseApiKeys(
+    YamlList? node,
+    Map<String, String> env,
+  ) {
+    if (node == null) return const <ApiKeyConfig>[];
+    final keys = <ApiKeyConfig>[];
+    for (var i = 0; i < node.length; i++) {
+      final entry = node[i];
+      if (entry is! YamlMap) {
+        throw AccessConfigException(
+          'access.apiKeys[$i] must be a map (got ${entry.runtimeType}).',
+        );
+      }
+      keys.add(_parseApiKey(entry, env, 'access.apiKeys[$i]'));
+    }
+    return keys;
+  }
+
+  static ApiKeyConfig _parseApiKey(
+    YamlMap node,
+    Map<String, String> env,
+    String path,
+  ) {
+    _rejectUnknownKeys(
+      node,
+      const <String>{
+        'key',
+        'principal',
+        'sessionPrefix',
+        'memoryPrefix',
+        'displayName',
+      },
+      path,
+    );
+    // The credential is a secret, so it `${ENV}`-expands like the user bearer
+    // tokens; a literal value (e.g. `no-key`) carries no `${}` and expands to
+    // itself. The principal / prefixes / displayName are non-secret namespace
+    // labels and are taken verbatim (matching `AccessUser.id`).
+    final key = _expandEnv(
+      _requireString(node, 'key', '$path.key'),
+      env,
+      '$path.key',
+    );
+    if (key.isEmpty) {
+      throw AccessConfigException('$path.key must be non-empty.');
+    }
+    final principal = _optionalString(node, 'principal', '$path.principal');
+    final sessionPrefix =
+        _optionalString(node, 'sessionPrefix', '$path.sessionPrefix') ??
+            defaultSessionPrefix;
+    final memoryPrefix =
+        _optionalString(node, 'memoryPrefix', '$path.memoryPrefix') ??
+            defaultMemoryPrefix;
+    final displayName = _optionalString(node, 'displayName', '$path.displayName');
+    try {
+      return ApiKeyConfig(
+        key: key,
+        principal: principal,
+        sessionPrefix: sessionPrefix,
+        memoryPrefix: memoryPrefix,
+        displayName: displayName,
+      );
+    } on ArgumentError catch (e) {
+      throw AccessConfigException('$path: ${e.message ?? e.toString()}');
+    }
+  }
+
+  /// Folds the [apiKeys] credentials into the user-derived [userBearer]
+  /// bindings (`memory_session_profiles.md` § 5.1), returning the combined
+  /// bearer-token map the resolver consumes.
+  ///
+  /// A credential identifies exactly one principal, so a key that collides
+  /// with a user bearer token, or with another API key, is rejected as an
+  /// [AccessConfigException] — never a silent last-wins.
+  static Map<String, IdentityBinding> _mergeApiKeyBindings(
+    Map<String, IdentityBinding> userBearer,
+    List<ApiKeyConfig> apiKeys,
+  ) {
+    final Map<String, IdentityBinding> apiKeyBearer;
+    try {
+      apiKeyBearer = AccessConfig.bindingsForApiKeys(apiKeys);
+    } on ArgumentError catch (e) {
+      throw AccessConfigException('access.apiKeys: ${e.message ?? e.toString()}');
+    }
+    final merged = Map<String, IdentityBinding>.of(userBearer);
+    for (final entry in apiKeyBearer.entries) {
+      if (merged.containsKey(entry.key)) {
+        throw const AccessConfigException(
+          'access.apiKeys: an API key collides with a user OpenAI bearer '
+          'token — a credential identifies exactly one principal.',
+        );
+      }
+      merged[entry.key] = entry.value;
+    }
+    return merged;
   }
 
   /// Parses a list of strings, optionally `${ENV}`-expanding each entry.
