@@ -273,8 +273,12 @@ access:
   users:
     - id: owner
       displayName: Owner
-      openaiBearerTokens:
-        - run-token
+      telegramUserIds:
+        - "999"
+  apiKeys:
+    - key: run-token
+      principal: owner
+      displayName: Owner
   rateLimit:
     capacity: 1000
     refillTokens: 1000

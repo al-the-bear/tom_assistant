@@ -235,17 +235,21 @@ ${accessBlock}cognition:
 ''';
 
 /// The `access:` block authenticating a single bearer principal (r32 / r34): a
-/// permissive single-user config whose `openaiBearerTokens` carries [token].
+/// permissive config whose `apiKeys[]` carries [token] under the default
+/// prefixes (G-3 / MSPP-61 — OpenAI bearer credentials are `apiKeys[]` entries).
+/// The default `memoryPrefix` resolves the token's scope to the default memory
+/// profile, which `_isDefault` treats identically to the bare (null-scope) token
+/// the legacy `users[].openaiBearerTokens` shape produced — so the run's memory
+/// behavior is unchanged.
 String bearerAccessBlock(String token) => '''
 access:
   openai:
     port: 8080
     basePath: /v1
-  users:
-    - id: owner
+  apiKeys:
+    - key: $token
+      principal: owner
       displayName: Owner
-      openaiBearerTokens:
-        - $token
   rateLimit:
     capacity: 1000000
     refillTokens: 1000000

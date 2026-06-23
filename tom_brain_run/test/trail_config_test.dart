@@ -91,11 +91,10 @@ access:
   openai:
     port: 8080
     basePath: /v1
-  users:
-    - id: owner
+  apiKeys:
+    - key: run-token
+      principal: owner
       displayName: Owner
-      openaiBearerTokens:
-        - run-token
   rateLimit:
     capacity: 1000000
     refillTokens: 1000000

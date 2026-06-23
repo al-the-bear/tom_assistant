@@ -246,24 +246,25 @@ abstract final class AccessConfigLoader {
       env,
     );
 
-    // The declared humans are the single declarative identity source; the
-    // two runtime binding maps are their projection (Q-E.24.2). Bearer-token
-    // secrets are `${ENV}`-expanded; Telegram user ids are verbatim.
+    // The declared humans are the single declarative *Telegram* identity
+    // source; the Telegram binding map is their projection (Q-E.24.2).
+    // Telegram user ids are verbatim. OpenAI bearer credentials are declared
+    // as `access.apiKeys[]` (MSPP-61 / G-3), not on users.
     final users = _parseUsers(
       _optionalList(node, 'users', 'access.users'),
       env,
     );
-    final (userBearerBindings, telegramBindings) = _projectUserBindings(users);
+    final telegramBindings = _projectUserBindings(users);
 
     // The per-key namespacing entries (memory_session_profiles.md § 5.1). Each
-    // entry's secret `key` is folded into the bearer-token map (so an API key
-    // authenticates like a user token); the entries themselves carry the
+    // entry's secret `key` is the bearer-token map (so an API key
+    // authenticates the request); the entries themselves carry the
     // session/memory prefixes the edge resolves after authentication.
     final apiKeys = _parseApiKeys(
       _optionalList(node, 'apiKeys', 'access.apiKeys'),
       env,
     );
-    final bearerBindings = _mergeApiKeyBindings(userBearerBindings, apiKeys);
+    final bearerBindings = _projectApiKeyBindings(apiKeys);
 
     final rateLimit = _parseRateLimit(
       _requireMap(node, 'rateLimit', 'access.rateLimit'),
@@ -544,7 +545,6 @@ abstract final class AccessConfigLoader {
         'numericId',
         'displayName',
         'claims',
-        'openaiBearerTokens',
         'telegramUserIds',
       },
       path,
@@ -565,17 +565,11 @@ abstract final class AccessConfigLoader {
       _optionalMap(node, 'claims', '$path.claims'),
       '$path.claims',
     );
-    // Both bearer tokens and Telegram user ids `${ENV}`-expand: the ids are
-    // public, but sourcing the owner whitelist from the environment (e.g.
-    // `${TELEGRAM_TOM_BRAIN_USER}` out of the shell profile) is the deployment
-    // workflow, and a literal numeric id carries no `${}` so expansion is a
-    // no-op for it (Q-E.49.2: the expanded value is the identity binding key).
-    final bearerTokens = _parseStringList(
-      _optionalList(node, 'openaiBearerTokens', '$path.openaiBearerTokens'),
-      '$path.openaiBearerTokens',
-      env: env,
-      expandEntries: true,
-    );
+    // Telegram user ids `${ENV}`-expand: the ids are public, but sourcing the
+    // owner whitelist from the environment (e.g. `${TELEGRAM_TOM_BRAIN_USER}`
+    // out of the shell profile) is the deployment workflow, and a literal
+    // numeric id carries no `${}` so expansion is a no-op for it (Q-E.49.2:
+    // the expanded value is the identity binding key).
     final telegramIds = _parseStringList(
       _optionalList(node, 'telegramUserIds', '$path.telegramUserIds'),
       '$path.telegramUserIds',
@@ -589,7 +583,6 @@ abstract final class AccessConfigLoader {
         numericId: numericId,
         displayName: displayName,
         claims: claims,
-        openAiBearerTokens: bearerTokens,
         telegramUserIds: telegramIds,
       );
     } on ArgumentError catch (e) {
@@ -597,11 +590,12 @@ abstract final class AccessConfigLoader {
     }
   }
 
-  /// Projects the declared [users] onto the two runtime binding maps,
+  /// Projects the declared [users] onto the Telegram runtime binding map,
   /// translating the projection's [ArgumentError] (a shared user id / shared
-  /// credential) into a path-prefixed [AccessConfigException].
-  static (Map<String, IdentityBinding>, Map<String, IdentityBinding>)
-      _projectUserBindings(List<AccessUser> users) {
+  /// Telegram credential) into a path-prefixed [AccessConfigException].
+  static Map<String, IdentityBinding> _projectUserBindings(
+    List<AccessUser> users,
+  ) {
     try {
       return AccessConfig.bindingsForUsers(users);
     } on ArgumentError catch (e) {
@@ -686,34 +680,20 @@ abstract final class AccessConfigLoader {
     }
   }
 
-  /// Folds the [apiKeys] credentials into the user-derived [userBearer]
-  /// bindings (`memory_session_profiles.md` § 5.1), returning the combined
-  /// bearer-token map the resolver consumes.
+  /// Projects the [apiKeys] credentials onto the bearer-token binding map the
+  /// resolver consumes (`memory_session_profiles.md` § 5.1; MSPP-61 / G-3 —
+  /// `access.apiKeys[]` is now the sole source of OpenAI bearer credentials).
   ///
-  /// A credential identifies exactly one principal, so a key that collides
-  /// with a user bearer token, or with another API key, is rejected as an
-  /// [AccessConfigException] — never a silent last-wins.
-  static Map<String, IdentityBinding> _mergeApiKeyBindings(
-    Map<String, IdentityBinding> userBearer,
+  /// A credential identifies exactly one principal, so a duplicate key is
+  /// rejected as an [AccessConfigException] — never a silent last-wins.
+  static Map<String, IdentityBinding> _projectApiKeyBindings(
     List<ApiKeyConfig> apiKeys,
   ) {
-    final Map<String, IdentityBinding> apiKeyBearer;
     try {
-      apiKeyBearer = AccessConfig.bindingsForApiKeys(apiKeys);
+      return AccessConfig.bindingsForApiKeys(apiKeys);
     } on ArgumentError catch (e) {
       throw AccessConfigException('access.apiKeys: ${e.message ?? e.toString()}');
     }
-    final merged = Map<String, IdentityBinding>.of(userBearer);
-    for (final entry in apiKeyBearer.entries) {
-      if (merged.containsKey(entry.key)) {
-        throw const AccessConfigException(
-          'access.apiKeys: an API key collides with a user OpenAI bearer '
-          'token — a credential identifies exactly one principal.',
-        );
-      }
-      merged[entry.key] = entry.value;
-    }
-    return merged;
   }
 
   /// Parses a list of strings, optionally `${ENV}`-expanding each entry.

@@ -287,30 +287,6 @@ access:
       expect(config.bearerTokenBindings, isEmpty);
     });
 
-    test('an api key colliding with a user bearer token is rejected', () {
-      const collide = '''
-access:
-  openai:
-    port: 9090
-  rateLimit:
-    capacity: 10
-    refillTokens: 5
-    refillPeriodSeconds: 30
-  quota:
-    dailyCap: 100
-  users:
-    - id: alice
-      openaiBearerTokens:
-        - "shared-secret"
-  apiKeys:
-    - key: shared-secret
-''';
-      expect(
-        () => AccessConfigLoader.parse(collide),
-        throwsA(isA<AccessConfigException>()),
-      );
-    });
-
     test('a duplicate api key is rejected at load', () {
       const dup = '''
 access:

@@ -7,7 +7,7 @@
 #
 # `${env:NAME}` references are expanded from the launching process's environment
 # (memory.root, memory.sqliteVec.binariesRoot, access.telegram.botToken, and
-# each user's openaiBearerTokens). Copy this file, fill in real values (or set
+# each access.apiKeys[].key). Copy this file, fill in real values (or set
 # the env vars), and pass the copy as the launcher's argument.
 
 # ── Substrate: where tokens actually come from ───────────────────────────────
@@ -208,14 +208,13 @@ access:
     #     defaultSession: default         # default 'default'
     #     defaultMemory: default          # default 'default'
 
-  # Declarative identity source. A Telegram message is only admitted if its
-  # sender's numeric id is whitelisted here; an OpenAI request is admitted if
-  # its bearer matches.
+  # Declarative Telegram identity source. A Telegram message is only admitted if
+  # its sender's numeric id is whitelisted here. (OpenAI bearer credentials are
+  # declared as `apiKeys[]` below, G-3 / MSPP-61 — an OpenAI request is admitted
+  # if its bearer matches an `apiKeys[].key`.)
   users:
     - id: owner
       displayName: Owner
-      openaiBearerTokens:
-        - ${env:TOM_BRAIN_OPENAI_TOKEN}            # any opaque string you'll send as Bearer
       telegramUserIds:
         - ${env:TELEGRAM_OWNER_USER_ID}            # your numeric Telegram user id
 
@@ -227,29 +226,28 @@ access:
   quota:
     dailyCap: 1000
 
-  # Per-key session/memory namespacing — OPTIONAL (memory_session_profiles.md
-  # § 5.1). Each entry binds an API key to a session prefix and a memory prefix
-  # so two consumers cannot collide; identical prefixes are deliberate sharing.
-  # The reserved `no-key` entry (§ 6) defines the prefixes for keyless usage —
-  # present ⇒ keyless selection allowed; remove it to re-close keyless access.
-  # Runtime-appendable via the `/create_api_key` Telegram command (§ 7).
-  # Validated by the brain_run schema's `access.apiKeys[]` sub-schema (each item
-  # requires `key`).
-  #
-  # NOTE: the access loader now parses this block (memory_session_profiles_plan.md
-  # step 3 shipped). It is kept commented because it is an OPTIONAL illustration
-  # that references an unset env var: uncomment it and export ACME_API_KEY to use
-  # the first entry. The `no-key` entry needs no env and may be uncommented on its
-  # own to open keyless access under the default prefixes (§ 6).
-  # apiKeys:
-  #   - key: ${env:ACME_API_KEY}          # the secret; ${env:…} expanded at boot
-  #     principal: owner                   # optional; defaults to a key-derived id
-  #     sessionPrefix: acme_               # optional; default defaultsession_
-  #     memoryPrefix: acme_                # optional; default defaultmemory_
-  #     displayName: ACME bot              # optional
-  #   - key: no-key                        # the well-known keyless selector entry
-  #     sessionPrefix: defaultsession_
-  #     memoryPrefix: defaultmemory_
+  # OpenAI bearer credentials + per-key session/memory namespacing
+  # (memory_session_profiles.md § 5.1; G-3 / MSPP-61 — `apiKeys[]` is the sole
+  # source of OpenAI bearer credentials). Each entry binds an API key to a
+  # `principal` and an optional session/memory prefix so two consumers cannot
+  # collide; identical prefixes are deliberate sharing. The reserved `no-key`
+  # entry (§ 6) defines the prefixes for keyless usage — present ⇒ keyless
+  # selection allowed; remove it to re-close keyless access. Runtime-appendable
+  # via the `/create_api_key` Telegram command (§ 7). Validated by the brain_run
+  # schema's `access.apiKeys[]` sub-schema (each item requires `key`).
+  apiKeys:
+    - key: ${env:TOM_BRAIN_OPENAI_TOKEN}  # any opaque string you'll send as Bearer
+      principal: owner                    # shares the owner principal id
+      displayName: Owner
+    # Further OPTIONAL illustrations (commented — they reference unset env vars):
+    # - key: ${env:ACME_API_KEY}          # the secret; ${env:…} expanded at boot
+    #   principal: acme                    # optional; defaults to a key-derived id
+    #   sessionPrefix: acme_               # optional; default defaultsession_
+    #   memoryPrefix: acme_                # optional; default defaultmemory_
+    #   displayName: ACME bot              # optional
+    # - key: no-key                        # the well-known keyless selector entry
+    #   sessionPrefix: defaultsession_
+    #   memoryPrefix: defaultmemory_
 
 # ── Extensions ───────────────────────────────────────────────────────────────
 #
