@@ -42,6 +42,7 @@ import 'dart:async';
 
 import '../history/history.dart';
 import '../ids/turn_id.dart';
+import '../profile/resolved_profile.dart';
 import 'inbound_request.dart';
 import 'outbound_chunk.dart';
 import 'persona.dart';
@@ -128,9 +129,25 @@ final class Access {
   /// (E.41+) always mints and sets it.
   final TurnId? turnId;
 
+  /// The resolved behavioural bundle — *how* this request is processed (entry
+  /// procedure, role, anchoring, template overlay, offered MCP servers,
+  /// budget, rate-limits, advisory cross-axis defaults). The third selection
+  /// axis alongside [session] (conversation) and `session.memoryProfile`
+  /// (database). The edge resolves a `profile-<name>` marker (or a channel
+  /// default) to a [ResolvedProfile] and stamps it here; the dispatcher and
+  /// engine read the resolved bundle, never the marker (SC-4).
+  ///
+  /// Never null: a request that selects no profile carries
+  /// [ResolvedProfile.cognitiveDefault], which is byte-compatible with today's
+  /// behaviour (SC-5). Mirrors `Session.memoryProfile` as a resolved-not-
+  /// selector knob.
+  final ResolvedProfile profile;
+
   /// Builds an immutable `Access`. The five core fields are required — an
   /// `Access` with a missing one could not be routed, scoped, answered, or
   /// delivered. [history] and [turnId] are optional (see their docs).
+  /// [profile] defaults to [ResolvedProfile.cognitiveDefault] so pre-profile
+  /// construction sites keep building byte-compatible `Access` objects (SC-5).
   ///
   /// Construction of [envelope] already rejects an empty / whitespace-only
   /// prompt (see `InboundRequest`), so an "empty inbound request" can
@@ -143,6 +160,7 @@ final class Access {
     required this.deliver,
     this.history,
     this.turnId,
+    this.profile = const ResolvedProfile.cognitiveDefault(),
   });
 
   /// Value equality over the four value fields plus reference identity of
@@ -158,7 +176,8 @@ final class Access {
       other.persona == persona &&
       identical(other.deliver, deliver) &&
       identical(other.history, history) &&
-      other.turnId == turnId;
+      other.turnId == turnId &&
+      other.profile == profile;
 
   @override
   int get hashCode => Object.hash(
@@ -169,6 +188,7 @@ final class Access {
         identityHashCode(deliver),
         identityHashCode(history),
         turnId,
+        profile,
       );
 
   @override
@@ -177,7 +197,8 @@ final class Access {
       'identity: $identity, '
       'session: $session, '
       'persona: $persona, '
-      'deliver: <callback>'
+      'deliver: <callback>, '
+      'profile: ${profile.id}'
       '${history == null ? '' : ', history: <history>'}'
       '${turnId == null ? '' : ', turnId: $turnId'})';
 }
