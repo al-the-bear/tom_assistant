@@ -27,29 +27,22 @@
 // behind a SendPort, but the databases are on disk, so a fresh in-host store
 // re-opened at each profile-bound config reads back exactly what the run wrote
 // (the same constraint r32 documents).
+//
+// The shared scaffolding (endpoint resolution + reachability probe, the
+// whole-process YAML, the vec0-binary skip gate, the standalone-platform
+// install, the HTTP/SSE post helpers, and the in-process MCP inspection harness)
+// lives in `support/live_e2e_harness.dart` (MSPP-60); this suite carries only
+// its namespaced-credential config and the present/absent isolation assertions.
 
-import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:dart_mcp/client.dart' as mcp_client;
-import 'package:dart_mcp/server.dart' as mcp_server;
-import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
-import 'package:tom_basics/tom_basics.dart' show TomPlatformUtils;
 import 'package:tom_brain_access/tom_brain_access.dart' show serveWithShelfIo;
-import 'package:tom_brain_memory/tom_brain_memory.dart'
-    show
-        MemoryConfig,
-        SqliteTomBrainMemory,
-        SqliteVecBinaryResolver,
-        TomBrainMemory,
-        TomBrainMemoryMcpServer;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show defaultMemoryProfile;
 import 'package:tom_brain_run/tom_brain_run.dart';
-import 'package:tom_core_server/tom_core_server.dart'
-    show standalonePlatformUtils;
+
+import 'support/live_e2e_harness.dart';
 
 /// The namespaced API key the run binds. It is deliberately `_`-free (D-6) so
 /// the §3.1 marker grammar — which splits the Bearer on `_` — never mistakes a
@@ -67,224 +60,19 @@ const String _profile = '$_memoryPrefix$_memorySelector';
 /// which is irrelevant to memory isolation.)
 const String _profiledBearer = 'memory-${_memorySelector}_$_apiKey';
 
-/// Locates `<workspace>/tom_binaries/sqlite_vec`. Mirrors r32.
-String? _findSqliteVecRoot() {
-  var dir = Directory.current.absolute;
-  for (var i = 0; i < 8; i++) {
-    final candidate = Directory('${dir.path}${Platform.pathSeparator}tom_binaries'
-        '${Platform.pathSeparator}sqlite_vec');
-    if (candidate.existsSync()) return candidate.path;
-    final parent = dir.parent;
-    if (parent.path == dir.path) break;
-    dir = parent;
-  }
-  return null;
-}
-
-/// A live daemon endpoint (base URI + model). Reachability is a separate awaited
-/// TCP probe done in the test body. Mirrors r32's `_LiveEndpoint`.
-class _LiveEndpoint {
-  final Uri baseUri;
-  final String model;
-  final String daemonName;
-
-  _LiveEndpoint._(this.baseUri, this.model, this.daemonName);
-
-  factory _LiveEndpoint.resolve({
-    required String baseUriEnv,
-    required String defaultBaseUri,
-    required String modelEnv,
-    required String defaultModel,
-    required String daemonName,
-  }) {
-    final env = Platform.environment;
-    final model = env[modelEnv] ?? defaultModel;
-    Uri parsed;
-    try {
-      parsed = Uri.parse(env[baseUriEnv] ?? defaultBaseUri);
-    } on FormatException {
-      parsed = Uri.parse(defaultBaseUri);
-    }
-    final port =
-        parsed.hasPort ? parsed.port : (parsed.scheme == 'https' ? 443 : 80);
-    final path = parsed.path.endsWith('/') ? parsed.path : '${parsed.path}/';
-    return _LiveEndpoint._(
-      parsed.replace(port: port, path: path),
-      model,
-      daemonName,
-    );
-  }
-
-  Future<String?> unreachableReason() async {
-    try {
-      final socket = await Socket.connect(baseUri.host, baseUri.port,
-          timeout: const Duration(seconds: 2));
-      socket.destroy();
-      return null;
-    } on Object catch (e) {
-      return 'no TCP connect to ${baseUri.host}:${baseUri.port} within 2s '
-          '($daemonName not reachable; this live e2e is skipped off-host by '
-          'design): $e';
-    }
-  }
-}
-
-_LiveEndpoint _omlx() => _LiveEndpoint.resolve(
-      baseUriEnv: 'TOM_BRAIN_OMLX_BASE_URI',
-      defaultBaseUri: 'http://10.8.0.7:8000/',
-      modelEnv: 'TOM_BRAIN_OMLX_MODEL',
-      defaultModel: 'gemma-4-26b-a4b-it-4bit',
-      daemonName: 'oMLX',
-    );
-
-_LiveEndpoint _ollama() => _LiveEndpoint.resolve(
-      baseUriEnv: 'TOM_BRAIN_OLLAMA_BASE_URI',
-      defaultBaseUri: 'http://127.0.0.1:11434/',
-      modelEnv: 'TOM_BRAIN_OLLAMA_EMBED_MODEL',
-      defaultModel: 'nomic-embed-text',
-      daemonName: 'Ollama',
-    );
-
-/// The version-controlled cognition config tree the live run wires the `sub.run`
-/// prompt / route resolvers from. Mirrors r32.
-String _cognitionConfigRoot() => Directory(
-      '${Directory.current.absolute.path}${Platform.pathSeparator}config'
-      '${Platform.pathSeparator}bomber${Platform.pathSeparator}cognition',
-    ).absolute.path;
-
-/// Whole-process YAML for the live run. Identical to r32 except for the
-/// `access.apiKeys[]` block: one namespaced credential (`memoryPrefix: proj_`)
-/// whose marker-wrapped Bearer routes a request to the `proj_alpha` profile.
-String _liveRunYaml({
-  required _LiveEndpoint omlx,
-  required _LiveEndpoint ollama,
-  required String memoryRoot,
-  required String binariesRoot,
-  required String cognitionRoot,
-}) =>
-    '''
-substrate:
-  providers:
-    - id: omlx
-      kind: openai
-      baseUrl: ${omlx.baseUri}
-      models:
-        - ${omlx.model}
-    - id: ollama
-      kind: ollama
-      baseUrl: ${ollama.baseUri}
-      models:
-        - ${ollama.model}
-  roleRoutes:
-    assistant_to_user:
-      - providerId: omlx
-        model: ${omlx.model}
-  embedding:
-    providerId: ollama
-    model: ${ollama.model}
-    dims: 768
-    normalize: true
-memory:
-  root: "$memoryRoot"
-  sqliteVec:
-    binariesRoot: "$binariesRoot"
-access:
-  openai:
-    port: 8080
-    basePath: /v1
-  apiKeys:
-    - key: $_apiKey
-      principal: owner
-      sessionPrefix: $_memoryPrefix
-      memoryPrefix: $_memoryPrefix
-      displayName: Project bot
-  rateLimit:
-    capacity: 1000000
-    refillTokens: 1000000
-    refillPeriodSeconds: 1
-  quota:
-    dailyCap: 1000000
-cognition:
-  root: "$cognitionRoot"
-''';
-
-Map<String, Object?> _chatBody(String prompt, {required bool stream}) =>
-    <String, Object?>{
-      'model': 'tom-assistant',
-      'messages': <Object?>[
-        <String, Object?>{'role': 'user', 'content': prompt},
-      ],
-      'stream': stream,
-    };
-
-typedef _StreamResult = ({int statusCode, String? contentType, String body});
-
-Future<_StreamResult> _postForStream(
-  int port,
-  String path,
-  Object body, {
-  required String token,
-}) async {
-  final HttpClient client = HttpClient();
-  try {
-    final HttpClientRequest request =
-        await client.postUrl(Uri.parse('http://127.0.0.1:$port$path'));
-    request.headers.contentType =
-        ContentType('application', 'json', charset: 'utf-8');
-    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
-    request.add(utf8.encode(jsonEncode(body)));
-    final HttpClientResponse response = await request.close();
-    final String text = await response.transform(utf8.decoder).join();
-    return (
-      statusCode: response.statusCode,
-      contentType: response.headers.value('content-type'),
-      body: text,
-    );
-  } finally {
-    client.close(force: true);
-  }
-}
-
-/// Splits an SSE wire body into its ordered, non-empty `data:` frame lines.
-List<String> _frames(String body) => body
-    .split('\n\n')
-    .map((String s) => s.trim())
-    .where((String s) => s.isNotEmpty)
-    .toList();
-
-/// Decodes the JSON of one `data: {…}` frame, or `null` for `data: [DONE]`.
-Map<String, Object?>? _framePayload(String frame) {
-  if (!frame.startsWith('data:')) return null;
-  final String data = frame.substring('data:'.length).trim();
-  if (data == '[DONE]') return null;
-  return jsonDecode(data) as Map<String, Object?>;
-}
-
 void main() {
   // The real providers source their wire HTTP client from `tom_core_kernel` via
   // the active `TomPlatformUtils`; the standalone platform makes the live HTTP
   // path work under `dart test` / testkit (mirrors r32).
-  setUpAll(() {
-    TomPlatformUtils.setCurrentPlatform(standalonePlatformUtils);
-  });
+  setUpAll(installStandalonePlatformForLiveHttp);
 
-  final String? vecRoot = _findSqliteVecRoot();
-  final SqliteVecBinaryResolver resolver = SqliteVecBinaryResolver();
-  String? resolvedPath;
-  if (vecRoot != null && resolver.isSupported) {
-    final String path = resolver.resolve(vecRoot);
-    if (File(path).existsSync()) resolvedPath = path;
-  }
-  final String? skipNoBinary = resolvedPath == null
-      ? 'No packaged vec0 binary for this platform under '
-          'tom_binaries/sqlite_vec (resolver.isSupported='
-          '${resolver.isSupported}, vecRoot=$vecRoot).'
-      : null;
+  final String? vecRoot = findSqliteVecRoot();
+  final String? skipNoBinary = sqliteVecSkipReason(vecRoot);
 
   group('r50 LIVE end-to-end — memory-profile isolation', () {
     Future<({BrainProcess process, BrainRunConfig config})> standUpLive({
-      required _LiveEndpoint omlx,
-      required _LiveEndpoint ollama,
+      required LiveEndpoint omlx,
+      required LiveEndpoint ollama,
     }) async {
       final Directory memoryRoot =
           Directory.systemTemp.createTempSync('tom_brain_run_50_mem_');
@@ -293,12 +81,21 @@ void main() {
       });
 
       final BrainRunConfig config = BrainRunConfigLoader.parse(
-        _liveRunYaml(
+        liveRunYaml(
           omlx: omlx,
           ollama: ollama,
           memoryRoot: memoryRoot.path,
           binariesRoot: vecRoot!,
-          cognitionRoot: _cognitionConfigRoot(),
+          cognitionRoot: cognitionConfigRoot(),
+          // One namespaced credential (`memoryPrefix: proj_`) whose
+          // marker-wrapped Bearer routes a request to the `proj_alpha` profile.
+          accessBlock: apiKeyAccessBlock(
+            key: _apiKey,
+            principal: 'owner',
+            sessionPrefix: _memoryPrefix,
+            memoryPrefix: _memoryPrefix,
+            displayName: 'Project bot',
+          ),
         ),
       );
       final BrainProcess process = await standUpBrainProcessFromConfig(
@@ -311,8 +108,8 @@ void main() {
     test(
         'a memory-marker request streams an answer into its profile and the '
         'default profile cannot see it (MSP-1)', () async {
-      final omlx = _omlx();
-      final ollama = _ollama();
+      final omlx = omlxEndpoint();
+      final ollama = ollamaEndpoint();
       final omlxSkip = await omlx.unreachableReason();
       if (omlxSkip != null) return markTestSkipped(omlxSkip);
       final ollamaSkip = await ollama.unreachableReason();
@@ -324,10 +121,10 @@ void main() {
       final live = await standUpLive(omlx: omlx, ollama: ollama);
       String answer;
       try {
-        final _StreamResult result = await _postForStream(
+        final StreamPostResult result = await postForStream(
           live.process.port,
           '/v1/chat/completions',
-          _chatBody(prompt, stream: true),
+          chatBody(prompt, stream: true),
           token: _profiledBearer,
         );
         expect(result.statusCode, 200,
@@ -335,10 +132,10 @@ void main() {
         expect(result.contentType, isNotNull);
         expect(result.contentType!.startsWith('text/event-stream'), isTrue);
 
-        final List<String> frames = _frames(result.body);
+        final List<String> frames = sseFrames(result.body);
         final StringBuffer content = StringBuffer();
         for (final String frame in frames) {
-          final Map<String, Object?>? payload = _framePayload(frame);
+          final Map<String, Object?>? payload = sseFramePayload(frame);
           if (payload == null) continue;
           expect(payload['object'], 'chat.completion.chunk');
           final choice = (payload['choices'] as List<Object?>).first
@@ -359,7 +156,7 @@ void main() {
       }
 
       // The exchange landed in the routed profile's database.
-      await _inspectOnDisk(live.config.memory.withProfile(_profile),
+      await inspectOnDisk(live.config.memory.withProfile(_profile),
           (mcp) async {
         await _assertExchangePresent(mcp, prompt: prompt, answer: answer);
       });
@@ -367,7 +164,7 @@ void main() {
       // …and is invisible to the default profile's database (MSP-1 isolation).
       // Opening it materialises a fresh, empty store (no default-routed request
       // was ever made), so neither node can surface there.
-      await _inspectOnDisk(live.config.memory.withProfile(defaultMemoryProfile),
+      await inspectOnDisk(live.config.memory.withProfile(defaultMemoryProfile),
           (mcp) async {
         await _assertExchangeAbsent(mcp, prompt: prompt, answer: answer);
       });
@@ -379,7 +176,7 @@ void main() {
 /// whose `summary` is [prompt] and a `Conclusion` whose `statement` is [answer],
 /// each recalled by its own indexed text (mirrors r32's recall-split rationale).
 Future<void> _assertExchangePresent(
-  _McpInspector mcp, {
+  McpInspector mcp, {
   required String prompt,
   required String answer,
 }) async {
@@ -405,7 +202,7 @@ Future<void> _assertExchangePresent(
 /// isolation leg. Recall by both texts must surface no `Event`/`Conclusion`
 /// carrying the profiled run's exact field values.
 Future<void> _assertExchangeAbsent(
-  _McpInspector mcp, {
+  McpInspector mcp, {
   required String prompt,
   required String answer,
 }) async {
@@ -425,107 +222,4 @@ Future<void> _assertExchangeAbsent(
   expect(leakedConclusions, isEmpty,
       reason:
           'the default profile must not see the profiled run\'s Conclusion');
-}
-
-/// Opens a fresh in-host `SqliteTomBrainMemory` over [config] (one profile-bound
-/// data directory the stopped run wrote to / would have written to), stands a
-/// `TomBrainMemoryMcpServer` up over it, runs the handshake, hands an
-/// [_McpInspector] to [body], then tears the connection and the store down.
-Future<void> _inspectOnDisk(
-  MemoryConfig config,
-  Future<void> Function(_McpInspector mcp) body,
-) async {
-  final SqliteTomBrainMemory memory = SqliteTomBrainMemory();
-  await memory.open(config);
-  try {
-    await _inspectViaMcp(memory, body);
-  } finally {
-    await memory.close();
-  }
-}
-
-/// Stands the memory MCP server up over [memory] (anonymous mode), runs the
-/// handshake, hands an [_McpInspector] to [body], then tears the connection
-/// down. Mirrors r32 / the smoke's E.55 in-process MCP harness.
-Future<void> _inspectViaMcp(
-  TomBrainMemory memory,
-  Future<void> Function(_McpInspector mcp) body,
-) async {
-  final clientController = StreamController<String>();
-  final serverController = StreamController<String>();
-
-  final clientChannel = StreamChannel<String>.withCloseGuarantee(
-    serverController.stream,
-    clientController.sink,
-  );
-  final serverChannel = StreamChannel<String>.withCloseGuarantee(
-    clientController.stream,
-    serverController.sink,
-  );
-
-  final client = _RunMcpClient();
-  final server = TomBrainMemoryMcpServer(serverChannel, memory: memory);
-  final connection = client.connectServer(clientChannel);
-
-  final init = await connection.initialize(
-    mcp_server.InitializeRequest(
-      protocolVersion: mcp_server.ProtocolVersion.latestSupported,
-      capabilities: client.capabilities,
-      clientInfo: client.implementation,
-    ),
-  );
-  if (init.protocolVersion?.isSupported == true) {
-    connection.notifyInitialized(mcp_server.InitializedNotification());
-    await server.initialized;
-  }
-
-  try {
-    await body(_McpInspector(connection));
-  } finally {
-    await client.shutdown();
-    await server.shutdown();
-  }
-}
-
-/// A thin read-only view over an MCP [mcp_client.ServerConnection]. Mirrors r32.
-class _McpInspector {
-  final mcp_client.ServerConnection _connection;
-
-  _McpInspector(this._connection);
-
-  Future<List<Map<String, Object?>>> recall({
-    required String text,
-    int k = 8,
-  }) async {
-    final payload = await _call('memory.recall', <String, Object?>{
-      'text': text,
-      'modes': <String>['bm25'],
-      'k': k,
-    });
-    return _maps(payload['nodes']);
-  }
-
-  Future<Map<String, Object?>> _call(
-    String name,
-    Map<String, Object?> arguments,
-  ) async {
-    final result = await _connection.callTool(
-      mcp_server.CallToolRequest(name: name, arguments: arguments),
-    );
-    expect(result.isError, isNot(isTrue),
-        reason: 'MCP tool $name returned an error');
-    final text = (result.content.first as mcp_server.TextContent).text;
-    return jsonDecode(text) as Map<String, Object?>;
-  }
-
-  List<Map<String, Object?>> _maps(Object? raw) => <Map<String, Object?>>[
-        for (final item in (raw as List)) item as Map<String, Object?>,
-      ];
-}
-
-base class _RunMcpClient extends mcp_client.MCPClient {
-  _RunMcpClient()
-      : super(
-          mcp_client.Implementation(name: 'r50-run-client', version: '0.0.1'),
-        );
 }
