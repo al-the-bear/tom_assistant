@@ -249,6 +249,27 @@ access:
     #   sessionPrefix: defaultsession_
     #   memoryPrefix: defaultmemory_
 
+# ── Profiles: the Profile selection axis (session_configuration.md § 3) ───────
+#
+# A top-level `profiles:` block declares named behaviour bundles (HOW a request
+# is processed: entry procedure, role, anchoring, template overlay, MCP surface,
+# budget, rate-limits, advisory cross-axis defaults). A request selects one via a
+# `profile-<name>` bearer marker (§ 4.1); the resolved bundle rides on
+# `Access.profile`.
+#
+# NOTE: shown only as a pointer here because the whole-process loader does not
+# parse `profiles:` yet (the typed ProfileRegistry is a later
+# session_configuration plan step). Uncommenting a top-level `profiles:` block
+# before that step ships is rejected by AccessConfigLoader's unknown-section gate
+# (AC-12). The fully worked example (default / research / quick / relay, spec
+# § 3.8) is schema-validated in the standalone snippet next to this file:
+#
+#   tom_brain_run/example/profiles.example.yaml
+#
+# profiles:
+#   default:
+#     mode: cognitive            # the reserved default — today's behaviour
+
 # ── Extensions ───────────────────────────────────────────────────────────────
 #
 # The Extension-F tool / MCP / LLM-config bundle (`extensions:` block —
