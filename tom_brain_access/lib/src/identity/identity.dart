@@ -28,3 +28,4 @@ export 'persona_resolver.dart';
 export 'session_manager.dart';
 export 'telegram_command.dart';
 export 'telegram_session_registry.dart';
+export 'uuid_v4.dart';

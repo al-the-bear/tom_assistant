@@ -384,6 +384,8 @@ class TelegramAccessEdge {
         await _handleSwitchModel(receiver, command.argument);
       case TelegramCommandKind.cliServerPort:
         await _handleCliServerPort(receiver, command.argument);
+      case TelegramCommandKind.createApiKey:
+        await _handleCreateApiKey(receiver, command.argument);
       case TelegramCommandKind.traceMemory:
         await _send(receiver, _sessionRegistry.toggleTraceMemory(userId));
     }
@@ -722,6 +724,45 @@ class TelegramAccessEdge {
       return;
     }
     await _sendSplit(receiver, await controller.setCliServerPort(port: port));
+  }
+
+  /// Handles `/create_api_key` and `/create_api_key <sessionPrefix> <memoryPrefix>`:
+  /// mints a new API key, admits it live, and persists it (MSP-7), rendering the
+  /// outcome (including the rollback notice on a persist failure). The
+  /// both-or-neither rule (MSPP-45) is enforced here: zero arguments mint a key
+  /// whose value is both prefixes; exactly two set the prefixes verbatim; one
+  /// argument is a usage error and the creator is *not* called. Replies the
+  /// unavailable message when no creator is wired.
+  Future<void> _handleCreateApiKey(
+    ChatReceiver receiver,
+    String argument,
+  ) async {
+    final TelegramApiKeyCreator? creator = _inspectors.apiKeyCreator;
+    if (creator == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    final List<String> parts = argument.trim().split(RegExp(r'\s+'))
+      ..removeWhere((p) => p.isEmpty);
+    if (parts.isEmpty) {
+      await _sendSplit(receiver, await creator.createApiKey());
+      return;
+    }
+    if (parts.length == 2) {
+      await _sendSplit(
+        receiver,
+        await creator.createApiKey(
+          sessionPrefix: parts[0],
+          memoryPrefix: parts[1],
+        ),
+      );
+      return;
+    }
+    await _send(
+      receiver,
+      'Usage: /create_api_key (the key value becomes both prefixes) or '
+      '/create_api_key <sessionPrefix> <memoryPrefix> (both together).',
+    );
   }
 
   /// Sends [text] as the minimum number of size-compliant Telegram messages,

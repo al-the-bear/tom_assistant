@@ -52,6 +52,9 @@
 
 export 'access_assembler.dart' show AccessAssembler;
 export 'access_event_bus.dart' show AccessEventBus;
+export 'api_key_creator.dart'
+    show ApiKeyCreator, ApiKeyGenerator, ApiKeyPersist;
+export 'api_key_registrar.dart' show ApiKeyRegistrar;
 export 'brain_access_boot.dart'
     show BootedAccessLayer, BrainAccessBoot, BrainAccessConfig;
 export 'brain_access_process.dart'
@@ -95,6 +98,7 @@ export 'telegram_access_edge.dart'
         telegramProcessingPreviewLength;
 export 'telegram_inspectors.dart'
     show
+        TelegramApiKeyCreator,
         TelegramCliServerPortController,
         TelegramInspectors,
         TelegramLogInspector,

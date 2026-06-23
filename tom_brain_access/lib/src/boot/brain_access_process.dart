@@ -82,6 +82,7 @@ import '../identity/telegram_session_registry.dart'
 import '../heuristic_classifier/heuristic_kind_hint_classifier.dart'
     show KindHintClassifier, KindHintEmbedder;
 import 'anthropic_access_edge.dart';
+import 'api_key_creator.dart';
 import 'brain_access_boot.dart';
 import 'brain_provisioner.dart';
 import 'graceful_shutdown.dart';
@@ -237,6 +238,14 @@ final class BrainAccessProcess {
 /// default) leaves the `incoming/` surface unwritten; a higher assembly
 /// (`tom_brain_run`) binds an `IncomingTrailWriter.write` here in full-trail
 /// mode.
+///
+/// [apiKeyPersist] is the optional durable-persist closure for `/create_api_key`
+/// (MSP-7, MSPP-42…47). When supplied, the Telegram edge gains an `ApiKeyCreator`
+/// that admits a new key into the live registry (the `AccessAssembler` built
+/// here) and persists it through this closure; `null` (the default) leaves
+/// `/create_api_key` answering "not available on this deployment". A higher
+/// assembly (`tom_brain_run`) binds a closure that appends the key to the run
+/// config — only it knows the config path.
 Future<BrainAccessProcess> startBrainAccessProcess({
   required AccessConfig config,
   required ProvisionedBrain brain,
@@ -252,6 +261,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
   DateTime Function()? clock,
   IncomingTrailSink? incomingTrailSink,
   TelegramInspectors telegramInspectors = TelegramInspectors.none,
+  ApiKeyPersist? apiKeyPersist,
 }) async {
   // The proto spec § 12 phase 5 sequence, one extracted step each:
   final BootedAccessLayer booted = _composeAccessLayer(
@@ -286,6 +296,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
     config: config,
     telegramChatApiFactory: telegramChatApiFactory,
     inspectors: telegramInspectors,
+    apiKeyPersist: apiKeyPersist,
   );
   final List<AccessServer> servers = <AccessServer>[
     server,
@@ -415,10 +426,23 @@ Future<_TelegramEdge> _startTelegram({
   required AccessConfig config,
   required TelegramChatApiFactory telegramChatApiFactory,
   required TelegramInspectors inspectors,
+  required ApiKeyPersist? apiKeyPersist,
 }) async {
   if (!config.hasTelegram) {
     return _TelegramEdge.none;
   }
+  // Late-bind the `/create_api_key` creator now that the live `AccessAssembler`
+  // (the registrar) exists (MSPP-47). The run layer hands in only the durable
+  // persist closure; the live admission is the assembler's own operation. With
+  // no closure the bundle is left as-is and `/create_api_key` is unavailable.
+  final TelegramInspectors effectiveInspectors = apiKeyPersist == null
+      ? inspectors
+      : inspectors.withApiKeyCreator(
+          ApiKeyCreator(
+            registrar: booted.assembler,
+            persist: apiKeyPersist,
+          ),
+        );
   final ChatApi chatApi = telegramChatApiFactory(config.telegramBotToken!);
   final TelegramAdapter adapter = TelegramAdapter(
     chatApi: chatApi,
@@ -450,7 +474,7 @@ Future<_TelegramEdge> _startTelegram({
     chatApi: chatApi,
     authorizedInbound: adapter.authorizedInboundRequests,
     sessionRegistry: sessionRegistry,
-    inspectors: inspectors,
+    inspectors: effectiveInspectors,
     // Per-chat session/memory namespace (§ 9.1, MSP-6): a configured chat scopes
     // its commands within its prefixes; a chat with no `chats[]` entry falls
     // back to the all-default namespace.

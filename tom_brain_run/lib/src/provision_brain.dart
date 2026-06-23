@@ -36,6 +36,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
     show
         AccessConfig,
         AccessServeSeam,
+        ApiKeyPersist,
         BrainAccessProcess,
         BrainProvisioner,
         IncomingTrailRecord,
@@ -91,6 +92,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
         bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream;
 
 import 'agent_sdk_llm_provider.dart' show AgentSdkLlmProvider;
+import 'api_key_persist.dart' show appendApiKeyToRunConfig;
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
 import 'cli_server_port_switch.dart'
@@ -517,6 +519,7 @@ Future<BrainProcess> standUpBrainProcess({
   McpLivenessMonitor? mcpMonitor,
   CognitionModelWriter? modelWriter,
   TelegramCliServerPortController? cliServerPortController,
+  ApiKeyPersist? apiKeyPersist,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -549,6 +552,7 @@ Future<BrainProcess> standUpBrainProcess({
       brain: provisioned,
       serve: serve,
       incomingTrailSink: incomingTrailSink,
+      apiKeyPersist: apiKeyPersist,
       telegramInspectors: _telegramInspectorsFor(
         trailRoot: trailRoot,
         memoryClient: provisioned.memoryClient,
@@ -791,6 +795,18 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
                   : CliServerPortConfigWriter(File(runConfigPath)),
             );
 
+  // The `/create_api_key` durable-persist closure (MSP-7, MSPP-42…47). The live
+  // admission half is the access layer's own `AccessAssembler` operation; the
+  // run layer supplies only this closure, which appends the minted key to the
+  // run config so it survives a restart. Gated on a known [runConfigPath] —
+  // without a config path on disk there is nowhere to persist to, so
+  // `/create_api_key` reports as unavailable rather than minting a key that
+  // would vanish on the next boot. The closure throws on a write failure, which
+  // is what triggers the access-side §13 rollback.
+  final ApiKeyPersist? apiKeyPersist = runConfigPath == null
+      ? null
+      : (config) => appendApiKeyToRunConfig(File(runConfigPath), config);
+
   // Boot-time trail sweep (§8 / §10 step #10): write the §7 `.gitignore` and
   // enforce the raw-tier count / aggregate-size caps before any writer appends
   // a new file this run. Full-trail mode only — unconfigured mode writes no raw
@@ -873,6 +889,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     mcpMonitor: mcpMonitor,
     modelWriter: modelWriter,
     cliServerPortController: cliServerPortController,
+    apiKeyPersist: apiKeyPersist,
   );
 }
 
