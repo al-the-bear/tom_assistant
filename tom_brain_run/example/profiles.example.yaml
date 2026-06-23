@@ -30,12 +30,14 @@ profiles:
     templateOverlay: research
     mcpServers: [web]                  # reuse a globally-defined server
     defineMcpServers:                  # plus a profile-private one (SC-Q9)
-      - name: docs
-        command: [mcp-docs, --root, ./corpus]
+      - id: docs                       # canonical McpServerConfig shape (SCP-16)
+        transport: stdio
+        command: mcp-docs
+        args: [--root, ./corpus]
         exposeToLlms: true
     budget:                            # SC-Q5 — wider envelope for deep work
       maxLlmCalls: 24
-      wallClock: 180s
+      wallClockSeconds: 180            # whole seconds (SCP-14 / SCP-16)
     defaultMemory: research            # SC-Q14 — advisory; explicit marker still wins
 
   # A fast single-shot answer bot: memory-aware, one LLM call, throttled.

@@ -28,6 +28,9 @@
 //   * `mcpServers:` → `McpServersConfig.fromYamlString` (reads
 //     `doc['mcpServers']`; an absent block yields an empty registry — the
 //     cognition has no outbound MCP servers; § 21.3, § 21.6).
+//   * `profiles:`  → `ProfileRegistry.fromYamlString` (reads `doc['profiles']`;
+//     an absent block yields a registry with only the built-in `default`
+//     profile — `session_configuration.md` § 3, SC-5).
 //
 // Each section loader produces a *located* error (dotted key path) on its own
 // malformed or missing section, so the whole-process loader needs no error
@@ -65,6 +68,7 @@ import 'cognition_run_config.dart';
 import 'cognition_run_config_loader.dart';
 import 'dream_config.dart';
 import 'dream_config_loader.dart';
+import 'profile/profile_registry.dart';
 import 'tools_config.dart';
 import 'tools_config_loader.dart';
 import 'trail_config.dart';
@@ -110,6 +114,8 @@ abstract final class BrainRunConfigLoader {
         CognitionRunConfigLoader.parse(content, envVars: envVars);
     final McpServersConfig mcpServers =
         McpServersConfig.fromYamlString(content);
+    final ProfileRegistry profiles =
+        ProfileRegistry.fromYamlString(content, envVars: envVars);
     final HistoryConfig history = _parseHistory(content);
     return BrainRunConfig(
       substrate: substrate,
@@ -121,6 +127,7 @@ abstract final class BrainRunConfigLoader {
       cognition: cognition,
       mcpServers: mcpServers,
       history: history,
+      profiles: profiles,
     );
   }
 

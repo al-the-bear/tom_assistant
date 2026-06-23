@@ -219,7 +219,12 @@ void main() {
       expect(budget['additionalProperties'], isFalse);
       expect(
         (budget['properties'] as Map).keys,
-        containsAll(<String>['maxLlmCalls', 'maxToolCalls', 'maxTokens', 'wallClock']),
+        containsAll(<String>[
+          'maxLlmCalls',
+          'maxToolCalls',
+          'maxTokens',
+          'wallClockSeconds',
+        ]),
       );
       final rateLimits = (props['rateLimits'] as Map).cast<String, Object?>();
       expect(rateLimits['additionalProperties'], isFalse);
@@ -229,21 +234,25 @@ void main() {
       );
     });
 
-    test('defineMcpServers items document the full McpServerConfig shape and '
-        'stay permissive (accept the § 3.8 name + array-command form)', () {
+    test('defineMcpServers items are the canonical McpServerConfig shape '
+        '(reconciled to the loader, SCP-16)', () {
       final item = _profileItemSchema(_loadSchema(schemaPath!));
       final define = ((item['properties'] as Map)['defineMcpServers'] as Map)
           .cast<String, Object?>();
       expect(define['type'], 'array');
       final mcpItem = (define['items'] as Map).cast<String, Object?>();
-      // Permissive (the § 3.8 friendly shape and the canonical loader shape
-      // differ; reconciliation deferred to the loader step, SCP-3).
-      expect(mcpItem['additionalProperties'], isTrue);
+      // Closed object: the loader is the strict authority — `id`/`transport`
+      // are required, unknown keys (and the dropped § 3.8 `name` alias /
+      // array-command friendly form) are rejected (SCP-16, hard principle 1).
+      expect(mcpItem['additionalProperties'], isFalse);
+      expect(
+        (mcpItem['required'] as List).cast<String>(),
+        containsAll(<String>['id', 'transport']),
+      );
       expect(
         (mcpItem['properties'] as Map).keys,
         containsAll(<String>[
           'id',
-          'name',
           'transport',
           'description',
           'command',
@@ -253,15 +262,28 @@ void main() {
           'exposeToLlms',
         ]),
       );
-      // The § 3.8 worked item conforms (name alias + array command, no transport).
+      expect((mcpItem['properties'] as Map).containsKey('name'), isFalse,
+          reason: 'the § 3.8 `name` alias was reconciled away (SCP-16)');
+      // The canonical worked item conforms.
       expect(
         _violations(mcpItem, <String, Object?>{
-          'name': 'docs',
-          'command': <String>['mcp-docs', '--root', './corpus'],
+          'id': 'docs',
+          'transport': 'stdio',
+          'command': 'mcp-docs',
+          'args': <String>['--root', './corpus'],
           'exposeToLlms': true,
         }, 'docs'),
         isEmpty,
       );
+      // The retired friendly form (name alias, no transport) is now rejected.
+      final bad = _violations(mcpItem, <String, Object?>{
+        'name': 'docs',
+        'command': <String>['mcp-docs', '--root', './corpus'],
+        'exposeToLlms': true,
+      }, 'docs');
+      expect(bad, isNotEmpty);
+      expect(bad.any((e) => e.contains('unknown key "name"')), isTrue);
+      expect(bad.any((e) => e.contains('missing required "id"')), isTrue);
     });
   });
 
