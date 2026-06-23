@@ -332,7 +332,9 @@ final class AccessAssembler implements ApiKeyRegistrar {
   ///     `no-key` substitute for an empty residual, § 6) is authenticated
   ///     through [IdentityResolver.resolveBearer]. When that residual key has an
   ///     [ApiKeyConfig] in [apiKeysByKey], its prefixes resolve the markers into
-  ///     a [ResolvedProfileScope] (MSP-4); a key with no entry applies no scope.
+  ///     a [ResolvedProfileScope] (MSP-4); a key with no entry resolves the
+  ///     markers under the built-in **default** prefixes ([resolveDefaultScope],
+  ///     MSPP-62) so no token runs bare-root (§ 8.1).
   ///
   /// Either way an unbound credential surfaces as a typed failure, never a
   /// fabricated identity; a duplicate marker throws [ApiKeyMarkerException]
@@ -359,7 +361,14 @@ final class AccessAssembler implements ApiKeyRegistrar {
       channel: channel.wireName,
     );
     final ApiKeyConfig? keyConfig = apiKeysByKey[markers.effectiveResidualKey];
-    return (identity: identity, scope: keyConfig?.resolveScope(markers));
+    // A configured key resolves the markers under its own prefixes; an
+    // unconfigured token (no `apiKeys[]` entry) resolves under the built-in
+    // default prefixes (MSPP-62) — so every authenticated API-key token runs
+    // under some profile rather than bare-root (§ 8.1).
+    return (
+      identity: identity,
+      scope: keyConfig?.resolveScope(markers) ?? resolveDefaultScope(markers),
+    );
   }
 
   /// Admits one Telegram request.
