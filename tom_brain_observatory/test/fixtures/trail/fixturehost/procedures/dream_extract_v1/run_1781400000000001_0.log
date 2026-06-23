@@ -1,0 +1,5 @@
+procedure dream_extract_v1  run run_1781400000000001_0
+├─ recall (semantic+lexical k=8 → 3: n_fixture0000000000000000E1, n_fixture0000000000000000E2, n_fixture0000000000000000E3)
+├─ llm extractor → 512→128 tok  → ../../llm/extractor/run_1781400000000001_0__01.raw.json
+├─ persist → n_fixture0000000000000000X1
+└─ outcome accepted (entries=4, 3.2s)

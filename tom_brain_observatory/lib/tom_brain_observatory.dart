@@ -12,6 +12,10 @@
 ///   over the brain's memory MCP server (the nine read tools; § 5.1), its
 ///   read-only view models ([MemoryNode], [MemoryEdge], [RecallResult], …), and
 ///   the [TypeBrowser] that composes browse-by-type from those reads (§ 5.2).
+/// - **Module 3 — Dreaming-cycle monitor** (§ 5A): the turn-less dream/sleep
+///   runs grouped by cadence lane ([DreamLane] / [DreamRunRow] / [DreamRun]),
+///   discovered from the same `procedures/` trail ([dreamLanes] / [dreamRunRows]
+///   / [dreamRunFor]) and rendered with the same [ProcedureRun] run-tree.
 ///
 /// The Flutter-web front-end and the shelf endpoints that serve this model land
 /// in later phases.
@@ -33,9 +37,11 @@ export 'src/memory/mcp_read_connection.dart';
 export 'src/memory/memory_nodes.dart';
 export 'src/memory/memory_read_client.dart';
 export 'src/memory/type_browser.dart';
+export 'src/model/dream_run.dart';
 export 'src/model/prompt_trace.dart';
 export 'src/model/run_tree.dart';
 export 'src/parse/configuration_builder.dart';
+export 'src/parse/dream_list_builder.dart';
 export 'src/parse/inbound_parser.dart';
 export 'src/parse/prompt_list_builder.dart';
 export 'src/parse/prompt_trace_parser.dart';

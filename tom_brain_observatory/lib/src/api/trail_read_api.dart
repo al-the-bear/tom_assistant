@@ -38,7 +38,9 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
 import '../live/live_tail.dart';
 import '../launch/runtime_snapshot.dart';
 import '../memory/memory_read_client.dart';
+import '../model/dream_run.dart';
 import '../model/prompt_trace.dart';
+import '../parse/dream_list_builder.dart';
 import '../parse/prompt_list_builder.dart';
 import '../parse/prompt_trace_parser.dart';
 import '../parse/trail_host.dart';
@@ -192,6 +194,9 @@ final class TrailReadApi {
       ..put('/api/templates', _writeTemplateFile)
       ..get('/api/config', _readConfigFile)
       ..put('/api/config', _writeConfigFile)
+      ..get('/api/dream/lanes', _dreamLanes)
+      ..get('/api/dream/runs', _dreamRuns)
+      ..get('/api/dream/runs/<runId>', _dreamRun)
       ..get('/api/runtime', _runtimeSnapshot);
     _memoryApi.registerRoutes(router); // /api/memory/* (§ 8.4)
     _catalogueApi.registerRoutes(router); // /api/catalogue (§ 8.3, step 14)
@@ -674,6 +679,36 @@ final class TrailReadApi {
       'name': name,
       'effect': _effectFor(kind),
     });
+  }
+
+  /// `GET /api/dream/lanes` — the Module-3 lane selector (§ 5A.2): the configured
+  /// cadence lanes (id, agent set, recent-run count) plus the synthetic `other`
+  /// lane when any discovered dream run is unclaimed. A pure read of the
+  /// `procedures/` trail — empty array in unconfigured mode, never an error.
+  Response _dreamLanes(Request request) {
+    final lanes = dreamLanes(host);
+    return _json(<Object?>[for (final lane in lanes) lane.toJson()]);
+  }
+
+  /// `GET /api/dream/runs?lane=<id>` — the Module-3 run list (§ 5A.2): the recent
+  /// turn-less dream runs, newest-first, optionally filtered to one lane. Empty
+  /// array when no dream runs exist (absence is never an error, § 4.1).
+  Response _dreamRuns(Request request) {
+    final lane = request.url.queryParameters['lane'];
+    final rows = dreamRunRows(host, lane: lane);
+    return _json(<Object?>[for (final row in rows) row.toJson()]);
+  }
+
+  /// `GET /api/dream/runs/{runId}` — one drilled-in dream run as the full § 3.6
+  /// `ProcedureRun` tree (§ 5A.4), or `404` when no turn-less log with that id
+  /// exists — the dreaming-side mirror of `GET /api/traces/{turnId}`.
+  Response _dreamRun(Request request, String runId) {
+    final DreamRun? run = dreamRunFor(host, runId);
+    if (run == null) {
+      return _json(<String, Object?>{'error': 'no dream run $runId'},
+          status: HttpStatus.notFound);
+    }
+    return _json(run.toJson());
   }
 
   /// `GET /api/runtime` — the live in-process snapshot the running brain bound

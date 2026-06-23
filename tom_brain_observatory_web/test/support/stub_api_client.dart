@@ -6,6 +6,7 @@
 import 'package:tom_brain_observatory_web/src/api/trace_api_client.dart';
 import 'package:tom_brain_observatory_web/src/model/authoring.dart';
 import 'package:tom_brain_observatory_web/src/model/catalogue.dart';
+import 'package:tom_brain_observatory_web/src/model/dream_run.dart';
 import 'package:tom_brain_observatory_web/src/model/live_step.dart';
 import 'package:tom_brain_observatory_web/src/model/llm_call_detail.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
@@ -50,6 +51,18 @@ class StubApiClient implements TraceApiClient {
   /// is the `404` "registered-but-absent" the editor opens as an empty buffer.
   final Map<String, String> configs;
 
+  /// The `GET /api/dream/lanes` body (§ 5A.2). Empty models the unconfigured
+  /// host (no dream lanes) — never an error.
+  final List<DreamLane> dreamLanes;
+
+  /// The dream runs `GET /api/dream/runs` lists, newest-first. `listDreamRuns`
+  /// filters them by `laneId` when a `lane` is given.
+  final List<DreamRunRow> dreamRuns;
+
+  /// Keyed by runId — one drilled-in dream run (§ 5A.4). A missing key is the
+  /// `404` "no such dream run" `dreamRunFor` maps to `null`.
+  final Map<String, DreamRun> dreamRunDetails;
+
   /// Canned SSE live-tail per turnId, keyed by turnId (PT-4.2).
   final Map<String, Stream<LiveStep>> turnStreams;
 
@@ -79,6 +92,9 @@ class StubApiClient implements TraceApiClient {
     this.catalogueData,
     this.runtimeData,
     Map<String, String>? configs,
+    this.dreamLanes = const <DreamLane>[],
+    this.dreamRuns = const <DreamRunRow>[],
+    this.dreamRunDetails = const <String, DreamRun>{},
     this.turnStreams = const <String, Stream<LiveStep>>{},
     this.changes,
     this.rowsAfterChange,
@@ -149,6 +165,17 @@ class StubApiClient implements TraceApiClient {
     configs['$kind/$name'] = content;
     return AuthoringResult.saved;
   }
+
+  @override
+  Future<List<DreamLane>> listDreamLanes() async => dreamLanes;
+
+  @override
+  Future<List<DreamRunRow>> listDreamRuns({String? lane}) async => lane == null
+      ? dreamRuns
+      : <DreamRunRow>[for (final r in dreamRuns) if (r.laneId == lane) r];
+
+  @override
+  Future<DreamRun?> dreamRunFor(String runId) async => dreamRunDetails[runId];
 
   @override
   Stream<LiveStep> tailTurn(String turnId) =>

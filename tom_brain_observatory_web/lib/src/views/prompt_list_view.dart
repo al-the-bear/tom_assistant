@@ -13,6 +13,7 @@ import '../api/memory_api_client.dart';
 import '../api/trace_api_client.dart';
 import '../model/prompt_trace.dart';
 import 'configuration_catalogue_view.dart';
+import 'dream_lanes_view.dart';
 import 'format.dart';
 import 'memory/memory_home_view.dart';
 import 'outcome_chip.dart';
@@ -80,11 +81,25 @@ class _PromptListViewState extends State<PromptListView> {
     ));
   }
 
+  void _openDreaming() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => DreamLanesView(
+        client: widget.client,
+        memoryClient: widget.memoryClient,
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
           title: const Text('Tom Brain Observatory — Prompt Tracing'),
           actions: <Widget>[
+            IconButton(
+              icon: const Icon(Icons.bedtime),
+              tooltip: 'Dreaming cycle',
+              onPressed: _openDreaming,
+            ),
             IconButton(
               icon: const Icon(Icons.memory),
               tooltip: 'Memory',

@@ -14,6 +14,7 @@ import 'package:http/http.dart' as http;
 
 import '../model/authoring.dart';
 import '../model/catalogue.dart';
+import '../model/dream_run.dart';
 import '../model/live_step.dart';
 import '../model/llm_call_detail.dart';
 import '../model/prompt_trace.dart';
@@ -101,6 +102,21 @@ abstract interface class TraceApiClient {
   /// standalone (the host answers `503` "runtime unavailable" — there is no live
   /// brain to ask, so the Runtime tab shows only the on-disk config).
   Future<RuntimeSnapshot?> runtime();
+
+  /// `GET /api/dream/lanes` — the Module-3 lane selector (§ 5A.2): the configured
+  /// cadence lanes plus the synthetic `other` lane when any dream run is
+  /// unclaimed. Empty in unconfigured mode (absence is never an error, § 8.1).
+  Future<List<DreamLane>> listDreamLanes();
+
+  /// `GET /api/dream/runs?lane=<id>` — the Module-3 run list (§ 5A.2): the recent
+  /// turn-less dream runs, newest-first, optionally filtered to one [lane]
+  /// (including `other`). Empty when no dream runs exist.
+  Future<List<DreamRunRow>> listDreamRuns({String? lane});
+
+  /// `GET /api/dream/runs/{runId}` — one drilled-in dream run as its run-tree
+  /// (§ 5A.4), or `null` when no turn-less log with that id exists (the host
+  /// answers `404`) — the dreaming-side mirror of [traceFor].
+  Future<DreamRun?> dreamRunFor(String runId);
 
   /// `GET /api/traces/{turnId}/stream` — the SSE live-tail of a turn (§ 4.8):
   /// one [LiveStep] per cognitive step as the brain appends it, the stream
@@ -275,6 +291,45 @@ class HttpTraceApiClient implements TraceApiClient {
       throw http.ClientException('GET $uri → ${res.statusCode}', uri);
     }
     return RuntimeSnapshot.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<DreamLane>> listDreamLanes() async {
+    final uri = _resolve('api/dream/lanes', const <String, String>{});
+    final res = await _http.get(uri);
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return <DreamLane>[
+      for (final lane in jsonDecode(res.body) as List<dynamic>)
+        DreamLane.fromJson(lane as Map<String, dynamic>),
+    ];
+  }
+
+  @override
+  Future<List<DreamRunRow>> listDreamRuns({String? lane}) async {
+    final uri = _resolve('api/dream/runs', <String, String>{
+      'lane': ?lane,
+    });
+    final res = await _http.get(uri);
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return <DreamRunRow>[
+      for (final row in jsonDecode(res.body) as List<dynamic>)
+        DreamRunRow.fromJson(row as Map<String, dynamic>),
+    ];
+  }
+
+  @override
+  Future<DreamRun?> dreamRunFor(String runId) async {
+    final uri = _resolve('api/dream/runs/$runId', const <String, String>{});
+    final res = await _http.get(uri);
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return DreamRun.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
   /// Maps a source-authoring `PUT` response into an [AuthoringResult]: `200` →

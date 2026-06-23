@@ -1,0 +1,4 @@
+procedure dream_custom_v1  run run_1781400000000003_0
+├─ note housekeeping
+├─ persist → n_fixture0000000000000000Z1
+└─ outcome accepted (entries=2, 0.4s)
