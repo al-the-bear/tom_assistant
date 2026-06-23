@@ -247,15 +247,15 @@ class TelegramAccessEdge {
       return;
     }
 
-    // Ordinary prompt: resolve the user's active session, send any "invalid →
-    // recreated" notice, and stamp the active session id onto the envelope
-    // (null id ⇒ the global session). The minted id was already adopted into
-    // the SessionManager by the registry, so the dispatcher resolves it as a
-    // known dedicated session.
-    final TelegramActiveSession active = _sessionRegistry.resolveActive(userId);
-    if (active.notice != null) {
-      await _send(receiver, active.notice!);
-    }
+    // Ordinary prompt: resolve the user's active session and stamp its effective
+    // id onto the envelope (null id ⇒ the global session). The effective id is
+    // derived from the chat's `sessionPrefix` and was already adopted into the
+    // SessionManager by the registry, so the dispatcher resolves it as a known
+    // dedicated session (MSPP-37).
+    final TelegramActiveSession active = _sessionRegistry.resolveActive(
+      userId,
+      sessionPrefix: chat.sessionPrefix,
+    );
     // When this user has memory-recall tracing on (`/trace_memory`), stamp the
     // per-turn trace flag onto the envelope metadata so the dispatch route binds
     // the memory-notice sink for this turn (§ 6.5). Merge rather than replace —
@@ -312,18 +312,24 @@ class TelegramAccessEdge {
         await _send(receiver, _sessionRegistry.createSession(
           userId,
           command.argument,
+          sessionPrefix: chat.sessionPrefix,
         ));
       case TelegramCommandKind.listSessions:
-        await _send(receiver, _sessionRegistry.listSessions(userId));
+        await _send(receiver, _sessionRegistry.listSessions(
+          userId,
+          sessionPrefix: chat.sessionPrefix,
+        ));
       case TelegramCommandKind.pickSession:
         await _send(receiver, _sessionRegistry.pickSession(
           userId,
           command.argument,
+          sessionPrefix: chat.sessionPrefix,
         ));
       case TelegramCommandKind.renameSession:
         await _send(receiver, _sessionRegistry.renameSession(
           userId,
           command.argument,
+          sessionPrefix: chat.sessionPrefix,
         ));
       case TelegramCommandKind.createMemory:
         await _send(receiver, _sessionRegistry.createMemory(
@@ -355,9 +361,9 @@ class TelegramAccessEdge {
       case TelegramCommandKind.checkStatus:
         await _handleCheckStatus(receiver);
       case TelegramCommandKind.todosList:
-        await _handleTodosList(receiver, userId);
+        await _handleTodosList(receiver, userId, chat.sessionPrefix);
       case TelegramCommandKind.todosClear:
-        await _handleTodosClear(receiver, userId);
+        await _handleTodosClear(receiver, userId, chat.sessionPrefix);
       case TelegramCommandKind.checkUsage:
         await _handleCheckUsage(receiver);
       case TelegramCommandKind.stopPrompt:
@@ -496,13 +502,19 @@ class TelegramAccessEdge {
   /// session, split across messages if it overflows. Replies the unavailable
   /// message when no todos inspector is wired, and the global-session notice
   /// when the active session is `global` (which keeps no persistent list).
-  Future<void> _handleTodosList(ChatReceiver receiver, String userId) async {
+  Future<void> _handleTodosList(
+    ChatReceiver receiver,
+    String userId,
+    String sessionPrefix,
+  ) async {
     final TelegramTodosInspector? inspector = _inspectors.todos;
     if (inspector == null) {
       await _send(receiver, telegramInspectorUnavailableMessage);
       return;
     }
-    final String? sessionId = _sessionRegistry.resolveActive(userId).sessionId;
+    final String? sessionId = _sessionRegistry
+        .resolveActive(userId, sessionPrefix: sessionPrefix)
+        .sessionId;
     if (sessionId == null) {
       await _send(receiver, telegramTodosGlobalSessionMessage);
       return;
@@ -514,13 +526,19 @@ class TelegramAccessEdge {
   /// session and reports the outcome. Replies the unavailable message when no
   /// todos inspector is wired, and the global-session notice when the active
   /// session is `global` (which keeps no persistent list to clear).
-  Future<void> _handleTodosClear(ChatReceiver receiver, String userId) async {
+  Future<void> _handleTodosClear(
+    ChatReceiver receiver,
+    String userId,
+    String sessionPrefix,
+  ) async {
     final TelegramTodosInspector? inspector = _inspectors.todos;
     if (inspector == null) {
       await _send(receiver, telegramInspectorUnavailableMessage);
       return;
     }
-    final String? sessionId = _sessionRegistry.resolveActive(userId).sessionId;
+    final String? sessionId = _sessionRegistry
+        .resolveActive(userId, sessionPrefix: sessionPrefix)
+        .sessionId;
     if (sessionId == null) {
       await _send(receiver, telegramTodosGlobalSessionMessage);
       return;

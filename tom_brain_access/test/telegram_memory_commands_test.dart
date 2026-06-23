@@ -50,7 +50,6 @@ void main() {
     TelegramSessionRegistry build({MapEdgeStateStore? store}) =>
         TelegramSessionRegistry(
           store: store ?? MapEdgeStateStore(),
-          mintSessionId: () => '260608-000000.000000',
           adoptSession: (_) {},
         );
 
@@ -154,7 +153,6 @@ void main() {
 
       final restarted = TelegramSessionRegistry(
         store: store,
-        mintSessionId: () => fail('restart must not mint a fresh id'),
         adoptSession: (_) {},
       );
       expect(
