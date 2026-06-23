@@ -349,10 +349,19 @@ final class AccessAssembler {
   /// request, which never reaches dispatch, draws only its decline and not a
   /// contradictory ack). It runs *before* `dispatcher.accept`, so the ack
   /// precedes the streamed answer.
+  ///
+  /// [memoryProfile], when supplied, is the chat's active memory profile id
+  /// resolved by the `TelegramSessionRegistry` from the user's `/switch_memory`
+  /// selection (the chat's `memoryPrefix` already applied, § 9.2). Telegram
+  /// owns memory selection *on the user's behalf* (there is no credential scope
+  /// to carry it), so it is stamped directly onto the `Access` — authoritative
+  /// over Extension H's content-driven selection (MSP-5). `null` keeps the
+  /// resolve-then-select-profile flow (MSPP-35).
   Future<void> admitTelegram({
     required String userId,
     required InboundRequest envelope,
     required TelegramSink sink,
+    String? memoryProfile,
     Future<void> Function()? onAdmitted,
   }) async {
     String? principalId;
@@ -366,6 +375,7 @@ final class AccessAssembler {
         identity: identity,
         envelope: envelope,
         persona: persona,
+        memoryProfile: memoryProfile,
         buildBinding: (resolvedIdentity, effectiveEnvelope) =>
             TelegramDeliveryBinding(
           identity: resolvedIdentity,
@@ -485,6 +495,14 @@ final class AccessAssembler {
   /// credential already named the profile; nothing past the edge re-derives it).
   /// `null` (the JWT path, the no-scope key, every non-bearer channel) keeps the
   /// existing resolve-then-select-profile flow.
+  ///
+  /// [memoryProfile] is the Telegram channel's already-resolved active memory
+  /// profile id (the chat's `memoryPrefix` applied, § 9.2). Like a credential
+  /// [scope] it is authoritative over content-driven selection — Telegram named
+  /// the profile via `/switch_memory`, so nothing past the edge re-derives it
+  /// (MSP-5 / MSPP-35). A credential [scope], when present, still wins (only the
+  /// bearer channels carry a scope, and they never pass a [memoryProfile], so
+  /// the two never collide). `null` keeps the resolve-then-select flow.
   Future<void> _admit({
     required AccessChannel channel,
     required ResolvedIdentity identity,
@@ -492,6 +510,7 @@ final class AccessAssembler {
     required Persona persona,
     required _BuildBinding buildBinding,
     ResolvedProfileScope? scope,
+    String? memoryProfile,
     Future<void> Function()? onAdmitted,
   }) async {
     final String principalId = identity.principalId;
@@ -530,6 +549,10 @@ final class AccessAssembler {
     final Session stampedSession;
     if (scope != null) {
       stampedSession = session.session.withMemoryProfile(scope.memoryProfile);
+    } else if (memoryProfile != null) {
+      // Telegram resolved the active memory on the user's behalf (§ 9.2); it is
+      // authoritative just like a credential scope (MSP-5 / MSPP-35).
+      stampedSession = session.session.withMemoryProfile(memoryProfile);
     } else {
       final MemoryProfileSelectionOutcome profileOutcome =
           await sessionManager.selectMemoryProfile(

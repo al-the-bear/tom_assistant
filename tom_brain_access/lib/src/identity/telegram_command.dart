@@ -36,6 +36,21 @@ enum TelegramCommandKind {
   /// `/rename_session <new name>` — rename the active session (§ 6.5).
   renameSession,
 
+  /// `/create_memory <name>` — create the memory profile `<memoryPrefix><name>`
+  /// within the chat's scope and switch the chat to it (§ 9.2). `<name>` is
+  /// `_`-free (the prefix delimiter) and path-safe.
+  createMemory,
+
+  /// `/list_memory` — list the chat's memory profiles (those under its
+  /// `memoryPrefix`), three-digit-numbered like `/list_sessions`, marking the
+  /// active one (§ 9.2).
+  listMemory,
+
+  /// `/switch_memory <nnn|name>` — set the chat's active memory profile to the
+  /// indexed or named profile *within the prefix scope*, rejecting an
+  /// out-of-scope id (§ 9.2, MSP-6).
+  switchMemory,
+
   /// `/help` — list every available command.
   help,
 
@@ -126,6 +141,9 @@ const Map<TelegramCommandKind, String> telegramCommandWords =
   TelegramCommandKind.listSessions: 'list_sessions',
   TelegramCommandKind.pickSession: 'pick_session',
   TelegramCommandKind.renameSession: 'rename_session',
+  TelegramCommandKind.createMemory: 'create_memory',
+  TelegramCommandKind.listMemory: 'list_memory',
+  TelegramCommandKind.switchMemory: 'switch_memory',
   TelegramCommandKind.help: 'help',
   TelegramCommandKind.observatoryShowPrompts: 'observatory_show_prompts',
   TelegramCommandKind.observatoryAnalyzePrompt: 'observatory_analyze_prompt',
@@ -207,6 +225,10 @@ String telegramHelpText() {
     ..write('\n/list_sessions — list your sessions (000-numbered)')
     ..write('\n/pick_session <nnn> — switch to the session at that index')
     ..write('\n/rename_session <new name> — rename the active session')
+    ..write('\n\nMemory:')
+    ..write('\n/create_memory <name> — create a memory profile and switch to it')
+    ..write('\n/list_memory — list your memory profiles (000-numbered)')
+    ..write('\n/switch_memory <nnn|name> — switch to that memory profile')
     ..write('\n\nInspection:')
     ..write('\n/observatory_show_prompts — list recent prompts with an index')
     ..write('\n/observatory_analyze_prompt <index> — full detail of one prompt')

@@ -50,6 +50,8 @@ import '../adapters/telegram/telegram_outbound_mapping.dart'
     show TelegramOutboundConsolidator;
 import '../adapters/telegram/telegram_whitelist.dart'
     show telegramNotAuthorisedMessage;
+import '../config/telegram_chat_profile_config.dart'
+    show TelegramChatProfileConfig;
 import '../delivery/telegram_delivery.dart' show ChatApiTelegramSink;
 import '../edge_security/edge_security.dart';
 import '../identity/telegram_command.dart';
@@ -127,6 +129,7 @@ class TelegramAccessEdge {
   final Stream<InboundRequest> _authorizedInbound;
   final TelegramSessionRegistry _sessionRegistry;
   final TelegramInspectors _inspectors;
+  final TelegramChatProfileConfig Function(String chatId) _resolveChat;
 
   StreamSubscription<InboundRequest>? _subscription;
 
@@ -141,17 +144,28 @@ class TelegramAccessEdge {
   /// wires none, so those commands reply "not available on this deployment". A
   /// higher assembly (`tom_brain_run`) injects a bundle built over the live
   /// trail + memory.
+  ///
+  /// [resolveChat] maps a Telegram chat id to its [TelegramChatProfileConfig]
+  /// — the namespace (`sessionPrefix` / `memoryPrefix`) the chat's session and
+  /// memory commands are scoped within (§ 9.1, MSP-6). Boot wires it from
+  /// `AccessConfig.telegramChatFor`; the default treats every chat as
+  /// [TelegramChatProfileConfig.unconfigured] (the all-default `defaultmemory_`
+  /// / `defaultsession_` namespace), so a deployment with no `chats[]` block
+  /// behaves exactly as before this scoping existed.
   TelegramAccessEdge({
     required AccessAssembler assembler,
     required ChatApi chatApi,
     required Stream<InboundRequest> authorizedInbound,
     required TelegramSessionRegistry sessionRegistry,
     TelegramInspectors inspectors = TelegramInspectors.none,
+    TelegramChatProfileConfig Function(String chatId)? resolveChat,
   })  : _assembler = assembler,
         _chatApi = chatApi,
         _authorizedInbound = authorizedInbound,
         _sessionRegistry = sessionRegistry,
-        _inspectors = inspectors;
+        _inspectors = inspectors,
+        _resolveChat = resolveChat ??
+            ((chatId) => TelegramChatProfileConfig.unconfigured(chatId));
 
   /// Whether [start] has run and [stop] has not yet been called.
   bool get isRunning => _subscription != null;
@@ -214,12 +228,22 @@ class TelegramAccessEdge {
 
     final ChatReceiver receiver = ChatReceiver.id(userId);
 
-    // A slash-command is handled here — session continuity, `/help`, and the
-    // inspection commands all stay in the access layer and never reach the
-    // brain (§ 6.5). An ordinary prompt falls through.
+    // Resolve the chat's profile namespace (§ 9.1, MSP-6): a configured chat
+    // declares its `sessionPrefix` / `memoryPrefix`; an unconfigured one falls
+    // back to the all-default namespace. The chat is keyed by the inbound
+    // `conversationId` (the Telegram chat id the mapping carried, E.20); an
+    // envelope without one (a private chat where the id was not stamped) keys on
+    // the sender id instead — a private chat's id equals its user's. It scopes
+    // both the memory commands and the active-memory stamp below.
+    final String chatId = request.conversationId ?? userId;
+    final TelegramChatProfileConfig chat = _resolveChat(chatId);
+
+    // A slash-command is handled here — session continuity, `/help`, the memory
+    // commands, and the inspection commands all stay in the access layer and
+    // never reach the brain (§ 6.5 / § 9.2). An ordinary prompt falls through.
     final TelegramCommand? command = parseTelegramCommand(request.text);
     if (command != null) {
-      await _handleCommand(receiver, userId, command);
+      await _handleCommand(receiver, userId, command, chat);
       return;
     }
 
@@ -247,11 +271,21 @@ class TelegramAccessEdge {
           )
         : request.copyWith(sessionId: active.sessionId);
 
+    // Stamp the chat's active memory profile (§ 9.2). The registry holds the
+    // bare active name; applying the chat's `memoryPrefix` yields the profile id
+    // the engine routes to. Telegram owns this selection on the user's behalf,
+    // so it is authoritative over content-driven selection (MSP-5 / MSPP-35).
+    final String memoryProfile = _sessionRegistry.resolveActiveMemory(
+      userId,
+      memoryPrefix: chat.memoryPrefix,
+    );
+
     try {
       await _assembler.admitTelegram(
         userId: userId,
         envelope: stamped,
         sink: ChatApiTelegramSink(chatApi: _chatApi, receiver: receiver),
+        memoryProfile: memoryProfile,
         onAdmitted: () => _acknowledge(receiver, stamped.text),
       );
     } catch (error) {
@@ -263,13 +297,15 @@ class TelegramAccessEdge {
   /// The brain is never involved — every slash-command is an access-layer
   /// concern (§ 6.5).
   ///
-  /// The session and `/help` commands answer from a single string; the
+  /// The session and `/help` commands answer from a single string; the memory
+  /// commands resolve within [chat]'s `memoryPrefix` scope (§ 9.2, MSP-6); the
   /// inspection commands fan their (potentially large) output out across as
   /// many size-compliant Telegram messages as it takes (parts b–e).
   Future<void> _handleCommand(
     ChatReceiver receiver,
     String userId,
     TelegramCommand command,
+    TelegramChatProfileConfig chat,
   ) async {
     switch (command.kind) {
       case TelegramCommandKind.createSession:
@@ -288,6 +324,23 @@ class TelegramAccessEdge {
         await _send(receiver, _sessionRegistry.renameSession(
           userId,
           command.argument,
+        ));
+      case TelegramCommandKind.createMemory:
+        await _send(receiver, _sessionRegistry.createMemory(
+          userId,
+          command.argument,
+          memoryPrefix: chat.memoryPrefix,
+        ));
+      case TelegramCommandKind.listMemory:
+        await _send(receiver, _sessionRegistry.listMemory(
+          userId,
+          memoryPrefix: chat.memoryPrefix,
+        ));
+      case TelegramCommandKind.switchMemory:
+        await _send(receiver, _sessionRegistry.switchMemory(
+          userId,
+          command.argument,
+          memoryPrefix: chat.memoryPrefix,
         ));
       case TelegramCommandKind.help:
         await _send(receiver, telegramHelpText());

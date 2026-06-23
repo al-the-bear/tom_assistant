@@ -39,7 +39,8 @@
 // then mints a fresh id in place, persists, and returns a notice the edge
 // sends to the user.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show TimestampId;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show TimestampId, isValidMemoryProfileName;
 
 import '../edge_security/edge_state_store.dart';
 import 'session_manager.dart' show SessionIdMinter;
@@ -54,6 +55,14 @@ const String globalSessionName = 'global';
 /// only by being the conventional starting point.
 const String defaultSessionName = 'default';
 
+/// The memory-profile selector a user's first contact starts on (§ 9.2). Stored
+/// **bare** (no prefix): the chat's `memoryPrefix` is applied at stamp / render
+/// time, so the same registry serves chats with different namespaces (MSPP-33).
+/// Combined with the default `defaultmemory_` prefix it yields
+/// `defaultmemory_default` — the profile a brand-new chat resolves to (MSP-4),
+/// which the engine routes to the boot default store.
+const String defaultMemoryName = 'default';
+
 /// The `EdgeStateStore` row key for the active session's name.
 const String _activeRowKey = 'active';
 
@@ -63,6 +72,15 @@ const String _sessionsRowKey = 'sessions';
 /// The `EdgeStateStore` row key for the per-user memory-recall trace toggle
 /// (the `/trace_memory` command). Absent / non-`true` means tracing is off.
 const String _traceMemoryRowKey = 'traceMemory';
+
+/// The `EdgeStateStore` row key for the active memory profile's **bare** name
+/// (the `/switch_memory` / `/create_memory` selection). Absent ⇒
+/// [defaultMemoryName].
+const String _activeMemoryRowKey = 'activeMemory';
+
+/// The `EdgeStateStore` row key for the ordered list of the user's **bare**
+/// memory-profile names. Absent ⇒ `[defaultMemoryName]`.
+const String _memoriesRowKey = 'memories';
 
 /// The per-session-entry key for its name.
 const String _sessionNameKey = 'name';
@@ -79,17 +97,24 @@ class _SessionRef {
 }
 
 /// One Telegram user's session state: the [active] session name, the ordered
-/// [sessions] list (always led by `global`), and the [traceMemory] toggle (the
-/// `/trace_memory` command — whether memory-recall tracing is on for this user).
+/// [sessions] list (always led by `global`), the [traceMemory] toggle (the
+/// `/trace_memory` command), and the memory-profile selection — [activeMemory]
+/// (the bare active profile name) over the ordered [memories] list of bare
+/// names (§ 9.2). Memory names are stored bare; the chat's `memoryPrefix` is
+/// applied at stamp / render time (MSPP-33).
 class _UserSessions {
   String active;
   final List<_SessionRef> sessions;
   bool traceMemory;
+  String activeMemory;
+  final List<String> memories;
   _UserSessions({
     required this.active,
     required this.sessions,
     this.traceMemory = false,
-  });
+    this.activeMemory = defaultMemoryName,
+    List<String>? memories,
+  }) : memories = memories ?? <String>[defaultMemoryName];
 }
 
 /// The active session resolved for one inbound Telegram message (§ 6.5).
@@ -289,6 +314,126 @@ final class TelegramSessionRegistry {
         : 'Memory tracing is now OFF.';
   }
 
+  /// Resolves the prefixed active memory profile for [userId] on an ordinary
+  /// (non-command) message: `memoryPrefix + <active bare name>` (§ 9.2, MSP-4).
+  ///
+  /// The edge passes the chat's [memoryPrefix]; the registry stores only the
+  /// bare name, so the same active selection resolves under whatever namespace
+  /// the chat is configured with (MSPP-33). First contact starts on
+  /// [defaultMemoryName], so a brand-new chat resolves to
+  /// `<memoryPrefix>default` (the default prefix yields `defaultmemory_default`,
+  /// which the engine routes to the boot default store).
+  String resolveActiveMemory(String userId, {required String memoryPrefix}) =>
+      memoryPrefix + _ensureUser(userId).activeMemory;
+
+  /// Handles `/create_memory <name>`: registers the bare profile [name], makes
+  /// it the active memory, and switches to it (§ 9.2). Returns the
+  /// acknowledgement naming the prefixed profile id (`memoryPrefix + name`).
+  ///
+  /// The store materialises on first write (Option B / MSPP-24), so the access
+  /// layer only records the name — it never opens the database. A name carrying
+  /// the prefix delimiter (`_`) or a path separator would address a raw global
+  /// id and is rejected (MSP-6 / path-traversal guard). A name already in the
+  /// list is not duplicated — it is simply re-activated.
+  String createMemory(
+    String userId,
+    String name, {
+    required String memoryPrefix,
+  }) {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return 'Usage: /create_memory <name>';
+    }
+    if (!_isValidMemoryName(trimmed)) {
+      return 'Invalid memory name "$trimmed": use a name with no "_" or path '
+          'separators.';
+    }
+    final _UserSessions user = _ensureUser(userId);
+    if (!user.memories.contains(trimmed)) {
+      user.memories.add(trimmed);
+    }
+    user.activeMemory = trimmed;
+    _save();
+    return 'New memory $memoryPrefix$trimmed named $trimmed created and is in '
+        'use now';
+  }
+
+  /// Handles `/list_memory`: lists the chat's memory profiles three-digit-
+  /// numbered from `000`, marking the active one (§ 9.2). Each line shows the
+  /// bare name and the prefixed profile id it resolves to. Returns the list text.
+  ///
+  /// Every listed name is in-scope by construction — the registry stores only
+  /// bare names and renders each as `memoryPrefix + name`, so the list can never
+  /// surface a profile outside the chat's prefix (MSP-6).
+  String listMemory(String userId, {required String memoryPrefix}) {
+    final _UserSessions user = _ensureUser(userId);
+    final StringBuffer buffer = StringBuffer('Memories:');
+    for (int i = 0; i < user.memories.length; i++) {
+      final String name = user.memories[i];
+      final String index = i.toString().padLeft(3, '0');
+      final String marker = name == user.activeMemory ? '*' : ' ';
+      buffer.write('\n$index $marker $name  $memoryPrefix$name');
+    }
+    return buffer.toString();
+  }
+
+  /// Handles `/switch_memory <nnn|name>`: sets the chat's active memory profile
+  /// to the indexed or named profile *within the prefix scope* (§ 9.2). Returns
+  /// the acknowledgement, or an error for an out-of-range index, an unknown
+  /// name, or an out-of-scope argument.
+  ///
+  /// A numeric argument is a three-digit index into the prefix-scoped list
+  /// (mirroring `/pick_session`). A non-numeric argument is a bare selector: a
+  /// name carrying the prefix delimiter (`_`) or a path separator would address
+  /// a raw global id and is rejected (MSP-6); a well-formed name not yet created
+  /// is rejected too (use `/create_memory` to make it).
+  String switchMemory(
+    String userId,
+    String argument, {
+    required String memoryPrefix,
+  }) {
+    final String trimmed = argument.trim();
+    if (trimmed.isEmpty) {
+      return 'Usage: /switch_memory <nnn|name>';
+    }
+    final _UserSessions user = _ensureUser(userId);
+
+    // Numeric: a three-digit index into the prefix-scoped list.
+    final int? n = int.tryParse(trimmed);
+    if (n != null) {
+      if (n < 0 || n >= user.memories.length) {
+        return 'No memory numbered "$trimmed". Use /list_memory to see them.';
+      }
+      user.activeMemory = user.memories[n];
+      _save();
+      return 'Now using memory ${user.activeMemory} '
+          '($memoryPrefix${user.activeMemory})';
+    }
+
+    // Named: a bare selector within the chat's scope. A name carrying the prefix
+    // delimiter or a path separator would address a raw global id — reject it.
+    if (!_isValidMemoryName(trimmed)) {
+      return 'Out-of-scope memory "$trimmed": a memory name has no "_" or path '
+          'separators.';
+    }
+    if (!user.memories.contains(trimmed)) {
+      return 'No memory named "$trimmed". Use /list_memory to see them, or '
+          '/create_memory to make it.';
+    }
+    user.activeMemory = trimmed;
+    _save();
+    return 'Now using memory $trimmed ($memoryPrefix$trimmed)';
+  }
+
+  /// Whether [name] is a valid **bare** memory-profile selector: free of the
+  /// prefix delimiter (`_`) and path-safe (no separators, not `.`/`..`). A
+  /// bare name combines with the chat's `memoryPrefix` to a `_`-delimited
+  /// profile id, so a name containing `_` would let a command address a profile
+  /// outside its prefix scope (MSP-6); [isValidMemoryProfileName] guards the
+  /// filesystem path the name ultimately maps onto.
+  bool _isValidMemoryName(String name) =>
+      !name.contains('_') && isValidMemoryProfileName(name);
+
   /// The active session reference for [user]. Falls back to `global` if the
   /// stored active name no longer matches any session (defensive — a save keeps
   /// them consistent).
@@ -341,10 +486,32 @@ final class TelegramSessionRegistry {
         sessions.add(_SessionRef(name, id is String ? id : null));
       }
       if (sessions.isEmpty) return;
+
+      // Memory selection (§ 9.2): bare active name + bare list. A row written
+      // before memory support is missing both — fall back to the first-contact
+      // default (`default` active over `[default]`) so older state migrates in
+      // place (MSPP-34).
+      final Object? rawActiveMemory = row[_activeMemoryRowKey];
+      final String activeMemory =
+          rawActiveMemory is String && rawActiveMemory.isNotEmpty
+              ? rawActiveMemory
+              : defaultMemoryName;
+      final Object? rawMemories = row[_memoriesRowKey];
+      final List<String> memories = [
+        if (rawMemories is List)
+          for (final Object? name in rawMemories)
+            if (name is String) name,
+      ];
+      if (memories.isEmpty) memories.add(defaultMemoryName);
+      // The active name must be in the list (a hand-edit could drop it).
+      if (!memories.contains(activeMemory)) memories.add(activeMemory);
+
       _users[userId] = _UserSessions(
         active: active,
         sessions: sessions,
         traceMemory: row[_traceMemoryRowKey] == true,
+        activeMemory: activeMemory,
+        memories: memories,
       );
     });
   }
@@ -357,6 +524,8 @@ final class TelegramSessionRegistry {
         entry.key: <String, Object?>{
           _activeRowKey: entry.value.active,
           _traceMemoryRowKey: entry.value.traceMemory,
+          _activeMemoryRowKey: entry.value.activeMemory,
+          _memoriesRowKey: <Object?>[...entry.value.memories],
           _sessionsRowKey: [
             for (final _SessionRef ref in entry.value.sessions)
               <String, Object?>{
