@@ -69,6 +69,8 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
         SqliteVecBinaryResolver,
         TomBrainMemory,
         TomBrainMemoryMcpServer;
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
+    show defaultMemoryProfile;
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_core_server/tom_core_server.dart'
     show standalonePlatformUtils;
@@ -404,9 +406,14 @@ void main() {
         await live.process.stop();
       }
 
-      // Re-open the same on-disk root in-host and inspect through the MCP
-      // server — the brain's real external memory-inspection surface.
-      await _inspectOnDisk(live.config.memory, (mcp) async {
+      // Re-open the same on-disk store in-host and inspect through the MCP
+      // server — the brain's real external memory-inspection surface. The
+      // default-profile run writes under `<root>/profiles/defaultmemory_default/`
+      // (the provisioner opens the default client at
+      // `memory.withProfile(defaultMemoryProfile)`, MSPP-26/§8.1), so the
+      // inspection must bind that same profile, not the bare root.
+      await _inspectOnDisk(live.config.memory.withProfile(defaultMemoryProfile),
+          (mcp) async {
         await _assertExchangePersisted(mcp, prompt: prompt, answer: answer);
       });
     }, timeout: const Timeout(Duration(minutes: 5)));
@@ -470,8 +477,11 @@ void main() {
       }
 
       // The streamed exchange persisted to real memory just like the buffered
-      // path: the same procedure runs regardless of the delivery mode.
-      await _inspectOnDisk(live.config.memory, (mcp) async {
+      // path: the same procedure runs regardless of the delivery mode. Bind the
+      // default profile (see the non-stream test) so the inspection reads the
+      // directory the default-profile run actually wrote to.
+      await _inspectOnDisk(live.config.memory.withProfile(defaultMemoryProfile),
+          (mcp) async {
         await _assertExchangePersisted(
           mcp,
           prompt: prompt,
