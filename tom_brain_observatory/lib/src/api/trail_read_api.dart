@@ -252,27 +252,43 @@ final class TrailReadApi {
     return _sse(_listChanges(dir).map((_) => <String, Object?>{'changed': true}));
   }
 
-  /// `GET /api/llm?turn=<turnId>&path=<rawPath>` — the verbatim raw LLM dump
-  /// (§ 3.7) behind a run-tree `LlmCall`'s `rawPath` link. The run-tree JSON
-  /// only carries the link (§ 3.9); this endpoint serves the full §4.5 detail
-  /// (hashes, wire body, answer) the front-end needs (PT-2.4).
+  /// `GET /api/llm?path=<rawPath>` with **exactly one** of `turn=<turnId>` or
+  /// `run=<runId>` — the verbatim raw LLM dump (§ 3.7) behind a run-tree
+  /// `LlmCall`'s `rawPath` link. The run-tree JSON only carries the link
+  /// (§ 3.9); this endpoint serves the full §4.5 detail (hashes, wire body,
+  /// answer) the front-end needs (PT-2.4).
+  ///
+  /// `turn=` resolves the link against a turn-bound run's procedure-log folder;
+  /// `run=` resolves it against a **turn-less dream/free-time run**'s folder
+  /// (MSPP-55, the dreaming-side counterpart — a dream has no `turnId`, § 5A.4).
+  /// The two differ only in how the procedure log is located
+  /// ([TrailHost.procedureLogFor] vs [TrailHost.dreamRunLog]); the link
+  /// resolution, the containment guard, and the verbatim pass-through are
+  /// identical, so the endpoint stays a single seam.
   ///
   /// `rawPath` is the `../../llm/…raw.json` link from the run-tree `.log`,
-  /// resolved against that turn's procedure-log folder. A containment guard
+  /// resolved against that run's procedure-log folder. A containment guard
   /// refuses anything that does not resolve under `<root>/llm/` or that is not a
   /// `.raw.json` — the link can only address an LLM dump, never an arbitrary
   /// file (read-only, OBS-1). The body is passed through verbatim: it is already
   /// the JSON the brain wrote, so the endpoint re-parses nothing.
   Response _llmRaw(Request request) {
     final turnId = request.url.queryParameters['turn'];
+    final runId = request.url.queryParameters['run'];
     final rawPath = request.url.queryParameters['path'];
-    if (turnId == null || rawPath == null) {
-      return _json(<String, Object?>{'error': 'requires ?turn= and ?path='},
+    if (rawPath == null || (turnId == null) == (runId == null)) {
+      return _json(
+          <String, Object?>{
+            'error': 'requires ?path= and exactly one of ?turn= or ?run='
+          },
           status: HttpStatus.badRequest);
     }
-    final procedureLog = host.procedureLogFor(turnId);
+    final File? procedureLog = turnId != null
+        ? host.procedureLogFor(turnId)
+        : host.dreamRunLog(runId!);
     if (procedureLog == null) {
-      return _json(<String, Object?>{'error': 'no run for turn $turnId'},
+      final what = turnId != null ? 'turn $turnId' : 'dream run $runId';
+      return _json(<String, Object?>{'error': 'no run for $what'},
           status: HttpStatus.notFound);
     }
     final file = host.llmRawFromLink(procedureLog, rawPath);
