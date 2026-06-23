@@ -129,6 +129,17 @@ abstract interface class TraceApiClient {
   /// `GET /api/stream` — the list-level live-tail (§ 4.8): a tick on connect and
   /// whenever a session live-trail changes, so the prompt list re-fetches.
   Stream<void> listChanges();
+
+  /// `GET /api/dream/stream[?lane=]` — the dreaming-side live-tail (§ 5A.5,
+  /// MSPP-57/58): a refresh tick per appended run-tree operation of the active
+  /// dream run, plus a terminal tick when it completes, so Module 3 re-fetches
+  /// the lane list / open run-tree without a manual refresh — the dream-side
+  /// mirror of [listChanges]. Consumed as a signal (not a delta builder): the
+  /// views re-fetch through the `/api/dream/*` GETs. One connection follows the
+  /// newest run to completion then ends (the backend's one-run contract); a
+  /// connection error ends the stream quietly so the views degrade to
+  /// fresh-parse-on-refresh.
+  Stream<void> dreamChanges({String? lane});
 }
 
 /// Talks to the same-origin `/api` via [http]. URLs resolve against [origin]
@@ -373,6 +384,24 @@ class HttpTraceApiClient implements TraceApiClient {
   Stream<void> listChanges() async* {
     final uri = _resolve('api/stream', const <String, String>{});
     final res = await _http.send(http.Request('GET', uri));
+    yield* sseDataFrames(res.stream).map((_) {});
+  }
+
+  @override
+  Stream<void> dreamChanges({String? lane}) async* {
+    final uri = _resolve('api/dream/stream', <String, String>{'lane': ?lane});
+    // One connection follows the newest dream run to completion then ends
+    // (MSPP-58): every SSE frame — each appended op and the terminal `done` —
+    // is one refresh tick. A connection failure ends the stream quietly so the
+    // views fall back to fresh-parse-on-refresh; reaching the end of the SSE
+    // frames is the run's clean completion, which simply ends the stream.
+    final http.StreamedResponse res;
+    try {
+      res = await _http.send(http.Request('GET', uri));
+    } catch (_) {
+      return;
+    }
+    if (res.statusCode != 200) return;
     yield* sseDataFrames(res.stream).map((_) {});
   }
 

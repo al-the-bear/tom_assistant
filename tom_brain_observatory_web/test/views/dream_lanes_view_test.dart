@@ -3,6 +3,8 @@
 // content + order, the lane filter, the run→detail navigation (rendering the
 // shared run-tree), and the empty-lane degradation.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tom_brain_observatory_web/src/app.dart';
@@ -243,5 +245,84 @@ void main() {
       StubApiClient(dreamLanes: _lanes, dreamRuns: const <DreamRunRow>[]),
     );
     expect(find.text('No dream runs in this lane.'), findsOneWidget);
+  });
+
+  // MSPP-58 — the lane run-list re-fetches on a `/api/dream/stream` tick, so a
+  // dream run that appears while a cycle runs surfaces without a manual refresh.
+  testWidgets('the lane run-list updates live on a dream-stream tick',
+      (tester) async {
+    final dreamTicks = StreamController<void>.broadcast();
+    addTearDown(dreamTicks.close);
+    await _openMonitor(
+      tester,
+      StubApiClient(
+        dreamLanes: _lanes,
+        dreamRuns: <DreamRunRow>[_row('run_a_0')],
+        dreamRunsAfterChange: <DreamRunRow>[
+          _row('run_a_0'),
+          _row('run_b_0', procedureId: 'dream_synthesise_v1', laneId: 'slow'),
+        ],
+        dreamChangesStream: dreamTicks.stream,
+      ),
+    );
+    expect(find.byType(DreamRunTile), findsNWidgets(1));
+
+    // A dream-stream frame arrives → the list re-fetches without a manual tap.
+    dreamTicks.add(null);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DreamRunTile), findsNWidgets(2));
+  });
+
+  // MSPP-58 — the open run-tree re-fetches on a tick, so an in-progress dream
+  // run's tree fills in live as it advances to its terminal outcome.
+  testWidgets('the open dream run-tree updates live on a dream-stream tick',
+      (tester) async {
+    final dreamTicks = StreamController<void>.broadcast();
+    addTearDown(dreamTicks.close);
+    DreamRun dream(String status, List<RunNode> nodes, int? elapsedMs) => DreamRun(
+          runId: 'run_a_0',
+          procedureId: 'dream_extract_v1',
+          laneId: 'fast',
+          run: ProcedureRun(
+            procedureId: 'dream_extract_v1',
+            runId: 'run_a_0',
+            turnId: null,
+            status: status,
+            elapsedMs: elapsedMs,
+            entryCount: nodes.length,
+            nodes: nodes,
+          ),
+        );
+    await _openMonitor(
+      tester,
+      StubApiClient(
+        dreamLanes: _lanes,
+        dreamRuns: <DreamRunRow>[_row('run_a_0', outcomeStatus: null)],
+        // In-progress: status `unknown`, no steps yet.
+        dreamRunDetails: <String, DreamRun>{
+          'run_a_0': dream('unknown', const <RunNode>[], null),
+        },
+        // After the tick: completed with one extract note.
+        dreamRunDetailsAfterChange: <String, DreamRun>{
+          'run_a_0':
+              dream('accepted', const <RunNode>[NoteNode(category: 'extract')], 3200),
+        },
+        dreamChangesStream: dreamTicks.stream,
+      ),
+    );
+
+    await tester.tap(find.text('dream_extract_v1'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DreamRunDetailView), findsOneWidget);
+    // The in-progress run-tree shows no completed steps yet.
+    expect(find.textContaining('unknown · 0 steps'), findsOneWidget);
+    expect(find.textContaining('accepted · 1 steps'), findsNothing);
+
+    // A dream-stream frame arrives → the open run-tree re-fetches and now shows
+    // the completed tree, without leaving the detail view.
+    dreamTicks.add(null);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('accepted · 1 steps'), findsOneWidget);
   });
 }

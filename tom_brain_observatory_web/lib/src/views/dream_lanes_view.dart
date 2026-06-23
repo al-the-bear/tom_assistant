@@ -13,6 +13,8 @@
 // turn-less `LlmCallSource.dreamRun(runId)` source (MSPP-55/56) — a dream run
 // has no turnId, so the dump is resolved against its `?run=` log.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api/memory_api_client.dart';
@@ -50,6 +52,7 @@ class DreamLanesView extends StatefulWidget {
 class _DreamLanesViewState extends State<DreamLanesView> {
   late Future<List<DreamLane>> _lanes;
   late Future<List<DreamRunRow>> _runs;
+  StreamSubscription<void>? _dreamChanges;
 
   /// The selected lane id, or [allDreamLanes] for "all lanes" (the default).
   String _selectedLane = allDreamLanes;
@@ -57,16 +60,38 @@ class _DreamLanesViewState extends State<DreamLanesView> {
   @override
   void initState() {
     super.initState();
+    _refresh();
+    // The dreaming-side live-tail (§ 5A.5, MSPP-58): re-fetch the lane list and
+    // run list on each `/api/dream/stream` tick, so a dream run that starts /
+    // advances while a cycle is running surfaces without a manual refresh. The
+    // signal is unfiltered (global dream activity); the lane filter still drives
+    // which runs are fetched. A stream error / unconfigured host yields nothing,
+    // so the page degrades silently to its fresh-parse `FutureBuilder`s.
+    _dreamChanges = widget.client.dreamChanges().listen((_) {
+      if (!mounted) return;
+      setState(_refresh);
+    });
+  }
+
+  @override
+  void dispose() {
+    _dreamChanges?.cancel();
+    super.dispose();
+  }
+
+  /// (Re)issues the lane + run fetches for the current [_selectedLane]. Called
+  /// from `initState`, the lane selector, and each live-tail tick.
+  void _refresh() {
     _lanes = widget.client.listDreamLanes();
-    _runs = widget.client.listDreamRuns();
+    _runs = widget.client.listDreamRuns(
+      lane: _selectedLane == allDreamLanes ? null : _selectedLane,
+    );
   }
 
   void _selectLane(String lane) {
     setState(() {
       _selectedLane = lane;
-      _runs = widget.client.listDreamRuns(
-        lane: lane == allDreamLanes ? null : lane,
-      );
+      _refresh();
     });
   }
 
@@ -237,7 +262,56 @@ class DreamRunDetailView extends StatefulWidget {
 }
 
 class _DreamRunDetailViewState extends State<DreamRunDetailView> {
-  late final Future<DreamRun?> _run = widget.client.dreamRunFor(widget.runId);
+  /// The last successfully-loaded run, held across re-fetches so a live tick
+  /// never flickers the run-tree back to a spinner mid-cycle (MSPP-58).
+  DreamRun? _dream;
+  Object? _error;
+  bool _loaded = false;
+  StreamSubscription<void>? _dreamChanges;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    // Follow the active dream run: re-fetch on each `/api/dream/stream` tick so
+    // the open run-tree fills in live. Once the run reaches a terminal outcome
+    // its tree is final, so [_load] tears the subscription down. A stream error
+    // / unconfigured host yields nothing, leaving the first fresh-parse load.
+    _dreamChanges = widget.client.dreamChanges().listen((_) {
+      if (!mounted) return;
+      _load();
+    });
+  }
+
+  Future<void> _load() async {
+    try {
+      final dream = await widget.client.dreamRunFor(widget.runId);
+      if (!mounted) return;
+      setState(() {
+        _dream = dream;
+        _error = null;
+        _loaded = true;
+      });
+      // The run-tree is final once the run leaves the `unknown` in-progress
+      // sentinel — stop re-fetching it.
+      if (dream != null && dream.run.status != 'unknown') {
+        await _dreamChanges?.cancel();
+        _dreamChanges = null;
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _loaded = true;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _dreamChanges?.cancel();
+    super.dispose();
+  }
 
   void _openScript(ProcedureRun run) {
     Navigator.of(context).push(MaterialPageRoute<void>(
@@ -268,30 +342,29 @@ class _DreamRunDetailViewState extends State<DreamRunDetailView> {
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: Text(widget.runId)),
-        body: FutureBuilder<DreamRun?>(
-          future: _run,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Center(child: Text('Failed to load dream run: ${snapshot.error}'));
-            }
-            final dream = snapshot.data;
-            if (dream == null) {
-              return Center(child: Text('No dream run ${widget.runId}.'));
-            }
-            return ListView(
-              children: buildDreamRunSections(
-                dream,
-                onOpenLlmCall: _openLlmCall,
-                onInspectScript: _openScript,
-                onOpenNode: _openNode,
-              ),
-            );
-          },
-        ),
+        body: _body(),
       );
+
+  Widget _body() {
+    if (!_loaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(child: Text('Failed to load dream run: $_error'));
+    }
+    final dream = _dream;
+    if (dream == null) {
+      return Center(child: Text('No dream run ${widget.runId}.'));
+    }
+    return ListView(
+      children: buildDreamRunSections(
+        dream,
+        onOpenLlmCall: _openLlmCall,
+        onInspectScript: _openScript,
+        onOpenNode: _openNode,
+      ),
+    );
+  }
 }
 
 /// The §5A.4 dream-run sections for [dream]: a one-line header (agent · lane ·
