@@ -81,6 +81,7 @@ import '../edge_security/quota.dart';
 import '../edge_security/rate_limiter.dart';
 import '../identity/identity_resolver.dart';
 import 'api_key_config.dart';
+import 'telegram_chat_profile_config.dart';
 
 /// Raised when the whole-process YAML's `access:` section (or the
 /// document's top-level shape) is malformed (E.44).
@@ -270,6 +271,23 @@ final class AccessConfig {
   /// twice is a configuration error, never a silent last-wins).
   final Map<String, ApiKeyConfig> _apiKeysByKey;
 
+  /// The per-chat Telegram session/memory namespacing entries
+  /// (`memory_session_profiles.md` § 9.1, MSP-6). One [TelegramChatProfileConfig] per
+  /// configured chat; the entry carries the `sessionPrefix` / `memoryPrefix`
+  /// namespace that scopes that chat's session + memory commands. Empty when no
+  /// `access.telegram.chats:` block is configured.
+  ///
+  /// Looked up by chat id via [telegramChatFor]; a chat with no entry uses
+  /// [TelegramChatProfileConfig.unconfigured] (the built-in `defaultsession_` /
+  /// `defaultmemory_` prefixes).
+  final List<TelegramChatProfileConfig> telegramChats;
+
+  /// Index of [telegramChats] by [TelegramChatProfileConfig.chatId], built once at
+  /// construction so the edge resolves a chat to its prefixes in O(1)
+  /// (steps 10–11). Rejects a duplicate chat id (the same chat configured
+  /// twice is a configuration error, never a silent last-wins).
+  final Map<String, TelegramChatProfileConfig> _telegramChatsByChatId;
+
   /// The short-horizon burst-throttle policy (E.29).
   final RateLimitPolicy rateLimitPolicy;
 
@@ -331,6 +349,7 @@ final class AccessConfig {
     Map<String, IdentityBinding> bearerTokenBindings = const {},
     Map<String, IdentityBinding> telegramUserIdBindings = const {},
     List<ApiKeyConfig> apiKeys = const [],
+    List<TelegramChatProfileConfig> telegramChats = const [],
     this.personaVocabulary,
     this.answerLaneSizing = const HistorySizing.standard(),
     this.embeddingCacheTtl = const Duration(minutes: 5),
@@ -340,7 +359,9 @@ final class AccessConfig {
         bearerTokenBindings = Map.unmodifiable(bearerTokenBindings),
         telegramUserIdBindings = Map.unmodifiable(telegramUserIdBindings),
         apiKeys = List.unmodifiable(apiKeys),
-        _apiKeysByKey = _indexApiKeys(apiKeys) {
+        _apiKeysByKey = _indexApiKeys(apiKeys),
+        telegramChats = List.unmodifiable(telegramChats),
+        _telegramChatsByChatId = _indexTelegramChats(telegramChats) {
     if (openAiPort <= 0) {
       throw ArgumentError.value(openAiPort, 'openAiPort', 'must be > 0');
     }
@@ -384,6 +405,16 @@ final class AccessConfig {
   /// bearer token (no per-key namespacing) and the default prefixes apply.
   ApiKeyConfig? apiKeyFor(String residualKey) => _apiKeysByKey[residualKey];
 
+  /// The [TelegramChatProfileConfig] whose [TelegramChatProfileConfig.chatId] is [chatId], or
+  /// `null` when no `access.telegram.chats:` entry configures that chat
+  /// (`memory_session_profiles.md` § 9.1).
+  ///
+  /// An unconfigured chat (a `null` return) uses
+  /// [TelegramChatProfileConfig.unconfigured] — the built-in `defaultsession_` /
+  /// `defaultmemory_` prefixes (MSP-4), byte-compatible with a brand-new chat.
+  TelegramChatProfileConfig? telegramChatFor(String chatId) =>
+      _telegramChatsByChatId[chatId];
+
   /// Builds the immutable [ApiKeyConfig.key] → entry index, rejecting (with
   /// [ArgumentError]) a key declared by two entries — a credential is declared
   /// exactly once.
@@ -400,6 +431,26 @@ final class AccessConfig {
       byKey[cfg.key] = cfg;
     }
     return Map.unmodifiable(byKey);
+  }
+
+  /// Builds the immutable [TelegramChatProfileConfig.chatId] → entry index, rejecting
+  /// (with [ArgumentError]) a chat id configured by two entries — a chat is
+  /// configured exactly once (never a silent last-wins).
+  static Map<String, TelegramChatProfileConfig> _indexTelegramChats(
+    Iterable<TelegramChatProfileConfig> chats,
+  ) {
+    final byChatId = <String, TelegramChatProfileConfig>{};
+    for (final cfg in chats) {
+      if (byChatId.containsKey(cfg.chatId)) {
+        throw ArgumentError.value(
+          cfg.chatId,
+          'telegram.chats',
+          'duplicate chat id — each chat is configured once',
+        );
+      }
+      byChatId[cfg.chatId] = cfg;
+    }
+    return Map.unmodifiable(byChatId);
   }
 
   /// Projects [apiKeys] onto the bearer-token binding contributions the loader

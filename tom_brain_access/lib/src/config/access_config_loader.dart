@@ -57,6 +57,7 @@ import '../edge_security/rate_limiter.dart';
 import '../identity/identity_resolver.dart';
 import 'access_config.dart';
 import 'api_key_config.dart';
+import 'telegram_chat_profile_config.dart';
 
 /// Parses + materialises [AccessConfig] from the whole-process YAML.
 ///
@@ -240,7 +241,7 @@ abstract final class AccessConfigLoader {
       '/v1',
     );
 
-    final telegramToken = _parseTelegram(
+    final (telegramToken, telegramChats) = _parseTelegram(
       _optionalMap(node, 'telegram', 'access.telegram'),
       env,
     );
@@ -298,6 +299,7 @@ abstract final class AccessConfigLoader {
       bearerTokenBindings: bearerBindings,
       telegramUserIdBindings: telegramBindings,
       apiKeys: apiKeys,
+      telegramChats: telegramChats,
       rateLimitPolicy: rateLimit,
       dailyQuotaPolicy: quota,
       anchorPolicy: anchor,
@@ -355,18 +357,21 @@ abstract final class AccessConfigLoader {
     return _parsePortAndBasePath(node, path, defaultBasePath);
   }
 
-  /// Parses `access.telegram` → bot token.
+  /// Parses `access.telegram` → (bot token, per-chat configs).
   ///
-  /// The whitelist now lives under `access.users` (Q-E.24.2), so this
-  /// section carries only the bot token.
-  static String? _parseTelegram(
+  /// The whitelist now lives under `access.users` (Q-E.24.2), so this section
+  /// carries the bot token plus the per-chat session/memory namespacing
+  /// `chats[]` block (`memory_session_profiles.md` § 9.1, MSP-6). A chat with
+  /// no entry uses the default prefixes; the typed entries are resolved by the
+  /// edge after the chat is identified (steps 10–11).
+  static (String?, List<TelegramChatProfileConfig>) _parseTelegram(
     YamlMap? node,
     Map<String, String> env,
   ) {
-    if (node == null) return null;
+    if (node == null) return (null, const <TelegramChatProfileConfig>[]);
     _rejectUnknownKeys(
       node,
-      const <String>{'botToken'},
+      const <String>{'botToken', 'chats'},
       'access.telegram',
     );
     String? token = _optionalString(
@@ -382,7 +387,124 @@ abstract final class AccessConfigLoader {
         );
       }
     }
-    return token;
+    final chats = _parseTelegramChats(
+      _optionalList(node, 'chats', 'access.telegram.chats'),
+      env,
+    );
+    return (token, chats);
+  }
+
+  /// Parses `access.telegram.chats` → the per-chat session/memory namespacing
+  /// entries (`memory_session_profiles.md` § 9.1).
+  ///
+  /// Each list entry is one [TelegramChatProfileConfig]: a required `chatId` (the
+  /// Telegram chat the entry configures), an optional `principal`, the optional
+  /// `sessionPrefix` / `memoryPrefix` namespace (defaulting to
+  /// [defaultSessionPrefix] / [defaultMemoryPrefix], MSP-4), and the optional
+  /// `defaultSession` / `defaultMemory` selectors the chat starts on
+  /// (defaulting to [defaultProfileSelector]).
+  static List<TelegramChatProfileConfig> _parseTelegramChats(
+    YamlList? node,
+    Map<String, String> env,
+  ) {
+    if (node == null) return const <TelegramChatProfileConfig>[];
+    final chats = <TelegramChatProfileConfig>[];
+    final seenChatIds = <String>{};
+    for (var i = 0; i < node.length; i++) {
+      final entry = node[i];
+      if (entry is! YamlMap) {
+        throw AccessConfigException(
+          'access.telegram.chats[$i] must be a map (got ${entry.runtimeType}).',
+        );
+      }
+      final chat = _parseTelegramChat(entry, env, 'access.telegram.chats[$i]');
+      // A chat is configured exactly once; a duplicate id is a config error,
+      // not a silent last-wins (mirrors `_indexTelegramChats`, but surfaced
+      // here with a dotted path before `AccessConfig` is constructed).
+      if (!seenChatIds.add(chat.chatId)) {
+        throw AccessConfigException(
+          'access.telegram.chats[$i].chatId "${chat.chatId}" is configured by '
+          'more than one entry — each chat is configured once.',
+        );
+      }
+      chats.add(chat);
+    }
+    return chats;
+  }
+
+  static TelegramChatProfileConfig _parseTelegramChat(
+    YamlMap node,
+    Map<String, String> env,
+    String path,
+  ) {
+    _rejectUnknownKeys(
+      node,
+      const <String>{
+        'chatId',
+        'principal',
+        'sessionPrefix',
+        'memoryPrefix',
+        'defaultSession',
+        'defaultMemory',
+      },
+      path,
+    );
+    // The chat id is a public Telegram id: an integer scalar is coerced to its
+    // decimal string, a string scalar `${ENV}`-expands like the user Telegram
+    // ids (MSPP-29). The prefixes / selectors / principal are non-secret
+    // namespace labels and are taken verbatim.
+    final chatId = _parseChatId(node, '$path.chatId', env);
+    final principal = _optionalString(node, 'principal', '$path.principal');
+    final sessionPrefix =
+        _optionalString(node, 'sessionPrefix', '$path.sessionPrefix') ??
+            defaultSessionPrefix;
+    final memoryPrefix =
+        _optionalString(node, 'memoryPrefix', '$path.memoryPrefix') ??
+            defaultMemoryPrefix;
+    final defaultSession =
+        _optionalString(node, 'defaultSession', '$path.defaultSession') ??
+            defaultProfileSelector;
+    final defaultMemory =
+        _optionalString(node, 'defaultMemory', '$path.defaultMemory') ??
+            defaultProfileSelector;
+    try {
+      return TelegramChatProfileConfig(
+        chatId: chatId,
+        principal: principal,
+        sessionPrefix: sessionPrefix,
+        memoryPrefix: memoryPrefix,
+        defaultSession: defaultSession,
+        defaultMemory: defaultMemory,
+      );
+    } on ArgumentError catch (e) {
+      throw AccessConfigException('$path: ${e.message ?? e.toString()}');
+    }
+  }
+
+  /// Reads a `chatId` tolerantly (schema: `["string", "integer"]`): an integer
+  /// scalar is coerced to its decimal string; a string scalar `${ENV}`-expands.
+  /// The resolved value is the string the registry/edge keys a chat on; an
+  /// empty expanded value is rejected.
+  static String _parseChatId(
+    YamlMap node,
+    String path,
+    Map<String, String> env,
+  ) {
+    final raw = node['chatId'];
+    if (raw == null) {
+      throw AccessConfigException('$path is required.');
+    }
+    if (raw is int) return raw.toString();
+    if (raw is! String) {
+      throw AccessConfigException(
+        '$path must be a string or integer (got ${raw.runtimeType}).',
+      );
+    }
+    final expanded = _expandEnv(raw, env, path);
+    if (expanded.isEmpty) {
+      throw AccessConfigException('$path must be non-empty.');
+    }
+    return expanded;
   }
 
   /// Parses `access.users` → the declared humans (Q-E.24.2).
