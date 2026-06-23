@@ -105,6 +105,10 @@ export 'src/provision_brain.dart'
         standUpBrainProcess,
         standUpBrainProcessFromConfig;
 
+// ── Legacy-store migration (memory-session-profiles § 11; plan step 8) ─
+export 'src/legacy_store_migration.dart'
+    show LegacyMigrationOutcome, migrateLegacyMemoryRoot;
+
 // ── Scheduled dream cadence driver (memory-spec § 9.7; G-M3) ──────────
 export 'src/dream_cadence_driver.dart'
     show

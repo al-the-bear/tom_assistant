@@ -62,6 +62,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         DreamLaneSessions,
         FileScope,
         DartMcpConnector,
+        defaultMemoryProfile,
         FreeTimeScheduler,
         LlmTrailRecord,
         LlmTrailSink,
@@ -97,6 +98,7 @@ import 'cli_server_port_switch.dart'
 import 'builtin_bindings.dart' show BrainBuiltins;
 import 'cognition_config.dart' show CognitionConfig;
 import 'cognition_config_loader.dart' show CognitionConfigLoader;
+import 'legacy_store_migration.dart' show migrateLegacyMemoryRoot;
 import 'cognition_prompt_resolver.dart'
     show buildPromptResolver, buildRouteChainResolver;
 import 'dream_cadence_driver.dart' show CadenceSchedule;
@@ -831,10 +833,21 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
       ? const <McpToolDefinition>[]
       : await McpClientToolSource(mcpClient, offered: mcpOffered).listTools();
 
+  // One-shot legacy-store migration (memory-session-profiles § 11, plan step 8,
+  // MSPP-26/MSPP-27): if a pre-profiles bare-root store exists and
+  // `<root>/profiles/` does not, relocate it into the default profile directory
+  // before the default store is opened. Idempotent — a second boot is a no-op.
+  // The default store is then provisioned against the *profiled* default config
+  // so it reads the migrated data back; every `.root`-keyed non-memory store
+  // (session todos, agent-SDK / dream sessions, the Telegram edge state) keeps
+  // using the bare root because `withProfile` preserves `.root`.
+  migrateLegacyMemoryRoot(runConfig.memory);
+  final memoryConfig = runConfig.memory.withProfile(defaultMemoryProfile);
+
   return standUpBrainProcess(
     config: runConfig.access,
     substrate: substrate,
-    memoryConfig: runConfig.memory,
+    memoryConfig: memoryConfig,
     substrateConfig: runConfig.substrate,
     systemScriptsDir: scriptsDir,
     serve: serve,
