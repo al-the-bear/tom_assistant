@@ -45,7 +45,8 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         MemoryProfileRegistry,
         NodeDraft,
         Scope,
-        TomBrainMemoryClient;
+        TomBrainMemoryClient,
+        validateMemoryProfileName;
 
 import '../api/tom_brain_memory.dart';
 import '../config/memory_config_paths.dart';
@@ -177,22 +178,9 @@ final class SqliteMemoryProfileRegistry implements MemoryProfileRegistry {
 
   /// Rejects any name that could escape the `profiles/` directory.
   ///
-  /// A valid profile name is non-empty, is not `.` or `..`, and
-  /// contains no path separator (`/` or `\`). This keeps the resolved
-  /// `<root>/profiles/<name>` strictly one level below `profiles/`.
-  static void _validateName(String name) {
-    final invalid = name.isEmpty ||
-        name == '.' ||
-        name == '..' ||
-        name.contains('/') ||
-        name.contains(r'\');
-    if (invalid) {
-      throw ArgumentError.value(
-        name,
-        'profile',
-        'profile name must be non-empty and contain no path separators '
-            "or '.'/'..' segments",
-      );
-    }
-  }
+  /// Delegates to the shared [validateMemoryProfileName] guard
+  /// (`tom_brain_shared`), the single source of truth this registry and
+  /// the engine-side `ProfiledMemory` router both apply before a name
+  /// becomes a `<root>/profiles/<name>` path.
+  static void _validateName(String name) => validateMemoryProfileName(name);
 }

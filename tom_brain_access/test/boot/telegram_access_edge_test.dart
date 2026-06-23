@@ -102,23 +102,16 @@ InboundRequest _inbound({
   return (edge: edge, booted: booted, chatApi: chatApi, inbound: inbound);
 }
 
-/// A deterministic, assertable, *valid `TimestampId`-shaped* session id for the
-/// n-th mint — `260608-000000.00000N`. Valid-format ids matter: the registry's
-/// invalid-session check recreates any active id that does not parse as a
-/// `TimestampId` (corruption guard), and the production minter always yields
-/// valid ids, so a realistic test minter must too.
-String _vid(int n) => '260608-000000.${n.toString().padLeft(6, '0')}';
-
-/// A registry with a deterministic, assertable minter ([_vid] 0, 1, …) for the
-/// command / stamping tests that need to name the active id.
-TelegramSessionRegistry _deterministicRegistry(BootedAccessLayer booted) {
-  var n = 0;
-  return TelegramSessionRegistry(
-    store: MapEdgeStateStore(),
-    mintSessionId: () => _vid(n++),
-    adoptSession: booted.assembler.sessionManager.ensureSession,
-  );
-}
+/// A registry for the command / stamping tests that name the active id. The
+/// effective ids are deterministic by construction (the prefixed-id model,
+/// MSPP-37): an unconfigured chat's `defaultsession_` prefix joins the bare name
+/// — first contact's `default` ⇒ `defaultsession_default`, a created `work` ⇒
+/// `defaultsession_work` — so no minter seam is needed to make them assertable.
+TelegramSessionRegistry _deterministicRegistry(BootedAccessLayer booted) =>
+    TelegramSessionRegistry(
+      store: MapEdgeStateStore(),
+      adoptSession: booted.assembler.sessionManager.ensureSession,
+    );
 
 /// A registry over an in-memory store, for the two `announceStartup` cases that
 /// build the edge directly (no inbound traffic, so the registry is unused but
@@ -324,10 +317,10 @@ void main() {
         f.inbound.add(_inbound(text: 'hello'));
         await pumpEventQueue();
 
-        // First contact silently activates `default` (minted `sess-0`); the
-        // dispatched access carries that id — no command reply leaked in.
+        // First contact silently activates `default`; the dispatched access
+        // carries the chat-prefixed effective id — no command reply leaked in.
         expect(d.routed, hasLength(1));
-        expect(d.routed.single.session.sessionId, _vid(0));
+        expect(d.routed.single.session.sessionId, 'defaultsession_default');
         expect(f.chatApi.sentMessages, contains('the answer'));
       });
 
@@ -350,7 +343,7 @@ void main() {
         // Continuity: both turns carry the same active id (history builds up).
         expect(
           d.routed.map((a) => a.session.sessionId),
-          equals([_vid(0), _vid(0)]),
+          equals(['defaultsession_default', 'defaultsession_default']),
         );
       });
 
@@ -370,11 +363,11 @@ void main() {
 
         // The command never reaches the brain.
         expect(d.routed, isEmpty);
-        // It is acknowledged with the exact wording; the minted id is the
-        // first-contact default's successor (sess-1, after the silent sess-0).
+        // It is acknowledged with the exact wording; the effective id is the
+        // chat-prefixed name `defaultsession_work`.
         expect(
           f.chatApi.sentMessages.single,
-          'New session ${_vid(1)} named work created and is in use now',
+          'New session defaultsession_work named work created and is in use now',
         );
       });
 
@@ -395,7 +388,7 @@ void main() {
         await pumpEventQueue();
 
         expect(d.routed, hasLength(1));
-        expect(d.routed.single.session.sessionId, _vid(1));
+        expect(d.routed.single.session.sessionId, 'defaultsession_work');
       });
 
       test('/list_sessions is intercepted and lists global + default',
@@ -777,9 +770,9 @@ void main() {
 
         // The brain is never involved — the working list is an engine read.
         expect(d.routed, isEmpty);
-        // First contact silently activates `default` (minted _vid(0)); the
-        // inspector is asked for exactly that active session id.
-        expect(inspector.listedSessions, equals([_vid(0)]));
+        // First contact silently activates `default`; the inspector is asked
+        // for exactly that active session's effective id.
+        expect(inspector.listedSessions, equals(['defaultsession_default']));
         expect(
           f.chatApi.sentMessages.single,
           'Working todo list (1):\n[ ] t1  do the thing',
@@ -805,7 +798,7 @@ void main() {
         await pumpEventQueue();
 
         expect(d.routed, isEmpty);
-        expect(inspector.clearedSessions, equals([_vid(0)]));
+        expect(inspector.clearedSessions, equals(['defaultsession_default']));
         expect(
           f.chatApi.sentMessages.single,
           'Cleared 2 entries from the working todo list.',

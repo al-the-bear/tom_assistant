@@ -97,6 +97,7 @@ import 'inbound_classifier.dart';
 import 'memory_provisioning.dart';
 import 'procedure_routing.dart';
 import 'procedure_selector.dart';
+import 'profiled_memory.dart' show ProfiledMemory;
 import 'run_coordinator.dart';
 
 /// Tears a started access layer down (stop listening, close sockets).
@@ -473,6 +474,13 @@ final class BootedBrain {
   /// close.
   final ProvisionedMemory memory;
 
+  /// The per-profile memory router (§ 8, MSPP-23), or `null` when the transport
+  /// cannot provision per-profile siblings (the in-process boot path). It owns
+  /// every per-profile transport it lazily spawned, so [shutdown] disposes it to
+  /// tear those down. The default-profile client it fronts is [memory] (owned
+  /// here and disposed separately).
+  final ProfiledMemory? profiledMemory;
+
   /// The in-process substrate boot opened. Exposed for inspection; closed by
   /// [shutdown].
   final TomBrainSubstrateClient substrate;
@@ -485,6 +493,7 @@ final class BootedBrain {
     required this.engine,
     required this.coordinator,
     required this.memory,
+    required this.profiledMemory,
     required this.substrate,
     required AccessLayerShutdown? accessLayerShutdown,
   }) : _accessLayerShutdown = accessLayerShutdown;
@@ -508,10 +517,15 @@ final class BootedBrain {
   ///      subscribers see the done-stream and no controller resource outlives
   ///      the boot (F.3.2). Done after the drain so no transition emits onto a
   ///      closed stream.
-  ///   4. **Dispose memory** — the isolate transport flushes writes +
+  ///   4. **Dispose the per-profile memory router** ([ProfiledMemory.dispose])
+  ///      — tears down every per-profile transport it lazily spawned (each its
+  ///      own isolate), flushing + checkpointing each before closing. The
+  ///      default client it fronts is `memory`, disposed in step 5. `null` for
+  ///      the in-process boot.
+  ///   5. **Dispose memory** — the isolate transport flushes writes +
   ///      checkpoints the WAL before closing the worker, persisting the trails
   ///      the drain let close.
-  ///   5. **Close the substrate.**
+  ///   6. **Close the substrate.**
   ///
   /// [drainTimeout] bounds step 2's best-effort wait; it defaults to
   /// [defaultShutdownDrainTimeout]. Pass a `null` timeout
@@ -527,6 +541,7 @@ final class BootedBrain {
     }
     await coordinator.drain(timeout: drainTimeout);
     await coordinator.close();
+    await profiledMemory?.dispose();
     await memory.dispose();
     await substrate.close();
   }
@@ -597,6 +612,7 @@ abstract final class BrainProcessBoot {
         engine: built.engine,
         coordinator: built.coordinator,
         memory: provisioned,
+        profiledMemory: built.profiledMemory,
         substrate: substrate,
         accessLayerShutdown: accessLayerShutdown,
       );
@@ -638,7 +654,7 @@ abstract final class BrainProcessBoot {
   ///
   /// The engine and coordinator share *one* [PreemptionState] (the engine
   /// yields against it; the coordinator drives it — see the file header).
-  static Future<({Dispatcher dispatcher, ProcedureEngine engine, RunCoordinator coordinator})>
+  static Future<({Dispatcher dispatcher, ProcedureEngine engine, RunCoordinator coordinator, ProfiledMemory? profiledMemory})>
       _buildEngine({
     required BrainProcessConfig config,
     required ProvisionedMemory memory,
@@ -654,12 +670,19 @@ abstract final class BrainProcessBoot {
     // coordinator (drives it) — see the file header.
     final preemption = PreemptionState();
 
+    // Per-profile memory routing (§ 8, D-4 / MSPP-23). For the isolate
+    // transport the boot's reusable factory spawns one fresh isolate per
+    // profile on first use; the in-process transport has no factory to mint a
+    // sibling, so it stays single-store (`forSiblingProfile` returns `null`).
+    final profiledMemory = _profiledMemory(provisioning: config.memoryProvisioning, memory: memory);
+
     final engine = _wireEngine(
       memory: memory,
       substrate: substrate,
       resolver: resolver,
       procedureReloadStore: procedureStore,
       preemption: preemption,
+      memoryForProfile: profiledMemory?.forProfile,
       llmTrailSink: config.llmTrailSink,
       memoryAccessSink: config.memoryAccessSink,
       toolAccessSink: config.toolAccessSink,
@@ -681,7 +704,34 @@ abstract final class BrainProcessBoot {
       engine: engine,
     );
 
-    return (dispatcher: dispatcher, engine: engine, coordinator: coordinator);
+    return (
+      dispatcher: dispatcher,
+      engine: engine,
+      coordinator: coordinator,
+      profiledMemory: profiledMemory,
+    );
+  }
+
+  /// Builds the [ProfiledMemory] router over the boot-provisioned default
+  /// [memory] (§ 8.3, MSPP-23), or `null` when the transport cannot provision
+  /// per-profile siblings (the in-process boot path). Each non-default profile
+  /// is provisioned lazily on first use against `baseConfig.withProfile(name)`
+  /// and torn down at [BootedBrain.shutdown].
+  static ProfiledMemory? _profiledMemory({
+    required MemoryProvisioningConfig provisioning,
+    required ProvisionedMemory memory,
+  }) {
+    // Probe whether this transport can spawn a sibling at all (isolate yes,
+    // in-process no) using the unbound base config; the per-profile config is
+    // rebuilt per request from the profile name.
+    final baseConfig = provisioning.memoryConfig.withProfile(null);
+    if (provisioning.forSiblingProfile(baseConfig) == null) return null;
+    return ProfiledMemory(
+      baseConfig: baseConfig,
+      defaultClient: memory.client,
+      provision: (cfg) =>
+          MemoryProvisioner(provisioning.forSiblingProfile(cfg)!).provision(),
+    );
   }
 
   /// Builds the disk procedure store (system + optional user scripts) that both
@@ -707,6 +757,7 @@ abstract final class BrainProcessBoot {
     required ProcedureResolver resolver,
     required ProcedureStore procedureReloadStore,
     required PreemptionState preemption,
+    required MemoryClientResolver? memoryForProfile,
     required LlmTrailSink? llmTrailSink,
     required MemoryAccessSink? memoryAccessSink,
     required ToolAccessSink? toolAccessSink,
@@ -726,6 +777,7 @@ abstract final class BrainProcessBoot {
         procedureReloadStore: procedureReloadStore,
         memory: memory.client,
         memoryBridge: MemoryBridge(memory.client),
+        memoryForProfile: memoryForProfile,
         substrateBridge: SubstrateBridge(
           substrate,
           promptResolver: promptResolver,

@@ -451,10 +451,19 @@ final class SessionManager {
   /// The brain answer is unknown at resolution time, so the recorded
   /// [HistoryTurn] carries an empty `brainAnswer`; the engine back-fills it
   /// downstream (hub § 21.1 step 4).
+  ///
+  /// [overrideSessionId], when given, names the session this request resolves
+  /// to *regardless* of any echoed id — the seam the access edge uses to honour
+  /// a credential-selected session (the `session-<sel>` marker resolved through
+  /// the key's prefix, MSP-4 / MSP-5). The brain still owns the id space: the
+  /// override is a brain-resolved id, not a client-invented one. An override
+  /// always resolves as a *known* dedicated session (registered on first use),
+  /// so the conversation accumulates its own history across turns.
   SessionResolution resolve({
     required ResolvedIdentity identity,
     required AccessChannel channel,
     required InboundRequest envelope,
+    String? overrideSessionId,
   }) {
     final now = _now();
     final global = _globals.putIfAbsent(
@@ -463,21 +472,41 @@ final class SessionManager {
     );
     final turn = HistoryTurn(userPrompt: envelope.text, brainAnswer: '');
 
+    // A credential-selected session id is authoritative — it overrides any
+    // echoed id and resolves as a known dedicated session (registered on first
+    // use), so the prefixed conversation accumulates its own history.
+    if (overrideSessionId != null) {
+      final entry = _sessions.putIfAbsent(
+        overrideSessionId,
+        () => _SessionEntry(
+          history: ConversationHistory(sizing: sizing),
+          lastActivityAt: now,
+        ),
+      );
+      return _recordKnown(
+        entry: entry,
+        sessionId: overrideSessionId,
+        turn: turn,
+        global: global,
+        identity: identity,
+        channel: channel,
+        envelope: envelope,
+        now: now,
+      );
+    }
+
     final echoed = envelope.sessionId;
     if (echoed != null && _sessions.containsKey(echoed)) {
       // Known echoed id → append to both, answer from the dedicated history.
-      final entry = _sessions[echoed]!;
-      entry.history.append(turn);
-      entry.lastActivityAt = now;
-      entry.principalId = identity.principalId;
-      entry.channel = channel;
-      global.append(turn);
-      return SessionResolution(
-        session: Session(sessionId: echoed, conversationId: envelope.conversationId),
-        history: entry.history,
+      return _recordKnown(
+        entry: _sessions[echoed]!,
         sessionId: echoed,
-        mintedNewId: false,
-        unknownSessionId: false,
+        turn: turn,
+        global: global,
+        identity: identity,
+        channel: channel,
+        envelope: envelope,
+        now: now,
       );
     }
 
@@ -498,6 +527,37 @@ final class SessionManager {
       sessionId: mintedId,
       mintedNewId: true,
       unknownSessionId: echoed != null,
+    );
+  }
+
+  /// Records [turn] against a known dedicated session [entry] (the shared body
+  /// of the known-echoed-id and credential-override branches of [resolve]):
+  /// appends to both the dedicated and the [global] history, refreshes the
+  /// entry's activity clock and principal/channel attribution, and answers from
+  /// the dedicated history. Always a known resolution (`mintedNewId: false`,
+  /// `unknownSessionId: false`).
+  SessionResolution _recordKnown({
+    required _SessionEntry entry,
+    required String sessionId,
+    required HistoryTurn turn,
+    required ConversationHistory global,
+    required ResolvedIdentity identity,
+    required AccessChannel channel,
+    required InboundRequest envelope,
+    required DateTime now,
+  }) {
+    entry.history.append(turn);
+    entry.lastActivityAt = now;
+    entry.principalId = identity.principalId;
+    entry.channel = channel;
+    global.append(turn);
+    return SessionResolution(
+      session:
+          Session(sessionId: sessionId, conversationId: envelope.conversationId),
+      history: entry.history,
+      sessionId: sessionId,
+      mintedNewId: false,
+      unknownSessionId: false,
     );
   }
 

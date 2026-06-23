@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../.tom/json-schema/tom_brain/brain_run.schema.json
 # Tom Brain — standard whole-process config for the `bomber` fleet host.
 #
 # This file is VERSION-CONTROLLED (config/<host>/brain_run.yaml). It carries no

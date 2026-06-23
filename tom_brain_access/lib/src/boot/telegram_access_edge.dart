@@ -50,6 +50,8 @@ import '../adapters/telegram/telegram_outbound_mapping.dart'
     show TelegramOutboundConsolidator;
 import '../adapters/telegram/telegram_whitelist.dart'
     show telegramNotAuthorisedMessage;
+import '../config/telegram_chat_profile_config.dart'
+    show TelegramChatProfileConfig;
 import '../delivery/telegram_delivery.dart' show ChatApiTelegramSink;
 import '../edge_security/edge_security.dart';
 import '../identity/telegram_command.dart';
@@ -127,6 +129,7 @@ class TelegramAccessEdge {
   final Stream<InboundRequest> _authorizedInbound;
   final TelegramSessionRegistry _sessionRegistry;
   final TelegramInspectors _inspectors;
+  final TelegramChatProfileConfig Function(String chatId) _resolveChat;
 
   StreamSubscription<InboundRequest>? _subscription;
 
@@ -141,17 +144,28 @@ class TelegramAccessEdge {
   /// wires none, so those commands reply "not available on this deployment". A
   /// higher assembly (`tom_brain_run`) injects a bundle built over the live
   /// trail + memory.
+  ///
+  /// [resolveChat] maps a Telegram chat id to its [TelegramChatProfileConfig]
+  /// — the namespace (`sessionPrefix` / `memoryPrefix`) the chat's session and
+  /// memory commands are scoped within (§ 9.1, MSP-6). Boot wires it from
+  /// `AccessConfig.telegramChatFor`; the default treats every chat as
+  /// [TelegramChatProfileConfig.unconfigured] (the all-default `defaultmemory_`
+  /// / `defaultsession_` namespace), so a deployment with no `chats[]` block
+  /// behaves exactly as before this scoping existed.
   TelegramAccessEdge({
     required AccessAssembler assembler,
     required ChatApi chatApi,
     required Stream<InboundRequest> authorizedInbound,
     required TelegramSessionRegistry sessionRegistry,
     TelegramInspectors inspectors = TelegramInspectors.none,
+    TelegramChatProfileConfig Function(String chatId)? resolveChat,
   })  : _assembler = assembler,
         _chatApi = chatApi,
         _authorizedInbound = authorizedInbound,
         _sessionRegistry = sessionRegistry,
-        _inspectors = inspectors;
+        _inspectors = inspectors,
+        _resolveChat = resolveChat ??
+            ((chatId) => TelegramChatProfileConfig.unconfigured(chatId));
 
   /// Whether [start] has run and [stop] has not yet been called.
   bool get isRunning => _subscription != null;
@@ -214,24 +228,34 @@ class TelegramAccessEdge {
 
     final ChatReceiver receiver = ChatReceiver.id(userId);
 
-    // A slash-command is handled here — session continuity, `/help`, and the
-    // inspection commands all stay in the access layer and never reach the
-    // brain (§ 6.5). An ordinary prompt falls through.
+    // Resolve the chat's profile namespace (§ 9.1, MSP-6): a configured chat
+    // declares its `sessionPrefix` / `memoryPrefix`; an unconfigured one falls
+    // back to the all-default namespace. The chat is keyed by the inbound
+    // `conversationId` (the Telegram chat id the mapping carried, E.20); an
+    // envelope without one (a private chat where the id was not stamped) keys on
+    // the sender id instead — a private chat's id equals its user's. It scopes
+    // both the memory commands and the active-memory stamp below.
+    final String chatId = request.conversationId ?? userId;
+    final TelegramChatProfileConfig chat = _resolveChat(chatId);
+
+    // A slash-command is handled here — session continuity, `/help`, the memory
+    // commands, and the inspection commands all stay in the access layer and
+    // never reach the brain (§ 6.5 / § 9.2). An ordinary prompt falls through.
     final TelegramCommand? command = parseTelegramCommand(request.text);
     if (command != null) {
-      await _handleCommand(receiver, userId, command);
+      await _handleCommand(receiver, userId, command, chat);
       return;
     }
 
-    // Ordinary prompt: resolve the user's active session, send any "invalid →
-    // recreated" notice, and stamp the active session id onto the envelope
-    // (null id ⇒ the global session). The minted id was already adopted into
-    // the SessionManager by the registry, so the dispatcher resolves it as a
-    // known dedicated session.
-    final TelegramActiveSession active = _sessionRegistry.resolveActive(userId);
-    if (active.notice != null) {
-      await _send(receiver, active.notice!);
-    }
+    // Ordinary prompt: resolve the user's active session and stamp its effective
+    // id onto the envelope (null id ⇒ the global session). The effective id is
+    // derived from the chat's `sessionPrefix` and was already adopted into the
+    // SessionManager by the registry, so the dispatcher resolves it as a known
+    // dedicated session (MSPP-37).
+    final TelegramActiveSession active = _sessionRegistry.resolveActive(
+      userId,
+      sessionPrefix: chat.sessionPrefix,
+    );
     // When this user has memory-recall tracing on (`/trace_memory`), stamp the
     // per-turn trace flag onto the envelope metadata so the dispatch route binds
     // the memory-notice sink for this turn (§ 6.5). Merge rather than replace —
@@ -247,11 +271,21 @@ class TelegramAccessEdge {
           )
         : request.copyWith(sessionId: active.sessionId);
 
+    // Stamp the chat's active memory profile (§ 9.2). The registry holds the
+    // bare active name; applying the chat's `memoryPrefix` yields the profile id
+    // the engine routes to. Telegram owns this selection on the user's behalf,
+    // so it is authoritative over content-driven selection (MSP-5 / MSPP-35).
+    final String memoryProfile = _sessionRegistry.resolveActiveMemory(
+      userId,
+      memoryPrefix: chat.memoryPrefix,
+    );
+
     try {
       await _assembler.admitTelegram(
         userId: userId,
         envelope: stamped,
         sink: ChatApiTelegramSink(chatApi: _chatApi, receiver: receiver),
+        memoryProfile: memoryProfile,
         onAdmitted: () => _acknowledge(receiver, stamped.text),
       );
     } catch (error) {
@@ -263,31 +297,56 @@ class TelegramAccessEdge {
   /// The brain is never involved — every slash-command is an access-layer
   /// concern (§ 6.5).
   ///
-  /// The session and `/help` commands answer from a single string; the
+  /// The session and `/help` commands answer from a single string; the memory
+  /// commands resolve within [chat]'s `memoryPrefix` scope (§ 9.2, MSP-6); the
   /// inspection commands fan their (potentially large) output out across as
   /// many size-compliant Telegram messages as it takes (parts b–e).
   Future<void> _handleCommand(
     ChatReceiver receiver,
     String userId,
     TelegramCommand command,
+    TelegramChatProfileConfig chat,
   ) async {
     switch (command.kind) {
       case TelegramCommandKind.createSession:
         await _send(receiver, _sessionRegistry.createSession(
           userId,
           command.argument,
+          sessionPrefix: chat.sessionPrefix,
         ));
       case TelegramCommandKind.listSessions:
-        await _send(receiver, _sessionRegistry.listSessions(userId));
+        await _send(receiver, _sessionRegistry.listSessions(
+          userId,
+          sessionPrefix: chat.sessionPrefix,
+        ));
       case TelegramCommandKind.pickSession:
         await _send(receiver, _sessionRegistry.pickSession(
           userId,
           command.argument,
+          sessionPrefix: chat.sessionPrefix,
         ));
       case TelegramCommandKind.renameSession:
         await _send(receiver, _sessionRegistry.renameSession(
           userId,
           command.argument,
+          sessionPrefix: chat.sessionPrefix,
+        ));
+      case TelegramCommandKind.createMemory:
+        await _send(receiver, _sessionRegistry.createMemory(
+          userId,
+          command.argument,
+          memoryPrefix: chat.memoryPrefix,
+        ));
+      case TelegramCommandKind.listMemory:
+        await _send(receiver, _sessionRegistry.listMemory(
+          userId,
+          memoryPrefix: chat.memoryPrefix,
+        ));
+      case TelegramCommandKind.switchMemory:
+        await _send(receiver, _sessionRegistry.switchMemory(
+          userId,
+          command.argument,
+          memoryPrefix: chat.memoryPrefix,
         ));
       case TelegramCommandKind.help:
         await _send(receiver, telegramHelpText());
@@ -302,9 +361,9 @@ class TelegramAccessEdge {
       case TelegramCommandKind.checkStatus:
         await _handleCheckStatus(receiver);
       case TelegramCommandKind.todosList:
-        await _handleTodosList(receiver, userId);
+        await _handleTodosList(receiver, userId, chat.sessionPrefix);
       case TelegramCommandKind.todosClear:
-        await _handleTodosClear(receiver, userId);
+        await _handleTodosClear(receiver, userId, chat.sessionPrefix);
       case TelegramCommandKind.checkUsage:
         await _handleCheckUsage(receiver);
       case TelegramCommandKind.stopPrompt:
@@ -443,13 +502,19 @@ class TelegramAccessEdge {
   /// session, split across messages if it overflows. Replies the unavailable
   /// message when no todos inspector is wired, and the global-session notice
   /// when the active session is `global` (which keeps no persistent list).
-  Future<void> _handleTodosList(ChatReceiver receiver, String userId) async {
+  Future<void> _handleTodosList(
+    ChatReceiver receiver,
+    String userId,
+    String sessionPrefix,
+  ) async {
     final TelegramTodosInspector? inspector = _inspectors.todos;
     if (inspector == null) {
       await _send(receiver, telegramInspectorUnavailableMessage);
       return;
     }
-    final String? sessionId = _sessionRegistry.resolveActive(userId).sessionId;
+    final String? sessionId = _sessionRegistry
+        .resolveActive(userId, sessionPrefix: sessionPrefix)
+        .sessionId;
     if (sessionId == null) {
       await _send(receiver, telegramTodosGlobalSessionMessage);
       return;
@@ -461,13 +526,19 @@ class TelegramAccessEdge {
   /// session and reports the outcome. Replies the unavailable message when no
   /// todos inspector is wired, and the global-session notice when the active
   /// session is `global` (which keeps no persistent list to clear).
-  Future<void> _handleTodosClear(ChatReceiver receiver, String userId) async {
+  Future<void> _handleTodosClear(
+    ChatReceiver receiver,
+    String userId,
+    String sessionPrefix,
+  ) async {
     final TelegramTodosInspector? inspector = _inspectors.todos;
     if (inspector == null) {
       await _send(receiver, telegramInspectorUnavailableMessage);
       return;
     }
-    final String? sessionId = _sessionRegistry.resolveActive(userId).sessionId;
+    final String? sessionId = _sessionRegistry
+        .resolveActive(userId, sessionPrefix: sessionPrefix)
+        .sessionId;
     if (sessionId == null) {
       await _send(receiver, telegramTodosGlobalSessionMessage);
       return;

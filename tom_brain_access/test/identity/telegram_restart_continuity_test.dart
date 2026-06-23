@@ -16,9 +16,10 @@
 //      rehydrates the dedicated history — so the next turn resolves to the
 //      conversation that already knows the user's name.
 //
-// Both halves had to be right: the registry must re-mint nothing (session id
-// stable across restart) AND the manager must rehydrate the dedicated history
-// with the prior answer in it. Either one missing and the brain "forgets".
+// Both halves had to be right: the registry must derive a stable session id
+// across restart (the prefixed-id model, MSPP-37: `sessionPrefix + name`, no
+// minting) AND the manager must rehydrate the dedicated history with the prior
+// answer in it. Either one missing and the brain "forgets".
 
 import 'package:tom_brain_access/tom_brain_access.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart';
@@ -38,8 +39,10 @@ ConversationHistory _telegramTurn({
   required String principalId,
   required String prompt,
   required String answer,
+  String sessionPrefix = 'defaultsession_',
 }) {
-  final TelegramActiveSession active = registry.resolveActive(userId);
+  final TelegramActiveSession active =
+      registry.resolveActive(userId, sessionPrefix: sessionPrefix);
   final SessionResolution res = manager.resolve(
     identity: _identity(principalId),
     channel: AccessChannel.telegram,
@@ -90,8 +93,8 @@ void main() {
     final manager2 = SessionManager(historyStore: historyStore);
     final registry2 = TelegramSessionRegistry(
       store: edgeStore,
-      // Re-adoption must not mint a new id: the persisted default id is reused.
-      mintSessionId: () => fail('a restart must not mint a fresh session id'),
+      // Re-derivation is deterministic: the persisted bare name maps to the same
+      // `sessionPrefix + name` effective id — nothing is minted.
       adoptSession: manager2.ensureSession,
     );
 

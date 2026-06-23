@@ -42,6 +42,7 @@
 // procedure_engine_test), so the suite needs no on-disk vec0 store.
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -55,6 +56,8 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show TomBrainSubstrateClient;
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
+
+import 'support/boot_doubles.dart' show BootSubstrate;
 
 /// The lane under test — a stub dreaming agent that consults its prior-run
 /// history and skips when a previous run already handled the source.
@@ -316,7 +319,111 @@ void main() {
       final rehydrated = restored.peek(_laneId)!;
       expect(conversationHistoriesEqual(original, rehydrated), isTrue);
     });
+
+    // Open-ends step 5 (HC-82): a dreaming lane's activity history is *durable*
+    // (survives a process restart through the on-disk store seams) and its
+    // compaction runs through the *production* `SubstrateHistoryCompaction` path
+    // — the anchored, budgeted `sub.llm` seam (PE-7/PE-8) the foreground answer
+    // lane matured in step 4 (HC-81) — not a one-line stub. This one test pins
+    // both halves of the done-when: a real over-threshold session folds through
+    // the substrate, and a fresh `DreamLaneSessions` rebuilt from the same
+    // on-disk file recovers the lane mid-narrative.
+    test(
+        'a dreaming lane persists across a restart and compacts through the '
+        'real anchored sub.llm seam', () async {
+      // A real temp JSON file standing in for production's
+      // `JsonFileHistoryStore('<memoryRoot>/dream_lane_sessions.json')` — the
+      // durable-persistence seam pair (HC-82). The seams are plain functions, so
+      // the test exercises on-disk round-tripping without a tom_brain_access
+      // dependency (the store's `dart:io` lives in `tom_brain_run` in
+      // production).
+      final dir = Directory.systemTemp.createTempSync('dream_lane_store_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = File(
+          '${dir.path}${Platform.pathSeparator}dream_lane_sessions.json');
+      Map<String, Object?> loadStore() => file.existsSync()
+          ? jsonDecode(file.readAsStringSync()) as Map<String, Object?>
+          : <String, Object?>{};
+      void saveStore(Map<String, Object?> snapshot) =>
+          file.writeAsStringSync(jsonEncode(snapshot));
+
+      // The compaction completion routes through the real production seam over a
+      // shared `BootSubstrate` (not a stub): the `recaller`-routed call falls
+      // through to the answer branch, which streams these chunks; the seam
+      // concatenates them into the rewritten summary.
+      final compactionSubstrate = BootSubstrate()
+        ..answerChunks = <String>['folded ', 'dreaming'];
+      final compactor = HistoryCompactor(
+        templates: _compactionTemplates(),
+        substrate: SubstrateHistoryCompaction(client: compactionSubstrate).call,
+      );
+
+      // Size the lane tiny so the third firing's append crosses the threshold
+      // (rawCount 1 + compactionThreshold 2).
+      const tiny = HistoryConfig(
+        lanes: <String, HistorySizing>{
+          _laneId: HistorySizing(rawCount: 1, compactionThreshold: 2),
+        },
+      );
+
+      // ── First boot ──────────────────────────────────────────────────
+      final sessions = DreamLaneSessions(
+        historyConfig: tiny,
+        compactor: compactor,
+        loadSnapshot: loadStore,
+        persistSnapshot: saveStore,
+      );
+      final scheduler =
+          schedulerWith(_laneSessionStub(), dreamSessions: sessions);
+
+      for (var i = 0; i < 3; i++) {
+        await scheduler.triggerMaintenance(
+          _laneId,
+          arguments: <String, Object?>{'source': 'src-$i'},
+        );
+      }
+
+      // The lane folded its pending batch through the *real* substrate seam …
+      final history = sessions.peek(_laneId)!;
+      expect(history.compactedSummary, 'folded dreaming');
+      expect(history.pending, isEmpty);
+      expect(history.durableRecord, hasLength(3));
+      // … and the compaction completion actually reached the substrate: the
+      // assembled `compact_history_v1` scaffolds were folded into the single
+      // `prompt` input the anchored role path consumes.
+      expect(compactionSubstrate.lastPrompt, isNotNull);
+      expect(compactionSubstrate.lastPrompt, contains('Fold the new turns'));
+      // The folded session was written through to the durable store.
+      expect(file.existsSync(), isTrue);
+
+      // ── Restart: a fresh registry rebuilt from the same on-disk file ──
+      final recovered = DreamLaneSessions(
+        historyConfig: tiny,
+        loadSnapshot: loadStore,
+      );
+      final rehydrated = recovered.peek(_laneId);
+      expect(rehydrated, isNotNull,
+          reason: 'the lane survived the restart through the durable store');
+      expect(rehydrated!.compactedSummary, 'folded dreaming');
+      expect(rehydrated.durableRecord, hasLength(3));
+      expect(conversationHistoriesEqual(history, rehydrated), isTrue);
+    });
   });
+}
+
+/// A `compact_history_v1` template store whose scaffolds inject the two history
+/// placeholders — the same shape the production `compact_history_v1.yaml` will
+/// carry. Paired with the real [SubstrateHistoryCompaction] seam (not a stubbed
+/// return) so a test proves a dreaming lane's compaction reaches the substrate.
+HistoryCompactionTemplateStore _compactionTemplates() {
+  final dir = Directory.systemTemp.createTempSync('dream_lane_compact_tpl_');
+  addTearDown(() => dir.deleteSync(recursive: true));
+  File('${dir.path}${Platform.pathSeparator}compact_history_v1.yaml')
+      .writeAsStringSync(
+    'system: |\n  Fold the new turns. Current: \${history.compacted}\n'
+    'user: |\n  New turns: \${history.batch}\n',
+  );
+  return HistoryCompactionTemplateStore(dir);
 }
 
 /// A [HistoryCompactor] whose substrate folds the pending batch into a fixed

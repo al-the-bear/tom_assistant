@@ -40,6 +40,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         BrainProvisioner,
         IncomingTrailRecord,
         IncomingTrailSink,
+        JsonFileHistoryStore,
         ProvisionedBrain,
         QueueSnapshot,
         QueueSnapshotSource,
@@ -61,6 +62,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         DreamLaneSessions,
         FileScope,
         DartMcpConnector,
+        defaultMemoryProfile,
         FreeTimeScheduler,
         LlmTrailRecord,
         LlmTrailSink,
@@ -96,6 +98,7 @@ import 'cli_server_port_switch.dart'
 import 'builtin_bindings.dart' show BrainBuiltins;
 import 'cognition_config.dart' show CognitionConfig;
 import 'cognition_config_loader.dart' show CognitionConfigLoader;
+import 'legacy_store_migration.dart' show migrateLegacyMemoryRoot;
 import 'cognition_prompt_resolver.dart'
     show buildPromptResolver, buildRouteChainResolver;
 import 'dream_cadence_driver.dart' show CadenceSchedule;
@@ -287,8 +290,9 @@ Future<ProvisionedBrain> provisionBrain({
   // start the gated heartbeat. An absent or disabled block leaves the cognition
   // with no background cadence — the prototype's deterministic live tests never
   // spin one (so r30 / r32 / r35 / r36 stay deterministic).
-  final DreamController? dreamController =
-      dreamEnabled ? _startDreamLoop(booted, dream, history) : null;
+  final DreamController? dreamController = dreamEnabled
+      ? _startDreamLoop(booted, dream, history, memoryConfig.root)
+      : null;
   // Bind the holder to the live controller so the `dream.control` tool drives
   // the running cadence (item c). `dreamHolder` is non-null exactly when the
   // controller is.
@@ -357,7 +361,16 @@ DreamController _startDreamLoop(
   BootedBrain booted,
   DreamConfig dream,
   HistoryConfig history,
+  String memoryRoot,
 ) {
+  // A dreaming lane is one long session that remembers what it did across
+  // firings (todo #15). Its activity history is now durable (HC-82): a
+  // `JsonFileHistoryStore` under the memory root (alongside `session_todos.json`)
+  // rehydrates every lane on boot and is written back after each firing, so the
+  // dreaming lanes resume mid-narrative across a process restart instead of
+  // forgetting what they were doing.
+  final JsonFileHistoryStore dreamStore =
+      JsonFileHistoryStore('$memoryRoot/dream_lane_sessions.json');
   final scheduler = FreeTimeScheduler(
     coordinator: booted.coordinator,
     memory: booted.memory.client,
@@ -367,13 +380,19 @@ DreamController _startDreamLoop(
     // `history:` block (todo #14): `history.lanes.<dreamLaneId>` sizes a lane's
     // `recentRuns` context independently of the foreground answer lane.
     historyConfig: history,
-    // A dreaming lane is one long session that remembers what it did across
-    // firings (todo #15): each lane keeps its own compactable activity history,
-    // sized through the same `history:` block. No compactor is wired yet —
-    // mirroring the foreground answer lane, whose `sub.llm` compaction seam is
-    // also still gated (HC-64) — so a lane's `pending` batch grows without
-    // folding for now; nothing is lost (the durable record keeps every firing).
-    dreamSessions: DreamLaneSessions(historyConfig: history),
+    // Each lane keeps its own compactable activity history, sized through the
+    // same `history:` block, persisted through the durable store above. No
+    // compactor is wired yet — mirroring the foreground answer lane, whose
+    // `sub.llm` compaction seam is built (`SubstrateHistoryCompaction`, HC-81)
+    // but whose production activation awaits an authored `compact_history_v1`
+    // template + directory resolution (deferred, see the completion plan) — so a
+    // lane's `pending` batch grows without folding for now; nothing is lost (the
+    // durable record keeps every firing).
+    dreamSessions: DreamLaneSessions(
+      historyConfig: history,
+      loadSnapshot: dreamStore.load,
+      persistSnapshot: dreamStore.save,
+    ),
   );
   // Part d: when a throttle is configured, build it over the active schedule so
   // its per-lane caps (`DreamLaneSpec.maxLlmCallsPerWindow`) are honoured on top
@@ -814,10 +833,21 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
       ? const <McpToolDefinition>[]
       : await McpClientToolSource(mcpClient, offered: mcpOffered).listTools();
 
+  // One-shot legacy-store migration (memory-session-profiles § 11, plan step 8,
+  // MSPP-26/MSPP-27): if a pre-profiles bare-root store exists and
+  // `<root>/profiles/` does not, relocate it into the default profile directory
+  // before the default store is opened. Idempotent — a second boot is a no-op.
+  // The default store is then provisioned against the *profiled* default config
+  // so it reads the migrated data back; every `.root`-keyed non-memory store
+  // (session todos, agent-SDK / dream sessions, the Telegram edge state) keeps
+  // using the bare root because `withProfile` preserves `.root`.
+  migrateLegacyMemoryRoot(runConfig.memory);
+  final memoryConfig = runConfig.memory.withProfile(defaultMemoryProfile);
+
   return standUpBrainProcess(
     config: runConfig.access,
     substrate: substrate,
-    memoryConfig: runConfig.memory,
+    memoryConfig: memoryConfig,
     substrateConfig: runConfig.substrate,
     systemScriptsDir: scriptsDir,
     serve: serve,

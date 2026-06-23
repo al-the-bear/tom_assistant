@@ -65,6 +65,8 @@ import '../adapters/openai_http_sse/openai_http_sse_adapter.dart'
 import '../adapters/telegram/telegram_adapter.dart';
 import '../adapters/telegram/telegram_whitelist.dart';
 import '../config/access_config.dart';
+import '../config/telegram_chat_profile_config.dart'
+    show TelegramChatProfileConfig;
 import '../edge_security/edge_security.dart'
     show
         BearerTokenAuthenticator,
@@ -449,6 +451,12 @@ Future<_TelegramEdge> _startTelegram({
     authorizedInbound: adapter.authorizedInboundRequests,
     sessionRegistry: sessionRegistry,
     inspectors: inspectors,
+    // Per-chat session/memory namespace (§ 9.1, MSP-6): a configured chat scopes
+    // its commands within its prefixes; a chat with no `chats[]` entry falls
+    // back to the all-default namespace.
+    resolveChat: (chatId) =>
+        config.telegramChatFor(chatId) ??
+        TelegramChatProfileConfig.unconfigured(chatId),
   );
   edge.start();
   // Ping each whitelisted owner that the link is live, naming the host this
@@ -582,6 +590,7 @@ BrainAccessConfig _toBrainAccessConfig(
     anchorPolicy: config.anchorPolicy,
     bearerTokenBindings: config.bearerTokenBindings,
     telegramUserIdBindings: config.telegramUserIdBindings,
+    apiKeys: config.apiKeys,
     personaVocabulary: config.personaVocabulary,
     answerLaneSizing: config.answerLaneSizing,
     bearerAuthenticator: bearerAuthenticator,
