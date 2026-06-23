@@ -5,6 +5,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tom_brain_observatory_web/src/model/dream_run.dart';
+import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
 
 void main() {
   group('DreamLane.fromJson', () {
@@ -88,6 +89,36 @@ void main() {
       expect(run.run.turnId, isNull); // turn-less.
       expect(run.run.status, 'accepted');
       expect(run.run.nodes, hasLength(1));
+    });
+
+    // MSPP-56 — a dream run-tree can carry an `llm` node; its `rawPath` is the
+    // link the populated `onOpenLlmCall` path resolves against the `?run=` log.
+    test('decodes an LLM-call node in the run-tree (the onOpenLlmCall link)',
+        () {
+      final run = DreamRun.fromJson(<String, dynamic>{
+        'runId': 'run_1781400000000001_0',
+        'procedureId': 'dream_extract_v1',
+        'laneId': 'fast',
+        'run': <String, dynamic>{
+          'procedureId': 'dream_extract_v1',
+          'runId': 'run_1781400000000001_0',
+          'status': 'accepted',
+          'nodes': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'kind': 'llm',
+              'callType': 'extractor',
+              'tokensIn': 512,
+              'tokensOut': 128,
+              'rawPath': '../../llm/extractor/run_1781400000000001_0__01.raw.json',
+            },
+          ],
+        },
+      });
+      final node = run.run.nodes.single;
+      expect(node, isA<LlmCallNode>());
+      expect((node as LlmCallNode).callType, 'extractor');
+      expect(node.rawPath,
+          '../../llm/extractor/run_1781400000000001_0__01.raw.json');
     });
   });
 }

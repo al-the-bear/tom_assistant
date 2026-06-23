@@ -10,22 +10,24 @@ import 'package:flutter/material.dart';
 
 import '../api/trace_api_client.dart';
 import '../model/llm_call_detail.dart';
+import '../model/llm_call_source.dart';
 import '../model/prompt_trace.dart';
 import 'format.dart';
 import 'monospace_block.dart';
 import 'prompt_file_editor_view.dart';
 
-/// The detail page for one run-tree LLM call ([node]) within [turnId], over
+/// The detail page for one run-tree LLM call ([node]) within the run named by
+/// [source] (a foreground turn or a turn-less dream run, MSPP-56), over
 /// [client]. Fetches the §3.7 dump lazily on open.
 class LlmCallDetailView extends StatefulWidget {
   final TraceApiClient client;
-  final String turnId;
+  final LlmCallSource source;
   final LlmCallNode node;
 
   const LlmCallDetailView({
     super.key,
     required this.client,
-    required this.turnId,
+    required this.source,
     required this.node,
   });
 
@@ -39,7 +41,7 @@ class _LlmCallDetailViewState extends State<LlmCallDetailView> {
   @override
   void initState() {
     super.initState();
-    _detail = widget.client.llmCallDetail(widget.turnId, widget.node.rawPath);
+    _detail = widget.client.llmCallDetail(widget.source, widget.node.rawPath);
   }
 
   @override

@@ -9,6 +9,7 @@ import 'package:tom_brain_observatory_web/src/model/catalogue.dart';
 import 'package:tom_brain_observatory_web/src/model/dream_run.dart';
 import 'package:tom_brain_observatory_web/src/model/live_step.dart';
 import 'package:tom_brain_observatory_web/src/model/llm_call_detail.dart';
+import 'package:tom_brain_observatory_web/src/model/llm_call_source.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
 import 'package:tom_brain_observatory_web/src/model/runtime.dart';
 
@@ -113,9 +114,16 @@ class StubApiClient implements TraceApiClient {
   @override
   Future<PromptTrace?> traceFor(String turnId) async => traces[turnId];
 
+  /// Records the [LlmCallSource] every [llmCallDetail] call used, so a widget
+  /// test can assert a dream row fetched via `LlmCallSource.dreamRun` (MSPP-56).
+  final List<LlmCallSource> llmCallSources = <LlmCallSource>[];
+
   @override
-  Future<LlmCallDetail?> llmCallDetail(String turnId, String rawPath) async =>
-      llmCalls[rawPath];
+  Future<LlmCallDetail?> llmCallDetail(
+      LlmCallSource source, String rawPath) async {
+    llmCallSources.add(source);
+    return llmCalls[rawPath];
+  }
 
   @override
   Future<List<String>> listProcedureScripts() async =>

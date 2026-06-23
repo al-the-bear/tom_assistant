@@ -17,6 +17,7 @@ import '../model/catalogue.dart';
 import '../model/dream_run.dart';
 import '../model/live_step.dart';
 import '../model/llm_call_detail.dart';
+import '../model/llm_call_source.dart';
 import '../model/prompt_trace.dart';
 import '../model/runtime.dart';
 import 'sse.dart';
@@ -31,10 +32,11 @@ abstract interface class TraceApiClient {
   /// no trace for the turn (§ 4.1 — absence is a clean not-found).
   Future<PromptTrace?> traceFor(String turnId);
 
-  /// `GET /api/llm?turn=&path=` — the full §3.7 detail behind a run-tree
-  /// `LlmCall`'s [rawPath] link, or `null` when the host has no such dump
-  /// (§ 4.5 / PT-2.4).
-  Future<LlmCallDetail?> llmCallDetail(String turnId, String rawPath);
+  /// `GET /api/llm?path=` + exactly one of `turn=`/`run=` — the full §3.7 detail
+  /// behind a run-tree `LlmCall`'s [rawPath] link, resolved against the run named
+  /// by [source] (a foreground turn or a turn-less dream run, MSPP-55/56), or
+  /// `null` when the host has no such dump (§ 4.5 / PT-2.4).
+  Future<LlmCallDetail?> llmCallDetail(LlmCallSource source, String rawPath);
 
   /// `GET /api/procedures` — the ids of every procedure script the running brain
   /// hosts under `scripts/system/*.dart` (§ 4.6 / § 8.3(5)), sorted. Feeds the
@@ -166,9 +168,10 @@ class HttpTraceApiClient implements TraceApiClient {
   }
 
   @override
-  Future<LlmCallDetail?> llmCallDetail(String turnId, String rawPath) async {
+  Future<LlmCallDetail?> llmCallDetail(
+      LlmCallSource source, String rawPath) async {
     final uri = _resolve('api/llm', <String, String>{
-      'turn': turnId,
+      ...source.queryParameters,
       'path': rawPath,
     });
     final res = await _http.get(uri);

@@ -5,19 +5,23 @@
 // run opens its detail — the *same* recursive run-tree (§ 4.4) the prompt trace
 // renders, since a dream run is just a turn-less [ProcedureRun] (§ 3.6).
 //
-// Read-only, like every observatory view: it issues only the three `/api/dream/*`
-// GETs (§ 8.3 (14)) through [TraceApiClient]; tests drive a stub. The run-tree's
-// node deep-links walk into Module 2 over [MemoryApiClient] (§ 4.7), exactly as
-// the prompt-trace detail does. The LLM-call rows are inert in v1 (§ 5A.4): the
-// raw-dump endpoint keys on a turnId a dream run does not have.
+// Read-only, like every observatory view: it issues only the `/api/dream/*` GETs
+// (§ 8.3 (14)) plus the shared `/api/llm` detail seam through [TraceApiClient];
+// tests drive a stub. The run-tree's node deep-links walk into Module 2 over
+// [MemoryApiClient] (§ 4.7), exactly as the prompt-trace detail does. An
+// LLM-call row opens the same §4.5 detail Module 1 shows, fetched through the
+// turn-less `LlmCallSource.dreamRun(runId)` source (MSPP-55/56) — a dream run
+// has no turnId, so the dump is resolved against its `?run=` log.
 
 import 'package:flutter/material.dart';
 
 import '../api/memory_api_client.dart';
 import '../api/trace_api_client.dart';
 import '../model/dream_run.dart';
+import '../model/llm_call_source.dart';
 import '../model/prompt_trace.dart';
 import 'format.dart';
+import 'llm_call_detail_view.dart';
 import 'memory/node_detail_view.dart';
 import 'outcome_chip.dart';
 import 'procedure_script_view.dart';
@@ -248,6 +252,19 @@ class _DreamRunDetailViewState extends State<DreamRunDetailView> {
     ));
   }
 
+  /// Opens a dream-run LLM call's §4.5 detail through the shared view, resolving
+  /// its raw dump against the turn-less `?run=` log (MSPP-55/56) — the dream-side
+  /// counterpart of Module 1's turn-bound open.
+  void _openLlmCall(LlmCallNode node) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => LlmCallDetailView(
+        client: widget.client,
+        source: LlmCallSource.dreamRun(widget.runId),
+        node: node,
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: Text(widget.runId)),
@@ -267,8 +284,7 @@ class _DreamRunDetailViewState extends State<DreamRunDetailView> {
             return ListView(
               children: buildDreamRunSections(
                 dream,
-                // LLM-call rows are inert in v1 (§ 5A.4): the raw-dump endpoint
-                // keys on a turnId a dream run has none of.
+                onOpenLlmCall: _openLlmCall,
                 onInspectScript: _openScript,
                 onOpenNode: _openNode,
               ),
@@ -280,11 +296,13 @@ class _DreamRunDetailViewState extends State<DreamRunDetailView> {
 
 /// The §5A.4 dream-run sections for [dream]: a one-line header (agent · lane ·
 /// status · elapsed) and the run-tree. Pure (no Navigator/Future) so widget
-/// tests exercise it directly. [onInspectScript] opens a run's procedure source
-/// (§ 4.6); [onOpenNode] deep-links a persisted node id into Module 2 (§ 4.7); a
-/// `null` callback makes the affordance inert.
+/// tests exercise it directly. [onOpenLlmCall] opens an LLM-call row's §4.5
+/// detail (MSPP-56); [onInspectScript] opens a run's procedure source (§ 4.6);
+/// [onOpenNode] deep-links a persisted node id into Module 2 (§ 4.7); a `null`
+/// callback makes the corresponding affordance inert.
 List<Widget> buildDreamRunSections(
   DreamRun dream, {
+  ValueChanged<LlmCallNode>? onOpenLlmCall,
   ValueChanged<ProcedureRun>? onInspectScript,
   ValueChanged<String>? onOpenNode,
 }) {
@@ -298,7 +316,7 @@ List<Widget> buildDreamRunSections(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: RunTreeView(
         run: run,
-        onOpenLlmCall: null,
+        onOpenLlmCall: onOpenLlmCall,
         onInspectScript: onInspectScript,
         onOpenNode: onOpenNode,
       ),

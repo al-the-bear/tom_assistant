@@ -7,8 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tom_brain_observatory_web/src/app.dart';
 import 'package:tom_brain_observatory_web/src/model/dream_run.dart';
+import 'package:tom_brain_observatory_web/src/model/llm_call_detail.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
 import 'package:tom_brain_observatory_web/src/views/dream_lanes_view.dart';
+import 'package:tom_brain_observatory_web/src/views/llm_call_detail_view.dart';
 import 'package:tom_brain_observatory_web/src/views/run_tree_view.dart';
 
 import '../support/stub_api_client.dart';
@@ -43,6 +45,47 @@ ProcedureRun _runTree(String runId, String procedureId) => ProcedureRun(
       elapsedMs: 3200,
       entryCount: 1,
       nodes: const <RunNode>[NoteNode(category: 'extract')],
+    );
+
+/// A turn-less run-tree carrying a single LLM-call node (its detail is fetched
+/// from [rawPath]) — the fixture for the MSPP-56 dream-run LLM-call open.
+ProcedureRun _runTreeWithLlm(
+        String runId, String procedureId, String rawPath) =>
+    ProcedureRun(
+      procedureId: procedureId,
+      runId: runId,
+      turnId: null,
+      status: 'accepted',
+      elapsedMs: 3200,
+      entryCount: 1,
+      nodes: <RunNode>[
+        LlmCallNode(
+          callType: 'extractor',
+          tokensIn: 512,
+          tokensOut: 128,
+          rawPath: rawPath,
+        ),
+      ],
+    );
+
+LlmCallDetail _dreamDetail() => const LlmCallDetail(
+      callType: 'extractor',
+      provider: 'local',
+      model: 'fixture-model',
+      profile: null,
+      roleId: null,
+      anchorHash: 'sha256:dddd1111',
+      promptHash: 'sha256:dddd2222',
+      tokensIn: 512,
+      tokensOut: 128,
+      retries: 0,
+      wallClockMs: 3200,
+      wire: <String, Object?>{
+        'messages': <Object?>[
+          <String, Object?>{'role': 'user', 'content': 'extract durable claims'},
+        ],
+      },
+      answer: 'Dream wire answer.',
     );
 
 const _lanes = <DreamLane>[
@@ -151,6 +194,46 @@ void main() {
     expect(find.byType(DreamRunDetailView), findsOneWidget);
     expect(find.byType(RunTreeView), findsOneWidget);
     expect(find.widgetWithText(AppBar, 'run_a_0'), findsOneWidget);
+  });
+
+  // MSPP-56 — an LLM-call row in a dream run opens the same §4.5 detail Module 1
+  // shows, fetched through the turn-less `LlmCallSource.dreamRun(runId)` source.
+  testWidgets('opening a dream-run LLM-call row shows its verbatim wire body',
+      (tester) async {
+    const rawPath = '../../llm/extractor/run_a_0__01.raw.json';
+    final client = StubApiClient(
+      dreamLanes: _lanes,
+      dreamRuns: <DreamRunRow>[_row('run_a_0')],
+      dreamRunDetails: <String, DreamRun>{
+        'run_a_0': DreamRun(
+          runId: 'run_a_0',
+          procedureId: 'dream_extract_v1',
+          laneId: 'fast',
+          run: _runTreeWithLlm('run_a_0', 'dream_extract_v1', rawPath),
+        ),
+      },
+      llmCalls: <String, LlmCallDetail>{rawPath: _dreamDetail()},
+    );
+    await _openMonitor(tester, client);
+
+    // Drill into the dream run, expand its run-tree, open the LLM-call row.
+    await tester.tap(find.text('dream_extract_v1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('run:run_a_0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('llm extractor'));
+    await tester.pumpAndSettle();
+
+    // The shared detail view opened, rendering the fetched wire body + answer.
+    expect(find.byType(LlmCallDetailView), findsOneWidget);
+    expect(find.text('Dream wire answer.'), findsOneWidget);
+    expect(find.textContaining('extract durable claims'), findsOneWidget);
+
+    // It resolved the dump against the turn-less `?run=` log (MSPP-55/56), not a
+    // turnId a dream run does not have.
+    expect(client.llmCallSources, hasLength(1));
+    expect(client.llmCallSources.single.queryParameters,
+        <String, String>{'run': 'run_a_0'});
   });
 
   testWidgets('an empty lane shows the no-runs notice, never an error',
