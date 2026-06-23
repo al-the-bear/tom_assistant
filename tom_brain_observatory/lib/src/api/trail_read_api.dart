@@ -704,7 +704,7 @@ final class TrailReadApi {
   /// lane when any discovered dream run is unclaimed. A pure read of the
   /// `procedures/` trail — empty array in unconfigured mode, never an error.
   Response _dreamLanes(Request request) {
-    final lanes = dreamLanes(host);
+    final lanes = dreamLanes(host, schedule: runtime?.cadence);
     return _json(<Object?>[for (final lane in lanes) lane.toJson()]);
   }
 
@@ -713,7 +713,7 @@ final class TrailReadApi {
   /// array when no dream runs exist (absence is never an error, § 4.1).
   Response _dreamRuns(Request request) {
     final lane = request.url.queryParameters['lane'];
-    final rows = dreamRunRows(host, lane: lane);
+    final rows = dreamRunRows(host, lane: lane, schedule: runtime?.cadence);
     return _json(<Object?>[for (final row in rows) row.toJson()]);
   }
 
@@ -729,6 +729,7 @@ final class TrailReadApi {
     final frames = tailNewestDreamRun(
       host: host,
       lane: lane,
+      schedule: runtime?.cadence,
       changes: dreamRunChanges(host),
     );
     return _sse(frames);
@@ -738,7 +739,7 @@ final class TrailReadApi {
   /// `ProcedureRun` tree (§ 5A.4), or `404` when no turn-less log with that id
   /// exists — the dreaming-side mirror of `GET /api/traces/{turnId}`.
   Response _dreamRun(Request request, String runId) {
-    final DreamRun? run = dreamRunFor(host, runId);
+    final DreamRun? run = dreamRunFor(host, runId, schedule: runtime?.cadence);
     if (run == null) {
       return _json(<String, Object?>{'error': 'no dream run $runId'},
           status: HttpStatus.notFound);

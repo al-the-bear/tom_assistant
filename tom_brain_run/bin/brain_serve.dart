@@ -171,6 +171,10 @@ Future<void> main(List<String> args) async {
           // (lane → defaults → code default), for the Runtime tab's effective
           // sizing display (history-compaction quest, todo #16).
           history: config.history.toJson(),
+          // The resolved dream cadence (config override ?? defaults), so Module 3
+          // groups dream runs by the brain's *actual* lanes (followup #5 /
+          // MSPP-59); absent ⇒ standalone observatory falls back to the defaults.
+          cadence: config.dream?.cadence ?? CadenceSchedule.defaults(),
         ),
       ),
       onInfo: (m) => tomLog.status('[tom_brain.observatory] $m'),

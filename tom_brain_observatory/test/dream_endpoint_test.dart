@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:tom_brain_observatory/tom_brain_observatory.dart';
+import 'package:tom_brain_run/tom_brain_run.dart' show CadenceSchedule, DreamLaneSpec;
 import 'package:test/test.dart';
 
 import 'support/obs_harness.dart';
@@ -52,6 +53,59 @@ void main() {
           <String>['dream_extract_v1', 'dream_connect_v1']);
       expect(lanes['fast']!['runCount'], 1);
       expect(lanes['other']!['runCount'], 1);
+    });
+  });
+
+  group('GET /api/dream/lanes — config-overridden cadence (MSPP-59)', () {
+    // A brain whose brain_run.yaml overrides the cadence threads its resolved
+    // CadenceSchedule into the RuntimeSnapshot; the dream handlers must group by
+    // *that* schedule, not the static defaults. This custom schedule claims
+    // dream_custom_v1 (which falls into the synthetic `other` lane under the
+    // defaults) into an explicit `experimental` lane.
+    final customSchedule = CadenceSchedule(lanes: <DreamLaneSpec>[
+      const DreamLaneSpec(
+        id: 'fast',
+        interval: Duration(minutes: 1),
+        agents: <String>['dream_extract_v1'],
+      ),
+      const DreamLaneSpec(
+        id: 'experimental',
+        interval: Duration(hours: 1),
+        agents: <String>['dream_synthesise_v1', 'dream_custom_v1'],
+      ),
+    ]);
+    final overriddenApi = TrailReadApi(
+      host: host,
+      runtime: RuntimeSnapshot(
+        openAiPort: 8080,
+        openAiBasePath: '/v1',
+        cadence: customSchedule,
+      ),
+    );
+
+    test('reflects the overridden lanes — no synthetic other lane', () async {
+      final res = await obsGet(overriddenApi, 'api/dream/lanes');
+      expect(res.statusCode, 200);
+      final lanes = jsonDecode(await res.readAsString()) as List;
+      // All three discovered runs are claimed by the custom schedule, so there
+      // is no `other` lane — the dropdown shows the brain's actual lanes.
+      expect(lanes.map((l) => (l as Map)['id']),
+          <String>['fast', 'experimental']);
+    });
+
+    test('the custom lane carries its claimed runs', () async {
+      final res = await obsGet(overriddenApi, 'api/dream/runs?lane=experimental');
+      final rows = jsonDecode(await res.readAsString()) as List;
+      expect(rows.map((r) => (r as Map)['procedureId']),
+          <String>['dream_synthesise_v1', 'dream_custom_v1']);
+    });
+
+    test('absent runtime falls back to defaults (no regression)', () async {
+      // The bare `api` (no runtime snapshot) keeps the canonical-defaults shape.
+      final res = await obsGet(api, 'api/dream/lanes');
+      final lanes = jsonDecode(await res.readAsString()) as List;
+      expect(lanes.map((l) => (l as Map)['id']),
+          <String>['fast', 'slow', 'deep', 'monthly', 'other']);
     });
   });
 
