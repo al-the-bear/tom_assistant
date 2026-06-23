@@ -113,6 +113,26 @@ DreamRun? dreamRunFor(
   );
 }
 
+/// The single newest turn-less dream-run log for [host] (§ 5A.5), optionally
+/// confined to [lane] (matching `other` for an unclaimed agent), or `null` when
+/// no dream run exists for the filter. The dreaming-side live-tail
+/// ([tailNewestDreamRun]) follows this run — under Hard principle 10 (one
+/// background task at a time) the newest run *is* the active one.
+/// [host.dreamRunLogs] already orders newest-first.
+File? newestDreamRunLog(
+  TrailHost host, {
+  String? lane,
+  CadenceSchedule? schedule,
+}) {
+  final agentToLane = _agentToLane((schedule ?? CadenceSchedule.defaults()).lanes);
+  for (final log in host.dreamRunLogs()) {
+    if (lane == null) return log;
+    final laneId = agentToLane[_procedureIdOf(log)] ?? otherDreamLane;
+    if (laneId == lane) return log;
+  }
+  return null;
+}
+
 /// Maps each agent procedure id to the id of the lane that fires it, keeping the
 /// **first** lane when an agent appears in more than one (not the case in the
 /// defaults, but resolved deterministically). Lanes are walked in fire order.

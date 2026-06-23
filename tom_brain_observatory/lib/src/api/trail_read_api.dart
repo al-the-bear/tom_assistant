@@ -35,6 +35,7 @@ import 'package:tom_brain_run/tom_brain_run.dart'
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show SubstrateConfigException, SubstrateConfigLoader;
 
+import '../live/dream_tail.dart';
 import '../live/live_tail.dart';
 import '../launch/runtime_snapshot.dart';
 import '../memory/memory_read_client.dart';
@@ -195,6 +196,7 @@ final class TrailReadApi {
       ..get('/api/config', _readConfigFile)
       ..put('/api/config', _writeConfigFile)
       ..get('/api/dream/lanes', _dreamLanes)
+      ..get('/api/dream/stream', _dreamStream)
       ..get('/api/dream/runs', _dreamRuns)
       ..get('/api/dream/runs/<runId>', _dreamRun)
       ..get('/api/runtime', _runtimeSnapshot);
@@ -713,6 +715,23 @@ final class TrailReadApi {
     final lane = request.url.queryParameters['lane'];
     final rows = dreamRunRows(host, lane: lane);
     return _json(<Object?>[for (final row in rows) row.toJson()]);
+  }
+
+  /// `GET /api/dream/stream?lane=<id>` — the Module-3 dreaming live-tail (§ 5A.5):
+  /// an SSE that adopts the active (newest) turn-less dream run — optionally
+  /// confined to a lane — replays its run-tree operations, tails each appended op
+  /// as a `data:` frame, and closes with a terminal `{"done": true, …}` frame on
+  /// the run's outcome. Backed by a read-only recursive watch over `procedures/`
+  /// (OBS-5: no hook in the brain). Idle (open, no frames) when no dream run is
+  /// active — absence is never an error (§ 4.1).
+  Response _dreamStream(Request request) {
+    final lane = request.url.queryParameters['lane'];
+    final frames = tailNewestDreamRun(
+      host: host,
+      lane: lane,
+      changes: dreamRunChanges(host),
+    );
+    return _sse(frames);
   }
 
   /// `GET /api/dream/runs/{runId}` — one drilled-in dream run as the full § 3.6

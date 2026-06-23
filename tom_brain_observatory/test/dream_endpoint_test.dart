@@ -93,6 +93,35 @@ void main() {
     });
   });
 
+  group('GET /api/dream/stream', () {
+    // MSPP-57 — the dreaming-side live-tail. Over the committed (finished)
+    // fixture runs the stream adopts the newest dream run, replays its run-tree
+    // operations as `data:` frames, and closes with a terminal `done` frame.
+    test('replays the newest run\'s ops and closes on the outcome', () async {
+      final res = await obsGet(api, 'api/dream/stream');
+      expect(res.statusCode, 200);
+      expect(res.headers['content-type'], contains('text/event-stream'));
+
+      final frames = (await drainSse(res)).cast<Map<String, Object?>>();
+      // The newest (pinned) run is dream_extract_v1: recall, llm, persist, done.
+      expect(
+          frames.map((f) => f['kind'] ?? (f['done'] == true ? 'done' : null)),
+          <Object?>['primitive', 'llm', 'primitive', 'done']);
+      expect(frames.last['runId'], 'run_1781400000000001_0');
+      expect(frames.last['status'], 'accepted');
+    });
+
+    test('?lane= narrows the stream to that lane\'s newest run', () async {
+      final res = await obsGet(api, 'api/dream/stream?lane=slow');
+      final frames = (await drainSse(res)).cast<Map<String, Object?>>();
+      // The slow lane's newest run is dream_synthesise_v1 (a sub-run recall, the
+      // llm, a persist, an edge), so the terminal frame names that run.
+      expect(frames.last['done'], isTrue);
+      expect(frames.last['runId'], 'run_1781400000000002_0');
+      expect(frames.where((f) => f['kind'] == 'llm'), hasLength(1));
+    });
+  });
+
   group('GET /api/dream/runs/{runId}', () {
     test('resolves a turn-less run to its run-tree', () async {
       final res = await obsGet(api, 'api/dream/runs/run_1781400000000001_0');
