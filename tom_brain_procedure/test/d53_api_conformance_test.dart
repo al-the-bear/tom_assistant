@@ -68,7 +68,9 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         OutboundChunk,
         Persona,
         ProcedureStatus,
+        ProfileMode,
         ResolvedIdentity,
+        ResolvedProfile,
         Session,
         StackEntryId,
         TrailId,
@@ -499,6 +501,10 @@ Access _accessWith({
   // router, which the two-phase route runs before the answer branch it selects.
   String? kindHint = SystemProcedures.promptAnalyzerV1,
   DeliverCallback? deliver,
+  // The boot-resolved processing profile. Defaults to the cognitive default
+  // (entry `prompt_analyzer_v1`), so the existing scenarios route through the
+  // two-phase entry-router path unchanged.
+  ResolvedProfile profile = const ResolvedProfile.cognitiveDefault(),
 }) =>
     Access(
       envelope: InboundRequest(text: text, kindHint: kindHint),
@@ -506,6 +512,7 @@ Access _accessWith({
       session: Session(sessionId: 's1'),
       persona: Persona.assistant(),
       deliver: deliver ?? (chunk) => Stream<OutboundChunk>.value(chunk),
+      profile: profile,
     );
 
 BrainProcessConfig _bootConfig({
@@ -806,6 +813,48 @@ void main() {
         await inProc.shutdown();
         await iso.shutdown();
       }
+    });
+  });
+
+  group('D.53-8 profile direct entry — the resolved entry runs as the single '
+      'top-level run', () {
+    test('an answer-mode profile runs answer_with_memory_v1 exactly once (no '
+        'phantom router phase)', () async {
+      final memory = ProbeMemory();
+      final substrate = _AnsweringSubstrate()
+        ..answerChunks = <String>['I have no notes on that yet.'];
+      final booted = await BrainProcessBoot.boot(_bootConfig(
+        memory: memory,
+        substrate: substrate,
+        memoryRoot: 'ztmp/d53_profile_direct',
+      ));
+      addTearDown(booted.shutdown);
+
+      // A profile whose `mode: answer` resolves the entry directly to
+      // `answer_with_memory_v1` (the § 5.1 profile-entry door). No centroid
+      // hint — door 0 routes before the hint/classifier doors.
+      await booted.dispatcher.accept(_accessWith(
+        text: 'what is a quasar?',
+        kindHint: null,
+        profile: ResolvedProfile(
+          id: 'quick',
+          mode: ProfileMode.answer,
+          entryProcedure: SystemProcedures.answerWithMemoryV1,
+        ),
+      ));
+
+      // The answer branch ran ONCE: one Event (the prompt) + one Conclusion
+      // (the answer). The pre-fix two-phase route ran it twice — an unstreamed
+      // phase-1 "router" plus a phase-2 answer branch defaulting back to
+      // `answer_with_memory_v1` — persisting two of each. That double run (and
+      // the matching `passthrough` → `passthrough_v1` then phantom
+      // `answer_with_memory_v1` the live r52 suite surfaced) is the regression
+      // this pins: a direct-entry profile IS the top-level run, not a router.
+      expect(memory.persistedOfType('Event'), hasLength(1),
+          reason: 'the direct-entry profile dispatches the answer branch as '
+              'the single top-level run, never as a router + answer pair');
+      expect(memory.persistedOfType('Conclusion'), hasLength(1),
+          reason: 'exactly one answer was produced and persisted');
     });
   });
 }

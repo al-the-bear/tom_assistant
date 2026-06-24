@@ -31,6 +31,20 @@ tools: all
 llm: assistant
 role: assistant_to_user
 
+# The `passthrough` sub-procedure (`prompt_configuration.md` §5.2 / SC-3) carries
+# the single `relay` prompt the no-memory `passthrough_v1` runs: it forwards the
+# user's text (`${text}`) through the active role in one substrate call, nothing
+# recalled, nothing persisted. It inherits the top-level `assistant_to_user` role
+# (persona + anchor) and the `assistant` (omlx/Gemma) route, and carries `tools:
+# none` because the relay runs no tool loop. Whether the dedication anchor is
+# actually concatenated is a per-run decision (`Access.profile.anchored`, §3.4):
+# a `passthrough` profile may set `anchored: false`, omitting it.
+passthrough:
+  prompts:
+    relay:
+      template: passthrough.relay
+      tools: none
+
 # The `prompt_analyzer` sub-procedure (`prompt_configuration.md` §10) carries the
 # single `classification` prompt the migrated `prompt_analyzer_v1` entry router
 # runs: it routes a user prompt (`${text}`) to the normal or thinking branch. It

@@ -964,6 +964,27 @@ cognition:
       expect(() => AccessConfigLoader.parse(doc), returnsNormally);
     });
 
+    // The whole-process document also carries the run package's `profiles:`
+    // section — the Profile selection-axis registry (owned by
+    // `ProfileRegistry.fromYamlString`; `session_configuration.md` § 3, SC-5).
+    // The access loader tolerates it as a sibling so the single file feeds every
+    // loader (without this the live profile-routing e2e r51 / r52 fail to parse).
+    test('tolerates a sibling profiles: section', () {
+      const doc = '''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+profiles:
+  default:
+    mode: cognitive
+  relay:
+    mode: passthrough
+    anchored: false
+''';
+      expect(() => AccessConfigLoader.parse(doc), returnsNormally);
+    });
+
     test('rejects an unknown key within access:', () {
       const doc = '''
 access:

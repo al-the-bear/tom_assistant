@@ -196,6 +196,13 @@ String cognitionConfigRoot() => Directory(
 /// at [memoryRoot] (vec0 from [binariesRoot]), the [accessBlock] (the full
 /// `access:` section — use [bearerAccessBlock] or [apiKeyAccessBlock]), and the
 /// cognition tree at [cognitionRoot].
+///
+/// [profilesBlock] (optional) is the full top-level `profiles:` section — the
+/// Profile selection axis registry (`session_configuration.md` § 3.8); when
+/// omitted, the run carries only the built-in `default` (cognitive) profile.
+/// [trailBlock] (optional) is the full top-level `trail:` section; when present
+/// the run trails every LLM call / procedure tree to disk, which the routing
+/// suite reads back to prove which entry procedure ran.
 String liveRunYaml({
   required LiveEndpoint omlx,
   required LiveEndpoint ollama,
@@ -203,6 +210,8 @@ String liveRunYaml({
   required String binariesRoot,
   required String cognitionRoot,
   required String accessBlock,
+  String profilesBlock = '',
+  String trailBlock = '',
 }) =>
     '''
 substrate:
@@ -230,7 +239,7 @@ memory:
   root: "$memoryRoot"
   sqliteVec:
     binariesRoot: "$binariesRoot"
-${accessBlock}cognition:
+$accessBlock$profilesBlock${trailBlock}cognition:
   root: "$cognitionRoot"
 ''';
 
@@ -279,6 +288,38 @@ access:
       sessionPrefix: $sessionPrefix
       memoryPrefix: $memoryPrefix
       displayName: $displayName
+  rateLimit:
+    capacity: 1000000
+    refillTokens: 1000000
+    refillPeriodSeconds: 1
+  quota:
+    dailyCap: 1000000
+''';
+
+/// The `access:` block enabling the Telegram channel (r52): a [botToken] turns
+/// long-polling intake on (here driven by an injected loopback `ChatApi`, so the
+/// token value is never used to reach a network), and the single `users[]` entry
+/// whitelists [telegramUserId] under [principal]. No `apiKeys[]` is needed — the
+/// Telegram principal binding rides on `users[].telegramUserIds`. The OpenAI
+/// socket is still stood up (port overridden to 0 by the test's `serve` seam) but
+/// goes unused on the Telegram path.
+String telegramAccessBlock({
+  required String botToken,
+  required String telegramUserId,
+  String principal = 'owner',
+}) =>
+    '''
+access:
+  openai:
+    port: 8080
+    basePath: /v1
+  telegram:
+    botToken: $botToken
+  users:
+    - id: $principal
+      displayName: Owner
+      telegramUserIds:
+        - "$telegramUserId"
   rateLimit:
     capacity: 1000000
     refillTokens: 1000000

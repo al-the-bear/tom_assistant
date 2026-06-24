@@ -979,48 +979,66 @@ abstract final class BrainProcessBoot {
 
       ProcedureOutcome? outcome;
       try {
-        // The route is two-phase within ONE foreground admission (§ 4.0.1, b):
-        // the user's turn occupies the slot once for both the router decision
-        // and the answer it gates. `procedureId` (the resolved entry router,
-        // `prompt_analyzer_v1`) is the tracking id for the admission.
+        // The route is two-phase within ONE foreground admission ONLY for the
+        // cognitive entry router (§ 4.0.1, b): the user's turn occupies the
+        // slot once for both the router decision and the answer it gates. A
+        // profile that routed directly to its own entry procedure (§ 5.1 door
+        // 0 — `answer` → `answer_with_memory_v1`, `passthrough` →
+        // `passthrough_v1`, or an explicit override) has no router phase: that
+        // entry IS the top-level run. Running the two-phase dance for it would
+        // run the entry unstreamed as a phantom "router", then run a phase-2
+        // answer branch on top — double work, and for `passthrough` it would
+        // wrongly chain `answer_with_memory_v1` after the memory-free relay
+        // (violating SC-3). `procedureId` is the tracking id for the admission.
+        final bool isEntryRouter =
+            procedureId == SystemProcedures.promptAnalyzerV1;
         final ProcedureOutcome result = await coordinator.submitForeground(
           () async {
-            // ── Phase 1: classify (no sink) ──
-            // Run the entry router with NO token/notice sink — a router
-            // classification must never stream to the live caller (§ 4.0.1, b:
-            // a branch invoked under the router would stream nothing, because
-            // the engine binds the per-run token sink only to the top-level
-            // run). Read the router's chosen `target` answer branch.
-            final ProcedureOutcome routerOutcome = await engine
-                .invoke(
-                  ProcedureInvocation(
-                    procedureId: procedureId,
-                    arguments: <String, Object?>{
-                      inboundTextArgumentKey: access.envelope.text,
-                    },
-                    turnId: access.turnId,
-                    memoryProfile: access.session.memoryProfile,
-                    sessionId: access.session.sessionId,
-                    // Carry the boot-resolved profile (session_configuration.md
-                    // § 4.3) so the engine binds the run's role / template
-                    // overlay / MCP exposure / budget from it (plan step 8).
-                    profile: access.profile,
-                  ),
-                )
-                .outcome;
+            final String target;
+            if (isEntryRouter) {
+              // ── Phase 1: classify (no sink) ──
+              // Run the entry router with NO token/notice sink — a router
+              // classification must never stream to the live caller (§ 4.0.1,
+              // b: a branch invoked under the router would stream nothing,
+              // because the engine binds the per-run token sink only to the
+              // top-level run). Read the router's chosen `target` answer branch.
+              final ProcedureOutcome routerOutcome = await engine
+                  .invoke(
+                    ProcedureInvocation(
+                      procedureId: procedureId,
+                      arguments: <String, Object?>{
+                        inboundTextArgumentKey: access.envelope.text,
+                      },
+                      turnId: access.turnId,
+                      memoryProfile: access.session.memoryProfile,
+                      sessionId: access.session.sessionId,
+                      // Carry the boot-resolved profile
+                      // (session_configuration.md § 4.3) so the engine binds the
+                      // run's role / template overlay / MCP exposure / budget
+                      // from it (plan step 8).
+                      profile: access.profile,
+                    ),
+                  )
+                  .outcome;
 
-            // The deterministic thinking floor (§ 4.0): the model verdict is
-            // augmented by the domain-free deliberation-cue scan
-            // (`classifyDeliberationCue`, tom_core_agentic) so a cued prompt
-            // ("think about …") always reaches the recursive loop, even when
-            // the model classified it `normal`. The router cannot run this
-            // itself — a d4rt body cannot import tom_core_agentic.
-            final target = _resolveAnswerBranch(
-              routerTarget: routerOutcome.result?.output<String>('target'),
-              promptText: access.envelope.text,
-            );
+              // The deterministic thinking floor (§ 4.0): the model verdict is
+              // augmented by the domain-free deliberation-cue scan
+              // (`classifyDeliberationCue`, tom_core_agentic) so a cued prompt
+              // ("think about …") always reaches the recursive loop, even when
+              // the model classified it `normal`. The router cannot run this
+              // itself — a d4rt body cannot import tom_core_agentic.
+              target = _resolveAnswerBranch(
+                routerTarget: routerOutcome.result?.output<String>('target'),
+                promptText: access.envelope.text,
+              );
+            } else {
+              // A profile routed directly to its entry procedure (§ 5.1 door 0):
+              // there is no router phase — the resolved entry is itself the
+              // top-level streaming run.
+              target = procedureId;
+            }
 
-            // ── Phase 2: answer (streaming, top-level) ──
+            // ── Phase 2 / direct entry: answer (streaming, top-level) ──
             // Run the chosen answer branch as the TOP-LEVEL streaming run,
             // binding the per-run token + notice sinks so its `sub.llm(...)`
             // chunks reach the caller live, and threading the full argument

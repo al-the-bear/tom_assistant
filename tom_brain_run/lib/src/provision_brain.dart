@@ -47,11 +47,13 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         ProvisionedBrain,
         QueueSnapshot,
         QueueSnapshotSource,
+        TelegramChatApiFactory,
         TelegramCliServerPortController,
         TelegramInspectors,
         TelegramStopController,
         TelegramTodosInspector,
         TelegramUsageInspector,
+        defaultTelegramChatApiFactory,
         serveWithShelfIo,
         startBrainAccessProcess;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
@@ -534,6 +536,7 @@ Future<BrainProcess> standUpBrainProcess({
   ApiKeyPersist? apiKeyPersist,
   ProfileResolver? profileResolver,
   List<String> Function()? configuredProfiles,
+  TelegramChatApiFactory? telegramChatApiFactory,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -570,6 +573,10 @@ Future<BrainProcess> standUpBrainProcess({
       apiKeyPersist: apiKeyPersist,
       profileResolver: profileResolver,
       configuredProfiles: configuredProfiles,
+      // Default to the real long-polling bot; a test injects a loopback
+      // `ChatApi` so the Telegram edge can be driven without a live bot.
+      telegramChatApiFactory:
+          telegramChatApiFactory ?? defaultTelegramChatApiFactory,
       telegramInspectors: _telegramInspectorsFor(
         trailRoot: trailRoot,
         memoryClient: provisioned.memoryClient,
@@ -715,6 +722,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   int foregroundQueueDepth = 4,
   String? isolateLogRootPath,
   String? runConfigPath,
+  TelegramChatApiFactory? telegramChatApiFactory,
 }) async {
   // Resolve the scripts dir once so the boot's procedure store and the §6
   // `${scripts_folder}` built-in the prompt resolver carries agree on the same
@@ -982,6 +990,9 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     // are operator config, not user-minted, so the candidate set is the run's
     // `profiles:` registry, read live so a config reload is picked up.
     configuredProfiles: () => runConfig.profiles.names.toList(),
+    // Forwarded so a test can drive the Telegram edge through a loopback
+    // `ChatApi` (null → the real long-polling bot, the production default).
+    telegramChatApiFactory: telegramChatApiFactory,
   );
 }
 

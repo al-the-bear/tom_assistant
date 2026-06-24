@@ -75,9 +75,10 @@ abstract final class AccessConfigLoader {
   /// loader for `cognition:` — `prompt_configuration.md` §7.4, the prompt /
   /// route resolver root — and the procedure package's `McpServersConfig`
   /// for `mcpServers:` (the outbound MCP servers merged into the tool loop,
-  /// `tom_brain_procedure_specification.md` § 21.6)) and are tolerated here
-  /// so the single file feeds every section loader. Any other root key is
-  /// rejected (AC-12).
+  /// `tom_brain_procedure_specification.md` § 21.6), and the run package's
+  /// `ProfileRegistry` for `profiles:` — the Profile selection-axis registry,
+  /// `session_configuration.md` § 3, SC-5) and are tolerated here so the single
+  /// file feeds every section loader. Any other root key is rejected (AC-12).
   static const Set<String> _allowedTopLevelKeys = <String>{
     'substrate',
     'memory',
@@ -88,6 +89,7 @@ abstract final class AccessConfigLoader {
     'dream',
     'cognition',
     'mcpServers',
+    'profiles',
     _historyKey,
     _accessKey,
   };

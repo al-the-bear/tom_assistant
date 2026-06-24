@@ -123,6 +123,12 @@ dev_dependencies:
   # boots `buildOmlxOllamaSubstrate`.
   tom_brain_smoke_prototype:
     path: ../tom_brain_smoke_prototype
+  # The r52 LIVE Telegram end-to-end test drives the Telegram edge through an
+  # in-process `LoopbackChatApi` (a consumer-authored `ChatApi` double, ported
+  # from the access package's test support) injected via the
+  # `telegramChatApiFactory` seam — no televerse `Bot`, no socket. `tom_chattools`
+  # ships the abstract `ChatApi` the double implements.
+  tom_chattools: ^1.0.2
   # NOTE: `dart_mcp` + `stream_channel` are now main dependencies (above): the
   # production MCP channel factory needs them in `lib/`. The #32 LIVE end-to-end
   # test still drives a `TomBrainMemoryMcpServer` over an in-host
