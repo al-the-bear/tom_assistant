@@ -7,7 +7,10 @@
 // pre-dispatch). This writer turns each into one
 // `incoming/<channel>/<turnId>.raw.json` carrying the §5.3 fields (turnId,
 // channel, receivedAt, principalId, sessionId, conversationId, profile,
-// persona, text, attachments, rawEnvelope).
+// processingProfile, processingMode, anchored, persona, text, attachments,
+// rawEnvelope). The processing-profile axis (`processingProfile` +
+// `processingMode` + `anchored`) is the third selection axis
+// (session_configuration.md §7.2 item 6), distinct from the memory `profile`.
 //
 // Secret handling (§5.3 "rawEnvelope redacted of secrets"): the bearer / bot
 // credential never reaches the record — it is a separate admission argument,
