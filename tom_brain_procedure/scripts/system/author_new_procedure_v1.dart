@@ -122,7 +122,10 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     {
       'name': name,
       'summary': summary,
-      'code': source,
+      // The verbatim d4rt source. The node field is `source`
+      // (`procedure_specification.md` § 7.1); this is the field
+      // `MemoryProcedureStore` reads back to make the node runnable.
+      'source': source,
       'status': status,
       'revision': revision,
       'requires': requires,

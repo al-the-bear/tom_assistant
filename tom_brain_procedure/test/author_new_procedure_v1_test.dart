@@ -114,7 +114,7 @@ void main() {
       expect(procedure.draft.values['name'], 'greet_user_v1');
       expect(procedure.draft.values['summary'],
           'Greets the user by their stored name.');
-      expect(procedure.draft.values['code'], _validCandidate);
+      expect(procedure.draft.values['source'], _validCandidate);
       expect(procedure.draft.values['status'], 'draft');
       expect(procedure.draft.values['requires'], <String>['recall', 'note']);
     });
@@ -161,7 +161,7 @@ void main() {
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       final procedure = authoredProcedure();
-      expect(procedure.draft.values['code'], _validCandidate);
+      expect(procedure.draft.values['source'], _validCandidate);
       expect(procedure.draft.values['status'], 'draft');
     });
   });
