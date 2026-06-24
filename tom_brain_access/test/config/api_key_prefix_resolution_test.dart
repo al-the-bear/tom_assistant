@@ -37,6 +37,7 @@ void main() {
         residualKey: 'sk-acme',
         sessionSelector: null,
         memorySelector: null,
+        profileSelector: null,
       );
       final scope = cfg.resolveScope(markers);
       expect(scope.sessionId, 'acme_default');
@@ -53,6 +54,7 @@ void main() {
         residualKey: 'sk-plain',
         sessionSelector: null,
         memorySelector: null,
+        profileSelector: null,
       );
       final scope = cfg.resolveScope(markers);
       expect(scope.sessionId, 'defaultsession_default');
@@ -264,6 +266,7 @@ access:
         residualKey: 'sk-real-acme',
         sessionSelector: null,
         memorySelector: null,
+        profileSelector: null,
       );
       final scope = config.apiKeyFor('sk-real-acme')!.resolveScope(noMarkers);
       expect(scope.sessionId, 'acme_default');

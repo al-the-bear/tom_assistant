@@ -5,19 +5,21 @@
 // ── Why a separate pure function ─────────────────────────────────────────
 //
 // memory_session_profiles.md gives session/memory selection through the
-// credential itself: a Bearer token may embed up to two markers —
-// `session-<sel>` and `memory-<sel>` — that pick a conversation session and a
-// memory profile, and whatever is left is the real key. Parsing runs at the
-// edge *before* authentication (MSP-3): the markers are stripped first; the
-// residual is what `IdentityResolver.resolveBearer` then validates.
+// credential itself: a Bearer token may embed up to three markers —
+// `session-<sel>`, `memory-<sel>`, and `profile-<sel>` (the third axis,
+// session_configuration.md § 3) — that pick a conversation session, a memory
+// profile, and a behaviour profile, and whatever is left is the real key.
+// Parsing runs at the edge *before* authentication (MSP-3): the markers are
+// stripped first; the residual is what `IdentityResolver.resolveBearer` then
+// validates.
 //
 // This file is that strip step and nothing more. It is pure (no I/O, no
 // state), exactly like [parseBearerHeader] and `parseTelegramCommand`, so the
 // whole §15 marker table is unit-testable in isolation. The edge wiring —
 // `parseBearerHeader` → [parseApiKeyMarkers] → authenticate residual → apply
-// prefixes → stamp `Access` — is plan step 5; prefix resolution + config is
-// step 3. Here we only produce `{ residualKey, sessionSelector?,
-// memorySelector? }`.
+// prefixes → resolve profile → stamp `Access` — is plan step 5; prefix
+// resolution + config is step 3. Here we only produce `{ residualKey,
+// sessionSelector?, memorySelector?, profileSelector? }`.
 //
 // ── The grammar (§ 3.1, the D-1 recommended default) ─────────────────────
 //
@@ -25,8 +27,9 @@
 //      leading / trailing and doubled underscores — the request's "potentially
 //      with leading/trailing underscores").
 //   2. A segment matching `^session-(.+)$` is the session marker (value =
-//      group 1); a segment matching `^memory-(.+)$` is the memory marker.
-//   3. At most one of each — a second occurrence of either is a duplicate
+//      group 1); a segment matching `^memory-(.+)$` is the memory marker; a
+//      segment matching `^profile-(.+)$` is the profile marker.
+//   3. At most one of each — a second occurrence of any is a duplicate
 //      error ([ApiKeyMarkerFailureReason.duplicateMarker], wire code
 //      `marker.duplicate`, surfaced as `400 invalid_api_key` at the edge,
 //      § 13).
@@ -34,10 +37,11 @@
 //      order, form the residual key.
 //
 // Markers may appear before, after, or interleaved with the key segments.
-// Matching is case-sensitive on the `session-`/`memory-` literal; values are
-// preserved verbatim. Because a marker value is one underscore-delimited
-// segment, selector values are `_`-free by construction (D-1); a real key may
-// contain `_` (it survives as rejoined residual segments).
+// Matching is case-sensitive on the `session-`/`memory-`/`profile-` literal;
+// values are preserved verbatim. Because a marker value is one
+// underscore-delimited segment, selector values are `_`-free by construction
+// (D-1); a real key may contain `_` (it survives as rejoined residual
+// segments).
 
 /// The reserved credential value for keyless access (§ 6, MSP-2).
 ///
@@ -53,12 +57,13 @@ const String noKeyCredential = 'no-key';
 /// The result of [parseApiKeyMarkers]: the markers stripped from a Bearer
 /// token plus the residual key left for authentication.
 ///
-/// [residualKey] is the token with both markers removed (the segments rejoined
+/// [residualKey] is the token with all markers removed (the segments rejoined
 /// with `_`); it may be empty when the token carried only markers — the edge
 /// then treats the request as keyless and substitutes the well-known `no-key`
 /// credential (§ 3.2 / § 6, plan step 4). [sessionSelector] / [memorySelector]
-/// are the verbatim marker values, or `null` when the corresponding marker was
-/// absent (the edge defaults an absent selector to `default`, § 3.2).
+/// / [profileSelector] are the verbatim marker values, or `null` when the
+/// corresponding marker was absent (the edge defaults an absent selector to
+/// `default`, § 3.2).
 final class ApiKeyMarkers {
   /// The token with the `session-`/`memory-` markers stripped — the credential
   /// that is actually authenticated. May be `''` (markers-only / empty token).
@@ -72,11 +77,19 @@ final class ApiKeyMarkers {
   /// present. Never empty when non-null (the grammar requires `(.+)`).
   final String? memorySelector;
 
+  /// The `profile-<value>` marker's value (the third selection axis,
+  /// session_configuration.md § 3), or `null` if no profile marker was present.
+  /// Never empty when non-null (the grammar requires `(.+)`). The edge resolves
+  /// an absent selector to the configured Telegram default / the built-in
+  /// `default` profile (plan step 5).
+  final String? profileSelector;
+
   /// Builds a marker result.
   const ApiKeyMarkers({
     required this.residualKey,
     required this.sessionSelector,
     required this.memorySelector,
+    required this.profileSelector,
   });
 
   /// Whether the token carried no real key — [residualKey] is empty, so the
@@ -98,7 +111,8 @@ final class ApiKeyMarkers {
 
   @override
   String toString() => 'ApiKeyMarkers(residualKey: "$residualKey", '
-      'session: $sessionSelector, memory: $memorySelector)';
+      'session: $sessionSelector, memory: $memorySelector, '
+      'profile: $profileSelector)';
 }
 
 /// Categories of API-key marker parse failure.
@@ -108,8 +122,8 @@ final class ApiKeyMarkers {
 /// version bump, not a silent extension. § 3.1 defines exactly one — a
 /// repeated marker.
 enum ApiKeyMarkerFailureReason {
-  /// A second `session-` or `memory-` marker appeared in one token. At most
-  /// one of each is allowed (§ 3.1 step 4).
+  /// A second `session-`, `memory-`, or `profile-` marker appeared in one
+  /// token. At most one of each is allowed (§ 3.1 step 4).
   duplicateMarker,
 }
 
@@ -145,16 +159,22 @@ final RegExp _sessionMarker = RegExp(r'^session-(.+)$');
 /// Matches a `memory-<value>` segment; group 1 is the verbatim selector.
 final RegExp _memoryMarker = RegExp(r'^memory-(.+)$');
 
-/// Parses the session/memory markers out of a Bearer [token] (§ 3.1).
+/// Matches a `profile-<value>` segment; group 1 is the verbatim selector
+/// (the third selection axis, session_configuration.md § 3).
+final RegExp _profileMarker = RegExp(r'^profile-(.+)$');
+
+/// Parses the session/memory/profile markers out of a Bearer [token] (§ 3.1).
 ///
-/// Returns the [ApiKeyMarkers] — the residual key plus the (optional) session
-/// and memory selectors. Pure: no I/O, no state.
+/// Returns the [ApiKeyMarkers] — the residual key plus the (optional) session,
+/// memory and profile selectors. Pure: no I/O, no state.
 ///
 /// Throws [ApiKeyMarkerException] ([ApiKeyMarkerFailureReason.duplicateMarker])
-/// when a second `session-` or `memory-` marker appears in the same token.
+/// when a second `session-`, `memory-`, or `profile-` marker appears in the
+/// same token.
 ApiKeyMarkers parseApiKeyMarkers(String token) {
   String? sessionSelector;
   String? memorySelector;
+  String? profileSelector;
   final residualSegments = <String>[];
 
   for (final segment in token.split('_')) {
@@ -184,6 +204,18 @@ ApiKeyMarkers parseApiKeyMarkers(String token) {
       continue;
     }
 
+    final profileMatch = _profileMarker.firstMatch(segment);
+    if (profileMatch != null) {
+      if (profileSelector != null) {
+        throw const ApiKeyMarkerException(
+          ApiKeyMarkerFailureReason.duplicateMarker,
+          'Token carries more than one profile- marker.',
+        );
+      }
+      profileSelector = profileMatch.group(1);
+      continue;
+    }
+
     residualSegments.add(segment);
   }
 
@@ -191,5 +223,6 @@ ApiKeyMarkers parseApiKeyMarkers(String token) {
     residualKey: residualSegments.join('_'),
     sessionSelector: sessionSelector,
     memorySelector: memorySelector,
+    profileSelector: profileSelector,
   );
 }
