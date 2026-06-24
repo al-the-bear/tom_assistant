@@ -221,6 +221,20 @@ export 'src/cli_env_expansion.dart'
 export 'src/tools_config.dart' show ToolsConfig, ToolsConfigException;
 export 'src/tools_config_loader.dart' show ToolsConfigLoader;
 
+// ── The in-process embedding facade (tom_brain_cli.md § 10; CLI plan step
+//    #10) ────────────────────────────────────────────────────────────────
+export 'src/embed/tom_brain.dart'
+    show
+        BrainApiKey,
+        BrainConfig,
+        BrainEmbedding,
+        BrainOverrides,
+        BrainProvider,
+        BrainRoute,
+        PromptSource,
+        ScriptSource,
+        TomBrain;
+
 // ── Profile selection axis: config DTO + boot registry (session_configuration
 //    plan step 3; spec § 3) ──────────────────────────────────────────────
 export 'src/profile/profile.dart' show Profile;
