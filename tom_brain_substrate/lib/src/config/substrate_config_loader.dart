@@ -82,11 +82,21 @@ abstract final class SubstrateConfigLoader {
   /// inside any string value; unknown tokens raise
   /// [SubstrateConfigException].
   ///
-  /// Pure: no I/O, no clock. Tests reach it directly with
-  /// hand-rolled YAML strings.
+  /// [basePath] is the directory against which a relative
+  /// `providersDir` / `modelsDir` resolves (the CLI plan step 2
+  /// aspect-directory split). It is the directory of the config
+  /// file when entered through [loadFromFile]; tests pass it
+  /// explicitly. When the aspect directories are absent (the
+  /// inline shape) [basePath] is unused and the call remains pure.
+  ///
+  /// Pure for the inline shape: no I/O, no clock. When `providersDir`
+  /// / `modelsDir` are configured the loader reads those directories'
+  /// `*.yaml` files — the only I/O this loader performs outside
+  /// [loadFromFile].
   static SubstrateConfig parse(
     String content, {
     Map<String, String> envVars = const {},
+    String? basePath,
   }) {
     final Map<String, Object?> doc;
     try {
@@ -108,13 +118,15 @@ abstract final class SubstrateConfigLoader {
         'Missing top-level `substrate:` map.',
       );
     }
-    return _parseSubstrate(node, envVars);
+    return _parseSubstrate(node, envVars, basePath);
   }
 
   /// Loads the YAML file at [path] and parses it via [parse].
   ///
   /// Production callers usually go through this entry point; the
-  /// test suite uses [parse] with inline content.
+  /// test suite uses [parse] with inline content. The config file's
+  /// own directory becomes the [basePath] so a relative `providersDir`
+  /// / `modelsDir` resolves against the config file's location.
   static SubstrateConfig loadFromFile(
     String path, {
     Map<String, String> envVars = const {},
@@ -124,8 +136,157 @@ abstract final class SubstrateConfigLoader {
       throw SubstrateConfigException('Config file not found: $path');
     }
     final content = file.readAsStringSync();
-    return parse(content, envVars: envVars);
+    return parse(
+      content,
+      envVars: envVars,
+      basePath: file.absolute.parent.path,
+    );
   }
+
+  // ---------------------------------------------------------------
+  // Aspect-directory sourcing (CLI plan step 2).
+  //
+  // `providersDir` / `modelsDir` relocate the providers list and the
+  // routing+embedding maps into their own directories of `*.yaml`
+  // files (the `<agent>/providers/` + `<agent>/models/` convention).
+  // The loaded fragments are fed back through the same inline section
+  // parsers, so env-expansion and cross-validation are identical to
+  // the inline shape.
+  // ---------------------------------------------------------------
+
+  /// Unions the `providers:` lists from every `*.yaml` file under the
+  /// `providersDir`, in filename order. Each file carries a top-level
+  /// `providers:` list (the same shape as inline `substrate.providers`).
+  /// Duplicate ids across files surface from `_parseProviders`.
+  static List<Object?> _loadProvidersFromDir(String dirPath, String? basePath) {
+    final files = _aspectYamlFiles(dirPath, basePath, 'providersDir');
+    final merged = <Object?>[];
+    for (final file in files) {
+      final doc = _loadAspectFile(file, 'providersDir');
+      merged.addAll(
+        _requireList(doc, 'providers', '${_fileLabel(file)}:providers'),
+      );
+    }
+    return merged;
+  }
+
+  /// Merges `roleRoutes` (by role) and `embedding` (declared exactly
+  /// once) from every `*.yaml` file under the `modelsDir`. Returns a
+  /// synthesized `{roleRoutes, embedding}` map fed through the inline
+  /// parsers; a missing aspect surfaces the standard
+  /// `Missing required field` error. A role declared in two files, or
+  /// `embedding` declared in two files, is rejected here.
+  static Map<Object?, Object?> _loadModelsFromDir(
+    String dirPath,
+    String? basePath,
+  ) {
+    final files = _aspectYamlFiles(dirPath, basePath, 'modelsDir');
+    final mergedRoutes = <Object?, Object?>{};
+    Map<Object?, Object?>? embedding;
+    String? embeddingFrom;
+    for (final file in files) {
+      final doc = _loadAspectFile(file, 'modelsDir');
+      final routes = _optionalMap(doc, 'roleRoutes');
+      if (routes != null) {
+        for (final entry in routes.entries) {
+          if (mergedRoutes.containsKey(entry.key)) {
+            throw SubstrateConfigException(
+              'substrate.modelsDir: role "${entry.key}" is declared in more '
+              'than one model file; route each role once.',
+            );
+          }
+          mergedRoutes[entry.key] = entry.value;
+        }
+      }
+      final emb = _optionalMap(doc, 'embedding');
+      if (emb != null) {
+        if (embedding != null) {
+          throw SubstrateConfigException(
+            'substrate.modelsDir: `embedding:` is declared in more than one '
+            'model file ($embeddingFrom and ${_fileLabel(file)}); declare it '
+            'once.',
+          );
+        }
+        embedding = emb;
+        embeddingFrom = _fileLabel(file);
+      }
+    }
+    return <Object?, Object?>{
+      if (mergedRoutes.isNotEmpty) 'roleRoutes': mergedRoutes,
+      'embedding': ?embedding,
+    };
+  }
+
+  /// Resolves [dirPath] against [basePath] and returns its `*.yaml` /
+  /// `*.yml` files sorted by path. A relative [dirPath] requires a
+  /// [basePath]; a missing directory is a clear error. [aspect] names
+  /// the offending key (`providersDir` / `modelsDir`) in errors.
+  static List<File> _aspectYamlFiles(
+    String dirPath,
+    String? basePath,
+    String aspect,
+  ) {
+    final String resolved;
+    if (_isAbsolutePath(dirPath)) {
+      resolved = dirPath;
+    } else if (basePath == null) {
+      throw SubstrateConfigException(
+        'substrate.$aspect "$dirPath" is a relative path but no base '
+        'directory is available; load the config via `loadFromFile` (or pass '
+        '`basePath`) so relative aspect directories resolve against the '
+        'config file.',
+      );
+    } else {
+      resolved = '$basePath/$dirPath';
+    }
+    final dir = Directory(resolved);
+    if (!dir.existsSync()) {
+      throw SubstrateConfigException(
+        'substrate.$aspect directory not found: $resolved',
+      );
+    }
+    return dir
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.yaml') || f.path.endsWith('.yml'))
+        .toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+  }
+
+  /// Reads + parses one aspect [file] into a plain map. Wraps read /
+  /// parse failures as [SubstrateConfigException] naming the file.
+  static Map<Object?, Object?> _loadAspectFile(File file, String aspect) {
+    final String content;
+    try {
+      content = file.readAsStringSync();
+    } on FileSystemException catch (e) {
+      throw SubstrateConfigException(
+        'substrate.$aspect: cannot read ${file.path}: ${e.message}',
+      );
+    }
+    try {
+      return loadYamlAsMap(content, errorFactory: SubstrateConfigException.new);
+    } on SubstrateConfigException {
+      rethrow;
+    } on FormatException catch (e) {
+      throw SubstrateConfigException(
+        'substrate.$aspect: YAML parse failed in ${file.path}: ${e.message}',
+      );
+    }
+  }
+
+  /// The trailing filename of an aspect [file], for compact error labels.
+  static String _fileLabel(File file) {
+    final segments = file.uri.pathSegments;
+    return segments.isEmpty ? file.path : segments.last;
+  }
+
+  /// Posix / Windows absolute-path test without `package:path` (kept off
+  /// the dependency surface — `dependency_surface_test.dart`).
+  static bool _isAbsolutePath(String pth) =>
+      pth.startsWith('/') ||
+      pth.startsWith(r'\\') ||
+      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(pth);
 
   // ---------------------------------------------------------------
   // Section parsers.
@@ -134,26 +295,48 @@ abstract final class SubstrateConfigLoader {
   static SubstrateConfig _parseSubstrate(
     Map<Object?, Object?> node,
     Map<String, String> env,
+    String? basePath,
   ) {
-    final providersNode = _requireList(
-      node,
-      'providers',
-      'substrate.providers',
-    );
+    // Providers: inline `providers:` XOR `providersDir:` (a directory
+    // of provider files, the CLI `<agent>/providers/` convention).
+    final providersDir =
+        _optionalString(node, 'providersDir', 'substrate.providersDir');
+    final List<Object?> providersNode;
+    if (providersDir != null) {
+      if (node.containsKey('providers')) {
+        throw const SubstrateConfigException(
+          'substrate: declare `providers:` (inline) or `providersDir:` '
+          '(a directory of provider files), not both.',
+        );
+      }
+      providersNode = _loadProvidersFromDir(providersDir, basePath);
+    } else {
+      providersNode = _requireList(node, 'providers', 'substrate.providers');
+    }
     final providers = _parseProviders(providersNode, env);
 
-    final routesNode = _requireMap(
-      node,
-      'roleRoutes',
-      'substrate.roleRoutes',
-    );
+    // Routes + embedding: inline `roleRoutes:`/`embedding:` XOR
+    // `modelsDir:` (a directory of model-routing files, the CLI
+    // `<agent>/models/` convention; one directory feeds both aspects).
+    final modelsDir =
+        _optionalString(node, 'modelsDir', 'substrate.modelsDir');
+    final Map<Object?, Object?> routesNode;
+    final Map<Object?, Object?> embeddingNode;
+    if (modelsDir != null) {
+      if (node.containsKey('roleRoutes') || node.containsKey('embedding')) {
+        throw const SubstrateConfigException(
+          'substrate: declare `roleRoutes:`/`embedding:` (inline) or '
+          '`modelsDir:` (a directory of model files), not both.',
+        );
+      }
+      final models = _loadModelsFromDir(modelsDir, basePath);
+      routesNode = _requireMap(models, 'roleRoutes', 'substrate.roleRoutes');
+      embeddingNode = _requireMap(models, 'embedding', 'substrate.embedding');
+    } else {
+      routesNode = _requireMap(node, 'roleRoutes', 'substrate.roleRoutes');
+      embeddingNode = _requireMap(node, 'embedding', 'substrate.embedding');
+    }
     final roleRoutes = _parseRoleRoutes(routesNode);
-
-    final embeddingNode = _requireMap(
-      node,
-      'embedding',
-      'substrate.embedding',
-    );
     final embedding = _parseEmbedding(embeddingNode);
 
     final router = _parseRouter(_optionalMap(node, 'router'));

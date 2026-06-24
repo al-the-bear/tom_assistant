@@ -89,7 +89,14 @@ abstract final class BrainRunConfigLoader {
   /// section. [envVars] is forwarded to every section loader to expand
   /// `${NAME}` tokens (typically `Platform.environment`).
   ///
-  /// Pure: no I/O, no clock. Tests reach it directly with inline YAML.
+  /// [basePath] is the config file's directory, forwarded to
+  /// [SubstrateConfigLoader.parse] so a relative `substrate.providersDir` /
+  /// `substrate.modelsDir` resolves against it (CLI plan step 2). It is set by
+  /// [loadFromFile]; tests pass it explicitly when exercising the aspect-dir
+  /// split.
+  ///
+  /// Pure for the inline shape: no I/O, no clock. Reads the substrate aspect
+  /// directories only when `providersDir` / `modelsDir` are configured.
   ///
   /// Throws `SubstrateConfigException` / `MemoryConfigException` /
   /// `AccessConfigException` (the owning loader's type) on a section that does
@@ -97,9 +104,13 @@ abstract final class BrainRunConfigLoader {
   static BrainRunConfig parse(
     String content, {
     Map<String, String> envVars = const {},
+    String? basePath,
   }) {
-    final SubstrateConfig substrate =
-        SubstrateConfigLoader.parse(content, envVars: envVars);
+    final SubstrateConfig substrate = SubstrateConfigLoader.parse(
+      content,
+      envVars: envVars,
+      basePath: basePath,
+    );
     final MemoryConfig memory =
         MemoryConfigLoader.parse(content, envVars: envVars);
     final AccessConfig access =
@@ -168,7 +179,11 @@ abstract final class BrainRunConfigLoader {
     if (!file.existsSync()) {
       throw BrainRunConfigException('Config file not found: $path');
     }
-    return parse(file.readAsStringSync(), envVars: envVars);
+    return parse(
+      file.readAsStringSync(),
+      envVars: envVars,
+      basePath: file.absolute.parent.path,
+    );
   }
 }
 
