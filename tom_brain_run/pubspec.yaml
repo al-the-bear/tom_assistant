@@ -85,6 +85,11 @@ dependencies:
   # channel helper + `stream_channel` in `lib/` (not just the test harness).
   dart_mcp: ^0.5.0
   stream_channel: ^2.1.4
+  # The bundle codegen (`bundle_codegen.dart`, CLI plan step 4) labels the
+  # generated `brain_bundle.g.dart` with a `sha256:` content fingerprint over
+  # the bundled prompt/script text and decoded native bytes — a real digest, so
+  # the build hash is stable and verifiable, not a length-only signature.
+  crypto: ^3.0.0
   # The run MCP channel factory (`mcp_channel_factory.dart`) opens an `http:`
   # MCP server by delegating to the substrate's `HttpMcpTransport`, whose
   # constructor takes an optional `package:http.Client` — so the factory's

@@ -152,6 +152,19 @@ export 'src/memory_mcp_isolate_host.dart'
 // the observatory package directly (the run layer owns its lifecycle).
 export 'package:tom_brain_observatory/tom_brain_observatory.dart'
     show ObservatoryOptions, RuntimeSnapshot;
+// ── Compiled-in asset bundle (tom_brain_cli.md §4; CLI plan step 4) ───
+export 'src/bundle/bundle_manifest.dart' show BundleManifest;
+export 'src/bundle/brain_bundle.g.dart' show brainBundle;
+export 'src/bundle/bundle_codegen.dart'
+    show BundleCodegenException, buildBundleManifest, renderBundleSource;
+export 'src/bundle/bundle_listing.dart' show renderBundleListing;
+export 'src/bundle/bundled_sqlite_vec.dart'
+    show
+        BundledSqliteVec,
+        SqliteVecOrigin,
+        SqliteVecResolution,
+        SqliteVecUnavailable,
+        resolveSqliteVecBinariesRoot;
 export 'src/scripts_config.dart' show ScriptsConfig, ScriptsConfigException;
 export 'src/scripts_config_loader.dart' show ScriptsConfigLoader;
 export 'src/tools_config.dart' show ToolsConfig, ToolsConfigException;
