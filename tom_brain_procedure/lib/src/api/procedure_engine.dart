@@ -874,6 +874,11 @@ final class ProcedureEngine {
       // none (an empty `ResolvedPrompt.role`), never overriding a named one.
       // `null` when the profile pins no role — every prompt keeps its own role.
       profileRole: resolvedProfile?.role,
+      // Per-run anchoring toggle (`session_configuration.md` § 3.4, plan step 9 /
+      // SCP-36): the profile's `anchored` flag drops the dedication anchor for a
+      // deliberately un-anchored profile (the passthrough relay). Defaults to
+      // `true` (anchored) whenever the run carries no profile.
+      anchored: resolvedProfile?.anchored ?? true,
       // Carry the §7.4 routing seam from the template bridge onto the per-run
       // bridge: without it every `sub.send` on a run would throw "no
       // RouteChainResolver bound" (it is the only seam `send` cannot default).

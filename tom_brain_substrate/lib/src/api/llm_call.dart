@@ -166,6 +166,18 @@ final class LlmCall {
   /// surfaces as `EmptyRouteChain` at dispatch.
   final List<RouteEntry>? routeChain;
 
+  /// Per-run anchoring toggle (`session_configuration.md` § 3.4, plan step 9 /
+  /// SCP-36). `true` (the default and every legacy caller) ⇒ the substrate
+  /// assembles the wire prompt with the assistant-dedication anchor leading the
+  /// `system` channel and stamps [AnchorRegistry.currentHash] — the Postulate-3
+  /// path. `false` ⇒ the substrate omits the anchor and stamps
+  /// [AnchorRegistry.unanchoredHash]; the anchor-enforcement check accepts the
+  /// sentinel **only** because this flag declared the call un-anchored, so an
+  /// un-anchored run is a deliberate, auditable choice and can never happen by a
+  /// dropped hash. The procedure engine binds this from `Access.profile.anchored`
+  /// per run; a script never sets it (the anchor is not a procedure concern).
+  final bool anchored;
+
   const LlmCall({
     required this.roleId,
     required this.inputs,
@@ -175,6 +187,7 @@ final class LlmCall {
     this.turnId,
     this.callSeq,
     this.routeChain,
+    this.anchored = true,
   });
 }
 

@@ -139,6 +139,22 @@ final class AnchorRegistry {
     return _cachedHash = promptSha256(AssistantDedicationAnchor.text);
   }
 
+  /// The sentinel an **un-anchored** prompt carries on its
+  /// [WirePrompt.anchorHash], in place of [currentHash]
+  /// (`session_configuration.md` § 3.4, plan step 9 / SCP-37).
+  ///
+  /// A handful of profiles (the passthrough relay first) run deliberately
+  /// un-anchored — `RoleTemplate.assemble(anchored: false)` omits the dedication
+  /// anchor from the `system` channel. Such a prompt must **not** record
+  /// [currentHash]: that would let an un-anchored run masquerade as an anchored
+  /// one in the trail. Instead it stamps this sentinel, which is intentionally
+  /// **not** a `sha256:`-prefixed digest, so a trail reader (logging-spec § 7.1)
+  /// can tell an un-anchored run apart from every anchored one at a glance and
+  /// flag it for audit (step 11). [isCurrent] returns `false` for it, so the
+  /// default anchored-enforcement path rejects it — the facade accepts it only
+  /// on a call that explicitly asked to be un-anchored (`LlmCall.anchored`).
+  static const String unanchoredHash = 'unanchored';
+
   /// Re-export of [AssistantDedicationAnchor.version].
   ///
   /// Carried here so the substrate has a single accounting surface

@@ -88,16 +88,24 @@ abstract final class SystemScaffold {
   /// it to the empty string and the block vanishes.
   ///
   /// The returned text is the system channel *before* the anchor guarantee —
-  /// `RoleTemplate.assemble` still runs it through
+  /// when [anchored] (the default), `RoleTemplate.assemble` still runs it through
   /// [AssistantDedicationAnchor.ensurePrefix] (idempotent here, since the
   /// rendered text already leads with the anchor via `${role.anchor}`).
+  ///
+  /// [anchored] is the per-run anchoring toggle (`session_configuration.md`
+  /// § 3.4, plan step 9 / SCP-36). When `false` the `${role.anchor}` slot binds
+  /// to the empty string, so the rendered scaffold leads with `PERSONA:` and the
+  /// dedication anchor is absent — the only difference from the anchored render.
+  /// `assemble(anchored: false)` correspondingly skips `ensurePrefix`, so the
+  /// anchor is genuinely gone rather than re-prepended.
   static String render({
     required String persona,
     required String objective,
     String outputSchemaSection = '',
+    bool anchored = true,
   }) {
     final stack = PlaceholderStack()
-      ..bind('role.anchor', AssistantDedicationAnchor.text)
+      ..bind('role.anchor', anchored ? AssistantDedicationAnchor.text : '')
       ..bind('persona', persona)
       ..bind('objective', objective);
     if (outputSchemaSection.isNotEmpty) {

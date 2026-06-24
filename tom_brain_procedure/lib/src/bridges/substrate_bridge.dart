@@ -211,6 +211,16 @@ class SubstrateBridge {
   /// procedure script never sees it.
   final String? _profileRole;
 
+  /// The per-run anchoring toggle (`session_configuration.md` § 3.4; plan
+  /// step 9). `true` (the default and the shared template bridge) ⇒ every
+  /// [LlmCall] this bridge issues carries the assistant-dedication anchor — the
+  /// Postulate-3 path. `false` ⇒ the run's profile opted out (the passthrough
+  /// relay), so each outbound call is stamped `anchored: false` and the substrate
+  /// omits the anchor. The engine binds it per run from `Access.profile.anchored`.
+  /// Not part of the d4rt-facing surface — a procedure script never sees it (the
+  /// anchor is a profile/safety concern, never a script one).
+  final bool _anchored;
+
   /// Per-run turn-correlation context (logging-spec §3 / §9 — the "→ substrate"
   /// end of the `turnId` thread-through). `null` on the shared template bridge
   /// and on every internal / free-time / dream run — those issue completions
@@ -256,7 +266,9 @@ class SubstrateBridge {
   /// (logging-spec §10 step #4). [profileRole], when supplied, is the run's
   /// profile-pinned role (§ 3.3): [run] uses it as the call's role *only when
   /// the resolved prompt names none* (an empty role) — a fallback, never an
-  /// override.
+  /// override. [anchored] (default `true`) is the run's profile anchoring toggle
+  /// (§ 3.4): when `false`, every [LlmCall] this bridge issues is stamped
+  /// `anchored: false` so the substrate omits the dedication anchor.
   SubstrateBridge(
     this.client, {
     BridgeCallRecorder? onCall,
@@ -269,6 +281,7 @@ class SubstrateBridge {
     PromptResolver? promptResolver,
     ProcedureRunner? runProcedure,
     String? profileRole,
+    bool anchored = true,
     TurnContext? turn,
     LlmTrailObserver? onLlmTrail,
   })  : _onCall = onCall,
@@ -281,6 +294,7 @@ class SubstrateBridge {
         _promptResolver = promptResolver,
         _runProcedure = runProcedure,
         _profileRole = profileRole,
+        _anchored = anchored,
         _turn = turn,
         _onLlmTrail = onLlmTrail;
 
@@ -751,6 +765,9 @@ class SubstrateBridge {
             callSeq: callSeq,
             // null for `llm` (route by role); the explicit chain for `send`.
             routeChain: routeChain,
+            // Per-run profile anchoring toggle (§ 3.4, plan step 9): `false`
+            // omits the dedication anchor for the run's profile (the relay).
+            anchored: _anchored,
           );
 
           // Raw-trail provenance (§5.2): when the engine bound a trail observer,
