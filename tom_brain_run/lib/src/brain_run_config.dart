@@ -33,6 +33,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
 
 import 'cognition_run_config.dart';
 import 'dream_config.dart';
+import 'profile/profile_registry.dart';
 import 'tools_config.dart';
 import 'trail_config.dart';
 
@@ -102,6 +103,14 @@ final class BrainRunConfig {
   /// code-default sizing).
   final HistoryConfig history;
 
+  /// The parsed top-level `profiles:` block (Profile selection axis,
+  /// `session_configuration.md` § 3). The boot registry the edge resolves a
+  /// `profile-<name>` marker against, and whose per-profile `defineMcpServers`
+  /// merge (namespaced) into the global MCP client at boot. Never `null`: an
+  /// absent `profiles:` block yields a registry holding only the built-in
+  /// `default` profile (today's behaviour, SC-5).
+  final ProfileRegistry profiles;
+
   /// Assembles the parsed sections into the run configuration.
   ///
   /// [trail], [tools], [dream] and [cognition] are optional: an absent `trail:`
@@ -109,7 +118,8 @@ final class BrainRunConfig {
   /// leaves [tools] `null` (the engine's placeholder file-scope root); an absent
   /// `dream:` block leaves [dream] `null` (no dream loop at boot); an absent
   /// `cognition:` block leaves [cognition] `null` (no prompt / route resolvers).
-  /// [mcpServers] defaults to an empty registry (no MCP servers configured).
+  /// [mcpServers] defaults to an empty registry (no MCP servers configured);
+  /// [profiles] defaults to a registry with only the built-in `default`.
   BrainRunConfig({
     required this.substrate,
     required this.memory,
@@ -120,7 +130,9 @@ final class BrainRunConfig {
     this.cognition,
     McpServersConfig? mcpServers,
     this.history = const HistoryConfig.standard(),
-  }) : mcpServers = mcpServers ?? McpServersConfig(const []);
+    ProfileRegistry? profiles,
+  })  : mcpServers = mcpServers ?? McpServersConfig(const []),
+        profiles = profiles ?? ProfileRegistry(const []);
 
   /// The active trail mode, derived from whether a `trail:` block was
   /// configured (`tom_brain_logging.md` §4.1): [TrailMode.unconfigured] when

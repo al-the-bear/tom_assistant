@@ -16,8 +16,12 @@
 // boot, holding no port, socket, or callback back into the brain.
 //
 // Sendable across isolates by construction — every field is a primitive, a
-// nullable primitive, or a JSON-ready map of such (the resolved [history]
-// sizing), so `Isolate.spawn` deep-copies it cleanly.
+// nullable primitive, a JSON-ready map of such (the resolved [history] sizing),
+// or an immutable value object composed solely of those (the resolved [cadence],
+// whose `String` / `Duration` / `List<String>` / `int?` fields are all
+// sendable), so `Isolate.spawn` deep-copies it cleanly.
+
+import 'package:tom_brain_run/tom_brain_run.dart' show CadenceSchedule;
 
 /// The live runtime values the running brain bound, for `GET /api/runtime`.
 final class RuntimeSnapshot {
@@ -64,9 +68,18 @@ final class RuntimeSnapshot {
   /// in the Runtime tab (todo #16; `prompt_tracing.md` § 6.4, § 8.3(13)).
   final Map<String, Object?>? history;
 
+  /// The dream cadence the live process resolved (`config.dream?.cadence ??
+  /// CadenceSchedule.defaults()`), threaded in so Module 3 groups dream runs by
+  /// the brain's *actual* lanes, not the static defaults (followup #5 / MSPP-59).
+  /// `null` when no live brain threaded one in (standalone observatory) — the
+  /// dream handlers then fall back to `CadenceSchedule.defaults()`, the
+  /// pre-followup behaviour. Internal threading only: not emitted by [toJson]
+  /// (the lane set surfaces through `GET /api/dream/lanes`, not `/api/runtime`).
+  final CadenceSchedule? cadence;
+
   /// Binds the snapshot. Only the always-present OpenAI gateway values are
-  /// required; the optional channels, roots, and resolved [history] sizing are
-  /// `null` when absent.
+  /// required; the optional channels, roots, resolved [history] sizing, and
+  /// resolved [cadence] are `null` when absent.
   const RuntimeSnapshot({
     required this.openAiPort,
     required this.openAiBasePath,
@@ -79,6 +92,7 @@ final class RuntimeSnapshot {
     this.trailRoot,
     this.cognitionRoot,
     this.history,
+    this.cadence,
   });
 
   /// The wire form served by `GET /api/runtime`. The web Runtime tab reads each

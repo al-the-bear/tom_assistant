@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../.tom/json-schema/tom_brain/brain_run.schema.json
+# Worked example of the Profile selection axis (session_configuration.md § 3.8).
+#
+# This is a STANDALONE snippet, not a whole-process config. It carries only the
+# top-level `profiles:` block so it validates in-editor against the brain_run
+# schema's `profiles:` sub-schema while remaining a legal (permissive) document.
+#
+# Why a separate snippet rather than an uncommented block inside
+# `brain_run.example.yaml`: the whole-process loader does not parse `profiles:`
+# yet (the typed `ProfileRegistry` is a later session_configuration plan step),
+# and AccessConfigLoader's unknown-section gate (AC-12) rejects any top-level
+# key outside its allowed set — so an uncommented `profiles:` in the
+# whole-process file would fail to boot until that step ships. Keeping the
+# worked example here lets it be schema-validated now without tripping the gate.
+# (session_configuration_decisions.md SCP-2.)
+
+# Top-level BrainRunConfig section (SC-Q11).
+profiles:
+  # The reserved default — IS today's behaviour; may be redefined to change the
+  # global baseline (SC-Q18 / SC-Q20).
+  default:
+    mode: cognitive
+
+  # A deep research assistant: full process, a research voice, a tweaked answer
+  # template, the global web tool plus a profile-private docs server, a larger
+  # budget, and a default 'research' memory.
+  research:
+    mode: cognitive
+    role: researcher
+    templateOverlay: research
+    mcpServers: [web]                  # reuse a globally-defined server
+    defineMcpServers:                  # plus a profile-private one (SC-Q9)
+      - id: docs                       # canonical McpServerConfig shape (SCP-16)
+        transport: stdio
+        command: mcp-docs
+        args: [--root, ./corpus]
+        exposeToLlms: true
+    budget:                            # SC-Q5 — wider envelope for deep work
+      maxLlmCalls: 24
+      wallClockSeconds: 180            # whole seconds (SCP-14 / SCP-16)
+    defaultMemory: research            # SC-Q14 — advisory; explicit marker still wins
+
+  # A fast single-shot answer bot: memory-aware, one LLM call, throttled.
+  quick:
+    mode: answer
+    role: assistant_to_user
+    rateLimits:                        # SC-Q5 — tighter than the global cap
+      requestsPerMinute: 30
+
+  # A memory-free, un-anchored relay: one raw call straight to the upstream model,
+  # for an external tool that needs OpenAI-compatible passthrough (SC-Q6).
+  relay:
+    mode: passthrough
+    anchored: false

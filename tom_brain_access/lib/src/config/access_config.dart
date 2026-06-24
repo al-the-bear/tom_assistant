@@ -142,40 +142,35 @@ final class AccessUser {
   /// interpret them.
   final Map<String, Object?> claims;
 
-  /// The OpenAI bearer-token secrets that identify this user (E.28). Each
-  /// becomes a key in `AccessConfig.bearerTokenBindings`. May be empty when
-  /// the user has no OpenAI access.
-  final List<String> openAiBearerTokens;
-
   /// The Telegram user ids that identify this user (E.22/E.24). Each becomes
   /// a key in `AccessConfig.telegramUserIdBindings` — and thus a member of
-  /// the Telegram whitelist. May be empty when the user has no Telegram
-  /// access.
+  /// the Telegram whitelist. Non-empty: a declared user is a Telegram
+  /// identity (OpenAI credentials are declared as first-class
+  /// `access.apiKeys[]` entries, MSPP-61 / G-3).
   final List<String> telegramUserIds;
 
   /// Builds an immutable user. [id] must be non-empty and the user must
-  /// declare at least one credential across the two channels.
+  /// declare at least one Telegram user id (its credential). OpenAI bearer
+  /// credentials are no longer carried here — they are `access.apiKeys[]`
+  /// entries (MSPP-61 / G-3).
   AccessUser({
     required this.id,
     String? username,
     this.numericId = -1,
     this.displayName,
     Map<String, Object?> claims = const {},
-    List<String> openAiBearerTokens = const [],
     List<String> telegramUserIds = const [],
   })  : username = username ?? id,
         claims = Map.unmodifiable(claims),
-        openAiBearerTokens = List.unmodifiable(openAiBearerTokens),
         telegramUserIds = List.unmodifiable(telegramUserIds) {
     if (id.isEmpty) {
       throw ArgumentError.value(id, 'id', 'must be non-empty');
     }
-    if (openAiBearerTokens.isEmpty && telegramUserIds.isEmpty) {
+    if (telegramUserIds.isEmpty) {
       throw ArgumentError.value(
         id,
         'id',
-        'user "$id" must declare at least one credential '
-            '(an OpenAI bearer token or a Telegram user id)',
+        'user "$id" must declare at least one Telegram user id',
       );
     }
   }
@@ -233,17 +228,18 @@ final class AccessConfig {
   /// configured. `${ENV}`-expanded at load.
   final String? telegramBotToken;
 
-  /// The declared humans (Q-E.24.2) — the *declarative* identity source. One
-  /// entry per person, each owning its credentials across both channels.
+  /// The declared humans (Q-E.24.2) — the *declarative* Telegram identity
+  /// source. One entry per person, each owning its Telegram credentials.
   /// Empty when a deployment configures no users (or builds the binding maps
-  /// directly). [bearerTokenBindings] and [telegramUserIdBindings] are the
-  /// projection of this list (see [bindingsForUsers]).
+  /// directly). [telegramUserIdBindings] is the projection of this list (see
+  /// [bindingsForUsers]). OpenAI credentials are declared as [apiKeys]
+  /// (MSPP-61 / G-3), not here.
   final List<AccessUser> users;
 
   /// OpenAI bearer token → identity binding (E.24/E.28). One entry per
   /// accepted shared secret; the key is the (possibly `${ENV}`-expanded)
   /// token, the value the non-secret principal binding. The loader derives
-  /// this from [users]; tests / boot may set it directly.
+  /// this from [apiKeys] (MSPP-61 / G-3); tests / boot may set it directly.
   final Map<String, IdentityBinding> bearerTokenBindings;
 
   /// Telegram user id → identity binding (E.24). One entry per whitelisted
@@ -479,21 +475,23 @@ final class AccessConfig {
     return bearer;
   }
 
-  /// Projects a list of declared [users] onto the two runtime binding maps
-  /// `(bearerTokenBindings, telegramUserIdBindings)` (Q-E.24.2).
+  /// Projects a list of declared [users] onto the Telegram runtime binding
+  /// map `telegramUserIdBindings` (Q-E.24.2).
   ///
-  /// Every credential of a user yields one binding carrying *that user's*
-  /// facts, so one human maps to one `principalId` across both channels. The
-  /// projection is the single source of truth for the accepted credential
-  /// set; the loader calls it after parsing `access.users`.
+  /// Each user yields one binding carrying *that user's* facts; every Telegram
+  /// user id it declares maps to that binding, so one human maps to one
+  /// `principalId`. The projection is the single source of truth for the
+  /// accepted Telegram credential set; the loader calls it after parsing
+  /// `access.users`. (OpenAI bearer credentials are projected separately from
+  /// `access.apiKeys[]` via [bindingsForApiKeys], MSPP-61 / G-3.)
   ///
   /// A credential may identify exactly one human, so the projection rejects
-  /// (with [ArgumentError]) a [user id], a bearer token, or a Telegram user
-  /// id shared by two users — an ambiguous mapping is a configuration error,
-  /// never a silent last-wins.
-  static (Map<String, IdentityBinding>, Map<String, IdentityBinding>)
-      bindingsForUsers(Iterable<AccessUser> users) {
-    final bearer = <String, IdentityBinding>{};
+  /// (with [ArgumentError]) a [user id] or a Telegram user id shared by two
+  /// users — an ambiguous mapping is a configuration error, never a silent
+  /// last-wins.
+  static Map<String, IdentityBinding> bindingsForUsers(
+    Iterable<AccessUser> users,
+  ) {
     final telegram = <String, IdentityBinding>{};
     final seenUserIds = <String>{};
     for (final user in users) {
@@ -505,15 +503,6 @@ final class AccessConfig {
         );
       }
       final binding = user.toBinding();
-      for (final token in user.openAiBearerTokens) {
-        if (bearer.containsKey(token)) {
-          throw ArgumentError(
-            'OpenAI bearer token is shared by two users — a credential '
-            'identifies exactly one human',
-          );
-        }
-        bearer[token] = binding;
-      }
       for (final telegramUserId in user.telegramUserIds) {
         if (telegram.containsKey(telegramUserId)) {
           throw ArgumentError.value(
@@ -526,6 +515,6 @@ final class AccessConfig {
         telegram[telegramUserId] = binding;
       }
     }
-    return (bearer, telegram);
+    return telegram;
   }
 }

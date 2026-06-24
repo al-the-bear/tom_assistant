@@ -1,0 +1,7 @@
+procedure dream_synthesise_v1  run run_1781400000000002_0
+├─ subprocedure recall_semantic_v1  run run_1781400000000002_1  (accepted)
+│  └─ recall (semantic k=12 → 5: n_fixture0000000000000000S1, n_fixture0000000000000000S2, n_fixture0000000000000000S3, n_fixture0000000000000000S4, n_fixture0000000000000000S5)
+├─ llm synthesiser → 1024→256 tok  → ../../llm/synthesiser/run_1781400000000002_0__01.raw.json
+├─ persist → n_fixture0000000000000000Y1
+├─ edge n_fixture0000000000000000Y1 -derived_from-> n_fixture0000000000000000S1 → e_fixture0000000000000000Y1
+└─ outcome accepted (entries=7, 12.5s)

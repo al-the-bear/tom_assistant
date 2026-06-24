@@ -37,6 +37,7 @@ void main() {
         residualKey: 'sk-acme',
         sessionSelector: null,
         memorySelector: null,
+        profileSelector: null,
       );
       final scope = cfg.resolveScope(markers);
       expect(scope.sessionId, 'acme_default');
@@ -53,6 +54,7 @@ void main() {
         residualKey: 'sk-plain',
         sessionSelector: null,
         memorySelector: null,
+        profileSelector: null,
       );
       final scope = cfg.resolveScope(markers);
       expect(scope.sessionId, 'defaultsession_default');
@@ -264,6 +266,7 @@ access:
         residualKey: 'sk-real-acme',
         sessionSelector: null,
         memorySelector: null,
+        profileSelector: null,
       );
       final scope = config.apiKeyFor('sk-real-acme')!.resolveScope(noMarkers);
       expect(scope.sessionId, 'acme_default');
@@ -285,30 +288,6 @@ access:
       final config = AccessConfigLoader.parse(minimal);
       expect(config.apiKeys, isEmpty);
       expect(config.bearerTokenBindings, isEmpty);
-    });
-
-    test('an api key colliding with a user bearer token is rejected', () {
-      const collide = '''
-access:
-  openai:
-    port: 9090
-  rateLimit:
-    capacity: 10
-    refillTokens: 5
-    refillPeriodSeconds: 30
-  quota:
-    dailyCap: 100
-  users:
-    - id: alice
-      openaiBearerTokens:
-        - "shared-secret"
-  apiKeys:
-    - key: shared-secret
-''';
-      expect(
-        () => AccessConfigLoader.parse(collide),
-        throwsA(isA<AccessConfigException>()),
-      );
     });
 
     test('a duplicate api key is rejected at load', () {

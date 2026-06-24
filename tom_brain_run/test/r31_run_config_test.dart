@@ -124,18 +124,18 @@ substrate:
     dims: 768
     normalize: true''';
 
-/// The `access:` section: one OpenAI port, one bearer-bound user, the required
-/// rate-limit / quota blocks. (Telegram omitted — optional per the plan.)
+/// The `access:` section: one OpenAI port, one bearer credential (an
+/// `apiKeys[]` entry bound to `owner`, G-3 / MSPP-61), the required rate-limit /
+/// quota blocks. (Telegram omitted — optional per the plan.)
 const String _accessSection = '''
 access:
   openai:
     port: 8080
     basePath: /v1
-  users:
-    - id: owner
+  apiKeys:
+    - key: run-token
+      principal: owner
       displayName: Owner
-      openaiBearerTokens:
-        - run-token
   rateLimit:
     capacity: 1000000
     refillTokens: 1000000
@@ -219,11 +219,13 @@ void main() {
       expect(config.memory.root, '/var/lib/tom_brain/memory');
       expect(config.memory.sqliteVec.binariesRoot, '/opt/tom_binaries/sqlite_vec');
 
-      // access: the OpenAI port + the declared bearer-bound user.
+      // access: the OpenAI port + the declared bearer credential (an apiKeys[]
+      // entry bound to the `owner` principal, G-3 / MSPP-61).
       expect(config.access.openAiPort, 8080);
       expect(config.access.openAiBasePath, '/v1');
-      expect(config.access.users.map((u) => u.id), contains('owner'));
-      expect(config.access.users.first.openAiBearerTokens, contains('run-token'));
+      expect(config.access.bearerTokenBindings.containsKey('run-token'), isTrue);
+      expect(config.access.bearerTokenBindings['run-token']!.principalId, 'owner');
+      expect(config.access.apiKeyFor('run-token')!.effectivePrincipalId, 'owner');
     });
 
     test('an mcpServers section parses into config.mcpServers; its absence '

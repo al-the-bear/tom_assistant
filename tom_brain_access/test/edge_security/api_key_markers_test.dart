@@ -18,11 +18,12 @@ import 'package:test/test.dart';
 
 void main() {
   group('parseApiKeyMarkers — § 3.1 grammar', () {
-    test('a bare key with no markers → residual key, both selectors null', () {
+    test('a bare key with no markers → residual key, all selectors null', () {
       final markers = parseApiKeyMarkers('sk-real');
       expect(markers.residualKey, 'sk-real');
       expect(markers.sessionSelector, isNull);
       expect(markers.memorySelector, isNull);
+      expect(markers.profileSelector, isNull);
     });
 
     test('a prefix session marker is stripped; residual is the key', () {
@@ -102,6 +103,105 @@ void main() {
       expect(markers.sessionSelector, isNull);
       // `Session-foo` is an ordinary residual segment, rejoined with the key.
       expect(markers.residualKey, 'Session-foo_sk-real');
+    });
+  });
+
+  group('parseApiKeyMarkers — profile- marker (step 4, § 3.1 third axis)', () {
+    test('a prefix profile marker is stripped; residual is the key; the other '
+        'two selectors are null', () {
+      final markers = parseApiKeyMarkers('profile-research_sk-real');
+      expect(markers.residualKey, 'sk-real');
+      expect(markers.profileSelector, 'research');
+      expect(markers.sessionSelector, isNull);
+      expect(markers.memorySelector, isNull);
+    });
+
+    test('a suffix profile marker is stripped; residual is the key', () {
+      final markers = parseApiKeyMarkers('sk-real_profile-quick');
+      expect(markers.residualKey, 'sk-real');
+      expect(markers.profileSelector, 'quick');
+    });
+
+    test('all three markers present yield one residual and all three selectors',
+        () {
+      final markers =
+          parseApiKeyMarkers('session-foo_profile-research_sk-real_memory-bar');
+      expect(markers.residualKey, 'sk-real');
+      expect(markers.sessionSelector, 'foo');
+      expect(markers.memorySelector, 'bar');
+      expect(markers.profileSelector, 'research');
+    });
+
+    test('profile- in every position relative to session-/memory- agrees on '
+        'residual and all three selectors (the §15 table, third axis)', () {
+      // Every ordering of the three markers around the key segment — the
+      // residual and all three selectors must be invariant under position.
+      for (final token in <String>[
+        'profile-research_session-foo_memory-bar_sk-real',
+        'session-foo_profile-research_memory-bar_sk-real',
+        'session-foo_memory-bar_profile-research_sk-real',
+        'session-foo_memory-bar_sk-real_profile-research',
+        'profile-research_sk-real_session-foo_memory-bar',
+        'sk-real_profile-research_session-foo_memory-bar',
+      ]) {
+        final markers = parseApiKeyMarkers(token);
+        expect(markers.residualKey, 'sk-real', reason: token);
+        expect(markers.sessionSelector, 'foo', reason: token);
+        expect(markers.memorySelector, 'bar', reason: token);
+        expect(markers.profileSelector, 'research', reason: token);
+      }
+    });
+
+    test('a third marker leaves the residual unchanged vs. the two-marker token',
+        () {
+      final two = parseApiKeyMarkers('session-foo_sk-real_memory-bar');
+      final three =
+          parseApiKeyMarkers('session-foo_sk-real_memory-bar_profile-baz');
+      expect(three.residualKey, two.residualKey);
+      expect(three.effectiveResidualKey, two.effectiveResidualKey);
+      expect(three.isKeyless, two.isKeyless);
+      expect(three.profileSelector, 'baz');
+    });
+
+    test('a profile marker value may contain a dash (verbatim after the literal)',
+        () {
+      final markers = parseApiKeyMarkers('profile-deep-research_sk-real');
+      expect(markers.profileSelector, 'deep-research');
+      expect(markers.residualKey, 'sk-real');
+    });
+
+    test('matching is case-sensitive: an uppercased Profile- is not a marker',
+        () {
+      final markers = parseApiKeyMarkers('Profile-research_sk-real');
+      expect(markers.profileSelector, isNull);
+      expect(markers.residualKey, 'Profile-research_sk-real');
+    });
+
+    test('a profile-only token is keyless (empty residual)', () {
+      final markers = parseApiKeyMarkers('profile-research');
+      expect(markers.residualKey, isEmpty);
+      expect(markers.isKeyless, isTrue);
+      expect(markers.profileSelector, 'research');
+    });
+
+    test('two profile markers throw duplicateMarker / code marker.duplicate',
+        () {
+      expect(
+        () => parseApiKeyMarkers('profile-a_profile-b_sk-real'),
+        throwsA(
+          isA<ApiKeyMarkerException>()
+              .having((e) => e.reason, 'reason',
+                  ApiKeyMarkerFailureReason.duplicateMarker)
+              .having((e) => e.code, 'code', 'marker.duplicate'),
+        ),
+      );
+    });
+
+    test('one of each of the three axes is NOT a duplicate', () {
+      expect(
+          () => parseApiKeyMarkers(
+              'session-a_memory-b_profile-c_sk-real'),
+          returnsNormally);
     });
   });
 

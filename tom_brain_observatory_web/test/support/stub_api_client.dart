@@ -6,8 +6,10 @@
 import 'package:tom_brain_observatory_web/src/api/trace_api_client.dart';
 import 'package:tom_brain_observatory_web/src/model/authoring.dart';
 import 'package:tom_brain_observatory_web/src/model/catalogue.dart';
+import 'package:tom_brain_observatory_web/src/model/dream_run.dart';
 import 'package:tom_brain_observatory_web/src/model/live_step.dart';
 import 'package:tom_brain_observatory_web/src/model/llm_call_detail.dart';
+import 'package:tom_brain_observatory_web/src/model/llm_call_source.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
 import 'package:tom_brain_observatory_web/src/model/runtime.dart';
 
@@ -50,6 +52,33 @@ class StubApiClient implements TraceApiClient {
   /// is the `404` "registered-but-absent" the editor opens as an empty buffer.
   final Map<String, String> configs;
 
+  /// The `GET /api/dream/lanes` body (§ 5A.2). Empty models the unconfigured
+  /// host (no dream lanes) — never an error.
+  final List<DreamLane> dreamLanes;
+
+  /// The dream runs `GET /api/dream/runs` lists, newest-first. `listDreamRuns`
+  /// filters them by `laneId` when a `lane` is given.
+  final List<DreamRunRow> dreamRuns;
+
+  /// Keyed by runId — one drilled-in dream run (§ 5A.4). A missing key is the
+  /// `404` "no such dream run" `dreamRunFor` maps to `null`.
+  final Map<String, DreamRun> dreamRunDetails;
+
+  /// The dreaming-side change stream (MSPP-58); empty when not driven. Each
+  /// event flips the dream re-fetch sources to their `*AfterChange` variants so
+  /// a widget test can assert Module 3 reloads live on a dream-stream tick.
+  final Stream<void>? dreamChangesStream;
+
+  /// Re-fetch override: when set, [listDreamRuns] returns these after
+  /// [dreamChangesStream] fires, letting a test assert the run list reloads on a
+  /// dream tick.
+  final List<DreamRunRow>? dreamRunsAfterChange;
+
+  /// Re-fetch override: when set, [dreamRunFor] returns these after
+  /// [dreamChangesStream] fires, letting a test assert the open run-tree reloads
+  /// (e.g. in-progress → terminal) on a dream tick.
+  final Map<String, DreamRun>? dreamRunDetailsAfterChange;
+
   /// Canned SSE live-tail per turnId, keyed by turnId (PT-4.2).
   final Map<String, Stream<LiveStep>> turnStreams;
 
@@ -79,6 +108,12 @@ class StubApiClient implements TraceApiClient {
     this.catalogueData,
     this.runtimeData,
     Map<String, String>? configs,
+    this.dreamLanes = const <DreamLane>[],
+    this.dreamRuns = const <DreamRunRow>[],
+    this.dreamRunDetails = const <String, DreamRun>{},
+    this.dreamChangesStream,
+    this.dreamRunsAfterChange,
+    this.dreamRunDetailsAfterChange,
     this.turnStreams = const <String, Stream<LiveStep>>{},
     this.changes,
     this.rowsAfterChange,
@@ -87,6 +122,7 @@ class StubApiClient implements TraceApiClient {
         configs = configs ?? <String, String>{};
 
   bool _reloaded = false;
+  bool _dreamReloaded = false;
 
   @override
   Future<List<PromptListRow>> listTraces({int? limit}) async {
@@ -97,9 +133,16 @@ class StubApiClient implements TraceApiClient {
   @override
   Future<PromptTrace?> traceFor(String turnId) async => traces[turnId];
 
+  /// Records the [LlmCallSource] every [llmCallDetail] call used, so a widget
+  /// test can assert a dream row fetched via `LlmCallSource.dreamRun` (MSPP-56).
+  final List<LlmCallSource> llmCallSources = <LlmCallSource>[];
+
   @override
-  Future<LlmCallDetail?> llmCallDetail(String turnId, String rawPath) async =>
-      llmCalls[rawPath];
+  Future<LlmCallDetail?> llmCallDetail(
+      LlmCallSource source, String rawPath) async {
+    llmCallSources.add(source);
+    return llmCalls[rawPath];
+  }
 
   @override
   Future<List<String>> listProcedureScripts() async =>
@@ -148,6 +191,33 @@ class StubApiClient implements TraceApiClient {
     if (rejectWrites != null) return rejectWrites!;
     configs['$kind/$name'] = content;
     return AuthoringResult.saved;
+  }
+
+  @override
+  Future<List<DreamLane>> listDreamLanes() async => dreamLanes;
+
+  @override
+  Future<List<DreamRunRow>> listDreamRuns({String? lane}) async {
+    final source = _dreamReloaded && dreamRunsAfterChange != null
+        ? dreamRunsAfterChange!
+        : dreamRuns;
+    return lane == null
+        ? source
+        : <DreamRunRow>[for (final r in source) if (r.laneId == lane) r];
+  }
+
+  @override
+  Future<DreamRun?> dreamRunFor(String runId) async =>
+      (_dreamReloaded && dreamRunDetailsAfterChange != null
+          ? dreamRunDetailsAfterChange!
+          : dreamRunDetails)[runId];
+
+  @override
+  Stream<void> dreamChanges({String? lane}) async* {
+    await for (final _ in dreamChangesStream ?? const Stream<void>.empty()) {
+      _dreamReloaded = true;
+      yield null;
+    }
   }
 
   @override

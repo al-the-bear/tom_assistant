@@ -125,6 +125,12 @@ enum TelegramCommandKind {
   /// config and disconnect/reconnect the live agent-SDK providers.
   cliServerPort,
 
+  /// `/create_api_key` or `/create_api_key <sessionPrefix> <memoryPrefix>` —
+  /// mint a new API key, admit it live, and persist it to the run config
+  /// (MSP-7). With no arguments the key value itself becomes both prefixes;
+  /// otherwise both prefixes are given together (the both-or-neither rule).
+  createApiKey,
+
   /// `/trace_memory` — toggle per-user memory-recall tracing. While on, each
   /// memory lookup the brain runs for this user surfaces what every retrieval
   /// search found as its own out-of-band message. The same command turns it
@@ -162,6 +168,7 @@ const Map<TelegramCommandKind, String> telegramCommandWords =
   TelegramCommandKind.showPrompts: 'show_prompts',
   TelegramCommandKind.switchModel: 'switch_model',
   TelegramCommandKind.cliServerPort: 'cli_server_port',
+  TelegramCommandKind.createApiKey: 'create_api_key',
   TelegramCommandKind.traceMemory: 'trace_memory',
 };
 
@@ -249,6 +256,8 @@ String telegramHelpText() {
     ..write('\n/switch_model <prompt-id> <model-id> — set a prompt type model')
     ..write('\n/cli_server_port <port> — change the VS Code bridge / agent-SDK '
         'port (persisted; reconnects the live brain)')
+    ..write('\n/create_api_key [<sessionPrefix> <memoryPrefix>] — mint a new API '
+        'key (live now + persisted); key value is both prefixes if none given')
     ..write('\n/trace_memory — toggle messages tracing what each memory search '
         'finds (same command turns it off)')
     ..write('\n\n/help — show this list');

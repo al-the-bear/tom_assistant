@@ -36,6 +36,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
     show
         AccessConfig,
         AccessServeSeam,
+        ApiKeyPersist,
         BrainAccessProcess,
         BrainProvisioner,
         IncomingTrailRecord,
@@ -69,6 +70,8 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         McpClient,
         McpClientToolSource,
         McpOfferedGate,
+        McpServerConfig,
+        McpServersConfig,
         McpToolDefinition,
         MemoryAccessRecord,
         MemoryAccessSink,
@@ -91,6 +94,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
         bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream;
 
 import 'agent_sdk_llm_provider.dart' show AgentSdkLlmProvider;
+import 'api_key_persist.dart' show appendApiKeyToRunConfig;
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
 import 'cli_server_port_switch.dart'
@@ -517,6 +521,7 @@ Future<BrainProcess> standUpBrainProcess({
   McpLivenessMonitor? mcpMonitor,
   CognitionModelWriter? modelWriter,
   TelegramCliServerPortController? cliServerPortController,
+  ApiKeyPersist? apiKeyPersist,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -549,6 +554,7 @@ Future<BrainProcess> standUpBrainProcess({
       brain: provisioned,
       serve: serve,
       incomingTrailSink: incomingTrailSink,
+      apiKeyPersist: apiKeyPersist,
       telegramInspectors: _telegramInspectorsFor(
         trailRoot: trailRoot,
         memoryClient: provisioned.memoryClient,
@@ -759,6 +765,29 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     routeChainOf = buildRouteChainResolver(cognitionConfig);
   }
 
+  // Profile selection axis boot validation (session_configuration.md § 3 / § 8,
+  // plan step 3). Reject an unknown `role` / missing `templateOverlay` dir, and
+  // warn (not reject) a profile whose budget/rate-limits exceed the global
+  // ceiling (SC-8). Guarded-by-construction: a config with no `profiles:` block
+  // carries only the built-in `default` (no role, no overlay, no budget), so
+  // this is a true no-op for a pre-feature config. The known-role set is the
+  // shipped roster's ids (a file-backed overlay only adds prose to existing
+  // ids, never new ones); the overlay predicate tests
+  // `<cognition.root>/overlays/<name>/`, which cannot exist when no cognition
+  // tree is configured. No global ceiling exists yet, so none is passed (the
+  // clamp composes against the real ceilings once they are wired, SCP-12).
+  final Set<String> knownRoles = (roleProseReload?.latest ??
+          bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream())
+      .ids
+      .toSet();
+  final String? cognitionRoot = cognition?.root;
+  runConfig.profiles.validateAtBoot(
+    knownRoles: knownRoles,
+    overlayDirExists: (name) => cognitionRoot != null &&
+        Directory('$cognitionRoot/overlays/$name').existsSync(),
+    warn: (message) => stderr.writeln('[profile] $message'),
+  );
+
   // The substrate uses the file-backed registry when a cognition tree was
   // loaded; otherwise `buildSubstrate` falls back to its in-code full roster.
   // Typed as the concrete facade (not the `TomBrainSubstrateClient` interface)
@@ -791,6 +820,18 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
                   : CliServerPortConfigWriter(File(runConfigPath)),
             );
 
+  // The `/create_api_key` durable-persist closure (MSP-7, MSPP-42…47). The live
+  // admission half is the access layer's own `AccessAssembler` operation; the
+  // run layer supplies only this closure, which appends the minted key to the
+  // run config so it survives a restart. Gated on a known [runConfigPath] —
+  // without a config path on disk there is nowhere to persist to, so
+  // `/create_api_key` reports as unavailable rather than minting a key that
+  // would vanish on the next boot. The closure throws on a write failure, which
+  // is what triggers the access-side §13 rollback.
+  final ApiKeyPersist? apiKeyPersist = runConfigPath == null
+      ? null
+      : (config) => appendApiKeyToRunConfig(File(runConfigPath), config);
+
   // Boot-time trail sweep (§8 / §10 step #10): write the §7 `.gitignore` and
   // enforce the raw-tier count / aggregate-size caps before any writer appends
   // a new file this run. Full-trail mode only — unconfigured mode writes no raw
@@ -806,10 +847,25 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // failing boot. When no server is configured, no client is built and the MCP
   // surface is simply absent (the `mcp.*` bridge raises `ToolSurfaceUnavailable`
   // and the `/mcp_*` commands report "not available on this deployment").
-  final McpClient? mcpClient = runConfig.mcpServers.servers.isEmpty
+  // Merge the per-profile `defineMcpServers` (each namespaced `<profileId>/
+  // <serverName>`) into the global registry before building the client, so a
+  // profile's private servers are connected once at boot alongside the global
+  // ones — profiles are operator config known at boot, so they carry no
+  // per-request connection cost (§ 3.6). Guarded: with no profile defines this
+  // is `runConfig.mcpServers` unchanged. (Strict-connect for an
+  // `exposeToLlms: true` define that fails to connect is deferred to step 8,
+  // SCP-11; this path uses the existing connect-tolerant merge.)
+  final List<McpServerConfig> profileServers =
+      runConfig.profiles.namespacedDefinedServers;
+  final McpServersConfig mcpServersConfig = profileServers.isEmpty
+      ? runConfig.mcpServers
+      : McpServersConfig(
+          <McpServerConfig>[...runConfig.mcpServers.servers, ...profileServers],
+        );
+  final McpClient? mcpClient = mcpServersConfig.servers.isEmpty
       ? null
       : McpClient(
-          runConfig.mcpServers,
+          mcpServersConfig,
           DartMcpConnector(channelFactory: productionMcpChannelFactory()),
         );
   // The dynamic availability gate (request c, § 3.3): the liveness monitor
@@ -821,10 +877,10 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // exposed server before the first probe.
   final McpLivenessMonitor? mcpMonitor = mcpClient == null
       ? null
-      : mcpLivenessMonitorOverClient(mcpClient, runConfig.mcpServers);
+      : mcpLivenessMonitorOverClient(mcpClient, mcpServersConfig);
   final McpOfferedGate? mcpOffered = mcpMonitor == null
       ? null
-      : mcpOfferedGate(runConfig.mcpServers, mcpMonitor);
+      : mcpOfferedGate(mcpServersConfig, mcpMonitor);
   // Pre-fetch the merged tool descriptors once, through the same gate: an
   // unexposed (or boot-dead) server contributes no `mcp__*` tools to the
   // registry, while the per-run invoke path re-checks the gate so a server that
@@ -873,6 +929,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     mcpMonitor: mcpMonitor,
     modelWriter: modelWriter,
     cliServerPortController: cliServerPortController,
+    apiKeyPersist: apiKeyPersist,
   );
 }
 

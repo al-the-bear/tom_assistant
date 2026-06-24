@@ -98,6 +98,50 @@ final class TrailHost {
     return logs.isEmpty ? null : logs.last;
   }
 
+  /// Every **turn-less dream/free-time run** log across all procedure
+  /// directories, newest-first by file modification time
+  /// (`prompt_tracing.md` § 5A.3).
+  ///
+  /// `ProcedureTreeWriter` keys a turn-bound run `<turnId>__<runId>.log` and a
+  /// turn-less run the bare `<runId>.log`. Turn ids and run ids contain only
+  /// single underscores; `__` is the separator. So a dream run is exactly a
+  /// `procedures/<proc>/*.log` whose basename contains **no** `__`. A dream has
+  /// no `incoming/` record and no `turnId`, so it never appears in the prompt
+  /// list (§ 4.1) — this is its only discovery path. Returns an empty list in
+  /// unconfigured mode.
+  List<File> dreamRunLogs() {
+    final dir = Directory(p.join(root.path, 'procedures'));
+    if (!dir.existsSync()) return const <File>[];
+    final logs = <File>[
+      for (final proc in dir.listSync().whereType<Directory>())
+        for (final file in proc.listSync().whereType<File>())
+          if (file.path.endsWith('.log') &&
+              !p.basename(file.path).contains('__'))
+            file,
+    ];
+    logs.sort((a, b) {
+      final byTime = b.statSync().modified.compareTo(a.statSync().modified);
+      return byTime != 0
+          ? byTime
+          : p.basename(a.path).compareTo(p.basename(b.path));
+    });
+    return logs;
+  }
+
+  /// The single turn-less dream-run log whose [runId] matches (basename
+  /// `<runId>.log`, no `__`), searched across every `procedures/<proc>/`
+  /// directory, or `null` when none exists (§ 5A.4 → `404`).
+  File? dreamRunLog(String runId) {
+    final dir = Directory(p.join(root.path, 'procedures'));
+    if (!dir.existsSync()) return null;
+    final target = '$runId.log';
+    for (final proc in dir.listSync().whereType<Directory>()) {
+      final file = File(p.join(proc.path, target));
+      if (file.existsSync() && !runId.contains('__')) return file;
+    }
+    return null;
+  }
+
   /// The run-start microsecond stamp encoded in a procedure-log basename's
   /// `…__run_<micros>_<seq>.log` token, or `-1` when the token carries none
   /// (so such files order purely by basename). Reverses the writer's run-id

@@ -1,0 +1,29 @@
+{
+  "turnId": null,
+  "callSeq": 1,
+  "callType": "extractor",
+  "sessionId": null,
+  "profile": null,
+  "principalId": null,
+  "runId": "run_1781400000000001_0",
+  "trailId": "t_fixture0000000000000000E0",
+  "provider": "local",
+  "model": "fixture-model",
+  "startedAt": "2026-06-14T03:00:00.100000Z",
+  "wallClockMs": 3200,
+  "tokensIn": 512,
+  "tokensOut": 128,
+  "retries": 0,
+  "anchorHash": "sha256:0000000000000000000000000000000000000000000000000000000000000e01",
+  "promptHash": "sha256:0000000000000000000000000000000000000000000000000000000000000e02",
+  "wire": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "I exist to help this user. (fixture anchor)\nPERSONA: the dreaming extractor.\nOBJECTIVE: extract durable claims from the recalled episodic context.\nINPUTS:\nnodes: n_fixture0000000000000000E1, n_fixture0000000000000000E2, n_fixture0000000000000000E3\n"
+      }
+    ]
+  },
+  "answer": "Extracted 4 durable claims about the backup topology and consolidated them under n_fixture0000000000000000X1.",
+  "memoryProfile": null
+}

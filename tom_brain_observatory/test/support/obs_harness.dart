@@ -105,6 +105,17 @@ Future<void> exerciseEveryEndpoint(TrailReadApi api) async {
   await obsGet(api, 'api/procedures');
   await obsGet(api, 'api/procedures/answer_with_memory_v1');
 
+  // Dreaming-cycle monitor (§ 5A): the lane selector, the run list (all lanes
+  // and one lane), one drilled-in run, and an absent run (404).
+  await obsGet(api, 'api/dream/lanes');
+  // The dreaming live-tail (§ 5A.5): over the finished fixture runs it replays
+  // the newest run's ops then closes, so the no-mutation walk can drain it.
+  await drainSse(await obsGet(api, 'api/dream/stream'));
+  await obsGet(api, 'api/dream/runs');
+  await obsGet(api, 'api/dream/runs?lane=fast');
+  await obsGet(api, 'api/dream/runs/run_1781400000000001_0');
+  await obsGet(api, 'api/dream/runs/run_does_not_exist_9');
+
   // Static root + an asset + an SPA fallback (§ 8.5).
   await obsGet(api, '');
   await obsGet(api, 'assets/main.dart.js');

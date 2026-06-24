@@ -286,6 +286,31 @@ abstract interface class TelegramCliServerPortController {
   Future<String> setCliServerPort({required int port});
 }
 
+/// Creates a new API key at runtime for the `/create_api_key` command
+/// (memory_session_profiles.md § 7, MSP-7).
+///
+/// A *controller* among the configuration seams — it both admits a freshly
+/// minted key into the live registry (so it authenticates on the next request)
+/// and persists it durably (so it survives a restart), the two halves of MSP-7.
+/// Unlike the other configuration seams the access layer can implement most of
+/// this itself (the live admission is an `AccessAssembler` operation); only the
+/// durable persist needs the run layer (it owns the run-config path). So the
+/// access-side `ApiKeyCreator` implements this interface over an injected persist
+/// closure the run layer supplies — there is no separate run-layer impl. Returns
+/// already-rendered, channel-neutral text — including the failure notice when the
+/// persist fails and the live change is rolled back (§ 13).
+abstract interface class TelegramApiKeyCreator {
+  /// Creates a new API key and renders the outcome.
+  ///
+  /// With no prefixes the key value itself (plus a trailing `_`) becomes both
+  /// the session and memory prefix (§ 7); [sessionPrefix] / [memoryPrefix], when
+  /// given, are used verbatim. The two are passed together or not at all (the
+  /// both-or-neither rule is enforced at the edge, MSPP-45). On success the reply
+  /// echoes the secret key once (never re-derivable); on a persist failure the
+  /// live admission is rolled back and the reply says so.
+  Future<String> createApiKey({String? sessionPrefix, String? memoryPrefix});
+}
+
 /// The read-only inspectors the Telegram edge drives for the inspection
 /// commands (parts b–e).
 ///
@@ -345,6 +370,16 @@ final class TelegramInspectors {
   /// `/cli_server_port`, or `null` when unavailable.
   final TelegramCliServerPortController? cliServerPort;
 
+  /// Creates a runtime API key for `/create_api_key`, or `null` when
+  /// unavailable.
+  ///
+  /// Late-bound: the creator needs the live `AccessAssembler` (the registrar),
+  /// which does not exist until `BrainAccessBoot.install` runs — *after* the run
+  /// layer builds this bundle. The run layer therefore builds the bundle without
+  /// a creator and the access process attaches one with [withApiKeyCreator] once
+  /// the assembler is live (MSPP-47).
+  final TelegramApiKeyCreator? apiKeyCreator;
+
   /// Builds an inspector bundle; every member defaults to absent.
   const TelegramInspectors({
     this.prompts,
@@ -360,9 +395,36 @@ final class TelegramInspectors {
     this.promptTypes,
     this.modelSwitcher,
     this.cliServerPort,
+    this.apiKeyCreator,
   });
 
   /// The no-inspectors bundle: every inspection command answers "not available
   /// on this deployment". The standalone access binary uses this.
   static const TelegramInspectors none = TelegramInspectors();
+
+  /// Returns a copy of this bundle with [creator] attached as the
+  /// [apiKeyCreator], leaving every other member unchanged.
+  ///
+  /// This is the late-bind seam for `/create_api_key`: the run layer builds the
+  /// bundle before the live `AccessAssembler` exists, so the access process
+  /// calls this once the assembler (the registrar) is available to wire the
+  /// creator in (MSPP-47).
+  TelegramInspectors withApiKeyCreator(TelegramApiKeyCreator creator) {
+    return TelegramInspectors(
+      prompts: prompts,
+      logs: logs,
+      memory: memory,
+      status: status,
+      todos: todos,
+      usage: usage,
+      stop: stop,
+      tools: tools,
+      mcp: mcp,
+      models: models,
+      promptTypes: promptTypes,
+      modelSwitcher: modelSwitcher,
+      cliServerPort: cliServerPort,
+      apiKeyCreator: creator,
+    );
+  }
 }

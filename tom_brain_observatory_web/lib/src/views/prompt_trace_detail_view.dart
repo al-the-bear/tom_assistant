@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import '../api/memory_api_client.dart';
 import '../api/trace_api_client.dart';
 import '../model/live_step.dart';
+import '../model/llm_call_source.dart';
 import '../model/prompt_trace.dart';
 import 'configuration_in_effect_view.dart';
 import 'format.dart';
@@ -90,7 +91,7 @@ class _PromptTraceDetailViewState extends State<PromptTraceDetailView> {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => LlmCallDetailView(
         client: widget.client,
-        turnId: widget.turnId,
+        source: LlmCallSource.turn(widget.turnId),
         node: node,
       ),
     ));

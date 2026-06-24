@@ -156,18 +156,52 @@ final class IdentityResolver {
   /// configured source of truth for the accepted set.
   final Map<String, IdentityBinding> _byPrincipalUsername;
 
-  /// Builds a resolver over the given credential → binding maps. Both maps
-  /// are copied defensively into unmodifiable views so the registry cannot
-  /// be mutated after construction.
+  /// Builds a resolver over the given credential → binding maps.
+  ///
+  /// The two bearer-keyed indices ([_byBearerToken] / [_byPrincipalUsername])
+  /// are copied into *growable* maps so a runtime credential (`/create_api_key`,
+  /// MSP-7) can be admitted into them via [admitBearer]; the Telegram index is
+  /// copied into an unmodifiable view (no channel admits Telegram ids at
+  /// runtime). Copying defensively either way means the constructor arguments
+  /// cannot be mutated through this resolver.
   IdentityResolver({
     Map<String, IdentityBinding> bearerTokenBindings = const {},
     Map<String, IdentityBinding> telegramUserIdBindings = const {},
-  })  : _byBearerToken = Map.unmodifiable(bearerTokenBindings),
+  })  : _byBearerToken = Map.of(bearerTokenBindings),
         _byTelegramUserId = Map.unmodifiable(telegramUserIdBindings),
-        _byPrincipalUsername = Map.unmodifiable(<String, IdentityBinding>{
+        _byPrincipalUsername = <String, IdentityBinding>{
           for (final binding in bearerTokenBindings.values)
             binding.username: binding,
-        });
+        };
+
+  /// Admits a runtime bearer credential: [token] now resolves to [binding] on
+  /// both the token-keyed ([resolveBearer]) and principal-keyed
+  /// ([resolveBearerPrincipal]) paths (MSP-7).
+  ///
+  /// The live half of `/create_api_key` (MSPP-42): a key minted at runtime must
+  /// authenticate on the very next request. Both indices are updated together so
+  /// the new credential resolves whichever bearer path the deployment uses.
+  void admitBearer(String token, IdentityBinding binding) {
+    _byBearerToken[token] = binding;
+    _byPrincipalUsername[binding.username] = binding;
+  }
+
+  /// Removes a runtime bearer credential admitted by [admitBearer] — the exact
+  /// reverse, used to roll a failed `/create_api_key` back to disk (§ 13).
+  ///
+  /// A no-op when [token] is unknown. The principal-username index entry is
+  /// removed only when it still points at the same binding the token mapped to,
+  /// so revoking one runtime key never strips another principal that happens to
+  /// share a username.
+  void revokeBearer(String token) {
+    final IdentityBinding? binding = _byBearerToken.remove(token);
+    if (binding == null) {
+      return;
+    }
+    if (identical(_byPrincipalUsername[binding.username], binding)) {
+      _byPrincipalUsername.remove(binding.username);
+    }
+  }
 
   /// Resolves a bearer [bearerToken] arriving over [channel] to its
   /// [ResolvedIdentity].

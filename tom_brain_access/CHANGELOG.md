@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — `users[].openaiBearerTokens` retired in favour of `apiKeys[]` (G-3 / MSPP-61)
+
+The legacy per-user OpenAI bearer channel is removed. Every OpenAI bearer
+credential is now declared as a first-class `access.apiKeys[]` entry (which also
+carries the per-key `sessionPrefix` / `memoryPrefix` namespace); `access.users[]`
+declares **Telegram** identities only. Per Hard principle 1 there is no
+compatibility shim — the `openaiBearerTokens` key is rejected as an unknown key
+(AC-12), not tolerated. A credential migrated into `apiKeys[]` authenticates to
+the same `principalId` it admitted under `users[]`; the apiKey binding is
+minimal (principalId + displayName), so a credential that previously carried
+`username`/`numericId`/`claims` keeps those facts on its Telegram binding only.
+
+- `lib/src/config/access_config.dart` — `AccessUser` loses `openAiBearerTokens`;
+  its constructor now requires at least one `telegramUserIds` entry.
+  `AccessConfig.bindingsForUsers(...)` returns just the Telegram binding map (no
+  longer a `(bearer, telegram)` pair); the bearer map is derived solely from
+  `apiKeys[]` via `bindingsForApiKeys(...)`.
+- `lib/src/config/access_config_loader.dart` — `_parseUser` drops
+  `openaiBearerTokens` from its allowed keys and parsing; the bearer bindings
+  come from `_projectApiKeyBindings(apiKeys)` (the old `_mergeApiKeyBindings`
+  user/apiKey fold is gone).
+- Tests migrated: `test/config/access_config_loader_test.dart`,
+  `test/config/api_key_prefix_resolution_test.dart`, and the new
+  `test/config/apikey_bearer_migration_test.dart` (admission parity + the
+  no-shim rejection).
+
 ## Unreleased — Telegram channel sends an immediate "Processing" acknowledgement
 
 A whitelisted Telegram prompt now draws an immediate `Processing: <first 200

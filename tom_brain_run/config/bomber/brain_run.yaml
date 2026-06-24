@@ -368,12 +368,18 @@ access:
   users:
     - id: owner
       displayName: Owner
-      openaiBearerTokens:
-        # Local-only dev bearer for the 127.0.0.1 OpenAI edge — not a real
-        # secret. Override per deployment if the edge is ever exposed.
-        - run-token
       telegramUserIds:
         - ${env:TELEGRAM_TOM_BRAIN_USER}
+  # OpenAI bearer credentials are first-class `apiKeys[]` entries (G-3 /
+  # MSPP-61): each carries the credential plus its session/memory namespace
+  # (defaulting here). The owner's bearer authenticates to `principal: owner`,
+  # exactly as the retired `users[].openaiBearerTokens` did.
+  apiKeys:
+    # Local-only dev bearer for the 127.0.0.1 OpenAI edge — not a real secret.
+    # Override per deployment if the edge is ever exposed.
+    - key: run-token
+      principal: owner
+      displayName: Owner
   # Rate limit / quota set very high (effectively unlimited): the owner is the
   # sole principal and the brain should never throttle or quota-block its own
   # multi-step agentic work.

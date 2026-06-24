@@ -39,6 +39,46 @@ const String defaultMemoryPrefix = 'defaultmemory_';
 /// (§ 3.2). Joined onto the prefix verbatim (`<prefix>default`).
 const String defaultProfileSelector = 'default';
 
+/// Applies the MSP-4 rule (`effective id = prefix + (selector ?? 'default')`)
+/// to [markers] under the given [sessionPrefix] / [memoryPrefix].
+///
+/// The single home of the prefix-resolution rule (D-2): both
+/// [ApiKeyConfig.resolveScope] (a configured key's own prefixes) and
+/// [resolveDefaultScope] (the built-in default prefixes) route through it, so
+/// the "absent selector defaults to [defaultProfileSelector]" semantics live in
+/// exactly one place. Pure.
+ResolvedProfileScope _scopeFor(
+  ApiKeyMarkers markers, {
+  required String sessionPrefix,
+  required String memoryPrefix,
+}) =>
+    ResolvedProfileScope(
+      sessionId:
+          sessionPrefix + (markers.sessionSelector ?? defaultProfileSelector),
+      memoryProfile:
+          memoryPrefix + (markers.memorySelector ?? defaultProfileSelector),
+    );
+
+/// Resolves [markers] under the **built-in default** prefixes
+/// ([defaultSessionPrefix] / [defaultMemoryPrefix], MSP-4) — the scope a token
+/// with no matching [ApiKeyConfig] resolves to (follow-up item 8 / MSPP-62).
+///
+/// Universalizes the default prefixes to *every* authenticated API-key token so
+/// no request runs bare-root (§ 8.1's "bare root is retired"): a token with no
+/// markers resolves to `defaultsession_default` / `defaultmemory_default`, and
+/// a token carrying `session-`/`memory-` markers resolves to
+/// `defaultsession_<sel>` / `defaultmemory_<sel>`. Pure — the same shape as
+/// [ApiKeyConfig.resolveScope], differing only in that the prefixes are the
+/// built-in defaults rather than a configured key's. The edge applies this only
+/// on the token-keyed path; the JWT/authenticator carve-out keeps a null scope
+/// (MSP-3), since a shared default session would collapse distinct upstream
+/// principals into one history.
+ResolvedProfileScope resolveDefaultScope(ApiKeyMarkers markers) => _scopeFor(
+      markers,
+      sessionPrefix: defaultSessionPrefix,
+      memoryPrefix: defaultMemoryPrefix,
+    );
+
 /// The session id + memory profile a request resolves to, after a key's
 /// prefixes are applied to its markers (§ 3.2).
 ///
@@ -127,11 +167,10 @@ final class ApiKeyConfig {
   /// is concatenated verbatim (D-2). The residual key on [markers] is *not*
   /// consulted here — authentication of the residual is the edge's job; this
   /// step only applies the namespace.
-  ResolvedProfileScope resolveScope(ApiKeyMarkers markers) => ResolvedProfileScope(
-        sessionId:
-            sessionPrefix + (markers.sessionSelector ?? defaultProfileSelector),
-        memoryProfile:
-            memoryPrefix + (markers.memorySelector ?? defaultProfileSelector),
+  ResolvedProfileScope resolveScope(ApiKeyMarkers markers) => _scopeFor(
+        markers,
+        sessionPrefix: sessionPrefix,
+        memoryPrefix: memoryPrefix,
       );
 
   /// The [IdentityBinding] this key folds into `bearerTokenBindings` (§ 5.1).

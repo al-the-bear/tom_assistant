@@ -254,11 +254,10 @@ access:
   openai:
     port: 8080
     basePath: /v1
-  users:
-    - id: owner
+  apiKeys:
+    - key: $_bearerToken
+      principal: owner
       displayName: Owner
-      openaiBearerTokens:
-        - $_bearerToken
   rateLimit:
     capacity: 1000000
     refillTokens: 1000000

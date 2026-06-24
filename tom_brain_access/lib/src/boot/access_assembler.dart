@@ -80,6 +80,7 @@ import '../identity/memory_profile_selector.dart';
 import '../identity/persona_resolver.dart';
 import '../identity/session_manager.dart';
 import 'access_event_bus.dart';
+import 'api_key_registrar.dart';
 import 'incoming_trail_record.dart';
 
 /// Builds the channel-specific [DeliveryBinding] for one admitted request.
@@ -101,7 +102,7 @@ typedef _BuildBinding = DeliveryBinding Function(
 /// a booted [Dispatcher]. The channel edges (E.45) call [admitOpenAi] /
 /// [admitTelegram] once per inbound request; the assembler runs the edge-chain,
 /// fills the `Access`, emits the lifecycle events, and dispatches.
-final class AccessAssembler {
+final class AccessAssembler implements ApiKeyRegistrar {
   /// The booted dispatcher's single entry point. Every admitted request lands
   /// on `dispatcher.accept(access)` (PE-11); the assembler never reaches past
   /// it into the engine or memory.
@@ -146,6 +147,10 @@ final class AccessAssembler {
   /// applies no scope — the session resolves as it always did. Only consulted on
   /// the token-keyed bearer path; the authenticator-wired (JWT) path skips marker
   /// parsing entirely (base64url tokens contain `_`).
+  ///
+  /// Growable: `/create_api_key` (MSP-7) admits a runtime key into it through
+  /// [admit] (the namespace half of live admission, MSPP-42); the constructor
+  /// copies the supplied map so the caller's is never mutated.
   final Map<String, ApiKeyConfig> apiKeysByKey;
 
   /// The optional cheap kind-hint classifier (E.33–E.34). When non-null and the
@@ -189,11 +194,38 @@ final class AccessAssembler {
     required this.deliveryRegistry,
     required this.eventBus,
     this.bearerAuthenticator,
-    this.apiKeysByKey = const {},
+    Map<String, ApiKeyConfig> apiKeysByKey = const {},
     this.classifier,
     this.incomingTrailSink,
     DateTime Function()? clock,
-  }) : _clock = clock ?? systemClock;
+  })  : apiKeysByKey = Map.of(apiKeysByKey),
+        _clock = clock ?? systemClock;
+
+  /// Admits a runtime API key into the live registry (`/create_api_key`,
+  /// MSP-7 — [ApiKeyRegistrar.admit]).
+  ///
+  /// Mutates both structures the no-authenticator bearer path consults, so the
+  /// key takes effect on the very next request: the identity registry (so the
+  /// residual key authenticates to [config]'s principal) and [apiKeysByKey] (so
+  /// the key scopes sessions/memory into [config]'s namespace). One operation,
+  /// both maps — the orchestration ([ApiKeyCreator]) never sees the split.
+  @override
+  void admit(ApiKeyConfig config) {
+    apiKeysByKey[config.key] = config;
+    identityResolver.admitBearer(config.key, config.toBinding());
+  }
+
+  /// Removes a runtime API key from the live registry — the exact reverse of
+  /// [admit] ([ApiKeyRegistrar.revoke]).
+  ///
+  /// Used to roll back a live admission when the durable persist fails (§ 13),
+  /// so the running process never authenticates a key that did not survive to
+  /// disk (live == disk).
+  @override
+  void revoke(ApiKeyConfig config) {
+    apiKeysByKey.remove(config.key);
+    identityResolver.revokeBearer(config.key);
+  }
 
   /// Admits one OpenAI HTTP/SSE request.
   ///
@@ -300,7 +332,9 @@ final class AccessAssembler {
   ///     `no-key` substitute for an empty residual, § 6) is authenticated
   ///     through [IdentityResolver.resolveBearer]. When that residual key has an
   ///     [ApiKeyConfig] in [apiKeysByKey], its prefixes resolve the markers into
-  ///     a [ResolvedProfileScope] (MSP-4); a key with no entry applies no scope.
+  ///     a [ResolvedProfileScope] (MSP-4); a key with no entry resolves the
+  ///     markers under the built-in **default** prefixes ([resolveDefaultScope],
+  ///     MSPP-62) so no token runs bare-root (§ 8.1).
   ///
   /// Either way an unbound credential surfaces as a typed failure, never a
   /// fabricated identity; a duplicate marker throws [ApiKeyMarkerException]
@@ -327,7 +361,14 @@ final class AccessAssembler {
       channel: channel.wireName,
     );
     final ApiKeyConfig? keyConfig = apiKeysByKey[markers.effectiveResidualKey];
-    return (identity: identity, scope: keyConfig?.resolveScope(markers));
+    // A configured key resolves the markers under its own prefixes; an
+    // unconfigured token (no `apiKeys[]` entry) resolves under the built-in
+    // default prefixes (MSPP-62) — so every authenticated API-key token runs
+    // under some profile rather than bare-root (§ 8.1).
+    return (
+      identity: identity,
+      scope: keyConfig?.resolveScope(markers) ?? resolveDefaultScope(markers),
+    );
   }
 
   /// Admits one Telegram request.

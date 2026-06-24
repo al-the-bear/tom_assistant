@@ -78,6 +78,8 @@ export 'src/cli_server_port_switch.dart'
         CliServerPortConfigWriter,
         CliServerPortWriteException,
         TomBrainCliServerPortController;
+export 'src/api_key_persist.dart'
+    show ApiKeyPersistException, appendApiKeyToRunConfig;
 export 'src/llm_route_config.dart' show LlmRouteConfig, UnknownLlmRouteException;
 export 'src/brain_run_config_loader.dart'
     show BrainRunConfigException, BrainRunConfigLoader;
@@ -148,6 +150,13 @@ export 'package:tom_brain_observatory/tom_brain_observatory.dart'
     show ObservatoryOptions, RuntimeSnapshot;
 export 'src/tools_config.dart' show ToolsConfig, ToolsConfigException;
 export 'src/tools_config_loader.dart' show ToolsConfigLoader;
+
+// ── Profile selection axis: config DTO + boot registry (session_configuration
+//    plan step 3; spec § 3) ──────────────────────────────────────────────
+export 'src/profile/profile.dart' show Profile;
+export 'src/profile/profile_config_errors.dart'
+    show ProfileConfigException, UnknownProfileException;
+export 'src/profile/profile_registry.dart' show ProfileRegistry;
 export 'src/trail_config.dart' show TrailConfig, TrailConfigException, TrailMode;
 export 'src/trail_config_loader.dart' show TrailConfigLoader;
 

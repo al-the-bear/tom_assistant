@@ -14,8 +14,10 @@ import 'package:http/http.dart' as http;
 
 import '../model/authoring.dart';
 import '../model/catalogue.dart';
+import '../model/dream_run.dart';
 import '../model/live_step.dart';
 import '../model/llm_call_detail.dart';
+import '../model/llm_call_source.dart';
 import '../model/prompt_trace.dart';
 import '../model/runtime.dart';
 import 'sse.dart';
@@ -30,10 +32,11 @@ abstract interface class TraceApiClient {
   /// no trace for the turn (§ 4.1 — absence is a clean not-found).
   Future<PromptTrace?> traceFor(String turnId);
 
-  /// `GET /api/llm?turn=&path=` — the full §3.7 detail behind a run-tree
-  /// `LlmCall`'s [rawPath] link, or `null` when the host has no such dump
-  /// (§ 4.5 / PT-2.4).
-  Future<LlmCallDetail?> llmCallDetail(String turnId, String rawPath);
+  /// `GET /api/llm?path=` + exactly one of `turn=`/`run=` — the full §3.7 detail
+  /// behind a run-tree `LlmCall`'s [rawPath] link, resolved against the run named
+  /// by [source] (a foreground turn or a turn-less dream run, MSPP-55/56), or
+  /// `null` when the host has no such dump (§ 4.5 / PT-2.4).
+  Future<LlmCallDetail?> llmCallDetail(LlmCallSource source, String rawPath);
 
   /// `GET /api/procedures` — the ids of every procedure script the running brain
   /// hosts under `scripts/system/*.dart` (§ 4.6 / § 8.3(5)), sorted. Feeds the
@@ -102,6 +105,21 @@ abstract interface class TraceApiClient {
   /// brain to ask, so the Runtime tab shows only the on-disk config).
   Future<RuntimeSnapshot?> runtime();
 
+  /// `GET /api/dream/lanes` — the Module-3 lane selector (§ 5A.2): the configured
+  /// cadence lanes plus the synthetic `other` lane when any dream run is
+  /// unclaimed. Empty in unconfigured mode (absence is never an error, § 8.1).
+  Future<List<DreamLane>> listDreamLanes();
+
+  /// `GET /api/dream/runs?lane=<id>` — the Module-3 run list (§ 5A.2): the recent
+  /// turn-less dream runs, newest-first, optionally filtered to one [lane]
+  /// (including `other`). Empty when no dream runs exist.
+  Future<List<DreamRunRow>> listDreamRuns({String? lane});
+
+  /// `GET /api/dream/runs/{runId}` — one drilled-in dream run as its run-tree
+  /// (§ 5A.4), or `null` when no turn-less log with that id exists (the host
+  /// answers `404`) — the dreaming-side mirror of [traceFor].
+  Future<DreamRun?> dreamRunFor(String runId);
+
   /// `GET /api/traces/{turnId}/stream` — the SSE live-tail of a turn (§ 4.8):
   /// one [LiveStep] per cognitive step as the brain appends it, the stream
   /// closing after the turn's `✅ DONE`. The streaming Reply view (§ 3.5)
@@ -111,6 +129,17 @@ abstract interface class TraceApiClient {
   /// `GET /api/stream` — the list-level live-tail (§ 4.8): a tick on connect and
   /// whenever a session live-trail changes, so the prompt list re-fetches.
   Stream<void> listChanges();
+
+  /// `GET /api/dream/stream[?lane=]` — the dreaming-side live-tail (§ 5A.5,
+  /// MSPP-57/58): a refresh tick per appended run-tree operation of the active
+  /// dream run, plus a terminal tick when it completes, so Module 3 re-fetches
+  /// the lane list / open run-tree without a manual refresh — the dream-side
+  /// mirror of [listChanges]. Consumed as a signal (not a delta builder): the
+  /// views re-fetch through the `/api/dream/*` GETs. One connection follows the
+  /// newest run to completion then ends (the backend's one-run contract); a
+  /// connection error ends the stream quietly so the views degrade to
+  /// fresh-parse-on-refresh.
+  Stream<void> dreamChanges({String? lane});
 }
 
 /// Talks to the same-origin `/api` via [http]. URLs resolve against [origin]
@@ -150,9 +179,10 @@ class HttpTraceApiClient implements TraceApiClient {
   }
 
   @override
-  Future<LlmCallDetail?> llmCallDetail(String turnId, String rawPath) async {
+  Future<LlmCallDetail?> llmCallDetail(
+      LlmCallSource source, String rawPath) async {
     final uri = _resolve('api/llm', <String, String>{
-      'turn': turnId,
+      ...source.queryParameters,
       'path': rawPath,
     });
     final res = await _http.get(uri);
@@ -277,6 +307,45 @@ class HttpTraceApiClient implements TraceApiClient {
     return RuntimeSnapshot.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
+  @override
+  Future<List<DreamLane>> listDreamLanes() async {
+    final uri = _resolve('api/dream/lanes', const <String, String>{});
+    final res = await _http.get(uri);
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return <DreamLane>[
+      for (final lane in jsonDecode(res.body) as List<dynamic>)
+        DreamLane.fromJson(lane as Map<String, dynamic>),
+    ];
+  }
+
+  @override
+  Future<List<DreamRunRow>> listDreamRuns({String? lane}) async {
+    final uri = _resolve('api/dream/runs', <String, String>{
+      'lane': ?lane,
+    });
+    final res = await _http.get(uri);
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return <DreamRunRow>[
+      for (final row in jsonDecode(res.body) as List<dynamic>)
+        DreamRunRow.fromJson(row as Map<String, dynamic>),
+    ];
+  }
+
+  @override
+  Future<DreamRun?> dreamRunFor(String runId) async {
+    final uri = _resolve('api/dream/runs/$runId', const <String, String>{});
+    final res = await _http.get(uri);
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) {
+      throw http.ClientException('GET $uri → ${res.statusCode}', uri);
+    }
+    return DreamRun.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
   /// Maps a source-authoring `PUT` response into an [AuthoringResult]: `200` →
   /// [AuthoringResult.saved]; `422` → the validator findings (a procedure carries
   /// a `findings[]` array; a prompt carries a single `error` string, normalised
@@ -315,6 +384,24 @@ class HttpTraceApiClient implements TraceApiClient {
   Stream<void> listChanges() async* {
     final uri = _resolve('api/stream', const <String, String>{});
     final res = await _http.send(http.Request('GET', uri));
+    yield* sseDataFrames(res.stream).map((_) {});
+  }
+
+  @override
+  Stream<void> dreamChanges({String? lane}) async* {
+    final uri = _resolve('api/dream/stream', <String, String>{'lane': ?lane});
+    // One connection follows the newest dream run to completion then ends
+    // (MSPP-58): every SSE frame — each appended op and the terminal `done` —
+    // is one refresh tick. A connection failure ends the stream quietly so the
+    // views fall back to fresh-parse-on-refresh; reaching the end of the SSE
+    // frames is the run's clean completion, which simply ends the stream.
+    final http.StreamedResponse res;
+    try {
+      res = await _http.send(http.Request('GET', uri));
+    } catch (_) {
+      return;
+    }
+    if (res.statusCode != 200) return;
     yield* sseDataFrames(res.stream).map((_) {});
   }
 

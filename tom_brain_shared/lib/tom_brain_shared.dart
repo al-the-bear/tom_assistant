@@ -175,6 +175,17 @@ export 'src/preemption/preemption.dart' show PreemptionState;
 export 'src/symbolic/symbolic.dart'
     show AttrClause, SymbolicFilter, SymbolicOp;
 
+// session_configuration step 2 — profile/ module: the Profile selection axis'
+// shared value types. `ProfileMode` (cognitive/answer/passthrough + the
+// mode→entry-procedure mapping, spec § 3.2), `ProfileBudget` /
+// `ProfileRateLimits` (the optional per-profile envelopes, § 3.1 / § 5.4), and
+// `ResolvedProfile` (the boot-resolved bundle stamped on `Access`, § 4.3 —
+// `Access.profile` reads it). The raw config-side `Profile` aggregate stays in
+// `tom_brain_run` (it references `McpServerConfig`; SCP-6). Pure value types —
+// they fit the A.9 dependency-discipline contract.
+export 'src/profile/profile.dart'
+    show ProfileBudget, ProfileMode, ProfileRateLimits, ResolvedProfile;
+
 // D.11 — access/ module: the canonical `Access` object the dispatcher
 // consumes regardless of channel, plus the field types it references —
 // `InboundRequest`, `OutboundChunk`, the minimal `ResolvedIdentity` /

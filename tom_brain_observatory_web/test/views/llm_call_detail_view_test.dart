@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tom_brain_observatory_web/src/model/llm_call_detail.dart';
+import 'package:tom_brain_observatory_web/src/model/llm_call_source.dart';
 import 'package:tom_brain_observatory_web/src/model/prompt_trace.dart';
 import 'package:tom_brain_observatory_web/src/views/llm_call_detail_view.dart';
 
@@ -54,7 +55,8 @@ LlmCallDetail _detail({
 
 Future<void> _pump(WidgetTester tester, StubApiClient client) async {
   await tester.pumpWidget(MaterialApp(
-    home: LlmCallDetailView(client: client, turnId: _turnId, node: _node),
+    home: LlmCallDetailView(
+        client: client, source: LlmCallSource.turn(_turnId), node: _node),
   ));
   await tester.pumpAndSettle();
 }
