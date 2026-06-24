@@ -172,6 +172,10 @@ export 'src/scripts_config_loader.dart' show ScriptsConfigLoader;
 //    / § 8; CLI plan step #6) ─────────────────────────────────────────────
 export 'src/project_home.dart'
     show HomeOverrides, PathLayer, ProjectHome, ResolvedPath;
+// ── CLI `${env:…}` flag expansion (tom_brain_cli.md § 5 note / § 11.7;
+//    CLI plan step #7) ──────────────────────────────────────────────────────
+export 'src/cli_env_expansion.dart'
+    show CliEnvExpansionException, expandCliFlag, expandCliFlags, expandSetValue;
 export 'src/tools_config.dart' show ToolsConfig, ToolsConfigException;
 export 'src/tools_config_loader.dart' show ToolsConfigLoader;
 
