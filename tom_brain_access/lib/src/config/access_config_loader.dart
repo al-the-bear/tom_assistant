@@ -93,6 +93,7 @@ abstract final class AccessConfigLoader {
     'cognition',
     'mcpServers',
     'profiles',
+    'profilesDir',
     _historyKey,
     _accessKey,
   };

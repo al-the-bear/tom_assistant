@@ -27,6 +27,8 @@
 // (SCP-3) rather than cross-package-refactoring a public factory out of
 // `tom_brain_procedure`.
 
+import 'dart:io' show Directory, File, FileSystemException;
+
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show McpServerConfig, McpTransport;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
@@ -59,17 +61,31 @@ final class ProfileRegistry {
 
   /// Parses the `profiles:` block out of the whole-process [content].
   ///
-  /// Reads only `doc['profiles']`, tolerating sibling sections — the same
-  /// re-parse-the-whole-document contract every section loader uses. An absent
-  /// or empty block yields a registry with only the built-in `default`.
-  /// [envVars] expands `${NAME}` tokens inside string fields.
+  /// The profiles are sourced either **inline** (`profiles:`) or from a
+  /// **directory** (the top-level `profilesDir:`, the standalone `tom_brain`
+  /// CLI's `<agent>/profiles/` convention, CLI plan step 5) — never both. When
+  /// `profilesDir` is set, every `*.yaml`/`*.yml` file under it carries its own
+  /// top-level `profiles:` map; those maps are unioned by id in filename order,
+  /// and a profile id declared in two files is a `profile.duplicate_id` error.
+  /// A relative `profilesDir` resolves against [basePath] (threaded from
+  /// `BrainRunConfigLoader.loadFromFile`); a relative path with no [basePath],
+  /// or a missing directory, is an error.
+  ///
+  /// Reads only `doc['profiles']` / `doc['profilesDir']`, tolerating sibling
+  /// sections — the same re-parse-the-whole-document contract every section
+  /// loader uses. An absent or empty block yields a registry with only the
+  /// built-in `default`. [envVars] expands `${NAME}` tokens inside string
+  /// fields.
   ///
   /// Throws [ProfileConfigException] on a malformed block, an unknown `mode`
-  /// token (`profile.unknown_mode`), or a `mode`/`entryProcedure` conflict
-  /// (`profile.mode_entry_conflict`).
+  /// token (`profile.unknown_mode`), a `mode`/`entryProcedure` conflict
+  /// (`profile.mode_entry_conflict`), both inline + directory set
+  /// (`profile.dir_inline_conflict`), or a cross-file duplicate id
+  /// (`profile.duplicate_id`).
   static ProfileRegistry fromYamlString(
     String content, {
     Map<String, String> envVars = const {},
+    String? basePath,
   }) {
     final Map<String, Object?> doc = loadYamlAsMap(
       content,
@@ -80,35 +96,148 @@ final class ProfileRegistry {
       env: envVars,
       errorFactory: ProfileConfigException.new,
     );
-    final Map<Object?, Object?>? profilesNode =
-        reader.optionalMap(doc, 'profiles');
-    final profiles = <Profile>[];
-    if (profilesNode != null) {
-      for (final entry in profilesNode.entries) {
-        final key = entry.key;
-        if (key is! String) {
-          throw const ProfileConfigException(
-            'a profile name must be a string',
-            path: 'profiles',
-          );
+    final profilesDir =
+        reader.optionalString(doc, 'profilesDir', 'profilesDir');
+    final byId = <String, Profile>{};
+    if (profilesDir != null) {
+      if (doc.containsKey('profiles')) {
+        throw const ProfileConfigException(
+          'declare `profiles:` (inline) or `profilesDir:` (a directory of '
+          'profile files), not both.',
+          code: 'profile.dir_inline_conflict',
+        );
+      }
+      for (final file in _profileYamlFiles(profilesDir, basePath)) {
+        final fileDoc = _loadProfileFile(file);
+        final node = reader.optionalMap(fileDoc, 'profiles');
+        if (node != null) {
+          _accumulate(node, reader, byId, source: _fileLabel(file));
         }
-        final Object? body = entry.value;
-        final Map<Object?, Object?> map;
-        if (body == null) {
-          map = const <Object?, Object?>{};
-        } else if (body is Map<Object?, Object?>) {
-          map = body;
-        } else {
-          throw ProfileConfigException(
-            'profile "$key" must be a map',
-            path: 'profiles.$key',
-          );
-        }
-        profiles.add(_parseProfile(key, map, reader));
+      }
+    } else {
+      final Map<Object?, Object?>? profilesNode =
+          reader.optionalMap(doc, 'profiles');
+      if (profilesNode != null) {
+        _accumulate(profilesNode, reader, byId, source: 'profiles');
       }
     }
-    return ProfileRegistry(profiles);
+    return ProfileRegistry(byId.values);
   }
+
+  /// Parses every entry of a `profiles:` [node] into [byId], detecting a
+  /// duplicate id ([source] names where the node came from, for the error).
+  static void _accumulate(
+    Map<Object?, Object?> node,
+    YamlConfigReader reader,
+    Map<String, Profile> byId, {
+    required String source,
+  }) {
+    for (final entry in node.entries) {
+      final key = entry.key;
+      if (key is! String) {
+        throw const ProfileConfigException(
+          'a profile name must be a string',
+          path: 'profiles',
+        );
+      }
+      if (byId.containsKey(key)) {
+        throw ProfileConfigException(
+          'duplicate profile id "$key" (already declared; redeclared in '
+          '$source)',
+          code: 'profile.duplicate_id',
+          path: 'profiles.$key',
+        );
+      }
+      final Object? body = entry.value;
+      final Map<Object?, Object?> map;
+      if (body == null) {
+        map = const <Object?, Object?>{};
+      } else if (body is Map<Object?, Object?>) {
+        map = body;
+      } else {
+        throw ProfileConfigException(
+          'profile "$key" must be a map',
+          path: 'profiles.$key',
+        );
+      }
+      byId[key] = _parseProfile(key, map, reader);
+    }
+  }
+
+  // ── directory sourcing (`profilesDir`, CLI plan step 5) ─────────────
+  //
+  // Mirrors the substrate loader's `providersDir`/`modelsDir` helpers
+  // (step 2): resolve a relative dir against the config file's directory,
+  // read its `*.yaml`/`*.yml` files in filename order, and feed each file's
+  // `profiles:` map back through the inline parser. Kept off `package:path`
+  // (the `_isAbsolutePath` regex) to match the substrate loader's surface.
+
+  /// Resolves [dirPath] against [basePath] and returns its `*.yaml`/`*.yml`
+  /// files sorted by path. A relative [dirPath] requires a [basePath]; a
+  /// missing directory is a clear error.
+  static List<File> _profileYamlFiles(String dirPath, String? basePath) {
+    final String resolved;
+    if (_isAbsolutePath(dirPath)) {
+      resolved = dirPath;
+    } else if (basePath == null) {
+      throw ProfileConfigException(
+        'profilesDir "$dirPath" is a relative path but no base directory is '
+        'available; load the config via `loadFromFile` (or pass `basePath`) '
+        'so a relative profiles directory resolves against the config file.',
+        code: 'profile.dir_unresolved',
+        path: 'profilesDir',
+      );
+    } else {
+      resolved = '$basePath/$dirPath';
+    }
+    final dir = Directory(resolved);
+    if (!dir.existsSync()) {
+      throw ProfileConfigException(
+        'profilesDir directory not found: $resolved',
+        code: 'profile.dir_missing',
+        path: 'profilesDir',
+      );
+    }
+    return dir
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.yaml') || f.path.endsWith('.yml'))
+        .toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+  }
+
+  /// Reads + parses one profiles [file] into a plain map. Wraps read/parse
+  /// failures as [ProfileConfigException] naming the file.
+  static Map<String, Object?> _loadProfileFile(File file) {
+    final String content;
+    try {
+      content = file.readAsStringSync();
+    } on FileSystemException catch (e) {
+      throw ProfileConfigException(
+        'profilesDir: cannot read ${file.path}: ${e.message}',
+        code: 'profile.dir_read_failed',
+        path: 'profilesDir',
+      );
+    }
+    return loadYamlAsMap(
+      content,
+      rootPath: _fileLabel(file),
+      errorFactory: ProfileConfigException.new,
+    );
+  }
+
+  /// The trailing filename of a profiles [file], for compact error labels.
+  static String _fileLabel(File file) {
+    final segments = file.uri.pathSegments;
+    return segments.isEmpty ? file.path : segments.last;
+  }
+
+  /// Posix / Windows absolute-path test without `package:path` (matching the
+  /// substrate loader's surface).
+  static bool _isAbsolutePath(String pth) =>
+      pth.startsWith('/') ||
+      pth.startsWith(r'\\') ||
+      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(pth);
 
   /// The configured profile names, in declaration order (always includes
   /// `default`).

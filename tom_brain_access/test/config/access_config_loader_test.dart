@@ -985,6 +985,22 @@ profiles:
       expect(() => AccessConfigLoader.parse(doc), returnsNormally);
     });
 
+    // The whole-process document may carry the run package's `profilesDir:`
+    // section — the directory-sourcing sibling of `profiles:` (owned by
+    // `ProfileRegistry.fromYamlString`; `tom_brain_cli.md` CLI plan step 5).
+    // The access loader tolerates it as a sibling so the single file feeds
+    // every loader.
+    test('tolerates a sibling profilesDir: section', () {
+      const doc = '''
+access:
+  openai: { port: 1 }
+  rateLimit: { capacity: 1, refillTokens: 1, refillPeriodSeconds: 1 }
+  quota: { dailyCap: 1 }
+profilesDir: profiles
+''';
+      expect(() => AccessConfigLoader.parse(doc), returnsNormally);
+    });
+
     test('rejects an unknown key within access:', () {
       const doc = '''
 access:
