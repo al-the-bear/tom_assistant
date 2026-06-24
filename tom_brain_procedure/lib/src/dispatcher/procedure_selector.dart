@@ -58,7 +58,32 @@ abstract final class SystemProcedures {
   /// The thinking answer branch: the recursive deliberation loop
   /// (§ 4.1–4.7). Reached only via the router's `thinking` verdict.
   static const String answerWithThinkingV1 = 'answer_with_thinking_v1';
+
+  /// The passthrough relay: one role-anchored substrate call, no memory
+  /// (`session_configuration.md` § 5.2, SC-3). The entry procedure
+  /// `mode: passthrough` selects. Named here so the profile entry door
+  /// (§ 5.1) and the engine-side loader share one spelling; the script itself
+  /// lands in plan step 7.
+  static const String passthroughV1 = 'passthrough_v1';
 }
+
+/// The closed set of *entry* procedure ids a profile may select via its
+/// `mode` / `entryProcedure` (`session_configuration.md` § 3.2, § 5.1).
+///
+/// One id per [ProfileMode]: `cognitive` → [SystemProcedures.promptAnalyzerV1],
+/// `answer` → [SystemProcedures.answerWithMemoryV1], `passthrough` →
+/// [SystemProcedures.passthroughV1]. This is the validation registry for
+/// [ProcedureSelector.resolveEntryProcedure] — the profile entry door
+/// (Plan step 6 / SCP-22) — kept **distinct** from
+/// [ProcedureSelector.knownProcedureIds] (the kindHint door's
+/// routing-derived set, `[prompt_analyzer_v1]`). The two namespaces were
+/// already separated by Q-E.50.1; the entry set lets a profile reach the
+/// `answer`/`passthrough` entries without widening the kindHint door's set.
+const Set<String> defaultEntryProcedures = <String>{
+  SystemProcedures.promptAnalyzerV1,
+  SystemProcedures.answerWithMemoryV1,
+  SystemProcedures.passthroughV1,
+};
 
 /// The default kind → procedure-id routing table for the prototype.
 ///
@@ -86,10 +111,20 @@ final class ProcedureSelector {
   /// boundary without depending on the prototype's single live entry. The
   /// table is copied defensively so a caller's later mutation cannot
   /// re-route a constructed selector.
-  ProcedureSelector({Map<String, String> routing = defaultProcedureRouting})
-      : _routing = Map<String, String>.unmodifiable(routing);
+  ProcedureSelector({
+    Map<String, String> routing = defaultProcedureRouting,
+    Set<String> entryProcedures = defaultEntryProcedures,
+  })  : _routing = Map<String, String>.unmodifiable(routing),
+        _entryProcedures = Set<String>.unmodifiable(entryProcedures);
 
   final Map<String, String> _routing;
+
+  /// The closed set of entry procedure ids the profile door
+  /// ([resolveEntryProcedure]) will admit, defaulting to
+  /// [defaultEntryProcedures]. Injectable so the run side can widen it from
+  /// the configured profiles' entries ("fed from the resolved profile",
+  /// § 5.1) once custom-entry profiles exist. Copied defensively.
+  final Set<String> _entryProcedures;
 
   /// The inbound kinds this selector can route, in insertion order.
   ///
@@ -106,6 +141,18 @@ final class ProcedureSelector {
   /// are the engine's (Q-E.50.1).
   List<String> get knownProcedureIds =>
       List<String>.unmodifiable(_routing.values.toSet());
+
+  /// The entry procedure ids the profile door ([resolveEntryProcedure])
+  /// admits, in iteration order.
+  ///
+  /// Distinct from [knownProcedureIds] (the kindHint door's routing-derived
+  /// set): a profile selects an *entry* procedure — one of the closed
+  /// [defaultEntryProcedures] — whereas a centroid hint names a routing
+  /// target. Keeping the sets separate is what lets a profile reach
+  /// `answer_with_memory_v1` / `passthrough_v1` without re-routing the
+  /// kindHint door (SCP-22).
+  List<String> get knownEntryProcedures =>
+      List<String>.unmodifiable(_entryProcedures);
 
   /// Resolves [kind] to the procedure id to run.
   ///
@@ -150,6 +197,34 @@ final class ProcedureSelector {
       throw UnknownProcedureHint(
         procedureId: trimmed,
         knownProcedureIds: knownProcedureIds,
+      );
+    }
+    return trimmed;
+  }
+
+  /// Resolves a profile-selected *entry* procedure id (the profile door,
+  /// Plan step 6 / SCP-21–SCP-22; `session_configuration.md` § 5.1).
+  ///
+  /// `resolveProcedureId`'s first door reads `Access.profile.entryProcedure`
+  /// (a `ResolvedProfile` already validated at boot) and routes it directly
+  /// when the profile selects a non-cognitive-baseline entry. This trims
+  /// [procedureId] and returns it if it names one of the closed
+  /// [knownEntryProcedures] — the same validate-against-a-known-set shape the
+  /// `kindHint` door uses (§ 5.1), but over the entry registry rather than the
+  /// routing values, so `answer_with_memory_v1` / `passthrough_v1` are
+  /// admissible here while the kindHint door's set stays `[prompt_analyzer_v1]`
+  /// (SCP-22).
+  ///
+  /// An entry naming no shipped entry procedure is a should-never-happen
+  /// safety net (boot step 3 already rejects a malformed/conflicting entry);
+  /// it is surfaced loudly with [UnknownProcedureHint] (reused per SCP-23),
+  /// carrying [knownEntryProcedures] as the accepted set.
+  String resolveEntryProcedure(String procedureId) {
+    final trimmed = procedureId.trim();
+    if (!_entryProcedures.contains(trimmed)) {
+      throw UnknownProcedureHint(
+        procedureId: trimmed,
+        knownProcedureIds: knownEntryProcedures,
       );
     }
     return trimmed;

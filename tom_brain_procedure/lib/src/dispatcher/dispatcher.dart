@@ -499,7 +499,11 @@ export 'preemption_event.dart'
         RunSlotOutcome;
 export 'procedure_routing.dart' show resolveProcedureId;
 export 'procedure_selector.dart'
-    show ProcedureSelector, SystemProcedures, defaultProcedureRouting;
+    show
+        ProcedureSelector,
+        SystemProcedures,
+        defaultEntryProcedures,
+        defaultProcedureRouting;
 export 'run_coordinator.dart'
     show
         BackgroundReservation,
