@@ -1,250 +1,262 @@
-ID,Groups,Description,Baseline [06-17 08:12],[06-17 08:52],[06-23 22:17]
-,ObservatoryOptions.fromArgs,lifts every --key=value flag,--/OK,OK/OK,OK/OK
-,parseTurnSteps,flags only the DONE banner as terminal,OK/OK,OK/OK,OK/OK
-,parseTurnSteps,captures the verbatim body under a step heading,OK/OK,OK/OK,OK/OK
-,parseTurnSteps,an in-flight turn has no DONE step,OK/OK,OK/OK,OK/OK
-,parseTurnSteps,a turn that is not present yields no steps,OK/OK,OK/OK,OK/OK
-,parseTurnSteps,"a turnId is matched whole, not as a prefix",OK/OK,OK/OK,OK/OK
-,,emits one event per appended step and closes after DONE,OK/OK,OK/OK,OK/OK
-OBS-5,,tailing never writes the trail file,OK/OK,OK/OK,OK/OK
-,,browse seeds recall by type and filters to the requested type,OK/OK,OK/OK,OK/OK
-,,known ids surfaced in traces are fetched via get and merged,OK/OK,OK/OK,OK/OK
-,,edge traversal discovers a neighbour not in the recall seed,OK/OK,OK/OK,OK/OK
-,,a neighbour already in the seed is not re-fetched,OK/OK,OK/OK,OK/OK
-,,every gathered node is deduped by id across sources,OK/OK,OK/OK,OK/OK
-,,the composition never calls a write tool (OBS-2 transitively),OK/OK,OK/OK,OK/OK
-,OBS-2 — only the nine read tools,"the static registry is exactly the nine reads, never the write",OK/OK,OK/OK,OK/OK
-,OBS-2 — only the nine read tools,exercising the whole client surface calls exactly the nine reads,OK/OK,OK/OK,OK/OK
-,read-tool decoding,recall decodes nodes + the per-mode cost report,OK/OK,OK/OK,OK/OK
-,read-tool decoding,recallMulti decodes per-node seed provenance,OK/OK,OK/OK,OK/OK
-,read-tool decoding,get decodes nodes with embedding dimension + norm,OK/OK,OK/OK,OK/OK
-,read-tool decoding,get decodes a node with a null embedding,OK/OK,OK/OK,OK/OK
-,read-tool decoding,edgesOf decodes edges and marshals direction + types,OK/OK,OK/OK,OK/OK
-,read-tool decoding,stackList decodes the inventory,OK/OK,OK/OK,OK/OK
-,read-tool decoding,stackPeek decodes entries and marshals k,OK/OK,OK/OK,OK/OK
-,read-tool decoding,classify decodes the decision band,OK/OK,OK/OK,OK/OK
-,read-tool decoding,profilesList + profileCurrent decode,OK/OK,OK/OK,OK/OK
-,read-tool decoding,profileCurrent on the unprofiled root decodes null,OK/OK,OK/OK,OK/OK
-,,a tool error surfaces as McpReadException,OK/OK,OK/OK,OK/OK
-,,serves the verbatim d4rt source as text/plain,--/OK,OK/OK,OK/OK
-,,refuses a procedureId that escapes the script root,--/OK,OK/OK,OK/OK
-,,404 when the named script does not exist,--/OK,OK/OK,OK/OK
-,,404 when the script root is unconfigured,--/OK,OK/OK,OK/OK
-,promptTraceFor — accepted turn (a0),inbound projects the incoming record,--/OK,OK/OK,OK/OK
-,promptTraceFor — accepted turn (a0),configuration is what actually ran (distinct tuples),--/OK,OK/OK,OK/OK
-,promptTraceFor — accepted turn (a0),configuration carries the generation knobs from the raw dump,--/OK,OK/OK,OK/OK
-,promptTraceFor — accepted turn (a0),toJson emits present knobs and omits absent ones,--/OK,OK/OK,OK/OK
-,promptTraceFor — accepted turn (a0),reply joins the summary answer with the run outcome,--/OK,OK/OK,OK/OK
-,promptTraceFor — accepted turn (a0),run trees are present and recursive,--/OK,OK/OK,OK/OK
-,promptTraceFor — accepted turn (a0),toJson is the locked §3 shape,--/OK,OK/OK,OK/OK
-,promptTraceFor — errored turn (b0),reply carries the verbatim no-answer placeholder + errored outcome,--/OK,OK/OK,OK/OK
-,"promptTraceFor — in-flight turn (c, incoming only)",inbound present but run-trees / reply absent,--/OK,OK/OK,OK/OK
-,"promptTraceFor — multi-run turn (analyzer + answer, d0)","both top-level runs surface, classifier first then answer",--/OK,OK/OK,OK/OK
-,"promptTraceFor — multi-run turn (analyzer + answer, d0)","wall-clock is the substantive answer run, not the classifier 1.6s",--/OK,OK/OK,OK/OK
-,"promptTraceFor — multi-run turn (analyzer + answer, d0)",the full answer flow is present (retrieve + tool loops),--/OK,OK/OK,OK/OK
-,"promptTraceFor — multi-run turn (analyzer + answer, d0)",toJson surfaces every top-level run in start order,--/OK,OK/OK,OK/OK
-,promptTraceFor — unknown turn,returns null (turn unknown to host),--/OK,OK/OK,OK/OK
-,RuntimeSnapshot.toJson — the resolved history sizing (todo #16),emits the threaded history map under the `history` key,--/OK,OK/OK,OK/OK
-,RuntimeSnapshot.toJson — the resolved history sizing (todo #16),omits the `history` key when no sizing was threaded in,--/OK,OK/OK,OK/OK
-,RuntimeSnapshot.toJson — the resolved history sizing (todo #16),the history facet is orthogonal to the gateways and roots,--/OK,OK/OK,OK/OK
-,PT-2.0 — the real Flutter build is served by the static root,GET / serves the built Flutter index.html,--/OK,OK/OK,OK/OK
-,PT-2.0 — the real Flutter build is served by the static root,an unknown app route falls back to the build index (SPA),--/OK,OK/OK,OK/OK
-,PT-2.0 — the real Flutter build is served by the static root,"/api still routes to the JSON API, not the web build",--/OK,OK/OK,OK/OK
-,GET /api/catalogue — wired cognition config,returns the registry-derived template index in ID order,--/OK,OK/OK,OK/OK
-,GET /api/catalogue — wired cognition config,a prompt lists its system+user pair; a fragment its single file,--/OK,OK/OK,OK/OK
-,GET /api/catalogue — wired cognition config,"an absent pair half is reported present:false, its sibling present",--/OK,OK/OK,OK/OK
-,GET /api/catalogue — wired cognition config,lists the distinct prompt roles + the assistant_to_user default,--/OK,OK/OK,OK/OK
-,GET /api/catalogue — wired cognition config,lists the complete config-file inventory,--/OK,OK/OK,OK/OK
-,GET /api/catalogue — deferred config (no cognition wired),"answers 503 {""error"":""config unavailable""}",--/OK,OK/OK,OK/OK
-,GET /api/catalogue — deferred config (no cognition wired),the Module-1 trail surface still works without a cognition config,--/OK,OK/OK,OK/OK
-,GET /api/templates — wired cognition config,returns a present prompt half verbatim,--/OK,OK/OK,OK/OK
-,GET /api/templates — wired cognition config,returns a present fragment verbatim,--/OK,OK/OK,OK/OK
-,GET /api/templates — wired cognition config,returns a present role persona verbatim,--/OK,OK/OK,OK/OK
-,GET /api/templates — wired cognition config,a registered-but-absent half is an empty body 200,--/OK,OK/OK,OK/OK
-,GET /api/templates — wired cognition config,a not-yet-created role objective is an empty body 200,--/OK,OK/OK,OK/OK
-,GET /api/templates — wired cognition config,an unregistered template id is 403,--/OK,OK/OK,OK/OK
-,GET /api/templates — wired cognition config,a missing query parameter is 400,--/OK,OK/OK,OK/OK
-,PUT /api/templates — wired cognition config,write + re-read round-trips a prompt half,--/OK,OK/OK,OK/OK
-,PUT /api/templates — wired cognition config,materialises an absent role persona on write,--/OK,OK/OK,OK/OK
-,PUT /api/templates — wired cognition config,a malformed ${…} is 422 and the file is untouched,--/OK,OK/OK,OK/OK
-,PUT /api/templates — wired cognition config,an empty system/user half is allowed (the empty-override signal),--/OK,OK/OK,OK/OK
-,PUT /api/templates — wired cognition config,a blank fragment is refused 422 without touching disk,--/OK,OK/OK,OK/OK
-,PUT /api/templates — wired cognition config,a traversal id is 403,--/OK,OK/OK,OK/OK
-,PUT /api/templates — wired cognition config,a well-formed ${name} / ${{ expr }} round-trips (not malformed),--/OK,OK/OK,OK/OK
-,GET/PUT /api/templates — deferred config (no cognition wired),"GET answers 503 {""error"":""config unavailable""}",--/OK,OK/OK,OK/OK
-,GET/PUT /api/templates — deferred config (no cognition wired),PUT answers 503 without writing,--/OK,OK/OK,OK/OK
-,parseTurnSteps,returns the ordered steps of a finished turn,OK/OK,OK/OK,OK/OK
-,the retired /api/prompts route is gone (principle 1),PUT /api/prompts/<roleId>/<part> is not served as an API route,--/OK,OK/OK,OK/OK
-,Step 20.1 — every template is listed and editable,the migrated completion-check / continuation-hint / todo-list appear,--/OK,OK/OK,OK/OK
-,Step 20.1 — every template is listed and editable,every catalogue template part is GET-readable (present or empty),--/OK,OK/OK,OK/OK
-,Step 20.1 — every template is listed and editable,a fragment edit round-trips against the live tree,--/OK,OK/OK,OK/OK
-,Step 20.2 — a persona edit is picked up on next use,the assistant_to_user persona round-trips through /api/templates,--/OK,OK/OK,OK/OK
-,Step 20.3 — a route re-point is picked up on next boot,an llm_route edit reports next-boot,--/OK,OK/OK,OK/OK
-,Step 20.3 — a route re-point is picked up on next boot,a substrate edit reports next-boot; a procedure edit next-use,--/OK,OK/OK,OK/OK
-,ObservatoryOptions.fromArgs,lifts the positional trail root and applies loopback defaults,--/OK,OK/OK,OK/OK
-,the retired /api/prompts route is gone (principle 1),GET /api/prompts/<roleId>/<part> is not served as an API route,--/OK,OK/OK,OK/OK
-,ObservatoryOptions.fromArgs,falls back to the default port on a non-integer --port,--/OK,OK/OK,OK/OK
-,ObservatoryOptions.fromArgs,rejects a missing or extra positional with ArgumentError,--/OK,OK/OK,OK/OK
-,Step 20.4 — AUTH-6: the anchor / tool-policy are not editable,no catalogue template names the anchor or a tool-policy profile,--/OK,OK/OK,OK/OK
-,Step 20.4 — AUTH-6: the anchor / tool-policy are not editable,the config kinds are exactly the wire alphabet (no anchor kind),--/OK,OK/OK,OK/OK
-,Step 20.4 — AUTH-6: the anchor / tool-policy are not editable,PUT /api/config?kind=anchor is refused 403,--/OK,OK/OK,OK/OK
-,startObservatoryServer,"binds a loopback socket and reports its URL, then closes",--/OK,OK/OK,OK/OK
-,Step 20 done-when — no hidden hardcoded prompt text remains,every procedure prompt file is editable via the catalogue,--/OK,OK/OK,OK/OK
-,Step 20 done-when — no hidden hardcoded prompt text remains,unreferenced role prose belongs to not-yet-wired procedures,--/OK,OK/OK,OK/OK
-,,serves the verbatim §3.7 raw dump for a valid link,--/OK,OK/OK,OK/OK
-,,refuses a link that escapes the llm root (containment guard),--/OK,OK/OK,OK/OK
-,,refuses a non-.raw.json link under llm/,--/OK,OK/OK,OK/OK
-,,404 when the dump does not exist,--/OK,OK/OK,OK/OK
-,,400 when turn or path is missing,--/OK,OK/OK,OK/OK
-,parseRunTree — deep accepted fixture (a0),top-level run header + outcome,--/OK,OK/OK,OK/OK
-,parseRunTree — deep accepted fixture (a0),"top-level nodes in trail order, by kind",--/OK,OK/OK,OK/OK
-,parseRunTree — deep accepted fixture (a0),top-level llm call decoded,--/OK,OK/OK,OK/OK
-,parseRunTree — deep accepted fixture (a0),id-returning primitives carry their result id,--/OK,OK/OK,OK/OK
-,parseRunTree — deep accepted fixture (a0),recurses to full depth: a0 → a1 → a2,--/OK,OK/OK,OK/OK
-,parseRunTree — deep accepted fixture (a0),walk helpers count across the whole tree,--/OK,OK/OK,OK/OK
-,parseRunTree — error fixture (b0),errored outcome with elapsed in seconds,--/OK,OK/OK,OK/OK
-,parseRunTree — error fixture (b0),typed error node decoded,--/OK,OK/OK,OK/OK
-,parseRunTree — recall returned ids (PT-7 / §3.9),a recall line carrying ids parses them into returnedIds,--/OK,OK/OK,OK/OK
-,parseRunTree — recall returned ids (PT-7 / §3.9),a count-only recall leaves returnedIds empty,--/OK,OK/OK,OK/OK
-,parseRunTree — recall returned ids (PT-7 / §3.9),returnedIds round-trips through toJson (omitted when empty),--/OK,OK/OK,OK/OK
-,parseRunTree — edge endpoints (PT-7 / §3.8 / §3.9),an edge line carrying endpoints parses into an EdgeDescriptor,--/OK,OK/OK,OK/OK
-,parseRunTree — edge endpoints (PT-7 / §3.8 / §3.9),a bare `edge → id` line carries the id but no endpoint descriptor,--/OK,OK/OK,OK/OK
-,parseRunTree — edge endpoints (PT-7 / §3.8 / §3.9),the edge descriptor round-trips through toJson (omitted when absent),--/OK,OK/OK,OK/OK
-,parseRunTree — tool.invoke nodes (§5.7.1),"an invoked tool parses name, arg summary and result size only",--/OK,OK/OK,OK/OK
-,parseRunTree — tool.invoke nodes (§5.7.1),a failed tool parses its reason and carries no result size,--/OK,OK/OK,OK/OK
-,parseRunTree — tool.invoke nodes (§5.7.1),a denied tool parses its policy reason,--/OK,OK/OK,OK/OK
-,parseRunTree — tool.invoke nodes (§5.7.1),the termination note rides through as a NoteNode,--/OK,OK/OK,OK/OK
-,parseRunTree — tool.invoke nodes (§5.7.1),"tool nodes count as tools, never as memory accesses",--/OK,OK/OK,OK/OK
-,parseRunTree — tool.invoke nodes (§5.7.1),"an invoked tool round-trips through toJson (size, no reason)",--/OK,OK/OK,OK/OK
-,"parseRunTree — malformed input degrades, never throws",empty content → null,--/OK,OK/OK,OK/OK
-,"parseRunTree — malformed input degrades, never throws",no header → null,--/OK,OK/OK,OK/OK
-,,writes a valid procedure body and returns 200,--/OK,OK/OK,OK/OK
-,,refuses a path-traversal id before any write (403),--/OK,OK/OK,OK/OK
-,,rejects a malformed header (422) and leaves the file untouched,--/OK,OK/OK,OK/OK
-,,rejects a sandbox-violating body (422) and leaves the file untouched,--/OK,OK/OK,OK/OK
-,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes?type=Question browses and filters by type,--/OK,OK/OK,OK/OK
-,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes without ?type= is a 400,--/OK,OK/OK,OK/OK
-,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes/<id> returns one node with its embedding,--/OK,OK/OK,OK/OK
-,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes/<unknown> is a 404,--/OK,OK/OK,OK/OK
-,PT-6 — /api/memory/* with a wired client,GET /api/memory/edges?id= returns the incident edges,--/OK,OK/OK,OK/OK
-,PT-6 — /api/memory/* with a wired client,POST /api/memory/recall returns the fused list and cost report,--/OK,OK/OK,OK/OK
-,PT-6 — /api/memory/* with a wired client,POST /api/memory/recall/multi carries per-node provenance,--/OK,OK/OK,OK/OK
-,PT-6 — /api/memory/* with a wired client,GET /api/memory/stacks lists the stack inventory,--/OK,OK/OK,OK/OK
-,PT-6 — /api/memory/* with a wired client,GET /api/memory/stacks/<name>?k= peeks the top-K,--/OK,OK/OK,OK/OK
-,PT-6 — /api/memory/* with a wired client,POST /api/memory/classify probes the centroid classifier,--/OK,OK/OK,OK/OK
-,PT-6 — /api/memory/* with a wired client,GET /api/memory/profiles lists profiles and the current binding,--/OK,OK/OK,OK/OK
-OBS-2,PT-6 — /api/memory/* with a wired client,exercising every route never calls the write tool,--/OK,OK/OK,OK/OK
-,PT-6 — view-scoping profile (OBS-2),GET /api/memory/nodes?profile= forwards the profile to every composed read,--/OK,OK/OK,OK/OK
-,PT-6 — view-scoping profile (OBS-2),GET /api/memory/edges?profile= forwards the profile,--/OK,OK/OK,OK/OK
-,PT-6 — view-scoping profile (OBS-2),"POST /api/memory/recall with a ""profile"" body field forwards it",--/OK,OK/OK,OK/OK
-,PT-6 — view-scoping profile (OBS-2),GET /api/memory/stacks/<name>?profile= forwards the profile,--/OK,OK/OK,OK/OK
-,PT-6 — view-scoping profile (OBS-2),a read without ?profile= carries no profile argument,--/OK,OK/OK,OK/OK
-,PT-6 — view-scoping profile (OBS-2),view-scoping never reaches the write tool (OBS-2),--/OK,OK/OK,OK/OK
-,PT-6 — deferred connector (no client wired),every /api/memory route answers 503 memory unavailable,--/OK,OK/OK,OK/OK
-,PT-6 — deferred connector (no client wired),the Module-1 trail surface still works without memory,--/OK,OK/OK,OK/OK
-,"PT-6 — a closed MCP session degrades to 503, never 500",GET /api/memory/profiles on a closed session is a 503,--/OK,OK/OK,OK/OK
-,"PT-6 — a closed MCP session degrades to 503, never 500",GET /api/memory/stacks on a closed session is a 503,--/OK,OK/OK,OK/OK
-,"PT-6 — a closed MCP session degrades to 503, never 500",POST /api/memory/recall on a closed session is a 503,--/OK,OK/OK,OK/OK
-,"PT-8.3 — OBS-5: live-tail is a file watch, not a hook","the list-level stream also watches a directory, never hooks",--/OK,OK/OK,OK/OK
-,HttpMcpReadConnection — over a loopback MCP server,callTool unwraps structuredContent when present,--/OK,OK/OK,OK/OK
-,HttpMcpReadConnection — over a loopback MCP server,callTool decodes the JSON object in a single text block when there is no structuredContent,--/OK,OK/OK,OK/OK
-,HttpMcpReadConnection — over a loopback MCP server,a tool-reported error (isError) surfaces as McpReadException,--/OK,OK/OK,OK/OK
-,HttpMcpReadConnection — over a loopback MCP server,a non-JSON text payload surfaces as McpReadException,--/OK,OK/OK,OK/OK
-,HttpMcpReadConnection — over a loopback MCP server,a content-less result surfaces as McpReadException,--/OK,OK/OK,OK/OK
-,HttpMcpReadConnection — over a loopback MCP server,a JSON-but-non-object text payload surfaces as McpReadException,--/OK,OK/OK,OK/OK
-,HttpMcpReadConnection — connect failures degrade to McpReadException,an unreachable endpoint surfaces as McpReadException,--/OK,OK/OK,OK/OK
-,HttpMcpReadConnection — connect failures degrade to McpReadException,a 401 (bearer rejected) surfaces as McpReadException and the token was forwarded,--/OK,OK/OK,OK/OK
-,promptList — configured host,"one row per incoming record, newest-first",--/OK,OK/OK,OK/OK
-,promptList — configured host,accepted turn row carries outcome + counts,--/OK,OK/OK,OK/OK
-,promptList — configured host,errored turn row reflects the errored outcome,--/OK,OK/OK,OK/OK
-,promptList — configured host,in-flight turn row has no outcome and zero counts,--/OK,OK/OK,OK/OK
-,promptList — configured host,"limit caps the window, keeping the newest",--/OK,OK/OK,OK/OK
-,promptList — configured host,"multi-run turn row reports the answer run, not the analyzer",--/OK,OK/OK,OK/OK
-,promptList — unconfigured host (§ 8.1),"degrades to an empty list, never an error",--/OK,OK/OK,OK/OK
-,GET /api/traces/<turnId>/stream,"streams one event per cognitive step, terminating on DONE",--/OK,OK/OK,OK/OK
-,GET /api/traces/<turnId>/stream,404 when no session live-trail carries the turn,--/OK,OK/OK,OK/OK
-,GET /api/stream,emits an initial list-changed tick on connect,--/OK,OK/OK,OK/OK
-,dream views — unconfigured host (§ 8.1),"degrade to empty / null, never an error",--/OK,--/OK,OK/OK
-,PT-1.4 — /api JSON endpoints,GET /api/traces?limit=1 caps the window,--/OK,OK/OK,OK/OK
-,PT-1.4 — /api JSON endpoints,GET /api/traces/{turnId} → the PromptTrace,--/OK,OK/OK,OK/OK
-,PT-1.4 — /api JSON endpoints,"GET /api/traces/{unknown} → 404, not an SPA fallthrough",--/OK,OK/OK,OK/OK
-,PT-1.5 — static root at /,GET / serves the build index,--/OK,OK/OK,OK/OK
-,PT-1.5 — static root at /,GET /assets/main.dart.js serves the static asset,--/OK,OK/OK,OK/OK
-,PT-1.5 — static root at /,unknown app route falls back to index.html (SPA),--/OK,OK/OK,OK/OK
-,PT-1.5 — static root at /,"/api still routes to the JSON API, not the static root",--/OK,OK/OK,OK/OK
-,PT-1.5 — static root at /,path-traversal never serves a file outside the web root,--/OK,OK/OK,OK/OK
-,GET /api/runtime — the live snapshot,"503 ""runtime unavailable"" when no snapshot is wired (standalone)",--/OK,OK/OK,OK/OK
-,GET /api/runtime — the live snapshot,"returns the bound gateways, telegram toggle, and roots when wired",--/OK,OK/OK,OK/OK
-,GET /api/runtime — the live snapshot,omits an absent optional channel from the gateways map,--/OK,OK/OK,OK/OK
-,GET /api/runtime — the live snapshot,reports the resolved per-lane history sizing when wired (todo #16),--/OK,OK/OK,OK/OK
-,GET /api/runtime — the live snapshot,omits history when no sizing was threaded in (standalone-byte-stable),--/OK,OK/OK,OK/OK
-,GET /api/config?kind=run — the on-disk run config,reads brain_run.yaml verbatim,--/OK,OK/OK,OK/OK
-,GET /api/config?kind=run — the on-disk run config,a name other than the run-config stem is 403,--/OK,OK/OK,OK/OK
-,GET /api/config?kind=run — the on-disk run config,a traversal name is 403,--/OK,OK/OK,OK/OK
-,PUT /api/config?kind=run — a loader-accepted write round-trips,a complete valid run config saves and reports next-boot,--/OK,OK/OK,OK/OK
-,PUT /api/config?kind=run — a loader-accepted write round-trips,a valid history block saves and reports next-boot,--/OK,OK/OK,OK/OK
-,PUT /api/config?kind=run — AUTH-3: a rejected write leaves the file untouched,a bad access port is 422 (the access loader rejects it),--/OK,OK/OK,OK/OK
-,PUT /api/config?kind=run — AUTH-3: a rejected write leaves the file untouched,a missing required section (memory) is 422,--/OK,OK/OK,OK/OK
-,PUT /api/config?kind=run — AUTH-3: a rejected write leaves the file untouched,a traversal name is 403 (before any write),--/OK,OK/OK,OK/OK
-,PUT /api/config?kind=run — AUTH-3: a rejected write leaves the file untouched,a below-floor history knob is 422 (file untouched),--/OK,OK/OK,OK/OK
-,GET /api/config — wired cognition config,reads the registry verbatim,--/OK,OK/OK,OK/OK
-,GET /api/config — wired cognition config,reads a procedure config verbatim,--/OK,OK/OK,OK/OK
-,GET /api/config — wired cognition config,reads an llm_route config verbatim,--/OK,OK/OK,OK/OK
-,GET /api/config — wired cognition config,reads the substrate config verbatim,--/OK,OK/OK,OK/OK
-,GET /api/config — wired cognition config,an unregistered kind is 403,--/OK,OK/OK,OK/OK
-,GET /api/config — wired cognition config,a registered kind with an unknown name is 403,--/OK,OK/OK,OK/OK
-,PUT /api/config — a loader-accepted write round-trips,a procedure edit saves and reports next-use,--/OK,OK/OK,OK/OK
-,PUT /api/config — a loader-accepted write round-trips,a registry edit saves and reports next-boot,--/OK,OK/OK,OK/OK
-,PUT /api/config — a loader-accepted write round-trips,an llm_route edit saves and reports next-boot,--/OK,OK/OK,OK/OK
-,PUT /api/config — a loader-accepted write round-trips,a substrate edit saves and reports next-boot,--/OK,OK/OK,OK/OK
-,PUT /api/config — AUTH-3: rejected writes leave the file untouched,an unknown setting key in a procedure config is 422,--/OK,OK/OK,OK/OK
-,PUT /api/config — AUTH-3: rejected writes leave the file untouched,a registry whose llm.default is not a loaded route is 422,--/OK,OK/OK,OK/OK
-,PUT /api/config — AUTH-3: rejected writes leave the file untouched,a prompt referencing an unknown llm route is 422,--/OK,OK/OK,OK/OK
-,PUT /api/config — AUTH-3: rejected writes leave the file untouched,an invalid substrate block (empty providers) is 422,--/OK,OK/OK,OK/OK
-,GET/PUT /api/config — deferred config (no cognition wired),GET answers 503,--/OK,OK/OK,OK/OK
-,PT-8.1 — OBS-1: the app never writes the trail tree,exercising every endpoint mutates no file the brain owns,--/OK,OK/OK,OK/OK
-,PT-8.2 — OBS-2: the app never writes memory,the read client registry excludes the write tool,--/OK,OK/OK,OK/OK
-,PT-8.2 — OBS-2: the app never writes memory,no /api/memory route maps to the write tool,--/OK,OK/OK,OK/OK
-,PT-8.2 — OBS-3: the app never touches the memory DB files,the only memory door (lib/src/memory/) imports no dart:io,--/OK,OK/OK,OK/OK
-,PT-8.2 — OBS-3: the app never touches the memory DB files,no lib/ source references a memory DB / storage-stack file,--/OK,OK/OK,OK/OK
-,,"lists the .dart script stems, sorted, ignoring non-dart files",--/OK,OK/OK,OK/OK
-,,returns an empty list when the script root is unconfigured,--/OK,OK/OK,OK/OK
-,PT-8.2 — OBS-3: the app never touches the memory DB files,exercising every endpoint never opens/mutates a DB-file sentinel,--/OK,OK/OK,OK/OK
-,PT-8.3 — OBS-4: writes confined to the source-authoring surface,no lib/ source outside the authoring surface carries any write IO,--/OK,OK/OK,OK/OK
-,PT-8.3 — OBS-4: writes confined to the source-authoring surface,the authoring surface writes only via the sanctioned verb,--/OK,OK/OK,OK/OK
-,PT-8.4 — the mutation surface is exactly the three authoring routes,the only write-source (PUT) routes are the three sanctioned ones,--/OK,OK/OK,OK/OK
-,PT-8.4 — the mutation surface is exactly the three authoring routes,no route uses the destructive DELETE verb,--/OK,OK/OK,OK/OK
-,PT-8.4 — the mutation surface is exactly the three authoring routes,"every POST route is a read-only memory query, never a mutation",--/OK,OK/OK,OK/OK
-,PT-8.4 — AUTH-6: the anchor and tool-policy profiles are not editable,PUT /api/config refuses an anchor / tool-policy / profile kind (403),--/OK,OK/OK,OK/OK
-,PT-8.4 — AUTH-6: the anchor and tool-policy profiles are not editable,"PUT /api/templates refuses the dedication anchor (unregistered, 403)",--/OK,OK/OK,OK/OK
-,PT-8.4 — AUTH-6: the anchor and tool-policy profiles are not editable,the config kind alphabet names only the four editable kinds,--/OK,OK/OK,OK/OK
-,"PT-8.3 — OBS-5: live-tail is a file watch, not a hook",the live-tail change source is an OS Directory.watch only,--/OK,OK/OK,OK/OK
-,HttpMcpReadConnection — over a loopback MCP server,"listTools maps each tool to {name, description, inputSchema}",--/OK,OK/OK,OK/OK
-,GET /api/dream/lanes,returns the canonical lanes plus the synthetic other lane,--/OK,--/OK,OK/OK
-,GET /api/dream/lanes,each lane carries its agent set and recent-run count,--/OK,--/OK,OK/OK
-,GET /api/dream/runs,"all lanes, newest-first",--/OK,--/OK,OK/OK
-,GET /api/dream/runs,"the row carries lane, outcome, and per-tree counts",--/OK,--/OK,OK/OK
-,GET /api/dream/runs,?lane= narrows to one lane,--/OK,--/OK,OK/OK
-,GET /api/dream/runs,?lane=other selects the synthetic lane,--/OK,--/OK,OK/OK
-,GET /api/dream/runs/{runId},resolves a turn-less run to its run-tree,--/OK,--/OK,OK/OK
-,GET /api/dream/runs/{runId},"unknown runId → 404, not an SPA fallthrough",--/OK,--/OK,OK/OK
-,GET /api/dream/runs/{runId},a turn-bound runId is not resolvable as a dream run (→ 404),--/OK,--/OK,OK/OK
-,run= (turn-less dream runs),serves the verbatim §3.7 raw dump for a dream-run link,--/OK,--/OK,OK/OK
-,run= (turn-less dream runs),refuses a dream link that escapes the llm root,--/OK,--/OK,OK/OK
-,run= (turn-less dream runs),refuses a non-.raw.json dream link under llm/,--/OK,--/OK,OK/OK
-,run= (turn-less dream runs),404 when the dream dump does not exist,--/OK,--/OK,OK/OK
-,run= (turn-less dream runs),404 when the runId is unknown,--/OK,--/OK,OK/OK
-,run= (turn-less dream runs),404 when a turn-bound runId is passed as a dream run,--/OK,--/OK,OK/OK
-,run= (turn-less dream runs),400 when both turn and run are supplied,--/OK,--/OK,OK/OK
-,run= (turn-less dream runs),400 when run is given but path is missing,--/OK,--/OK,OK/OK
-,dreamLanes — configured host,emits the four canonical lanes plus a synthetic other lane,--/OK,--/OK,OK/OK
-,dreamLanes — configured host,lane agent sets mirror CadenceSchedule.defaults(),--/OK,--/OK,OK/OK
-,dreamLanes — configured host,run counts reflect the discovered dream runs per lane,--/OK,--/OK,OK/OK
-,dreamRunRows — configured host,"all lanes, newest-first by recorded time",--/OK,--/OK,OK/OK
-,dreamRunRows — configured host,"row carries lane, outcome, elapsed, and per-tree counts",--/OK,--/OK,OK/OK
-,dreamRunRows — configured host,lane filter narrows to one lane,--/OK,--/OK,OK/OK
-,dreamRunRows — configured host,the synthetic other lane is selectable,--/OK,--/OK,OK/OK
-,dreamRunFor — configured host,resolves a run-tree by its bare runId,--/OK,--/OK,OK/OK
-,dreamRunFor — configured host,returns null for an unknown runId (→ 404),--/OK,--/OK,OK/OK
-,dreamRunFor — configured host,a turn-bound runId is not resolvable as a dream run,--/OK,--/OK,OK/OK
-,PT-1.4 — /api JSON endpoints,GET /api/traces → newest-first prompt list,--/OK,OK/OK,OK/OK
+ID,Groups,Description,Baseline [06-17 08:12],[06-17 08:52],[06-23 22:17],[06-24 08:36]
+,Step 20.4 — AUTH-6: the anchor / tool-policy are not editable,the config kinds are exactly the wire alphabet (no anchor kind),--/OK,OK/OK,OK/OK,OK/OK
+,parseTurnSteps,flags only the DONE banner as terminal,OK/OK,OK/OK,OK/OK,OK/OK
+,parseTurnSteps,captures the verbatim body under a step heading,OK/OK,OK/OK,OK/OK,OK/OK
+,parseTurnSteps,an in-flight turn has no DONE step,OK/OK,OK/OK,OK/OK,OK/OK
+,parseTurnSteps,a turn that is not present yields no steps,OK/OK,OK/OK,OK/OK,OK/OK
+,parseTurnSteps,"a turnId is matched whole, not as a prefix",OK/OK,OK/OK,OK/OK,OK/OK
+,,emits one event per appended step and closes after DONE,OK/OK,OK/OK,OK/OK,OK/OK
+OBS-5,,tailing never writes the trail file,OK/OK,OK/OK,OK/OK,OK/OK
+,,browse seeds recall by type and filters to the requested type,OK/OK,OK/OK,OK/OK,OK/OK
+,,known ids surfaced in traces are fetched via get and merged,OK/OK,OK/OK,OK/OK,OK/OK
+,,edge traversal discovers a neighbour not in the recall seed,OK/OK,OK/OK,OK/OK,OK/OK
+,,a neighbour already in the seed is not re-fetched,OK/OK,OK/OK,OK/OK,OK/OK
+,,every gathered node is deduped by id across sources,OK/OK,OK/OK,OK/OK,OK/OK
+,,the composition never calls a write tool (OBS-2 transitively),OK/OK,OK/OK,OK/OK,OK/OK
+,OBS-2 — only the nine read tools,"the static registry is exactly the nine reads, never the write",OK/OK,OK/OK,OK/OK,OK/OK
+,OBS-2 — only the nine read tools,exercising the whole client surface calls exactly the nine reads,OK/OK,OK/OK,OK/OK,OK/OK
+,read-tool decoding,recall decodes nodes + the per-mode cost report,OK/OK,OK/OK,OK/OK,OK/OK
+,read-tool decoding,recallMulti decodes per-node seed provenance,OK/OK,OK/OK,OK/OK,OK/OK
+,read-tool decoding,get decodes nodes with embedding dimension + norm,OK/OK,OK/OK,OK/OK,OK/OK
+,read-tool decoding,get decodes a node with a null embedding,OK/OK,OK/OK,OK/OK,OK/OK
+,read-tool decoding,edgesOf decodes edges and marshals direction + types,OK/OK,OK/OK,OK/OK,OK/OK
+,read-tool decoding,stackList decodes the inventory,OK/OK,OK/OK,OK/OK,OK/OK
+,read-tool decoding,stackPeek decodes entries and marshals k,OK/OK,OK/OK,OK/OK,OK/OK
+,read-tool decoding,classify decodes the decision band,OK/OK,OK/OK,OK/OK,OK/OK
+,read-tool decoding,profilesList + profileCurrent decode,OK/OK,OK/OK,OK/OK,OK/OK
+,read-tool decoding,profileCurrent on the unprofiled root decodes null,OK/OK,OK/OK,OK/OK,OK/OK
+,,a tool error surfaces as McpReadException,OK/OK,OK/OK,OK/OK,OK/OK
+,,serves the verbatim d4rt source as text/plain,--/OK,OK/OK,OK/OK,OK/OK
+,,refuses a procedureId that escapes the script root,--/OK,OK/OK,OK/OK,OK/OK
+,,404 when the named script does not exist,--/OK,OK/OK,OK/OK,OK/OK
+,,404 when the script root is unconfigured,--/OK,OK/OK,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),inbound projects the incoming record,--/OK,OK/OK,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),configuration is what actually ran (distinct tuples),--/OK,OK/OK,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),configuration carries the generation knobs from the raw dump,--/OK,OK/OK,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),toJson emits present knobs and omits absent ones,--/OK,OK/OK,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),reply joins the summary answer with the run outcome,--/OK,OK/OK,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),run trees are present and recursive,--/OK,OK/OK,OK/OK,OK/OK
+,promptTraceFor — accepted turn (a0),toJson is the locked §3 shape,--/OK,OK/OK,OK/OK,OK/OK
+,promptTraceFor — errored turn (b0),reply carries the verbatim no-answer placeholder + errored outcome,--/OK,OK/OK,OK/OK,OK/OK
+,"promptTraceFor — in-flight turn (c, incoming only)",inbound present but run-trees / reply absent,--/OK,OK/OK,OK/OK,OK/OK
+,"promptTraceFor — multi-run turn (analyzer + answer, d0)","both top-level runs surface, classifier first then answer",--/OK,OK/OK,OK/OK,OK/OK
+,"promptTraceFor — multi-run turn (analyzer + answer, d0)","wall-clock is the substantive answer run, not the classifier 1.6s",--/OK,OK/OK,OK/OK,OK/OK
+,"promptTraceFor — multi-run turn (analyzer + answer, d0)",the full answer flow is present (retrieve + tool loops),--/OK,OK/OK,OK/OK,OK/OK
+,"promptTraceFor — multi-run turn (analyzer + answer, d0)",toJson surfaces every top-level run in start order,--/OK,OK/OK,OK/OK,OK/OK
+,promptTraceFor — unknown turn,returns null (turn unknown to host),--/OK,OK/OK,OK/OK,OK/OK
+,RuntimeSnapshot.toJson — the resolved history sizing (todo #16),emits the threaded history map under the `history` key,--/OK,OK/OK,OK/OK,OK/OK
+,RuntimeSnapshot.toJson — the resolved history sizing (todo #16),omits the `history` key when no sizing was threaded in,--/OK,OK/OK,OK/OK,OK/OK
+,RuntimeSnapshot.toJson — the resolved history sizing (todo #16),the history facet is orthogonal to the gateways and roots,--/OK,OK/OK,OK/OK,OK/OK
+,PT-2.0 — the real Flutter build is served by the static root,GET / serves the built Flutter index.html,--/OK,OK/OK,OK/OK,OK/OK
+,PT-2.0 — the real Flutter build is served by the static root,an unknown app route falls back to the build index (SPA),--/OK,OK/OK,OK/OK,OK/OK
+,PT-2.0 — the real Flutter build is served by the static root,"/api still routes to the JSON API, not the web build",--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/catalogue — wired cognition config,returns the registry-derived template index in ID order,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/catalogue — wired cognition config,a prompt lists its system+user pair; a fragment its single file,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/catalogue — wired cognition config,"an absent pair half is reported present:false, its sibling present",--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/catalogue — wired cognition config,lists the distinct prompt roles + the assistant_to_user default,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/catalogue — wired cognition config,lists the complete config-file inventory,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/catalogue — deferred config (no cognition wired),"answers 503 {""error"":""config unavailable""}",--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/catalogue — deferred config (no cognition wired),the Module-1 trail surface still works without a cognition config,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/templates — wired cognition config,returns a present prompt half verbatim,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/templates — wired cognition config,returns a present fragment verbatim,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/templates — wired cognition config,returns a present role persona verbatim,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/templates — wired cognition config,a registered-but-absent half is an empty body 200,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/templates — wired cognition config,a not-yet-created role objective is an empty body 200,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/templates — wired cognition config,an unregistered template id is 403,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/templates — wired cognition config,a missing query parameter is 400,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/templates — wired cognition config,write + re-read round-trips a prompt half,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/templates — wired cognition config,materialises an absent role persona on write,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/templates — wired cognition config,a malformed ${…} is 422 and the file is untouched,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/templates — wired cognition config,an empty system/user half is allowed (the empty-override signal),--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/templates — wired cognition config,a blank fragment is refused 422 without touching disk,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/templates — wired cognition config,a traversal id is 403,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/templates — wired cognition config,a well-formed ${name} / ${{ expr }} round-trips (not malformed),--/OK,OK/OK,OK/OK,OK/OK
+,GET/PUT /api/templates — deferred config (no cognition wired),"GET answers 503 {""error"":""config unavailable""}",--/OK,OK/OK,OK/OK,OK/OK
+,GET/PUT /api/templates — deferred config (no cognition wired),PUT answers 503 without writing,--/OK,OK/OK,OK/OK,OK/OK
+,parseTurnSteps,returns the ordered steps of a finished turn,OK/OK,OK/OK,OK/OK,OK/OK
+,the retired /api/prompts route is gone (principle 1),PUT /api/prompts/<roleId>/<part> is not served as an API route,--/OK,OK/OK,OK/OK,OK/OK
+,Step 20.1 — every template is listed and editable,the migrated completion-check / continuation-hint / todo-list appear,--/OK,OK/OK,OK/OK,OK/OK
+,Step 20.1 — every template is listed and editable,every catalogue template part is GET-readable (present or empty),--/OK,OK/OK,OK/OK,OK/OK
+,Step 20.1 — every template is listed and editable,a fragment edit round-trips against the live tree,--/OK,OK/OK,OK/OK,OK/OK
+,Step 20.2 — a persona edit is picked up on next use,the assistant_to_user persona round-trips through /api/templates,--/OK,OK/OK,OK/OK,OK/OK
+,Step 20.3 — a route re-point is picked up on next boot,an llm_route edit reports next-boot,--/OK,OK/OK,OK/OK,OK/OK
+,Step 20.3 — a route re-point is picked up on next boot,a substrate edit reports next-boot; a procedure edit next-use,--/OK,OK/OK,OK/OK,OK/OK
+,ObservatoryOptions.fromArgs,lifts the positional trail root and applies loopback defaults,--/OK,OK/OK,OK/OK,OK/OK
+,the retired /api/prompts route is gone (principle 1),GET /api/prompts/<roleId>/<part> is not served as an API route,--/OK,OK/OK,OK/OK,OK/OK
+,ObservatoryOptions.fromArgs,falls back to the default port on a non-integer --port,--/OK,OK/OK,OK/OK,OK/OK
+,ObservatoryOptions.fromArgs,rejects a missing or extra positional with ArgumentError,--/OK,OK/OK,OK/OK,OK/OK
+,Step 20.4 — AUTH-6: the anchor / tool-policy are not editable,no catalogue template names the anchor or a tool-policy profile,--/OK,OK/OK,OK/OK,OK/OK
+,ObservatoryOptions.fromArgs,lifts every --key=value flag,--/OK,OK/OK,OK/OK,OK/OK
+,Step 20.4 — AUTH-6: the anchor / tool-policy are not editable,PUT /api/config?kind=anchor is refused 403,--/OK,OK/OK,OK/OK,OK/OK
+,startObservatoryServer,"binds a loopback socket and reports its URL, then closes",--/OK,OK/OK,OK/OK,OK/OK
+,Step 20 done-when — no hidden hardcoded prompt text remains,every procedure prompt file is editable via the catalogue,--/OK,OK/OK,OK/OK,OK/OK
+,Step 20 done-when — no hidden hardcoded prompt text remains,unreferenced role prose belongs to not-yet-wired procedures,--/OK,OK/OK,OK/OK,OK/OK
+,,serves the verbatim §3.7 raw dump for a valid link,--/OK,OK/OK,OK/OK,OK/OK
+,,refuses a link that escapes the llm root (containment guard),--/OK,OK/OK,OK/OK,OK/OK
+,,refuses a non-.raw.json link under llm/,--/OK,OK/OK,OK/OK,OK/OK
+,,404 when the dump does not exist,--/OK,OK/OK,OK/OK,OK/OK
+,,400 when turn or path is missing,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),top-level run header + outcome,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),"top-level nodes in trail order, by kind",--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),top-level llm call decoded,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),id-returning primitives carry their result id,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),recurses to full depth: a0 → a1 → a2,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — deep accepted fixture (a0),walk helpers count across the whole tree,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — error fixture (b0),errored outcome with elapsed in seconds,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — error fixture (b0),typed error node decoded,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — recall returned ids (PT-7 / §3.9),a recall line carrying ids parses them into returnedIds,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — recall returned ids (PT-7 / §3.9),a count-only recall leaves returnedIds empty,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — recall returned ids (PT-7 / §3.9),returnedIds round-trips through toJson (omitted when empty),--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — edge endpoints (PT-7 / §3.8 / §3.9),an edge line carrying endpoints parses into an EdgeDescriptor,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — edge endpoints (PT-7 / §3.8 / §3.9),a bare `edge → id` line carries the id but no endpoint descriptor,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — edge endpoints (PT-7 / §3.8 / §3.9),the edge descriptor round-trips through toJson (omitted when absent),--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — tool.invoke nodes (§5.7.1),"an invoked tool parses name, arg summary and result size only",--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — tool.invoke nodes (§5.7.1),a failed tool parses its reason and carries no result size,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — tool.invoke nodes (§5.7.1),a denied tool parses its policy reason,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — tool.invoke nodes (§5.7.1),the termination note rides through as a NoteNode,--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — tool.invoke nodes (§5.7.1),"tool nodes count as tools, never as memory accesses",--/OK,OK/OK,OK/OK,OK/OK
+,parseRunTree — tool.invoke nodes (§5.7.1),"an invoked tool round-trips through toJson (size, no reason)",--/OK,OK/OK,OK/OK,OK/OK
+,"parseRunTree — malformed input degrades, never throws",empty content → null,--/OK,OK/OK,OK/OK,OK/OK
+,"parseRunTree — malformed input degrades, never throws",no header → null,--/OK,OK/OK,OK/OK,OK/OK
+,,writes a valid procedure body and returns 200,--/OK,OK/OK,OK/OK,OK/OK
+,,refuses a path-traversal id before any write (403),--/OK,OK/OK,OK/OK,OK/OK
+,,rejects a malformed header (422) and leaves the file untouched,--/OK,OK/OK,OK/OK,OK/OK
+,,rejects a sandbox-violating body (422) and leaves the file untouched,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes?type=Question browses and filters by type,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes without ?type= is a 400,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes/<id> returns one node with its embedding,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/nodes/<unknown> is a 404,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/edges?id= returns the incident edges,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,POST /api/memory/recall returns the fused list and cost report,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,POST /api/memory/recall/multi carries per-node provenance,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/stacks lists the stack inventory,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/stacks/<name>?k= peeks the top-K,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,POST /api/memory/classify probes the centroid classifier,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — /api/memory/* with a wired client,GET /api/memory/profiles lists profiles and the current binding,--/OK,OK/OK,OK/OK,OK/OK
+OBS-2,PT-6 — /api/memory/* with a wired client,exercising every route never calls the write tool,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — view-scoping profile (OBS-2),GET /api/memory/nodes?profile= forwards the profile to every composed read,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — view-scoping profile (OBS-2),GET /api/memory/edges?profile= forwards the profile,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — view-scoping profile (OBS-2),"POST /api/memory/recall with a ""profile"" body field forwards it",--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — view-scoping profile (OBS-2),GET /api/memory/stacks/<name>?profile= forwards the profile,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — view-scoping profile (OBS-2),a read without ?profile= carries no profile argument,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — view-scoping profile (OBS-2),view-scoping never reaches the write tool (OBS-2),--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — deferred connector (no client wired),every /api/memory route answers 503 memory unavailable,--/OK,OK/OK,OK/OK,OK/OK
+,PT-6 — deferred connector (no client wired),the Module-1 trail surface still works without memory,--/OK,OK/OK,OK/OK,OK/OK
+,"PT-6 — a closed MCP session degrades to 503, never 500",GET /api/memory/profiles on a closed session is a 503,--/OK,OK/OK,OK/OK,OK/OK
+,"PT-6 — a closed MCP session degrades to 503, never 500",GET /api/memory/stacks on a closed session is a 503,--/OK,OK/OK,OK/OK,OK/OK
+,"PT-6 — a closed MCP session degrades to 503, never 500",POST /api/memory/recall on a closed session is a 503,--/OK,OK/OK,OK/OK,OK/OK
+,"PT-8.3 — OBS-5: live-tail is a file watch, not a hook","the list-level stream also watches a directory, never hooks",--/OK,OK/OK,OK/OK,OK/OK
+,HttpMcpReadConnection — over a loopback MCP server,callTool unwraps structuredContent when present,--/OK,OK/OK,OK/OK,OK/OK
+,HttpMcpReadConnection — over a loopback MCP server,callTool decodes the JSON object in a single text block when there is no structuredContent,--/OK,OK/OK,OK/OK,OK/OK
+,HttpMcpReadConnection — over a loopback MCP server,a tool-reported error (isError) surfaces as McpReadException,--/OK,OK/OK,OK/OK,OK/OK
+,HttpMcpReadConnection — over a loopback MCP server,a non-JSON text payload surfaces as McpReadException,--/OK,OK/OK,OK/OK,OK/OK
+,HttpMcpReadConnection — over a loopback MCP server,a content-less result surfaces as McpReadException,--/OK,OK/OK,OK/OK,OK/OK
+,HttpMcpReadConnection — over a loopback MCP server,a JSON-but-non-object text payload surfaces as McpReadException,--/OK,OK/OK,OK/OK,OK/OK
+,HttpMcpReadConnection — connect failures degrade to McpReadException,an unreachable endpoint surfaces as McpReadException,--/OK,OK/OK,OK/OK,OK/OK
+,HttpMcpReadConnection — connect failures degrade to McpReadException,a 401 (bearer rejected) surfaces as McpReadException and the token was forwarded,--/OK,OK/OK,OK/OK,OK/OK
+,promptList — configured host,"one row per incoming record, newest-first",--/OK,OK/OK,OK/OK,OK/OK
+,promptList — configured host,accepted turn row carries outcome + counts,--/OK,OK/OK,OK/OK,OK/OK
+,promptList — configured host,errored turn row reflects the errored outcome,--/OK,OK/OK,OK/OK,OK/OK
+,promptList — configured host,in-flight turn row has no outcome and zero counts,--/OK,OK/OK,OK/OK,OK/OK
+,promptList — configured host,"limit caps the window, keeping the newest",--/OK,OK/OK,OK/OK,OK/OK
+,promptList — configured host,"multi-run turn row reports the answer run, not the analyzer",--/OK,OK/OK,OK/OK,OK/OK
+,promptList — unconfigured host (§ 8.1),"degrades to an empty list, never an error",--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/traces/<turnId>/stream,"streams one event per cognitive step, terminating on DONE",--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/traces/<turnId>/stream,404 when no session live-trail carries the turn,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/stream,emits an initial list-changed tick on connect,--/OK,OK/OK,OK/OK,OK/OK
+,dream views — unconfigured host (§ 8.1),"degrade to empty / null, never an error",--/OK,--/OK,OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,GET /api/traces?limit=1 caps the window,--/OK,OK/OK,OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,GET /api/traces/{turnId} → the PromptTrace,--/OK,OK/OK,OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,"GET /api/traces/{unknown} → 404, not an SPA fallthrough",--/OK,OK/OK,OK/OK,OK/OK
+,PT-1.5 — static root at /,GET / serves the build index,--/OK,OK/OK,OK/OK,OK/OK
+,PT-1.5 — static root at /,GET /assets/main.dart.js serves the static asset,--/OK,OK/OK,OK/OK,OK/OK
+,PT-1.5 — static root at /,unknown app route falls back to index.html (SPA),--/OK,OK/OK,OK/OK,OK/OK
+,PT-1.5 — static root at /,"/api still routes to the JSON API, not the static root",--/OK,OK/OK,OK/OK,OK/OK
+OBS-5,,tailing never writes the dream log,--/OK,--/OK,--/OK,OK/OK
+,GET /api/runtime — the live snapshot,"503 ""runtime unavailable"" when no snapshot is wired (standalone)",--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/runtime — the live snapshot,"returns the bound gateways, telegram toggle, and roots when wired",--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/runtime — the live snapshot,omits an absent optional channel from the gateways map,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/runtime — the live snapshot,reports the resolved per-lane history sizing when wired (todo #16),--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/runtime — the live snapshot,omits history when no sizing was threaded in (standalone-byte-stable),--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/config?kind=run — the on-disk run config,reads brain_run.yaml verbatim,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/config?kind=run — the on-disk run config,a name other than the run-config stem is 403,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/config?kind=run — the on-disk run config,a traversal name is 403,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config?kind=run — a loader-accepted write round-trips,a complete valid run config saves and reports next-boot,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config?kind=run — a loader-accepted write round-trips,a valid history block saves and reports next-boot,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config?kind=run — AUTH-3: a rejected write leaves the file untouched,a bad access port is 422 (the access loader rejects it),--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config?kind=run — AUTH-3: a rejected write leaves the file untouched,a missing required section (memory) is 422,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config?kind=run — AUTH-3: a rejected write leaves the file untouched,a traversal name is 403 (before any write),--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config?kind=run — AUTH-3: a rejected write leaves the file untouched,a below-floor history knob is 422 (file untouched),--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/config — wired cognition config,reads the registry verbatim,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/config — wired cognition config,reads a procedure config verbatim,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/config — wired cognition config,reads an llm_route config verbatim,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/config — wired cognition config,reads the substrate config verbatim,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/config — wired cognition config,an unregistered kind is 403,--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/config — wired cognition config,a registered kind with an unknown name is 403,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config — a loader-accepted write round-trips,a procedure edit saves and reports next-use,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config — a loader-accepted write round-trips,a registry edit saves and reports next-boot,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config — a loader-accepted write round-trips,an llm_route edit saves and reports next-boot,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config — a loader-accepted write round-trips,a substrate edit saves and reports next-boot,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config — AUTH-3: rejected writes leave the file untouched,an unknown setting key in a procedure config is 422,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config — AUTH-3: rejected writes leave the file untouched,a registry whose llm.default is not a loaded route is 422,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config — AUTH-3: rejected writes leave the file untouched,a prompt referencing an unknown llm route is 422,--/OK,OK/OK,OK/OK,OK/OK
+,PUT /api/config — AUTH-3: rejected writes leave the file untouched,an invalid substrate block (empty providers) is 422,--/OK,OK/OK,OK/OK,OK/OK
+,GET/PUT /api/config — deferred config (no cognition wired),GET answers 503,--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.1 — OBS-1: the app never writes the trail tree,exercising every endpoint mutates no file the brain owns,--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.2 — OBS-2: the app never writes memory,the read client registry excludes the write tool,--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.2 — OBS-2: the app never writes memory,no /api/memory route maps to the write tool,--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.2 — OBS-3: the app never touches the memory DB files,the only memory door (lib/src/memory/) imports no dart:io,--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.2 — OBS-3: the app never touches the memory DB files,no lib/ source references a memory DB / storage-stack file,--/OK,OK/OK,OK/OK,OK/OK
+,,"lists the .dart script stems, sorted, ignoring non-dart files",--/OK,OK/OK,OK/OK,OK/OK
+,,returns an empty list when the script root is unconfigured,--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.2 — OBS-3: the app never touches the memory DB files,exercising every endpoint never opens/mutates a DB-file sentinel,--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.3 — OBS-4: writes confined to the source-authoring surface,no lib/ source outside the authoring surface carries any write IO,--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.3 — OBS-4: writes confined to the source-authoring surface,the authoring surface writes only via the sanctioned verb,--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.4 — the mutation surface is exactly the three authoring routes,the only write-source (PUT) routes are the three sanctioned ones,--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.4 — the mutation surface is exactly the three authoring routes,no route uses the destructive DELETE verb,--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.4 — the mutation surface is exactly the three authoring routes,"every POST route is a read-only memory query, never a mutation",--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.4 — AUTH-6: the anchor and tool-policy profiles are not editable,PUT /api/config refuses an anchor / tool-policy / profile kind (403),--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.4 — AUTH-6: the anchor and tool-policy profiles are not editable,"PUT /api/templates refuses the dedication anchor (unregistered, 403)",--/OK,OK/OK,OK/OK,OK/OK
+,PT-8.4 — AUTH-6: the anchor and tool-policy profiles are not editable,the config kind alphabet names only the four editable kinds,--/OK,OK/OK,OK/OK,OK/OK
+,"PT-8.3 — OBS-5: live-tail is a file watch, not a hook",the live-tail change source is an OS Directory.watch only,--/OK,OK/OK,OK/OK,OK/OK
+,HttpMcpReadConnection — over a loopback MCP server,"listTools maps each tool to {name, description, inputSchema}",--/OK,OK/OK,OK/OK,OK/OK
+,GET /api/dream/lanes,returns the canonical lanes plus the synthetic other lane,--/OK,--/OK,OK/OK,OK/OK
+,GET /api/dream/lanes,each lane carries its agent set and recent-run count,--/OK,--/OK,OK/OK,OK/OK
+,GET /api/dream/runs,"all lanes, newest-first",--/OK,--/OK,OK/OK,OK/OK
+,GET /api/dream/runs,"the row carries lane, outcome, and per-tree counts",--/OK,--/OK,OK/OK,OK/OK
+,GET /api/dream/runs,?lane= narrows to one lane,--/OK,--/OK,OK/OK,OK/OK
+,GET /api/dream/runs,?lane=other selects the synthetic lane,--/OK,--/OK,OK/OK,OK/OK
+,GET /api/dream/runs/{runId},resolves a turn-less run to its run-tree,--/OK,--/OK,OK/OK,OK/OK
+,GET /api/dream/runs/{runId},"unknown runId → 404, not an SPA fallthrough",--/OK,--/OK,OK/OK,OK/OK
+,GET /api/dream/runs/{runId},a turn-bound runId is not resolvable as a dream run (→ 404),--/OK,--/OK,OK/OK,OK/OK
+,run= (turn-less dream runs),serves the verbatim §3.7 raw dump for a dream-run link,--/OK,--/OK,OK/OK,OK/OK
+,run= (turn-less dream runs),refuses a dream link that escapes the llm root,--/OK,--/OK,OK/OK,OK/OK
+,run= (turn-less dream runs),refuses a non-.raw.json dream link under llm/,--/OK,--/OK,OK/OK,OK/OK
+,run= (turn-less dream runs),404 when the dream dump does not exist,--/OK,--/OK,OK/OK,OK/OK
+,run= (turn-less dream runs),404 when the runId is unknown,--/OK,--/OK,OK/OK,OK/OK
+,run= (turn-less dream runs),404 when a turn-bound runId is passed as a dream run,--/OK,--/OK,OK/OK,OK/OK
+,run= (turn-less dream runs),400 when both turn and run are supplied,--/OK,--/OK,OK/OK,OK/OK
+,run= (turn-less dream runs),400 when run is given but path is missing,--/OK,--/OK,OK/OK,OK/OK
+,dreamLanes — configured host,emits the four canonical lanes plus a synthetic other lane,--/OK,--/OK,OK/OK,OK/OK
+,dreamLanes — configured host,lane agent sets mirror CadenceSchedule.defaults(),--/OK,--/OK,OK/OK,OK/OK
+,dreamLanes — configured host,run counts reflect the discovered dream runs per lane,--/OK,--/OK,OK/OK,OK/OK
+,dreamRunRows — configured host,"all lanes, newest-first by recorded time",--/OK,--/OK,OK/OK,OK/OK
+,dreamRunRows — configured host,"row carries lane, outcome, elapsed, and per-tree counts",--/OK,--/OK,OK/OK,OK/OK
+,dreamRunRows — configured host,lane filter narrows to one lane,--/OK,--/OK,OK/OK,OK/OK
+,dreamRunRows — configured host,the synthetic other lane is selectable,--/OK,--/OK,OK/OK,OK/OK
+,dreamRunFor — configured host,resolves a run-tree by its bare runId,--/OK,--/OK,OK/OK,OK/OK
+,dreamRunFor — configured host,returns null for an unknown runId (→ 404),--/OK,--/OK,OK/OK,OK/OK
+,dreamRunFor — configured host,a turn-bound runId is not resolvable as a dream run,--/OK,--/OK,OK/OK,OK/OK
+,PT-1.4 — /api JSON endpoints,GET /api/traces → newest-first prompt list,--/OK,OK/OK,OK/OK,OK/OK
+,parseInbound — processing-profile axis (§7.2 item 6),"surfaces processingProfile + processingMode + anchored, parallel to the memory profile",--/OK,--/OK,--/OK,OK/OK
+,parseInbound — processing-profile axis (§7.2 item 6),an un-anchored run is visibly flagged anchored:false (§7.1),--/OK,--/OK,--/OK,OK/OK
+,parseInbound — processing-profile axis (§7.2 item 6),toJson round-trips the three fields,--/OK,--/OK,--/OK,OK/OK
+,parseInbound — processing-profile axis (§7.2 item 6),"an older dump without the fields degrades to the SC-5 default (cognitive, anchored)",--/OK,--/OK,--/OK,OK/OK
+,GET /api/dream/lanes — config-overridden cadence (MSPP-59),reflects the overridden lanes — no synthetic other lane,--/OK,--/OK,--/OK,OK/OK
+,GET /api/dream/lanes — config-overridden cadence (MSPP-59),the custom lane carries its claimed runs,--/OK,--/OK,--/OK,OK/OK
+,GET /api/dream/lanes — config-overridden cadence (MSPP-59),absent runtime falls back to defaults (no regression),--/OK,--/OK,--/OK,OK/OK
+,GET /api/dream/stream,replays the newest run's ops and closes on the outcome,--/OK,--/OK,--/OK,OK/OK
+,GET /api/dream/stream,?lane= narrows the stream to that lane's newest run,--/OK,--/OK,--/OK,OK/OK
+,,"idle until a run appears, one frame per appended op, closes on outcome",--/OK,--/OK,--/OK,OK/OK
+,,"replays an already-complete run on a late subscribe, then closes",--/OK,--/OK,--/OK,OK/OK
+,PT-1.5 — static root at /,path-traversal never serves a file outside the web root,--/OK,OK/OK,OK/OK,OK/OK
