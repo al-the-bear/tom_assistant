@@ -105,6 +105,14 @@ abstract interface class TraceApiClient {
   /// brain to ask, so the Runtime tab shows only the on-disk config).
   Future<RuntimeSnapshot?> runtime();
 
+  /// `GET /api/meta` — the static capability surface (plan step 9): whether the
+  /// three authoring PUTs may write. `false` when the observatory was launched
+  /// `--observatory-readonly`, so the editors grey their Save controls up front
+  /// rather than discovering it from a `409` on save. Degrades to `true` (the
+  /// historical writable default) when the host predates the route, so an older
+  /// backend keeps working.
+  Future<bool> configWritable();
+
   /// `GET /api/dream/lanes` — the Module-3 lane selector (§ 5A.2): the configured
   /// cadence lanes plus the synthetic `other` lane when any dream run is
   /// unclaimed. Empty in unconfigured mode (absence is never an error, § 8.1).
@@ -305,6 +313,20 @@ class HttpTraceApiClient implements TraceApiClient {
       throw http.ClientException('GET $uri → ${res.statusCode}', uri);
     }
     return RuntimeSnapshot.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  @override
+  Future<bool> configWritable() async {
+    final uri = _resolve('api/meta', const <String, String>{});
+    final http.Response res;
+    try {
+      res = await _http.get(uri);
+    } catch (_) {
+      return true; // unreachable meta → assume writable (historical default).
+    }
+    if (res.statusCode != 200) return true; // older host w/o the route.
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return body['configWritable'] as bool? ?? true;
   }
 
   @override

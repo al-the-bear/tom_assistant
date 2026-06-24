@@ -177,6 +177,7 @@ Future<BrainServeSession> defaultServeBoot(
         memoryMcpUrl: memoryMcp?.url.toString(),
         host: runtime.observatoryHost,
         port: runtime.observatoryPort,
+        configWritable: !runtime.observatoryReadonly,
         runtime: RuntimeSnapshot(
           openAiPort: process.port,
           openAiBasePath: config.access.openAiBasePath,

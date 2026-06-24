@@ -86,6 +86,14 @@ final class ObservatoryOptions {
   /// `GET /api/runtime` route then `503`s "runtime unavailable".
   final RuntimeSnapshot? runtime;
 
+  /// Whether the Observatory's three authoring PUTs (procedure script, template,
+  /// config) may write (plan step 9). `--observatory-readonly` forces this
+  /// `false` even in directory mode, closing the authoring surface so a shared
+  /// deployment cannot be retuned from the browser; the backend then answers
+  /// `409 config_is_immutable` on each PUT and reports it via `GET /api/meta`.
+  /// Defaults to `true`.
+  final bool configWritable;
+
   /// Binds the options. Only [trailRoot] is required; the rest carry the same
   /// defaults `bin/observatory.dart` applied.
   const ObservatoryOptions({
@@ -99,6 +107,7 @@ final class ObservatoryOptions {
     this.host = defaultHost,
     this.port = defaultPort,
     this.runtime,
+    this.configWritable = true,
   });
 
   /// Parses the CLI form: exactly one positional `<trail-host-root>` plus the
@@ -117,6 +126,9 @@ final class ObservatoryOptions {
         if (a.startsWith('--') && a.contains('='))
           a.substring(2, a.indexOf('=')): a.substring(a.indexOf('=') + 1),
     };
+    // `--observatory-readonly` is a bare boolean flag (no `=value`), so it is
+    // matched against the whole arg list rather than the `key=value` map.
+    final readonly = args.contains('--observatory-readonly');
     return ObservatoryOptions(
       trailRoot: positional.single,
       webDir: flags['web'],
@@ -127,6 +139,7 @@ final class ObservatoryOptions {
       memoryMcpToken: flags['memory-mcp-token'],
       host: flags['host'] ?? defaultHost,
       port: int.tryParse(flags['port'] ?? '') ?? defaultPort,
+      configWritable: !readonly,
     );
   }
 
@@ -237,6 +250,7 @@ Future<ObservatoryServer> startObservatoryServer(
     runConfigRoot: runConfigRoot,
     memory: memory,
     runtime: options.runtime,
+    configWritable: options.configWritable,
   );
 
   final server = await shelf_io.serve(api.handler, options.host, options.port);

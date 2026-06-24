@@ -45,6 +45,12 @@
 //                       posture)
 //   --port=N            loopback port (default 8787)
 //   --host=ADDR         bind address (default 127.0.0.1; loopback-only by design)
+//   --observatory-readonly
+//                       close the three authoring PUTs (procedure script,
+//                       template, config): each then answers 409
+//                       config_is_immutable and GET /api/meta reports
+//                       configWritable=false, so the editor greys its controls
+//                       (plan step 9). Default: writable
 //
 // Read-only is load-bearing (OBS-1..OBS-5): this process never opens a trail
 // file, the memory store, or any brain control surface for writing.
@@ -63,7 +69,7 @@ Future<void> main(List<String> args) async {
       '[--web=<dir>] [--scripts=<dir>] '
       '[--cognition=<dir>] [--run-config=<dir>] '
       '[--memory-mcp-url=<url>] [--memory-mcp-token=<token>] '
-      '[--port=N] [--host=ADDR]',
+      '[--port=N] [--host=ADDR] [--observatory-readonly]',
     );
     exitCode = 64; // EX_USAGE
     return;

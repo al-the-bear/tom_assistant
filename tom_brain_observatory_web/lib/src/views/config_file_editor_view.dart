@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import '../api/trace_api_client.dart';
 import '../model/authoring.dart';
 import 'authoring_findings.dart';
+import 'read_only_notice.dart';
 
 /// The editor for the registered config file [kind]/[name]. Fetches the current
 /// content lazily on open; a registered-but-absent file (`404` → null) opens as
@@ -51,6 +52,12 @@ class _ConfigFileEditorViewState extends State<ConfigFileEditorView> {
   bool _seeded = false;
 
   bool _saving = false;
+
+  /// Whether the host accepts authoring writes (`GET /api/meta`); `false` greys
+  /// Save and shows the read-only banner. Optimistically `true` until the meta
+  /// fetch resolves.
+  bool _writable = true;
+
   List<AuthoringFinding> _findings = const <AuthoringFinding>[];
 
   /// The AUTH-4 effect this kind's edit takes — a `procedure` config is read per
@@ -62,6 +69,9 @@ class _ConfigFileEditorViewState extends State<ConfigFileEditorView> {
   void initState() {
     super.initState();
     _initial = widget.client.readConfigFile(widget.kind, widget.name);
+    widget.client.configWritable().then((writable) {
+      if (mounted) setState(() => _writable = writable);
+    });
   }
 
   @override
@@ -133,6 +143,10 @@ class _ConfigFileEditorViewState extends State<ConfigFileEditorView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              if (!_writable) ...<Widget>[
+                const ReadOnlyNotice(),
+                const SizedBox(height: 8),
+              ],
               _EffectNotice(effect: _effect),
               const SizedBox(height: 8),
               Text(
@@ -164,7 +178,7 @@ class _ConfigFileEditorViewState extends State<ConfigFileEditorView> {
                   ),
                   const SizedBox(width: 12),
                   FilledButton(
-                    onPressed: _saving ? null : _save,
+                    onPressed: (_saving || !_writable) ? null : _save,
                     child: const Text('Save'),
                   ),
                 ],

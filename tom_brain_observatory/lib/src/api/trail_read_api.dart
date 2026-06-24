@@ -117,6 +117,15 @@ final class TrailReadApi {
   /// to ask) — the route then `503`s "runtime unavailable".
   final RuntimeSnapshot? runtime;
 
+  /// Whether the three authoring PUTs (procedure script, template, config) may
+  /// write (`--observatory-readonly` forces this `false`, plan step 9). When
+  /// `false` every PUT short-circuits `409 config_is_immutable` *before* the
+  /// AUTH guards — the authoring surface is closed, not merely validated
+  /// stricter — and `GET /api/meta` reports it so the editor greys its controls.
+  /// Defaults to `true` (the common in-process-against-a-running-brain case,
+  /// where retuning config is the point).
+  final bool configWritable;
+
   TrailReadApi({
     required this.host,
     this.listLimit = 10,
@@ -128,6 +137,7 @@ final class TrailReadApi {
     MemoryReadClient? memory,
     this.substrateConfigFile = 'brain_run.yaml',
     this.runtime,
+    this.configWritable = true,
   })  : runConfigRoot = runConfigRoot ?? cognitionRoot,
         _memoryApi = MemoryReadApi(client: memory),
         _catalogueApi = CatalogueReadApi(
@@ -199,7 +209,8 @@ final class TrailReadApi {
       ..get('/api/dream/stream', _dreamStream)
       ..get('/api/dream/runs', _dreamRuns)
       ..get('/api/dream/runs/<runId>', _dreamRun)
-      ..get('/api/runtime', _runtimeSnapshot);
+      ..get('/api/runtime', _runtimeSnapshot)
+      ..get('/api/meta', _meta);
     _memoryApi.registerRoutes(router); // /api/memory/* (§ 8.4)
     _catalogueApi.registerRoutes(router); // /api/catalogue (§ 8.3, step 14)
     return router;
@@ -388,6 +399,8 @@ final class TrailReadApi {
     Request request,
     String procedureId,
   ) async {
+    final immutable = _immutableConfig();
+    if (immutable != null) return immutable;
     final root = scriptRoot;
     if (root == null) {
       return _json(<String, Object?>{'error': 'no script root configured'},
@@ -473,6 +486,8 @@ final class TrailReadApi {
   ///
   /// `503` "config unavailable" when no cognition config is wired.
   Future<Response> _writeTemplateFile(Request request) async {
+    final immutable = _immutableConfig();
+    if (immutable != null) return immutable;
     final config = cognition;
     final root = cognitionRoot;
     if (config == null || root == null) {
@@ -666,6 +681,8 @@ final class TrailReadApi {
   /// (structure + provider routing the loader reads at boot) is `next-boot`.
   /// `503` "config unavailable" when no cognition config is wired.
   Future<Response> _writeConfigFile(Request request) async {
+    final immutable = _immutableConfig();
+    if (immutable != null) return immutable;
     final config = cognition;
     if (config == null || cognitionRoot == null) {
       return _json(<String, Object?>{'error': 'config unavailable'},
@@ -761,6 +778,24 @@ final class TrailReadApi {
     }
     return _json(snapshot.toJson());
   }
+
+  /// `GET /api/meta` — the static, always-available capability surface (plan
+  /// step 9): currently just `{"configWritable": bool}`, so the editor UI can
+  /// grey its authoring controls up front rather than discovering the read-only
+  /// posture from a `409` on save. Always `200` (unlike `/api/runtime`, which
+  /// `503`s standalone), so the front-end has one reliable place to ask.
+  Response _meta(Request request) =>
+      _json(<String, Object?>{'configWritable': configWritable});
+
+  /// The `409 config_is_immutable` short-circuit shared by the three authoring
+  /// PUTs (plan step 9): `null` when [configWritable] is set (the PUT proceeds
+  /// to its AUTH guards), or the immutable response when it is not. Returned
+  /// *first* in each handler, so a read-only observatory closes the authoring
+  /// surface entirely — no write target is ever resolved or touched.
+  Response? _immutableConfig() => configWritable
+      ? null
+      : _json(<String, Object?>{'error': 'config_is_immutable'},
+          status: HttpStatus.conflict);
 
   /// Resolves the on-disk path of the registered config file for [kind]/[name]
   /// via the cognition catalogue (route 12, the authoritative inventory), or

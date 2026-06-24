@@ -112,6 +112,13 @@ void main() {
         origin: origin,
         httpClient: MockClient((req) async {
           seen.add(req);
+          if (req.url.path == '/api/meta') {
+            return http.Response(
+              jsonEncode(<String, Object?>{'configWritable': true}),
+              200,
+              headers: const <String, String>{'content-type': 'application/json'},
+            );
+          }
           if (req.method == 'GET') return http.Response('old persona prose', 200);
           return http.Response(
             jsonEncode(<String, Object?>{'ok': true}),
@@ -131,9 +138,10 @@ void main() {
       );
 
       // The load is a GET to the template surface keyed off the role id/part.
-      final load = seen.single;
-      expect(load.method, 'GET');
-      expect(load.url.path, '/api/templates');
+      // The editor also fires GET /api/meta from initState, so select the
+      // template load out of the recorded requests.
+      final load = seen.firstWhere(
+          (r) => r.method == 'GET' && r.url.path == '/api/templates');
       expect(load.url.queryParameters,
           <String, String>{'id': 'analyser', 'part': 'persona'});
 

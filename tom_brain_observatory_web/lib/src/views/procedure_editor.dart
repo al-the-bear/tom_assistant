@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import '../api/trace_api_client.dart';
 import '../model/authoring.dart';
 import 'authoring_findings.dart';
+import 'read_only_notice.dart';
 
 /// The monospace editor for the procedure [procedureId], seeded with
 /// [initialSource]. On a clean save [onSaved] is invoked with the saved buffer
@@ -42,9 +43,23 @@ class _ProcedureEditorState extends State<ProcedureEditor> {
 
   bool _saving = false;
 
+  /// Whether the host accepts authoring writes (`GET /api/meta`); `false` greys
+  /// Save and shows the read-only banner. Optimistically `true` until the meta
+  /// fetch resolves, so a brief load never flashes the editor as writable then
+  /// locks it — the server still refuses a racing save with `409`.
+  bool _writable = true;
+
   /// The findings from the last rejected save (`422`), or empty when the last
   /// save was clean or none has run.
   List<AuthoringFinding> _findings = const <AuthoringFinding>[];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.client.configWritable().then((writable) {
+      if (mounted) setState(() => _writable = writable);
+    });
+  }
 
   @override
   void dispose() {
@@ -87,6 +102,11 @@ class _ProcedureEditorState extends State<ProcedureEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        if (!_writable)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: ReadOnlyNotice(),
+          ),
         if (_findings.isNotEmpty) AuthoringFindingsBanner(findings: _findings),
         Padding(
           padding: const EdgeInsets.all(16),
@@ -116,7 +136,7 @@ class _ProcedureEditorState extends State<ProcedureEditor> {
               ),
               const SizedBox(width: 12),
               FilledButton(
-                onPressed: _saving ? null : _save,
+                onPressed: (_saving || !_writable) ? null : _save,
                 child: const Text('Save'),
               ),
             ],

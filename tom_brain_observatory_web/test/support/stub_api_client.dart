@@ -47,6 +47,11 @@ class StubApiClient implements TraceApiClient {
   /// "runtime unavailable" the Runtime tab turns into a standalone notice.
   final RuntimeSnapshot? runtimeData;
 
+  /// The `GET /api/meta` `configWritable` flag (plan step 9); `false` models a
+  /// `--observatory-readonly` host, so a widget test can assert the editors grey
+  /// their Save controls. Defaults to writable.
+  final bool configWritableData;
+
   /// Keyed by `<wireKind>/<name>` — the registered config file's verbatim text
   /// (§ 6.4). A save through [writeConfigFile] mutates this map. A missing key
   /// is the `404` "registered-but-absent" the editor opens as an empty buffer.
@@ -107,6 +112,7 @@ class StubApiClient implements TraceApiClient {
     this.rejectWrites,
     this.catalogueData,
     this.runtimeData,
+    this.configWritableData = true,
     Map<String, String>? configs,
     this.dreamLanes = const <DreamLane>[],
     this.dreamRuns = const <DreamRunRow>[],
@@ -179,6 +185,9 @@ class StubApiClient implements TraceApiClient {
 
   @override
   Future<RuntimeSnapshot?> runtime() async => runtimeData;
+
+  @override
+  Future<bool> configWritable() async => configWritableData;
 
   @override
   Future<String?> readConfigFile(String kind, String name) async =>

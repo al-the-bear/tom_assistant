@@ -78,6 +78,43 @@ void main() {
     expect(find.textContaining('unknown provider "bogus"'), findsOneWidget);
   });
 
+  // Plan step 9 — read-only greying. When the host reports
+  // `configWritable: false` (a `--observatory-readonly` observatory), the editor
+  // disables Save and shows the read-only banner, so the operator sees the
+  // surface is closed before attempting a save the server would 409.
+  testWidgets('greys Save and shows the banner when configWritable is false',
+      (tester) async {
+    final client = StubApiClient(
+      configs: <String, String>{'procedure/answer': 'temperature: 0.3'},
+      configWritableData: false,
+    );
+    await _pump(
+      tester,
+      ConfigFileEditorView(client: client, kind: 'procedure', name: 'answer'),
+    );
+
+    final save = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Save'));
+    expect(save.onPressed, isNull, reason: 'Save must be disabled when read-only');
+    expect(find.textContaining('Read-only'), findsOneWidget);
+  });
+
+  testWidgets('Save is enabled when configWritable is true (default)',
+      (tester) async {
+    final client = StubApiClient(
+      configs: <String, String>{'procedure/answer': 'temperature: 0.3'},
+    );
+    await _pump(
+      tester,
+      ConfigFileEditorView(client: client, kind: 'procedure', name: 'answer'),
+    );
+
+    final save = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Save'));
+    expect(save.onPressed, isNotNull);
+    expect(find.textContaining('Read-only'), findsNothing);
+  });
+
   // Step 19 — the editor over the *real* client, proving load + save go to the
   // `/api/config?kind=&name=` route keyed off the catalogue entry's wire kind.
   group('via the /api/config route (HttpTraceApiClient)', () {
@@ -90,6 +127,13 @@ void main() {
         origin: origin,
         httpClient: MockClient((req) async {
           seen.add(req);
+          if (req.url.path == '/api/meta') {
+            return http.Response(
+              jsonEncode(<String, Object?>{'configWritable': true}),
+              200,
+              headers: const <String, String>{'content-type': 'application/json'},
+            );
+          }
           if (req.method == 'GET') {
             return http.Response('substrate:\n  primary: local', 200);
           }
@@ -112,9 +156,10 @@ void main() {
             client: client, kind: 'substrate', name: 'substrate'),
       );
 
-      final load = seen.single;
-      expect(load.method, 'GET');
-      expect(load.url.path, '/api/config');
+      // The editor also fires GET /api/meta from initState to learn the
+      // read-only flag, so select the config load out of the recorded requests.
+      final load = seen.firstWhere(
+          (r) => r.method == 'GET' && r.url.path == '/api/config');
       expect(load.url.queryParameters,
           <String, String>{'kind': 'substrate', 'name': 'substrate'});
 

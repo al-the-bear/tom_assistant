@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import '../api/trace_api_client.dart';
 import '../model/authoring.dart';
 import 'authoring_findings.dart';
+import 'read_only_notice.dart';
 
 /// The override editor for a role's [part] prose. Fetches the current override
 /// lazily on open; a missing override is the create-override starting point.
@@ -45,12 +46,21 @@ class _PromptFileEditorViewState extends State<PromptFileEditorView> {
   bool _seeded = false;
 
   bool _saving = false;
+
+  /// Whether the host accepts authoring writes (`GET /api/meta`); `false` greys
+  /// Save and shows the read-only banner. Optimistically `true` until the meta
+  /// fetch resolves.
+  bool _writable = true;
+
   List<AuthoringFinding> _findings = const <AuthoringFinding>[];
 
   @override
   void initState() {
     super.initState();
     _initial = widget.client.readPromptFile(widget.roleId, widget.part);
+    widget.client.configWritable().then((writable) {
+      if (mounted) setState(() => _writable = writable);
+    });
   }
 
   @override
@@ -121,6 +131,10 @@ class _PromptFileEditorViewState extends State<PromptFileEditorView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              if (!_writable) ...<Widget>[
+                const ReadOnlyNotice(),
+                const SizedBox(height: 8),
+              ],
               Text(
                 isNew
                     ? 'no override yet — create override for '
@@ -149,7 +163,7 @@ class _PromptFileEditorViewState extends State<PromptFileEditorView> {
                   ),
                   const SizedBox(width: 12),
                   FilledButton(
-                    onPressed: _saving ? null : _save,
+                    onPressed: (_saving || !_writable) ? null : _save,
                     child: const Text('Save'),
                   ),
                 ],
