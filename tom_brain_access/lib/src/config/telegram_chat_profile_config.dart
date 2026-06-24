@@ -71,6 +71,15 @@ final class TelegramChatProfileConfig {
   /// [defaultProfileSelector] (`'default'`).
   final String defaultMemory;
 
+  /// The processing-profile name the chat starts on (`session_configuration.md`
+  /// § 6). Defaults to [defaultProfileSelector] (`'default'`).
+  ///
+  /// Unlike [defaultSession] / [defaultMemory] this is **not** prefixed — a
+  /// profile name is global operator config, not a per-tenant namespace
+  /// (§ 4.2). It names one of the operator-configured `profiles:`; the chat's
+  /// active profile starts here and `/switch_profile` re-points it.
+  final String defaultProfile;
+
   /// Builds a per-chat config. [chatId] must be non-empty.
   TelegramChatProfileConfig({
     required this.chatId,
@@ -79,6 +88,7 @@ final class TelegramChatProfileConfig {
     this.memoryPrefix = defaultMemoryPrefix,
     this.defaultSession = defaultProfileSelector,
     this.defaultMemory = defaultProfileSelector,
+    this.defaultProfile = defaultProfileSelector,
   }) {
     if (chatId.isEmpty) {
       throw ArgumentError.value(chatId, 'chatId', 'must be non-empty');

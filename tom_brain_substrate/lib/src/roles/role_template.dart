@@ -390,7 +390,28 @@ final class RoleTemplate {
   /// report's anchor hash and fails the build if it does not
   /// equal [AnchorRegistry.currentHash]. The combination is the
   /// structural proof of Postulate 3.
-  WirePrompt assemble({Map<String, Object?> inputs = const {}}) {
+  WirePrompt assemble({
+    Map<String, Object?> inputs = const {},
+    bool anchored = true,
+  }) {
+    // The per-run anchoring toggle (`session_configuration.md` § 3.4, plan
+    // step 9 / SCP-36). Anchored (the default) is the Postulate-3 path: the
+    // scaffold leads with `${role.anchor}` and `ensurePrefix` guarantees it
+    // structurally. Un-anchored is the deliberate escape for a small set of
+    // profiles (the passthrough relay): the scaffold renders with an empty
+    // anchor slot AND `ensurePrefix` is skipped, so the anchor is genuinely
+    // absent — never re-prepended — and the prompt records the un-anchored
+    // sentinel so the trail can flag the run (SCP-37).
+    final composed = _composeSystem(anchored: anchored);
+    if (!anchored) {
+      return WirePrompt(
+        system: composed,
+        user: _composeUser(inputs),
+        anchorHash: AnchorRegistry.unanchoredHash,
+        roleId: id,
+        templateSha: null,
+      );
+    }
     // `ensurePrefix`, not `wrap`. The shared `wrap` keys idempotency on
     // `contains(text)`, giving only the *contains-anchor* guarantee — if
     // the system scaffold happened to include the anchor text mid-string,
@@ -399,7 +420,7 @@ final class RoleTemplate {
     // `ensurePrefix` keys idempotency on `startsWith` and so always
     // produces the strict starts-with guarantee. One anchor mechanism,
     // owned by the shared primitive, used everywhere.
-    final system = AssistantDedicationAnchor.ensurePrefix(_composeSystem());
+    final system = AssistantDedicationAnchor.ensurePrefix(composed);
     final user = _composeUser(inputs);
     return WirePrompt(
       system: system,
@@ -427,11 +448,12 @@ final class RoleTemplate {
   /// individual sections (persona present, objective present, output-schema
   /// marker present iff `outputSchema != null`) and
   /// `system_scaffold_test.dart` pins the exact assembled layout.
-  String _composeSystem() => SystemScaffold.render(
+  String _composeSystem({bool anchored = true}) => SystemScaffold.render(
         persona: personaText,
         objective: objective,
         outputSchemaSection:
             outputSchema == null ? '' : _outputSchemaSection(outputSchema!),
+        anchored: anchored,
       );
 
   /// The fully composed `OUTPUT SCHEMA:` section for a role that declares an

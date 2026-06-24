@@ -69,6 +69,19 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+
+    test('defaultProfile defaults to "default" and is taken verbatim (§ 6)', () {
+      expect(TelegramChatProfileConfig(chatId: '1').defaultProfile, 'default');
+      expect(
+        TelegramChatProfileConfig(chatId: '1', defaultProfile: 'research')
+            .defaultProfile,
+        'research',
+      );
+      expect(
+        TelegramChatProfileConfig.unconfigured('9').defaultProfile,
+        'default',
+      );
+    });
   });
 
   group('AccessConfigLoader — access.telegram.chats[] → typed config', () {
@@ -103,6 +116,14 @@ $chats
       expect(chat!.effectiveDefaultSessionId, 'tg_owner_default');
       expect(chat.effectiveDefaultMemoryProfile, 'tg_owner_default');
       expect(chat.effectivePrincipalId, 'owner');
+    });
+
+    test('a configured chat folds in its defaultProfile (§ 6)', () {
+      final config = AccessConfigLoader.parse(yamlWithChats('''
+      - chatId: "12345"
+        defaultProfile: research
+'''));
+      expect(config.telegramChatFor('12345')!.defaultProfile, 'research');
     });
 
     test('an integer chatId is coerced to its decimal string', () {

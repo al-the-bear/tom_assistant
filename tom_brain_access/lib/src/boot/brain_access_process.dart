@@ -264,6 +264,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
   TelegramInspectors telegramInspectors = TelegramInspectors.none,
   ApiKeyPersist? apiKeyPersist,
   ProfileResolver? profileResolver,
+  List<String> Function()? configuredProfiles,
 }) async {
   // The proto spec § 12 phase 5 sequence, one extracted step each:
   final BootedAccessLayer booted = _composeAccessLayer(
@@ -300,6 +301,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
     telegramChatApiFactory: telegramChatApiFactory,
     inspectors: telegramInspectors,
     apiKeyPersist: apiKeyPersist,
+    configuredProfiles: configuredProfiles,
   );
   final List<AccessServer> servers = <AccessServer>[
     server,
@@ -432,6 +434,7 @@ Future<_TelegramEdge> _startTelegram({
   required TelegramChatApiFactory telegramChatApiFactory,
   required TelegramInspectors inspectors,
   required ApiKeyPersist? apiKeyPersist,
+  required List<String> Function()? configuredProfiles,
 }) async {
   if (!config.hasTelegram) {
     return _TelegramEdge.none;
@@ -473,6 +476,11 @@ Future<_TelegramEdge> _startTelegram({
   final TelegramSessionRegistry sessionRegistry = TelegramSessionRegistry(
     store: sessionStore,
     adoptSession: booted.assembler.sessionManager.ensureSession,
+    // The operator-configured processing-profile names `/list_profiles` renders
+    // and `/switch_profile` validates against (§ 6). A higher assembly
+    // (`tom_brain_run`) supplies `() => registry.names.toList()`; absent it the
+    // registry exposes only the built-in `default`.
+    configuredProfiles: configuredProfiles,
   );
   final TelegramAccessEdge edge = TelegramAccessEdge(
     assembler: booted.assembler,

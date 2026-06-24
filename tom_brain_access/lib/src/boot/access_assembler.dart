@@ -435,6 +435,17 @@ final class AccessAssembler implements ApiKeyRegistrar {
     return resolver(profileSelector);
   }
 
+  /// Resolves a processing-profile [selector] to its [ResolvedProfile] (§ 6).
+  ///
+  /// The public face of [_resolveProfile]: the Telegram edge owns profile
+  /// selection on the user's behalf (there is no credential marker to carry it),
+  /// so it resolves the active profile *name* through the
+  /// `TelegramSessionRegistry`, then calls this to obtain the `ResolvedProfile`
+  /// whose advisory `defaultSession` / `defaultMemory` seed the session / memory
+  /// resolution before [admitTelegram] stamps the result. An unknown profile
+  /// surfaces as [ProfileResolutionException] (SC-6).
+  ResolvedProfile resolveProfile(String? selector) => _resolveProfile(selector);
+
   /// Admits one Telegram request.
   ///
   /// [userId] is the (whitelist-validated, E.22) Telegram sender id; [envelope]
@@ -462,11 +473,19 @@ final class AccessAssembler implements ApiKeyRegistrar {
   /// to carry it), so it is stamped directly onto the `Access` — authoritative
   /// over Extension H's content-driven selection (MSP-5). `null` keeps the
   /// resolve-then-select-profile flow (MSPP-35).
+  ///
+  /// [profile], when supplied, is the chat's active processing profile already
+  /// resolved by the edge via [resolveProfile] from the user's `/switch_profile`
+  /// selection (§ 6). Telegram owns profile selection on the user's behalf (no
+  /// credential marker carries it), so the edge resolves it once — its advisory
+  /// `defaultSession` / `defaultMemory` having already seeded session / memory —
+  /// and passes it straight through here. `null` runs the default profile.
   Future<void> admitTelegram({
     required String userId,
     required InboundRequest envelope,
     required TelegramSink sink,
     String? memoryProfile,
+    ResolvedProfile? profile,
     Future<void> Function()? onAdmitted,
   }) async {
     String? principalId;
@@ -475,15 +494,15 @@ final class AccessAssembler implements ApiKeyRegistrar {
           identityResolver.resolveTelegramUser(userId);
       principalId = identity.principalId;
       final Persona persona = personaResolver.resolve(null);
-      // Telegram carries no credential markers, so it runs the default profile
-      // for now; per-chat profile selection (`/switch_profile`) is plan step 10.
-      final ResolvedProfile profile = _resolveProfile(null);
+      // The edge resolves the active profile (`/switch_profile`, § 6) and passes
+      // it in; absent it (isolated callers) the default profile applies.
+      final ResolvedProfile resolvedProfile = profile ?? _resolveProfile(null);
       await _admit(
         channel: AccessChannel.telegram,
         identity: identity,
         envelope: envelope,
         persona: persona,
-        profile: profile,
+        profile: resolvedProfile,
         memoryProfile: memoryProfile,
         buildBinding: (resolvedIdentity, effectiveEnvelope) =>
             TelegramDeliveryBinding(

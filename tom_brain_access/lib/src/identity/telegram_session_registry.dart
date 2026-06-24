@@ -85,6 +85,30 @@ const String _activeMemoryRowKey = 'activeMemory';
 /// memory-profile names. Absent ⇒ `[defaultMemoryName]`.
 const String _memoriesRowKey = 'memories';
 
+/// The processing profile a chat starts on when neither the chat config nor a
+/// `/switch_profile` named one (`session_configuration.md` § 6). Used only as
+/// the fallback for the [TelegramSessionRegistry.configuredProfiles] provider
+/// when no operator set is wired; the live chat default rides in per call.
+const String defaultProfileName = 'default';
+
+/// The `EdgeStateStore` row key for the chat's active processing profile name
+/// (the `/switch_profile` selection, § 6). Absent ⇒ the chat's configured
+/// `defaultProfile` (the per-call `chatDefaultProfile`), so a profile is never
+/// stored until the user explicitly switches.
+const String _activeProfileRowKey = 'activeProfile';
+
+/// The `EdgeStateStore` row key for whether the user explicitly chose their
+/// active session (any `/create_session` / `/pick_session` / `/rename_session`).
+/// Absent / non-`true` ⇒ the active session is still the first-contact default,
+/// so a profile's `defaultSession` may seed it (§ 6, SC-Q14).
+const String _sessionExplicitRowKey = 'sessionExplicit';
+
+/// The `EdgeStateStore` row key for whether the user explicitly chose their
+/// active memory (any `/create_memory` / `/switch_memory`). Absent / non-`true`
+/// ⇒ the active memory is still the first-contact default, so a profile's
+/// `defaultMemory` may seed it (§ 6, SC-Q14).
+const String _memoryExplicitRowKey = 'memoryExplicit';
+
 /// One Telegram user's session state: the [active] session name, the ordered
 /// [sessions] list of **bare names** (always led by `global`), the
 /// [traceMemory] toggle (the `/trace_memory` command), and the memory-profile
@@ -98,12 +122,28 @@ class _UserSessions {
   bool traceMemory;
   String activeMemory;
   final List<String> memories;
+
+  /// The bare active processing-profile name, or `null` while the user has
+  /// never run `/switch_profile` (then the chat's `defaultProfile` applies, § 6).
+  String? activeProfile;
+
+  /// Whether the active session was explicitly chosen (vs. the first-contact
+  /// default) — gates whether a profile's `defaultSession` may seed it (SC-Q14).
+  bool sessionExplicit;
+
+  /// Whether the active memory was explicitly chosen — gates `defaultMemory`
+  /// seeding (SC-Q14).
+  bool memoryExplicit;
+
   _UserSessions({
     required this.active,
     required this.sessions,
     this.traceMemory = false,
     this.activeMemory = defaultMemoryName,
     List<String>? memories,
+    this.activeProfile,
+    this.sessionExplicit = false,
+    this.memoryExplicit = false,
   }) : memories = memories ?? <String>[defaultMemoryName];
 }
 
@@ -141,6 +181,7 @@ final class TelegramActiveSession {
 final class TelegramSessionRegistry {
   final EdgeStateStore _store;
   final void Function(String sessionId)? _adopt;
+  final List<String> Function() _configuredProfiles;
 
   /// In-memory view of every user's session state, keyed by Telegram user id.
   /// The authoritative copy lives in [_store]; this mirrors it and is rewritten
@@ -152,12 +193,24 @@ final class TelegramSessionRegistry {
   /// [adoptSession] is the `SessionManager.ensureSession` seam — called for
   /// every non-null effective id the registry hands out so the manager adopts
   /// it as a known dedicated session (§ 7.2); `null` in tests that exercise the
-  /// registry in isolation. Loads persisted state immediately.
+  /// registry in isolation.
+  ///
+  /// [configuredProfiles] enumerates the operator-configured processing-profile
+  /// names (`session_configuration.md` § 6) — the candidate set `/list_profiles`
+  /// renders and `/switch_profile` validates against. Profiles are operator
+  /// config, not user-minted, so unlike sessions/memory this list does not grow
+  /// per user. The run-side provisioner wires it over the live `ProfileRegistry`;
+  /// when absent (profiles off / isolated tests) it is the single built-in
+  /// `[defaultProfileName]`, so a switch only ever lands on `default`. Loads
+  /// persisted state immediately.
   TelegramSessionRegistry({
     required EdgeStateStore store,
     void Function(String sessionId)? adoptSession,
+    List<String> Function()? configuredProfiles,
   })  : _store = store,
-        _adopt = adoptSession {
+        _adopt = adoptSession,
+        _configuredProfiles =
+            configuredProfiles ?? (() => const <String>[defaultProfileName]) {
     _load();
   }
 
@@ -175,12 +228,25 @@ final class TelegramSessionRegistry {
   /// `sessionId: null`. Every non-null effective id is adopted into the
   /// `SessionManager`. The effective id is derived from the bare name and
   /// [sessionPrefix] — never minted or stored (MSPP-37).
+  ///
+  /// [profileDefaultSession] is the active profile's advisory `defaultSession`
+  /// selector (§ 6, SC-Q14). It seeds the resolved session **only** while the
+  /// user has not explicitly chosen one — an explicit `/create_session` /
+  /// `/pick_session` / `/rename_session` always wins. The seed is resolve-time
+  /// only (mirroring the HTTP `s ?? profile.defaultSession ?? 'default'` rule,
+  /// § 4.2): it is adopted into the `SessionManager` but does not mutate the
+  /// stored active name, so dropping the profile reverts to `default`.
   TelegramActiveSession resolveActive(
     String userId, {
     required String sessionPrefix,
+    String? profileDefaultSession,
   }) {
     final _UserSessions user = _ensureUser(userId);
-    final String name = _activeName(user);
+    final String name = (!user.sessionExplicit &&
+            profileDefaultSession != null &&
+            profileDefaultSession.isNotEmpty)
+        ? profileDefaultSession
+        : _activeName(user);
     final String? id = _effectiveSessionId(name, sessionPrefix);
     if (id != null) _adopt?.call(id);
     return TelegramActiveSession(sessionId: id, activeName: name);
@@ -213,6 +279,7 @@ final class TelegramSessionRegistry {
       user.sessions.add(trimmed);
     }
     user.active = trimmed;
+    user.sessionExplicit = true;
     _save();
     final String id = sessionPrefix + trimmed;
     _adopt?.call(id);
@@ -251,6 +318,7 @@ final class TelegramSessionRegistry {
     }
     final String name = user.sessions[n];
     user.active = name;
+    user.sessionExplicit = true;
     _save();
     final String? id = _effectiveSessionId(name, sessionPrefix);
     if (id != null) {
@@ -286,6 +354,7 @@ final class TelegramSessionRegistry {
     final int idx = user.sessions.indexOf(user.active);
     if (idx >= 0) user.sessions[idx] = trimmed;
     user.active = trimmed;
+    user.sessionExplicit = true;
     _save();
     return 'Session renamed to $trimmed';
   }
@@ -316,8 +385,26 @@ final class TelegramSessionRegistry {
   /// [defaultMemoryName], so a brand-new chat resolves to
   /// `<memoryPrefix>default` (the default prefix yields `defaultmemory_default`,
   /// which the engine routes to the boot default store).
-  String resolveActiveMemory(String userId, {required String memoryPrefix}) =>
-      memoryPrefix + _ensureUser(userId).activeMemory;
+  ///
+  /// [profileDefaultMemory] is the active profile's advisory `defaultMemory`
+  /// selector (§ 6, SC-Q14). It seeds the resolved profile **only** while the
+  /// user has not explicitly chosen one — an explicit `/create_memory` /
+  /// `/switch_memory` always wins. The seed is resolve-time only: it never
+  /// mutates the stored active name, so dropping the profile reverts to the
+  /// first-contact default.
+  String resolveActiveMemory(
+    String userId, {
+    required String memoryPrefix,
+    String? profileDefaultMemory,
+  }) {
+    final _UserSessions user = _ensureUser(userId);
+    final String name = (!user.memoryExplicit &&
+            profileDefaultMemory != null &&
+            profileDefaultMemory.isNotEmpty)
+        ? profileDefaultMemory
+        : user.activeMemory;
+    return memoryPrefix + name;
+  }
 
   /// Handles `/create_memory <name>`: registers the bare profile [name], makes
   /// it the active memory, and switches to it (§ 9.2). Returns the
@@ -346,6 +433,7 @@ final class TelegramSessionRegistry {
       user.memories.add(trimmed);
     }
     user.activeMemory = trimmed;
+    user.memoryExplicit = true;
     _save();
     return 'New memory $memoryPrefix$trimmed named $trimmed created and is in '
         'use now';
@@ -398,6 +486,7 @@ final class TelegramSessionRegistry {
         return 'No memory numbered "$trimmed". Use /list_memory to see them.';
       }
       user.activeMemory = user.memories[n];
+      user.memoryExplicit = true;
       _save();
       return 'Now using memory ${user.activeMemory} '
           '($memoryPrefix${user.activeMemory})';
@@ -414,8 +503,89 @@ final class TelegramSessionRegistry {
           '/create_memory to make it.';
     }
     user.activeMemory = trimmed;
+    user.memoryExplicit = true;
     _save();
     return 'Now using memory $trimmed ($memoryPrefix$trimmed)';
+  }
+
+  /// Resolves the active processing-profile name for [userId] (§ 6): the user's
+  /// `/switch_profile` selection when set, else the chat's configured
+  /// [chatDefaultProfile] (the per-call `defaultProfile` from the chat config).
+  ///
+  /// Pure read — no mutation, no persistence. The profile *name* is resolved
+  /// here; the edge hands it to the assembler's `resolveProfile` seam to get the
+  /// `ResolvedProfile` that carries the mode / role / anchor / budget knobs.
+  String resolveActiveProfile(
+    String userId, {
+    required String chatDefaultProfile,
+  }) =>
+      _ensureUser(userId).activeProfile ?? chatDefaultProfile;
+
+  /// Handles `/list_profiles`: lists the operator-configured profiles
+  /// three-digit-numbered from `000`, marking the active one (§ 6). Returns the
+  /// list text.
+  ///
+  /// The candidate set is [configuredProfiles] (operator config, not user-minted);
+  /// the active profile is [resolveActiveProfile] resolved against
+  /// [chatDefaultProfile]. A configured-but-unswitched chat marks its
+  /// `defaultProfile`.
+  String listProfiles(
+    String userId, {
+    required String chatDefaultProfile,
+  }) {
+    final String active =
+        resolveActiveProfile(userId, chatDefaultProfile: chatDefaultProfile);
+    final List<String> names = _configuredProfiles();
+    final StringBuffer buffer = StringBuffer('Profiles:');
+    for (int i = 0; i < names.length; i++) {
+      final String name = names[i];
+      final String index = i.toString().padLeft(3, '0');
+      final String marker = name == active ? '*' : ' ';
+      buffer.write('\n$index $marker $name');
+    }
+    return buffer.toString();
+  }
+
+  /// Handles `/switch_profile <nnn|name>`: sets the chat's active processing
+  /// profile to the indexed or named operator-configured profile (§ 6, SC-6).
+  /// Returns the acknowledgement, or an error for an out-of-range index or an
+  /// unknown name — in which case the active profile is left unchanged.
+  ///
+  /// A numeric argument is a three-digit index into [configuredProfiles]
+  /// (mirroring `/pick_session`). A non-numeric argument is matched verbatim
+  /// against the configured names — profiles are operator config, so an unknown
+  /// name is rejected (never created, SC-6).
+  String switchProfile(
+    String userId,
+    String argument, {
+    required String chatDefaultProfile,
+  }) {
+    final String trimmed = argument.trim();
+    if (trimmed.isEmpty) {
+      return 'Usage: /switch_profile <nnn|name>';
+    }
+    final List<String> names = _configuredProfiles();
+
+    // Numeric: a three-digit index into the configured list.
+    final int? n = int.tryParse(trimmed);
+    if (n != null) {
+      if (n < 0 || n >= names.length) {
+        return 'No profile numbered "$trimmed". Use /list_profiles to see them.';
+      }
+      final _UserSessions user = _ensureUser(userId);
+      user.activeProfile = names[n];
+      _save();
+      return 'Now using profile ${names[n]}';
+    }
+
+    // Named: matched verbatim against the operator-configured set.
+    if (!names.contains(trimmed)) {
+      return 'No profile named "$trimmed". Use /list_profiles to see them.';
+    }
+    final _UserSessions user = _ensureUser(userId);
+    user.activeProfile = trimmed;
+    _save();
+    return 'Now using profile $trimmed';
   }
 
   /// Whether [name] is a valid **bare** scoped selector for a session or memory
@@ -504,12 +674,23 @@ final class TelegramSessionRegistry {
       // The active name must be in the list (a hand-edit could drop it).
       if (!memories.contains(activeMemory)) memories.add(activeMemory);
 
+      // Processing profile (§ 6): the bare active profile name, or absent while
+      // the user has never run `/switch_profile` (the chat default then applies).
+      final Object? rawActiveProfile = row[_activeProfileRowKey];
+      final String? activeProfile =
+          rawActiveProfile is String && rawActiveProfile.isNotEmpty
+              ? rawActiveProfile
+              : null;
+
       _users[userId] = _UserSessions(
         active: activeName,
         sessions: sessions,
         traceMemory: row[_traceMemoryRowKey] == true,
         activeMemory: activeMemory,
         memories: memories,
+        activeProfile: activeProfile,
+        sessionExplicit: row[_sessionExplicitRowKey] == true,
+        memoryExplicit: row[_memoryExplicitRowKey] == true,
       );
     });
   }
@@ -525,6 +706,10 @@ final class TelegramSessionRegistry {
           _activeMemoryRowKey: entry.value.activeMemory,
           _memoriesRowKey: <Object?>[...entry.value.memories],
           _sessionsRowKey: <Object?>[...entry.value.sessions],
+          if (entry.value.activeProfile != null)
+            _activeProfileRowKey: entry.value.activeProfile,
+          _sessionExplicitRowKey: entry.value.sessionExplicit,
+          _memoryExplicitRowKey: entry.value.memoryExplicit,
         },
     };
     _store.save(rows);

@@ -447,6 +447,7 @@ abstract final class AccessConfigLoader {
         'memoryPrefix',
         'defaultSession',
         'defaultMemory',
+        'defaultProfile',
       },
       path,
     );
@@ -468,6 +469,9 @@ abstract final class AccessConfigLoader {
     final defaultMemory =
         _optionalString(node, 'defaultMemory', '$path.defaultMemory') ??
             defaultProfileSelector;
+    final defaultProfile =
+        _optionalString(node, 'defaultProfile', '$path.defaultProfile') ??
+            defaultProfileSelector;
     try {
       return TelegramChatProfileConfig(
         chatId: chatId,
@@ -476,6 +480,7 @@ abstract final class AccessConfigLoader {
         memoryPrefix: memoryPrefix,
         defaultSession: defaultSession,
         defaultMemory: defaultMemory,
+        defaultProfile: defaultProfile,
       );
     } on ArgumentError catch (e) {
       throw AccessConfigException('$path: ${e.message ?? e.toString()}');

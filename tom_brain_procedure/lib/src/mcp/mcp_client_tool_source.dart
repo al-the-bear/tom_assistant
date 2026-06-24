@@ -29,6 +29,34 @@ import 'mcp_client.dart';
 /// monitor.isLive(serverId)` (`agent_sdk_provider_and_mcp_liveness.md` § 3.3).
 typedef McpOfferedGate = bool Function(String serverId);
 
+/// Composes a per-run MCP offered-server gate from a profile's resolved
+/// allowlist and the process-wide dynamic liveness gate
+/// (`session_configuration.md` § 3.6; plan step 8 (c); SCP-33).
+///
+/// [profileOffered] is the profile's already-composed offered-server set
+/// (`(global-exposed ∩ allowlist) ∪ profile-defined-exposed`, computed at boot);
+/// an **empty** list is the "all globally-exposed servers" sentinel. [globalGate]
+/// is the engine's dynamic `exposeToLlms && isLive` gate (`null` ⇒ every
+/// configured server is unconditionally offered).
+///
+/// The composition:
+///   - empty allowlist ⇒ the global gate verbatim (the sentinel: every server
+///     the global gate offers is offered — an `exposeToLlms:false` or dead
+///     server still fails the global gate and is never offered);
+///   - a non-empty allowlist ⇒ a server is offered only when it is **both** in
+///     the allowlist **and** passing the global gate — so the dynamic liveness
+///     gate still wins over a stale profile allowlist (a server that flips dead
+///     drops out without a restart).
+McpOfferedGate? composeMcpGate(
+  List<String> profileOffered,
+  McpOfferedGate? globalGate,
+) {
+  if (profileOffered.isEmpty) return globalGate;
+  final allow = profileOffered.toSet();
+  return (String serverId) =>
+      allow.contains(serverId) && (globalGate?.call(serverId) ?? true);
+}
+
 /// Adapts an [McpClient] to the tools layer's [McpToolSource] port.
 ///
 /// Constructed by the engine wiring over the process-spanning client; handed to

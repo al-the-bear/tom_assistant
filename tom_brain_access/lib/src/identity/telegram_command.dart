@@ -51,6 +51,17 @@ enum TelegramCommandKind {
   /// out-of-scope id (§ 9.2, MSP-6).
   switchMemory,
 
+  /// `/list_profiles` — list the operator-configured processing profiles,
+  /// three-digit-numbered like `/list_memory`, marking the active one
+  /// (`session_configuration.md` § 6). Profiles are operator config, not
+  /// user-minted, so there is no `/create_profile`.
+  listProfiles,
+
+  /// `/switch_profile <nnn|name>` — set the chat's active processing profile to
+  /// the indexed or named configured profile; an unknown name is an error and
+  /// leaves the active profile unchanged (§ 6, SC-6).
+  switchProfile,
+
   /// `/help` — list every available command.
   help,
 
@@ -150,6 +161,8 @@ const Map<TelegramCommandKind, String> telegramCommandWords =
   TelegramCommandKind.createMemory: 'create_memory',
   TelegramCommandKind.listMemory: 'list_memory',
   TelegramCommandKind.switchMemory: 'switch_memory',
+  TelegramCommandKind.listProfiles: 'list_profiles',
+  TelegramCommandKind.switchProfile: 'switch_profile',
   TelegramCommandKind.help: 'help',
   TelegramCommandKind.observatoryShowPrompts: 'observatory_show_prompts',
   TelegramCommandKind.observatoryAnalyzePrompt: 'observatory_analyze_prompt',
@@ -236,6 +249,9 @@ String telegramHelpText() {
     ..write('\n/create_memory <name> — create a memory profile and switch to it')
     ..write('\n/list_memory — list your memory profiles (000-numbered)')
     ..write('\n/switch_memory <nnn|name> — switch to that memory profile')
+    ..write('\n\nProfiles:')
+    ..write('\n/list_profiles — list the configured profiles (000-numbered)')
+    ..write('\n/switch_profile <nnn|name> — switch to that processing profile')
     ..write('\n\nInspection:')
     ..write('\n/observatory_show_prompts — list recent prompts with an index')
     ..write('\n/observatory_analyze_prompt <index> — full detail of one prompt')

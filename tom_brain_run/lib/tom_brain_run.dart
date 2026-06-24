@@ -67,7 +67,10 @@ export 'src/cognition_config.dart'
         UnregisteredPromptException;
 export 'src/cognition_config_loader.dart' show CognitionConfigLoader;
 export 'src/cognition_prompt_resolver.dart'
-    show buildPromptResolver, buildRouteChainResolver;
+    show
+        buildOverlayPromptResolver,
+        buildPromptResolver,
+        buildRouteChainResolver;
 export 'src/model_switch.dart'
     show
         CognitionModelWriteException,

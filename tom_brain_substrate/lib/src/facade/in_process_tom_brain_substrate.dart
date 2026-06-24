@@ -378,7 +378,8 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     // § 6.3, AUTH-5). Signature-gated, so an unchanged prose set costs only a
     // stat sweep; a fixed holder is a no-op.
     final template = _roles.current().get(call.roleId);
-    final prompt = template.assemble(inputs: call.inputs);
+    final prompt =
+        template.assemble(inputs: call.inputs, anchored: call.anchored);
     final callId = _allocateCallId();
 
     // The router surfaces failures as typed router-layer exceptions
@@ -411,7 +412,11 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
             cancellationToken: call.cancellationToken,
           );
 
-    _enforceAnchorOrThrow(report: report, roleId: call.roleId);
+    _enforceAnchorOrThrow(
+      report: report,
+      roleId: call.roleId,
+      anchored: call.anchored,
+    );
     _recordCallSuccess(report: report, roleId: call.roleId);
 
     _safeEmit(
@@ -433,7 +438,8 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     _ensureNotClosed('completeStream');
     // Same AUTH-5 prose pickup as `complete`.
     final template = _roles.current().get(call.roleId);
-    final prompt = template.assemble(inputs: call.inputs);
+    final prompt =
+        template.assemble(inputs: call.inputs, anchored: call.anchored);
     final callId = _allocateCallId();
 
     // Returned as a lazy `async*` stream rather than pumped into a
@@ -479,6 +485,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
         _enforceAnchorOrThrow(
           report: event.report,
           roleId: call.roleId,
+          anchored: call.anchored,
         );
         _recordCallSuccess(
           report: event.report,
@@ -658,10 +665,22 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
   void _enforceAnchorOrThrow({
     required LlmCallReport report,
     required String roleId,
+    required bool anchored,
   }) {
-    if (AnchorRegistry.isCurrent(report.anchorHash)) return;
+    // The per-run anchoring toggle (`session_configuration.md` § 3.4, plan
+    // step 9 / SCP-38). A deliberately un-anchored call (the passthrough relay)
+    // is allowed past enforcement *only* when its report carries the un-anchored
+    // sentinel — anything else (a real anchor hash, or a dropped/garbled one) is
+    // still a violation, so the toggle cannot be abused to smuggle a tampered
+    // anchored prompt through. The sentinel is never accepted on an anchored
+    // call (`isCurrent` is false for it), so the default safety lever is intact:
+    // an un-anchored prompt can surface only when the *caller* declared the call
+    // un-anchored.
+    final expected =
+        anchored ? AnchorRegistry.currentHash : AnchorRegistry.unanchoredHash;
+    if (report.anchorHash == expected) return;
     throw AnchorViolation(
-      expected: AnchorRegistry.currentHash,
+      expected: expected,
       actual: report.anchorHash,
       providerId: report.providerId,
       modelId: report.modelId,
