@@ -41,7 +41,7 @@
 import 'dart:async';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show InboundRequest, traceMemoryMetadataKey;
+    show InboundRequest, ResolvedProfile, traceMemoryMetadataKey;
 import 'package:tom_chattools/tom_chattools.dart' show ChatApi, ChatReceiver;
 
 import '../adapters/telegram/telegram_inbound_mapping.dart'
@@ -247,14 +247,29 @@ class TelegramAccessEdge {
       return;
     }
 
+    // Resolve the chat's active processing profile (§ 6). Telegram owns profile
+    // selection on the user's behalf (no credential marker carries it): the
+    // registry resolves the active *name* (`/switch_profile` selection over the
+    // chat's `defaultProfile`), and the assembler's `resolveProfile` seam maps it
+    // to the `ResolvedProfile` carrying the mode / role / anchor / budget knobs.
+    // Its advisory `defaultSession` / `defaultMemory` seed the session / memory
+    // resolution below (SC-Q14), and the profile itself is stamped onto `Access`.
+    final String profileName = _sessionRegistry.resolveActiveProfile(
+      userId,
+      chatDefaultProfile: chat.defaultProfile,
+    );
+    final ResolvedProfile profile = _assembler.resolveProfile(profileName);
+
     // Ordinary prompt: resolve the user's active session and stamp its effective
     // id onto the envelope (null id ⇒ the global session). The effective id is
     // derived from the chat's `sessionPrefix` and was already adopted into the
     // SessionManager by the registry, so the dispatcher resolves it as a known
-    // dedicated session (MSPP-37).
+    // dedicated session (MSPP-37). The profile's `defaultSession` seeds an unset
+    // active session (an explicit `/create_session` always wins, SC-Q14).
     final TelegramActiveSession active = _sessionRegistry.resolveActive(
       userId,
       sessionPrefix: chat.sessionPrefix,
+      profileDefaultSession: profile.defaultSession,
     );
     // When this user has memory-recall tracing on (`/trace_memory`), stamp the
     // per-turn trace flag onto the envelope metadata so the dispatch route binds
@@ -278,6 +293,7 @@ class TelegramAccessEdge {
     final String memoryProfile = _sessionRegistry.resolveActiveMemory(
       userId,
       memoryPrefix: chat.memoryPrefix,
+      profileDefaultMemory: profile.defaultMemory,
     );
 
     try {
@@ -286,6 +302,7 @@ class TelegramAccessEdge {
         envelope: stamped,
         sink: ChatApiTelegramSink(chatApi: _chatApi, receiver: receiver),
         memoryProfile: memoryProfile,
+        profile: profile,
         onAdmitted: () => _acknowledge(receiver, stamped.text),
       );
     } catch (error) {
@@ -347,6 +364,17 @@ class TelegramAccessEdge {
           userId,
           command.argument,
           memoryPrefix: chat.memoryPrefix,
+        ));
+      case TelegramCommandKind.listProfiles:
+        await _send(receiver, _sessionRegistry.listProfiles(
+          userId,
+          chatDefaultProfile: chat.defaultProfile,
+        ));
+      case TelegramCommandKind.switchProfile:
+        await _send(receiver, _sessionRegistry.switchProfile(
+          userId,
+          command.argument,
+          chatDefaultProfile: chat.defaultProfile,
         ));
       case TelegramCommandKind.help:
         await _send(receiver, telegramHelpText());

@@ -533,6 +533,7 @@ Future<BrainProcess> standUpBrainProcess({
   TelegramCliServerPortController? cliServerPortController,
   ApiKeyPersist? apiKeyPersist,
   ProfileResolver? profileResolver,
+  List<String> Function()? configuredProfiles,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -568,6 +569,7 @@ Future<BrainProcess> standUpBrainProcess({
       incomingTrailSink: incomingTrailSink,
       apiKeyPersist: apiKeyPersist,
       profileResolver: profileResolver,
+      configuredProfiles: configuredProfiles,
       telegramInspectors: _telegramInspectorsFor(
         trailRoot: trailRoot,
         memoryClient: provisioned.memoryClient,
@@ -975,6 +977,11 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     cliServerPortController: cliServerPortController,
     apiKeyPersist: apiKeyPersist,
     profileResolver: profileResolver,
+    // The operator-configured processing-profile names the Telegram
+    // `/list_profiles` / `/switch_profile` commands operate over (§ 6). Profiles
+    // are operator config, not user-minted, so the candidate set is the run's
+    // `profiles:` registry, read live so a config reload is picked up.
+    configuredProfiles: () => runConfig.profiles.names.toList(),
   );
 }
 
