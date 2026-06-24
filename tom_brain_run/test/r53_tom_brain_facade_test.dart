@@ -210,6 +210,13 @@ profiles:
       expect(brain.profiles.contains('research'), isTrue);
       expect(brain.profiles.profile('research')!.role, 'researcher');
 
+      // The co-hosted memory MCP server came up: in home mode the isolate must
+      // boot from the convention-merged `memory.root` (the skeleton brain.yaml
+      // carries no `memory:` block — the convention fills it), not a re-read of
+      // the partial on-disk file.
+      expect(brain.memoryMcpUrl, isNotNull,
+          reason: 'home-mode memory MCP must boot from the resolved config');
+
       // The read-write Observatory co-hosted.
       final String? observatory = brain.observatoryUrl;
       expect(observatory, isNotNull);

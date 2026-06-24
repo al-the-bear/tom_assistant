@@ -30,6 +30,8 @@ import 'dart:ffi' show Abi;
 import 'dart:io';
 
 import 'package:tom_basics/tom_basics.dart' show TomPlatformUtils, tomLog;
+import 'package:tom_brain_memory/tom_brain_memory.dart'
+    show MemoryConfig, MemoryConfigException, MemoryConfigLoader;
 import 'package:tom_brain_observatory/tom_brain_observatory.dart'
     show ObservatoryOptions;
 import 'package:tom_build_base/tom_build_base_v2.dart';
@@ -162,12 +164,26 @@ final class MemoryMcpCommandExecutor extends CommandExecutor {
     final int port =
         _intFlag(rawArgs, 'memory-mcp') ?? defaultStandaloneMemoryMcpPort;
 
+    // The standalone split deployment is handed a complete `brain.yaml` (the
+    // `memory:` block to serve) — resolve it to a `MemoryConfig` here, so the
+    // isolate boots from a fully-resolved config (the run-mode path resolves
+    // `config.memory` the same way; the isolate never re-reads a file).
+    final MemoryConfig memoryConfig;
+    try {
+      memoryConfig =
+          MemoryConfigLoader.loadFromFile(configPath, envVars: env);
+    } on MemoryConfigException catch (e) {
+      return ToolResult.failure(
+        'memory-mcp could not load $configPath: ${e.message}',
+      );
+    }
+
     // The store opens through the real platform's kernel factory; install the
     // standalone platform (mirrors the serve boot).
     TomPlatformUtils.setCurrentPlatform(standalonePlatformUtils);
 
     final MemoryMcpIsolateHost? host = await spawnMemoryMcpIsolate(
-      configPath,
+      memoryConfig,
       port: port,
       onInfo: (m) => stdout.writeln('[tom_brain.memory.mcp] $m'),
       onWarning: (m) => stderr.writeln('[tom_brain.memory.mcp] $m'),

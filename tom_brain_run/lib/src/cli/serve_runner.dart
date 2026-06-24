@@ -161,8 +161,11 @@ Future<BrainServeSession> defaultServeBoot(
   MemoryMcpIsolateHost? memoryMcp;
   ObservatoryIsolateHost? observatory;
   if (runtime.memoryMcpEnabled && config.trail != null) {
+    // The isolate boots from the resolved `config.memory` — never a re-read of
+    // `runConfigPath`, which in `--home` mode is a partial overlay with no
+    // `memory:` block (the convention fills `memory.root`).
     memoryMcp = await spawnMemoryMcpIsolate(
-      runConfigPath,
+      config.memory,
       port: runtime.memoryMcpPort,
       onInfo: (m) => tomLog.status('[tom_brain.memory.mcp] $m'),
       onWarning: (m) => tomLog.status('[tom_brain.memory.mcp] $m'),

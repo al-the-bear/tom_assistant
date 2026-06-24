@@ -19,7 +19,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 import 'package:tom_brain_memory/tom_brain_memory.dart'
-    show SqliteVecBinaryResolver;
+    show MemoryConfig, MemoryConfigLoader, SqliteVecBinaryResolver;
 import 'package:tom_brain_run/tom_brain_run.dart';
 
 /// Locates `<workspace>/tom_binaries/sqlite_vec`, walking up from the CWD.
@@ -56,26 +56,27 @@ void main() {
 
   group('spawnMemoryMcpIsolate', () {
     late Directory tempDir;
-    late String configPath;
+    late MemoryConfig memoryConfig;
 
     setUp(() {
       tempDir = Directory.systemTemp.createTempSync('mem_mcp_iso_test');
       final storeRoot = Directory('${tempDir.path}/store')..createSync();
-      // The loader only reads the `memory:` block, so a minimal run config with
-      // just the store root + the packaged vec binary is enough to boot.
-      configPath = '${tempDir.path}/brain_run.yaml';
+      // The host takes a fully-resolved `MemoryConfig`; a minimal run config
+      // with just the store root + the packaged vec binary is enough to boot.
+      final configPath = '${tempDir.path}/brain_run.yaml';
       File(configPath).writeAsStringSync(
         'memory:\n'
         '  root: ${storeRoot.path}\n'
         '  sqliteVec:\n'
         '    binariesRoot: $vecRoot\n',
       );
+      memoryConfig = MemoryConfigLoader.loadFromFile(configPath);
     });
     tearDown(() => tempDir.deleteSync(recursive: true));
 
     test('hosts the memory MCP server in a second isolate and reports its URL',
         () async {
-      final host = await spawnMemoryMcpIsolate(configPath);
+      final host = await spawnMemoryMcpIsolate(memoryConfig);
       expect(host, isNotNull, reason: 'the server should come up');
       addTearDown(() => host!.stop());
 
@@ -94,7 +95,7 @@ void main() {
 
     test('stop() tears the isolate down and frees the port, idempotently',
         () async {
-      final host = await spawnMemoryMcpIsolate(configPath);
+      final host = await spawnMemoryMcpIsolate(memoryConfig);
       expect(host, isNotNull);
       final boundPort = host!.url.port;
 

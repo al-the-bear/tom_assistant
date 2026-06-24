@@ -31,14 +31,12 @@
 // checkpoint), mirroring the standalone server's graceful shutdown.
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:isolate';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show
         McpHttpServer,
         MemoryConfig,
-        MemoryConfigLoader,
         SqliteTomBrainMemory,
         TomBrainMemoryMcpServer;
 
@@ -90,11 +88,19 @@ final class MemoryMcpIsolateHost {
   }
 }
 
-/// Spawns the memory MCP server in a second isolate against the `memory:` block
-/// of the run config at [runConfigPath], and returns a live
-/// [MemoryMcpIsolateHost], or `null` when it could not be brought up within
-/// [readyTimeout] (the brain then serves without it — a missing inspection
-/// surface is never fatal).
+/// Spawns the memory MCP server in a second isolate against the already-resolved
+/// [memoryConfig], and returns a live [MemoryMcpIsolateHost], or `null` when it
+/// could not be brought up within [readyTimeout] (the brain then serves without
+/// it — a missing inspection surface is never fatal).
+///
+/// The caller passes the fully-resolved [MemoryConfig] (the convention-merged
+/// `config.memory` the run assembler produced) rather than a config-file path:
+/// in `--home`/agent mode the on-disk `brain.yaml` is a partial overlay with no
+/// `memory:` block (the convention fills `memory.root`), so a re-read would die
+/// with "Missing top-level `memory:` map". [MemoryConfig] is a deeply-immutable
+/// value object, so it is safe to send across the isolate boundary — the
+/// spawned isolate boots from exactly the config the parent assembled, with no
+/// second parse and no second source of truth.
 ///
 /// [port] is the loopback bind port; the default `0` lets the OS assign an
 /// ephemeral port (the bound URL is reported back), so the server never collides
@@ -104,7 +110,7 @@ final class MemoryMcpIsolateHost {
 /// forwarded to [onInfo] / [onWarning] so the run layer can log it from the main
 /// isolate.
 Future<MemoryMcpIsolateHost?> spawnMemoryMcpIsolate(
-  String runConfigPath, {
+  MemoryConfig memoryConfig, {
   int port = 0,
   MemoryMcpHostLog? onInfo,
   MemoryMcpHostLog? onWarning,
@@ -120,7 +126,7 @@ Future<MemoryMcpIsolateHost?> spawnMemoryMcpIsolate(
   try {
     isolate = await Isolate.spawn<_MemoryMcpBoot>(
       _memoryMcpIsolateEntry,
-      (runConfigPath: runConfigPath, port: port, events: events.sendPort),
+      (memoryConfig: memoryConfig, port: port, events: events.sendPort),
       onExit: exitPort.sendPort,
       debugName: 'tom_brain_memory_mcp',
       errorsAreFatal: false,
@@ -181,11 +187,11 @@ Future<MemoryMcpIsolateHost?> spawnMemoryMcpIsolate(
   return host;
 }
 
-/// The message [Isolate.spawn] hands [_memoryMcpIsolateEntry]: the run-config
-/// path (the isolate loads the `memory:` block itself, avoiding any
-/// sendability concern over the parsed config), the loopback bind port, and the
-/// [SendPort] the entry reports lifecycle + narration back on.
-typedef _MemoryMcpBoot = ({String runConfigPath, int port, SendPort events});
+/// The message [Isolate.spawn] hands [_memoryMcpIsolateEntry]: the resolved
+/// [MemoryConfig] (a sendable value object — see [spawnMemoryMcpIsolate]), the
+/// loopback bind port, and the [SendPort] the entry reports lifecycle +
+/// narration back on.
+typedef _MemoryMcpBoot = ({MemoryConfig memoryConfig, int port, SendPort events});
 
 /// The second-isolate entrypoint: open the on-disk `SqliteTomBrainMemory` at the
 /// config's `memory:` root, bind the read-mostly MCP v1 surface over Streamable
@@ -199,10 +205,7 @@ Future<void> _memoryMcpIsolateEntry(_MemoryMcpBoot boot) async {
   final SqliteTomBrainMemory memory;
   final McpHttpServer server;
   try {
-    final MemoryConfig config = MemoryConfigLoader.loadFromFile(
-      boot.runConfigPath,
-      envVars: Platform.environment,
-    );
+    final MemoryConfig config = boot.memoryConfig;
     memory = SqliteTomBrainMemory();
     await memory.open(config);
     events.send(<String, Object?>{
