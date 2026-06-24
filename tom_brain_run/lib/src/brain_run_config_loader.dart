@@ -69,6 +69,8 @@ import 'cognition_run_config_loader.dart';
 import 'dream_config.dart';
 import 'dream_config_loader.dart';
 import 'profile/profile_registry.dart';
+import 'scripts_config.dart';
+import 'scripts_config_loader.dart';
 import 'tools_config.dart';
 import 'tools_config_loader.dart';
 import 'trail_config.dart';
@@ -119,6 +121,8 @@ abstract final class BrainRunConfigLoader {
         TrailConfigLoader.parse(content, envVars: envVars);
     final ToolsConfig? tools =
         ToolsConfigLoader.parse(content, envVars: envVars);
+    final ScriptsConfig? scripts =
+        ScriptsConfigLoader.parse(content, envVars: envVars);
     final DreamConfig? dream =
         DreamConfigLoader.parse(content, envVars: envVars);
     final CognitionRunConfig? cognition =
@@ -134,6 +138,7 @@ abstract final class BrainRunConfigLoader {
       access: access,
       trail: trail,
       tools: tools,
+      scripts: scripts,
       dream: dream,
       cognition: cognition,
       mcpServers: mcpServers,

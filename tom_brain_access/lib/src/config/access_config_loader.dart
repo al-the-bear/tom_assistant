@@ -71,6 +71,8 @@ abstract final class AccessConfigLoader {
   /// (substrate / memory / engine / dispatcher, the run package's
   /// `TrailConfigLoader` for `trail:` — `tom_brain_logging.md` §8 — its
   /// `ToolsConfigLoader` for `tools:` — the file-scope roots — its
+  /// `ScriptsConfigLoader` for `scripts:` — the disk procedure directories
+  /// (CLI plan step 3) — its
   /// `DreamConfigLoader` for `dream:` (memory-spec § 9.7), its cognition
   /// loader for `cognition:` — `prompt_configuration.md` §7.4, the prompt /
   /// route resolver root — and the procedure package's `McpServersConfig`
@@ -86,6 +88,7 @@ abstract final class AccessConfigLoader {
     'dispatcher',
     'trail',
     'tools',
+    'scripts',
     'dream',
     'cognition',
     'mcpServers',

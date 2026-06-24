@@ -49,6 +49,14 @@ final class ProcedureRef {
       : origin = ProcedureOrigin.brain,
         locator = nodeId;
 
+  /// Convenience constructor for a compiled-in bundle procedure. [key] is
+  /// the bundle-local locator (the codegen's per-source key, typically the
+  /// source filename stem), not the procedure id — identity still lives in
+  /// the in-source header.
+  const ProcedureRef.bundle(String key)
+      : origin = ProcedureOrigin.bundle,
+        locator = key;
+
   @override
   bool operator ==(Object other) =>
       other is ProcedureRef &&

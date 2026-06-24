@@ -34,6 +34,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
 import 'cognition_run_config.dart';
 import 'dream_config.dart';
 import 'profile/profile_registry.dart';
+import 'scripts_config.dart';
 import 'tools_config.dart';
 import 'trail_config.dart';
 
@@ -71,6 +72,14 @@ final class BrainRunConfig {
   /// `tools:` block, leaving the engine on its neutral placeholder root. A
   /// value threads its non-empty `fileScope` list onto the procedure engine.
   final ToolsConfig? tools;
+
+  /// The optional `scripts:` section (CLI plan step 3) — the disk directories
+  /// the procedure store's disk backend resolves `scripts/system/` (and
+  /// optionally `scripts/user/`) from. `null` when the document carries no
+  /// `scripts:` block, in which case the boot path keeps its package-relative
+  /// fallback (`_resolveProcedurePrototypeScripts`). A value supplies the
+  /// `systemScriptsDir` the run assembly stands the disk store up over.
+  final ScriptsConfig? scripts;
 
   /// The optional `dream:` section (item b) — the boot-time dream-cadence
   /// policy (whether the loop starts, the daily windows it runs in, the
@@ -126,6 +135,7 @@ final class BrainRunConfig {
     required this.access,
     this.trail,
     this.tools,
+    this.scripts,
     this.dream,
     this.cognition,
     McpServersConfig? mcpServers,

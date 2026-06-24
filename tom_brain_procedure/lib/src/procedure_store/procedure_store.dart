@@ -26,6 +26,7 @@
 //     production code, raises the three pillars to the integrated
 //     `store → loader → resolver` pipeline.
 
+export 'bundled_procedure_store.dart' show BundledProcedureStore;
 export 'composite_procedure_store.dart' show CompositeProcedureStore;
 export 'disk_procedure_store.dart' show DiskProcedureStore;
 export 'memory_procedure_store.dart' show MemoryProcedureStore;
@@ -46,3 +47,4 @@ export 'procedure_resolver.dart' show ProcedureResolver;
 export 'procedure_resolver_handle.dart' show ProcedureResolverHandle;
 export 'procedure_source.dart' show ProcedureSource;
 export 'procedure_store_interface.dart' show ProcedureStore;
+export 'shadowing_procedure_store.dart' show ShadowingProcedureStore;

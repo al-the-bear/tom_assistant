@@ -726,9 +726,13 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
 }) async {
   // Resolve the scripts dir once so the boot's procedure store and the §6
   // `${scripts_folder}` built-in the prompt resolver carries agree on the same
-  // directory.
-  final Directory scriptsDir =
-      systemScriptsDir ?? await _resolveProcedurePrototypeScripts();
+  // directory. Precedence: an explicit [systemScriptsDir] (tests / embedders)
+  // → the configured `scripts.systemDir` (CLI plan step 3) → the package-
+  // relative prototype fallback (kept until a real bundle lands at step 4;
+  // CLP decision).
+  final Directory scriptsDir = systemScriptsDir ??
+      runConfig.scripts?.systemDir ??
+      await _resolveProcedurePrototypeScripts();
 
   // Build the two `sub.run` seams + the file-backed role registry from the
   // `cognition:` config tree (§7.1 / §7.4 / §8) when the block is present.

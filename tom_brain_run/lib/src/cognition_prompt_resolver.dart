@@ -56,11 +56,20 @@ import 'cognition_config.dart';
 /// and maps the inherited settings on. An unregistered id yields `null`, which
 /// `SubstrateBridge.run` turns into its typed `UnregisteredPromptException`
 /// (§7.3).
+///
+/// [fallThroughOnMissing] selects how a registered prompt whose template file is
+/// **absent** on disk is handled. The default (`false`) is the standalone-disk
+/// contract: an absent present-flagged file is a config error and the underlying
+/// read throws. `true` is the *overlay* contract used when this disk resolver is
+/// layered over a bundle (CLI plan step 3): an absent file yields `null`, so the
+/// `LayeredPromptResolver` falls through to the bundled base — the same
+/// "shadow when present, base otherwise" rule the profile-overlay resolver uses.
 proc.PromptResolver buildPromptResolver(
   CognitionConfig config,
   BrainBuiltins builtins, {
   PlaceholderExpressions? expressions,
   Map<String, String>? environment,
+  bool fallThroughOnMissing = false,
 }) {
   return (String promptId, Map<String, Object?> inputs) async {
     final registered = config.prompts[promptId];
@@ -70,39 +79,117 @@ proc.PromptResolver buildPromptResolver(
       return null;
     }
 
-    final rawTemplate =
-        await _loadRawTemplate(registered.template, builtins.configFolder);
+    // In soft (overlay) mode a missing disk template is a fall-through (`null`);
+    // in the default standalone-disk mode the read fails fast on a missing
+    // present-flagged file.
+    final String? rawTemplate = fallThroughOnMissing
+        ? await _loadOverlayTemplate(registered.template, builtins.configFolder)
+        : await _loadRawTemplate(registered.template, builtins.configFolder);
+    if (rawTemplate == null) return null;
 
-    final resolver = builtins.resolver(
+    return _renderPrompt(
+      registered,
+      rawTemplate,
+      inputs,
+      config,
+      builtins,
       expressions: expressions,
       environment: environment,
     );
+  };
+}
 
-    final body = await _resolveProtected(
+/// Builds the `PromptResolver` seam over a compiled-in [bundlePrompts] map
+/// (`path → verbatim template source`), the prompt-template analogue of
+/// `BundledProcedureStore` (CLI plan step 3).
+///
+/// The standalone `tom_brain` CLI ships its `cognition/` templates compiled into
+/// the executable rather than on disk; this resolver renders a registered
+/// prompt's body from that bundle instead of from [builtins].configFolder. It
+/// addresses each template by the *same* cognition-root-relative path the
+/// registered `TemplateResolution` carries (so a disk resolver and a bundled
+/// resolver agree on the key for one prompt id, which is what makes
+/// disk-overlays-bundle "by template id" composition work). The bundle is keyed
+/// by path, not by disk `present` flags — a bundle-only deployment has no disk
+/// to flag presence against, so the lookup ignores `present` entirely.
+///
+/// Returns `null` for an unregistered id OR a registered id whose template
+/// path is not in the bundle — the `LayeredPromptResolver` fall-through signal.
+proc.PromptResolver buildBundledPromptResolver(
+  CognitionConfig config,
+  BrainBuiltins builtins,
+  Map<String, String> bundlePrompts, {
+  PlaceholderExpressions? expressions,
+  Map<String, String>? environment,
+}) {
+  final bundle = Map<String, String>.unmodifiable(bundlePrompts);
+  return (String promptId, Map<String, Object?> inputs) async {
+    final registered = config.prompts[promptId];
+    if (registered == null) return null;
+
+    final rawTemplate = _loadBundleTemplate(registered.template, bundle);
+    if (rawTemplate == null) return null;
+
+    return _renderPrompt(
+      registered,
       rawTemplate,
-      resolver,
-      // The dynamic blocks are rendered here and restored *after* resolution so
-      // user-controlled `${…}` in them is never re-scanned. The catalogue marker
-      // restores to itself — `SubstrateBridge.run` renders it from the tool set.
-      restore: _buildRestoreMap(inputs),
-    );
-
-    final settings = registered.settings;
-    // The prompt's resolved `llm:` route — its committed binding, or whatever a
-    // live `/switch_model` rebound it to (the command mutates this same config,
-    // §request e), falling back to the registry default when unset.
-    final route = settings.llm ?? config.registry.llmDefault;
-    return proc.ResolvedPrompt(
-      role: settings.role,
-      llmRoute: route,
-      templateBody: body,
-      tools: _expandTools(settings.tools),
-      maxToolLoops: settings.maxToolLoops ?? 6,
-      temperature: settings.temperature,
-      responseFormat: settings.responseFormat,
-      channel: settings.channel,
+      inputs,
+      config,
+      builtins,
+      expressions: expressions,
+      environment: environment,
     );
   };
+}
+
+/// Renders a loaded [rawTemplate] for a [registered] prompt into the
+/// procedure-side `ResolvedPrompt` — the shared tail of every resolver seam this
+/// file builds (base disk, profile overlay, and compiled bundle).
+///
+/// It seeds a built-in resolver, renders the dynamic blocks and the literal
+/// `${k}` / `${k?}` context bindings (restored *after* resolution so
+/// user-controlled `${…}` is never re-scanned), resolves the §6 built-ins, and
+/// maps the inherited settings on (its `llm:` route falling back to the registry
+/// default when unset). The `${tools.catalogue}` marker is left in the body for
+/// `SubstrateBridge.run` to render from the resolved tool set.
+Future<proc.ResolvedPrompt> _renderPrompt(
+  ResolvedPrompt registered,
+  String rawTemplate,
+  Map<String, Object?> inputs,
+  CognitionConfig config,
+  BrainBuiltins builtins, {
+  PlaceholderExpressions? expressions,
+  Map<String, String>? environment,
+}) async {
+  final resolver = builtins.resolver(
+    expressions: expressions,
+    environment: environment,
+  );
+
+  final body = await _resolveProtected(
+    rawTemplate,
+    resolver,
+    // The dynamic blocks are rendered here and restored *after* resolution so
+    // user-controlled `${…}` in them is never re-scanned. The catalogue marker
+    // restores to itself — `SubstrateBridge.run` renders it from the tool set.
+    restore: _buildRestoreMap(inputs),
+  );
+
+  final settings = registered.settings;
+  // The prompt's resolved `llm:` route — its committed binding, or whatever a
+  // live `/switch_model` rebound it to (the command mutates this same config,
+  // §request e), falling back to the registry default when unset.
+  final route = settings.llm ?? config.registry.llmDefault;
+  return proc.ResolvedPrompt(
+    role: settings.role,
+    llmRoute: route,
+    templateBody: body,
+    tools: _expandTools(settings.tools),
+    maxToolLoops: settings.maxToolLoops ?? 6,
+    temperature: settings.temperature,
+    responseFormat: settings.responseFormat,
+    channel: settings.channel,
+  );
 }
 
 /// Builds the `OverlayResolverFactory` seam over a loaded [config]
@@ -145,27 +232,14 @@ proc.OverlayResolverFactory buildOverlayPromptResolver(
           await _loadOverlayTemplate(registered.template, overlayRoot);
       if (rawTemplate == null) return null;
 
-      final resolver = builtins.resolver(
+      return _renderPrompt(
+        registered,
+        rawTemplate,
+        inputs,
+        config,
+        builtins,
         expressions: expressions,
         environment: environment,
-      );
-      final body = await _resolveProtected(
-        rawTemplate,
-        resolver,
-        restore: _buildRestoreMap(inputs),
-      );
-
-      final settings = registered.settings;
-      final route = settings.llm ?? config.registry.llmDefault;
-      return proc.ResolvedPrompt(
-        role: settings.role,
-        llmRoute: route,
-        templateBody: body,
-        tools: _expandTools(settings.tools),
-        maxToolLoops: settings.maxToolLoops ?? 6,
-        temperature: settings.temperature,
-        responseFormat: settings.responseFormat,
-        channel: settings.channel,
       );
     };
   };
@@ -473,6 +547,38 @@ Future<String?> _loadOverlayTemplate(
       final File f = File(_joinPath(overlayRoot, file.path));
       if (!await f.exists()) return null;
       return f.readAsString();
+  }
+}
+
+/// Loads a resolved [template] from a compiled-in [bundle] (`path → source`),
+/// returning `null` when the bundle carries **no** source for it (CLI plan
+/// step 3).
+///
+/// The bundle analogue of [_loadOverlayTemplate]: it addresses each half by the
+/// registered template's cognition-root-relative path, exactly the key a disk
+/// resolver would read the file from — so disk and bundle agree on the key for
+/// one prompt id. Unlike the disk loaders it ignores the `present` flags (a
+/// bundle-only deployment has no disk to flag presence against); presence in the
+/// [bundle] map *is* the existence test. A [PromptTemplateFiles] pair is served
+/// when *either* half is in the bundle (the present halves are read, an absent
+/// half → empty, joined by the same rule as the base); a [FragmentTemplateFiles]
+/// only when its single file is in the bundle.
+String? _loadBundleTemplate(
+  TemplateResolution template,
+  Map<String, String> bundle,
+) {
+  switch (template) {
+    case PromptTemplateFiles(:final system, :final user):
+      final String? systemSrc = bundle[system.path];
+      final String? userSrc = bundle[user.path];
+      if (systemSrc == null && userSrc == null) return null;
+      final String systemText = systemSrc ?? '';
+      final String userText = userSrc ?? '';
+      if (systemText.isEmpty) return userText;
+      if (userText.isEmpty) return systemText;
+      return '$systemText\n\n$userText';
+    case FragmentTemplateFiles(:final file):
+      return bundle[file.path];
   }
 }
 

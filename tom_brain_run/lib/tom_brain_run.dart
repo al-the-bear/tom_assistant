@@ -68,6 +68,7 @@ export 'src/cognition_config.dart'
 export 'src/cognition_config_loader.dart' show CognitionConfigLoader;
 export 'src/cognition_prompt_resolver.dart'
     show
+        buildBundledPromptResolver,
         buildOverlayPromptResolver,
         buildPromptResolver,
         buildRouteChainResolver;
@@ -151,6 +152,8 @@ export 'src/memory_mcp_isolate_host.dart'
 // the observatory package directly (the run layer owns its lifecycle).
 export 'package:tom_brain_observatory/tom_brain_observatory.dart'
     show ObservatoryOptions, RuntimeSnapshot;
+export 'src/scripts_config.dart' show ScriptsConfig, ScriptsConfigException;
+export 'src/scripts_config_loader.dart' show ScriptsConfigLoader;
 export 'src/tools_config.dart' show ToolsConfig, ToolsConfigException;
 export 'src/tools_config_loader.dart' show ToolsConfigLoader;
 
