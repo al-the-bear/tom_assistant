@@ -24,7 +24,8 @@
 // secrets").
 
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show InboundRequest, Persona, ResolvedIdentity, Session, TurnId;
+    show InboundRequest, Persona, ResolvedIdentity, ResolvedProfile, Session,
+        TurnId;
 
 import '../identity/session_manager.dart' show AccessChannel;
 
@@ -59,6 +60,21 @@ final class IncomingTrailRecord {
   /// `null` for the process default.
   final String? profile;
 
+  /// The selected **processing** profile id ([ResolvedProfile.id]) — the third
+  /// selection axis (session_configuration.md §7.2 item 6). Distinct from
+  /// [profile] (the memory axis); `default` for a request that selected none.
+  final String processingProfile;
+
+  /// The processing profile's mode wire token ([ProfileMode.wireName]:
+  /// `cognitive` / `answer` / `passthrough`).
+  final String processingMode;
+
+  /// Whether the assistant-dedication anchor was injected for this turn's
+  /// prompts ([ResolvedProfile.anchored]). `true` for every default/anchored
+  /// profile; `false` only for an explicitly un-anchored relay — recorded so
+  /// every un-anchored run is auditable (§7.1).
+  final bool anchored;
+
   /// The resolved persona id ([Persona.personaId]).
   final String persona;
 
@@ -85,6 +101,9 @@ final class IncomingTrailRecord {
     required this.text,
     this.conversationId,
     this.profile,
+    this.processingProfile = 'default',
+    this.processingMode = 'cognitive',
+    this.anchored = true,
     this.attachments = const [],
     this.rawEnvelope = const {},
   });
@@ -100,6 +119,7 @@ final class IncomingTrailRecord {
     required ResolvedIdentity identity,
     required Session session,
     required Persona persona,
+    required ResolvedProfile profile,
     required InboundRequest envelope,
   }) =>
       IncomingTrailRecord(
@@ -110,6 +130,9 @@ final class IncomingTrailRecord {
         sessionId: session.sessionId,
         conversationId: envelope.conversationId,
         profile: session.memoryProfile,
+        processingProfile: profile.id,
+        processingMode: profile.mode.wireName,
+        anchored: profile.anchored,
         persona: persona.personaId,
         text: envelope.text,
         rawEnvelope: envelope.metadata,

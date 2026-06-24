@@ -21,6 +21,12 @@ Inbound _fromMap(Map<String, Object?> json) => Inbound(
       sessionId: json['sessionId'] as String? ?? '',
       conversationId: json['conversationId'] as String?,
       profile: json['profile'] as String?,
+      // The processing-profile axis (§7.2 item 6). Older dumps predate these
+      // fields → degrade to the SC-5 byte-compatible default (cognitive,
+      // anchored).
+      processingProfile: json['processingProfile'] as String? ?? 'default',
+      processingMode: json['processingMode'] as String? ?? 'cognitive',
+      anchored: json['anchored'] as bool? ?? true,
       persona: json['persona'] as String? ?? '',
       receivedAt:
           DateTime.tryParse(json['receivedAt'] as String? ?? '')?.toUtc() ??

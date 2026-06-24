@@ -23,6 +23,9 @@ IncomingTrailRecord _record({
   String sessionId = 'sess-1',
   String? conversationId = 'conv-1',
   String? profile = 'default',
+  String processingProfile = 'default',
+  String processingMode = 'cognitive',
+  bool anchored = true,
   String persona = 'tom-assistant',
   String text = 'And what were the three prompts before?',
   Map<String, Object?> rawEnvelope = const {'locale': 'en'},
@@ -35,6 +38,9 @@ IncomingTrailRecord _record({
       sessionId: sessionId,
       conversationId: conversationId,
       profile: profile,
+      processingProfile: processingProfile,
+      processingMode: processingMode,
+      anchored: anchored,
       persona: persona,
       text: text,
       rawEnvelope: rawEnvelope,
@@ -75,6 +81,46 @@ void main() {
       expect(json['text'], 'And what were the three prompts before?');
       expect(json['attachments'], isEmpty);
       expect(json['rawEnvelope'], {'locale': 'en'});
+    });
+
+    test('records the processing-profile axis: processingProfile + '
+        'processingMode + anchored (§7.2 item 6)', () {
+      IncomingTrailWriter(root: root).write(_record(
+        processingProfile: 'research',
+        processingMode: 'cognitive',
+        anchored: true,
+      ));
+
+      final file = File(
+        '${root.path}/incoming/telegram/'
+        '260608-120831.402355.raw.json',
+      );
+      final json = jsonDecode(file.readAsStringSync()) as Map<String, Object?>;
+      // Parallel to (and distinct from) the memory `profile` label above.
+      expect(json['processingProfile'], 'research');
+      expect(json['processingMode'], 'cognitive');
+      expect(json['anchored'], isTrue);
+      // The memory profile stays its own field — the two axes never collide.
+      expect(json['profile'], 'default');
+    });
+
+    test('an un-anchored run is visibly flagged anchored:false (§7.1 '
+        'auditability)', () {
+      IncomingTrailWriter(root: root).write(_record(
+        processingProfile: 'relay',
+        processingMode: 'passthrough',
+        anchored: false,
+      ));
+
+      final file = File(
+        '${root.path}/incoming/telegram/'
+        '260608-120831.402355.raw.json',
+      );
+      final json = jsonDecode(file.readAsStringSync()) as Map<String, Object?>;
+      expect(json['anchored'], isFalse,
+          reason: 'every un-anchored run must be auditable in the trail');
+      expect(json['processingProfile'], 'relay');
+      expect(json['processingMode'], 'passthrough');
     });
 
     test('routes each channel to its own sub-folder', () {

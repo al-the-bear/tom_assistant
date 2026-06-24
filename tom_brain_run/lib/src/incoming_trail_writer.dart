@@ -84,6 +84,12 @@ final class IncomingTrailWriter {
         if (record.conversationId != null)
           'conversationId': record.conversationId,
         if (record.profile != null) 'profile': record.profile,
+        // The processing-profile axis (§7.2 item 6) — always present, distinct
+        // from the memory `profile` above; `anchored` flags un-anchored runs
+        // for §7.1 auditability.
+        'processingProfile': record.processingProfile,
+        'processingMode': record.processingMode,
+        'anchored': record.anchored,
         'persona': record.persona,
         'text': record.text,
         'attachments': record.attachments,

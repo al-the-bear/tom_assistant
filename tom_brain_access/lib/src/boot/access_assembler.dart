@@ -748,6 +748,7 @@ final class AccessAssembler implements ApiKeyRegistrar {
       identity: identity,
       session: stampedSession,
       persona: effectivePersona,
+      profile: profile,
       envelope: effectiveEnvelope,
     );
 
@@ -806,6 +807,7 @@ final class AccessAssembler implements ApiKeyRegistrar {
     required ResolvedIdentity identity,
     required Session session,
     required Persona persona,
+    required ResolvedProfile profile,
     required InboundRequest envelope,
   }) {
     final IncomingTrailSink? sink = incomingTrailSink;
@@ -821,6 +823,7 @@ final class AccessAssembler implements ApiKeyRegistrar {
           identity: identity,
           session: session,
           persona: persona,
+          profile: profile,
           envelope: envelope,
         ),
       );

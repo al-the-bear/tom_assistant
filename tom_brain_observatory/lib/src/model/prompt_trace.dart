@@ -68,6 +68,19 @@ final class Inbound {
   /// The memory profile pinned on the session, or `null` for the process default.
   final String? profile;
 
+  /// The selected **processing** profile id (the third selection axis,
+  /// `session_configuration.md` §7.2 item 6) — distinct from [profile] (the
+  /// memory axis). `default` for a request that selected no profile.
+  final String processingProfile;
+
+  /// The processing profile's mode (`cognitive` / `answer` / `passthrough`).
+  final String processingMode;
+
+  /// Whether this turn's prompts carried the assistant-dedication anchor.
+  /// `false` only for an explicitly un-anchored relay — surfaced so every
+  /// un-anchored run is visible in the prompt trace (§7.1).
+  final bool anchored;
+
   /// The resolved persona id (the OpenAI `model` string, mapped).
   final String persona;
 
@@ -92,6 +105,9 @@ final class Inbound {
     required this.text,
     this.conversationId,
     this.profile,
+    this.processingProfile = 'default',
+    this.processingMode = 'cognitive',
+    this.anchored = true,
     List<Object?> attachments = const <Object?>[],
     Map<String, Object?> rawEnvelope = const <String, Object?>{},
   })  : attachments = List<Object?>.unmodifiable(attachments),
@@ -103,6 +119,9 @@ final class Inbound {
         'sessionId': sessionId,
         if (conversationId != null) 'conversationId': conversationId,
         if (profile != null) 'profile': profile,
+        'processingProfile': processingProfile,
+        'processingMode': processingMode,
+        'anchored': anchored,
         'persona': persona,
         'receivedAt': receivedAt.toIso8601String(),
         'text': text,

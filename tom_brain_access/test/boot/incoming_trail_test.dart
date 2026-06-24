@@ -105,10 +105,42 @@ void main() {
       expect(rec.receivedAt, _fixedNow());
       expect(rec.sessionId, isNotEmpty);
 
+      // The processing-profile axis (§7.2 item 6). No profile selected → the
+      // SC-5 byte-compatible default: cognitive + anchored.
+      expect(rec.processingProfile, 'default');
+      expect(rec.processingMode, 'cognitive');
+      expect(rec.anchored, isTrue);
+
       // The record names the same turn the dispatched access carries, and the
       // sink fired *before* the access reached the dispatcher (admission seam).
       expect(d.routed, hasLength(1));
       expect(rec.turnId.value, d.routed.single.turnId!.value);
+    });
+
+    test('fromAdmission stamps the resolved profile id + mode + anchored',
+        () {
+      final rec = IncomingTrailRecord.fromAdmission(
+        channel: AccessChannel.openai,
+        turnId: TurnId.generate(),
+        receivedAt: _fixedNow(),
+        identity: ResolvedIdentity(principalId: 'principal-1'),
+        session: Session(sessionId: 'sess-1'),
+        persona: Persona(
+          personaId: 'tom-assistant',
+          substrateRole: 'assistant_to_user',
+        ),
+        envelope: _envelope(),
+        profile: ResolvedProfile(
+          id: 'relay',
+          mode: ProfileMode.passthrough,
+          entryProcedure: 'passthrough_v1',
+          anchored: false,
+        ),
+      );
+
+      expect(rec.processingProfile, 'relay');
+      expect(rec.processingMode, 'passthrough');
+      expect(rec.anchored, isFalse);
     });
 
     test('the record never carries the bearer credential', () async {
