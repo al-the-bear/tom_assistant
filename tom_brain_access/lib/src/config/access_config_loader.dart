@@ -76,7 +76,8 @@ abstract final class AccessConfigLoader {
   /// `DreamConfigLoader` for `dream:` (memory-spec § 9.7), its cognition
   /// loader for `cognition:` — `prompt_configuration.md` §7.4, the prompt /
   /// route resolver root — and the procedure package's `McpServersConfig`
-  /// for `mcpServers:` (the outbound MCP servers merged into the tool loop,
+  /// for `mcpServers:` / `mcpServersDir:` (the outbound MCP servers merged into
+  /// the tool loop, inline or directory-sourced,
   /// `tom_brain_procedure_specification.md` § 21.6), and the run package's
   /// `ProfileRegistry` for `profiles:` — the Profile selection-axis registry,
   /// `session_configuration.md` § 3, SC-5) and are tolerated here so the single
@@ -92,6 +93,7 @@ abstract final class AccessConfigLoader {
     'dream',
     'cognition',
     'mcpServers',
+    'mcpServersDir',
     'profiles',
     'profilesDir',
     _historyKey,

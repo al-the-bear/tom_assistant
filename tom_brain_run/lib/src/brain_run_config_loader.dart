@@ -127,8 +127,11 @@ abstract final class BrainRunConfigLoader {
         DreamConfigLoader.parse(content, envVars: envVars);
     final CognitionRunConfig? cognition =
         CognitionRunConfigLoader.parse(content, envVars: envVars);
-    final McpServersConfig mcpServers =
-        McpServersConfig.fromYamlString(content);
+    final McpServersConfig mcpServers = McpServersConfig.fromYamlString(
+      content,
+      envVars: envVars,
+      basePath: basePath,
+    );
     final ProfileRegistry profiles = ProfileRegistry.fromYamlString(
       content,
       envVars: envVars,

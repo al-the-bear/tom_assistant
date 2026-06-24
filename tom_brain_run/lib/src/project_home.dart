@@ -72,10 +72,6 @@ final class ResolvedPath {
 /// `<home>/agent` convention and (in [ProjectHome.buildConfig]) an explicit
 /// value in the base config file.
 ///
-/// There is deliberately no `mcp` override: directory-sourced external MCP
-/// servers (`--mcp` / `mcpServersDir`) are not yet wired — `McpServersConfig`
-/// is inline-only today — so `ProjectHome` offers no knob it cannot honour
-/// (CLI plan step #8 owns that loader work).
 final class HomeOverrides {
   /// Builds an override set; every field defaults to "not overridden".
   const HomeOverrides({
@@ -86,6 +82,7 @@ final class HomeOverrides {
     this.providersDir,
     this.modelsDir,
     this.profilesDir,
+    this.mcpServersDir,
     this.promptsDir,
     this.scriptsSystemDir,
     this.sqliteVecBinariesRoot,
@@ -113,6 +110,9 @@ final class HomeOverrides {
 
   /// `--profiles` → top-level `profilesDir`.
   final String? profilesDir;
+
+  /// `--mcp` → top-level `mcpServersDir`.
+  final String? mcpServersDir;
 
   /// `--prompts` → `cognition.root`.
   final String? promptsDir;
@@ -186,6 +186,9 @@ final class ProjectHome {
   /// top-level `profilesDir` — session-profile config.
   String get profilesDir => overrides.profilesDir ?? _underAgent('profiles');
 
+  /// top-level `mcpServersDir` — external MCP-server definitions.
+  String get mcpServersDir => overrides.mcpServersDir ?? _underAgent('mcp');
+
   /// `cognition.root` — the prompt registry, roles, and overlays.
   String get promptsDir => overrides.promptsDir ?? _underAgent('prompts');
 
@@ -216,6 +219,7 @@ final class ProjectHome {
         _layer('providers.dir', providersDir, overrides.providersDir),
         _layer('models.dir', modelsDir, overrides.modelsDir),
         _layer('profiles.dir', profilesDir, overrides.profilesDir),
+        _layer('mcpServers.dir', mcpServersDir, overrides.mcpServersDir),
         _layer('cognition.root', promptsDir, overrides.promptsDir),
         _layer('scripts.systemDir', scriptsSystemDir,
             overrides.scriptsSystemDir),
@@ -338,6 +342,18 @@ final class ProjectHome {
       overlay['profilesDir'] = profilesDir;
     }
 
+    // External MCP servers are an OPTIONAL aspect — an absent block yields an
+    // empty registry (the cognition has no outbound MCP servers). Like
+    // profiles, the convention points `mcpServersDir` at `<agent>/mcp/` only
+    // when that directory actually exists; otherwise it stays unset and the
+    // registry is empty. An explicit `--mcp` flag is honoured unconditionally
+    // (a missing flagged dir is an error).
+    if (!base.containsKey('mcpServers') &&
+        !base.containsKey('mcpServersDir') &&
+        Directory(mcpServersDir).existsSync()) {
+      overlay['mcpServersDir'] = mcpServersDir;
+    }
+
     return overlay;
   }
 
@@ -385,6 +401,9 @@ final class ProjectHome {
     }
     if (overrides.profilesDir != null) {
       overlay['profilesDir'] = overrides.profilesDir;
+    }
+    if (overrides.mcpServersDir != null) {
+      overlay['mcpServersDir'] = overrides.mcpServersDir;
     }
 
     final Map<Object?, Object?> tools = <Object?, Object?>{};

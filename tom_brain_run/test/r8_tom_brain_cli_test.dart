@@ -252,6 +252,27 @@ void main() {
       expect(asm.runtime.memoryMcpPort, 9100);
     });
 
+    test('--mcp sources external MCP servers from a directory (CLP-41 lifted)',
+        () {
+      final cfgPath = writeConfig(_homeLeaningConfig);
+      final mcpDir = '${tmp.path}/external_mcp';
+      Directory(mcpDir).createSync(recursive: true);
+      File('$mcpDir/s.yaml').writeAsStringSync('''
+mcpServers:
+  - id: flagged
+    transport: http
+    url: http://localhost:9500
+''');
+      final asm = assembleServeConfig(
+        [':serve', '--config', cfgPath, '--home', tmp.path, '--mcp', mcpDir],
+        env: const {},
+      );
+      expect(
+        asm.config.mcpServers.servers.map((s) => s.id),
+        <String>['flagged'],
+      );
+    });
+
     test('an unknown flag is a clear startup error', () {
       final cfgPath = writeConfig(_singleFileConfig);
       expect(

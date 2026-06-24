@@ -169,11 +169,21 @@ final class McpServersConfig {
   ///
   /// An absent file yields an empty registry (the brain simply has no MCP
   /// servers — not an error). Structural problems throw [McpConfigInvalid].
-  static Future<McpServersConfig> loadFromFile(File file) async {
+  ///
+  /// [envVars] expands `${env:NAME}` tokens in server coordinates; a relative
+  /// `mcpServersDir` resolves against [file]'s directory (CLI plan step #3).
+  static Future<McpServersConfig> loadFromFile(
+    File file, {
+    Map<String, String> envVars = const <String, String>{},
+  }) async {
     if (!await file.exists()) {
       return McpServersConfig(const <McpServerConfig>[]);
     }
-    return fromYamlString(await file.readAsString());
+    return fromYamlString(
+      await file.readAsString(),
+      envVars: envVars,
+      basePath: file.absolute.parent.path,
+    );
   }
 
   /// Parses an `mcpServers:` block from [yamlText].
@@ -183,27 +193,83 @@ final class McpServersConfig {
   /// `url` / `headers`. A missing `mcpServers:` key yields an empty registry.
   /// An unknown `transport`, a missing `id`, or a wrong-typed field throws
   /// [McpConfigInvalid].
-  static McpServersConfig fromYamlString(String yamlText) {
+  ///
+  /// The block may be sourced from a directory instead of inline: a top-level
+  /// `mcpServersDir:` names a directory of `*.yaml` / `*.yml` files, each
+  /// carrying its own `mcpServers:` list; the lists are unioned in filename
+  /// order with cross-file duplicate-id detection (mirrors the substrate
+  /// `providersDir` / profiles `profilesDir` aspects, CLI plan step #3).
+  /// Declaring both `mcpServers:` (inline) and `mcpServersDir:` is a config
+  /// error. A relative `mcpServersDir` resolves against [basePath] (the config
+  /// file's directory); [envVars] expands `${env:NAME}` tokens in server
+  /// coordinates (`command` / `args` / `url` / `headers`).
+  static McpServersConfig fromYamlString(
+    String yamlText, {
+    Map<String, String> envVars = const <String, String>{},
+    String? basePath,
+  }) {
     final doc = loadYamlAsMap(
       yamlText,
       rootPath: 'mcp',
       errorFactory: McpConfigInvalid.new,
     );
-    const reader = YamlConfigReader(
-      env: <String, String>{},
+    final reader = YamlConfigReader(
+      env: envVars,
       errorFactory: McpConfigInvalid.new,
     );
+
+    final servers = <McpServerConfig>[];
+    final seenIds = <String>{};
+
+    final mcpServersDir =
+        reader.optionalString(doc, 'mcpServersDir', 'mcpServersDir');
+    if (mcpServersDir != null) {
+      if (doc.containsKey('mcpServers')) {
+        throw const McpConfigInvalid(
+          'declare `mcpServers:` (inline) or `mcpServersDir:` (a directory of '
+          'MCP server files), not both.',
+          path: 'mcpServersDir',
+        );
+      }
+      for (final file in _mcpYamlFiles(mcpServersDir, basePath)) {
+        final fileDoc = _loadMcpFile(file);
+        final rawServers =
+            reader.optionalList(fileDoc, 'mcpServers', 'mcpServers');
+        if (rawServers != null) {
+          _accumulate(
+            rawServers,
+            reader,
+            servers,
+            seenIds,
+            source: _fileLabel(file),
+          );
+        }
+      }
+      return McpServersConfig(servers);
+    }
 
     final rawServers = reader.optionalList(doc, 'mcpServers', 'mcp.mcpServers');
     if (rawServers == null) {
       return McpServersConfig(const <McpServerConfig>[]);
     }
+    _accumulate(rawServers, reader, servers, seenIds, source: 'mcp.mcpServers');
+    return McpServersConfig(servers);
+  }
 
-    final servers = <McpServerConfig>[];
-    final seenIds = <String>{};
+  /// Parses each entry of an `mcpServers:` [rawServers] list into [servers],
+  /// expanding `${env:NAME}` coordinates and detecting a duplicate id across
+  /// the accumulated set ([seenIds]). [source] names the error-path prefix
+  /// (`mcp.mcpServers` inline, or the filename when directory-sourced).
+  static void _accumulate(
+    List<Object?> rawServers,
+    YamlConfigReader reader,
+    List<McpServerConfig> servers,
+    Set<String> seenIds, {
+    required String source,
+  }) {
     for (var i = 0; i < rawServers.length; i++) {
       final entry = rawServers[i];
-      final path = 'mcp.mcpServers[$i]';
+      final path = '$source[$i]';
       if (entry is! Map<String, Object?>) {
         throw McpConfigInvalid(
           'server entry must be a map (got ${entry.runtimeType})',
@@ -223,10 +289,20 @@ final class McpServersConfig {
       );
       final description =
           reader.optionalString(entry, 'description', '$path.description');
-      final command = reader.optionalString(entry, 'command', '$path.command');
-      final args = _stringList(reader, entry, 'args', '$path.args');
-      final url = reader.optionalString(entry, 'url', '$path.url');
-      final headers = _stringMap(reader, entry, 'headers', '$path.headers');
+      final rawCommand =
+          reader.optionalString(entry, 'command', '$path.command');
+      final command = rawCommand == null
+          ? null
+          : reader.expandEnv(rawCommand, '$path.command');
+      final args = _stringList(reader, entry, 'args', '$path.args')
+          .map((a) => reader.expandEnv(a, '$path.args'))
+          .toList(growable: false);
+      final rawUrl = reader.optionalString(entry, 'url', '$path.url');
+      final url = rawUrl == null ? null : reader.expandEnv(rawUrl, '$path.url');
+      final headers = _stringMap(reader, entry, 'headers', '$path.headers').map(
+        (key, value) =>
+            MapEntry(key, reader.expandEnv(value, '$path.headers.$key')),
+      );
       final exposeToLlms = reader.optionalBool(
             entry,
             'exposeToLlms',
@@ -245,9 +321,80 @@ final class McpServersConfig {
         exposeToLlms: exposeToLlms,
       ));
     }
-
-    return McpServersConfig(servers);
   }
+
+  // ── directory sourcing (`mcpServersDir`, CLI plan step #3) ──────────
+  //
+  // Mirrors the substrate loader's `providersDir`/`modelsDir` helpers and the
+  // profiles `profilesDir` aspect: resolve a relative dir against the config
+  // file's directory, read its `*.yaml`/`*.yml` files in filename order, and
+  // feed each file's `mcpServers:` list back through the inline parser. Kept
+  // off `package:path` (the `_isAbsolutePath` regex) to match the sibling
+  // loaders' surface.
+
+  /// Resolves [dirPath] against [basePath] and returns its `*.yaml`/`*.yml`
+  /// files sorted by path. A relative [dirPath] requires a [basePath]; a
+  /// missing directory is a clear error.
+  static List<File> _mcpYamlFiles(String dirPath, String? basePath) {
+    final String resolved;
+    if (_isAbsolutePath(dirPath)) {
+      resolved = dirPath;
+    } else if (basePath == null) {
+      throw const McpConfigInvalid(
+        'mcpServersDir is a relative path but no base directory is available; '
+        'load the config via `loadFromFile` (or pass `basePath`) so a relative '
+        'MCP servers directory resolves against the config file.',
+        path: 'mcpServersDir',
+      );
+    } else {
+      resolved = '$basePath/$dirPath';
+    }
+    final dir = Directory(resolved);
+    if (!dir.existsSync()) {
+      throw McpConfigInvalid(
+        'mcpServersDir directory not found: $resolved',
+        path: 'mcpServersDir',
+      );
+    }
+    return dir
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.yaml') || f.path.endsWith('.yml'))
+        .toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+  }
+
+  /// Reads + parses one MCP servers [file] into a plain map. Wraps read
+  /// failures as [McpConfigInvalid] naming the file.
+  static Map<String, Object?> _loadMcpFile(File file) {
+    final String content;
+    try {
+      content = file.readAsStringSync();
+    } on FileSystemException catch (e) {
+      throw McpConfigInvalid(
+        'mcpServersDir: cannot read ${file.path}: ${e.message}',
+        path: 'mcpServersDir',
+      );
+    }
+    return loadYamlAsMap(
+      content,
+      rootPath: _fileLabel(file),
+      errorFactory: McpConfigInvalid.new,
+    );
+  }
+
+  /// The trailing filename of an MCP servers [file], for compact error labels.
+  static String _fileLabel(File file) {
+    final segments = file.uri.pathSegments;
+    return segments.isEmpty ? file.path : segments.last;
+  }
+
+  /// Posix / Windows absolute-path test without `package:path` (matching the
+  /// sibling aspect loaders' surface).
+  static bool _isAbsolutePath(String pth) =>
+      pth.startsWith('/') ||
+      pth.startsWith(r'\\') ||
+      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(pth);
 
   static McpTransport _parseTransport(String value, String path) {
     for (final transport in McpTransport.values) {

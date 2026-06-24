@@ -268,4 +268,69 @@ void main() {
       );
     });
   });
+
+  group('#3 ProjectHome — mcp relocatable aspect', () {
+    test('mcpServersDir defaults under <agent>/mcp', () {
+      final home = ProjectHome(home: tmp.path);
+      expect(home.mcpServersDir, '${tmp.path}/agent/mcp');
+    });
+
+    test('--mcp override beats the convention; resolution log records it', () {
+      final home = ProjectHome(
+        home: tmp.path,
+        overrides: HomeOverrides(mcpServersDir: '/srv/shared/mcp'),
+      );
+      expect(home.mcpServersDir, '/srv/shared/mcp');
+      final mcp =
+          home.resolutionLog.firstWhere((r) => r.aspect == 'mcpServers.dir');
+      expect(mcp.layer, PathLayer.flag);
+      expect(mcp.value, '/srv/shared/mcp');
+    });
+
+    test('the <agent>/mcp/ convention fills mcpServers when the dir exists', () {
+      final agent = '${tmp.path}/agent';
+      Directory('$agent/mcp').createSync(recursive: true);
+      File('$agent/mcp/servers.yaml').writeAsStringSync('''
+mcpServers:
+  - id: external
+    transport: http
+    url: http://localhost:9400
+''');
+      final home = ProjectHome(home: tmp.path);
+      final base = '$_substrateInline\n$_memorySqliteOnly\n$_accessInline\n';
+
+      final cfg = home.buildConfig(base);
+
+      expect(cfg.mcpServers.servers.map((s) => s.id), <String>['external']);
+    });
+
+    test('no <agent>/mcp/ dir ⇒ empty registry (optional aspect)', () {
+      final home = ProjectHome(home: tmp.path);
+      final base = '$_substrateInline\n$_memorySqliteOnly\n$_accessInline\n';
+
+      final cfg = home.buildConfig(base);
+
+      expect(cfg.mcpServers.servers, isEmpty);
+    });
+
+    test('an explicit --mcp flag is honoured through buildConfig', () {
+      final mcpDir = '${tmp.path}/custom_mcp';
+      Directory(mcpDir).createSync(recursive: true);
+      File('$mcpDir/s.yaml').writeAsStringSync('''
+mcpServers:
+  - id: flagged
+    transport: stdio
+    command: serve
+''');
+      final home = ProjectHome(
+        home: tmp.path,
+        overrides: HomeOverrides(mcpServersDir: mcpDir),
+      );
+      final base = '$_substrateInline\n$_memorySqliteOnly\n$_accessInline\n';
+
+      final cfg = home.buildConfig(base);
+
+      expect(cfg.mcpServers.servers.map((s) => s.id), <String>['flagged']);
+    });
+  });
 }

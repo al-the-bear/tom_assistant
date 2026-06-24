@@ -274,6 +274,7 @@ class _ParsedServeFlags {
   String? providersDir;
   String? modelsDir;
   String? profilesDir;
+  String? mcpDir;
   String? promptsDir;
   String? scriptsDir;
   String? memoryDir;
@@ -306,6 +307,7 @@ class _ParsedServeFlags {
       providersDir != null ||
       modelsDir != null ||
       profilesDir != null ||
+      mcpDir != null ||
       promptsDir != null ||
       scriptsDir != null ||
       memoryDir != null ||
@@ -324,6 +326,7 @@ class _ParsedServeFlags {
         providersDir: providersDir,
         modelsDir: modelsDir,
         profilesDir: profilesDir,
+        mcpServersDir: mcpDir,
         promptsDir: promptsDir,
         scriptsSystemDir: scriptsDir,
         sqliteVecBinariesRoot: sqliteVecDir,
@@ -463,13 +466,7 @@ void _applyValue(_ParsedServeFlags out, String name, String value) {
     case 'models':
       out.modelsDir = value;
     case 'mcp':
-      // Directory-sourced external MCP servers are not yet wired
-      // (McpServersConfig is inline-only); reject rather than silently drop
-      // (CLP-41).
-      throw ServeConfigException(
-        '--mcp is not yet supported (directory-sourced MCP servers are not '
-        'wired; use inline mcp config).',
-      );
+      out.mcpDir = value;
     case 'profiles':
       out.profilesDir = value;
     case 'prompts':
