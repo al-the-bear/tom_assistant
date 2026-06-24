@@ -19,8 +19,9 @@
 //                     deployments); blocks until SIGINT/SIGTERM.
 //   * `observatory` — the read-only Observatory standalone against a trail root;
 //                     blocks until SIGINT/SIGTERM.
-//   * `init`        — refuses for now; the scaffold lands at CLI plan step #11
-//                     (CLP-42).
+//   * `init`        — scaffold the `<dir>/agent` convention skeleton (the
+//                     *.example.yaml aspect templates, an empty mcp/, and the
+//                     bundled prompts/scripts extracted onto disk).
 //   * `bundle`      — codegen the compiled-in prompt/script/native asset bundle
 //                     (§ 4), or `--list` a human-readable inventory.
 
@@ -35,6 +36,7 @@ import 'package:tom_build_base/tom_build_base_v2.dart';
 import 'package:tom_core_server/tom_core_server.dart'
     show standalonePlatformUtils;
 
+import '../bundle/brain_bundle.g.dart' show brainBundle;
 import '../bundle/bundle_codegen.dart'
     show buildBundleManifest, renderBundleSource;
 import '../bundle/bundle_listing.dart' show renderBundleListing;
@@ -44,6 +46,8 @@ import '../memory_mcp_isolate_host.dart'
 import '../observatory_banner.dart' show ObservatoryBanner;
 import '../observatory_isolate_host.dart'
     show ObservatoryIsolateHost, spawnObservatoryIsolate;
+import 'init_scaffold.dart'
+    show InitScaffoldException, InitScaffoldResult, scaffoldAgentSkeleton;
 import 'serve_config_assembler.dart'
     show ServeAssembly, ServeConfigAssembler, assembleServeConfig;
 import 'serve_runner.dart' show ServeBoot, defaultServeBoot, runBrainServe;
@@ -60,11 +64,16 @@ const int defaultStandaloneMemoryMcpPort = 8765;
 /// expansion source (the binary passes `Platform.environment`). [boot] and
 /// [assemble] are the injectable seams the tests fake; production uses the real
 /// [defaultServeBoot] / [assembleServeConfig].
+///
+/// [bundle] is the compiled-in asset bundle `init` extracts prompts/scripts
+/// from; it defaults to the binary's baked [brainBundle]. Tests inject a
+/// populated manifest to exercise extraction.
 Map<String, CommandExecutor> createTomBrainExecutors({
   required List<String> rawArgs,
   required Map<String, String> env,
   ServeBoot boot = defaultServeBoot,
   ServeConfigAssembler assemble = assembleServeConfig,
+  BundleManifest? bundle,
 }) {
   return {
     tomBrainServeCommandName: ServeCommandExecutor(
@@ -77,7 +86,8 @@ Map<String, CommandExecutor> createTomBrainExecutors({
         MemoryMcpCommandExecutor(rawArgs: rawArgs, env: env),
     tomBrainObservatoryCommandName:
         ObservatoryCommandExecutor(rawArgs: rawArgs, env: env),
-    tomBrainInitCommandName: InitCommandExecutor(),
+    tomBrainInitCommandName:
+        InitCommandExecutor(rawArgs: rawArgs, bundle: bundle),
     tomBrainBundleCommandName: BundleCommandExecutor(rawArgs: rawArgs),
   };
 }
@@ -219,21 +229,56 @@ final class ObservatoryCommandExecutor extends CommandExecutor {
   }
 }
 
-/// `tom_brain init` — scaffold the `<home>/agent` convention skeleton. Deferred:
-/// the wiring lands at CLI plan step #11 (CLP-42), so this refuses cleanly
-/// rather than silently doing nothing.
+/// `tom_brain init <dir> [--no-extract]` — scaffold the `<dir>/agent`
+/// convention skeleton (§ 5.4): the three `*.example.yaml` aspect templates, an
+/// empty `mcp/`, and (unless `--no-extract`) the bundled prompts/scripts
+/// extracted onto disk for editing.
 final class InitCommandExecutor extends CommandExecutor {
+  /// Binds the raw argv (for the `<dir>` positional + `--no-extract`) and the
+  /// asset bundle to extract from (defaults to the binary's [brainBundle]).
+  InitCommandExecutor({required this.rawArgs, BundleManifest? bundle})
+      : bundle = bundle ?? brainBundle;
+
+  /// The subcommand-normalised process argv.
+  final List<String> rawArgs;
+
+  /// The compiled-in asset bundle prompts/scripts are extracted from.
+  final BundleManifest bundle;
+
   @override
   Future<ItemResult> execute(CommandContext context, CliArgs args) =>
       throw UnsupportedError('init does not traverse projects');
 
   @override
   Future<ToolResult> executeWithoutTraversal(CliArgs args) async {
-    return const ToolResult.failure(
-      'tom_brain init is not implemented yet (CLI plan step #11). Create the '
-      '<home>/agent skeleton by hand, or run `tom_brain serve --home <dir>` '
-      'which fills the convention paths from the bundle.',
-    );
+    final String? target = _firstPositional(rawArgs, tomBrainInitCommandName);
+    if (target == null) {
+      return const ToolResult.failure(
+        'init needs a target directory: tom_brain init <dir> [--no-extract].',
+      );
+    }
+    final bool extract = !_hasFlag(rawArgs, 'no-extract');
+
+    final InitScaffoldResult result;
+    try {
+      result = scaffoldAgentSkeleton(
+        home: Directory(target),
+        bundle: bundle,
+        extract: extract,
+      );
+    } on InitScaffoldException catch (e) {
+      return ToolResult.failure(e.message);
+    }
+
+    stdout.writeln('tom_brain init: scaffolded ${result.agentRoot}');
+    stdout.writeln('  wrote: ${result.created.join(', ')}');
+    if (result.extracted) {
+      stdout.writeln('  extracted: ${result.extractedPrompts} prompts, '
+          '${result.extractedScripts} scripts');
+    } else if (!extract) {
+      stdout.writeln('  --no-extract: running off the in-binary bundle');
+    }
+    return const ToolResult.success(processedCount: 1);
   }
 }
 
@@ -310,6 +355,17 @@ int? _intFlag(List<String> args, String name) {
 
 bool _hasFlag(List<String> args, String name) =>
     args.contains('--$name') || args.any((a) => a.startsWith('--$name='));
+
+/// The first positional argument — the leading non-flag token that is not the
+/// subcommand name itself (`init` / `:init`). Used by `init` for its `<dir>`.
+String? _firstPositional(List<String> args, String subcommand) {
+  for (final token in args) {
+    if (token == subcommand || token == ':$subcommand') continue;
+    if (token.startsWith('-')) continue;
+    return token;
+  }
+  return null;
+}
 
 /// Blocks until SIGINT (or SIGTERM, off Windows), then runs [stop] and resolves.
 /// Shared by the standalone server subcommands so a wedged guest never blocks

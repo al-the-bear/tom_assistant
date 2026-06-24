@@ -288,8 +288,9 @@ final CommandDefinition tomBrainObservatoryCommand = CommandDefinition(
 /// The `init` command — scaffold the `--home`/agent convention skeleton.
 final CommandDefinition tomBrainInitCommand = CommandDefinition(
   name: tomBrainInitCommandName,
-  description: 'Scaffold the <home>/agent convention skeleton (§ 5.4). '
-      'Wiring lands at CLI plan step #11.',
+  description: 'Scaffold the <home>/agent convention skeleton (§ 5.4): the '
+      'three *.example.yaml aspect templates, an empty mcp/, and (unless '
+      '--no-extract) the bundled prompts/scripts extracted onto disk.',
   requiresTraversal: false,
   supportsProjectTraversal: false,
   options: const [

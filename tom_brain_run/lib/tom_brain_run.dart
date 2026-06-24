@@ -209,6 +209,11 @@ export 'src/cli/cli_executors.dart'
         ServeCommandExecutor,
         createTomBrainExecutors,
         defaultStandaloneMemoryMcpPort;
+export 'src/cli/init_scaffold.dart'
+    show
+        InitScaffoldException,
+        InitScaffoldResult,
+        scaffoldAgentSkeleton;
 
 // ── The --home/agent directory-convention resolver (tom_brain_cli.md § 2 / § 6
 //    / § 8; CLI plan step #6) ─────────────────────────────────────────────
