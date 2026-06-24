@@ -8,7 +8,7 @@
 // disables it (`--no-observatory`), it fails to start, or no trail tree is
 // configured, [forStartup] is the fallback banner: it names the URL and the
 // hand-launch command for the standalone `bin/observatory.dart`. Both are pure
-// functions so they are unit-testable without a logger; `bin/brain_serve.dart`
+// functions so they are unit-testable without a logger; `tom_brain serve`
 // emits the result through `tomLog.status`, exactly like the sibling
 // [TrailBanner].
 //

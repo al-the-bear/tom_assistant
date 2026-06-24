@@ -20,7 +20,7 @@
 //
 // Signal discipline: the spawned entry must NEVER touch `ProcessSignal` or
 // `exit` — those are process-wide and belong to the parent brain isolate
-// (`brain_serve`). The entry stops only on an explicit control message from the
+// (`tom_brain serve`). The entry stops only on an explicit control message from the
 // host; the parent's SIGINT/SIGTERM handler calls [ObservatoryIsolateHost.stop].
 
 import 'dart:async';

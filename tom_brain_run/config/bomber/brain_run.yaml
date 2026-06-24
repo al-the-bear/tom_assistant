@@ -10,7 +10,7 @@
 #   TELEGRAM_TOM_BRAIN_USER  — the owner's numeric Telegram user id (whitelist)
 #
 # Launch with `run_tom_brain.sh` (which defaults to this host's config) or:
-#   dart run bin/brain_serve.dart config/bomber/brain_run.yaml
+#   dart run bin/tom_brain.dart serve --config config/bomber/brain_run.yaml
 #
 # Substrate: Gemma on oMLX (OpenAI-compatible) over the VPN for the LLM, local
 # Ollama for embeddings. Access: all three API gateways (OpenAI / Ollama /

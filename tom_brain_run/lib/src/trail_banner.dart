@@ -3,7 +3,7 @@
 //
 // §4.1 requires a banner emitted early (before the first turn) stating which
 // of the two modes is active. The text is produced here as a pure function so
-// it is unit-testable without a logger; `bin/brain_serve.dart` emits the
+// it is unit-testable without a logger; `tom_brain serve` emits the
 // result through `tomLog.status`, which prepends the `STATUS ` level the §4.1
 // example shows. The `[tom_brain.trail]` category prefix is part of the body
 // (the same convention `MemoryLog`/`SubstrateLog` use via their `_tag`).

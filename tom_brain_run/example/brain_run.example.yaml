@@ -1,14 +1,15 @@
 # yaml-language-server: $schema=../../../.tom/json-schema/tom_brain/brain_run.schema.json
 # Example whole-process run config for the tom_brain prototype.
 #
-# Consumed by two launchers, both reading this one file:
-#   * tom_brain_run/bin/brain_serve.dart       — substrate + memory + access
-#   * tom_brain_memory/bin/memory_mcp_server.dart — the `memory:` section only
+# Consumed by the unified `tom_brain` CLI, reading this one file:
+#   * tom_brain serve       — substrate + memory + access (co-hosts the
+#                             read-mostly memory MCP server + Observatory)
+#   * tom_brain memory-mcp   — the `memory:` section only (standalone server)
 #
 # `${env:NAME}` references are expanded from the launching process's environment
 # (memory.root, memory.sqliteVec.binariesRoot, access.telegram.botToken, and
 # each access.apiKeys[].key). Copy this file, fill in real values (or set
-# the env vars), and pass the copy as the launcher's argument.
+# the env vars), and pass the copy via `--config`.
 
 # ── Substrate: where tokens actually come from ───────────────────────────────
 substrate:

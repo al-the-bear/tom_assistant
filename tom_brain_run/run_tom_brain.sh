@@ -6,7 +6,7 @@
 #
 # This is a thin, machine-agnostic launcher: it locates the project, resolves
 # the per-machine config, makes sure the two Telegram secrets are in scope, and
-# runs `dart run bin/brain_serve.dart <config>`. The config carries the concrete
+# runs `dart run bin/tom_brain.dart serve --config <config>`. The config carries the concrete
 # substrate / memory / trail paths for this host; the secrets come from the
 # shell environment (already exported in ~/.bashrc on bomber):
 #
@@ -73,12 +73,12 @@ echo "run_tom_brain: launching with config: $CONFIG"
 # process-group id reaches every process in the group. `set +m` afterwards
 # silences job-control notices for the rest of the script.
 set -m
-dart run bin/brain_serve.dart "$CONFIG" --observatory &
+dart run bin/tom_brain.dart serve --config "$CONFIG" --observatory &
 SERVER_PGID=$!                            # job-control leader == the group id
 set +m
 
 # Gracefully stop the whole server group, then force-kill if it overruns its
-# grace window. brain_serve handles SIGINT/SIGTERM with a graceful shutdown
+# grace window. `tom_brain serve` handles SIGINT/SIGTERM with a graceful shutdown
 # (closes the edges, flushes the trail, stops the memory isolate); we give the
 # group 5s before SIGKILL. The `-PGID` form signals every process in the group;
 # the bare-PID fallback covers the (rare) case where job control was unavailable.

@@ -168,6 +168,48 @@ export 'src/bundle/bundled_sqlite_vec.dart'
 export 'src/scripts_config.dart' show ScriptsConfig, ScriptsConfigException;
 export 'src/scripts_config_loader.dart' show ScriptsConfigLoader;
 
+// ── The unified `tom_brain` CLI (tom_brain_cli.md § 5; CLI plan step #8) ──────
+export 'src/cli/config_overlay.dart'
+    show deepMergeMaps, emitYamlDoc, setDottedKey;
+export 'src/cli/tom_brain_tool.dart'
+    show
+        defaultServeAnthropicPort,
+        defaultServeOllamaPort,
+        defaultServeOpenAiPort,
+        normalizeSubcommand,
+        tomBrainBundleCommandName,
+        tomBrainCommandNames,
+        tomBrainInitCommandName,
+        tomBrainMemoryMcpCommandName,
+        tomBrainObservatoryCommandName,
+        tomBrainServeCommandName,
+        tomBrainTool,
+        tomBrainVersion,
+        tomBrainVersionString;
+export 'src/cli/serve_config_assembler.dart'
+    show
+        ServeAssembly,
+        ServeConfigAssembler,
+        ServeConfigException,
+        ServeRuntimeOptions,
+        assembleServeConfig;
+export 'src/cli/serve_runner.dart'
+    show
+        BrainServeSession,
+        ServeBoot,
+        ServeNarrate,
+        defaultServeBoot,
+        runBrainServe;
+export 'src/cli/cli_executors.dart'
+    show
+        BundleCommandExecutor,
+        InitCommandExecutor,
+        MemoryMcpCommandExecutor,
+        ObservatoryCommandExecutor,
+        ServeCommandExecutor,
+        createTomBrainExecutors,
+        defaultStandaloneMemoryMcpPort;
+
 // ── The --home/agent directory-convention resolver (tom_brain_cli.md § 2 / § 6
 //    / § 8; CLI plan step #6) ─────────────────────────────────────────────
 export 'src/project_home.dart'

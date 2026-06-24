@@ -33,6 +33,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart' show loadYamlAsMap;
 
 import 'brain_run_config.dart';
 import 'brain_run_config_loader.dart';
+import 'cli/config_overlay.dart';
 
 /// Which layer of the precedence ladder (§ 6) supplied a resolved path.
 ///
@@ -260,22 +261,31 @@ final class ProjectHome {
   /// A missing *required* aspect (e.g. no inline providers and no
   /// `<agent>/providers/` directory) surfaces as the owning loader's located
   /// boot error during the parse.
+  ///
+  /// [overlay] is the top CLI-tier layer (channel ports + `--set` scalar
+  /// overrides assembled by `assembleServeConfig`, step #8): it is deep-merged
+  /// LAST, so a flag-tier value wins over the file, the path overrides, and the
+  /// convention — the top rung of the precedence ladder (§ 6).
   BrainRunConfig buildConfig(
     String baseYaml, {
     Map<String, String> envVars = const {},
+    Map<Object?, Object?> overlay = const {},
   }) {
     final Map<Object?, Object?> base = baseYaml.trim().isEmpty
         ? <Object?, Object?>{}
         : loadYamlAsMap(baseYaml, errorFactory: BrainRunConfigException.new)
             .cast<Object?, Object?>();
 
-    final Map<Object?, Object?> merged = _deepMerge(
-      _deepMerge(_conventionOverlay(base), base),
-      _overridesOverlay(),
+    final Map<Object?, Object?> merged = deepMergeMaps(
+      deepMergeMaps(
+        deepMergeMaps(_conventionOverlay(base), base),
+        _overridesOverlay(),
+      ),
+      overlay,
     );
 
     return BrainRunConfigLoader.parse(
-      _emitYaml(merged),
+      emitYamlDoc(merged),
       envVars: envVars,
       basePath: agentRoot,
     );
@@ -410,105 +420,4 @@ final class ProjectHome {
 
   static String _join(String base, String name) =>
       base.endsWith('/') ? '$base$name' : '$base/$name';
-
-  /// Deep-merges [overlay] onto [base]; [overlay] wins. Two maps recurse; any
-  /// other value (list / scalar) replaces. Mirrors the merge discipline used by
-  /// the procedure config loaders.
-  static Map<Object?, Object?> _deepMerge(
-    Map<Object?, Object?> base,
-    Map<Object?, Object?> overlay,
-  ) {
-    final out = <Object?, Object?>{...base};
-    for (final entry in overlay.entries) {
-      final existing = out[entry.key];
-      final incoming = entry.value;
-      if (existing is Map<Object?, Object?> &&
-          incoming is Map<Object?, Object?>) {
-        out[entry.key] = _deepMerge(existing, incoming);
-      } else {
-        out[entry.key] = incoming;
-      }
-    }
-    return out;
-  }
-
-  // ── Minimal block-style YAML emitter ──────────────────────────────────
-  //
-  // The merged document is a plain tree of Map / List / String / num / bool /
-  // null (the canonical `loadYamlAsMap` shape plus our overlay scalars). The
-  // emitter renders it back to block-style YAML so each section loader can
-  // re-parse its own slice. It handles exactly those node kinds — anything else
-  // is a programming error in the overlay construction above.
-
-  static String _emitYaml(Map<Object?, Object?> doc) {
-    final buf = StringBuffer();
-    _emitMap(buf, doc, 0);
-    return buf.toString();
-  }
-
-  static void _emitMap(StringBuffer buf, Map<Object?, Object?> map, int indent) {
-    final pad = '  ' * indent;
-    for (final entry in map.entries) {
-      final key = entry.key.toString();
-      final value = entry.value;
-      if (value is Map<Object?, Object?>) {
-        if (value.isEmpty) {
-          buf.writeln('$pad$key: {}');
-        } else {
-          buf.writeln('$pad$key:');
-          _emitMap(buf, value, indent + 1);
-        }
-      } else if (value is List) {
-        if (value.isEmpty) {
-          buf.writeln('$pad$key: []');
-        } else {
-          buf.writeln('$pad$key:');
-          _emitList(buf, value, indent + 1);
-        }
-      } else {
-        buf.writeln('$pad$key: ${_scalar(value)}');
-      }
-    }
-  }
-
-  static void _emitList(StringBuffer buf, List<Object?> list, int indent) {
-    final pad = '  ' * indent;
-    for (final item in list) {
-      if (item is Map<Object?, Object?>) {
-        if (item.isEmpty) {
-          buf.writeln('$pad- {}');
-        } else {
-          buf.writeln('$pad-');
-          _emitMap(buf, item, indent + 1);
-        }
-      } else if (item is List) {
-        if (item.isEmpty) {
-          buf.writeln('$pad- []');
-        } else {
-          buf.writeln('$pad-');
-          _emitList(buf, item, indent + 1);
-        }
-      } else {
-        buf.writeln('$pad- ${_scalar(item)}');
-      }
-    }
-  }
-
-  /// Renders a scalar for YAML emission, quoting strings that could be misread
-  /// as another type or that carry YAML-significant characters.
-  static String _scalar(Object? value) {
-    if (value == null) return 'null';
-    if (value is bool || value is num) return value.toString();
-    final s = value.toString();
-    final needsQuote = s.isEmpty ||
-        s != s.trim() ||
-        const {'true', 'false', 'null', 'yes', 'no', '~'}
-            .contains(s.toLowerCase()) ||
-        RegExp(r'''^[\[\]{}#&*!|>%@`"']''').hasMatch(s) ||
-        s.contains(': ') ||
-        s.contains(' #') ||
-        s.endsWith(':');
-    if (!needsQuote) return s;
-    return '"${s.replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"';
-  }
 }

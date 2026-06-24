@@ -53,7 +53,7 @@ dependencies:
   tom_brain_shared:
     path: ../tom_brain_shared
   # The Trail Observatory is the official configuration + control surface, so the
-  # run assembly owns its lifecycle: `brain_serve` spawns the read-only backend in
+  # run assembly owns its lifecycle: `tom_brain serve` spawns the read-only backend in
   # a second isolate (`observatory_isolate_host.dart`) and tears it down on
   # shutdown, instead of leaving the operator to launch a separate process. This
   # is a deliberate mutual path dep — the observatory depends on `tom_brain_run`
@@ -68,7 +68,12 @@ dependencies:
   tom_core_agentic:
     path: ../../tom_ai/core/tom_core_agentic
   tom_basics: ^1.0.0
-  # The production entrypoint (`bin/brain_serve.dart`) and the #31 Verify suite
+  # The unified `tom_brain` CLI binary (CLI plan step #8) is built on the
+  # `tom_build_base` v2 tool framework (ToolRunner + ToolDefinition +
+  # CommandExecutor), so `--help` / `--version` / subcommand dispatch / error
+  # formatting are uniform with every other workspace CLI rather than hand-rolled.
+  tom_build_base: ^2.6.21
+  # The production entrypoint (`bin/tom_brain.dart serve`) and the #31 Verify suite
   # both manufacture the *real* substrate (OpenAI-passthrough + Ollama
   # providers), whose default wire HTTP client is sourced from the
   # `tom_core_kernel` factory via the active `TomPlatformUtils`. A bare

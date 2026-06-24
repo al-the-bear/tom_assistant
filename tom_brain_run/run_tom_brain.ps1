@@ -8,7 +8,7 @@
   The PowerShell sibling of run_tom_brain.sh. A thin, machine-agnostic
   launcher: it locates the project, resolves the per-machine config, checks the
   two Telegram secrets are in scope, and hands off to
-  `dart run bin/brain_serve.dart <config>`. The config carries the concrete
+  `dart run bin/tom_brain.dart serve --config <config>`. The config carries the concrete
   substrate / memory / trail paths for this host; the secrets come from the
   environment:
 
@@ -57,10 +57,10 @@ Write-Host "run_tom_brain: launching with config: $Config"
 
 # Run the server as a child process so Ctrl-C can tear it down cleanly. On a
 # console Ctrl-C, Windows delivers CTRL_C_EVENT to the child too, which
-# brain_serve handles (SIGINT) for a graceful stop; the finally block then
+# `tom_brain serve` handles (SIGINT) for a graceful stop; the finally block then
 # guarantees the process is gone (force-killing if it overran its grace window).
 $proc = Start-Process -FilePath 'dart' `
-  -ArgumentList @('run', 'bin/brain_serve.dart', $Config) `
+  -ArgumentList @('run', 'bin/tom_brain.dart', 'serve', '--config', $Config) `
   -NoNewWindow -PassThru
 try {
   while (-not $proc.HasExited) { Start-Sleep -Milliseconds 200 }

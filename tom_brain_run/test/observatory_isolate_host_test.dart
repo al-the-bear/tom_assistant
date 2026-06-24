@@ -1,6 +1,6 @@
 // spawnObservatoryIsolate / ObservatoryIsolateHost — the in-process Trail
 // Observatory the run assembly hosts in a second isolate (it is the official
-// config + control surface, so `brain_serve` owns its lifecycle rather than
+// config + control surface, so `tom_brain serve` owns its lifecycle rather than
 // leaving the operator to launch a separate process).
 //
 // What is proven:
