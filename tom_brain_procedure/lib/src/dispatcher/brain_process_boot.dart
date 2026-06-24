@@ -382,6 +382,14 @@ final class BrainProcessConfig {
   /// that yields a prompt naming a route the host cannot expand cannot dispatch.
   final RouteChainResolver? routeChainOf;
 
+  /// Builds the overlay [PromptResolver] for a profile's template-overlay name
+  /// (`session_configuration.md` § 5.2, plan step 8 (b)), or `null` when no
+  /// profile supplies an overlay. When set, boot threads it onto the
+  /// [ProcedureEngine] so a run whose `ResolvedProfile.templateOverlay` is named
+  /// layers the overlay over [promptResolver]; production binds a
+  /// cognition-root-backed `buildOverlayPromptResolver`, tests pass a fake.
+  final OverlayResolverFactory? overlayResolverFor;
+
   /// The process-spanning outbound MCP client boot threads onto the
   /// [ProcedureEngine] (§ 21.3), or `null` when the cognition has no MCP
   /// servers configured. When non-null, every run's `mcp.*` bridge and the
@@ -439,6 +447,7 @@ final class BrainProcessConfig {
     this.turnSummarySink,
     this.promptResolver,
     this.routeChainOf,
+    this.overlayResolverFor,
     this.mcpClient,
     this.mcpTools = const <McpToolDefinition>[],
     this.mcpOffered,
@@ -692,6 +701,7 @@ abstract final class BrainProcessBoot {
       toolDreamSurface: config.toolDreamSurface,
       promptResolver: config.promptResolver,
       routeChainOf: config.routeChainOf,
+      overlayResolverFor: config.overlayResolverFor,
       mcpClient: config.mcpClient,
       mcpTools: config.mcpTools,
       mcpOffered: config.mcpOffered,
@@ -767,6 +777,7 @@ abstract final class BrainProcessBoot {
     required ToolDreamSurface? toolDreamSurface,
     required PromptResolver? promptResolver,
     required RouteChainResolver? routeChainOf,
+    required OverlayResolverFactory? overlayResolverFor,
     required McpClient? mcpClient,
     required List<McpToolDefinition> mcpTools,
     required McpOfferedGate? mcpOffered,
@@ -784,6 +795,7 @@ abstract final class BrainProcessBoot {
           routeChainOf: routeChainOf,
         ),
         preemptionState: preemption,
+        overlayResolverFor: overlayResolverFor,
         llmTrailSink: llmTrailSink,
         memoryAccessSink: memoryAccessSink,
         toolAccessSink: toolAccessSink,
@@ -989,6 +1001,10 @@ abstract final class BrainProcessBoot {
                     turnId: access.turnId,
                     memoryProfile: access.session.memoryProfile,
                     sessionId: access.session.sessionId,
+                    // Carry the boot-resolved profile (session_configuration.md
+                    // § 4.3) so the engine binds the run's role / template
+                    // overlay / MCP exposure / budget from it (plan step 8).
+                    profile: access.profile,
                   ),
                 )
                 .outcome;
@@ -1035,6 +1051,11 @@ abstract final class BrainProcessBoot {
                     // persistent store — the list survives across prompts of the
                     // conversation rather than resetting every turn.
                     sessionId: access.session.sessionId,
+                    // Carry the boot-resolved profile (session_configuration.md
+                    // § 4.3) so the engine binds the run's role / template
+                    // overlay / MCP exposure / budget from it (plan step 8); the
+                    // whole answer run tree shares this one profile.
+                    profile: access.profile,
                   ),
                   tokenSink: streamDelta,
                   noticeSink: noticeSink,

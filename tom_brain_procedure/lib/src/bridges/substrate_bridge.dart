@@ -201,6 +201,16 @@ class SubstrateBridge {
   /// substrate bridge.
   final ProcedureRunner? _runProcedure;
 
+  /// The per-run profile role (`session_configuration.md` § 3.3; plan step 8
+  /// (a)). `null` on the shared template bridge and whenever the run's profile
+  /// pins no role; the engine binds it per run from `Access.profile.role`. It is
+  /// a **fallback**, not an override: [run] uses it as the call's role *only
+  /// when the resolved prompt names none* (an empty [ResolvedPrompt.role]) — a
+  /// prompt that declares its own role keeps it (the spec's "profile role used
+  /// when the procedure names none"). Not part of the d4rt-facing surface — a
+  /// procedure script never sees it.
+  final String? _profileRole;
+
   /// Per-run turn-correlation context (logging-spec §3 / §9 — the "→ substrate"
   /// end of the `turnId` thread-through). `null` on the shared template bridge
   /// and on every internal / free-time / dream run — those issue completions
@@ -243,7 +253,10 @@ class SubstrateBridge {
   /// §3 / §9). [onLlmTrail], when supplied, receives one [LlmCallObservation]
   /// per completed [send] call (wire body + answer + report) so a downstream
   /// raw-LLM-trail writer can serialise the §5.2 `llm/<role>/…raw.json` file
-  /// (logging-spec §10 step #4).
+  /// (logging-spec §10 step #4). [profileRole], when supplied, is the run's
+  /// profile-pinned role (§ 3.3): [run] uses it as the call's role *only when
+  /// the resolved prompt names none* (an empty role) — a fallback, never an
+  /// override.
   SubstrateBridge(
     this.client, {
     BridgeCallRecorder? onCall,
@@ -255,6 +268,7 @@ class SubstrateBridge {
     RouteChainResolver? routeChainOf,
     PromptResolver? promptResolver,
     ProcedureRunner? runProcedure,
+    String? profileRole,
     TurnContext? turn,
     LlmTrailObserver? onLlmTrail,
   })  : _onCall = onCall,
@@ -266,6 +280,7 @@ class SubstrateBridge {
         _routeChainOf = routeChainOf,
         _promptResolver = promptResolver,
         _runProcedure = runProcedure,
+        _profileRole = profileRole,
         _turn = turn,
         _onLlmTrail = onLlmTrail;
 
@@ -500,10 +515,20 @@ class SubstrateBridge {
     // Delegate the loop to the shared `tool_loop_v1` script. Per-prompt
     // variation rides entirely in these inputs (§7.2): the same loop body serves
     // every prompt. The script returns `{answer, toolLoopExhausted}`.
+    // Per-run profile role fallback (`session_configuration.md` § 5.1, plan
+    // step 8 (a); SCP-31). A profile's role *fills* a prompt that names none —
+    // `ResolvedPrompt.role` is empty — but never overrides a named role. So the
+    // engine-bound `_profileRole` is used only when the resolved prompt leaves
+    // the role unset.
+    final effectiveRole =
+        (resolved.role.isEmpty && _profileRole != null && _profileRole.isNotEmpty)
+            ? _profileRole
+            : resolved.role;
+
     final loopInputs = ProcedureInputs(<String, Object?>{
       'transcript': transcript,
       'route': resolved.llmRoute,
-      'role': resolved.role,
+      'role': effectiveRole,
       'tools': resolved.tools,
       'maxToolLoops': resolved.maxToolLoops,
       if (resolved.temperature != null) 'temperature': resolved.temperature,

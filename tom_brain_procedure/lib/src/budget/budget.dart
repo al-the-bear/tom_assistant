@@ -25,3 +25,6 @@ export 'memory_write_guard.dart'
         MemoryWriteSkipSink;
 export 'procedure_budget_exceeded.dart'
     show BudgetDimension, ProcedureBudgetExceeded;
+// Plan step 8 (d) — the profile-tightened effective run budget
+// (`session_configuration.md` § 5.4).
+export 'effective_budget.dart' show effectiveProcedureBudget;

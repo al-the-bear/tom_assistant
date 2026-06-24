@@ -105,6 +105,72 @@ proc.PromptResolver buildPromptResolver(
   };
 }
 
+/// Builds the `OverlayResolverFactory` seam over a loaded [config]
+/// (`session_configuration.md` § 5.2, plan step 8 (b)).
+///
+/// A profile may name a *template overlay* — a sibling tree under
+/// `<cognition.root>/overlays/<name>/` that shadows individual prompt templates
+/// while inheriting everything else from the base registry. The engine binds the
+/// overlay per run by calling the returned factory with the run's
+/// `ResolvedProfile.templateOverlay` and layering the result over the base
+/// [buildPromptResolver] in a `LayeredPromptResolver`.
+///
+/// The returned factory maps an overlay *name* to a `PromptResolver` that loads
+/// the *same* registered prompt's template file(s) from the overlay tree instead
+/// of the base [builtins].configFolder. When the overlay tree carries **no** file
+/// for a prompt id the resolver returns `null` — the layered resolver then falls
+/// through to the base, so an overlay shadows only the prompts it actually
+/// redefines ("missing-id shadow ignored"). When it does carry the file(s), the
+/// body is rendered with the identical built-in / block resolution the base path
+/// uses, so an overlaid template behaves byte-for-byte like a base one. The file
+/// is read live on every call, so an edited overlay template is picked up on the
+/// next run (the same live-edit contract the base resolver honours).
+proc.OverlayResolverFactory buildOverlayPromptResolver(
+  CognitionConfig config,
+  BrainBuiltins builtins, {
+  PlaceholderExpressions? expressions,
+  Map<String, String>? environment,
+}) {
+  return (String overlayName) {
+    final overlayRoot =
+        _joinPath(_joinPath(builtins.configFolder, 'overlays'), overlayName);
+    return (String promptId, Map<String, Object?> inputs) async {
+      final registered = config.prompts[promptId];
+      if (registered == null) return null;
+
+      // Only shadow the base when the overlay tree actually provides this
+      // prompt's template file(s); otherwise return `null` so the
+      // `LayeredPromptResolver` falls through to the base registry.
+      final rawTemplate =
+          await _loadOverlayTemplate(registered.template, overlayRoot);
+      if (rawTemplate == null) return null;
+
+      final resolver = builtins.resolver(
+        expressions: expressions,
+        environment: environment,
+      );
+      final body = await _resolveProtected(
+        rawTemplate,
+        resolver,
+        restore: _buildRestoreMap(inputs),
+      );
+
+      final settings = registered.settings;
+      final route = settings.llm ?? config.registry.llmDefault;
+      return proc.ResolvedPrompt(
+        role: settings.role,
+        llmRoute: route,
+        templateBody: body,
+        tools: _expandTools(settings.tools),
+        maxToolLoops: settings.maxToolLoops ?? 6,
+        temperature: settings.temperature,
+        responseFormat: settings.responseFormat,
+        channel: settings.channel,
+      );
+    };
+  };
+}
+
 /// Builds the `RouteChainResolver` seam over a loaded [config].
 ///
 /// Maps a named route's ordered `RoleRouteEntryConfig` chain onto the substrate
@@ -370,6 +436,43 @@ Future<String> _loadRawTemplate(
       return '$systemText\n\n$userText';
     case FragmentTemplateFiles(:final file):
       return File(_joinPath(configFolder, file.path)).readAsString();
+  }
+}
+
+/// Loads a resolved [template] from an [overlayRoot] tree, returning `null` when
+/// the overlay carries **no** file for it (plan step 8 (b)).
+///
+/// The mirror of [_loadRawTemplate] for the overlay path, with one difference: a
+/// base load reads a registered template whose presence the config guarantees, so
+/// an absent file is a config error; an overlay load reads an *optional* shadow,
+/// so an absent file is the normal "this overlay does not redefine this prompt"
+/// case and must fall through (`null`) rather than throw. A [PromptTemplateFiles]
+/// pair shadows when *either* half exists in the overlay (the present halves are
+/// read, an absent half → empty, joined by the same rule as the base); a
+/// [FragmentTemplateFiles] shadows only when its single file exists.
+Future<String?> _loadOverlayTemplate(
+  TemplateResolution template,
+  String overlayRoot,
+) async {
+  switch (template) {
+    case PromptTemplateFiles(:final system, :final user):
+      final File? systemFile =
+          system.present ? File(_joinPath(overlayRoot, system.path)) : null;
+      final File? userFile =
+          user.present ? File(_joinPath(overlayRoot, user.path)) : null;
+      final bool hasSystem = systemFile != null && await systemFile.exists();
+      final bool hasUser = userFile != null && await userFile.exists();
+      if (!hasSystem && !hasUser) return null;
+      final String systemText =
+          hasSystem ? await systemFile.readAsString() : '';
+      final String userText = hasUser ? await userFile.readAsString() : '';
+      if (systemText.isEmpty) return userText;
+      if (userText.isEmpty) return systemText;
+      return '$systemText\n\n$userText';
+    case FragmentTemplateFiles(:final file):
+      final File f = File(_joinPath(overlayRoot, file.path));
+      if (!await f.exists()) return null;
+      return f.readAsString();
   }
 }
 

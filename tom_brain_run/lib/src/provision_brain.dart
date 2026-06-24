@@ -78,6 +78,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         MemoryAccessRecord,
         MemoryAccessSink,
         MemoryProvisioningConfig,
+        OverlayResolverFactory,
         ProcedureTreeSink,
         PromptResolver,
         RouteChainResolver,
@@ -106,7 +107,10 @@ import 'cognition_config.dart' show CognitionConfig;
 import 'cognition_config_loader.dart' show CognitionConfigLoader;
 import 'legacy_store_migration.dart' show migrateLegacyMemoryRoot;
 import 'cognition_prompt_resolver.dart'
-    show buildPromptResolver, buildRouteChainResolver;
+    show
+        buildOverlayPromptResolver,
+        buildPromptResolver,
+        buildRouteChainResolver;
 import 'dream_cadence_driver.dart' show CadenceSchedule;
 import 'dream_cadence_wiring.dart' show dreamCadenceDriverOverScheduler;
 import 'dream_config.dart' show DreamConfig;
@@ -230,6 +234,7 @@ Future<ProvisionedBrain> provisionBrain({
   HistoryConfig history = const HistoryConfig.standard(),
   PromptResolver? promptResolver,
   RouteChainResolver? routeChainOf,
+  OverlayResolverFactory? overlayResolverFor,
   McpClient? mcpClient,
   List<McpToolDefinition> mcpTools = const <McpToolDefinition>[],
   McpOfferedGate? mcpOffered,
@@ -271,6 +276,7 @@ Future<ProvisionedBrain> provisionBrain({
       toolDreamSurface: dreamHolder,
       promptResolver: promptResolver,
       routeChainOf: routeChainOf,
+      overlayResolverFor: overlayResolverFor,
       mcpClient: mcpClient,
       mcpTools: mcpTools,
       mcpOffered: mcpOffered,
@@ -517,6 +523,7 @@ Future<BrainProcess> standUpBrainProcess({
   HistoryConfig history = const HistoryConfig.standard(),
   PromptResolver? promptResolver,
   RouteChainResolver? routeChainOf,
+  OverlayResolverFactory? overlayResolverFor,
   CognitionConfig? cognitionConfig,
   McpClient? mcpClient,
   List<McpToolDefinition> mcpTools = const <McpToolDefinition>[],
@@ -545,6 +552,7 @@ Future<BrainProcess> standUpBrainProcess({
     history: history,
     promptResolver: promptResolver,
     routeChainOf: routeChainOf,
+    overlayResolverFor: overlayResolverFor,
     mcpClient: mcpClient,
     mcpTools: mcpTools,
     mcpOffered: mcpOffered,
@@ -716,6 +724,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // `cognition:` config tree (§7.1 / §7.4 / §8) when the block is present.
   PromptResolver? promptResolver;
   RouteChainResolver? routeChainOf;
+  OverlayResolverFactory? overlayResolverFor;
   ReloadingRoleRegistry? roleProseReload;
   CognitionConfig? cognitionConfig;
   // The `/switch_model` config writer (request e). Built only when a cognition
@@ -768,6 +777,16 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
       environment: environment,
     );
     routeChainOf = buildRouteChainResolver(cognitionConfig);
+    // The per-run template-overlay seam (session_configuration.md § 5.2, plan
+    // step 8 (b)): a profile's `templateOverlay` name selects a shadow tree under
+    // `<cognition.root>/overlays/<name>/`. The engine layers it over the base
+    // resolver per run; a profile-less request never names an overlay, so this
+    // is bound but inert until a profile uses it.
+    overlayResolverFor = buildOverlayPromptResolver(
+      cognitionConfig,
+      builtins,
+      environment: environment,
+    );
   }
 
   // Profile selection axis boot validation (session_configuration.md § 3 / § 8,
@@ -946,6 +965,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     history: runConfig.history,
     promptResolver: promptResolver,
     routeChainOf: routeChainOf,
+    overlayResolverFor: overlayResolverFor,
     cognitionConfig: cognitionConfig,
     mcpClient: mcpClient,
     mcpTools: mcpTools,

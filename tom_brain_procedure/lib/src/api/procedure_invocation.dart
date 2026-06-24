@@ -19,7 +19,8 @@
 // one declaration — there is no way for the recorded arguments and the
 // arguments the procedure actually receives to drift apart.
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show TurnId;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show ResolvedProfile, TurnId;
 
 import 'procedure_inputs.dart';
 
@@ -48,7 +49,12 @@ final class ProcedureInvocation {
   /// session's persistent store so the list survives from one prompt to the
   /// next within the conversation. `null` for a turn-less / internal / dream
   /// invocation that belongs to no user session — those get a fresh, run-scoped
-  /// todo list as before.
+  /// todo list as before. [profile] is the boot-resolved `ResolvedProfile` the
+  /// request runs under (`session_configuration.md` § 4.3, plan step 8); the
+  /// engine binds its role / template-overlay / MCP-allowlist / budget knobs
+  /// per run and threads it onto every nested run, so the whole run tree shares
+  /// one profile. `null` for an internal / dream / test invocation that selects
+  /// no profile — the engine then leaves all four bindings at today's behaviour.
   ProcedureInvocation({
     required this.procedureId,
     Map<String, Object?> arguments = const <String, Object?>{},
@@ -58,6 +64,7 @@ final class ProcedureInvocation {
     this.turnId,
     this.memoryProfile,
     this.sessionId,
+    this.profile,
   }) : arguments = Map<String, Object?>.unmodifiable(
           Map<String, Object?>.of(arguments),
         ) {
@@ -102,6 +109,13 @@ final class ProcedureInvocation {
   /// session's persistent store, so the working todo list survives across the
   /// runs of one conversation; a `null` session id gets a fresh per-run store.
   final String? sessionId;
+
+  /// The boot-resolved profile the request runs under (`session_configuration.md`
+  /// § 4.3), or `null` when the request selects no profile. The engine reads its
+  /// role / template-overlay / MCP-allowlist / budget knobs to bind the run and
+  /// threads it onto every nested run; a `null` profile leaves all four bindings
+  /// at today's (profile-less) behaviour.
+  final ResolvedProfile? profile;
 
   /// The typed input bag the procedure's `run` entry point receives.
   ///

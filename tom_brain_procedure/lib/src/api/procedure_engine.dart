@@ -63,9 +63,10 @@ import 'dart:async';
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show TomBrainMemoryClient, TrailEntry, TrailEntryKind, TrailOutcomeStatus;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show PreemptionState, TurnContext, defaultNowUtc;
+    show PreemptionState, ResolvedProfile, TurnContext, defaultNowUtc;
 
 import '../bridges/bridge_call_recorder.dart';
+import '../bridges/layered_prompt_resolver.dart' show LayeredPromptResolver;
 import '../bridges/llm_call_observation.dart' show LlmCallObservation;
 import '../bridges/mcp_bridge.dart' show McpBridge;
 import '../bridges/memory_bridge.dart';
@@ -83,7 +84,7 @@ import '../primitives_native/yield_primitive.dart';
 import '../bridges/tool_bridge.dart' show ToolBridge;
 import '../mcp/mcp_client.dart' show McpClient;
 import '../mcp/mcp_client_tool_source.dart'
-    show McpClientToolSource, McpOfferedGate;
+    show McpClientToolSource, McpOfferedGate, composeMcpGate;
 import '../tools/basic_tools.dart' show registerBasicTools;
 import '../tools/file_scope.dart' show FileScope;
 import '../tools/mcp_tool_source.dart' show McpToolDefinition, McpToolSource;
@@ -171,6 +172,13 @@ typedef MemoryClientResolver = Future<TomBrainMemoryClient> Function(
   String? profile,
 );
 
+/// Builds the overlay [PromptResolver] for a profile's template-overlay name
+/// (`session_configuration.md` § 5.2, plan step 8 (b)). The engine calls it with
+/// the run's `ResolvedProfile.templateOverlay` and layers the result over the
+/// base resolver per run. Supplied by the assembler (`tom_brain_run`'s
+/// `buildOverlayPromptResolver`); `null` leaves every run on the base resolver.
+typedef OverlayResolverFactory = PromptResolver Function(String overlayName);
+
 /// Resolves, runs, records, and hands back procedure runs.
 ///
 /// One engine serves many invocations; it holds the shared, run-independent
@@ -224,7 +232,9 @@ final class ProcedureEngine {
     ProcedureTreeSink? procedureTreeSink,
     this.memoryWriteLimits = MemoryWriteLimits.standard,
     SessionTodoStores? sessionTodoStores,
-  })  : _resolverHandle = procedureReloadStore == null
+    OverlayResolverFactory? overlayResolverFor,
+  })  : _overlayResolverFor = overlayResolverFor,
+        _resolverHandle = procedureReloadStore == null
             ? ProcedureResolverHandle.fixed(resolver)
             : ProcedureResolverHandle.reloading(procedureReloadStore, resolver),
         toolFileScope = toolFileScope ?? _defaultToolFileScope,
@@ -310,6 +320,16 @@ final class ProcedureEngine {
   /// `_runInternal` (E.3.2); the template instance itself is never
   /// dispatched through.
   final SubstrateBridge substrateBridge;
+
+  /// Builds the overlay [PromptResolver] for a profile's template-overlay name
+  /// (`session_configuration.md` § 3.5 / § 5.2, plan step 8 (b)). When a run's
+  /// `ResolvedProfile.templateOverlay` is set, `_runInternal` calls this with
+  /// the overlay name and layers the result over the base resolver
+  /// ([LayeredPromptResolver]) — an overlay hit shadows the base, a miss falls
+  /// through, and the resolver is re-read live each call so an edited overlay
+  /// template is picked up. `null` (the default) means no profile ever supplies
+  /// an overlay, so every run keeps the base resolver — today's behaviour.
+  final OverlayResolverFactory? _overlayResolverFor;
 
   /// The shared cooperative-preemption state the engine yields against and
   /// the dispatcher's coordinator drives.
@@ -518,6 +538,7 @@ final class ProcedureEngine {
             turn: turn,
             profile: invocation.memoryProfile,
             sessionId: invocation.sessionId,
+            resolvedProfile: invocation.profile,
           );
           outcome.complete(result);
         } catch (error, stack) {
@@ -588,6 +609,7 @@ final class ProcedureEngine {
     TurnContext? turn,
     String? profile,
     String? sessionId,
+    ResolvedProfile? resolvedProfile,
     void Function(ProcedureTreeRecord tree)? onTree,
   }) async {
     final LoadedProcedure loaded = resolver.resolve(procedureId, version: version);
@@ -645,12 +667,19 @@ final class ProcedureEngine {
     // run (the deferred composition-root wiring, Q-C.44.1).
     final recordCall = recorder.recordPrimitiveCall;
 
-    // One budget ledger over this run's header budget, shared by both bridges
-    // so token / tool-call / memory-write spend accumulates in a single place
-    // across memory and substrate calls (PE-8). `null` when the budget
+    // One budget ledger over this run's *effective* budget, shared by both
+    // bridges so token / tool-call / memory-write spend accumulates in a single
+    // place across memory and substrate calls (PE-8). `null` when the budget
     // enforces no count/spend cap (a wall-clock-only budget — the deadline
     // owns that), so the bridges keep their zero-overhead fast path.
-    final ledger = BudgetLedger(loaded.header.budget);
+    //
+    // Per-run profile budget binding (`session_configuration.md` § 5.4, plan
+    // step 8 (d); SCP-34): the entry-procedure header is *tightened* by the
+    // run's `ResolvedProfile.budget` — a profile may only lower a cap, never
+    // raise one. A `null` profile budget returns the header unchanged.
+    final ledger = BudgetLedger(
+      effectiveProcedureBudget(loaded.header.budget, resolvedProfile?.budget),
+    );
     final runBudget = ledger.enforces ? ledger : null;
 
     // The read-only budget view a procedure reaches as the `budget` global
@@ -781,6 +810,7 @@ final class ProcedureEngine {
           turn: turn,
           profile: profile,
           sessionId: sessionId,
+          resolvedProfile: resolvedProfile,
           // Stream-sink inheritance (§9.2 + increment-6 migration). A nested
           // `runProcedure` does *not* re-stream by default — the answer is the
           // top-level body's to deliver. The one exception is the shared
@@ -814,21 +844,44 @@ final class ProcedureEngine {
       startDepth: depth,
     );
 
+    // Per-run prompt resolver (`session_configuration.md` § 5.2, plan step 8
+    // (b); SCP-32). The base resolver is the template bridge's, config-backed
+    // and run-independent. When the run's profile names a template overlay and
+    // the engine was wired with an overlay factory, the base is wrapped in a
+    // [LayeredPromptResolver]: an overlay hit shadows the base, a miss falls
+    // through, and the live re-read of each side is preserved (the layered
+    // resolver awaits each call). A missing overlay name (no factory) or no
+    // overlay leaves the base resolver untouched — today's behaviour.
+    final baseResolver = substrateBridge.promptResolver;
+    final overlayName = resolvedProfile?.templateOverlay;
+    final overlayFactory = _overlayResolverFor;
+    final PromptResolver? runPromptResolver =
+        (overlayName != null && overlayFactory != null && baseResolver != null)
+            ? LayeredPromptResolver(
+                base: baseResolver,
+                overlay: overlayFactory(overlayName),
+              ).asResolver
+            : baseResolver;
+
     final runSubstrateBridge = SubstrateBridge(
       substrateBridge.client,
       onCall: recordCall,
       onToken: tokenSink,
       onThinking: thinkingSink,
       budget: runBudget,
+      // Per-run profile role binding (`session_configuration.md` § 5.1, plan
+      // step 8 (a); SCP-31): the profile's role *fills* a prompt that names
+      // none (an empty `ResolvedPrompt.role`), never overriding a named one.
+      // `null` when the profile pins no role — every prompt keeps its own role.
+      profileRole: resolvedProfile?.role,
       // Carry the §7.4 routing seam from the template bridge onto the per-run
       // bridge: without it every `sub.send` on a run would throw "no
       // RouteChainResolver bound" (it is the only seam `send` cannot default).
       routeChainOf: substrateBridge.routeChainOf,
-      // Carry the §7.1/§7.4 prompt-resolution seam (`sub.run`) the same way: it
-      // is config-backed and run-independent, so the template bridge's resolver
-      // is the per-run resolver. Without it every `sub.run` would throw "no
-      // PromptResolver bound".
-      promptResolver: substrateBridge.promptResolver,
+      // The §7.1/§7.4 prompt-resolution seam (`sub.run`), overlaid per run by
+      // the profile's template overlay (above). Without it every `sub.run`
+      // would throw "no PromptResolver bound".
+      promptResolver: runPromptResolver,
       // The `ProcedureRunner` `sub.run` delegates its tool-loop to is *this*
       // run's depth-capped `RunProcedurePrimitive` (not a seam copied from the
       // template bridge): the delegated `tool_loop_v1` run must inherit this
@@ -883,10 +936,23 @@ final class ProcedureEngine {
     // The descriptors were listed once at boot ([mcpTools]); the per-run merge
     // is a pure registration with no network call. The invoke path reaches the
     // server live through [McpClientToolSource] (carried on the context below).
+    // Per-run profile MCP exposure (`session_configuration.md` § 5.3, plan step
+    // 8 (c); SCP-33). The boot-computed `offeredMcpServers` is already the
+    // composed `(global-exposed ∩ allowlist) ∪ profile-defined-exposed` set; an
+    // empty list is the "all globally-exposed" sentinel. `composeMcpGate`
+    // intersects it with the dynamic global gate ([mcpOffered]): a profile may
+    // only *restrict* the offered set, never widen past a globally-hidden
+    // server. An empty list (no profile restriction) keeps the global gate
+    // unchanged — today's behaviour. `mem.*` is unaffected: the gate governs
+    // only the `tool.*`/`mcp.*` surface.
     final runMcpClient = mcpClient;
+    final runMcpOffered = composeMcpGate(
+      resolvedProfile?.offeredMcpServers ?? const <String>[],
+      mcpOffered,
+    );
     final McpToolSource? runMcpSource = runMcpClient == null
         ? null
-        : McpClientToolSource(runMcpClient, offered: mcpOffered);
+        : McpClientToolSource(runMcpClient, offered: runMcpOffered);
     if (runMcpClient != null) {
       for (final definition in mcpTools) {
         toolRegistry.register(McpBrainTool(definition));
@@ -1279,6 +1345,7 @@ final class ProcedureEngine {
     TurnContext? turn,
     String? profile,
     String? sessionId,
+    ResolvedProfile? resolvedProfile,
     OutboundDeltaSink? tokenSink,
     ToolNoticeSink? noticeSink,
     SubstrateThinkingSink? thinkingSink,
@@ -1303,6 +1370,9 @@ final class ProcedureEngine {
       turn: turn,
       profile: profile,
       sessionId: sessionId,
+      // The whole run tree shares one profile (plan step 8): the four bindings
+      // resolve from the same `ResolvedProfile` on every nested run.
+      resolvedProfile: resolvedProfile,
       onTree: onTree,
     );
     return outcome.result ?? ProcedureResult.failed();
