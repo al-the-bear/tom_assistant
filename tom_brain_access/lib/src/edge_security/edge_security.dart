@@ -49,6 +49,8 @@
 export 'api_key_markers.dart';
 export 'bearer_auth.dart';
 export 'edge_state_store.dart';
+export 'profile_rate_limiter.dart';
+export 'profile_resolution.dart';
 export 'rate_limiter.dart';
 export 'quota.dart';
 export 'anchor_precheck.dart';

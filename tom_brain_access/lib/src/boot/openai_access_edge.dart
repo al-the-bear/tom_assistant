@@ -466,6 +466,14 @@ class OpenAiAccessEdge {
         code: error.code,
       );
     }
+    if (error is ProfileResolutionException) {
+      return _errorResponse(
+        statusCode: 400,
+        message: error.message,
+        type: 'invalid_request_error',
+        code: error.code,
+      );
+    }
     if (error is BearerAuthFailure) {
       return _errorResponse(
         statusCode: bearerAuthHttpStatus,

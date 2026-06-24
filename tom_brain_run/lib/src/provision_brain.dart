@@ -42,6 +42,8 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         IncomingTrailRecord,
         IncomingTrailSink,
         JsonFileHistoryStore,
+        ProfileResolutionException,
+        ProfileResolver,
         ProvisionedBrain,
         QueueSnapshot,
         QueueSnapshotSource,
@@ -84,7 +86,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         TurnSummary,
         TurnSummarySink;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show HistoryConfig, TomBrainMemoryClient;
+    show HistoryConfig, ResolvedProfile, TomBrainMemoryClient;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show
         InProcessTomBrainSubstrate,
@@ -121,6 +123,7 @@ import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
 import 'procedure_tree_writer.dart' show ProcedureTreeWriter;
+import 'profile/profile_config_errors.dart' show UnknownProfileException;
 import 'streaming_live_trail.dart' show StreamingLiveTrailWriter;
 import 'summary_fanout.dart' show SummaryFanout;
 import 'telegram_inspector_impls.dart'
@@ -522,6 +525,7 @@ Future<BrainProcess> standUpBrainProcess({
   CognitionModelWriter? modelWriter,
   TelegramCliServerPortController? cliServerPortController,
   ApiKeyPersist? apiKeyPersist,
+  ProfileResolver? profileResolver,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -555,6 +559,7 @@ Future<BrainProcess> standUpBrainProcess({
       serve: serve,
       incomingTrailSink: incomingTrailSink,
       apiKeyPersist: apiKeyPersist,
+      profileResolver: profileResolver,
       telegramInspectors: _telegramInspectorsFor(
         trailRoot: trailRoot,
         memoryClient: provisioned.memoryClient,
@@ -788,6 +793,25 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     warn: (message) => stderr.writeln('[profile] $message'),
   );
 
+  // The profile-resolution seam the access edge stamps onto `Access` (SCP-18 /
+  // SCP-20, plan step 5). A `null` selector means the request carried no
+  // `profile-` marker → the built-in `default` profile. An unknown selector's
+  // run-side `UnknownProfileException` is translated to the access-local
+  // `ProfileResolutionException` the edge maps to `400` / `profile.unknown`.
+  // No global ceilings / exposed-MCP ids are passed yet — the same posture as
+  // `validateAtBoot` above; clamping and the offered-MCP set are wired with the
+  // engine binding that consumes them (SCP-12, plan steps 6/8).
+  ResolvedProfile profileResolver(String? profileSelector) {
+    try {
+      return runConfig.profiles.resolve(profileSelector ?? 'default');
+    } on UnknownProfileException catch (error) {
+      throw ProfileResolutionException(
+        error.name,
+        'no profile named "${error.name}"',
+      );
+    }
+  }
+
   // The substrate uses the file-backed registry when a cognition tree was
   // loaded; otherwise `buildSubstrate` falls back to its in-code full roster.
   // Typed as the concrete facade (not the `TomBrainSubstrateClient` interface)
@@ -930,6 +954,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     modelWriter: modelWriter,
     cliServerPortController: cliServerPortController,
     apiKeyPersist: apiKeyPersist,
+    profileResolver: profileResolver,
   );
 }
 

@@ -39,24 +39,38 @@ const String defaultMemoryPrefix = 'defaultmemory_';
 /// (§ 3.2). Joined onto the prefix verbatim (`<prefix>default`).
 const String defaultProfileSelector = 'default';
 
-/// Applies the MSP-4 rule (`effective id = prefix + (selector ?? 'default')`)
-/// to [markers] under the given [sessionPrefix] / [memoryPrefix].
+/// Applies the prefix-resolution rule to [markers] under the given
+/// [sessionPrefix] / [memoryPrefix], with the profile's cross-axis defaults as
+/// the no-marker fallback.
+///
+/// Selector precedence (SC-1 / SC-Q14, plan step 5): an **explicit marker
+/// wins**, then the profile's [defaultSession] / [defaultMemory] (when the
+/// resolved profile declares one, § 3.7), then the built-in
+/// [defaultProfileSelector]:
+///
+///     effective id = prefix + (marker ?? profileDefault ?? 'default')
+///
+/// The profile default still passes through the per-tenant prefix, so a default
+/// can never escape the key's namespace. [defaultSession] / [defaultMemory]
+/// default to `null` (no profile default), keeping the original
+/// `marker ?? 'default'` behaviour for every pre-profile call site.
 ///
 /// The single home of the prefix-resolution rule (D-2): both
 /// [ApiKeyConfig.resolveScope] (a configured key's own prefixes) and
 /// [resolveDefaultScope] (the built-in default prefixes) route through it, so
-/// the "absent selector defaults to [defaultProfileSelector]" semantics live in
-/// exactly one place. Pure.
+/// the precedence lives in exactly one place. Pure.
 ResolvedProfileScope _scopeFor(
   ApiKeyMarkers markers, {
   required String sessionPrefix,
   required String memoryPrefix,
+  String? defaultSession,
+  String? defaultMemory,
 }) =>
     ResolvedProfileScope(
-      sessionId:
-          sessionPrefix + (markers.sessionSelector ?? defaultProfileSelector),
-      memoryProfile:
-          memoryPrefix + (markers.memorySelector ?? defaultProfileSelector),
+      sessionId: sessionPrefix +
+          (markers.sessionSelector ?? defaultSession ?? defaultProfileSelector),
+      memoryProfile: memoryPrefix +
+          (markers.memorySelector ?? defaultMemory ?? defaultProfileSelector),
     );
 
 /// Resolves [markers] under the **built-in default** prefixes
@@ -73,10 +87,22 @@ ResolvedProfileScope _scopeFor(
 /// on the token-keyed path; the JWT/authenticator carve-out keeps a null scope
 /// (MSP-3), since a shared default session would collapse distinct upstream
 /// principals into one history.
-ResolvedProfileScope resolveDefaultScope(ApiKeyMarkers markers) => _scopeFor(
+///
+/// [defaultSession] / [defaultMemory] are the resolved profile's cross-axis
+/// defaults (§ 3.7) — the no-marker fallback applied between an explicit marker
+/// and the built-in `'default'` (plan step 5). `null` keeps the original
+/// `marker ?? 'default'` behaviour.
+ResolvedProfileScope resolveDefaultScope(
+  ApiKeyMarkers markers, {
+  String? defaultSession,
+  String? defaultMemory,
+}) =>
+    _scopeFor(
       markers,
       sessionPrefix: defaultSessionPrefix,
       memoryPrefix: defaultMemoryPrefix,
+      defaultSession: defaultSession,
+      defaultMemory: defaultMemory,
     );
 
 /// The session id + memory profile a request resolves to, after a key's
@@ -163,14 +189,23 @@ final class ApiKeyConfig {
   /// Resolves [markers] (parsed from the Bearer token) against this key's
   /// prefixes into the effective `(sessionId, memoryProfile)` (§ 3.2, MSP-4).
   ///
-  /// Pure. An absent selector defaults to [defaultProfileSelector]; the prefix
-  /// is concatenated verbatim (D-2). The residual key on [markers] is *not*
-  /// consulted here — authentication of the residual is the edge's job; this
-  /// step only applies the namespace.
-  ResolvedProfileScope resolveScope(ApiKeyMarkers markers) => _scopeFor(
+  /// Pure. Selector precedence (plan step 5): explicit marker → the resolved
+  /// profile's [defaultSession] / [defaultMemory] (§ 3.7) → the built-in
+  /// [defaultProfileSelector]; the prefix is concatenated verbatim (D-2). The
+  /// residual key on [markers] is *not* consulted here — authentication of the
+  /// residual is the edge's job; this step only applies the namespace.
+  /// [defaultSession] / [defaultMemory] default to `null` (no profile default).
+  ResolvedProfileScope resolveScope(
+    ApiKeyMarkers markers, {
+    String? defaultSession,
+    String? defaultMemory,
+  }) =>
+      _scopeFor(
         markers,
         sessionPrefix: sessionPrefix,
         memoryPrefix: memoryPrefix,
+        defaultSession: defaultSession,
+        defaultMemory: defaultMemory,
       );
 
   /// The [IdentityBinding] this key folds into `bearerTokenBindings` (§ 5.1).

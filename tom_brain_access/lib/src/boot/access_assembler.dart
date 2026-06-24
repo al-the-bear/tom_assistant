@@ -132,6 +132,22 @@ final class AccessAssembler implements ApiKeyRegistrar {
   /// prompt trips a disallowed signature.
   final AnchorPreCheck anchorPreCheck;
 
+  /// Resolves a token's `profile-<name>` marker to its boot-resolved
+  /// [ResolvedProfile] (session_configuration.md § 4, plan step 5, SCP-18).
+  /// `null` (the pre-feature default, profiles off) resolves every request to
+  /// `ResolvedProfile.cognitiveDefault()` — the SC-5 byte-compatible default —
+  /// so `Access.profile` keeps today's behaviour with no wiring. When wired, the
+  /// run-side provisioner supplies it over the live `ProfileRegistry`; an unknown
+  /// profile throws [ProfileResolutionException] (mapped to `400` /
+  /// `profile.unknown` at the edge).
+  final ProfileResolver? profileResolver;
+
+  /// The per-(principal, profileId) request-per-minute gate that composes a
+  /// profile's `rateLimits` with the global [rateLimiter] (SC-8 / SCP-19). A
+  /// no-op for the default profile (no per-minute limit). Always present; the
+  /// default profile simply never charges it.
+  final ProfileRateLimiter profileRateLimiter;
+
   /// The optional bearer-credential authenticator (E.28). When non-null,
   /// [admitOpenAi] validates the credential *before* resolving identity; a
   /// failure throws [BearerAuthFailure]. `null` leaves bearer validation to a
@@ -197,8 +213,12 @@ final class AccessAssembler implements ApiKeyRegistrar {
     Map<String, ApiKeyConfig> apiKeysByKey = const {},
     this.classifier,
     this.incomingTrailSink,
+    this.profileResolver,
+    ProfileRateLimiter? profileRateLimiter,
     DateTime Function()? clock,
   })  : apiKeysByKey = Map.of(apiKeysByKey),
+        profileRateLimiter =
+            profileRateLimiter ?? ProfileRateLimiter(clock: clock),
         _clock = clock ?? systemClock;
 
   /// Admits a runtime API key into the live registry (`/create_api_key`,
@@ -249,8 +269,11 @@ final class AccessAssembler implements ApiKeyRegistrar {
   }) async {
     String? principalId;
     try {
-      final ({ResolvedIdentity identity, ResolvedProfileScope? scope}) auth =
-          _authenticateBearerScoped(bearerToken, AccessChannel.openai);
+      final ({
+        ResolvedIdentity identity,
+        ResolvedProfileScope? scope,
+        ResolvedProfile profile,
+      }) auth = _authenticateBearerScoped(bearerToken, AccessChannel.openai);
       final ResolvedIdentity identity = auth.identity;
       principalId = identity.principalId;
       final Persona persona = personaResolver.resolve(modelId);
@@ -259,6 +282,7 @@ final class AccessAssembler implements ApiKeyRegistrar {
         identity: identity,
         envelope: envelope,
         persona: persona,
+        profile: auth.profile,
         scope: auth.scope,
         buildBinding: (resolvedIdentity, effectiveEnvelope) =>
             SseDeliveryBinding(
@@ -339,13 +363,19 @@ final class AccessAssembler implements ApiKeyRegistrar {
   /// Either way an unbound credential surfaces as a typed failure, never a
   /// fabricated identity; a duplicate marker throws [ApiKeyMarkerException]
   /// before authentication (the edge maps it to `400`, § 13).
-  ({ResolvedIdentity identity, ResolvedProfileScope? scope})
-      _authenticateBearerScoped(
+  ({
+    ResolvedIdentity identity,
+    ResolvedProfileScope? scope,
+    ResolvedProfile profile,
+  }) _authenticateBearerScoped(
     String bearerToken,
     AccessChannel channel,
   ) {
     final BearerTokenAuthenticator? authenticator = bearerAuthenticator;
     if (authenticator != null) {
+      // The JWT carve-out parses no markers (MSP-3): no session/memory/profile
+      // selection rides an upstream-authenticated token, so the request runs the
+      // default profile and a null scope.
       final TomPrincipal principal = authenticator.authenticate(bearerToken);
       return (
         identity: identityResolver.resolveBearerPrincipal(
@@ -353,6 +383,7 @@ final class AccessAssembler implements ApiKeyRegistrar {
           channel: channel.wireName,
         ),
         scope: null,
+        profile: _resolveProfile(null),
       );
     }
     final ApiKeyMarkers markers = parseApiKeyMarkers(bearerToken);
@@ -360,15 +391,48 @@ final class AccessAssembler implements ApiKeyRegistrar {
       markers.effectiveResidualKey,
       channel: channel.wireName,
     );
+    // Resolve the profile FIRST (plan step 5): its cross-axis defaults feed the
+    // no-marker fallback in scope resolution, and an unknown profile fails here
+    // (before scope is built) as a `400`/`profile.unknown` (SCP-18).
+    final ResolvedProfile profile = _resolveProfile(markers.profileSelector);
     final ApiKeyConfig? keyConfig = apiKeysByKey[markers.effectiveResidualKey];
     // A configured key resolves the markers under its own prefixes; an
     // unconfigured token (no `apiKeys[]` entry) resolves under the built-in
     // default prefixes (MSPP-62) — so every authenticated API-key token runs
-    // under some profile rather than bare-root (§ 8.1).
+    // under some profile rather than bare-root (§ 8.1). The resolved profile's
+    // `defaultSession` / `defaultMemory` are the no-marker fallback, applied
+    // through the per-tenant prefix so a default cannot escape the namespace
+    // (explicit marker still wins — SC-1 / SC-Q14).
     return (
       identity: identity,
-      scope: keyConfig?.resolveScope(markers) ?? resolveDefaultScope(markers),
+      scope: keyConfig?.resolveScope(
+            markers,
+            defaultSession: profile.defaultSession,
+            defaultMemory: profile.defaultMemory,
+          ) ??
+          resolveDefaultScope(
+            markers,
+            defaultSession: profile.defaultSession,
+            defaultMemory: profile.defaultMemory,
+          ),
+      profile: profile,
     );
+  }
+
+  /// Resolves a `profile-<name>` selector to its [ResolvedProfile] through the
+  /// injected [profileResolver] seam (SCP-18).
+  ///
+  /// No resolver wired (profiles off) → the SC-5 byte-compatible
+  /// `ResolvedProfile.cognitiveDefault()`, so `Access.profile` is unchanged from
+  /// today. An unknown profile surfaces as [ProfileResolutionException] (thrown
+  /// by the wired resolver), which the public methods' catch maps to an
+  /// `AccessFailed` and the channel edge maps to `400` / `profile.unknown`.
+  ResolvedProfile _resolveProfile(String? profileSelector) {
+    final ProfileResolver? resolver = profileResolver;
+    if (resolver == null) {
+      return const ResolvedProfile.cognitiveDefault();
+    }
+    return resolver(profileSelector);
   }
 
   /// Admits one Telegram request.
@@ -411,11 +475,15 @@ final class AccessAssembler implements ApiKeyRegistrar {
           identityResolver.resolveTelegramUser(userId);
       principalId = identity.principalId;
       final Persona persona = personaResolver.resolve(null);
+      // Telegram carries no credential markers, so it runs the default profile
+      // for now; per-chat profile selection (`/switch_profile`) is plan step 10.
+      final ResolvedProfile profile = _resolveProfile(null);
       await _admit(
         channel: AccessChannel.telegram,
         identity: identity,
         envelope: envelope,
         persona: persona,
+        profile: profile,
         memoryProfile: memoryProfile,
         buildBinding: (resolvedIdentity, effectiveEnvelope) =>
             TelegramDeliveryBinding(
@@ -493,8 +561,11 @@ final class AccessAssembler implements ApiKeyRegistrar {
   }) async {
     String? principalId;
     try {
-      final ({ResolvedIdentity identity, ResolvedProfileScope? scope}) auth =
-          _authenticateBearerScoped(bearerToken, channel);
+      final ({
+        ResolvedIdentity identity,
+        ResolvedProfileScope? scope,
+        ResolvedProfile profile,
+      }) auth = _authenticateBearerScoped(bearerToken, channel);
       final ResolvedIdentity identity = auth.identity;
       principalId = identity.principalId;
       final Persona persona = personaResolver.resolve(modelId);
@@ -503,6 +574,7 @@ final class AccessAssembler implements ApiKeyRegistrar {
         identity: identity,
         envelope: envelope,
         persona: persona,
+        profile: auth.profile,
         scope: auth.scope,
         buildBinding: (resolvedIdentity, effectiveEnvelope) =>
             ChunkStreamDeliveryBinding(
@@ -549,6 +621,7 @@ final class AccessAssembler implements ApiKeyRegistrar {
     required ResolvedIdentity identity,
     required InboundRequest envelope,
     required Persona persona,
+    required ResolvedProfile profile,
     required _BuildBinding buildBinding,
     ResolvedProfileScope? scope,
     String? memoryProfile,
@@ -556,10 +629,25 @@ final class AccessAssembler implements ApiKeyRegistrar {
   }) async {
     final String principalId = identity.principalId;
 
-    // ── Remaining edge gates (auth + identity already ran in the caller). ──
+    // ── Remaining edge gates (auth + identity already ran in the caller). The
+    //    profile rate-limit composes with the global one: a request must clear
+    //    both, so the tighter (principal, profileId) bound governs (SC-8 /
+    //    SCP-19). A no-op for the default profile (no per-minute limit). ──
     rateLimiter.check(principalId);
+    profileRateLimiter.check(principalId, profile);
     quotaLimiter.check(principalId);
     anchorPreCheck.check(envelope.text);
+
+    // ── Persona: the profile's pinned substrate role wins over the model-id
+    //    persona (spec § 3.3); the persona id (the answered-as model echo) is
+    //    preserved so only the substrate role changes. A null `profile.role`
+    //    (the default profile) leaves the model-id persona untouched. ──
+    final Persona effectivePersona = profile.role == null
+        ? persona
+        : Persona(
+            personaId: persona.personaId,
+            substrateRole: profile.role!,
+          );
 
     // ── Turn id: the request has now cleared every edge gate, so it is
     //    admitted. Mint the turn correlation id here — the single instant
@@ -612,15 +700,19 @@ final class AccessAssembler implements ApiKeyRegistrar {
     final DeliveryBinding binding = buildBinding(identity, effectiveEnvelope);
     final DeliverCallback deliver = deliveryRegistry.deliverFor(binding);
 
-    // ── Build the one canonical Access and announce it before dispatch. ──
+    // ── Build the one canonical Access and announce it before dispatch. The
+    //    resolved profile rides onto `Access.profile` (the dispatcher/engine
+    //    read it for entry-procedure, role, overlay, MCP, budget — steps 6/8);
+    //    the marker itself never reaches the dispatcher (SC-4). ──
     final Access access = Access(
       envelope: effectiveEnvelope,
       identity: identity,
       session: stampedSession,
-      persona: persona,
+      persona: effectivePersona,
       deliver: deliver,
       history: session.history,
       turnId: turnId,
+      profile: profile,
     );
     eventBus.emit(
       AccessCreated.fromAccess(access, occurredAt: _clock().toUtc()),
@@ -636,7 +728,7 @@ final class AccessAssembler implements ApiKeyRegistrar {
       turnId: turnId,
       identity: identity,
       session: stampedSession,
-      persona: persona,
+      persona: effectivePersona,
       envelope: effectiveEnvelope,
     );
 
@@ -781,6 +873,9 @@ final class AccessAssembler implements ApiKeyRegistrar {
     }
     if (error is ApiKeyMarkerException) {
       return 'access.auth.markers.invalid';
+    }
+    if (error is ProfileResolutionException) {
+      return 'access.profile.unknown';
     }
     if (error is IdentityResolutionException) {
       return 'access.identity.unresolved';

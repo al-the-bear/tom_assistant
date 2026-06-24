@@ -72,7 +72,8 @@ import '../edge_security/edge_security.dart'
         BearerTokenAuthenticator,
         EdgeStateStore,
         JsonFileEdgeStateStore,
-        MapEdgeStateStore;
+        MapEdgeStateStore,
+        ProfileResolver;
 import '../identity/history_markdown.dart'
     show DirectoryHistoryMarkdownSink, HistoryMarkdownSink;
 import '../identity/history_store.dart'
@@ -262,6 +263,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
   IncomingTrailSink? incomingTrailSink,
   TelegramInspectors telegramInspectors = TelegramInspectors.none,
   ApiKeyPersist? apiKeyPersist,
+  ProfileResolver? profileResolver,
 }) async {
   // The proto spec § 12 phase 5 sequence, one extracted step each:
   final BootedAccessLayer booted = _composeAccessLayer(
@@ -272,6 +274,7 @@ Future<BrainAccessProcess> startBrainAccessProcess({
     kindHintClassifier: kindHintClassifier,
     clock: clock,
     incomingTrailSink: incomingTrailSink,
+    profileResolver: profileResolver,
   );
   final AccessServer server = await _serveOpenAiAndHealth(
     booted: booted,
@@ -374,6 +377,7 @@ BootedAccessLayer _composeAccessLayer({
   required KindHintClassifier? kindHintClassifier,
   required DateTime Function()? clock,
   required IncomingTrailSink? incomingTrailSink,
+  required ProfileResolver? profileResolver,
 }) =>
     BrainAccessBoot.install(
       dispatcher: brain.dispatcher,
@@ -384,6 +388,7 @@ BootedAccessLayer _composeAccessLayer({
         kindHintClassifier: kindHintClassifier,
         clock: clock,
         incomingTrailSink: incomingTrailSink,
+        profileResolver: profileResolver,
       ),
     );
 
@@ -577,6 +582,7 @@ BrainAccessConfig _toBrainAccessConfig(
   required KindHintClassifier? kindHintClassifier,
   required DateTime Function()? clock,
   required IncomingTrailSink? incomingTrailSink,
+  required ProfileResolver? profileResolver,
 }) {
   final EdgeStateStore? rateLimitStore;
   final EdgeStateStore? quotaStore;
@@ -627,6 +633,7 @@ BrainAccessConfig _toBrainAccessConfig(
     historyStore: historyStore,
     markdownSink: markdownSink,
     incomingTrailSink: incomingTrailSink,
+    profileResolver: profileResolver,
   );
 }
 

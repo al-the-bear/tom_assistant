@@ -277,6 +277,12 @@ class OllamaAccessEdge {
         message: error.message,
       );
     }
+    if (error is ProfileResolutionException) {
+      return _errorResponse(
+        statusCode: 400,
+        message: error.message,
+      );
+    }
     if (error is BearerAuthFailure) {
       return _errorResponse(
         statusCode: bearerAuthHttpStatus,

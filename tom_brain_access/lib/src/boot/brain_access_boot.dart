@@ -129,6 +129,15 @@ final class BrainAccessConfig {
   /// to the identity registry (an unbound token still fails resolution).
   final BearerTokenAuthenticator? bearerAuthenticator;
 
+  /// The profile-resolution seam (SCP-18, plan step 5): resolves a token's
+  /// `profile-<name>` marker to its boot-resolved [ResolvedProfile]. `null` (the
+  /// pre-feature default, profiles off) resolves every request to
+  /// `const ResolvedProfile.cognitiveDefault()` — the SC-5 byte-compatible
+  /// default. The run-side provisioner supplies
+  /// `(sel) => registry.resolve(sel ?? 'default', …ceilings)`, translating run's
+  /// `UnknownProfileException` into the access-local [ProfileResolutionException].
+  final ProfileResolver? profileResolver;
+
   /// The embedding seam (E.33 / E.16): substrate's embed call, as a function.
   /// `null` (with or without [kindHintClassifier]) disables classification —
   /// the dispatcher then classifies every request.
@@ -194,6 +203,7 @@ final class BrainAccessConfig {
     this.personaVocabulary,
     this.answerLaneSizing = const HistorySizing.standard(),
     this.bearerAuthenticator,
+    this.profileResolver,
     this.kindHintEmbedder,
     this.kindHintClassifier,
     this.embeddingCacheTtl = const Duration(minutes: 5),
@@ -301,6 +311,8 @@ abstract final class BrainAccessBoot {
         store: config.quotaStore,
       ),
       anchorPreCheck: AnchorPreCheck(config.anchorPolicy),
+      profileResolver: config.profileResolver,
+      profileRateLimiter: ProfileRateLimiter(clock: config.clock),
       deliveryRegistry: deliveryRegistry,
       eventBus: eventBus,
       bearerAuthenticator: config.bearerAuthenticator,

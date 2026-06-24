@@ -280,6 +280,13 @@ class AnthropicAccessEdge {
         message: error.message,
       );
     }
+    if (error is ProfileResolutionException) {
+      return _errorResponse(
+        statusCode: 400,
+        type: 'invalid_request_error',
+        message: error.message,
+      );
+    }
     if (error is BearerAuthFailure) {
       return _errorResponse(
         statusCode: bearerAuthHttpStatus,
