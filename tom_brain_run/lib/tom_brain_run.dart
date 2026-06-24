@@ -167,6 +167,11 @@ export 'src/bundle/bundled_sqlite_vec.dart'
         resolveSqliteVecBinariesRoot;
 export 'src/scripts_config.dart' show ScriptsConfig, ScriptsConfigException;
 export 'src/scripts_config_loader.dart' show ScriptsConfigLoader;
+
+// ── The --home/agent directory-convention resolver (tom_brain_cli.md § 2 / § 6
+//    / § 8; CLI plan step #6) ─────────────────────────────────────────────
+export 'src/project_home.dart'
+    show HomeOverrides, PathLayer, ProjectHome, ResolvedPath;
 export 'src/tools_config.dart' show ToolsConfig, ToolsConfigException;
 export 'src/tools_config_loader.dart' show ToolsConfigLoader;
 
