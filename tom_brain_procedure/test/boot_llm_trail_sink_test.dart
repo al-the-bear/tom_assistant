@@ -215,6 +215,16 @@ class _BootMemory implements TomBrainMemory {
   Future<Node?> get(NodeId id) async => _nodes[id];
 
   @override
+  Stream<Node> stream(StreamQuery query) {
+    // CLP-76: the boot now enumerates brain `Procedure` nodes from memory.
+    // This double serves none, so the procedure tier sees an empty stream.
+    final types = query.filter.typeNames;
+    return Stream<Node>.fromIterable(
+      _nodes.values.where((n) => types.isEmpty || types.contains(n.typeName)),
+    );
+  }
+
+  @override
   Future<EdgeId> edge(
     NodeId from,
     EdgeType type,

@@ -76,7 +76,9 @@ import '../bridges/substrate_bridge.dart';
 import '../budget/budget.dart' show MemoryWriteLimits;
 import '../history/history_compactor.dart' show HistoryCompactor;
 import '../procedure_store/disk_procedure_store.dart';
+import '../procedure_store/memory_procedure_store.dart';
 import '../procedure_store/procedure_store_interface.dart' show ProcedureStore;
+import '../procedure_store/shadowing_procedure_store.dart';
 import '../recorder/llm_trail_record.dart' show LlmTrailSink;
 import '../recorder/memory_access_record.dart' show MemoryAccessSink;
 import '../recorder/memory_recall_notice.dart' show MemoryRecallNotice;
@@ -669,10 +671,19 @@ abstract final class BrainProcessBoot {
     required ProvisionedMemory memory,
     required TomBrainSubstrateClient substrate,
   }) async {
-    // One disk store, used both to build the initial resolver and as the
-    // engine's reload store, so an edited `scripts/system/<id>.dart` is picked
-    // up on the next run (`prompt_tracing.md` § 6.3, AUTH-5).
-    final procedureStore = _diskProcedureStore(config);
+    // The procedure store the boot builds the initial resolver from and reuses
+    // as the engine's reload store, so an edited `scripts/system/<id>.dart` is
+    // picked up on the next run (`prompt_tracing.md` § 6.3, AUTH-5).
+    //
+    // The disk tier shadows the memory tier (§ 24.5, CLP-76): a brain-authored
+    // `Procedure` node becomes resolvable/runnable, but a human-edited
+    // disk/bundle procedure of the same id still wins. ShadowingProcedureStore
+    // (shadow-by-id) — not CompositeProcedureStore (which would surface both
+    // versions of a shared id) — encodes that precedence.
+    final procedureStore = ShadowingProcedureStore(
+      primary: _diskProcedureStore(config),
+      shadowed: MemoryProcedureStore(memory.client),
+    );
     final resolver = await ProcedureResolver.fromStore(procedureStore);
 
     // One shared preemption state for the engine (yields against it) and the
