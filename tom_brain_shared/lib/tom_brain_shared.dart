@@ -176,8 +176,8 @@ export 'src/symbolic/symbolic.dart'
     show AttrClause, SymbolicFilter, SymbolicOp;
 
 // session_configuration step 2 — profile/ module: the Profile selection axis'
-// shared value types. `ProfileMode` (cognitive/answer/passthrough + the
-// mode→entry-procedure mapping, spec § 3.2), `ProfileBudget` /
+// shared value types. `ProfileMode` (cognitive/answer/passthrough/retrieval +
+// the mode→entry-procedure mapping, spec § 3.2), `ProfileBudget` /
 // `ProfileRateLimits` (the optional per-profile envelopes, § 3.1 / § 5.4), and
 // `ResolvedProfile` (the boot-resolved bundle stamped on `Access`, § 4.3 —
 // `Access.profile` reads it). The raw config-side `Profile` aggregate stays in

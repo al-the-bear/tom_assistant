@@ -211,9 +211,11 @@ void main() {
           'defaultMemory',
         ]),
       );
-      // `mode` is the closed cognitive/answer/passthrough enum (§ 3.2).
+      // `mode` is the closed cognitive/answer/passthrough/retrieval enum
+      // (§ 3.2; SC-Q4 added the zero-LLM `retrieval` diagnostic mode).
       final mode = (props['mode'] as Map).cast<String, Object?>();
-      expect(mode['enum'], containsAll(<String>['cognitive', 'answer', 'passthrough']));
+      expect(mode['enum'],
+          containsAll(<String>['cognitive', 'answer', 'passthrough', 'retrieval']));
       // budget / rateLimits are closed nested objects with their § 3.1 fields.
       final budget = (props['budget'] as Map).cast<String, Object?>();
       expect(budget['additionalProperties'], isFalse);

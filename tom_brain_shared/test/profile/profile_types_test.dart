@@ -6,7 +6,8 @@
 // value sub-types it composes and the boot-resolved bundle `Access` actually
 // reads live here. This suite proves the shared contract:
 //
-//   * `ProfileMode`       — the closed cognitive/answer/passthrough alphabet,
+//   * `ProfileMode`       — the closed cognitive/answer/passthrough/retrieval
+//                           alphabet,
 //                           its mode→entry-procedure mapping (spec § 3.2), and
 //                           a wire (de)serialisation surface.
 //   * `ProfileBudget`     — the optional per-profile budget envelope, with
@@ -61,20 +62,24 @@ Access _accessWith({ResolvedProfile? profile, DeliverCallback? deliver}) {
 
 void main() {
   group('ProfileMode', () {
-    test('is the closed cognitive/answer/passthrough alphabet', () {
+    test('is the closed cognitive/answer/passthrough/retrieval alphabet', () {
+      // SC-Q4 widened the alphabet with the zero-LLM `retrieval` diagnostic
+      // mode (procedure spec § 24.9); it remains closed at four.
       expect(ProfileMode.values,
           containsAll(<ProfileMode>[
             ProfileMode.cognitive,
             ProfileMode.answer,
             ProfileMode.passthrough,
+            ProfileMode.retrieval,
           ]));
-      expect(ProfileMode.values, hasLength(3));
+      expect(ProfileMode.values, hasLength(4));
     });
 
     test('maps each mode to its default entry procedure (spec § 3.2)', () {
       expect(ProfileMode.cognitive.defaultEntryProcedure, 'prompt_analyzer_v1');
       expect(ProfileMode.answer.defaultEntryProcedure, 'answer_with_memory_v1');
       expect(ProfileMode.passthrough.defaultEntryProcedure, 'passthrough_v1');
+      expect(ProfileMode.retrieval.defaultEntryProcedure, 'retrieve_v1');
     });
 
     test('wireName / fromWire round-trip for every mode', () {

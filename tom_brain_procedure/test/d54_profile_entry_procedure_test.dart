@@ -116,6 +116,17 @@ void main() {
       );
     });
 
+    test('retrieval mode routes directly to retrieve_v1 (first door)', () {
+      // SC-Q4: the zero-LLM diagnostic mode reaches its entry the same way the
+      // other non-cognitive modes do — the first door fires on the non-baseline
+      // entry. The entry is substrate-free by construction (retrieve_v1 imports
+      // no substrate bridge), but routing does not care; it only resolves the id.
+      expect(
+        _resolve(_accessWith(profile: _profile(ProfileMode.retrieval))),
+        SystemProcedures.retrieveV1,
+      );
+    });
+
     test('an explicit entryProcedure wins over the cognitive mode default', () {
       // A cognitive profile that explicitly pins answer_with_memory_v1: the
       // explicit entry is non-baseline, so the first door fires and wins.
@@ -170,6 +181,8 @@ void main() {
           SystemProcedures.answerWithMemoryV1);
       expect(selector.resolveEntryProcedure(SystemProcedures.passthroughV1),
           SystemProcedures.passthroughV1);
+      expect(selector.resolveEntryProcedure(SystemProcedures.retrieveV1),
+          SystemProcedures.retrieveV1);
     });
 
     test('the entry is trimmed before it is matched', () {
@@ -191,15 +204,17 @@ void main() {
           SystemProcedures.promptAnalyzerV1,
           SystemProcedures.answerWithMemoryV1,
           SystemProcedures.passthroughV1,
+          SystemProcedures.retrieveV1,
         ]);
       }
     });
 
-    test('knownEntryProcedures reports the closed three-entry set', () {
+    test('knownEntryProcedures reports the closed four-entry set', () {
       expect(ProcedureSelector().knownEntryProcedures, <String>[
         SystemProcedures.promptAnalyzerV1,
         SystemProcedures.answerWithMemoryV1,
         SystemProcedures.passthroughV1,
+        SystemProcedures.retrieveV1,
       ]);
     });
 
@@ -218,11 +233,12 @@ void main() {
       );
     });
 
-    test('defaultEntryProcedures is the three mode entries', () {
+    test('defaultEntryProcedures is the four mode entries', () {
       expect(defaultEntryProcedures, <String>{
         SystemProcedures.promptAnalyzerV1,
         SystemProcedures.answerWithMemoryV1,
         SystemProcedures.passthroughV1,
+        SystemProcedures.retrieveV1,
       });
     });
 

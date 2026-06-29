@@ -3,8 +3,9 @@
 //
 // Module surface:
 //
-//   * `ProfileMode`        — the cognitive/answer/passthrough alphabet + its
-//                            mode→entry-procedure mapping (`profile_mode.dart`).
+//   * `ProfileMode`        — the cognitive/answer/passthrough/retrieval alphabet
+//                            + its mode→entry-procedure mapping
+//                            (`profile_mode.dart`).
 //   * `ProfileBudget`      — the optional per-profile budget envelope
 //                            (`profile_budget.dart`).
 //   * `ProfileRateLimits`  — the optional per-profile rate-limits

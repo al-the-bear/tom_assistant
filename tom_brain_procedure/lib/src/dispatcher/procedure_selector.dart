@@ -65,6 +65,12 @@ abstract final class SystemProcedures {
   /// (§ 5.1) and the engine-side loader share one spelling; the script itself
   /// lands in plan step 7.
   static const String passthroughV1 = 'passthrough_v1';
+
+  /// The zero-LLM diagnostic retrieval entry: pure lexical (bm25) memory
+  /// recall returned verbatim, no synthesis (procedure spec § 24.9, SC-Q4).
+  /// The entry procedure `mode: retrieval` selects. Structurally substrate-free
+  /// — the script imports no substrate bridge, so it can issue no LLM call.
+  static const String retrieveV1 = 'retrieve_v1';
 }
 
 /// The closed set of *entry* procedure ids a profile may select via its
@@ -72,17 +78,20 @@ abstract final class SystemProcedures {
 ///
 /// One id per [ProfileMode]: `cognitive` → [SystemProcedures.promptAnalyzerV1],
 /// `answer` → [SystemProcedures.answerWithMemoryV1], `passthrough` →
-/// [SystemProcedures.passthroughV1]. This is the validation registry for
+/// [SystemProcedures.passthroughV1], `retrieval` →
+/// [SystemProcedures.retrieveV1]. This is the validation registry for
 /// [ProcedureSelector.resolveEntryProcedure] — the profile entry door
 /// (Plan step 6 / SCP-22) — kept **distinct** from
 /// [ProcedureSelector.knownProcedureIds] (the kindHint door's
 /// routing-derived set, `[prompt_analyzer_v1]`). The two namespaces were
 /// already separated by Q-E.50.1; the entry set lets a profile reach the
-/// `answer`/`passthrough` entries without widening the kindHint door's set.
+/// `answer`/`passthrough`/`retrieval` entries without widening the kindHint
+/// door's set.
 const Set<String> defaultEntryProcedures = <String>{
   SystemProcedures.promptAnalyzerV1,
   SystemProcedures.answerWithMemoryV1,
   SystemProcedures.passthroughV1,
+  SystemProcedures.retrieveV1,
 };
 
 /// The default kind → procedure-id routing table for the prototype.

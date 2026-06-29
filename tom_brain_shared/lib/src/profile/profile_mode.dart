@@ -19,7 +19,16 @@ enum ProfileMode {
 
   /// One relay call, no memory and no orchestration (still a traced,
   /// budgeted, rate-limited procedure — SC-3).
-  passthrough;
+  passthrough,
+
+  /// Pure non-LLM memory retrieval, no synthesis — the diagnostic mode
+  /// (SC-Q4). It runs only the lexical (bm25) recall pass and returns the
+  /// recalled context verbatim as the answer; it issues no substrate call
+  /// (structurally enforced — `retrieve_v1` imports no substrate bridge) and
+  /// makes no embedding callout (bm25 only). Distinct from the LLM-augmented
+  /// four-mode retrieval *system* of § 23 (`retrieve_for_prompt_v1`), which is
+  /// a procedure-layer conductor, not a profile mode.
+  retrieval;
 
   /// The well-known entry procedure this mode selects by default (spec § 3.2).
   /// A profile's explicit `entryProcedure` may override it (step 6).
@@ -27,6 +36,7 @@ enum ProfileMode {
         ProfileMode.cognitive => 'prompt_analyzer_v1',
         ProfileMode.answer => 'answer_with_memory_v1',
         ProfileMode.passthrough => 'passthrough_v1',
+        ProfileMode.retrieval => 'retrieve_v1',
       };
 
   /// The token used in config (`mode:`) and trail records — the enum name.

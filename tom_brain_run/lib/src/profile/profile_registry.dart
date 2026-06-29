@@ -462,8 +462,8 @@ final class ProfileRegistry {
       return ProfileMode.fromWire(value);
     } on ArgumentError {
       throw ProfileConfigException(
-        'unknown profile mode "$value" (expected cognitive, answer, or '
-        'passthrough)',
+        'unknown profile mode "$value" (expected one of '
+        '${ProfileMode.values.map((m) => m.wireName).join(', ')})',
         code: 'profile.unknown_mode',
         path: path,
       );
