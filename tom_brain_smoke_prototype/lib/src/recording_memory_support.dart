@@ -251,6 +251,16 @@ class NoopProfileRegistry implements MemoryProfileRegistry {
         'NoopProfileRegistry does not materialise profile views; the smoke '
         'harness never reads in a profile.',
       );
+
+  @override
+  Future<T> writeInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) =>
+      throw UnsupportedError(
+        'NoopProfileRegistry does not materialise profile views; the smoke '
+        'harness never writes in a profile.',
+      );
 }
 
 /// A recording [StackApi] shared by both smoke memory doubles.

@@ -265,11 +265,24 @@ Future<ProvisionedBrain> provisionBrain({
   final LateDreamSurface? dreamHolder =
       dreamEnabled ? LateDreamSurface() : null;
 
+  // The foreground answer lane's history compactor (HC-81 activation). Built
+  // from the incoming substrate (the boot consumes the same client, so no boot
+  // output is needed first) through the same gated seam the dream loop uses
+  // below: an over-threshold answer session folds its `pending` batch into its
+  // bounded summary through the anchored (PE-7) + budgeted (PE-8) `sub.llm`
+  // path. Absent template ⇒ `null`: the safe never-fold default (the answer lane
+  // loses nothing — verbatim turns stay in the durable record).
+  final HistoryCompactor? foregroundCompactor = historyCompactorFor(
+    templatesDir: historyCompactionTemplatesDir,
+    substrate: substrate,
+  );
+
   // Boot the cognition: real substrate → real on-disk memory (isolate-hosted
   // via the production factory) → engine → dispatcher.
   final booted = await BrainProcessBoot.boot(
     BrainProcessConfig(
       substrate: substrate,
+      historyCompactor: foregroundCompactor,
       substrateConfig: substrateConfig,
       memoryProvisioning: MemoryProvisioningConfig.isolate(
         factory: createSqliteTomBrainMemory,
@@ -412,14 +425,10 @@ DreamController _startDreamLoop(
   // the durable record above keeps every firing. Absent template ⇒ no compactor
   // (the answer-lane's HC-81 default): a lane's `pending` batch grows unfolded,
   // still losing nothing.
-  final HistoryCompactor? dreamCompactor =
-      historyCompactionTemplatesDir != null &&
-              _hasCompactionTemplate(historyCompactionTemplatesDir)
-          ? buildDreamHistoryCompactor(
-              templatesDir: historyCompactionTemplatesDir,
-              substrate: booted.substrate,
-            )
-          : null;
+  final HistoryCompactor? dreamCompactor = historyCompactorFor(
+    templatesDir: historyCompactionTemplatesDir,
+    substrate: booted.substrate,
+  );
   final scheduler = FreeTimeScheduler(
     coordinator: booted.coordinator,
     memory: booted.memory.client,
@@ -465,25 +474,50 @@ DreamController _startDreamLoop(
   return controller;
 }
 
-/// Whether [dir] holds the production `compact_history_v1` template the dream
+/// The gated production [HistoryCompactor] both lanes wire in (HC-81 foreground
+/// / I-2 dream): a compactor built over [templatesDir] + [substrate] when a
+/// `compact_history_v1` template is actually present there, else `null` — the
+/// safe never-fold default (a session's `pending` batch then grows unfolded but
+/// loses nothing, since the durable record keeps every turn / firing).
+/// [templatesDir] is `null` when no cognition tree is configured.
+///
+/// This is the single decision both the foreground answer lane (its
+/// `BrainProcessConfig.historyCompactor` seam) and `_startDreamLoop` (the
+/// `DreamLaneSessions.compactor` seam) make, factored out so the gate is one
+/// place and both lanes degrade identically.
+HistoryCompactor? historyCompactorFor({
+  required Directory? templatesDir,
+  required TomBrainSubstrateClient substrate,
+}) =>
+    templatesDir != null && _hasCompactionTemplate(templatesDir)
+        ? buildHistoryCompactor(
+            templatesDir: templatesDir,
+            substrate: substrate,
+          )
+        : null;
+
+/// Whether [dir] holds the production `compact_history_v1` template the
 /// compactor folds through. The store resolves `<dir>/<type>.yaml`, so the file
 /// is the load-bearing artifact: an absent template would silently degrade a
-/// dreaming fold to a never-fold (the compactor swallows the load error), so the
-/// dream loop only builds a compactor when the file is actually present.
+/// fold to a never-fold (the compactor swallows the load error), so a lane only
+/// builds a compactor when the file is actually present.
 bool _hasCompactionTemplate(Directory dir) =>
     File('${dir.path}/$defaultCompactionTemplate.yaml').existsSync();
 
-/// Builds the production dream-lane [HistoryCompactor]: the `compact_history_v1`
-/// template store over [templatesDir] folded through the anchored (PE-7) +
-/// budgeted (PE-8) `sub.llm` seam ([SubstrateHistoryCompaction]) over
-/// [substrate].
+/// Builds the production [HistoryCompactor] both lanes fold through: the
+/// `compact_history_v1` template store over [templatesDir] folded through the
+/// anchored (PE-7) + budgeted (PE-8) `sub.llm` seam ([SubstrateHistoryCompaction])
+/// over [substrate].
 ///
-/// This is the exact construction `_startDreamLoop` performs in production once
-/// a `compact_history_v1` template is present (I-2): an over-threshold dreaming
-/// lane folds its `pending` batch into its bounded summary through the real
-/// substrate call. It is exported so a test can pin the production wiring seam
-/// without a vec0 boot.
-HistoryCompactor buildDreamHistoryCompactor({
+/// This is the exact construction both the foreground answer lane (its
+/// `BrainProcessConfig.historyCompactor` seam) and `_startDreamLoop` perform in
+/// production once a `compact_history_v1` template is present (HC-81 / I-2): an
+/// over-threshold session folds its `pending` batch into its bounded summary
+/// through the real substrate call. The build is lane-agnostic — the compactor
+/// only ever sees a `ConversationHistory` — so a single builder serves both.
+/// It is exported so a test can pin the production wiring seam without a vec0
+/// boot.
+HistoryCompactor buildHistoryCompactor({
   required Directory templatesDir,
   required TomBrainSubstrateClient substrate,
 }) =>
@@ -1055,11 +1089,11 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     procedureTreeSink: sinks.procedureTreeSink,
     dream: runConfig.dream,
     history: runConfig.history,
-    // The dream-lane history compactor folds through the `compact_history_v1`
-    // template resolved under the cognition tree (I-2). Pass the cognition root
-    // when one is configured; `_startDreamLoop` guards on the template's actual
-    // presence, so a cognition tree without the template still boots compactor-
-    // less (the answer-lane HC-81 default).
+    // Both lanes' history compactors fold through the `compact_history_v1`
+    // template resolved under the cognition tree (HC-81 foreground / I-2 dream).
+    // Pass the cognition root when one is configured; each lane guards on the
+    // template's actual presence, so a cognition tree without the template still
+    // boots compactor-less (the safe never-fold default).
     historyCompactionTemplatesDir:
         cognition != null ? Directory(cognition.root) : null,
     promptResolver: promptResolver,
