@@ -97,4 +97,25 @@ abstract interface class MemoryProfileRegistry {
     String name,
     Future<T> Function(TomBrainMemoryClient body) body,
   );
+
+  /// Runs [body] against a transient **writable** handle bound to the
+  /// profile named [name], returning [body]'s result (memory § 2.6, GA-6).
+  ///
+  /// The writable twin of [readInProfile]: same open/work/close child-store
+  /// lifecycle, but [body] is expected to mutate the profile (e.g. `persist`
+  /// each derived node under its own `Scope.idempotencyKey`). It exists as a
+  /// distinct method so the cross-profile aggregator (memory § 2.6) can make
+  /// its write target **structurally explicit** — the only place that opens a
+  /// profile to write it is this seam, and the global-aggregation pass only
+  /// ever names `global` here. That is the construction-level half of GA-INV:
+  /// the aggregator reads every *source* through [readInProfile] (intent:
+  /// no mutation) and writes *only* `global` through [writeInProfile].
+  ///
+  /// [name] is validated exactly as in [createProfile]; the profile is
+  /// materialised if absent (matching the child-handle lifecycle). Like
+  /// [readInProfile] this is for short-lived passes, never a hot path.
+  Future<T> writeInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  );
 }

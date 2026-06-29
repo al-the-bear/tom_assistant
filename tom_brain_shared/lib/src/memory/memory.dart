@@ -45,7 +45,11 @@ export 'config/memory_config.dart'
         SqliteVecConfig,
         TrailsConfig;
 export 'config/profile_name.dart'
-    show isValidMemoryProfileName, validateMemoryProfileName;
+    show
+        isReservedGlobalProfile,
+        isValidMemoryProfileName,
+        reservedGlobalProfile,
+        validateMemoryProfileName;
 
 // edges/ — read-side edge record + the closed 12-edge alphabet.
 export 'edges/edge.dart' show Edge;

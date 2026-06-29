@@ -248,6 +248,30 @@ void main() {
       expect(outcome.profile, 'default');
       expect(outcome.code, 'access.profile.unknown');
     });
+
+    test(
+        'a confident pick of the reserved "global" profile is rejected and '
+        'falls back to the default (GA-2: global can never be bound active)',
+        () async {
+      // GA-10 puts `global` in `memory.profiles.list`, so the selector role can
+      // legitimately name it (isKnownProfile: true). Binding it would make a
+      // request write the read-only aggregation tier — GA-INV forbids it. The
+      // manager must coerce a `global` pick to the unknown/fall-back path.
+      final selector = _FakeSelector(
+        [_pick(reservedGlobalProfile, 0.99)],
+      );
+      final manager = SessionManager(
+        sessionIdMinter: _counterMinter(),
+        profileSelector: selector,
+        selection: _enabled,
+      );
+
+      final outcome = await _turn(manager, text: 'hello');
+
+      expect(outcome.status, MemoryProfileSelectionStatus.profileUnknown);
+      expect(outcome.profile, 'default');
+      expect(outcome.code, 'access.profile.unknown');
+    });
   });
 
   group('history vs first-prompt-only input (Q-H.9)', () {

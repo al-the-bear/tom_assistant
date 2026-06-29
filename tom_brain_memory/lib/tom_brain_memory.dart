@@ -25,6 +25,7 @@ library;
 // Module barrels. Each `src/<folder>/<folder>.dart` re-exports the
 // public types of its module behind explicit `show` clauses; the
 // top-level package surface mirrors the internal layout.
+export 'src/aggregation/aggregation.dart';
 export 'src/api/api.dart';
 export 'src/budget/budget.dart';
 export 'src/classification/classification.dart';

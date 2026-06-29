@@ -112,6 +112,15 @@ types:
     version: 1
     schema:
       statement: { type: string, fts: true }
+      # Global-aggregation provenance (memory § 2.6, GA-4). Optional and
+      # non-indexed: null on every normal-profile Claim; set only on the
+      # copy-derived twin the Aggregator writes into the reserved `global`
+      # profile, recording the source profile/node and aggregation time. A
+      # cross-store `derived_from` edge is impossible (§ 2.5 isolation), so
+      # provenance lives in values.
+      _sourceProfile: { type: string, nullable: true }
+      _sourceNodeId: { type: string, nullable: true }
+      _aggregatedAt: { type: string, nullable: true }
     embedding:
       source_fields: [statement]
     index:
@@ -133,6 +142,10 @@ types:
     schema:
       name: { type: string, fts: true }
       description: { type: string, fts: true }
+      # Global-aggregation provenance (memory § 2.6, GA-4) — see Claim.
+      _sourceProfile: { type: string, nullable: true }
+      _sourceNodeId: { type: string, nullable: true }
+      _aggregatedAt: { type: string, nullable: true }
     embedding:
       source_fields: [name, description]
     index:
@@ -151,6 +164,10 @@ types:
     schema:
       statement: { type: string, fts: true }
       rationale: { type: string, fts: true }
+      # Global-aggregation provenance (memory § 2.6, GA-4) — see Claim.
+      _sourceProfile: { type: string, nullable: true }
+      _sourceNodeId: { type: string, nullable: true }
+      _aggregatedAt: { type: string, nullable: true }
     embedding:
       source_fields: [statement, rationale]
     index:
@@ -195,6 +212,10 @@ types:
     schema:
       signature: { type: string, fts: true }
       description: { type: string, fts: true }
+      # Global-aggregation provenance (memory § 2.6, GA-4) — see Claim.
+      _sourceProfile: { type: string, nullable: true }
+      _sourceNodeId: { type: string, nullable: true }
+      _aggregatedAt: { type: string, nullable: true }
     embedding:
       source_fields: [signature, description]
     index:
@@ -452,6 +473,10 @@ types:
     schema:
       topic: { type: string, fts: true }
       why: { type: string, fts: true }
+      # Global-aggregation provenance (memory § 2.6, GA-4) — see Claim.
+      _sourceProfile: { type: string, nullable: true }
+      _sourceNodeId: { type: string, nullable: true }
+      _aggregatedAt: { type: string, nullable: true }
     embedding:
       source_fields: [topic, why]
     index:

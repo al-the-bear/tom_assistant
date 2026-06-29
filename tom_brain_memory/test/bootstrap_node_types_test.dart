@@ -296,6 +296,47 @@ void main() {
       }
     });
 
+    test(
+        'the 5 global-aggregation allowlist types declare optional provenance '
+        'fields; non-aggregated types do not (GA-4)', () {
+      const provenanceFields = <String>[
+        '_sourceProfile',
+        '_sourceNodeId',
+        '_aggregatedAt',
+      ];
+      // The v1 allowlist (memory § 2.6 GA-3) — these carry provenance so a
+      // copy-derived global twin can record its source.
+      const allowlisted = <String>[
+        'Concept',
+        'Claim',
+        'Conclusion',
+        'Pattern',
+        'InterestItem',
+      ];
+      for (final typeName in allowlisted) {
+        final decl = _decl(manifest, typeName);
+        for (final f in provenanceFields) {
+          expect(decl.schema.containsKey(f), isTrue,
+              reason: '$typeName must declare provenance field "$f" (GA-4)');
+          expect(decl.schema[f]!.nullable, isTrue,
+              reason: '$typeName.$f must be optional (null on normal nodes)');
+          expect(decl.schema[f]!.type, FieldType.string,
+              reason: '$typeName.$f must be a string');
+          // Provenance is metadata, never content — never indexed.
+          expect(decl.indexPolicy.ftsFields.contains(f), isFalse);
+          expect(decl.indexPolicy.vectorFields.contains(f), isFalse);
+          expect(decl.embeddingPolicy.sourceFields.contains(f), isFalse);
+        }
+      }
+      // An episodic / non-aggregated type must NOT carry provenance — it is
+      // never aggregated, so the fields would be dead weight.
+      final event = _decl(manifest, 'Event');
+      for (final f in provenanceFields) {
+        expect(event.schema.containsKey(f), isFalse,
+            reason: 'Event is never aggregated and must not declare "$f"');
+      }
+    });
+
     test('Event/Source/NodeType/Stack/Tombstone retain indefinitely', () {
       // Per spec § 1 (hard invariant: "no event is ever truly lost") and
       // § 4.1: Tombstone is the immutability anchor; Events are also

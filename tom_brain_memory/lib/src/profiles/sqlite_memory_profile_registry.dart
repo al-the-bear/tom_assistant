@@ -166,6 +166,26 @@ final class SqliteMemoryProfileRegistry implements MemoryProfileRegistry {
     }
   }
 
+  @override
+  Future<T> writeInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) async {
+    _validateName(name);
+    // Writable twin of readInProfile (memory § 2.6, GA-6): the same
+    // open/work/close child-handle lifecycle, but `body` is expected to
+    // mutate the profile (persist each derived node under its own
+    // idempotency key). The aggregator names only `global` here, so this
+    // is the single construction-level write seam for the global tier.
+    final store = _childStoreFactory();
+    await store.open(_baseConfig.withProfile(name));
+    try {
+      return await body(store);
+    } finally {
+      await store.close();
+    }
+  }
+
   /// Opens a child store bound to [name] just long enough for `open()`
   /// to build the full layout + bootstrap catalogue, then closes it.
   Future<void> _materialise(String name) async {

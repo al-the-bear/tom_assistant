@@ -278,6 +278,13 @@ class _NoopProfileRegistry implements MemoryProfileRegistry {
     Future<T> Function(TomBrainMemoryClient body) body,
   ) async =>
       throw UnimplementedError();
+
+  @override
+  Future<T> writeInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) async =>
+      throw UnimplementedError();
 }
 
 class _NoopStackApi implements StackApi {

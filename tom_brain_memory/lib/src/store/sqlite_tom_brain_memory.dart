@@ -720,6 +720,56 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
     return _reader.getMany(ids);
   }
 
+  /// Reads the stored embeddings for [ids] from `vectors.db`
+  /// (memory § 2.6, GA-4) — an in-process-only seam not on the abstract
+  /// [TomBrainMemory] surface.
+  ///
+  /// The read path (`get` / `getMany` / `stream`) deliberately omits
+  /// embeddings (Q-A.35.1); this exposes the vector blob directly for the
+  /// sole v1 consumer, the cross-profile aggregator, which copies a
+  /// source node's embedding verbatim into `global` so the aggregated
+  /// node is vector-recallable without a substrate re-embed (hard
+  /// principle 11: memory copies an existing embedding; it never calls an
+  /// LLM). Ids of nodes with no embedding (`EmbeddingPolicy.none`, or a
+  /// missing / forgotten id) are elided — never a `null` placeholder.
+  Future<Map<NodeId, Vec>> readEmbeddings(List<NodeId> ids) async {
+    _ensureOpen('readEmbeddings');
+    if (ids.isEmpty) return const <NodeId, Vec>{};
+
+    // Resolve each id's type to its embedding model, then batch the vector
+    // readback per model (VectorTable.readVectors is one round-trip per
+    // model). A node whose type declares no embedding, or whose row is gone,
+    // contributes nothing.
+    final nodes = await _reader.getMany(ids);
+    final idsByModel = <String, List<String>>{};
+    for (final node in nodes) {
+      final decl = _registry.get(node.typeName);
+      if (decl == null || decl.embeddingPolicy.isNone) continue;
+      idsByModel
+          .putIfAbsent(decl.embeddingPolicy.modelIdentity, () => <String>[])
+          .add(node.id.value);
+    }
+    if (idsByModel.isEmpty) return const <NodeId, Vec>{};
+
+    // A fresh VectorTable over the live vectors handle — it reads the meta
+    // table on demand, so it needs no setup beyond the already-ensured
+    // index.
+    final vectorTable = VectorTable(
+      vectorsDb: _vectorsDb,
+      backend: const Vec0VirtualTableBackend(),
+      clock: _clock,
+    );
+    final out = <NodeId, Vec>{};
+    for (final entry in idsByModel.entries) {
+      final vecs =
+          vectorTable.readVectors(nodeIds: entry.value, modelId: entry.key);
+      vecs.forEach((idString, vec) {
+        out[NodeId.fromString(idString)] = vec;
+      });
+    }
+    return out;
+  }
+
   @override
   Future<void> recordAccess(List<NodeId> ids, {String? producer}) async {
     _ensureOpen('recordAccess');

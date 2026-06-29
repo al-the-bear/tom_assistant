@@ -693,7 +693,13 @@ final class SessionManager {
     entry.everSelected = true;
     entry.turnsSinceProfileCheck = 0;
 
-    if (!pick.isKnownProfile) {
+    // GA-2 (defence in depth): the reserved global-aggregation profile is
+    // read-only to every consumer and must never be bound as a conversation's
+    // active (writable) profile. GA-10 lists it among the known profiles, so a
+    // selector role can legitimately *name* it — coerce that pick onto the
+    // unknown/fall-back path exactly as for an unconfigured name, so `global`
+    // is unreachable as an active selection.
+    if (!pick.isKnownProfile || isReservedGlobalProfile(pick.profile)) {
       entry.selectionInconclusive = true;
       return MemoryProfileSelectionOutcome(
         status: MemoryProfileSelectionStatus.profileUnknown,

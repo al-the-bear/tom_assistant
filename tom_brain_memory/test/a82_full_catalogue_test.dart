@@ -474,6 +474,13 @@ class _FakeProfileRegistryA82 implements MemoryProfileRegistry {
     Future<T> Function(TomBrainMemoryClient body) body,
   ) async =>
       throw UnimplementedError();
+
+  @override
+  Future<T> writeInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) async =>
+      throw UnimplementedError();
 }
 
 // ─── Stack & Migration sub-API fakes ──────────────────────────────

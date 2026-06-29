@@ -48,6 +48,7 @@ const _requiredSubfolders = <String>[
   // Per Plan step A.23 — order matters only as documentation; the test
   // checks the set, not the order. Subsequent plan steps may extend
   // the inventory (see file header).
+  'aggregation', // I-3 — cross-profile global-aggregation tier (memory § 2.6)
   'api',
   'budget', // A.68
   'classification',
@@ -80,9 +81,9 @@ void main() {
       // `observability` for 15; Q-A.87.8 added `sync` for 16;
       // H.27 added `profiles` for 17; Todo 7 added `procedures` for 18;
       // the planning subsystem (commit 283d896) added `graph` +
-      // `planning` for 20.
-      expect(_requiredSubfolders, hasLength(20));
-      expect(_requiredSubfolders.toSet(), hasLength(20),
+      // `planning` for 20; I-3 added `aggregation` for 21.
+      expect(_requiredSubfolders, hasLength(21));
+      expect(_requiredSubfolders.toSet(), hasLength(21),
           reason: 'subfolder list must be free of duplicates');
     });
 
