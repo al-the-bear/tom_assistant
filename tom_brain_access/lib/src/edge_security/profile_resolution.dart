@@ -59,3 +59,25 @@ class ProfileResolutionException implements Exception {
   @override
   String toString() => 'ProfileResolutionException($profileName): $message';
 }
+
+/// Raised when a credential names (or resolves to) a profile its per-key
+/// `allowedProfiles` allowlist does not permit (access § 7.6, I-5).
+///
+/// A sub-case of [ProfileResolutionException] — the profile *exists* but this
+/// key may not run under it — so every edge's `400` / `invalid_request_error`
+/// mapping (which reads [code]) covers it unchanged; only the wire [code] is
+/// distinct (`profile.forbidden`). Like its parent it carries the non-secret
+/// [profileName] and never the residual credential. The profile resolves
+/// successfully *before* this is thrown, so the rejection happens after profile
+/// resolution but before scope is built or the request reaches the dispatcher
+/// (SC-4).
+class ProfileNotAllowedException extends ProfileResolutionException {
+  /// Builds a forbidden-profile failure for the named profile.
+  const ProfileNotAllowedException(super.profileName, super.message);
+
+  @override
+  String get code => 'profile.forbidden';
+
+  @override
+  String toString() => 'ProfileNotAllowedException($profileName): $message';
+}

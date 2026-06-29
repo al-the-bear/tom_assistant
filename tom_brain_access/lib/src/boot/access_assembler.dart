@@ -396,6 +396,18 @@ final class AccessAssembler implements ApiKeyRegistrar {
     // (before scope is built) as a `400`/`profile.unknown` (SCP-18).
     final ResolvedProfile profile = _resolveProfile(markers.profileSelector);
     final ApiKeyConfig? keyConfig = apiKeysByKey[markers.effectiveResidualKey];
+    // Per-key profile tenancy (access § 7.6, I-5): when the matched key declares
+    // an `allowedProfiles` allowlist, the resolved profile id must be on it —
+    // including the implicit `default` (deny-by-default). The check is on the
+    // resolved profile.id (after resolution succeeds), before scope is built or
+    // the request reaches the dispatcher (SC-4). An omitted allowlist is
+    // unrestricted, so an unconfigured/keyless token is never gated here.
+    if (keyConfig != null && !keyConfig.permitsProfile(profile.id)) {
+      throw ProfileNotAllowedException(
+        profile.id,
+        'profile "${profile.id}" is not permitted for this credential',
+      );
+    }
     // A configured key resolves the markers under its own prefixes; an
     // unconfigured token (no `apiKeys[]` entry) resolves under the built-in
     // default prefixes (MSPP-62) — so every authenticated API-key token runs
@@ -895,6 +907,9 @@ final class AccessAssembler implements ApiKeyRegistrar {
     }
     if (error is ApiKeyMarkerException) {
       return 'access.auth.markers.invalid';
+    }
+    if (error is ProfileNotAllowedException) {
+      return 'access.profile.forbidden';
     }
     if (error is ProfileResolutionException) {
       return 'access.profile.unknown';

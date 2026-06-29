@@ -657,6 +657,7 @@ abstract final class AccessConfigLoader {
         'sessionPrefix',
         'memoryPrefix',
         'displayName',
+        'allowedProfiles',
       },
       path,
     );
@@ -680,6 +681,10 @@ abstract final class AccessConfigLoader {
         _optionalString(node, 'memoryPrefix', '$path.memoryPrefix') ??
             defaultMemoryPrefix;
     final displayName = _optionalString(node, 'displayName', '$path.displayName');
+    final allowedProfiles = _parseAllowedProfiles(
+      _optionalList(node, 'allowedProfiles', '$path.allowedProfiles'),
+      '$path.allowedProfiles',
+    );
     try {
       return ApiKeyConfig(
         key: key,
@@ -687,10 +692,33 @@ abstract final class AccessConfigLoader {
         sessionPrefix: sessionPrefix,
         memoryPrefix: memoryPrefix,
         displayName: displayName,
+        allowedProfiles: allowedProfiles,
       );
     } on ArgumentError catch (e) {
       throw AccessConfigException('$path: ${e.message ?? e.toString()}');
     }
+  }
+
+  /// Parses an optional `allowedProfiles:` list (access § 7.6, I-5) into a list
+  /// of non-empty profile-id strings. An absent key yields `null`
+  /// (unrestricted); a present-but-empty list yields an empty list (deny-all).
+  /// A non-string or empty-string entry is a load-time config error.
+  static List<String>? _parseAllowedProfiles(YamlList? node, String path) {
+    if (node == null) return null;
+    final result = <String>[];
+    for (var i = 0; i < node.length; i++) {
+      final v = node[i];
+      if (v is! String) {
+        throw AccessConfigException(
+          '$path[$i] must be a string (got ${v.runtimeType}).',
+        );
+      }
+      if (v.isEmpty) {
+        throw AccessConfigException('$path[$i] must be non-empty.');
+      }
+      result.add(v);
+    }
+    return result;
   }
 
   /// Projects the [apiKeys] credentials onto the bearer-token binding map the

@@ -69,12 +69,14 @@ ProfileResolver _resolverOf(Map<String, ResolvedProfile> profiles) {
 ({OpenAiAccessEdge edge, BootedAccessLayer booted}) _profiledEdge({
   required Dispatcher dispatcher,
   required Map<String, ResolvedProfile> profiles,
+  List<String>? allowedProfiles,
 }) {
   final apiKey = ApiKeyConfig(
     key: 'secret-token',
     principal: 'principal-1',
     sessionPrefix: 'sess_',
     memoryPrefix: 'mem_',
+    allowedProfiles: allowedProfiles,
   );
   final booted = BrainAccessBoot.install(
     dispatcher: dispatcher,
@@ -344,6 +346,100 @@ void main() {
       final second = await _postChat(f.edge, text: 'two', token: token);
       expect(second.statusCode, rateLimitHttpStatus);
       expect(d.routed.length, 1);
+    });
+  });
+
+  group('OpenAiAccessEdge — per-key profile allowlist (I-5)', () {
+    ResolvedProfile research() => ResolvedProfile(
+          id: 'research',
+          mode: ProfileMode.cognitive,
+          entryProcedure: 'research_v1',
+          role: 'researcher',
+        );
+
+    test('a profile not on the key allowlist is a 400 profile.forbidden '
+        'before any dispatch', () async {
+      final d = _answeringDispatcher();
+      final f = _profiledEdge(
+        dispatcher: d.dispatcher,
+        profiles: {'default': _defaultProfile(), 'research': research()},
+        allowedProfiles: const ['default'], // research not permitted
+      );
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postChat(
+        f.edge,
+        text: 'find me sources',
+        token: 'profile-research_secret-token',
+      );
+
+      expect(response.statusCode, 400);
+      expect(d.routed, isEmpty);
+      final error = (await _json(response))['error'] as Map<String, Object?>;
+      expect(error['code'], 'profile.forbidden');
+      expect(error['type'], 'invalid_request_error');
+      // The message names the profile but never the residual credential.
+      expect(error['message'], contains('research'));
+      expect(error['message'], isNot(contains('secret-token')));
+    });
+
+    test('a profile on the key allowlist resolves and dispatches', () async {
+      final d = _answeringDispatcher();
+      final f = _profiledEdge(
+        dispatcher: d.dispatcher,
+        profiles: {'default': _defaultProfile(), 'research': research()},
+        allowedProfiles: const ['default', 'research'],
+      );
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postChat(
+        f.edge,
+        text: 'find me sources',
+        token: 'profile-research_secret-token',
+      );
+
+      expect(response.statusCode, 200);
+      expect(d.routed.single.profile.id, 'research');
+    });
+
+    test('an allowlist omitting default rejects a bare request '
+        '(deny-by-default)', () async {
+      final d = _answeringDispatcher();
+      final f = _profiledEdge(
+        dispatcher: d.dispatcher,
+        profiles: {'default': _defaultProfile(), 'research': research()},
+        allowedProfiles: const ['research'], // default not listed
+      );
+      addTearDown(f.booted.shutdown);
+
+      // No profile- marker ⇒ resolves to `default`, which is not on the list.
+      final response = await _postChat(f.edge, text: 'hi', token: 'secret-token');
+
+      expect(response.statusCode, 400);
+      expect(d.routed, isEmpty);
+      final error = (await _json(response))['error'] as Map<String, Object?>;
+      expect(error['code'], 'profile.forbidden');
+      expect(error['message'], contains('default'));
+    });
+
+    test('an omitted allowlist permits any configured profile (unrestricted)',
+        () async {
+      final d = _answeringDispatcher();
+      final f = _profiledEdge(
+        dispatcher: d.dispatcher,
+        profiles: {'default': _defaultProfile(), 'research': research()},
+        // allowedProfiles omitted ⇒ null ⇒ unrestricted (SC-5).
+      );
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postChat(
+        f.edge,
+        text: 'find me sources',
+        token: 'profile-research_secret-token',
+      );
+
+      expect(response.statusCode, 200);
+      expect(d.routed.single.profile.id, 'research');
     });
   });
 }

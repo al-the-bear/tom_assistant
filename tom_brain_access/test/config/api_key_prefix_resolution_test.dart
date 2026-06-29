@@ -160,6 +160,45 @@ void main() {
     });
   });
 
+  group('ApiKeyConfig.permitsProfile — per-key allowlist (I-5)', () {
+    test('an omitted allowlist (null) permits any profile (unrestricted)', () {
+      final cfg = ApiKeyConfig(key: 'sk-open');
+      expect(cfg.allowedProfiles, isNull);
+      expect(cfg.permitsProfile('default'), isTrue);
+      expect(cfg.permitsProfile('research'), isTrue);
+    });
+
+    test('a declared allowlist permits only listed profiles (deny-by-default)',
+        () {
+      final cfg = ApiKeyConfig(
+        key: 'sk-scoped',
+        allowedProfiles: const ['default', 'support'],
+      );
+      expect(cfg.permitsProfile('default'), isTrue);
+      expect(cfg.permitsProfile('support'), isTrue);
+      expect(cfg.permitsProfile('research'), isFalse);
+    });
+
+    test('an allowlist omitting default rejects the implicit default', () {
+      final cfg = ApiKeyConfig(key: 'sk-x', allowedProfiles: const ['research']);
+      expect(cfg.permitsProfile('default'), isFalse);
+    });
+
+    test('an empty allowlist forbids every profile', () {
+      final cfg = ApiKeyConfig(key: 'sk-locked', allowedProfiles: const []);
+      expect(cfg.permitsProfile('default'), isFalse);
+      expect(cfg.permitsProfile('research'), isFalse);
+    });
+
+    test('the allowlist is copied defensively and exposed unmodifiable', () {
+      final source = ['default'];
+      final cfg = ApiKeyConfig(key: 'sk-d', allowedProfiles: source);
+      source.add('research'); // mutating the source must not affect the config
+      expect(cfg.permitsProfile('research'), isFalse);
+      expect(() => cfg.allowedProfiles!.add('x'), throwsUnsupportedError);
+    });
+  });
+
   group('AccessConfig api-key wiring', () {
     test('bindingsForApiKeys keys the bearer map by the credential', () {
       final bearer = AccessConfig.bindingsForApiKeys([
@@ -307,6 +346,52 @@ access:
 ''';
       expect(
         () => AccessConfigLoader.parse(dup),
+        throwsA(isA<AccessConfigException>()),
+      );
+    });
+
+    test('parses a per-key allowedProfiles list (I-5)', () {
+      const doc = '''
+access:
+  openai:
+    port: 9090
+  rateLimit:
+    capacity: 10
+    refillTokens: 5
+    refillPeriodSeconds: 30
+  quota:
+    dailyCap: 100
+  apiKeys:
+    - key: sk-scoped
+      allowedProfiles: [default, support]
+    - key: sk-open
+''';
+      final config = AccessConfigLoader.parse(doc);
+      final scoped = config.apiKeyFor('sk-scoped')!;
+      expect(scoped.allowedProfiles, ['default', 'support']);
+      expect(scoped.permitsProfile('default'), isTrue);
+      expect(scoped.permitsProfile('research'), isFalse);
+      // An omitted allowlist stays null (unrestricted).
+      expect(config.apiKeyFor('sk-open')!.allowedProfiles, isNull);
+    });
+
+    test('a non-string allowedProfiles entry is rejected at load', () {
+      const doc = '''
+access:
+  openai:
+    port: 9090
+  rateLimit:
+    capacity: 10
+    refillTokens: 5
+    refillPeriodSeconds: 30
+  quota:
+    dailyCap: 100
+  apiKeys:
+    - key: sk-a
+      allowedProfiles: [default, 7]
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
         throwsA(isA<AccessConfigException>()),
       );
     });

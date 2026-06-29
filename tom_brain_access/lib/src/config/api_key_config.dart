@@ -169,6 +169,15 @@ final class ApiKeyConfig {
   /// display name. Never load-bearing.
   final String? displayName;
 
+  /// The per-key processing-profile allowlist (access § 7.6, I-5). When
+  /// non-null, every request on this key must resolve to a profile whose `id`
+  /// is in this list — *including the implicit `default`* (deny-by-default: a
+  /// declared allowlist that omits `default` rejects bare requests). `null`
+  /// (the omitted default) is **unrestricted** — the key may select any
+  /// configured profile, so removing the field changes nothing (SC-5). Stored
+  /// unmodifiable and copied defensively at construction.
+  final List<String>? allowedProfiles;
+
   /// Builds an API-key config. [key] must be non-empty.
   ApiKeyConfig({
     required this.key,
@@ -176,11 +185,25 @@ final class ApiKeyConfig {
     this.sessionPrefix = defaultSessionPrefix,
     this.memoryPrefix = defaultMemoryPrefix,
     this.displayName,
-  }) {
+    List<String>? allowedProfiles,
+  }) : allowedProfiles = allowedProfiles == null
+            ? null
+            : List<String>.unmodifiable(allowedProfiles) {
     if (key.isEmpty) {
       throw ArgumentError.value(key, 'key', 'must be non-empty');
     }
   }
+
+  /// Whether this key may run under the profile resolved to [profileId]
+  /// (access § 7.6, I-5).
+  ///
+  /// A `null` [allowedProfiles] (the omitted default) permits every profile
+  /// (unrestricted, SC-5). A declared allowlist is deny-by-default: only an
+  /// `id` present in the list is permitted — an empty list forbids every
+  /// profile, and a list omitting `default` rejects the implicit default. The
+  /// check is on the resolved `profile.id`, never the raw selector string.
+  bool permitsProfile(String profileId) =>
+      allowedProfiles == null || allowedProfiles!.contains(profileId);
 
   /// The effective principal id this key binds to: [principal] when set, else
   /// the [key] itself (§ 5.1).
