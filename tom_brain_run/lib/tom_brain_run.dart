@@ -107,6 +107,7 @@ export 'src/provision_brain.dart'
     show
         BrainProcess,
         brainProvisioner,
+        buildDreamHistoryCompactor,
         provisionBrain,
         standUpBrainProcess,
         standUpBrainProcessFromConfig;

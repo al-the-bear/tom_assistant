@@ -44,6 +44,12 @@ final class SmokeSubstrate implements TomBrainSubstrateClient {
   /// Number of times [close] has been called (shutdown closes exactly once).
   int closeCount = 0;
 
+  /// The `prompt` input of the most recent completion call, or `null` if none
+  /// has been issued. Set by [completeStream] (and so also by [complete], which
+  /// drains it), letting a test assert the substrate was actually reached and
+  /// inspect the assembled prompt it carried.
+  Object? lastPrompt;
+
   @override
   Future<void> open(SubstrateConfig config) async {
     openCount++;
@@ -56,6 +62,7 @@ final class SmokeSubstrate implements TomBrainSubstrateClient {
 
   @override
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
+    lastPrompt = call.inputs['prompt'];
     // A run expects at least one answer chunk: the procedure concatenates the
     // emitted [LlmStreamChunk] texts into the answer, and an empty stream would
     // yield an empty answer (and starve a consumer waiting on a first chunk).

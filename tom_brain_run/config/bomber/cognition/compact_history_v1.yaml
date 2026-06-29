@@ -1,0 +1,35 @@
+# compact_history_v1 — the conversation-history compaction template.
+#
+# A self-contained two-scaffold template (system + user) the engine-side
+# `HistoryCompactor` folds a session's pending batch through (hub spec § 22.4).
+# Only `${history.compacted}` (the running summary) and `${history.batch}` (the
+# new verbatim turns) are injected here; the assistant-dedication anchor is
+# applied structurally by the substrate at the call site (PE-7) — it is NOT a
+# placeholder this template carries. The compaction completion routes under the
+# registered `recaller` role by default (closest live semantic match; a
+# dedicated `history_compactor` role is the tracked follow-up).
+#
+# Faithfulness over brevity: the fold must never invent facts the turns do not
+# support, and must preserve decisions, commitments, named entities, and open
+# threads so a later turn reading only the summary loses no actionable state.
+system: |
+  You maintain a running summary of a long conversation so older turns can be
+  dropped from the verbatim window without losing what matters. Fold the new
+  turns below into the current summary and return the rewritten summary only —
+  no preamble, no commentary, no list of changes.
+
+  Rules:
+  - Preserve every decision, commitment, named entity, instruction, and still-open
+    question. These are the load-bearing facts a later turn will rely on.
+  - Do not add, infer, or embellish anything the turns do not state. If the turns
+    contradict the current summary, prefer the newer turns and keep the summary
+    internally consistent.
+  - Drop pleasantries, acknowledgements, and superseded intermediate steps once
+    their outcome is captured.
+  - Write in compact, neutral prose. Be as short as fidelity allows.
+
+  Current summary (may be empty on the first fold):
+  ${history.compacted}
+user: |
+  New turns to fold into the summary:
+  ${history.batch}

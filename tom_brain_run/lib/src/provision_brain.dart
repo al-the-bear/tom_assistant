@@ -67,8 +67,11 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         DreamLaneSessions,
         FileScope,
         DartMcpConnector,
+        defaultCompactionTemplate,
         defaultMemoryProfile,
         FreeTimeScheduler,
+        HistoryCompactor,
+        HistoryCompactionTemplateStore,
         LlmTrailRecord,
         LlmTrailSink,
         McpClient,
@@ -84,6 +87,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         ProcedureTreeSink,
         PromptResolver,
         RouteChainResolver,
+        SubstrateHistoryCompaction,
         ToolAccessRecord,
         ToolAccessSink,
         TurnSummary,
@@ -234,6 +238,7 @@ Future<ProvisionedBrain> provisionBrain({
   ProcedureTreeSink? procedureTreeSink,
   DreamConfig? dream,
   HistoryConfig history = const HistoryConfig.standard(),
+  Directory? historyCompactionTemplatesDir,
   PromptResolver? promptResolver,
   RouteChainResolver? routeChainOf,
   OverlayResolverFactory? overlayResolverFor,
@@ -306,7 +311,13 @@ Future<ProvisionedBrain> provisionBrain({
   // with no background cadence — the prototype's deterministic live tests never
   // spin one (so r30 / r32 / r35 / r36 stay deterministic).
   final DreamController? dreamController = dreamEnabled
-      ? _startDreamLoop(booted, dream, history, memoryConfig.root)
+      ? _startDreamLoop(
+          booted,
+          dream,
+          history,
+          memoryConfig.root,
+          historyCompactionTemplatesDir,
+        )
       : null;
   // Bind the holder to the live controller so the `dream.control` tool drives
   // the running cadence (item c). `dreamHolder` is non-null exactly when the
@@ -377,6 +388,7 @@ DreamController _startDreamLoop(
   DreamConfig dream,
   HistoryConfig history,
   String memoryRoot,
+  Directory? historyCompactionTemplatesDir,
 ) {
   // A dreaming lane is one long session that remembers what it did across
   // firings (todo #15). Its activity history is now durable (HC-82): a
@@ -386,6 +398,23 @@ DreamController _startDreamLoop(
   // forgetting what they were doing.
   final JsonFileHistoryStore dreamStore =
       JsonFileHistoryStore('$memoryRoot/dream_lane_sessions.json');
+  // Each lane keeps its own compactable activity history, sized through the
+  // same `history:` block, persisted through the durable store above. When a
+  // `compact_history_v1` template is present in the cognition tree (I-2), wire
+  // the production compactor so an over-threshold dreaming lane folds its
+  // `pending` batch into its bounded summary through the anchored + budgeted
+  // `sub.llm` seam (`SubstrateHistoryCompaction`) — derivation, not deletion:
+  // the durable record above keeps every firing. Absent template ⇒ no compactor
+  // (the answer-lane's HC-81 default): a lane's `pending` batch grows unfolded,
+  // still losing nothing.
+  final HistoryCompactor? dreamCompactor =
+      historyCompactionTemplatesDir != null &&
+              _hasCompactionTemplate(historyCompactionTemplatesDir)
+          ? buildDreamHistoryCompactor(
+              templatesDir: historyCompactionTemplatesDir,
+              substrate: booted.substrate,
+            )
+          : null;
   final scheduler = FreeTimeScheduler(
     coordinator: booted.coordinator,
     memory: booted.memory.client,
@@ -395,16 +424,9 @@ DreamController _startDreamLoop(
     // `history:` block (todo #14): `history.lanes.<dreamLaneId>` sizes a lane's
     // `recentRuns` context independently of the foreground answer lane.
     historyConfig: history,
-    // Each lane keeps its own compactable activity history, sized through the
-    // same `history:` block, persisted through the durable store above. No
-    // compactor is wired yet — mirroring the foreground answer lane, whose
-    // `sub.llm` compaction seam is built (`SubstrateHistoryCompaction`, HC-81)
-    // but whose production activation awaits an authored `compact_history_v1`
-    // template + directory resolution (deferred, see the completion plan) — so a
-    // lane's `pending` batch grows without folding for now; nothing is lost (the
-    // durable record keeps every firing).
     dreamSessions: DreamLaneSessions(
       historyConfig: history,
+      compactor: dreamCompactor,
       loadSnapshot: dreamStore.load,
       persistSnapshot: dreamStore.save,
     ),
@@ -437,6 +459,33 @@ DreamController _startDreamLoop(
   controller.start();
   return controller;
 }
+
+/// Whether [dir] holds the production `compact_history_v1` template the dream
+/// compactor folds through. The store resolves `<dir>/<type>.yaml`, so the file
+/// is the load-bearing artifact: an absent template would silently degrade a
+/// dreaming fold to a never-fold (the compactor swallows the load error), so the
+/// dream loop only builds a compactor when the file is actually present.
+bool _hasCompactionTemplate(Directory dir) =>
+    File('${dir.path}/$defaultCompactionTemplate.yaml').existsSync();
+
+/// Builds the production dream-lane [HistoryCompactor]: the `compact_history_v1`
+/// template store over [templatesDir] folded through the anchored (PE-7) +
+/// budgeted (PE-8) `sub.llm` seam ([SubstrateHistoryCompaction]) over
+/// [substrate].
+///
+/// This is the exact construction `_startDreamLoop` performs in production once
+/// a `compact_history_v1` template is present (I-2): an over-threshold dreaming
+/// lane folds its `pending` batch into its bounded summary through the real
+/// substrate call. It is exported so a test can pin the production wiring seam
+/// without a vec0 boot.
+HistoryCompactor buildDreamHistoryCompactor({
+  required Directory templatesDir,
+  required TomBrainSubstrateClient substrate,
+}) =>
+    HistoryCompactor(
+      templates: HistoryCompactionTemplateStore(templatesDir),
+      substrate: SubstrateHistoryCompaction(client: substrate).call,
+    );
 
 /// Binds [provisionBrain] into a value matching the access package's
 /// `BrainProvisioner` typedef (`(AccessConfig) → ProvisionedBrain`).
@@ -523,6 +572,7 @@ Future<BrainProcess> standUpBrainProcess({
   ProcedureTreeSink? procedureTreeSink,
   DreamConfig? dream,
   HistoryConfig history = const HistoryConfig.standard(),
+  Directory? historyCompactionTemplatesDir,
   PromptResolver? promptResolver,
   RouteChainResolver? routeChainOf,
   OverlayResolverFactory? overlayResolverFor,
@@ -554,6 +604,7 @@ Future<BrainProcess> standUpBrainProcess({
     procedureTreeSink: procedureTreeSink,
     dream: dream,
     history: history,
+    historyCompactionTemplatesDir: historyCompactionTemplatesDir,
     promptResolver: promptResolver,
     routeChainOf: routeChainOf,
     overlayResolverFor: overlayResolverFor,
@@ -977,6 +1028,13 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     procedureTreeSink: sinks.procedureTreeSink,
     dream: runConfig.dream,
     history: runConfig.history,
+    // The dream-lane history compactor folds through the `compact_history_v1`
+    // template resolved under the cognition tree (I-2). Pass the cognition root
+    // when one is configured; `_startDreamLoop` guards on the template's actual
+    // presence, so a cognition tree without the template still boots compactor-
+    // less (the answer-lane HC-81 default).
+    historyCompactionTemplatesDir:
+        cognition != null ? Directory(cognition.root) : null,
     promptResolver: promptResolver,
     routeChainOf: routeChainOf,
     overlayResolverFor: overlayResolverFor,
