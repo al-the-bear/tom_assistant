@@ -15,10 +15,12 @@ import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:test/test.dart';
 import 'package:yaml/yaml.dart';
 
-ApiKeyConfig _config({String key = 'abc-key'}) => ApiKeyConfig(
+ApiKeyConfig _config({String key = 'abc-key', String? defaultProfile}) =>
+    ApiKeyConfig(
       key: key,
       sessionPrefix: '${key}_',
       memoryPrefix: '${key}_',
+      defaultProfile: defaultProfile,
     );
 
 /// Reads back the single appended entry from [file] as a plain map, the way a
@@ -106,6 +108,22 @@ substrate:
       appendApiKeyToRunConfig(file, _config(key: 'k3'));
       final Map<Object?, Object?> entry = _onlyEntry(file);
       expect(entry.keys.toSet(), {'key', 'sessionPrefix', 'memoryPrefix'});
+    });
+
+    test('writes defaultProfile when the key pinned one (I-7)', () {
+      file = write('run.yaml', 'access:\n  apiKeys: []\n');
+      appendApiKeyToRunConfig(file, _config(key: 'k4', defaultProfile: 'fast'));
+      final Map<Object?, Object?> entry = _onlyEntry(file);
+      expect(entry['defaultProfile'], 'fast');
+      expect(entry.keys.toSet(),
+          {'key', 'sessionPrefix', 'memoryPrefix', 'defaultProfile'});
+    });
+
+    test('omits defaultProfile when the key pinned none (I-7)', () {
+      file = write('run.yaml', 'access:\n  apiKeys: []\n');
+      appendApiKeyToRunConfig(file, _config(key: 'k5'));
+      final Map<Object?, Object?> entry = _onlyEntry(file);
+      expect(entry.containsKey('defaultProfile'), isFalse);
     });
 
     test('throws when the file is missing (triggers the §13 rollback)', () {

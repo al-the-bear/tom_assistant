@@ -71,7 +71,11 @@ final class ApiKeyCreator implements TelegramApiKeyCreator {
   }) : generateKey = generateKey ?? uuidV4;
 
   @override
-  Future<String> createApiKey({String? sessionPrefix, String? memoryPrefix}) async {
+  Future<String> createApiKey({
+    String? sessionPrefix,
+    String? memoryPrefix,
+    String? defaultProfile,
+  }) async {
     final String key = generateKey();
 
     // No prefixes ⇒ the key value itself (plus a trailing `_`) is both the
@@ -85,6 +89,7 @@ final class ApiKeyCreator implements TelegramApiKeyCreator {
       key: key,
       sessionPrefix: effectiveSession,
       memoryPrefix: effectiveMemory,
+      defaultProfile: defaultProfile,
     );
 
     // Admit live first so the rollback path is the one exercised on a persist
@@ -106,6 +111,7 @@ final class ApiKeyCreator implements TelegramApiKeyCreator {
       key: key,
       sessionPrefix: effectiveSession,
       memoryPrefix: effectiveMemory,
+      defaultProfile: defaultProfile,
     );
   }
 
@@ -115,6 +121,7 @@ final class ApiKeyCreator implements TelegramApiKeyCreator {
     required String key,
     required String sessionPrefix,
     required String memoryPrefix,
+    String? defaultProfile,
   }) {
     final StringBuffer buffer = StringBuffer()
       ..writeln('Created a new API key. It is live now and will survive a '
@@ -124,6 +131,9 @@ final class ApiKeyCreator implements TelegramApiKeyCreator {
       ..writeln()
       ..writeln('session prefix: $sessionPrefix')
       ..write('memory prefix: $memoryPrefix');
+    if (defaultProfile != null) {
+      buffer.write('\ndefault profile: $defaultProfile');
+    }
     return buffer.toString();
   }
 }

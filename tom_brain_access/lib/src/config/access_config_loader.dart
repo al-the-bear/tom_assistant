@@ -658,6 +658,7 @@ abstract final class AccessConfigLoader {
         'memoryPrefix',
         'displayName',
         'allowedProfiles',
+        'defaultProfile',
       },
       path,
     );
@@ -685,6 +686,25 @@ abstract final class AccessConfigLoader {
       _optionalList(node, 'allowedProfiles', '$path.allowedProfiles'),
       '$path.allowedProfiles',
     );
+    final defaultProfile =
+        _optionalString(node, 'defaultProfile', '$path.defaultProfile');
+    if (defaultProfile != null && defaultProfile.isEmpty) {
+      throw AccessConfigException('$path.defaultProfile must be non-empty.');
+    }
+    // I-7 cross-check: a pinned `defaultProfile` must itself be permitted by a
+    // declared `allowedProfiles` allowlist — otherwise a bare request on this
+    // key (no explicit marker) would resolve to the pinned default and then be
+    // rejected by its own allowlist, so the key could never serve a bare
+    // request. Caught at load time rather than surfacing per-request.
+    if (defaultProfile != null &&
+        allowedProfiles != null &&
+        !allowedProfiles.contains(defaultProfile)) {
+      throw AccessConfigException(
+        '$path.defaultProfile ("$defaultProfile") is not in this key\'s '
+        'allowedProfiles allowlist; a pinned default profile must be permitted '
+        'by the allowlist or the key could never serve a bare request.',
+      );
+    }
     try {
       return ApiKeyConfig(
         key: key,
@@ -693,6 +713,7 @@ abstract final class AccessConfigLoader {
         memoryPrefix: memoryPrefix,
         displayName: displayName,
         allowedProfiles: allowedProfiles,
+        defaultProfile: defaultProfile,
       );
     } on ArgumentError catch (e) {
       throw AccessConfigException('$path: ${e.message ?? e.toString()}');

@@ -391,11 +391,20 @@ final class AccessAssembler implements ApiKeyRegistrar {
       markers.effectiveResidualKey,
       channel: channel.wireName,
     );
-    // Resolve the profile FIRST (plan step 5): its cross-axis defaults feed the
-    // no-marker fallback in scope resolution, and an unknown profile fails here
-    // (before scope is built) as a `400`/`profile.unknown` (SCP-18).
-    final ResolvedProfile profile = _resolveProfile(markers.profileSelector);
+    // Look up the matched key's config BEFORE resolving the profile (I-7): a
+    // key may pin a `defaultProfile`, which supplies the no-marker fallback for
+    // profile selection. An explicit `profile-<name>` marker still wins; only a
+    // bare request (no marker) falls back to the key's pinned default, then to
+    // the global `default` for keys with none.
     final ApiKeyConfig? keyConfig = apiKeysByKey[markers.effectiveResidualKey];
+    // Resolve the profile (plan step 5 / I-7): its cross-axis defaults feed the
+    // no-marker fallback in scope resolution, and an unknown profile fails here
+    // (before scope is built) as a `400`/`profile.unknown` (SCP-18). The
+    // selector is the explicit marker, else the key's pinned `defaultProfile`
+    // (§ 7.6, MSP-7), else null (→ the global `default`).
+    final ResolvedProfile profile = _resolveProfile(
+      markers.profileSelector ?? keyConfig?.defaultProfile,
+    );
     // Per-key profile tenancy (access § 7.6, I-5): when the matched key declares
     // an `allowedProfiles` allowlist, the resolved profile id must be on it —
     // including the implicit `default` (deny-by-default). The check is on the

@@ -70,6 +70,7 @@ ProfileResolver _resolverOf(Map<String, ResolvedProfile> profiles) {
   required Dispatcher dispatcher,
   required Map<String, ResolvedProfile> profiles,
   List<String>? allowedProfiles,
+  String? defaultProfile,
 }) {
   final apiKey = ApiKeyConfig(
     key: 'secret-token',
@@ -77,6 +78,7 @@ ProfileResolver _resolverOf(Map<String, ResolvedProfile> profiles) {
     sessionPrefix: 'sess_',
     memoryPrefix: 'mem_',
     allowedProfiles: allowedProfiles,
+    defaultProfile: defaultProfile,
   );
   final booted = BrainAccessBoot.install(
     dispatcher: dispatcher,
@@ -440,6 +442,96 @@ void main() {
 
       expect(response.statusCode, 200);
       expect(d.routed.single.profile.id, 'research');
+    });
+  });
+
+  group('OpenAiAccessEdge — per-key pinned default profile (I-7)', () {
+    ResolvedProfile fast() => ResolvedProfile(
+          id: 'fast',
+          mode: ProfileMode.answer,
+          entryProcedure: 'answer_with_memory_v1',
+          role: 'fast_role',
+        );
+
+    test('a bare request on a key pinning a default resolves to the pinned '
+        'profile (not the global default)', () async {
+      final d = _answeringDispatcher();
+      final f = _profiledEdge(
+        dispatcher: d.dispatcher,
+        profiles: {'default': _defaultProfile(), 'fast': fast()},
+        defaultProfile: 'fast',
+      );
+      addTearDown(f.booted.shutdown);
+
+      // No profile- marker — the key's pinned `fast` default applies.
+      final response = await _postChat(f.edge, text: 'hi', token: 'secret-token');
+
+      expect(response.statusCode, 200);
+      final access = d.routed.single;
+      expect(access.profile.id, 'fast');
+      expect(access.profile.entryProcedure, 'answer_with_memory_v1');
+    });
+
+    test('an explicit profile- marker still wins over the pinned default',
+        () async {
+      final d = _answeringDispatcher();
+      final research = ResolvedProfile(
+        id: 'research',
+        mode: ProfileMode.cognitive,
+        entryProcedure: 'research_v1',
+        role: 'researcher',
+      );
+      final f = _profiledEdge(
+        dispatcher: d.dispatcher,
+        profiles: {
+          'default': _defaultProfile(),
+          'fast': fast(),
+          'research': research,
+        },
+        defaultProfile: 'fast',
+      );
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postChat(
+        f.edge,
+        text: 'find me sources',
+        token: 'profile-research_secret-token',
+      );
+
+      expect(response.statusCode, 200);
+      expect(d.routed.single.profile.id, 'research'); // explicit wins
+    });
+
+    test('a key with no pinned default still resolves the global default '
+        '(SC-5 unchanged)', () async {
+      final d = _answeringDispatcher();
+      final f = _profiledEdge(
+        dispatcher: d.dispatcher,
+        profiles: {'default': _defaultProfile(), 'fast': fast()},
+        // defaultProfile omitted ⇒ null ⇒ global default for a bare request.
+      );
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postChat(f.edge, text: 'hi', token: 'secret-token');
+
+      expect(response.statusCode, 200);
+      expect(d.routed.single.profile.id, 'default');
+    });
+
+    test('the pinned default is still gated by the I-5 allowlist', () async {
+      final d = _answeringDispatcher();
+      final f = _profiledEdge(
+        dispatcher: d.dispatcher,
+        profiles: {'default': _defaultProfile(), 'fast': fast()},
+        defaultProfile: 'fast',
+        allowedProfiles: const ['fast'], // permits the pinned default
+      );
+      addTearDown(f.booted.shutdown);
+
+      final response = await _postChat(f.edge, text: 'hi', token: 'secret-token');
+
+      expect(response.statusCode, 200);
+      expect(d.routed.single.profile.id, 'fast');
     });
   });
 }

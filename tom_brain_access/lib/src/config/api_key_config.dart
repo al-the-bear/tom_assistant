@@ -178,6 +178,18 @@ final class ApiKeyConfig {
   /// unmodifiable and copied defensively at construction.
   final List<String>? allowedProfiles;
 
+  /// The profile this key pins as its *default* (access § 7.6, I-7). When set,
+  /// a request on this key that carries **no explicit `profile-<name>` marker**
+  /// resolves to this profile instead of the global `default` — the credential
+  /// pins a default profile (the `/create_api_key profile=<name>` capability,
+  /// MSP-7). An explicit marker always wins (selection precedence is unchanged).
+  /// `null` (the omitted default) keeps the global-`default` behaviour, so
+  /// removing the field changes nothing (SC-5). A pinned profile is still
+  /// subject to [allowedProfiles] — if both are declared, the [defaultProfile]
+  /// must be permitted by the allowlist (enforced at config-parse time), else
+  /// the key could never serve a bare request.
+  final String? defaultProfile;
+
   /// Builds an API-key config. [key] must be non-empty.
   ApiKeyConfig({
     required this.key,
@@ -186,6 +198,7 @@ final class ApiKeyConfig {
     this.memoryPrefix = defaultMemoryPrefix,
     this.displayName,
     List<String>? allowedProfiles,
+    this.defaultProfile,
   }) : allowedProfiles = allowedProfiles == null
             ? null
             : List<String>.unmodifiable(allowedProfiles) {

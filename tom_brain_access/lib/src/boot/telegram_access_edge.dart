@@ -754,13 +754,17 @@ class TelegramAccessEdge {
     await _sendSplit(receiver, await controller.setCliServerPort(port: port));
   }
 
-  /// Handles `/create_api_key` and `/create_api_key <sessionPrefix> <memoryPrefix>`:
-  /// mints a new API key, admits it live, and persists it (MSP-7), rendering the
-  /// outcome (including the rollback notice on a persist failure). The
-  /// both-or-neither rule (MSPP-45) is enforced here: zero arguments mint a key
-  /// whose value is both prefixes; exactly two set the prefixes verbatim; one
-  /// argument is a usage error and the creator is *not* called. Replies the
-  /// unavailable message when no creator is wired.
+  /// Handles `/create_api_key`, `/create_api_key <sessionPrefix> <memoryPrefix>`,
+  /// and an optional orthogonal `profile=<name>` token (I-7): mints a new API
+  /// key, admits it live, and persists it (MSP-7), rendering the outcome
+  /// (including the rollback notice on a persist failure). The both-or-neither
+  /// rule (MSPP-45) is enforced here over the *prefix* arguments: zero mint a key
+  /// whose value is both prefixes; exactly two set the prefixes verbatim; one is
+  /// a usage error and the creator is *not* called. The `profile=<name>` token
+  /// may appear anywhere among the arguments and is parsed out first — it pins
+  /// the minted key's default processing profile (a bare request resolves to it
+  /// instead of the global `default`). At most one `profile=` token is allowed.
+  /// Replies the unavailable message when no creator is wired.
   Future<void> _handleCreateApiKey(
     ChatReceiver receiver,
     String argument,
@@ -770,10 +774,41 @@ class TelegramAccessEdge {
       await _send(receiver, telegramInspectorUnavailableMessage);
       return;
     }
-    final List<String> parts = argument.trim().split(RegExp(r'\s+'))
+    final List<String> tokens = argument.trim().split(RegExp(r'\s+'))
       ..removeWhere((p) => p.isEmpty);
+    // Pull the orthogonal `profile=<name>` token out first; the rest follow the
+    // existing 0-or-2 prefix rule.
+    String? defaultProfile;
+    final List<String> parts = <String>[];
+    for (final String token in tokens) {
+      if (token.startsWith('profile=')) {
+        if (defaultProfile != null) {
+          await _send(
+            receiver,
+            'Usage: at most one profile=<name> token may be given to '
+            '/create_api_key.',
+          );
+          return;
+        }
+        final String name = token.substring('profile='.length);
+        if (name.isEmpty) {
+          await _send(
+            receiver,
+            'Usage: profile=<name> needs a non-empty profile name, e.g. '
+            'profile=fast.',
+          );
+          return;
+        }
+        defaultProfile = name;
+      } else {
+        parts.add(token);
+      }
+    }
     if (parts.isEmpty) {
-      await _sendSplit(receiver, await creator.createApiKey());
+      await _sendSplit(
+        receiver,
+        await creator.createApiKey(defaultProfile: defaultProfile),
+      );
       return;
     }
     if (parts.length == 2) {
@@ -782,6 +817,7 @@ class TelegramAccessEdge {
         await creator.createApiKey(
           sessionPrefix: parts[0],
           memoryPrefix: parts[1],
+          defaultProfile: defaultProfile,
         ),
       );
       return;
@@ -789,7 +825,8 @@ class TelegramAccessEdge {
     await _send(
       receiver,
       'Usage: /create_api_key (the key value becomes both prefixes) or '
-      '/create_api_key <sessionPrefix> <memoryPrefix> (both together).',
+      '/create_api_key <sessionPrefix> <memoryPrefix> (both together), '
+      'optionally with a profile=<name> token to pin a default profile.',
     );
   }
 

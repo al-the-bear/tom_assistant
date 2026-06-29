@@ -199,6 +199,19 @@ void main() {
     });
   });
 
+  group('ApiKeyConfig.defaultProfile — per-key pinned default (I-7)', () {
+    test('an omitted defaultProfile is null (global-default behaviour, SC-5)',
+        () {
+      final cfg = ApiKeyConfig(key: 'sk-plain');
+      expect(cfg.defaultProfile, isNull);
+    });
+
+    test('a declared defaultProfile is stored verbatim', () {
+      final cfg = ApiKeyConfig(key: 'sk-pinned', defaultProfile: 'fast');
+      expect(cfg.defaultProfile, 'fast');
+    });
+  });
+
   group('AccessConfig api-key wiring', () {
     test('bindingsForApiKeys keys the bearer map by the credential', () {
       final bearer = AccessConfig.bindingsForApiKeys([
@@ -389,6 +402,95 @@ access:
   apiKeys:
     - key: sk-a
       allowedProfiles: [default, 7]
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>()),
+      );
+    });
+
+    test('parses a per-key defaultProfile (I-7)', () {
+      const doc = '''
+access:
+  openai:
+    port: 9090
+  rateLimit:
+    capacity: 10
+    refillTokens: 5
+    refillPeriodSeconds: 30
+  quota:
+    dailyCap: 100
+  apiKeys:
+    - key: sk-pinned
+      defaultProfile: fast
+    - key: sk-plain
+''';
+      final config = AccessConfigLoader.parse(doc);
+      expect(config.apiKeyFor('sk-pinned')!.defaultProfile, 'fast');
+      // An omitted defaultProfile stays null (global-default behaviour).
+      expect(config.apiKeyFor('sk-plain')!.defaultProfile, isNull);
+    });
+
+    test('an empty defaultProfile is rejected at load (I-7)', () {
+      const doc = '''
+access:
+  openai:
+    port: 9090
+  rateLimit:
+    capacity: 10
+    refillTokens: 5
+    refillPeriodSeconds: 30
+  quota:
+    dailyCap: 100
+  apiKeys:
+    - key: sk-a
+      defaultProfile: ""
+''';
+      expect(
+        () => AccessConfigLoader.parse(doc),
+        throwsA(isA<AccessConfigException>()),
+      );
+    });
+
+    test('a defaultProfile and allowedProfiles that permits it is accepted (I-7)',
+        () {
+      const doc = '''
+access:
+  openai:
+    port: 9090
+  rateLimit:
+    capacity: 10
+    refillTokens: 5
+    refillPeriodSeconds: 30
+  quota:
+    dailyCap: 100
+  apiKeys:
+    - key: sk-ok
+      defaultProfile: fast
+      allowedProfiles: [fast, deep]
+''';
+      final config = AccessConfigLoader.parse(doc);
+      final cfg = config.apiKeyFor('sk-ok')!;
+      expect(cfg.defaultProfile, 'fast');
+      expect(cfg.permitsProfile('fast'), isTrue);
+    });
+
+    test('a defaultProfile absent from a declared allowedProfiles is rejected '
+        'at load (I-7)', () {
+      const doc = '''
+access:
+  openai:
+    port: 9090
+  rateLimit:
+    capacity: 10
+    refillTokens: 5
+    refillPeriodSeconds: 30
+  quota:
+    dailyCap: 100
+  apiKeys:
+    - key: sk-bad
+      defaultProfile: fast
+      allowedProfiles: [deep]
 ''';
       expect(
         () => AccessConfigLoader.parse(doc),

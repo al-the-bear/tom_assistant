@@ -38,9 +38,10 @@ class ApiKeyPersistException implements Exception {
 ///
 /// Creates the `access:` map and/or the `apiKeys:` list when either is absent,
 /// and appends to an existing list otherwise — never rewriting sibling config.
-/// Only the `key` / `sessionPrefix` / `memoryPrefix` the creator sets are
-/// written (no `principal` / `displayName`), so the re-parsed entry resolves to
-/// exactly the scope that was admitted live.
+/// Only the `key` / `sessionPrefix` / `memoryPrefix` (and `defaultProfile` when
+/// the key pinned one, I-7) the creator sets are written (no `principal` /
+/// `displayName`), so the re-parsed entry resolves to exactly the scope that was
+/// admitted live.
 ///
 /// Throws [ApiKeyPersistException] when the file is missing, unparseable, or has
 /// an `access:` / `access.apiKeys` of the wrong shape.
@@ -66,6 +67,10 @@ void appendApiKeyToRunConfig(File file, ApiKeyConfig config) {
     'key': config.key,
     'sessionPrefix': config.sessionPrefix,
     'memoryPrefix': config.memoryPrefix,
+    // The pinned default profile (I-7), written only when the minted key set
+    // one (`/create_api_key profile=<name>`), so the re-parsed entry resolves to
+    // the same pinned default that was admitted live.
+    if (config.defaultProfile != null) 'defaultProfile': config.defaultProfile!,
   };
 
   final Object? accessValue =

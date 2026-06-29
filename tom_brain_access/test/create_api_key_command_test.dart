@@ -40,16 +40,26 @@ final class _FakeRegistrar implements ApiKeyRegistrar {
   void revoke(ApiKeyConfig config) => revoked.add(config);
 }
 
-/// Records the prefixes the edge passed the creator (so the both-or-neither
-/// parse is observable) and returns a canned reply.
+/// Records the prefixes and pinned default profile the edge passed the creator
+/// (so the both-or-neither parse and the `profile=` token are observable) and
+/// returns a canned reply.
 final class _RecordingCreator implements TelegramApiKeyCreator {
-  final List<({String? sessionPrefix, String? memoryPrefix})> calls =
-      <({String? sessionPrefix, String? memoryPrefix})>[];
+  final List<({String? sessionPrefix, String? memoryPrefix, String? defaultProfile})>
+      calls =
+      <({String? sessionPrefix, String? memoryPrefix, String? defaultProfile})>[];
   final String reply = 'created-reply';
 
   @override
-  Future<String> createApiKey({String? sessionPrefix, String? memoryPrefix}) async {
-    calls.add((sessionPrefix: sessionPrefix, memoryPrefix: memoryPrefix));
+  Future<String> createApiKey({
+    String? sessionPrefix,
+    String? memoryPrefix,
+    String? defaultProfile,
+  }) async {
+    calls.add((
+      sessionPrefix: sessionPrefix,
+      memoryPrefix: memoryPrefix,
+      defaultProfile: defaultProfile,
+    ));
     return reply;
   }
 }
@@ -203,6 +213,38 @@ void main() {
       expect(reply, contains('rolled back'));
       expect(reply, contains('disk full'));
     });
+
+    test('a pinned default profile is set on the config and echoed (I-7)',
+        () async {
+      final _FakeRegistrar registrar = _FakeRegistrar();
+      final List<ApiKeyConfig> persisted = <ApiKeyConfig>[];
+      final ApiKeyCreator creator = ApiKeyCreator(
+        registrar: registrar,
+        persist: persisted.add,
+        generateKey: () => 'KEY-PRO',
+      );
+
+      final String reply = await creator.createApiKey(defaultProfile: 'fast');
+
+      final ApiKeyConfig config = registrar.admitted.single;
+      expect(config.defaultProfile, 'fast');
+      expect(persisted.single, same(config));
+      expect(reply, contains('default profile: fast'));
+    });
+
+    test('no pinned profile ⇒ defaultProfile null, not echoed (SC-5)', () async {
+      final _FakeRegistrar registrar = _FakeRegistrar();
+      final ApiKeyCreator creator = ApiKeyCreator(
+        registrar: registrar,
+        persist: (_) {},
+        generateKey: () => 'KEY-PLAIN',
+      );
+
+      final String reply = await creator.createApiKey();
+
+      expect(registrar.admitted.single.defaultProfile, isNull);
+      expect(reply, isNot(contains('default profile')));
+    });
   });
 
   group('TelegramAccessEdge — /create_api_key parse (MSPP-45)', () {
@@ -324,6 +366,118 @@ void main() {
       await pumpEventQueue();
 
       expect(f.chatApi.sentMessages, contains(telegramInspectorUnavailableMessage));
+    });
+
+    test('profile=<name> alone ⇒ default prefixes + pinned profile (I-7)',
+        () async {
+      final _RecordingCreator creator = _RecordingCreator();
+      final f = buildEdge(
+        inspectors: const TelegramInspectors().withApiKeyCreator(creator),
+      );
+      addTearDown(f.booted.shutdown);
+      addTearDown(f.inbound.close);
+
+      f.edge.start();
+      f.inbound.add(inbound(text: '/create_api_key profile=fast'));
+      await pumpEventQueue();
+
+      expect(creator.calls, hasLength(1));
+      expect(creator.calls.single.sessionPrefix, isNull);
+      expect(creator.calls.single.memoryPrefix, isNull);
+      expect(creator.calls.single.defaultProfile, 'fast');
+    });
+
+    test('profile=<name> composes with two prefixes (I-7)', () async {
+      final _RecordingCreator creator = _RecordingCreator();
+      final f = buildEdge(
+        inspectors: const TelegramInspectors().withApiKeyCreator(creator),
+      );
+      addTearDown(f.booted.shutdown);
+      addTearDown(f.inbound.close);
+
+      f.edge.start();
+      f.inbound.add(inbound(text: '/create_api_key sess_ mem_ profile=deep'));
+      await pumpEventQueue();
+
+      expect(creator.calls, hasLength(1));
+      expect(creator.calls.single.sessionPrefix, 'sess_');
+      expect(creator.calls.single.memoryPrefix, 'mem_');
+      expect(creator.calls.single.defaultProfile, 'deep');
+    });
+
+    test('the profile= token may appear before the prefixes (I-7)', () async {
+      final _RecordingCreator creator = _RecordingCreator();
+      final f = buildEdge(
+        inspectors: const TelegramInspectors().withApiKeyCreator(creator),
+      );
+      addTearDown(f.booted.shutdown);
+      addTearDown(f.inbound.close);
+
+      f.edge.start();
+      f.inbound.add(inbound(text: '/create_api_key profile=deep sess_ mem_'));
+      await pumpEventQueue();
+
+      expect(creator.calls, hasLength(1));
+      expect(creator.calls.single.sessionPrefix, 'sess_');
+      expect(creator.calls.single.memoryPrefix, 'mem_');
+      expect(creator.calls.single.defaultProfile, 'deep');
+    });
+
+    test('empty profile= name ⇒ usage error, creator NOT called (I-7)',
+        () async {
+      final _RecordingCreator creator = _RecordingCreator();
+      final f = buildEdge(
+        inspectors: const TelegramInspectors().withApiKeyCreator(creator),
+      );
+      addTearDown(f.booted.shutdown);
+      addTearDown(f.inbound.close);
+
+      f.edge.start();
+      f.inbound.add(inbound(text: '/create_api_key profile='));
+      await pumpEventQueue();
+
+      expect(creator.calls, isEmpty);
+      expect(f.chatApi.sentMessages.single, contains('non-empty profile name'));
+    });
+
+    test('two profile= tokens ⇒ usage error, creator NOT called (I-7)',
+        () async {
+      final _RecordingCreator creator = _RecordingCreator();
+      final f = buildEdge(
+        inspectors: const TelegramInspectors().withApiKeyCreator(creator),
+      );
+      addTearDown(f.booted.shutdown);
+      addTearDown(f.inbound.close);
+
+      f.edge.start();
+      f.inbound.add(inbound(text: '/create_api_key profile=a profile=b'));
+      await pumpEventQueue();
+
+      expect(creator.calls, isEmpty);
+      expect(
+        f.chatApi.sentMessages.single,
+        contains('at most one profile=<name>'),
+      );
+    });
+
+    test('one prefix arg with a profile= token is still a usage error (I-7)',
+        () async {
+      final _RecordingCreator creator = _RecordingCreator();
+      final f = buildEdge(
+        inspectors: const TelegramInspectors().withApiKeyCreator(creator),
+      );
+      addTearDown(f.booted.shutdown);
+      addTearDown(f.inbound.close);
+
+      f.edge.start();
+      f.inbound.add(inbound(text: '/create_api_key only_one profile=fast'));
+      await pumpEventQueue();
+
+      expect(creator.calls, isEmpty);
+      expect(
+        f.chatApi.sentMessages.single,
+        allOf(contains('Usage:'), contains('both together')),
+      );
     });
   });
 }

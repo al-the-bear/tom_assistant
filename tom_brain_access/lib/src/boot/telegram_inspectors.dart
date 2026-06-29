@@ -305,10 +305,18 @@ abstract interface class TelegramApiKeyCreator {
   /// With no prefixes the key value itself (plus a trailing `_`) becomes both
   /// the session and memory prefix (§ 7); [sessionPrefix] / [memoryPrefix], when
   /// given, are used verbatim. The two are passed together or not at all (the
-  /// both-or-neither rule is enforced at the edge, MSPP-45). On success the reply
-  /// echoes the secret key once (never re-derivable); on a persist failure the
-  /// live admission is rolled back and the reply says so.
-  Future<String> createApiKey({String? sessionPrefix, String? memoryPrefix});
+  /// both-or-neither rule is enforced at the edge, MSPP-45). [defaultProfile],
+  /// when given (the `/create_api_key profile=<name>` token, I-7), pins the
+  /// minted key's default processing profile — a bare request on the key (no
+  /// explicit `profile-<name>` marker) resolves to it instead of the global
+  /// `default`. On success the reply echoes the secret key once (never
+  /// re-derivable); on a persist failure the live admission is rolled back and
+  /// the reply says so.
+  Future<String> createApiKey({
+    String? sessionPrefix,
+    String? memoryPrefix,
+    String? defaultProfile,
+  });
 }
 
 /// The read-only inspectors the Telegram edge drives for the inspection
