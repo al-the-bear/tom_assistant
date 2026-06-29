@@ -49,6 +49,7 @@ import 'package:tom_brain_smoke_prototype/tom_brain_smoke_prototype.dart';
 import 'package:tom_chattools/tom_chattools.dart' show ChatReceiver;
 
 import '_support/loopback_chat_api.dart';
+import '_support/telegram_outbound.dart';
 
 /// The chunked answer the stub substrate streams; its concatenation is the
 /// answer the channel delivers and the `Conclusion` records.
@@ -136,9 +137,16 @@ void main() {
 
       // ── Start → Telegram message → answer. ──
       loopback.injectText(senderId: _allowedSender, text: prompt);
-      await _waitForSent(loopback);
-      expect(loopback.sentMessages.single, _answerText);
-      expect(loopback.sentReceivers.single, ChatReceiver.id(_allowedSender));
+      await waitForAnswersTo(loopback, _allowedSender, prompts: <String>[prompt]);
+      // The one substantive answer (control pings + out-of-band notices
+      // stripped), addressed to the sender's chat.
+      final List<String> answers =
+          answerMessagesTo(loopback, _allowedSender, prompts: <String>[prompt]);
+      expect(answers.single, _answerText);
+      expect(
+        loopback.sentReceivers,
+        everyElement(ChatReceiver.id(_allowedSender)),
+      );
 
       // ── Memory inspect, via the MCP server. ──
       await _inspectViaMcp(smoke.inProcessMemory, (mcp) async {
@@ -340,23 +348,3 @@ Map<String, Object?> _chatBody(String prompt) => <String, Object?>{
       ],
       'stream': false,
     };
-
-/// Polls until the loopback has recorded at least [atLeast] sent message(s), or
-/// throws on [timeout]. The Telegram path is async across delivery, so the test
-/// waits for delivery rather than assuming it is synchronous.
-Future<void> _waitForSent(
-  LoopbackChatApi loopback, {
-  int atLeast = 1,
-  Duration timeout = const Duration(seconds: 10),
-}) async {
-  final DateTime deadline = DateTime.now().add(timeout);
-  while (loopback.sentMessages.length < atLeast) {
-    if (DateTime.now().isAfter(deadline)) {
-      throw StateError(
-        'timed out waiting for $atLeast sent Telegram message(s); '
-        'got ${loopback.sentMessages.length}',
-      );
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-  }
-}

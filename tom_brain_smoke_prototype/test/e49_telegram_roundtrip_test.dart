@@ -29,6 +29,7 @@ import 'package:tom_chattools/tom_chattools.dart' show ChatReceiver;
 import 'package:test/test.dart';
 
 import '_support/loopback_chat_api.dart';
+import '_support/telegram_outbound.dart';
 
 /// The chunked answer the stub substrate streams; its concatenation is the
 /// answer the Telegram channel must deliver.
@@ -42,27 +43,6 @@ const String _botToken = 'smoke-bot-token';
 /// The whitelisted sender id, and the one outside the whitelist.
 const String _allowedSender = 'tg-allowed';
 const String _blockedSender = 'tg-blocked';
-
-/// Polls until the loopback has recorded at least [atLeast] sent message(s), or
-/// throws on [timeout]. The whole Telegram path is async across the memory
-/// worker isolate, so the test waits for delivery rather than assuming it is
-/// synchronous.
-Future<void> _waitForSent(
-  LoopbackChatApi loopback, {
-  int atLeast = 1,
-  Duration timeout = const Duration(seconds: 10),
-}) async {
-  final DateTime deadline = DateTime.now().add(timeout);
-  while (loopback.sentMessages.length < atLeast) {
-    if (DateTime.now().isAfter(deadline)) {
-      throw StateError(
-        'timed out waiting for $atLeast sent Telegram message(s); '
-        'got ${loopback.sentMessages.length}',
-      );
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-  }
-}
 
 void main() {
   group('E.49 Telegram roundtrip', () {
@@ -84,31 +64,53 @@ void main() {
       await smoke.stop();
     });
 
+    const String promptText = 'how do I automate backups?';
+
     test('a whitelisted sender gets the answer delivered back', () async {
-      loopback.injectText(
-        senderId: _allowedSender,
-        text: 'how do I automate backups?',
+      loopback.injectText(senderId: _allowedSender, text: promptText);
+
+      await waitForAnswersTo(loopback, _allowedSender, prompts: <String>[promptText]);
+
+      // Exactly one substantive message was answered back: the consolidated
+      // answer (the prototype's single procedure produces the whole answer as
+      // one part). The boot startup announcement and the per-prompt processing
+      // acknowledgement are control pings, stripped here.
+      final List<String> answers =
+          answerMessagesTo(loopback, _allowedSender, prompts: <String>[promptText]);
+      expect(answers, <String>[_answerText]);
+    });
+
+    test(
+        'the channel wraps the answer in the startup announcement and the '
+        'processing acknowledgement', () async {
+      loopback.injectText(senderId: _allowedSender, text: promptText);
+
+      await waitForAnswersTo(loopback, _allowedSender, prompts: <String>[promptText]);
+
+      // The delivered sequence opens with the boot ping then the immediate
+      // "Processing" echo — both control pings the buffered edge sends before
+      // the run produces anything. (Out-of-band tool/thinking notices and the
+      // answer follow; the contract under test here is the two leading control
+      // pings, asserted by their fixed positions.)
+      expect(loopback.sentMessages.first, smokeStartupAnnouncement());
+      expect(loopback.sentMessages[1], smokeProcessingAck(promptText));
+      // The substantive answer (notices and pings stripped) is the consolidated
+      // answer text, and every message went to the sender's chat.
+      expect(
+        answerMessagesTo(loopback, _allowedSender,
+            prompts: <String>[promptText]),
+        <String>[_answerText],
       );
-
-      await _waitForSent(loopback);
-
-      // Exactly one message was sent back: the consolidated answer (the
-      // prototype's single procedure produces the whole answer as one part).
-      expect(loopback.sentMessages, hasLength(1));
-      expect(loopback.sentMessages.single, _answerText);
-
-      // It was addressed to the sender's chat.
-      final ChatReceiver receiver = loopback.sentReceivers.single;
-      expect(receiver, ChatReceiver.id(_allowedSender));
+      expect(
+        loopback.sentReceivers,
+        everyElement(ChatReceiver.id(_allowedSender)),
+      );
     });
 
     test('the run persists an Event + a Conclusion', () async {
-      loopback.injectText(
-        senderId: _allowedSender,
-        text: 'how do I automate backups?',
-      );
+      loopback.injectText(senderId: _allowedSender, text: promptText);
 
-      await _waitForSent(loopback);
+      await waitForAnswersTo(loopback, _allowedSender, prompts: <String>[promptText]);
 
       final MemoryStats stats = await smoke.memory.stats();
       expect(stats.nodeCountByType['Event'], 1);
@@ -144,13 +146,15 @@ void main() {
       );
 
       // The edge gate sends exactly the decline, addressed to the rejected
-      // sender. Wait for it, then prove nothing else arrives.
-      await _waitForSent(loopback);
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      // sender — no "Processing" ack (the request never admitted) and no answer.
+      // The boot startup announcement goes to the *whitelisted* owner, not the
+      // blocked sender, so the blocked sender's only message is the decline.
+      await waitForAnswersTo(loopback, _blockedSender);
 
-      expect(loopback.sentMessages, hasLength(1));
-      expect(loopback.sentMessages.single, telegramNotAuthorisedMessage);
-      expect(loopback.sentReceivers.single, ChatReceiver.id(_blockedSender));
+      expect(
+        answerMessagesTo(loopback, _blockedSender),
+        <String>[telegramNotAuthorisedMessage],
+      );
     });
 
     test('a gated request builds no Access — nothing is written to memory',
@@ -160,8 +164,7 @@ void main() {
         text: 'let me in please',
       );
 
-      await _waitForSent(loopback);
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await waitForAnswersTo(loopback, _blockedSender);
 
       final MemoryStats stats = await smoke.memory.stats();
       expect(stats.nodeCountByType['Event'] ?? 0, 0);

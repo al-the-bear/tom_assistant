@@ -110,15 +110,20 @@ void main() {
         },
         // E.33: the centroid classifier seam (memory's
         // `classify(embedding, ClassificationTarget.procedure)`). It returns a
-        // confident match naming the *procedure id* `answer_with_memory_v1`
-        // (Q-E.50.1: the centroid hint keys on a procedure id, not an inbound
-        // kind), so the edge attaches a kind-hint the dispatcher resolves
-        // directly to that procedure — bypassing the kind → procedure map.
+        // confident match naming the *procedure id* `prompt_analyzer_v1` — the
+        // entry router (Q-E.50.1: the centroid hint keys on a procedure id, not
+        // an inbound kind). After the Todo-6 route-flip (§ 4.0.1) the only
+        // directly-routable hint is the entry router; the answer branches are
+        // reached *only* through its two-phase dispatch, and the hint door
+        // rejects a branch id loudly (SCP-22, proved in d54). The edge attaches
+        // that hint and the dispatcher resolves it directly — bypassing the
+        // kind → procedure map and its `classify_inbound_v1` fallback — then
+        // runs the chosen answer branch as the streaming run.
         kindHintClassifier: (List<double> embedding) async {
           classifyCalls++;
           return const KindHintClassification(
             decision: KindHintDecision.confident,
-            procedureId: SystemProcedures.answerWithMemoryV1,
+            procedureId: SystemProcedures.promptAnalyzerV1,
           );
         },
         // The dispatcher's no-hint fallback (the prototype's LLM-classifier

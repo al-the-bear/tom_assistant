@@ -61,6 +61,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         MemoryProvisioningConfig;
 
 import 'smoke_memory.dart';
+import 'smoke_prompts.dart';
 import 'smoke_substrate.dart';
 
 /// A booted, running smoke process plus its in-process stub substrate (E.46).
@@ -243,6 +244,14 @@ Future<SmokeProcess> standUpSmokeProcess({
       // E.50: the dispatcher's no-hint fallback (the prototype's LLM-classifier
       // stand-in). A confident kind-hint must short-circuit it.
       classifyFallback: classifyFallback,
+      // The `sub.run` seams (increment 6): the answer path resolves the
+      // registered `assist_user.answer_with_memory.assembly` prompt through a
+      // `PromptResolver`. Without one bound, `SubstrateBridge.run` throws and the
+      // answer run fails (empty answer, nothing persisted). The smoke has no
+      // cognition tree, so it binds the lightweight stand-in (`smoke_prompts.dart`)
+      // — the production assembly binds a cognition-root-backed resolver instead.
+      promptResolver: smokePromptResolver(),
+      routeChainOf: smokeRouteChainResolver(),
     ),
   );
 

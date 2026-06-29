@@ -44,6 +44,7 @@ import 'package:tom_chattools/tom_chattools.dart' show ChatReceiver;
 import 'package:test/test.dart';
 
 import '_support/loopback_chat_api.dart';
+import '_support/telegram_outbound.dart';
 
 /// The Telegram bot token the smoke configures (any non-null value stands the
 /// Telegram edge up; the loopback ignores it).
@@ -52,30 +53,6 @@ const String _botToken = 'conformance-bot-token';
 /// The whitelisted sender id, and the one outside the whitelist.
 const String _allowedSender = 'tg-conformance-allowed';
 const String _blockedSender = 'tg-conformance-blocked';
-
-/// Polls until the loopback has recorded at least [atLeast] sent message(s), or
-/// throws on [timeout]. The whole Telegram path is async across the memory
-/// worker isolate, so the conformance assertions wait for delivery rather than
-/// assume it is synchronous.
-Future<void> _waitForSent(
-  LoopbackChatApi loopback, {
-  int atLeast = 1,
-  Duration timeout = const Duration(seconds: 15),
-}) async {
-  final DateTime deadline = DateTime.now().add(timeout);
-  while (loopback.sentMessages.length < atLeast) {
-    if (DateTime.now().isAfter(deadline)) {
-      throw StateError(
-        'timed out waiting for $atLeast sent Telegram message(s); '
-        'got ${loopback.sentMessages.length}',
-      );
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-  }
-  // Settle: let any stray extra message arrive so a count assertion would catch
-  // it (the delivery path should send exactly the expected number).
-  await Future<void>.delayed(const Duration(milliseconds: 100));
-}
 
 void main() {
   late LoopbackChatApi loopback;
@@ -103,26 +80,31 @@ void main() {
         'addressed to the sender, losslessly', () async {
       const List<String> chunks = <String>['Back up by ', 'rsyncing nightly.'];
       const String answer = 'Back up by rsyncing nightly.';
+      const String prompt = 'how do I automate backups?';
       await stand(chunks);
 
-      loopback.injectText(
-        senderId: _allowedSender,
-        text: 'how do I automate backups?',
-      );
-      await _waitForSent(loopback);
+      loopback.injectText(senderId: _allowedSender, text: prompt);
+      await waitForAnswersTo(loopback, _allowedSender,
+          prompts: <String>[prompt]);
 
-      // Under the 4096 limit → exactly one buffered message, plain text, the
-      // whole answer, addressed to the sender's private chat.
-      expect(loopback.sentMessages, hasLength(1));
-      expect(loopback.sentMessages.single, answer);
-      expect(loopback.sentReceivers.single, ChatReceiver.id(_allowedSender));
+      // Under the 4096 limit → exactly one buffered answer message, plain text,
+      // the whole answer (control pings and out-of-band notices stripped),
+      // addressed to the sender's private chat.
+      final List<String> answers = answerMessagesTo(loopback, _allowedSender,
+          prompts: <String>[prompt]);
+      expect(answers, hasLength(1));
+      expect(answers.single, answer);
+      expect(
+        loopback.sentReceivers,
+        everyElement(ChatReceiver.id(_allowedSender)),
+      );
     });
 
     test('the normal-message run persists an Event + a Conclusion', () async {
       await stand(const <String>['ok']);
 
       loopback.injectText(senderId: _allowedSender, text: 'ping');
-      await _waitForSent(loopback);
+      await waitForAnswersTo(loopback, _allowedSender, prompts: <String>['ping']);
 
       final MemoryStats stats = await smoke.memory.stats();
       expect(stats.nodeCountByType['Event'], 1);
@@ -138,11 +120,14 @@ void main() {
       await stand(const <String>['ok']);
 
       loopback.injectText(senderId: _blockedSender, text: 'let me in please');
-      await _waitForSent(loopback);
+      await waitForAnswersTo(loopback, _blockedSender);
 
-      expect(loopback.sentMessages, hasLength(1));
-      expect(loopback.sentMessages.single, telegramNotAuthorisedMessage);
-      expect(loopback.sentReceivers.single, ChatReceiver.id(_blockedSender));
+      // The blocked sender's only substantive message is the decline — it never
+      // admitted, so it draws no processing ack, and the startup announcement
+      // goes to the whitelisted owner, not this sender.
+      final List<String> answers = answerMessagesTo(loopback, _blockedSender);
+      expect(answers, hasLength(1));
+      expect(answers.single, telegramNotAuthorisedMessage);
     });
 
     test('a gated request builds no Access — nothing is written to memory',
@@ -150,7 +135,7 @@ void main() {
       await stand(const <String>['ok']);
 
       loopback.injectText(senderId: _blockedSender, text: 'let me in please');
-      await _waitForSent(loopback);
+      await waitForAnswersTo(loopback, _blockedSender);
 
       final MemoryStats stats = await smoke.memory.stats();
       expect(stats.nodeCountByType['Event'] ?? 0, 0);
@@ -170,23 +155,30 @@ void main() {
       final List<String> chunks =
           List<String>.generate(1000, (_) => big); // …× 1000 = 10000 units.
       final String whole = chunks.join();
+      const String prompt = 'tell me a long story';
       await stand(chunks);
 
-      loopback.injectText(senderId: _allowedSender, text: 'tell me a long story');
-      await _waitForSent(loopback, atLeast: 3);
+      loopback.injectText(senderId: _allowedSender, text: prompt);
+      await waitForAnswersTo(loopback, _allowedSender,
+          prompts: <String>[prompt], count: 3);
 
-      expect(loopback.sentMessages, hasLength(3));
+      // The answer parts only (control pings + out-of-band notices stripped):
+      // the consolidator splits the buffered answer; the notices are single
+      // un-split messages that never begin with answer text.
+      final List<String> answers = answerMessagesTo(loopback, _allowedSender,
+          prompts: <String>[prompt]);
+      expect(answers, hasLength(3));
       // Every delivered part is within Telegram's per-message limit.
-      for (final String message in loopback.sentMessages) {
+      for (final String message in answers) {
         expect(message.length, lessThanOrEqualTo(telegramMaxMessageLength));
       }
       // Minimal count: 4096 + 4096 + 1808.
       expect(
-        loopback.sentMessages.map((String m) => m.length).toList(),
+        answers.map((String m) => m.length).toList(),
         <int>[telegramMaxMessageLength, telegramMaxMessageLength, 1808],
       );
       // Lossless across the wire, every part to the sender's own chat.
-      expect(loopback.sentMessages.join(), whole);
+      expect(answers.join(), whole);
       expect(
         loopback.sentReceivers,
         everyElement(ChatReceiver.id(_allowedSender)),
@@ -199,33 +191,41 @@ void main() {
       // keep each emoji whole: the first message holds 2048 emoji (4096 units),
       // the second the remaining one (2 units) — never half a surrogate pair.
       final String emojiWall = '😀' * 2049;
+      const String prompt = 'emoji please';
       await stand(<String>[emojiWall]);
 
-      loopback.injectText(senderId: _allowedSender, text: 'emoji please');
-      await _waitForSent(loopback, atLeast: 2);
+      loopback.injectText(senderId: _allowedSender, text: prompt);
+      await waitForAnswersTo(loopback, _allowedSender,
+          prompts: <String>[prompt], count: 2);
 
-      expect(loopback.sentMessages, hasLength(2));
-      expect(loopback.sentMessages[0].length, telegramMaxMessageLength); // 4096
-      expect(loopback.sentMessages[0].runes.length, 2048);
-      expect(loopback.sentMessages[1].length, 2); // one emoji = 2 code units
-      expect(loopback.sentMessages[1].runes.length, 1);
-      for (final String message in loopback.sentMessages) {
+      final List<String> answers = answerMessagesTo(loopback, _allowedSender,
+          prompts: <String>[prompt]);
+      expect(answers, hasLength(2));
+      expect(answers[0].length, telegramMaxMessageLength); // 4096
+      expect(answers[0].runes.length, 2048);
+      expect(answers[1].length, 2); // one emoji = 2 code units
+      expect(answers[1].runes.length, 1);
+      for (final String message in answers) {
         expect(message.length, lessThanOrEqualTo(telegramMaxMessageLength));
       }
       // Lossless: no surrogate pair was cut in half.
-      expect(loopback.sentMessages.join(), emojiWall);
+      expect(answers.join(), emojiWall);
     });
 
     test('an answer exactly at the limit is delivered as one message', () async {
       final String exact = 'x' * telegramMaxMessageLength;
+      const String prompt = 'exact';
       await stand(<String>[exact]);
 
-      loopback.injectText(senderId: _allowedSender, text: 'exact');
-      await _waitForSent(loopback);
+      loopback.injectText(senderId: _allowedSender, text: prompt);
+      await waitForAnswersTo(loopback, _allowedSender,
+          prompts: <String>[prompt]);
 
-      expect(loopback.sentMessages, hasLength(1));
-      expect(loopback.sentMessages.single.length, telegramMaxMessageLength);
-      expect(loopback.sentMessages.single, exact);
+      final List<String> answers = answerMessagesTo(loopback, _allowedSender,
+          prompts: <String>[prompt]);
+      expect(answers, hasLength(1));
+      expect(answers.single.length, telegramMaxMessageLength);
+      expect(answers.single, exact);
     });
   });
 }
