@@ -173,6 +173,16 @@ final class AgentRegistration {
   /// Builds a `"stack:<name>"` tag.
   static String stackScope(String stackName) => 'stack:$stackName';
 
+  /// Builds a `"profile:<name>"` tag — a **store-wide** write grant
+  /// (memory § 2.6, GA-5). A registration granted `profile:<p>` may write
+  /// any resource (node / edge / stack) within the store scoped to profile
+  /// `p`. It is the grant the `aggregator` agent carries
+  /// (`profile:global`): the registration is installed on exactly the
+  /// `global` child store, so the store-wide grant cannot leak to another
+  /// profile. Used only for the aggregation tier; ordinary agents stay on
+  /// the per-kind node/edge/stack tags.
+  static String profileScope(String name) => 'profile:$name';
+
   /// The global wildcard tag (`"*"`). A registration whose
   /// [writeScopes] contains this tag may write anything; same for
   /// [readScopes] and reads. Reserved for bootstrap / author
@@ -193,6 +203,13 @@ final class AgentRegistration {
     if (granted.isEmpty) return false;
     if (granted.contains(globalWildcard)) return true;
     if (granted.contains(requested)) return true;
+    // Store-wide grant. A granted `profile:<name>` tag authorises any
+    // resource write within its store (memory § 2.6, GA-5); the
+    // aggregator carries `profile:global` and is installed only on the
+    // `global` child store, so this cannot reach another profile.
+    for (final tag in granted) {
+      if (tag.startsWith('profile:')) return true;
+    }
     // Per-kind wildcard. Split on the first colon; everything before
     // it is the kind; the registered `"kind:*"` form matches any
     // request whose prefix matches.

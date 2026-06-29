@@ -46,10 +46,13 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         NodeDraft,
         Scope,
         TomBrainMemoryClient,
+        isReservedGlobalProfile,
         validateMemoryProfileName;
 
+import '../aggregation/aggregator_registration.dart' show aggregatorRegistration;
 import '../api/tom_brain_memory.dart';
 import '../config/memory_config_paths.dart';
+import '../store/sqlite_tom_brain_memory.dart' show SqliteTomBrainMemory;
 import 'profile_events.dart';
 
 /// Filesystem-backed [MemoryProfileRegistry] over the
@@ -180,6 +183,17 @@ final class SqliteMemoryProfileRegistry implements MemoryProfileRegistry {
     final store = _childStoreFactory();
     await store.open(_baseConfig.withProfile(name));
     try {
+      // memory § 2.6, GA-5: the `global` child store is the only place the
+      // aggregator's writes land, so it is where the `aggregator` agent is
+      // registered — without it the inner `AgentRegistry` guard would
+      // reject the agent-stamped derived-node writes as unregistered. The
+      // grant is store-wide (`profile:global`) and confined to this child
+      // handle, which is discarded when the pass closes. The cast is sound:
+      // the in-process registry only ever spawns `SqliteTomBrainMemory`
+      // children (same cast the aggregator's read seam uses).
+      if (isReservedGlobalProfile(name)) {
+        (store as SqliteTomBrainMemory).registerAgent(aggregatorRegistration);
+      }
       return await body(store);
     } finally {
       await store.close();

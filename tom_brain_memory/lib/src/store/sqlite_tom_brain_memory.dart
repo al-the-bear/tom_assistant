@@ -82,6 +82,9 @@ import 'package:sqlite3/sqlite3.dart';
 // the shared barrel — the TomBrainMemoryClient contract is defined there.
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 
+import '../aggregation/aggregating_memory.dart';
+import '../aggregation/aggregator_registration.dart';
+import '../aggregation/profile_aggregator.dart';
 import '../api/tom_brain_memory.dart';
 import '../budget/write_budget_tracker.dart';
 import '../classification/centroid_store.dart';
@@ -131,7 +134,8 @@ import 'vector_table_applier.dart';
 /// the four-mode [recall] pipeline are live (#14–#16). The remaining
 /// data-plane methods are deferred to prototype_implementation_plan_2
 /// item #17 and throw [UnimplementedError] until then.
-final class SqliteTomBrainMemory extends TomBrainMemory {
+final class SqliteTomBrainMemory extends TomBrainMemory
+    implements AggregatingMemory {
   /// The single FTS5 catalog shared by the registry (which provisions
   /// the per-type FTS5 virtual tables on registration) and the
   /// persister's [Fts5Writer] (which writes the FTS rows). Both halves
@@ -265,6 +269,12 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   /// (memory § 3.1, reconciled at H.28). `null` = the profile-unbound
   /// single-tenant layout.
   String? _currentProfile;
+
+  /// The cross-profile global-aggregation config (memory § 2.6), captured
+  /// from `MemoryConfig.aggregation` at [open]. Drives
+  /// [aggregateProfilesIntoGlobal]; off by default (GA-11), so an
+  /// unconfigured store's pass is a no-op.
+  AggregationConfig _aggregationConfig = const AggregationConfig();
 
   /// Creates an unopened store.
   ///
@@ -507,6 +517,11 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
     // introspection (memory § 3.1). `null` is the unbound layout.
     _currentProfile = config.profile;
 
+    // memory § 2.6 — capture the global-aggregation config so an
+    // in-isolate store can drive a pass from the config it was opened
+    // with (the config crosses the isolate boundary via `open`).
+    _aggregationConfig = config.aggregation;
+
     _isOpen = true;
   }
 
@@ -525,6 +540,33 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   MemoryProfileRegistry get profiles {
     _ensureOpen('profiles');
     return _profiles;
+  }
+
+  /// Runs one cross-profile global-aggregation pass (memory § 2.6,
+  /// [AggregatingMemory]).
+  ///
+  /// Drives the [ProfileAggregator] over this store's profile registry
+  /// with the config captured at [open] (`_aggregationConfig`, off by
+  /// default per GA-11). The aggregator opens the `global` child store via
+  /// the registry's write seam — where [aggregatorRegistration] is
+  /// installed — so its derived-node writes carry the `aggregator` identity
+  /// and pass the GA-8 guard. Returns a primitive, SendPort-serialisable
+  /// summary so the isolate client can forward it verbatim.
+  @override
+  Future<Map<String, Object?>> aggregateProfilesIntoGlobal() async {
+    _ensureOpen('aggregateProfilesIntoGlobal');
+    final aggregator = ProfileAggregator(
+      registry: _profiles,
+      clock: _clock,
+      config: _aggregationConfig,
+    );
+    final result = await aggregator.runPass();
+    return <String, Object?>{
+      'ran': result.ran,
+      'sourceProfiles': List<String>.unmodifiable(result.sourceProfiles),
+      'nodesScanned': result.nodesScanned,
+      'nodesDerived': result.nodesDerived,
+    };
   }
 
   /// Installs a vector index for each distinct embedding model declared
@@ -705,6 +747,11 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
   @override
   Future<NodeId> persist(NodeDraft draft, {required Scope scope}) async {
     _ensureOpen('persist');
+    _guardGlobalProfileWrite(
+      resourceKind: 'node',
+      resourceDetail: draft.typeName,
+      scope: scope,
+    );
     return _persister.persist(draft, scope: scope);
   }
 
@@ -824,8 +871,35 @@ final class SqliteTomBrainMemory extends TomBrainMemory {
     Map<String, Object?>? attrs,
   }) async {
     _ensureOpen('edge');
+    _guardGlobalProfileWrite(
+      resourceKind: 'edge',
+      resourceDetail: type.wireName,
+      scope: scope,
+    );
     return _edgeWriter.edge(from, type, to,
         scope: scope, weight: weight, attrs: attrs);
+  }
+
+  /// GA-8 live-path guard (memory § 2.6): a node / edge write against the
+  /// reserved `global` profile is refused unless it carries the
+  /// `aggregator` agent identity. d4rt procedures cannot set
+  /// `Scope.agentName`, so this confines `global` mutation to the
+  /// in-engine aggregation writes — which run under [aggregatorRegistration]
+  /// installed on the `global` child store by the profile registry. A
+  /// no-op for every non-`global` profile.
+  void _guardGlobalProfileWrite({
+    required String resourceKind,
+    required String resourceDetail,
+    required Scope scope,
+  }) {
+    final profile = _currentProfile;
+    if (profile == null || !isReservedGlobalProfile(profile)) return;
+    if (scope.agentName == aggregatorAgentName) return;
+    throw GlobalProfileWriteForbidden(
+      resourceKind: resourceKind,
+      resourceDetail: resourceDetail,
+      agentName: scope.agentName,
+    );
   }
 
   @override

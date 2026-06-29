@@ -4,8 +4,12 @@
 // Off by default (GA-11): a brain that never opts in never aggregates.
 // `enabled: false` makes `ProfileAggregator.runPass` a no-op that scans
 // nothing and writes nothing.
-
-import 'aggregation_provenance.dart';
+//
+// This value type lives in `tom_brain_shared` (no `dart:io`) so it can be
+// embedded in `MemoryConfig` and travel across the memory isolate boundary
+// via `open(config)`: the in-isolate `SqliteTomBrainMemory` reads its
+// `aggregation` field to drive the engine. The engine itself, its
+// provenance keys, and the `ProfileAggregator` stay in `tom_brain_memory`.
 
 /// Configuration for the cross-profile aggregation pass.
 final class AggregationConfig {
@@ -29,3 +33,15 @@ final class AggregationConfig {
     this.excludeProfiles = const <String>{},
   });
 }
+
+/// The v1 default semantic-type allowlist (GA-3): only durable, semantic
+/// knowledge is aggregated. Episodic types (`Event`, `Session`, `Trail`,
+/// `ProcedureRun`, …) are never aggregated — they are local lived history,
+/// not shareable knowledge.
+const Set<String> defaultAggregationNodeTypes = <String>{
+  'Concept',
+  'Claim',
+  'Conclusion',
+  'Pattern',
+  'InterestItem',
+};

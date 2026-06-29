@@ -659,6 +659,51 @@ class MemoryBridge {
         () => client.registerNodeType(_buildNodeTypeDecl(decl)),
       );
 
+  // ── aggregateProfilesIntoGlobal ─────────────────────────────────
+
+  /// Runs the cross-profile global-aggregation pass (memory § 2.6,
+  /// Phase 2). This is the single coarse engine call `dream_aggregate_v1`
+  /// drives: it re-derives every allowlisted semantic node across the
+  /// source profiles into the reserved `global` profile under the
+  /// in-engine `aggregator` agent identity. The procedure never sees the
+  /// per-profile mechanics, the node-type allowlist, or the `global`
+  /// write seam — those are configuration the engine owns; the bridge
+  /// exposes only the trigger and the primitive summary map.
+  ///
+  /// The injected [client] is the consumer-facing `TomBrainMemoryClient`,
+  /// but the production instance is always an [AggregatingMemory]
+  /// (`SqliteTomBrainMemory` in-process or `TomBrainMemoryIsolateClient`
+  /// over the isolate boundary). A handle that does not implement the
+  /// marker — only the in-memory stub used by some unit tests — yields a
+  /// `ran: false` no-op rather than throwing, so a misconfigured test
+  /// substrate degrades quietly instead of crashing a dream pass.
+  ///
+  /// Returns the engine's pass summary verbatim: `{'ran': bool,
+  /// 'sourceProfiles': List of String, 'nodesScanned': int,
+  /// 'nodesDerived': int}`.
+  Future<Map<String, Object?>> aggregateProfilesIntoGlobal() =>
+      _record<Map<String, Object?>>(
+        'aggregateProfilesIntoGlobal',
+        _noResult,
+        () async {
+          final memory = client;
+          if (memory is! AggregatingMemory) {
+            return <String, Object?>{
+              'ran': false,
+              'sourceProfiles': const <String>[],
+              'nodesScanned': 0,
+              'nodesDerived': 0,
+            };
+          }
+          return (memory as AggregatingMemory).aggregateProfilesIntoGlobal();
+        },
+        resultOf: (summary) => summary,
+        // A skipped aggregation pass (write cap reached) reports a no-op
+        // the run surfaces without failing — the dream lane simply did not
+        // run this cycle.
+        skipValue: () => <String, Object?>{'ran': false, 'skipped': true},
+      );
+
   // ── stack.* ─────────────────────────────────────────────────────
 
   /// `stack.list` — summary row per stack.

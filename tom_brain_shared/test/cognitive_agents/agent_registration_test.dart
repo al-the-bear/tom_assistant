@@ -205,6 +205,26 @@ void main() {
           reason: '"node:*" must not match an edge scope.');
       expect(r.allowsWrite('stack:inflight'), isFalse);
     });
+
+    test('a granted profile scope authorises any resource write store-wide',
+        () {
+      // memory § 2.6, GA-5: the aggregator carries a single `profile:global`
+      // grant and is installed only on the `global` child store, so this
+      // store-wide grant authorises its node writes without enumerating every
+      // node type.
+      final aggregator = AgentRegistration(
+        agentName: 'aggregator',
+        procedureId: 'dream_aggregate_v1',
+        defaultBudget: budget,
+        readScopes: const {'*'},
+        writeScopes: {AgentRegistration.profileScope('global')},
+      );
+      expect(aggregator.allowsWrite('node:Concept'), isTrue);
+      expect(aggregator.allowsWrite('node:Claim'), isTrue);
+      expect(aggregator.allowsWrite('edge:derived_from'), isTrue,
+          reason: 'a profile grant is store-wide across resource kinds.');
+      expect(aggregator.allowsWrite('stack:questions_open'), isTrue);
+    });
   });
 
   group('AgentRegistration helpers', () {

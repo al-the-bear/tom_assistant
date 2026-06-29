@@ -20,13 +20,16 @@
 // re-run persists nothing new — `persist` returns the original id and
 // inserts no row.
 //
-// This is the Dart engine half of the tier (build-step #12, Phase 1). The
-// d4rt `dream_aggregate_v1` procedure, the `aggregator` agent registration,
-// and the `aggregate` cadence lane that schedules this pass off-by-default
-// are the deferred Phase-2 remainder (see `tom_brain_completion_plan_2.md`).
+// This is the Dart engine half of the tier (build-step #12). The d4rt
+// `dream_aggregate_v1` procedure that drives it through the single bridged
+// `mem.aggregateProfilesIntoGlobal` primitive, the `aggregator` agent
+// registration (registered on the `global` child store by
+// `SqliteMemoryProfileRegistry.writeInProfile`), and the off-by-default
+// `aggregate` cadence lane are realised (memory § 2.6, Phase 2).
 
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
+        AggregationConfig,
         Clock,
         MemoryProfileRegistry,
         Node,
@@ -38,25 +41,19 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         reservedGlobalProfile;
 
 import '../store/sqlite_tom_brain_memory.dart';
-import 'aggregation_config.dart';
 import 'aggregation_provenance.dart';
 
 /// Stable producer identity stamped on every aggregated node's `Scope`
-/// (memory § 2.6, GA-5). This is the GA-5 attribution the Phase-1 engine
-/// uses; it is sufficient for provenance and never triggers the
-/// `AgentRegistry` write guard (that guard is a no-op when `agentName` is
-/// null).
+/// (memory § 2.6, GA-5). Also the `procedureId` of the `dream_aggregate_v1`
+/// procedure that drives the engine, and of [aggregatorRegistration].
 const String aggregatorProducer = 'dream_aggregate_v1';
 
-/// The agent identity the aggregation writes will be issued under **once
-/// the Phase-2 `aggregator` agent is registered** (memory § 2.6, GA-5).
-///
-/// Deliberately NOT stamped on the Phase-1 write scope: the `AgentRegistry`
-/// rejects any `agentName` it has no registration for, and that
-/// registration is the deferred Phase-2 remainder (the `dream_aggregate_v1`
-/// procedure + `aggregator` agent + `aggregate` cadence lane — see
-/// `tom_brain_completion_plan_2.md`). The Phase-1 engine attributes via
-/// `producer` only; Phase 2 adds the registration and this `agentName`.
+/// The agent identity the aggregation writes are issued under (memory § 2.6,
+/// GA-5). Stamped on every derived node's `Scope.agentName` by
+/// [ProfileAggregator._scopeFor], authorised by [aggregatorRegistration]
+/// (registered on the `global` child store by
+/// `SqliteMemoryProfileRegistry.writeInProfile`), and the value GA-8 checks
+/// for when rejecting non-aggregator writes against `profile:global`.
 const String aggregatorAgentName = 'aggregator';
 
 /// Summary of one aggregation pass — what was scanned and derived.
@@ -205,13 +202,16 @@ final class ProfileAggregator {
 
   /// The idempotent, attributed write scope for a derived node (GA-5/7).
   ///
-  /// Attribution is by `producer` only. `agentName` is intentionally left
-  /// null in Phase 1: the `AgentRegistry` rejects an unregistered agent,
-  /// and the `aggregator` registration is the deferred Phase-2 remainder
-  /// (see [aggregatorAgentName]). The idempotency key is what makes a
-  /// re-run a no-op (GA-7) and does not depend on the agent.
+  /// Attribution carries both `producer` (`dream_aggregate_v1`) and
+  /// `agentName` (`aggregator`). The `aggregator` agent is registered on the
+  /// `global` child store by `SqliteMemoryProfileRegistry.writeInProfile`
+  /// before this scope reaches the write guard, so the stamp authorises the
+  /// write (its `profile:global` grant covers store-wide writes) and is what
+  /// GA-8 checks for on the live cross-store path. The idempotency key is
+  /// what makes a re-run a no-op (GA-7) and does not depend on the agent.
   Scope _scopeFor(String sourceProfile, Node node) => Scope(
         producer: aggregatorProducer,
+        agentName: aggregatorAgentName,
         idempotencyKey:
             'aggregate:${node.typeName}:$sourceProfile:${node.id.value}',
       );

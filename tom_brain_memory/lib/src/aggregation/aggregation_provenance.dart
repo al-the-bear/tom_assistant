@@ -1,5 +1,9 @@
-// Global-aggregation provenance keys + the default semantic allowlist
-// (memory_specification.md § 2.6, GA-3 / GA-4).
+// Global-aggregation provenance keys (memory_specification.md § 2.6, GA-4).
+//
+// The semantic-type allowlist (`defaultAggregationNodeTypes`) lives with
+// `AggregationConfig` in `tom_brain_shared` (it is config that crosses the
+// isolate boundary); these provenance keys stay here because only the
+// engine reads/writes them.
 //
 // The aggregator copies a source node's semantic values into a derived
 // `global` node and stamps three provenance fields so a `global` read can
@@ -28,16 +32,4 @@ const Set<String> aggregationProvenanceKeys = <String>{
   aggregationSourceProfileKey,
   aggregationSourceNodeIdKey,
   aggregationAtKey,
-};
-
-/// The v1 default semantic-type allowlist (GA-3): only durable, semantic
-/// knowledge is aggregated. Episodic types (`Event`, `Session`, `Trail`,
-/// `ProcedureRun`, …) are never aggregated — they are local lived history,
-/// not shareable knowledge.
-const Set<String> defaultAggregationNodeTypes = <String>{
-  'Concept',
-  'Claim',
-  'Conclusion',
-  'Pattern',
-  'InterestItem',
 };

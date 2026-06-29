@@ -51,6 +51,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show ClassificationResul
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show IsolateCancellationToken;
 
+import '../aggregation/aggregating_memory.dart' show AggregatingMemory;
 import 'isolate_envelopes_full.dart';
 import 'isolate_messages.dart';
 import 'isolate_stream_protocol.dart';
@@ -69,7 +70,8 @@ import 'tom_brain_memory_isolate_host.dart';
 /// streams use a sliding window (one credit auto-pulled per
 /// delivered chunk); unbounded streams use cancellation tokens for
 /// termination.
-class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
+class TomBrainMemoryIsolateClient
+    implements TomBrainMemoryClient, AggregatingMemory {
   /// The host this client dispatches through. Lifetime is owned by
   /// the caller — the client does not call `host.spawn()` or
   /// `host.shutdown()` and does not register cleanup hooks.
@@ -509,6 +511,20 @@ class TomBrainMemoryIsolateClient implements TomBrainMemoryClient {
       const MemoryStatsRequest(),
     );
     return reply.stats;
+  }
+
+  /// `AggregatingMemory` (memory § 2.6, Phase 2). The bridged
+  /// `mem.aggregateProfilesIntoGlobal` primitive type-checks the memory
+  /// handle against `AggregatingMemory`; in the isolate-hosted deployment
+  /// the handle is *this* client, which forwards the single coarse RPC so
+  /// the whole cross-profile pass runs in-isolate on the concrete
+  /// `SqliteTomBrainMemory`. Only the primitive summary map crosses back.
+  @override
+  Future<Map<String, Object?>> aggregateProfilesIntoGlobal() async {
+    final reply = await host.send<AggregateProfilesIntoGlobalResponse>(
+      const AggregateProfilesIntoGlobalRequest(),
+    );
+    return reply.summary;
   }
 }
 

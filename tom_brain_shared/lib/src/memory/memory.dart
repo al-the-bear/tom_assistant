@@ -29,6 +29,8 @@ export 'classification/classification_result.dart'
     show ClassificationDecision, ClassificationResult, ClassificationTarget;
 
 // config/ — root config record + sub-config value types (no `dart:io`).
+export 'config/aggregation_config.dart'
+    show AggregationConfig, defaultAggregationNodeTypes;
 export 'config/memory_config.dart'
     show
         BudgetsConfig,

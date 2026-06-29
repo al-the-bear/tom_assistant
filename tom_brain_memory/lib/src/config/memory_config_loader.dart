@@ -42,8 +42,10 @@ import 'package:yaml/yaml.dart';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
+        AggregationConfig,
         BudgetsConfig,
         ClassificationConfig,
+        defaultAggregationNodeTypes,
         DecayConfig,
         DecayDemoteConfig,
         DefaultWriteBudgetConfig,
@@ -170,6 +172,9 @@ abstract final class MemoryConfigLoader {
       _optionalMap(node, 'replication'),
       env,
     );
+    final aggregation = _parseAggregation(
+      _optionalMap(node, 'aggregation'),
+    );
 
     return MemoryConfig(
       root: root,
@@ -181,6 +186,38 @@ abstract final class MemoryConfigLoader {
       budgets: budgets,
       mcpServer: mcpServer,
       replication: replication,
+      aggregation: aggregation,
+    );
+  }
+
+  /// Parses the optional `memory.aggregation` block (memory § 2.6, § 14)
+  /// into an [AggregationConfig]. Absent ⇒ the off-by-default config
+  /// (`enabled: false`, the v1 allowlist, no extra exclusions), so an
+  /// unconfigured brain never materialises the reserved `global` profile.
+  static AggregationConfig _parseAggregation(YamlMap? node) {
+    if (node == null) return const AggregationConfig();
+    final enabled = _optionalBool(
+          node,
+          'enabled',
+          'memory.aggregation.enabled',
+        ) ??
+        false;
+    final nodeTypes = _optionalStringSet(
+          node,
+          'nodeTypes',
+          'memory.aggregation.nodeTypes',
+        ) ??
+        defaultAggregationNodeTypes;
+    final excludeProfiles = _optionalStringSet(
+          node,
+          'excludeProfiles',
+          'memory.aggregation.excludeProfiles',
+        ) ??
+        const <String>{};
+    return AggregationConfig(
+      enabled: enabled,
+      nodeTypes: nodeTypes,
+      excludeProfiles: excludeProfiles,
     );
   }
 
@@ -695,6 +732,32 @@ abstract final class MemoryConfigLoader {
 
   static YamlMap? _optionalMap(YamlMap node, String key) =>
       _types.optionalMap(node, key) as YamlMap?;
+
+  /// Reads an optional YAML sequence of strings into an unordered set.
+  /// Returns `null` when the key is absent (so the caller can fall back to
+  /// its default). Throws [MemoryConfigException] when the value is present
+  /// but not a list, or contains a non-scalar / empty entry.
+  static Set<String>? _optionalStringSet(
+    YamlMap node,
+    String key,
+    String path,
+  ) {
+    final raw = node[key];
+    if (raw == null) return null;
+    if (raw is! YamlList) {
+      throw MemoryConfigException('$path must be a list of strings.');
+    }
+    final out = <String>{};
+    for (final entry in raw) {
+      if (entry is! String || entry.isEmpty) {
+        throw MemoryConfigException(
+          '$path entries must be non-empty strings (got `$entry`).',
+        );
+      }
+      out.add(entry);
+    }
+    return out;
+  }
 
   static String _expandEnv(String input, Map<String, String> env, String path) =>
       YamlConfigReader(env: env, errorFactory: MemoryConfigException.new)

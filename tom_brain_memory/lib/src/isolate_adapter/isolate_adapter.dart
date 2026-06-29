@@ -148,6 +148,8 @@ export 'isolate_envelopes_full.dart'
         UpdateCentroidResponse;
 export 'isolate_messages.dart'
     show
+        AggregateProfilesIntoGlobalRequest,
+        AggregateProfilesIntoGlobalResponse,
         CloseMemoryRequest,
         CloseMemoryResponse,
         IsolateBoundaryException,

@@ -19,6 +19,7 @@
 // (`config/memory_config_paths.dart`), where `dart:io` is allowed.
 
 import '../retrieval/recall_query.dart' show RecallRanking;
+import 'aggregation_config.dart' show AggregationConfig;
 
 /// sqlite-vec FFI extension configuration.
 ///
@@ -333,6 +334,15 @@ final class MemoryConfig {
   /// Replication tunables.
   final ReplicationConfig replication;
 
+  /// Cross-profile global-aggregation tunables (memory § 2.6).
+  ///
+  /// Off by default (GA-11): an unconfigured brain never materialises the
+  /// reserved `global` profile. Embedded here — rather than passed as a
+  /// constructor argument — so it travels with the config across the
+  /// memory isolate boundary (`open(config)`), where the in-isolate
+  /// `SqliteTomBrainMemory` reads it to drive the aggregation engine.
+  final AggregationConfig aggregation;
+
   const MemoryConfig({
     required this.root,
     required this.sqliteVec,
@@ -344,6 +354,7 @@ final class MemoryConfig {
     this.budgets = const BudgetsConfig(),
     this.mcpServer = const McpServerConfig(),
     this.replication = const ReplicationConfig(),
+    this.aggregation = const AggregationConfig(),
   });
 
   /// Returns a copy of this config bound to [profile] (memory § 2.5).
@@ -364,6 +375,7 @@ final class MemoryConfig {
         budgets: budgets,
         mcpServer: mcpServer,
         replication: replication,
+        aggregation: aggregation,
       );
 
   /// Convenience constructor for tests: a single-rooted config
@@ -377,6 +389,7 @@ final class MemoryConfig {
     required String root,
     String extensionPath = '',
     String binariesRoot = '',
+    AggregationConfig aggregation = const AggregationConfig(),
   }) {
     if (root.isEmpty) {
       throw ArgumentError.value(root, 'root', 'must be non-empty');
@@ -387,6 +400,7 @@ final class MemoryConfig {
         extensionPath: extensionPath,
         binariesRoot: binariesRoot,
       ),
+      aggregation: aggregation,
     );
   }
 }

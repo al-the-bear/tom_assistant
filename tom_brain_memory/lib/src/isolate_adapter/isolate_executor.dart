@@ -50,6 +50,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart'
         IsolateStreamCloseSignal;
 import 'package:tom_core_kernel/tom_core_kernel.dart' show TomExecutor, TomWorker;
 
+import '../aggregation/aggregating_memory.dart' show AggregatingMemory;
 import '../api/tom_brain_memory.dart';
 
 import 'isolate_cancellation_protocol.dart';
@@ -141,6 +142,16 @@ class MemoryIsolateExecutor extends TomExecutor {
           final memory = _requireOpenMemory();
           final MemoryStats stats = await memory.stats();
           return MemoryStatsResponse(stats);
+
+        case AggregateProfilesIntoGlobalRequest():
+          // The concrete in-isolate memory is `SqliteTomBrainMemory`,
+          // which implements `AggregatingMemory`; the whole Phase-2 pass
+          // runs in-isolate and only the primitive summary map crosses
+          // back (memory § 2.6).
+          final memory = _requireOpenMemory();
+          final summary =
+              await (memory as AggregatingMemory).aggregateProfilesIntoGlobal();
+          return AggregateProfilesIntoGlobalResponse(summary);
 
         // ─── A.81: cancellation control ──────────────────────────
         case CancelRequest(:final token):

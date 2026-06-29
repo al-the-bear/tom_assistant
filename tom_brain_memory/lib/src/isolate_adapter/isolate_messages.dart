@@ -144,6 +144,30 @@ final class MemoryStatsResponse extends IsolateResponse {
   const MemoryStatsResponse(this.stats);
 }
 
+// ─── Global aggregation (`aggregateProfilesIntoGlobal()`) ─────────
+//
+// The single coarse RPC for the cross-profile global-aggregation tier
+// (memory § 2.6, Phase 2). The bridged `mem.aggregateProfilesIntoGlobal`
+// primitive type-checks the memory handle against `AggregatingMemory`;
+// in the isolate-hosted deployment the handle is the
+// `TomBrainMemoryIsolateClient`, which forwards this one envelope so the
+// whole pass runs in-isolate on the concrete `SqliteTomBrainMemory`. The
+// summary is a primitive `Map<String, Object?>` (`ran` / `sourceProfiles`
+// / `nodesScanned` / `nodesDerived`), so it crosses the SendPort verbatim.
+
+/// Drive `(memory as AggregatingMemory).aggregateProfilesIntoGlobal()`
+/// inside the isolate (memory § 2.6).
+final class AggregateProfilesIntoGlobalRequest extends IsolateRequest {
+  const AggregateProfilesIntoGlobalRequest();
+}
+
+/// Reply to an [AggregateProfilesIntoGlobalRequest], carrying the
+/// primitive pass-summary map.
+final class AggregateProfilesIntoGlobalResponse extends IsolateResponse {
+  final Map<String, Object?> summary;
+  const AggregateProfilesIntoGlobalResponse(this.summary);
+}
+
 // ─── Failure ─────────────────────────────────────────────────────
 
 /// Boundary-side failure marker.

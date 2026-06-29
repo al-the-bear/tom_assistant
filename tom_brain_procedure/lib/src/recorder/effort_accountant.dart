@@ -114,6 +114,11 @@ final class EffortAccountant {
     // cache (§ 6.4 / § 7.1, G-PR5). It changes the store, so it charges one
     // memoryWrite — the metrics-pass agent's writes are budgeted like any other.
     'updateProcedureMetrics',
+    // `aggregateProfilesIntoGlobal` triggers the cross-profile global-aggregation
+    // pass (memory § 2.6, Phase 2). Internally it re-derives many nodes into the
+    // `global` profile, but to the procedure's budget the coarse engine call is a
+    // single memoryWrite — the per-pass node ceiling is the engine's own concern.
+    'aggregateProfilesIntoGlobal',
   };
 
   /// Tool callouts — each contributes one `toolCalls`. The substrate tool

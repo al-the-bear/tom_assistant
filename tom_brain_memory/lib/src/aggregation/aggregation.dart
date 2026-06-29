@@ -7,18 +7,22 @@
 // `global` written only here) is enforced by construction via the
 // registry's read/write seams — see `profile_aggregator.dart`.
 //
-// This is the Phase-1 Dart engine. The d4rt `dream_aggregate_v1` procedure,
-// the `aggregator` agent registration, and the off-by-default `aggregate`
-// cadence lane are the deferred Phase-2 remainder.
+// This is the engine + Phase-2 surface. `AggregationConfig` and the default
+// allowlist now live in `tom_brain_shared` (config that crosses the memory
+// isolate boundary); they are re-exported here for source compatibility.
 
-export 'aggregation_config.dart' show AggregationConfig;
+export 'package:tom_brain_shared/tom_brain_shared.dart'
+    show AggregationConfig, defaultAggregationNodeTypes;
+
+export 'aggregating_memory.dart' show AggregatingMemory;
 export 'aggregation_provenance.dart'
     show
         aggregationAtKey,
         aggregationProvenanceKeys,
         aggregationSourceNodeIdKey,
-        aggregationSourceProfileKey,
-        defaultAggregationNodeTypes;
+        aggregationSourceProfileKey;
+export 'aggregator_registration.dart'
+    show GlobalProfileWriteForbidden, aggregatorRegistration;
 export 'profile_aggregator.dart'
     show
         AggregationPassResult,

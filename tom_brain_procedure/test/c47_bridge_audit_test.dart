@@ -23,7 +23,7 @@
 //  2. **Bridge-surface signature guard.** The generated `BridgedClass`
 //     carries a `methodSignatures` string per bridged method — the exact
 //     d4rt-facing contract a procedure script binds to. This audit pins
-//     all 30 of them (23 memory + 7 substrate, the § 5.1 surface) to
+//     all 31 of them (24 memory + 7 substrate, the § 5.1 surface) to
 //     literal expected strings. Any edit to a bridge method's d4rt-facing
 //     signature (a param added, removed, retyped, or re-defaulted, then
 //     re-reflected into the `*.b.dart`) drifts the generated string away
@@ -75,7 +75,7 @@ import 'package:tom_brain_procedure/src/bridges/brain_bridges.b.dart';
 
 /// The authoritative § 5.1 memory surface: bridged method name → the
 /// exact d4rt-facing signature string the generated `BridgedClass`
-/// records. Twenty-three rows — `recall` (now carrying the § 3.2.1
+/// records. Twenty-four rows — `recall` (now carrying the § 3.2.1
 /// `ranking` / `types` / `countsAsAccess` knobs), the powerful-recall
 /// specialisations `recallOld` / `recallCold` / `recallPrompts` /
 /// `recallAnswers` (memory_optimization_plan § 9 / spec § 3.2.1), the
@@ -86,8 +86,9 @@ import 'package:tom_brain_procedure/src/bridges/brain_bridges.b.dart';
 /// the usage-tracking write `recordAccess` (the answer layer's mark that a
 /// recalled node was used, § 6.6 / § 6.7),
 /// the classifier-maintenance methods `updateCentroid` and `findUncertain`,
-/// and the procedure metrics-pass cache write `updateProcedureMetrics`
-/// (Todo 7 / G-PR5).
+/// the procedure metrics-pass cache write `updateProcedureMetrics`
+/// (Todo 7 / G-PR5), and the Phase-2 cross-profile aggregation trigger
+/// `aggregateProfilesIntoGlobal` (memory § 2.6).
 const Map<String, String> _expectedMemorySignatures = <String, String>{
   'recall':
       "Future<Map<String, Object?>> recall(String text, {List<String> modes = const <String>['bm25', 'vector'], int k = 8, String ranking = 'relevance', List<String> types = const <String>[], bool countsAsAccess = false, bool relations = false})",
@@ -128,6 +129,12 @@ const Map<String, String> _expectedMemorySignatures = <String, String>{
       'Future<void> updateCentroid(String forKey, List<double> centroid)',
   'findUncertain':
       'Future<List<String>> findUncertain(String forKey, {required double low, required double high, int limit = 200})',
+  // The Phase-2 cross-profile aggregation trigger (memory § 2.6): a single
+  // coarse, argument-free engine call that re-derives every allowlisted
+  // semantic node into the reserved `global` profile under the in-engine
+  // `aggregator` agent and returns the pass summary.
+  'aggregateProfilesIntoGlobal':
+      'Future<Map<String, Object?>> aggregateProfilesIntoGlobal()',
 };
 
 /// The authoritative substrate surface: seven rows — the increment-5 routing
@@ -218,7 +225,7 @@ void main() {
   }
 
   group('C.47 bridge audit — registered method set is the § 5.1 surface', () {
-    test('MemoryBridge registers exactly the 22 audited memory methods', () {
+    test('MemoryBridge registers exactly the 24 audited memory methods', () {
       final registered = bridgeClassNamed('MemoryBridge').methods.keys.toSet();
       expect(
         registered,
@@ -271,7 +278,7 @@ void main() {
 
   group('C.47 bridge audit — every bridged method roundtrips end-to-end', () {
     test(
-        'each of the 30 methods runs through the interpreter and is recorded',
+        'each of the 31 methods runs through the interpreter and is recorded',
         () async {
       // Seed canned domain results so every outbound flattening leg has
       // something to read. Inbound legs are observed via the doubles'
@@ -357,6 +364,8 @@ void main() {
         'updateCentroid': "await mem.updateCentroid('Claim', [0.1, 0.2]);",
         'findUncertain':
             "await mem.findUncertain('Claim', low: 0.0, high: 1.0);",
+        'aggregateProfilesIntoGlobal':
+            'await mem.aggregateProfilesIntoGlobal();',
       };
       const substrateBodies = <String, String>{
         'send': "await sub.send('q', llmRoute: 'fast');",
@@ -437,7 +446,7 @@ Future<Object?> main(SubstrateBridge sub) async {
 
 /// Recording `TomBrainMemoryClient`. `called` accumulates the names of
 /// the bridge methods that reached it via the interpreter.
-class _AuditMemoryClient implements TomBrainMemory {
+class _AuditMemoryClient implements TomBrainMemory, AggregatingMemory {
   _AuditMemoryClient(this._stacks);
 
   final _AuditStackApi _stacks;
@@ -560,6 +569,17 @@ class _AuditMemoryClient implements TomBrainMemory {
   }) async {
     called.add('findUncertain');
     return const <NodeId>[];
+  }
+
+  @override
+  Future<Map<String, Object?>> aggregateProfilesIntoGlobal() async {
+    called.add('aggregateProfilesIntoGlobal');
+    return const <String, Object?>{
+      'ran': true,
+      'sourceProfiles': <String>[],
+      'nodesScanned': 0,
+      'nodesDerived': 0,
+    };
   }
 
   @override

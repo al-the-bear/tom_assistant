@@ -48,6 +48,10 @@ final class BridgedPrimitiveCatalog {
     'updateCentroid',
     'findUncertain',
     'updateProcedureMetrics',
+    // The cross-profile global-aggregation trigger (memory § 2.6, Phase 2).
+    // `dream_aggregate_v1` declares it in `requires`; it delegates to the
+    // engine's `AggregatingMemory` seam.
+    'aggregateProfilesIntoGlobal',
   };
 
   /// Substrate primitives (C.13), re-exposed by `SubstrateBridge`.
