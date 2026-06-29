@@ -52,7 +52,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
         ReloadingRoleRegistry,
         RoleRegistry,
         WirePrompt,
-        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream;
+        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory;
 import 'package:test/test.dart';
 
 /// The committed cognition config tree (`Directory.current` is the package root
@@ -122,7 +122,8 @@ Map<String, Object?> _stubInputs() => <String, Object?>{
 /// (the same construction `provision_brain` performs).
 RoleRegistry _fileBackedRoles(String configRoot) =>
     ReloadingRoleRegistry.reloading(
-      base: bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream(),
+      base:
+          bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory(),
       rolesDir: Directory('$configRoot/roles'),
     ).latest;
 

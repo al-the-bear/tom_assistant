@@ -11,7 +11,7 @@
 // dirs. This file pins the *run* obligation the unit tests cannot see: that
 // the committed bomber config tree actually carries a present, non-blank prose
 // pair for every role the live roster
-// (`bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream()`)
+// (`bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory()`)
 // registers — so no live role silently degrades to its in-code fallback — and
 // that there are no orphan prose files for ids the roster does not contain.
 //
@@ -47,7 +47,7 @@ void main() {
 
   setUpAll(() {
     liveRoster =
-        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream();
+        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory();
     cognitionConfig = CognitionConfigLoader.loadFromDir(_cognitionRoot());
     rolesDir = Directory(
       '${_cognitionRoot()}${Platform.pathSeparator}'
@@ -88,13 +88,15 @@ void main() {
       );
     });
 
-    test('the roster is the full thirty-one-role live cognition (regression on '
+    test('the roster is the full thirty-two-role live cognition (regression on '
         'silent roster shrinkage)', () {
       // The number is load-bearing only as a tripwire: if a future roster
       // change adds or drops roles, this forces a deliberate update here and a
       // matching prose-file change, rather than a silent coverage gap. The
-      // thirty-first role is `memory_curator` (dream-subsystem redesign part f).
-      expect(liveRoster.length, equals(31));
+      // thirty-second role is `history_compactor` (completion-plan item 4,
+      // HC-81) — the dedicated home the engine-side `HistoryCompactor` routes
+      // under, composed on after the eight dreaming roles.
+      expect(liveRoster.length, equals(32));
     });
   });
 

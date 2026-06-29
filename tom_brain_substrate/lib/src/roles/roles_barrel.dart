@@ -144,6 +144,15 @@ export 'planning/planning_barrel.dart';
 // composes the full thirty-role live roster (core + retrieval + procedure +
 // creation + planning + dream).
 export 'dream/dream_barrel.dart';
+// Completion-plan item 4 (HC-81) — the single conversation-history role
+// (`history_compactor`). A separate, optional roster (like the retrieval /
+// procedure / creation / planning / dream rosters): `bootstrapRoleRegistry()`
+// still returns exactly the six core roles;
+// `bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory()`
+// composes the full thirty-two-role live roster (core + retrieval + procedure +
+// creation + planning + dream + history). It is the dedicated home the
+// engine-side `HistoryCompactor` routes under, replacing the `recaller` stopgap.
+export 'history/history_barrel.dart';
 export 'role_budget_defaults.dart';
 export 'role_registry.dart';
 export 'role_template.dart';

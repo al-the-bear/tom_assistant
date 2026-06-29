@@ -333,6 +333,15 @@ class _NoopProfileRegistry implements MemoryProfileRegistry {
       throw UnimplementedError(
         'readInProfile is not exercised by this double.',
       );
+
+  @override
+  Future<T> writeInProfile<T>(
+    String name,
+    Future<T> Function(TomBrainMemoryClient body) body,
+  ) =>
+      throw UnimplementedError(
+        'writeInProfile is not exercised by this double.',
+      );
 }
 
 class _NoopStackApi implements StackApi {

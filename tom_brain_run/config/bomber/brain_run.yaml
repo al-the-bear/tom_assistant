@@ -316,6 +316,15 @@ substrate:
     repetition_detector:
       - providerId: omlx
         model: gemma-4-26b-a4b-it-4bit
+    # Conversation-history compaction role. The engine-side `HistoryCompactor`
+    # folds a session's pending verbatim turns into its running summary under
+    # this role (the dedicated first-class home, replacing the `recaller`
+    # stopgap, HC-81). It runs on both the answer and Telegram lanes whenever a
+    # session's verbatim window overflows; without a route the fold would throw
+    # `RoleNotFound` the moment compaction triggers.
+    history_compactor:
+      - providerId: omlx
+        model: gemma-4-26b-a4b-it-4bit
   embedding:
     providerId: ollama
     model: nomic-embed-text

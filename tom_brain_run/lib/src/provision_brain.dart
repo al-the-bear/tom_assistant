@@ -103,7 +103,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
         ReloadingRoleRegistry,
         SubstrateConfig,
         TomBrainSubstrateClient,
-        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream;
+        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory;
 
 import 'agent_sdk_llm_provider.dart' show AgentSdkLlmProvider;
 import 'api_key_persist.dart' show appendApiKeyToRunConfig;
@@ -859,7 +859,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     // per `sub.run`).
     roleProseReload = ReloadingRoleRegistry.reloading(
       base:
-          bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream(),
+          bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory(),
       rolesDir: Directory(
         '${cognition.root}/${cognitionConfig.registry.rolesFolder}',
       ),
@@ -909,7 +909,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // tree is configured. No global ceiling exists yet, so none is passed (the
   // clamp composes against the real ceilings once they are wired, SCP-12).
   final Set<String> knownRoles = (roleProseReload?.latest ??
-          bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream())
+          bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory())
       .ids
       .toSet();
   final String? cognitionRoot = cognition?.root;

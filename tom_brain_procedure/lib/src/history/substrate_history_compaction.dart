@@ -25,14 +25,15 @@
 // [HistoryCompactionPrompt.user]; this seam folds those two into the single
 // `prompt` input, matching every other `sub.llm` call shape.
 //
-// Role choice (stopgap, tracked): the compaction call routes under the existing
-// registered + routed `recaller` role, whose objective — "compose a concise
-// summary … do not add facts beyond what the items support" — is the closest
-// live match to compaction ("fold a batch into a bounded summary, faithfully").
-// A dedicated first-class `history_compactor` role (its own roster entry, route,
-// and `<role>.persona.md` / `.objective.md` prose) is the cleaner long-term
-// home and is deferred — see the completion plan. [roleId] is a parameter so
-// that wiring swaps in the dedicated role without touching this class.
+// Role choice: the compaction call routes under the dedicated first-class
+// `history_compactor` role — its own roster entry (the substrate's `history`
+// roster group), its own `roleRoutes` route, and its own
+// `history_compactor.persona.md` / `.objective.md` prose. The role's objective —
+// "fold the new turns into the running summary faithfully; preserve every
+// decision, commitment, named entity, and open thread; add nothing the turns do
+// not state" — is purpose-written for compaction (it replaced the earlier
+// `recaller` stopgap, HC-81). [roleId] is still a parameter so a richer assembly
+// can override it without touching this class.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
@@ -46,9 +47,10 @@ import 'history_compactor.dart' show HistoryCompactionPrompt;
 
 /// The registered role the compaction completion routes under by default.
 ///
-/// A stopgap reuse of the live `recaller` role (see the file header); a
-/// dedicated `history_compactor` role is the tracked follow-up.
-const String historyCompactionRoleId = 'recaller';
+/// The dedicated first-class `history_compactor` role (substrate `history`
+/// roster group; see the file header) — purpose-written for faithful summary
+/// folding, replacing the earlier `recaller` stopgap (HC-81).
+const String historyCompactionRoleId = 'history_compactor';
 
 /// The default budget for one compaction completion.
 ///

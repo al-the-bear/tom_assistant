@@ -280,9 +280,10 @@ void main() {
     });
 
     test('the full live roster is preserved when overlaid file-backed', () {
-      // The run wires the loader over the full thirty-role roster; an
+      // The run wires the loader over the full thirty-two-role roster; an
       // empty roles dir must leave every role intact and assemble-able.
-      final base = bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream();
+      final base =
+          bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory();
       final registry = loadFileBackedRoleRegistry(base: base, rolesDir: rolesDir);
 
       expect(registry.ids.toList(), equals(base.ids.toList()));

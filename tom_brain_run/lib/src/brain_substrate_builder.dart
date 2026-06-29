@@ -140,12 +140,14 @@ InProcessTomBrainSubstrate buildSubstrate(
     // `decomposer` / `estimator` / `plan_evaluator` / `re_planner` calls
     // unroutable; and registering only the planning roster left the dreaming
     // agents' `extractor` / `connector` / `synthesiser` / `inquisitor` /
-    // `pruner` / `reconsolidator` / `repetition_detector` calls unroutable.
-    // This roster registers all their templates; the config's `roleRoutes`
-    // supplies their routes (both halves are required for a role to dispatch).
+    // `pruner` / `reconsolidator` / `repetition_detector` calls unroutable; and
+    // registering only the dreaming roster left the engine-side
+    // `HistoryCompactor`'s `history_compactor` call unroutable. This roster
+    // registers all their templates; the config's `roleRoutes` supplies their
+    // routes (both halves are required for a role to dispatch).
     roleRegistry: roleProseReload?.latest ??
         roleRegistry ??
-        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningAndDream(),
+        bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory(),
     // When present, the assembly authority — an edited role-prose file is picked
     // up on the next call (§ 6.3 AUTH-5). When null the facade wraps the
     // `roleRegistry` above in a `fixed`, never-reloading holder.

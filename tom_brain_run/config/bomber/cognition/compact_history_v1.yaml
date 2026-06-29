@@ -6,8 +6,9 @@
 # new verbatim turns) are injected here; the assistant-dedication anchor is
 # applied structurally by the substrate at the call site (PE-7) — it is NOT a
 # placeholder this template carries. The compaction completion routes under the
-# registered `recaller` role by default (closest live semantic match; a
-# dedicated `history_compactor` role is the tracked follow-up).
+# dedicated first-class `history_compactor` role (its own roster entry, route,
+# and `history_compactor.persona.md` / `.objective.md` prose) — purpose-written
+# for faithful summary folding, replacing the earlier `recaller` stopgap (HC-81).
 #
 # Faithfulness over brevity: the fold must never invent facts the turns do not
 # support, and must preserve decisions, commitments, named entities, and open
