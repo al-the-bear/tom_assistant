@@ -67,12 +67,12 @@ dependencies:
   # `YamlMap`/`YamlList` node leaks into a `RetrievalEvalConfig`.
   tom_core_agentic:
     path: ../../tom_ai/core/tom_core_agentic
-  tom_basics: ^1.0.0
+  tom_basics: ">=1.0.0"
   # The unified `tom_brain` CLI binary (CLI plan step #8) is built on the
   # `tom_build_base` v2 tool framework (ToolRunner + ToolDefinition +
   # CommandExecutor), so `--help` / `--version` / subcommand dispatch / error
   # formatting are uniform with every other workspace CLI rather than hand-rolled.
-  tom_build_base: ^2.6.21
+  tom_build_base: ">=2.6.25"
   # The production entrypoint (`bin/tom_brain.dart serve`) and the #31 Verify suite
   # both manufacture the *real* substrate (OpenAI-passthrough + Ollama
   # providers), whose default wire HTTP client is sourced from the
@@ -117,7 +117,7 @@ dependencies:
   # `Stream<SdkMessage>` into substrate stream events. The provider lives in the
   # run layer (not the transport-pure substrate) precisely because it depends on
   # this bridge package and a live VS Code window.
-  tom_vscode_scripting_api: ^1.1.0
+  tom_vscode_scripting_api: ">=1.1.0"
 
 dev_dependencies:
   lints: ^6.0.0
@@ -138,7 +138,7 @@ dev_dependencies:
   # from the access package's test support) injected via the
   # `telegramChatApiFactory` seam — no televerse `Bot`, no socket. `tom_chattools`
   # ships the abstract `ChatApi` the double implements.
-  tom_chattools: ^1.0.2
+  tom_chattools: ">=1.0.2"
   # NOTE: `dart_mcp` + `stream_channel` are now main dependencies (above): the
   # production MCP channel factory needs them in `lib/`. The #32 LIVE end-to-end
   # test still drives a `TomBrainMemoryMcpServer` over an in-host

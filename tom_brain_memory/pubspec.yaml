@@ -85,7 +85,7 @@ dependencies:
   # workspace. The local edit to tom_basics still flows through, because
   # tom_basics's published version matches what's on disk for the
   # workspace's Phase A timeline.
-  tom_basics: ^1.0.0
+  tom_basics: ">=1.0.0"
   tom_core_kernel:
     path: ../../tom_ai/core/tom_core_kernel
   tom_core_server:

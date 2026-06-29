@@ -31,7 +31,7 @@ dependencies:
   # dep cannot coexist with a hosted dep of the same name without an override,
   # which the workspace rule forbids). `^2.6.21` is the version the whole brain
   # closure already locks.
-  tom_build_base: ^2.6.21
+  tom_build_base: ">=2.6.25"
   # The source-authoring surface (§ 6.3, AUTH-3) validates a procedure script
   # *before* it lands. The gate must be the brain's own gate, never a divergent
   # copy: a reimplemented validator could accept a script the brain rejects (or
