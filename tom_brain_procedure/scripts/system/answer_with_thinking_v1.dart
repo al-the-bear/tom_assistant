@@ -17,9 +17,10 @@
 /// # Only a wall-clock deadline (§ 5.4): a foreground user prompt is virtually
 /// # unlimited on every count dimension, exactly as `answer_with_memory_v1`.
 /// # 14400000 ms (240 min) is the spec's external default — the **only**
-/// # non-confirmation exit, a runaway-stop for a genuinely hung run, enforced
-/// # externally by the engine (the body cannot read the clock; agent-loop
-/// # completion plan § 3.3). Re-entry is bounded by the completion-confirmation
+/// # non-confirmation exit, a runaway-stop for a genuinely hung run. The body
+/// # reads its remaining wall-clock from the `budget` view and stops gracefully
+/// # with `incomplete = true`; the engine's external cancel is the hard backstop
+/// # (agent-loop completion plan § 3.3). Re-entry is bounded by the confirmation
 /// # contract, not a count cap: the loop re-enters while the critique rejects, or
 /// # while an accepted draft's completion-confirmation says `CONTINUE`.
 /// inputs:
@@ -107,15 +108,15 @@
 // empty or unparseable reply — the never-hang default) finishes. The
 // confirmation turn streams to the **thinking** channel (§ 9.2), so its verdict
 // is an out-of-band notice that never leaks into the answer. The single
-// non-confirmation exit is the wall-clock runaway-stop (§ 3.3), enforced
-// externally by the engine: the body cannot read the clock, so it loops purely
-// on `!finished`.
+// non-confirmation exit is the wall-clock runaway-stop (§ 3.3): at the foot of
+// each iteration the body reads the run's remaining wall-clock from the `budget`
+// view (§ 5.4.2) and, once it has hit zero *and a draft already exists*, exits
+// gracefully with that last best-effort draft and `incomplete = true`.
 //
-// The body always exits with a critique-accepted, confirmed-complete answer, so
-// `incomplete` is always `false` here (the only `incomplete = true` source is
-// the external wall-clock runaway-stop, which is not observable in the body —
-// agent-loop plan § 3.4). A foreground prompt is therefore never answered with
-// silence: an answer is always produced, jointly authored by the run and the
+// The body normally exits with a critique-accepted, confirmed-complete answer
+// (`incomplete = false`); the only `incomplete = true` exit is that wall-clock
+// runaway-stop. Either way a foreground prompt is never answered with silence:
+// a best-effort answer is always produced, jointly authored by the run and the
 // recalled memory.
 //
 // ── Persisting the exchange (§ 4.1, mirrors `answer_with_memory_v1`) ─────
@@ -140,15 +141,18 @@
 // (`mem.persist` / `mem.edge`), `substrate_bridge` (`sub.run` / `sub.embed`),
 // `tool_bridge` (`tool.invoke` — the `todo.*` family the todo-based termination
 // reads and writes; the engine binds the per-run `tool` global on every run),
-// and `primitives_native` (the engine-native `runProcedure`). Every completion
-// is a `sub.run` call that names a registered prompt whose role assembles
-// persona + the assistant-dedication anchor at the substrate's assembly time —
-// it can never hand the substrate a pre-assembled wire prompt (principle 5).
+// `budget_view` (the read-only `budget` global the wall-clock runaway-stop reads
+// `budget.remainingTimeBudget` from, § 5.4.2; bound on every run), and
+// `primitives_native` (the engine-native `runProcedure`). Every completion is a
+// `sub.run` call that names a registered prompt whose role assembles persona +
+// the assistant-dedication anchor at the substrate's assembly time — it can
+// never hand the substrate a pre-assembled wire prompt (principle 5).
 import 'package:tom_brain_procedure/src/api/procedure_inputs.dart';
 import 'package:tom_brain_procedure/src/api/procedure_result.dart';
 import 'package:tom_brain_procedure/src/bridges/memory_bridge.dart';
 import 'package:tom_brain_procedure/src/bridges/substrate_bridge.dart';
 import 'package:tom_brain_procedure/src/bridges/tool_bridge.dart';
+import 'package:tom_brain_procedure/src/budget/budget_view.dart';
 import 'package:tom_brain_procedure/src/primitives_native/primitives_native.dart';
 
 /// The registered-prompt id prefix for the thinking stages (§5.1). Each stage
@@ -221,6 +225,9 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
   final pushedTodoIds = <String>[];
   var iteration = 0;
   var finished = false;
+  // Set only by the wall-clock runaway-stop (§ 3.3) — the one non-confirmation
+  // exit. A normally-confirmed answer leaves this false.
+  var incomplete = false;
 
   // The exit condition is folded into the loop guard rather than using `break`:
   // the d4rt interpreter does not honour a `break` inside this async `while` (it
@@ -334,15 +341,29 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
       finished = false;
     }
 
+    // Wall-clock runaway-stop (§ 3.3) — the only non-confirmation exit. Checked
+    // at the foot of every iteration (so a runaway *REJECT* chain stops too, not
+    // just a runaway CONTINUE chain), and only once a draft exists so the
+    // graceful exit always returns a best-effort answer rather than silence. A
+    // `null` remaining means the header left the wall-clock dimension uncapped —
+    // never tripped. The engine's external cancel stays the hard backstop for a
+    // run that never produced a draft.
+    if (!finished && draft.isNotEmpty) {
+      final remaining = budget.remainingTimeBudget;
+      if (remaining != null && remaining <= 0) {
+        finished = true;
+        incomplete = true;
+      }
+    }
+
     iteration = iteration + 1;
   }
 
-  // The body only exits when finished — a critique-accepted, todo-clear answer.
-  // `incomplete` is therefore always false here; the only `incomplete = true`
-  // source is the external wall-clock runaway-stop (§ 3.4), not observable in
-  // the body. Never silence (gap-hunt § 6.5).
+  // The body exits either on a critique-accepted, confirmed-complete answer
+  // (`incomplete` stays false) or on the wall-clock runaway-stop above
+  // (`incomplete == true`). Either way `draft` holds a best-effort answer — never
+  // silence (gap-hunt § 6.5).
   final answer = draft;
-  const incomplete = false;
 
   // Persist the exchange (§ 4.1). The body has no run id, so writes carry the
   // procedure id as the producer (Q-D.39.3).

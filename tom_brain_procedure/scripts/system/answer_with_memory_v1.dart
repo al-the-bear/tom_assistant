@@ -56,8 +56,11 @@
 // session todo store and, while open todos remain, re-enters `sub.run` with an
 // `open_todo_reminder` folded into the prompt and the accumulating answer
 // carried forward so the next pass sees what was already drafted. The sole
-// non-todo exit is the wall-clock runaway-stop, enforced externally by the
-// engine (§ 3.3), so the body itself loops purely on `!finished`.
+// non-confirmation exit is the wall-clock runaway-stop (§ 3.3): the body reads
+// the run's remaining wall-clock from the `budget` view (§ 5.4.2) and, once it
+// has hit zero, exits gracefully with the last best-effort draft and
+// `incomplete = true` — the graceful counterpart of the engine's external hard
+// cancel, never a silent mid-answer kill.
 //
 // The bootstrap "zero-work exit" hazard (§ 3.2) cannot arise: termination is
 // only evaluated *after* a completed `sub.run` answer, so the loop always
@@ -112,6 +115,9 @@
 //   - `…/src/bridges/substrate_bridge.dart` brings `sub` into scope so
 //     `sub.run(...)` (the answering entry point) and `sub.embed(...)` (the
 //     persist/classify embeddings) resolve;
+//   - `…/src/budget/budget_view.dart` brings the read-only `budget` global into
+//     scope so the wall-clock runaway-stop can read `budget.remainingTimeBudget`
+//     (§ 5.4.2) — bound on every run, so it is always present;
 //   - `…/src/bridges/tool_bridge.dart` brings `tool` into scope so the
 //     outer-loop termination probe `tool.invoke('todo.list', …)` resolves;
 //   - `…/src/primitives_native/primitives_native.dart` brings the bare
@@ -131,6 +137,7 @@ import 'package:tom_brain_procedure/src/api/procedure_result.dart';
 import 'package:tom_brain_procedure/src/bridges/memory_bridge.dart';
 import 'package:tom_brain_procedure/src/bridges/substrate_bridge.dart';
 import 'package:tom_brain_procedure/src/bridges/tool_bridge.dart';
+import 'package:tom_brain_procedure/src/budget/budget_view.dart';
 import 'package:tom_brain_procedure/src/primitives_native/primitives_native.dart';
 
 /// The registered prompt the answering step runs (§ 7.4). Resolving it yields
@@ -228,6 +235,7 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 
   var answer = '';
   var finished = false;
+  var incomplete = false;
   var reminder = '';
   while (!finished) {
     final completion = await sub.run(
@@ -264,13 +272,28 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
     final reply = replyText is String ? replyText : '';
     finished = _isFinished(reply);
     if (!finished) {
-      // The model wants to keep going. Record the draft and the are-you-done
-      // exchange as ordinary chat turns, fold the `continuation_hint` reminder
-      // (also a registered fragment now) into the next pass's prompt, then
-      // re-enter (§ 3.1 revision).
-      history.add(<String, Object?>{'user': text, 'assistant': answer});
-      history.add(<String, Object?>{'user': question, 'assistant': reply});
-      reminder = await sub.render(_continuationHintPromptId);
+      // Wall-clock runaway-stop (§ 3.3) — the only non-confirmation exit. The
+      // model wants another pass, but a genuinely hung run must still stop: read
+      // the run's remaining wall-clock from the `budget` view and, once it has
+      // hit zero, finish gracefully with the last best-effort draft and
+      // `incomplete = true`. A `null` remaining means the header left the
+      // wall-clock dimension uncapped — never tripped. (`<= 0` rather than
+      // `== 0` is belt-and-braces; the view already clamps remaining at zero.)
+      // This is the graceful counterpart of the engine's external hard cancel,
+      // checked here *after* a draft exists so the exit is never silent.
+      final remaining = budget.remainingTimeBudget;
+      if (remaining != null && remaining <= 0) {
+        incomplete = true;
+        finished = true;
+      } else {
+        // The model wants to keep going. Record the draft and the are-you-done
+        // exchange as ordinary chat turns, fold the `continuation_hint` reminder
+        // (also a registered fragment now) into the next pass's prompt, then
+        // re-enter (§ 3.1 revision).
+        history.add(<String, Object?>{'user': text, 'assistant': answer});
+        history.add(<String, Object?>{'user': question, 'assistant': reply});
+        reminder = await sub.render(_continuationHintPromptId);
+      }
     }
   }
 
@@ -365,12 +388,12 @@ Future<Map<String, Object?>> run(ProcedureInputs inputs) async {
 
   // The engine reads `producedNodeIds` to drive the run recorder's
   // `produced_by` edge (Conclusion → ProcedureRun), then strips the key so
-  // `answer` and `incomplete` stay the surfaced outputs. `incomplete` is always
-  // `false` on this path: the only non-todo exit (the wall-clock runaway-stop,
-  // § 3.3) is enforced externally by the engine, not observable here.
+  // `answer` and `incomplete` stay the surfaced outputs. `incomplete` is `true`
+  // only when the loop took the wall-clock runaway-stop above (§ 3.3) — the one
+  // non-confirmation exit; a normally-confirmed answer reports `false`.
   return <String, Object?>{
     'answer': answer,
-    'incomplete': false,
+    'incomplete': incomplete,
     'producedNodeIds': [conclusionId],
   };
 }

@@ -40,11 +40,14 @@
 //     invocation's `sessionId`, exposed as `engine.sessionTodoStores`. The tests
 //     read and seed it directly.
 //
-// Test 5 (wall-clock runaway-stop, § 3.3) is `skip`-ped: it needs the loop body
-// to read a deadline, but the cognition layer has no clock primitive today.
-// Forcing it deterministically requires a new primitive, tracked in
-// `open_topics.tom_brain.md`. The skipped test documents the intended assertions
-// so it can be un-skipped once that primitive lands.
+// Test 5 (wall-clock runaway-stop, § 3.3) drives the body-readable deadline: the
+// loop reads the run's remaining wall-clock from the `budget` view
+// (`BudgetView.remainingTimeBudget`, § 5.4.2), which the engine binds on every
+// run. The test injects a mutable clock the scripted substrate jumps past the
+// procedure's `wallClockMs` budget once the run is under way, scripts an
+// always-`CONTINUE` loop (which would otherwise never stop), and asserts both
+// agent-loop procedures still return a non-empty best-effort answer with
+// `incomplete == true` — the only non-confirmation exit.
 
 import 'dart:async';
 import 'dart:io';
@@ -102,19 +105,25 @@ void main() {
     );
   });
 
-  ProcedureEngine engineFor(Iterable<LoadedProcedure> procedures) =>
+  // `now` defaults to a fixed clock (elapsed always 0 ⇒ the wall-clock deadline
+  // never trips), so every test but T5 is unaffected. T5 passes a mutable clock
+  // it advances past the budget to drive the runaway-stop (§ 3.3).
+  ProcedureEngine engineFor(
+    Iterable<LoadedProcedure> procedures, {
+    DateTime Function()? now,
+  }) =>
       ProcedureEngine(
         resolver: ProcedureResolver(procedures),
         memory: memory,
         memoryBridge: memoryBridge,
         substrateBridge: substrateBridge,
-        now: () => DateTime.utc(2026, 6, 12, 12, 0, 0),
+        now: now ?? () => DateTime.utc(2026, 6, 12, 12, 0, 0),
       );
 
-  Future<ProcedureEngine> buildEngine() async {
+  Future<ProcedureEngine> buildEngine({DateTime Function()? now}) async {
     final store = DiskProcedureStore(systemDir: Directory('scripts/system'));
     final resolver = await ProcedureResolver.fromStore(store);
-    return engineFor(resolver.ids.map(resolver.resolve).toList());
+    return engineFor(resolver.ids.map(resolver.resolve).toList(), now: now);
   }
 
   Future<ProcedureOutcome> runMemory(
@@ -299,22 +308,55 @@ void main() {
   });
 
   group('T5 wall-clock runaway-stop (§ 3.3 / § 6.5)', () {
+    // A mutable clock the substrate jumps 5 h past run-start (> the procedures'
+    // 240-min `wallClockMs` budget) on the first completion, so the loop body
+    // observes `budget.remainingTimeBudget == 0` after producing its first draft.
+    // The substrate always confirms CONTINUE — without the deadline these loops
+    // would never terminate — so the runaway-stop is the only thing that exits.
+    final base = DateTime.utc(2026, 6, 12, 12, 0, 0);
+
     test(
-      'with the deadline tripped, the loop exits incomplete with a non-empty '
-      'answer (never silent)',
-      () async {
-        // Intended contract once a body-readable deadline primitive exists:
-        //   - force the deadline into the past;
-        //   - script a loop that always answers CONTINUE;
-        //   - assert the run still returns a non-empty answer with
-        //     incomplete == true (the only non-confirmation exit, § 3.3).
-        // Cannot be driven today: the cognition layer has no clock primitive,
-        // so the body cannot gracefully observe `_deadlineTripped()`. Tracked
-        // in open_topics.tom_brain.md.
-      },
-      skip: 'needs a body-readable deadline primitive (§ 3.3); see '
-          'open_topics.tom_brain.md',
-    );
+        'memory path: with the deadline tripped, the loop exits incomplete with '
+        'a non-empty answer (never silent)', () async {
+      var clock = base;
+      substrate.confirmationVerdicts = <String>[];
+      substrate.defaultConfirmation = 'CONTINUE';
+      substrate.answerTurns = <_Turn>[_Turn.text('best-effort partial answer')];
+      substrate.onCompletion = () => clock = base.add(const Duration(hours: 5));
+
+      final engine = await buildEngine(now: () => clock);
+      final outcome = await runMemory(engine, 'a never-ending request',
+          sessionId: 's-deadline-mem');
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(outcome.result!.output<String>('answer'), isNotEmpty,
+          reason: 'the runaway-stop returns the last best-effort draft');
+      expect(outcome.result!.output<bool>('incomplete'), isTrue,
+          reason: 'the wall-clock runaway-stop is the only incomplete exit');
+    });
+
+    test(
+        'thinking path: with the deadline tripped, the loop exits incomplete '
+        'with a non-empty answer (never silent)', () async {
+      seedRecall();
+      var clock = base;
+      substrate.thinkingMode = true;
+      // Every critique ACCEPTs (so the loop reaches the confirmation gate) and
+      // every confirmation says CONTINUE (so only the deadline can stop it).
+      substrate.confirmationVerdicts = <String>[];
+      substrate.defaultConfirmation = 'CONTINUE';
+      substrate.onCompletion = () => clock = base.add(const Duration(hours: 5));
+
+      final engine = await buildEngine(now: () => clock);
+      final outcome = await runThinking(engine, 'a never-ending deliberation',
+          sessionId: 's-deadline-think');
+
+      expect(outcome.status, TrailOutcomeStatus.accepted);
+      expect(outcome.result!.output<String>('answer'), isNotEmpty,
+          reason: 'the runaway-stop returns the last best-effort draft');
+      expect(outcome.result!.output<bool>('incomplete'), isTrue,
+          reason: 'the wall-clock runaway-stop is the only incomplete exit');
+    });
   });
 
   group('T6 the answering prompt carries the todo-discipline block (§ 4 / § 6.6)',
@@ -380,6 +422,11 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
   /// stage making progress on the session todo store.
   void Function(int draftCount)? onSynthesis;
 
+  /// Fired at the start of every completion — the seam T5 uses to advance a
+  /// mutable clock past the run's wall-clock budget once the run is under way,
+  /// so the loop body observes `budget.remainingTimeBudget == 0`.
+  void Function()? onCompletion;
+
   final Map<String, int> _byRole = <String, int>{};
 
   /// The prompts of every tools-bearing completion, in order.
@@ -400,6 +447,7 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
   Stream<LlmStreamEvent> completeStream(LlmCall call) {
     final role = call.roleId;
     _byRole[role] = (_byRole[role] ?? 0) + 1;
+    onCompletion?.call();
     final hasTools = call.options.toolCatalogue.isNotEmpty;
     final promptInput = call.inputs['prompt'];
     final prompt = promptInput is String ? promptInput : '';
