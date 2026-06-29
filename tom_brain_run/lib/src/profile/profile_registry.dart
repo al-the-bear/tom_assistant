@@ -26,6 +26,18 @@
 // reconciling the § 3.8 example's friendlier form onto the realised shape
 // (SCP-3) rather than cross-package-refactoring a public factory out of
 // `tom_brain_procedure`.
+//
+// ── Runtime authoring (I-6, Phase 1) ────────────────────────────────────
+//
+// The registry is built once at boot but is *runtime-authorable*: `author`
+// upserts a profile and `remove` deletes one, each running the **same**
+// environmental validation as boot (extracted into `_validateProfile`, shared
+// with `validateAtBoot`) against a captured `ProfileAuthoringContext`. `default`
+// may be redefined but never removed (SC-5: it must always exist). This is the
+// load-bearing engine; the *persisted* write surface that would drive it — the
+// Observatory `PUT` route + on-disk `yaml_edit` (procedure § 24.8 /
+// `prompt_tracing.md` § 6.3) — is the deferred Phase 2, so today no inbound
+// channel mutates the registry and an operator still edits config + reboots.
 
 import 'dart:io' show Directory, File, FileSystemException;
 
@@ -301,35 +313,102 @@ final class ProfileRegistry {
     void Function(String message)? warn,
   }) {
     for (final p in _profiles.values) {
-      final role = p.role;
-      if (role != null && !knownRoles.contains(role)) {
-        throw ProfileConfigException(
-          'profile "${p.id}" names unregistered role "$role"',
-          code: 'profile.unknown_role',
-          path: 'profiles.${p.id}.role',
-        );
+      _validateProfile(
+        p,
+        knownRoles: knownRoles,
+        overlayDirExists: overlayDirExists,
+        budgetCeiling: budgetCeiling,
+        rateLimitCeiling: rateLimitCeiling,
+        warn: warn,
+      );
+    }
+  }
+
+  /// The per-profile environmental check shared by [validateAtBoot] and the
+  /// runtime [author] path, so an authored profile passes exactly the boot
+  /// gates (I-6). Throws on the first unknown role / missing overlay; a
+  /// budget/rate-limit that exceeds the ceiling is *warned*, never rejected
+  /// (SC-8 — the real clamp happens at [resolve]).
+  static void _validateProfile(
+    Profile p, {
+    required Set<String> knownRoles,
+    required bool Function(String overlayName) overlayDirExists,
+    ProfileBudget? budgetCeiling,
+    ProfileRateLimits? rateLimitCeiling,
+    void Function(String message)? warn,
+  }) {
+    final role = p.role;
+    if (role != null && !knownRoles.contains(role)) {
+      throw ProfileConfigException(
+        'profile "${p.id}" names unregistered role "$role"',
+        code: 'profile.unknown_role',
+        path: 'profiles.${p.id}.role',
+      );
+    }
+    final overlay = p.templateOverlay;
+    if (overlay != null && !overlayDirExists(overlay)) {
+      throw ProfileConfigException(
+        'profile "${p.id}" templateOverlay "$overlay" directory not found',
+        code: 'profile.overlay_missing',
+        path: 'profiles.${p.id}.templateOverlay',
+      );
+    }
+    if (warn != null) {
+      final clampedBudget = _clampBudget(p.budget, budgetCeiling);
+      if (clampedBudget != p.budget) {
+        warn('profile "${p.id}" budget exceeds the global ceiling; '
+            'clamped to the ceiling (SC-8)');
       }
-      final overlay = p.templateOverlay;
-      if (overlay != null && !overlayDirExists(overlay)) {
-        throw ProfileConfigException(
-          'profile "${p.id}" templateOverlay "$overlay" directory not found',
-          code: 'profile.overlay_missing',
-          path: 'profiles.${p.id}.templateOverlay',
-        );
-      }
-      if (warn != null) {
-        final clampedBudget = _clampBudget(p.budget, budgetCeiling);
-        if (clampedBudget != p.budget) {
-          warn('profile "${p.id}" budget exceeds the global ceiling; '
-              'clamped to the ceiling (SC-8)');
-        }
-        final clampedRate = _clampRateLimits(p.rateLimits, rateLimitCeiling);
-        if (clampedRate != p.rateLimits) {
-          warn('profile "${p.id}" rateLimits exceed the global ceiling; '
-              'clamped to the ceiling (SC-8)');
-        }
+      final clampedRate = _clampRateLimits(p.rateLimits, rateLimitCeiling);
+      if (clampedRate != p.rateLimits) {
+        warn('profile "${p.id}" rateLimits exceed the global ceiling; '
+            'clamped to the ceiling (SC-8)');
       }
     }
+  }
+
+  /// Authors [profile] into the registry at runtime — adds it, or replaces an
+  /// existing profile with the same [Profile.id] (I-6, Phase 1).
+  ///
+  /// Validates the single profile against the **same** environmental gates as
+  /// boot using the captured [context] (unknown `role` → `profile.unknown_role`,
+  /// missing `templateOverlay` dir → `profile.overlay_missing`; an over-ceiling
+  /// budget/rate-limit is warned, not rejected). Validation runs **before** the
+  /// upsert, so a rejected author leaves the registry unchanged. `default` may
+  /// be redefined this way (SC-Q18 / SC-Q20); it may not be [remove]d.
+  ///
+  /// This is the in-memory engine only: it does **not** persist. The durable
+  /// write surface (Observatory `PUT` + on-disk `yaml_edit`) is the deferred
+  /// Phase 2 (procedure § 24.8).
+  void author(Profile profile, ProfileAuthoringContext context) {
+    _validateProfile(
+      profile,
+      knownRoles: context.knownRoles,
+      overlayDirExists: context.overlayDirExists,
+      budgetCeiling: context.budgetCeiling,
+      rateLimitCeiling: context.rateLimitCeiling,
+      warn: context.warn,
+    );
+    _profiles[profile.id] = profile;
+  }
+
+  /// Removes the profile named [name] at runtime, returning whether one was
+  /// present (I-6, Phase 1).
+  ///
+  /// Refuses to remove the built-in `default` — it must always exist (SC-5) —
+  /// throwing [ProfileConfigException] (`profile.default_immutable`). Like
+  /// [author], this mutates only the in-memory registry; persistence is the
+  /// deferred Phase 2.
+  bool remove(String name) {
+    if (name == 'default') {
+      throw const ProfileConfigException(
+        'the built-in `default` profile cannot be removed; it must always '
+        'exist (SC-5). It may be redefined via `author`.',
+        code: 'profile.default_immutable',
+        path: 'profiles.default',
+      );
+    }
+    return _profiles.remove(name) != null;
   }
 
   /// Every profile's `defineMcpServers`, each rewritten to a profile-namespaced
@@ -605,4 +684,42 @@ final class ProfileRegistry {
     }
     return out;
   }
+}
+
+/// The boot context a runtime [ProfileRegistry.author] call validates a profile
+/// against — the same environmental dependencies [ProfileRegistry.validateAtBoot]
+/// injects (I-6).
+///
+/// A consumer captures it once from the live boot context (the shipped
+/// role-registry ids, the overlay-dir probe, the global budget/rate-limit
+/// ceilings) and reuses it for every authoring call, so an authored profile
+/// passes exactly the gates a config-loaded one does. [warn] receives the same
+/// over-ceiling clamp notices boot logs (a `null` [warn] suppresses them).
+final class ProfileAuthoringContext {
+  /// The shipped role-registry id set; a profile naming a role outside it is a
+  /// `profile.unknown_role` error.
+  final Set<String> knownRoles;
+
+  /// Tests whether a `templateOverlay` directory is present; a missing one is a
+  /// `profile.overlay_missing` error.
+  final bool Function(String overlayName) overlayDirExists;
+
+  /// The global budget ceiling a profile may only *tighten* (SC-8); an
+  /// over-ceiling value is warned (not rejected) and clamped at resolve.
+  final ProfileBudget? budgetCeiling;
+
+  /// The global rate-limit ceiling a profile may only *tighten* (SC-8).
+  final ProfileRateLimits? rateLimitCeiling;
+
+  /// Receives the over-ceiling clamp notices; `null` suppresses them.
+  final void Function(String message)? warn;
+
+  /// Captures the boot context for runtime authoring validation.
+  const ProfileAuthoringContext({
+    required this.knownRoles,
+    required this.overlayDirExists,
+    this.budgetCeiling,
+    this.rateLimitCeiling,
+    this.warn,
+  });
 }

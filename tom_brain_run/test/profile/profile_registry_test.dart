@@ -17,7 +17,12 @@
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show McpServerConfig, McpTransport;
 import 'package:tom_brain_run/tom_brain_run.dart'
-    show Profile, ProfileConfigException, ProfileRegistry, UnknownProfileException;
+    show
+        Profile,
+        ProfileAuthoringContext,
+        ProfileConfigException,
+        ProfileRegistry,
+        UnknownProfileException;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show ProfileBudget, ProfileMode, ProfileRateLimits, ResolvedProfile;
 import 'package:test/test.dart';
@@ -418,6 +423,117 @@ profiles:
     test('NS-02: no defines anywhere → empty list', () {
       final r = ProfileRegistry.fromYamlString('profiles:\n  x: {}\n');
       expect(r.namespacedDefinedServers, isEmpty);
+    });
+  });
+
+  // Runtime authoring engine (I-6, Phase 1) — `author` upserts a profile and
+  // `remove` deletes one, both with boot-identical environmental validation and
+  // the SC-5 guarantee that `default` always exists. The persisted write
+  // surface (Observatory PUT + on-disk yaml_edit) is the deferred Phase 2.
+  group('ProfileRegistry runtime authoring (I-6)', () {
+    ProfileAuthoringContext ctx({
+      Set<String> knownRoles = const <String>{},
+      bool Function(String)? overlayDirExists,
+      ProfileBudget? budgetCeiling,
+      void Function(String)? warn,
+    }) =>
+        ProfileAuthoringContext(
+          knownRoles: knownRoles,
+          overlayDirExists: overlayDirExists ?? (_) => true,
+          budgetCeiling: budgetCeiling,
+          warn: warn,
+        );
+
+    test('AUTH-01: author a new profile → resolvable like a configured one', () {
+      final r = ProfileRegistry.fromYamlString('profiles: {}\n');
+      expect(r.contains('research'), isFalse);
+      r.author(Profile(id: 'research', mode: ProfileMode.answer), ctx());
+      expect(r.contains('research'), isTrue);
+      expect(r.names, containsAll(<String>['default', 'research']));
+      expect(r.resolve('research').entryProcedure, 'answer_with_memory_v1');
+    });
+
+    test('AUTH-02: author replaces an existing profile by id', () {
+      final r = ProfileRegistry.fromYamlString(
+          'profiles:\n  s: {mode: answer}\n');
+      expect(r.profile('s')!.mode, ProfileMode.answer);
+      r.author(Profile(id: 's', mode: ProfileMode.passthrough), ctx());
+      expect(r.profile('s')!.mode, ProfileMode.passthrough);
+    });
+
+    test('AUTH-03: author may redefine the built-in default', () {
+      final r = ProfileRegistry.fromYamlString('profiles: {}\n');
+      r.author(Profile(id: 'default', mode: ProfileMode.answer), ctx());
+      expect(r.resolve('default').entryProcedure, 'answer_with_memory_v1');
+    });
+
+    test('AUTH-04: an unknown role rejects with profile.unknown_role and leaves '
+        'the registry unchanged', () {
+      final r = ProfileRegistry.fromYamlString('profiles: {}\n');
+      expect(
+        () => r.author(
+          Profile(id: 'ghosted', role: 'ghost'),
+          ctx(knownRoles: const {'researcher'}),
+        ),
+        throwsA(isA<ProfileConfigException>()
+            .having((e) => e.code, 'code', 'profile.unknown_role')),
+      );
+      expect(r.contains('ghosted'), isFalse);
+    });
+
+    test('AUTH-05: a missing overlay dir rejects with profile.overlay_missing '
+        'and leaves the registry unchanged', () {
+      final r = ProfileRegistry.fromYamlString('profiles: {}\n');
+      expect(
+        () => r.author(
+          Profile(id: 'over', templateOverlay: 'nope'),
+          ctx(overlayDirExists: (_) => false),
+        ),
+        throwsA(isA<ProfileConfigException>()
+            .having((e) => e.code, 'code', 'profile.overlay_missing')),
+      );
+      expect(r.contains('over'), isFalse);
+    });
+
+    test('AUTH-06: a looser budget warns (does not throw); stored raw, clamped '
+        'at resolve', () {
+      final r = ProfileRegistry.fromYamlString('profiles: {}\n');
+      final warnings = <String>[];
+      r.author(
+        Profile(id: 'big', budget: const ProfileBudget(maxLlmCalls: 100)),
+        ctx(
+          budgetCeiling: const ProfileBudget(maxLlmCalls: 10),
+          warn: warnings.add,
+        ),
+      );
+      expect(warnings, isNotEmpty);
+      expect(warnings.first, contains('big'));
+      expect(r.profile('big')!.budget!.maxLlmCalls, 100);
+      final resolved = r.resolve('big',
+          budgetCeiling: const ProfileBudget(maxLlmCalls: 10));
+      expect(resolved.budget!.maxLlmCalls, 10);
+    });
+
+    test('REM-01: remove an authored profile → gone, returns true', () {
+      final r = ProfileRegistry.fromYamlString('profiles: {}\n');
+      r.author(Profile(id: 'temp'), ctx());
+      expect(r.remove('temp'), isTrue);
+      expect(r.contains('temp'), isFalse);
+    });
+
+    test('REM-02: removing an absent profile returns false', () {
+      final r = ProfileRegistry.fromYamlString('profiles: {}\n');
+      expect(r.remove('never'), isFalse);
+    });
+
+    test('REM-03: removing the built-in default is refused (SC-5)', () {
+      final r = ProfileRegistry.fromYamlString('profiles: {}\n');
+      expect(
+        () => r.remove('default'),
+        throwsA(isA<ProfileConfigException>()
+            .having((e) => e.code, 'code', 'profile.default_immutable')),
+      );
+      expect(r.contains('default'), isTrue);
     });
   });
 }

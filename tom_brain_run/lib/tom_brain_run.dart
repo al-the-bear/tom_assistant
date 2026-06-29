@@ -246,7 +246,8 @@ export 'src/embed/tom_brain.dart'
 export 'src/profile/profile.dart' show Profile;
 export 'src/profile/profile_config_errors.dart'
     show ProfileConfigException, UnknownProfileException;
-export 'src/profile/profile_registry.dart' show ProfileRegistry;
+export 'src/profile/profile_registry.dart'
+    show ProfileAuthoringContext, ProfileRegistry;
 export 'src/trail_config.dart' show TrailConfig, TrailConfigException, TrailMode;
 export 'src/trail_config_loader.dart' show TrailConfigLoader;
 
