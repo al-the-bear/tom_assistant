@@ -112,6 +112,15 @@ export 'src/provision_brain.dart'
         standUpBrainProcess,
         standUpBrainProcessFromConfig;
 
+// ── Extension-H memory-profile selector: the substrate-backed host
+//    implementation of the access layer's `MemoryProfileSelector` seam
+//    (I-10 remainder; access spec § 7.4) ───────────────────────────────────
+export 'src/substrate_memory_profile_selector.dart'
+    show
+        MemoryProfileSelectorException,
+        SubstrateMemoryProfileSelector,
+        buildMemoryProfileSelector;
+
 // ── Legacy-store migration (memory-session-profiles § 11; plan step 8) ─
 export 'src/legacy_store_migration.dart'
     show LegacyMigrationOutcome, migrateLegacyMemoryRoot;

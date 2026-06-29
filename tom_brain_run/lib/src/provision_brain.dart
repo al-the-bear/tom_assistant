@@ -42,6 +42,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         IncomingTrailRecord,
         IncomingTrailSink,
         JsonFileHistoryStore,
+        MemoryProfileSelector,
         ProfileResolutionException,
         ProfileResolver,
         ProvisionedBrain,
@@ -57,7 +58,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         serveWithShelfIo,
         startBrainAccessProcess;
 import 'package:tom_brain_memory/tom_brain_memory.dart'
-    show MemoryConfig, createSqliteTomBrainMemory;
+    show MemoryConfig, MemoryConfigPaths, createSqliteTomBrainMemory;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show
         BootedBrain,
@@ -83,10 +84,12 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         MemoryAccessRecord,
         MemoryAccessSink,
         MemoryProvisioningConfig,
+        MemoryRetrievalConfig,
         OverlayResolverFactory,
         ProcedureTreeSink,
         PromptResolver,
         RouteChainResolver,
+        SelectionSettings,
         SubstrateHistoryCompaction,
         ToolAccessRecord,
         ToolAccessSink,
@@ -135,6 +138,8 @@ import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
 import 'procedure_tree_writer.dart' show ProcedureTreeWriter;
 import 'profile/profile_config_errors.dart' show UnknownProfileException;
 import 'streaming_live_trail.dart' show StreamingLiveTrailWriter;
+import 'substrate_memory_profile_selector.dart'
+    show buildMemoryProfileSelector;
 import 'summary_fanout.dart' show SummaryFanout;
 import 'telegram_inspector_impls.dart'
     show
@@ -587,6 +592,8 @@ Future<BrainProcess> standUpBrainProcess({
   ProfileResolver? profileResolver,
   List<String> Function()? configuredProfiles,
   TelegramChatApiFactory? telegramChatApiFactory,
+  MemoryProfileSelector? profileSelector,
+  SelectionSettings? selection,
 }) async {
   final ProvisionedBrain provisioned = await provisionBrain(
     substrate: substrate,
@@ -624,6 +631,8 @@ Future<BrainProcess> standUpBrainProcess({
       apiKeyPersist: apiKeyPersist,
       profileResolver: profileResolver,
       configuredProfiles: configuredProfiles,
+      profileSelector: profileSelector,
+      selection: selection,
       // Default to the real long-polling bot; a test injects a loopback
       // `ChatApi` so the Telegram edge can be driven without a live bot.
       telegramChatApiFactory:
@@ -1008,10 +1017,28 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   migrateLegacyMemoryRoot(runConfig.memory);
   final memoryConfig = runConfig.memory.withProfile(defaultMemoryProfile);
 
+  // Extension-H memory-profile selection (I-10; access spec § 7.4). The access
+  // surface owns the conversation session, so it is the surface that runs
+  // history-driven profile selection. Resolve the `selection:` block from the
+  // cognition tree's `memory_retrieval/` family (the access surface = `defaults
+  // ← access`); a deployment with no such tree gets the disabled default, so
+  // the gate below builds no selector. The selector lists the *memory* profiles
+  // (`<memory-root>/profiles/`, the recall axis) live, distinct from the SCP
+  // processing-profile axis the channels operate over.
+  final SelectionSettings selection =
+      _resolveMemoryProfileSelection(cognitionRoot);
+  final MemoryProfileSelector? profileSelector = buildMemoryProfileSelector(
+    substrate: substrate,
+    knownProfiles: () async => _listMemoryProfiles(runConfig.memory.profilesDir),
+    selection: selection,
+  );
+
   return standUpBrainProcess(
     config: runConfig.access,
     substrate: substrate,
     memoryConfig: memoryConfig,
+    profileSelector: profileSelector,
+    selection: selection,
     substrateConfig: runConfig.substrate,
     systemScriptsDir: scriptsDir,
     serve: serve,
@@ -1056,6 +1083,48 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     // `ChatApi` (null → the real long-polling bot, the production default).
     telegramChatApiFactory: telegramChatApiFactory,
   );
+}
+
+/// Resolves the Extension-H memory-profile `selection:` block for the access
+/// surface from the cognition tree's `memory_retrieval/` family (I-10; access
+/// spec § 7.4).
+///
+/// The access surface is the `defaults ← access` layer pair, so this layers
+/// `memory_retrieval/defaults.yml` then `memory_retrieval/access.yml` through
+/// [MemoryRetrievalConfig.resolveYaml] and returns the composed `.selection`.
+/// A deployment with no cognition tree, no `memory_retrieval/` directory, or no
+/// layer files gets the disabled [SelectionSettings] default — the off-by-default
+/// path the provisioner's selector gate reads to build no selector at all.
+SelectionSettings _resolveMemoryProfileSelection(String? cognitionRoot) {
+  if (cognitionRoot == null) return const SelectionSettings();
+  final Directory dir = Directory('$cognitionRoot/memory_retrieval');
+  if (!dir.existsSync()) return const SelectionSettings();
+  final List<String> layers = <String>[];
+  final File defaultsFile = File('${dir.path}/defaults.yml');
+  if (defaultsFile.existsSync()) layers.add(defaultsFile.readAsStringSync());
+  final File accessFile = File('${dir.path}/access.yml');
+  if (accessFile.existsSync()) layers.add(accessFile.readAsStringSync());
+  if (layers.isEmpty) return const SelectionSettings();
+  return MemoryRetrievalConfig.resolveYaml(layers).selection;
+}
+
+/// Lists the live *memory* profile names under [profilesDir]
+/// (`<memory-root>/profiles/`), one per directory, for the profile selector's
+/// `knownProfiles` input.
+///
+/// Read live (not cached) so a profile minted after boot is offered to the
+/// selector on the next selection. Mirrors `SqliteMemoryProfileRegistry.list()`:
+/// each immediate sub-directory name is a profile. A missing directory (no
+/// profiles materialised yet) yields the empty list.
+List<String> _listMemoryProfiles(String profilesDir) {
+  final Directory dir = Directory(profilesDir);
+  if (!dir.existsSync()) return <String>[];
+  return dir
+      .listSync()
+      .whereType<Directory>()
+      .map((d) => d.path.split(Platform.pathSeparator).last)
+      .where((name) => name.isNotEmpty)
+      .toList();
 }
 
 /// Builds the trail sinks the engine + route are wired to from the `trail:`

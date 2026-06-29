@@ -55,7 +55,7 @@
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show systemClock;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
-    show AccessLayerInstaller, AccessLayerShutdown, Dispatcher;
+    show AccessLayerInstaller, AccessLayerShutdown, Dispatcher, SelectionSettings;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show HistorySizing;
 
 import '../config/api_key_config.dart';
@@ -69,6 +69,7 @@ import '../heuristic_classifier/heuristic_kind_hint_classifier.dart';
 import '../identity/history_markdown.dart';
 import '../identity/history_store.dart';
 import '../identity/identity_resolver.dart';
+import '../identity/memory_profile_selector.dart';
 import '../identity/persona_resolver.dart';
 import '../identity/session_manager.dart';
 import 'access_assembler.dart';
@@ -192,6 +193,22 @@ final class BrainAccessConfig {
   /// access layer depends on no trail package — it only carries the function.
   final IncomingTrailSink? incomingTrailSink;
 
+  /// The Extension-H memory-profile selector seam (access spec § 7.4; PE-1):
+  /// the `profile_selector` substrate role behind the [MemoryProfileSelector]
+  /// interface, so access stays substrate-free. The run-side provisioner builds
+  /// the concrete substrate-backed selector and injects it here when
+  /// `memory_retrieval.selection.enabled` is set; `null` (the default) leaves
+  /// memory-profile selection off and every conversation recalls against the
+  /// process default profile.
+  final MemoryProfileSelector? profileSelector;
+
+  /// The Extension-H selection policy (`profile_selector` role id, default
+  /// profile, history use, re-check window, inconclusive threshold). Defaults to
+  /// the disabled [SelectionSettings] so a process with no `memory_retrieval`
+  /// selection block keeps selection off; only consulted by the [SessionManager]
+  /// when [profileSelector] is non-null.
+  final SelectionSettings selection;
+
   /// Builds an access-layer composition config.
   BrainAccessConfig({
     required this.rateLimitPolicy,
@@ -213,6 +230,8 @@ final class BrainAccessConfig {
     this.historyStore,
     this.markdownSink,
     this.incomingTrailSink,
+    this.profileSelector,
+    this.selection = const SelectionSettings(),
   }) : clock = clock ?? systemClock;
 }
 
@@ -295,6 +314,8 @@ abstract final class BrainAccessBoot {
       sessionManager: SessionManager(
         sizing: config.answerLaneSizing,
         now: config.clock,
+        profileSelector: config.profileSelector,
+        selection: config.selection,
         historyStore: config.historyStore,
         markdownSink:
             config.markdownSink ?? const NullHistoryMarkdownSink(),

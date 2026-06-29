@@ -74,10 +74,14 @@ import '../edge_security/edge_security.dart'
         JsonFileEdgeStateStore,
         MapEdgeStateStore,
         ProfileResolver;
+import 'package:tom_brain_procedure/tom_brain_procedure.dart'
+    show SelectionSettings;
+
 import '../identity/history_markdown.dart'
     show DirectoryHistoryMarkdownSink, HistoryMarkdownSink;
 import '../identity/history_store.dart'
     show HistoryStore, JsonFileHistoryStore;
+import '../identity/memory_profile_selector.dart' show MemoryProfileSelector;
 import '../identity/telegram_session_registry.dart'
     show TelegramSessionRegistry;
 import '../heuristic_classifier/heuristic_kind_hint_classifier.dart'
@@ -265,6 +269,8 @@ Future<BrainAccessProcess> startBrainAccessProcess({
   ApiKeyPersist? apiKeyPersist,
   ProfileResolver? profileResolver,
   List<String> Function()? configuredProfiles,
+  MemoryProfileSelector? profileSelector,
+  SelectionSettings? selection,
 }) async {
   // The proto spec § 12 phase 5 sequence, one extracted step each:
   final BootedAccessLayer booted = _composeAccessLayer(
@@ -276,6 +282,8 @@ Future<BrainAccessProcess> startBrainAccessProcess({
     clock: clock,
     incomingTrailSink: incomingTrailSink,
     profileResolver: profileResolver,
+    profileSelector: profileSelector,
+    selection: selection,
   );
   final AccessServer server = await _serveOpenAiAndHealth(
     booted: booted,
@@ -380,6 +388,8 @@ BootedAccessLayer _composeAccessLayer({
   required DateTime Function()? clock,
   required IncomingTrailSink? incomingTrailSink,
   required ProfileResolver? profileResolver,
+  required MemoryProfileSelector? profileSelector,
+  required SelectionSettings? selection,
 }) =>
     BrainAccessBoot.install(
       dispatcher: brain.dispatcher,
@@ -391,6 +401,8 @@ BootedAccessLayer _composeAccessLayer({
         clock: clock,
         incomingTrailSink: incomingTrailSink,
         profileResolver: profileResolver,
+        profileSelector: profileSelector,
+        selection: selection,
       ),
     );
 
@@ -591,6 +603,8 @@ BrainAccessConfig _toBrainAccessConfig(
   required DateTime Function()? clock,
   required IncomingTrailSink? incomingTrailSink,
   required ProfileResolver? profileResolver,
+  required MemoryProfileSelector? profileSelector,
+  required SelectionSettings? selection,
 }) {
   final EdgeStateStore? rateLimitStore;
   final EdgeStateStore? quotaStore;
@@ -642,6 +656,8 @@ BrainAccessConfig _toBrainAccessConfig(
     markdownSink: markdownSink,
     incomingTrailSink: incomingTrailSink,
     profileResolver: profileResolver,
+    profileSelector: profileSelector,
+    selection: selection ?? const SelectionSettings(),
   );
 }
 
