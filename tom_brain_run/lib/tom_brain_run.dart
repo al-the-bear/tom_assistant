@@ -113,6 +113,11 @@ export 'src/provision_brain.dart'
         standUpBrainProcess,
         standUpBrainProcessFromConfig;
 
+// ── Boot-time embedding-substrate reachability probe: the non-fatal startup
+//    check that reports an unreachable embedding backend once and clearly,
+//    instead of leaving it to surface as a wall of errored dream lanes ───────
+export 'src/embedding_boot_probe.dart' show probeEmbeddingReachableAtBoot;
+
 // ── Extension-H memory-profile selector: the substrate-backed host
 //    implementation of the access layer's `MemoryProfileSelector` seam
 //    (I-10 remainder; access spec § 7.4) ───────────────────────────────────

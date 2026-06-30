@@ -77,7 +77,13 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
         procedureRunNodeType,
         recentRunsStackName;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show Clock, HistoryConfig, HistorySizing, HistoryTurn, SystemClock;
+    show
+        Clock,
+        HistoryConfig,
+        HistorySizing,
+        HistoryTurn,
+        NodeTypeDecl,
+        SystemClock;
 
 import '../api/procedure_engine.dart' show ProcedureEngine;
 import '../api/procedure_invocation.dart' show ProcedureInvocation;
@@ -127,6 +133,27 @@ const String dreamSeedArgumentKey = 'source';
 /// their own. A caller that already supplied `nowMs` (a test harness, a
 /// deep-lane driver replaying a fixed instant) always wins.
 const String dreamClockArgumentKey = 'nowMs';
+
+/// Procedure-input key under which [FreeTimeScheduler.triggerMaintenance] seeds
+/// the centroid-recomputation lane's *target family* — the node-type whose
+/// classification centroid `dream_recentroid_v1` recomputes this pass.
+///
+/// `dream_recentroid_v1` is the only dream agent that declares a *second*
+/// required input beyond `source`: it reads `forKey` (`inputs.get('forKey')`)
+/// to know which node-type family to re-centroid. A scheduled cadence firing
+/// carries no inbound prompt, so without this seam the body crashes at that read
+/// with `no input named "forKey"`. The seam resolves the family from the store's
+/// own catalogue at the single dream-fire point so the agent needs no defensive
+/// fallback of its own. A caller that already supplied `forKey` (a test harness,
+/// a manual invocation targeting one family) always wins.
+const String dreamRecentroidKeyArgumentKey = 'forKey';
+
+/// The id of the centroid-recomputation dream agent the [forKey] seam is scoped
+/// to. Unlike the `source` / `nowMs` seeds — harmless extra inputs no other lane
+/// reads — resolving a `forKey` costs a catalogue read, so the seam applies only
+/// to the one lane that consumes it (memory § 7.3: recentroid is the only
+/// normal-operation writer of centroids).
+const String dreamRecentroidProcedureId = 'dream_recentroid_v1';
 
 /// The mind-state stacks the dream-seed seam draws a recall focus from, in
 /// priority order: the brain's active interests first, then its open questions.
@@ -503,6 +530,7 @@ final class FreeTimeScheduler {
         enriched = _withLaneSessionContext(procedureId, enriched);
         enriched = await _withDreamSeedContext(enriched);
         enriched = _withDreamClockContext(enriched);
+        enriched = await _withDreamRecentroidContext(procedureId, enriched);
         final outcome = await engine
             .invoke(
               ProcedureInvocation(
@@ -675,6 +703,68 @@ final class FreeTimeScheduler {
       ...arguments,
       dreamClockArgumentKey: clock.nowMs(),
     };
+  }
+
+  /// Round-robin cursor over the node-type catalogue for the [forKey] seam. Each
+  /// recentroid firing advances it by one so successive passes recompute a
+  /// *different* family's centroid, covering the whole catalogue over a cadence
+  /// cycle rather than pinning the first family forever. In-memory and per
+  /// scheduler instance: a restart simply re-starts the rotation from the top,
+  /// which still achieves full coverage.
+  int _recentroidCursor = 0;
+
+  /// Returns [arguments] augmented with the centroid-recomputation lane's target
+  /// family under [dreamRecentroidKeyArgumentKey], or [arguments] unchanged when
+  /// the lane is not [dreamRecentroidProcedureId], a caller already supplied a
+  /// `forKey`, or the catalogue cannot be resolved.
+  ///
+  /// `dream_recentroid_v1` requires `forKey` (the node-type whose centroid it
+  /// recomputes) but a scheduled cadence firing carries no inbound prompt, so
+  /// the seam draws the family from the store's own catalogue
+  /// ([TomBrainMemoryClient.listNodeTypes]) and rotates it round-robin across
+  /// firings. An explicit caller-supplied `forKey` is never clobbered, and the
+  /// seam is scoped to the one lane that reads the key — every other lane's
+  /// arguments pass through untouched.
+  Future<Map<String, Object?>> _withDreamRecentroidContext(
+    String procedureId,
+    Map<String, Object?> arguments,
+  ) async {
+    if (procedureId != dreamRecentroidProcedureId ||
+        arguments.containsKey(dreamRecentroidKeyArgumentKey)) {
+      return arguments;
+    }
+    final forKey = await _resolveRecentroidKey();
+    if (forKey == null) {
+      return arguments;
+    }
+    return <String, Object?>{
+      ...arguments,
+      dreamRecentroidKeyArgumentKey: forKey,
+    };
+  }
+
+  /// Resolves the next node-type family the recentroid lane should recompute:
+  /// the catalogue's type names sorted (for a deterministic rotation independent
+  /// of catalogue iteration order), indexed by the advancing [_recentroidCursor].
+  ///
+  /// Best-effort: a catalogue-read failure or an empty catalogue yields `null`
+  /// (the seam then leaves `forKey` unseeded) rather than failing the dream run.
+  /// A real store always carries the bootstrap catalogue, so the empty case is a
+  /// degenerate boot-time window, not the live path.
+  Future<String?> _resolveRecentroidKey() async {
+    final List<NodeTypeDecl> types;
+    try {
+      types = await memory.listNodeTypes();
+    } on Object {
+      return null;
+    }
+    if (types.isEmpty) {
+      return null;
+    }
+    final names = <String>[for (final type in types) type.typeName]..sort();
+    final picked = names[_recentroidCursor % names.length];
+    _recentroidCursor++;
+    return picked;
   }
 
   /// Resolves the term a dream cycle "dreams about": the salient text of the

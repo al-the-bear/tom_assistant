@@ -110,6 +110,7 @@ import 'agent_sdk_llm_provider.dart' show AgentSdkLlmProvider;
 import 'api_key_persist.dart' show appendApiKeyToRunConfig;
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
+import 'embedding_boot_probe.dart' show probeEmbeddingReachableAtBoot;
 import 'cli_server_port_switch.dart'
     show CliServerPortConfigWriter, TomBrainCliServerPortController;
 import 'builtin_bindings.dart' show BrainBuiltins;
@@ -973,6 +974,20 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     // its persisted Claude session ids under `<root>/agent_sdk_sessions.json`
     // (agent-SDK design spec § 1.4).
     agentSdkSessionRoot: runConfig.memory.root,
+  );
+
+  // Boot-time embedding-substrate reachability check. The embedding backend is
+  // a *separate* service from the chat LLM (on bomber: chat = omlx, embeddings
+  // = Ollama on :11434); it can be down while chat is up, in which case the
+  // first embedding-dependent work — a vector recall or a dreaming lane that
+  // re-embeds — crashes with `Connection refused`. The probe does one real
+  // embed round-trip here so an unreachable backend is reported once, clearly,
+  // at boot instead of as a flood of errored dream lanes. Non-fatal: chat needs
+  // no embeddings, so a dead backend warns and boot continues.
+  await probeEmbeddingReachableAtBoot(
+    substrate,
+    warn: (message) => stderr.writeln(message),
+    info: (message) => stderr.writeln(message),
   );
 
   // The `/cli_server_port` controller: collect the live agent-SDK providers
