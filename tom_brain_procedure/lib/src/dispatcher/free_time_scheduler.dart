@@ -77,7 +77,7 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
         procedureRunNodeType,
         recentRunsStackName;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show HistoryConfig, HistorySizing, HistoryTurn;
+    show Clock, HistoryConfig, HistorySizing, HistoryTurn, SystemClock;
 
 import '../api/procedure_engine.dart' show ProcedureEngine;
 import '../api/procedure_invocation.dart' show ProcedureInvocation;
@@ -112,6 +112,21 @@ const String recentRunsArgumentKey = 'recentRuns';
 /// point so the agents need no defensive fallback of their own. A caller that
 /// already supplied `source` (a test harness, a manual invocation) always wins.
 const String dreamSeedArgumentKey = 'source';
+
+/// Procedure-input key under which [FreeTimeScheduler.triggerMaintenance] seeds
+/// a dreaming lane's *pass clock* — the epoch-millisecond instant the lane
+/// measures its verdicts against.
+///
+/// `dream_decay_v1` declares `nowMs` as a *required* input and reads it
+/// (`inputs.get<int>('nowMs')`) to compute coldness ages: the body has no
+/// access to a wall clock inside the d4rt sandbox, so the caller must stamp
+/// the instant. A scheduled cadence firing carries no inbound prompt, so
+/// without this seam the body crashes at that first read with `no input named
+/// "nowMs"`. The seam supplies the stamp from the scheduler's injected [Clock]
+/// at the single dream-fire point so the agents need no ambient-clock escape of
+/// their own. A caller that already supplied `nowMs` (a test harness, a
+/// deep-lane driver replaying a fixed instant) always wins.
+const String dreamClockArgumentKey = 'nowMs';
 
 /// The mind-state stacks the dream-seed seam draws a recall focus from, in
 /// priority order: the brain's active interests first, then its open questions.
@@ -318,6 +333,7 @@ final class FreeTimeScheduler {
     this.hotPriorityThreshold = defaultHotPriorityThreshold,
     this.historyConfig = const HistoryConfig.standard(),
     this.dreamSessions,
+    this.clock = const SystemClock(),
   }) : schedulableStacks = List<String>.unmodifiable(schedulableStacks);
 
   /// The coordinator the scheduler submits background runs to and reads the
@@ -373,6 +389,17 @@ final class FreeTimeScheduler {
   /// `priorTurns` / `compactedSummary` bound, nothing recorded), mirroring the
   /// answer lane before its history store is wired.
   final DreamLaneSessions? dreamSessions;
+
+  /// The injected time source the [triggerMaintenance] seam stamps a dreaming
+  /// lane's pass clock from (under [dreamClockArgumentKey]).
+  ///
+  /// `dream_decay_v1` measures coldness against `nowMs` but cannot read a wall
+  /// clock inside the d4rt sandbox, so the seam supplies the instant from here.
+  /// Defaults to [SystemClock] (the production wall clock); tests inject a
+  /// [Clock] double to fire dream lanes against a fixed, asserted instant. The
+  /// no-global-clock rule holds: the clock is constructor-injected, never
+  /// ambient.
+  final Clock clock;
 
   /// Runs one scheduler cycle (§ 5.3, Plan D.33).
   ///
@@ -475,6 +502,7 @@ final class FreeTimeScheduler {
         var enriched = await _withRecentRunsContext(procedureId, arguments);
         enriched = _withLaneSessionContext(procedureId, enriched);
         enriched = await _withDreamSeedContext(enriched);
+        enriched = _withDreamClockContext(enriched);
         final outcome = await engine
             .invoke(
               ProcedureInvocation(
@@ -625,6 +653,27 @@ final class FreeTimeScheduler {
     return <String, Object?>{
       ...arguments,
       dreamSeedArgumentKey: await _resolveDreamSeed(),
+    };
+  }
+
+  /// Returns [arguments] augmented with the dreaming-lane pass clock under
+  /// [dreamClockArgumentKey], or [arguments] unchanged when a caller already
+  /// supplied one.
+  ///
+  /// `dream_decay_v1` requires `nowMs` to age coldness but cannot read a wall
+  /// clock inside the sandbox, so the seam stamps the instant from the
+  /// scheduler's injected [clock] here — always, since the clock always yields
+  /// a value. An explicit caller-supplied `nowMs` (a test, a deep-lane driver
+  /// replaying a fixed instant) is never clobbered.
+  Map<String, Object?> _withDreamClockContext(
+    Map<String, Object?> arguments,
+  ) {
+    if (arguments.containsKey(dreamClockArgumentKey)) {
+      return arguments;
+    }
+    return <String, Object?>{
+      ...arguments,
+      dreamClockArgumentKey: clock.nowMs(),
     };
   }
 
