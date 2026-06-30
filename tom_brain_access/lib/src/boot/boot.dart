@@ -100,6 +100,7 @@ export 'telegram_inspectors.dart'
     show
         TelegramApiKeyCreator,
         TelegramCliServerPortController,
+        TelegramDreamController,
         TelegramInspectors,
         TelegramLogInspector,
         TelegramLogTail,

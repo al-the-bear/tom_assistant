@@ -319,6 +319,39 @@ abstract interface class TelegramApiKeyCreator {
   });
 }
 
+/// Drives the live dream cadence for `/dream_now`, `/dream_start`,
+/// `/dream_stop`, and `/dream_status` (dream-redesign item 5).
+///
+/// Unlike the read-only inspectors above, this port both *reads* the dreaming
+/// state ([dreamStatus]) and *commands* it ([dreamNow] / [dreamStart] /
+/// [dreamStop]). It is still a narrow seam: the access package never touches the
+/// run-layer `DreamController`; the run layer implements this port over it and
+/// injects it through the [TelegramInspectors] bundle. Each method returns
+/// already-rendered, channel-neutral text; the edge owns the Telegram
+/// presentation and split.
+abstract interface class TelegramDreamController {
+  /// Opens a manual dreaming window for [windowMinutes] minutes and fires one
+  /// immediate out-of-band pass, then renders the outcome.
+  ///
+  /// The window admits dreaming regardless of the base schedule for its
+  /// duration; it does not change the base mode (it is not a "start") and its
+  /// immediate pass never counts toward the scheduled-repeat cap.
+  Future<String> dreamNow(int windowMinutes);
+
+  /// Resumes normal scheduled dreaming (the base mode returns to `scheduled`
+  /// and the scheduled-repeat tally is re-baselined), then renders the outcome.
+  Future<String> dreamStart();
+
+  /// Stops normal scheduled dreaming (the base mode becomes `suspended` and any
+  /// open manual window is closed), then renders the outcome.
+  Future<String> dreamStop();
+
+  /// Renders the current dreaming state — base mode, whether it is active now,
+  /// the configured windows, the repeat cap, and every configured lane's
+  /// interval / agent count / scheduled-run tally — even before any run.
+  Future<String> dreamStatus();
+}
+
 /// The read-only inspectors the Telegram edge drives for the inspection
 /// commands (parts b–e).
 ///
@@ -388,6 +421,11 @@ final class TelegramInspectors {
   /// the assembler is live (MSPP-47).
   final TelegramApiKeyCreator? apiKeyCreator;
 
+  /// Drives the dream cadence for `/dream_now` / `/dream_start` /
+  /// `/dream_stop` / `/dream_status`, or `null` when dreaming is not wired on
+  /// this deployment (the CLI default, and any run with `dream:` disabled).
+  final TelegramDreamController? dream;
+
   /// Builds an inspector bundle; every member defaults to absent.
   const TelegramInspectors({
     this.prompts,
@@ -404,6 +442,7 @@ final class TelegramInspectors {
     this.modelSwitcher,
     this.cliServerPort,
     this.apiKeyCreator,
+    this.dream,
   });
 
   /// The no-inspectors bundle: every inspection command answers "not available
@@ -433,6 +472,7 @@ final class TelegramInspectors {
       modelSwitcher: modelSwitcher,
       cliServerPort: cliServerPort,
       apiKeyCreator: creator,
+      dream: dream,
     );
   }
 }

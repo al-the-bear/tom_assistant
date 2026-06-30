@@ -114,6 +114,15 @@ final class ProvisionedBrain {
   /// the stop lever (the standalone serve path).
   final TelegramStopController? stopController;
 
+  /// Drives the live dream cadence for the Telegram `/dream_now` /
+  /// `/dream_start` / `/dream_stop` / `/dream_status` commands — a
+  /// `tom_brain_access` port type (an allowed dependency), so surfacing it here
+  /// does *not* pull `tom_brain_run` into the access package. A higher assembly
+  /// (`tom_brain_run`) sets it over the booted `DreamController`; `null` when
+  /// the provisioner does not run a dream cadence (dreaming disabled, or the
+  /// standalone serve path).
+  final TelegramDreamController? dreamController;
+
   /// Builds a provisioned-brain handle.
   const ProvisionedBrain({
     required this.dispatcher,
@@ -123,6 +132,7 @@ final class ProvisionedBrain {
     this.todosInspector,
     this.usageInspector,
     this.stopController,
+    this.dreamController,
   });
 }
 

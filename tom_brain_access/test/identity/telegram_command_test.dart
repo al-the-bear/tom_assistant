@@ -105,6 +105,20 @@ void main() {
           TelegramCommandKind.traceMemory);
     });
 
+    test('parses the dreaming commands', () {
+      expect(parseTelegramCommand('/dream_now 30')!.kind,
+          TelegramCommandKind.dreamNow);
+      expect(parseTelegramCommand('/dream_now 30')!.argument, '30');
+      expect(parseTelegramCommand('/dream_status')!.kind,
+          TelegramCommandKind.dreamStatus);
+      expect(parseTelegramCommand('/dream_start')!.kind,
+          TelegramCommandKind.dreamStart);
+      expect(parseTelegramCommand('/dream_stop')!.kind,
+          TelegramCommandKind.dreamStop);
+      expect(parseTelegramCommand('/DREAM_NOW@tom_brain_bot 15')!.kind,
+          TelegramCommandKind.dreamNow);
+    });
+
     test('strips a @botname suffix and is case-insensitive', () {
       expect(parseTelegramCommand('/list_sessions@tom_brain_bot')!.kind,
           TelegramCommandKind.listSessions);

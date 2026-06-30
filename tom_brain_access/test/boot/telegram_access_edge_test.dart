@@ -1176,6 +1176,144 @@ void main() {
           telegramInspectorUnavailableMessage,
         );
       });
+
+      test('/dream_now opens a window, passing the minutes through', () async {
+        final d = _answeringDispatcher();
+        final controller = _FakeDreamController(nowText: 'window open for 30m');
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(dream: controller),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/dream_now 30'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(controller.nowMinutes, equals([30]));
+        expect(f.chatApi.sentMessages.single, 'window open for 30m');
+      });
+
+      test('/dream_now rejects a missing argument with a usage line', () async {
+        final d = _answeringDispatcher();
+        final controller = _FakeDreamController();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(dream: controller),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/dream_now'));
+        await pumpEventQueue();
+
+        expect(controller.nowMinutes, isEmpty);
+        expect(f.chatApi.sentMessages.single, contains('Usage:'));
+      });
+
+      test('/dream_now rejects a non-positive argument with a usage line',
+          () async {
+        final d = _answeringDispatcher();
+        final controller = _FakeDreamController();
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(dream: controller),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/dream_now 0'));
+        await pumpEventQueue();
+
+        expect(controller.nowMinutes, isEmpty);
+        expect(f.chatApi.sentMessages.single, contains('Usage:'));
+      });
+
+      test('/dream_status renders the current dreaming state', () async {
+        final d = _answeringDispatcher();
+        final controller = _FakeDreamController(statusText: 'mode: scheduled');
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(dream: controller),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/dream_status'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(controller.statusCalls, 1);
+        expect(f.chatApi.sentMessages.single, 'mode: scheduled');
+      });
+
+      test('/dream_start resumes scheduled dreaming', () async {
+        final d = _answeringDispatcher();
+        final controller = _FakeDreamController(startText: 'dreaming resumed');
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(dream: controller),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/dream_start'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(controller.startCalls, 1);
+        expect(f.chatApi.sentMessages.single, 'dreaming resumed');
+      });
+
+      test('/dream_stop suspends scheduled dreaming', () async {
+        final d = _answeringDispatcher();
+        final controller = _FakeDreamController(stopText: 'dreaming suspended');
+        final f = _edge(
+          dispatcher: d.dispatcher,
+          inspectors: TelegramInspectors(dream: controller),
+        );
+        addTearDown(f.booted.shutdown);
+        addTearDown(f.inbound.close);
+
+        f.edge.start();
+        f.inbound.add(_inbound(text: '/dream_stop'));
+        await pumpEventQueue();
+
+        expect(d.routed, isEmpty);
+        expect(controller.stopCalls, 1);
+        expect(f.chatApi.sentMessages.single, 'dreaming suspended');
+      });
+
+      test('the dreaming commands are unavailable when no controller is wired',
+          () async {
+        for (final String text in <String>[
+          '/dream_now 30',
+          '/dream_status',
+          '/dream_start',
+          '/dream_stop',
+        ]) {
+          final d = _answeringDispatcher();
+          final f = _edge(dispatcher: d.dispatcher);
+          addTearDown(f.booted.shutdown);
+          addTearDown(f.inbound.close);
+
+          f.edge.start();
+          f.inbound.add(_inbound(text: text));
+          await pumpEventQueue();
+
+          expect(
+            f.chatApi.sentMessages.single,
+            telegramInspectorUnavailableMessage,
+            reason: '$text must report unavailable without a controller',
+          );
+        }
+      });
     });
 
     group('telegramProcessingAcknowledgement', () {
@@ -1307,6 +1445,52 @@ final class _FakeStopController implements TelegramStopController {
   @override
   Future<String> stopCurrentPrompt() async {
     calls += 1;
+    return stopText;
+  }
+}
+
+/// A dream controller recording the verbs it is driven through and returning
+/// canned strings, used to drive the `/dream_now` / `/dream_status` /
+/// `/dream_start` / `/dream_stop` dispatch paths. The commands are
+/// process-global; `dreamNow` records the window length it is passed.
+final class _FakeDreamController implements TelegramDreamController {
+  _FakeDreamController({
+    this.nowText = 'now',
+    this.statusText = 'status',
+    this.startText = 'start',
+    this.stopText = 'stop',
+  });
+
+  final String nowText;
+  final String statusText;
+  final String startText;
+  final String stopText;
+  final List<int> nowMinutes = <int>[];
+  int statusCalls = 0;
+  int startCalls = 0;
+  int stopCalls = 0;
+
+  @override
+  Future<String> dreamNow(int windowMinutes) async {
+    nowMinutes.add(windowMinutes);
+    return nowText;
+  }
+
+  @override
+  Future<String> dreamStatus() async {
+    statusCalls += 1;
+    return statusText;
+  }
+
+  @override
+  Future<String> dreamStart() async {
+    startCalls += 1;
+    return startText;
+  }
+
+  @override
+  Future<String> dreamStop() async {
+    stopCalls += 1;
     return stopText;
   }
 }

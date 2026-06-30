@@ -416,6 +416,14 @@ class TelegramAccessEdge {
         await _handleCreateApiKey(receiver, command.argument);
       case TelegramCommandKind.traceMemory:
         await _send(receiver, _sessionRegistry.toggleTraceMemory(userId));
+      case TelegramCommandKind.dreamNow:
+        await _handleDreamNow(receiver, command.argument);
+      case TelegramCommandKind.dreamStatus:
+        await _handleDreamStatus(receiver);
+      case TelegramCommandKind.dreamStart:
+        await _handleDreamStart(receiver);
+      case TelegramCommandKind.dreamStop:
+        await _handleDreamStop(receiver);
     }
   }
 
@@ -828,6 +836,64 @@ class TelegramAccessEdge {
       '/create_api_key <sessionPrefix> <memoryPrefix> (both together), '
       'optionally with a profile=<name> token to pin a default profile.',
     );
+  }
+
+  /// Handles `/dream_now <minutes>`: opens a manual dreaming window and fires
+  /// one immediate pass. Replies a usage line for a missing / non-positive
+  /// argument and the unavailable message when no dream controller is wired
+  /// (dreaming disabled on this deployment).
+  Future<void> _handleDreamNow(
+    ChatReceiver receiver,
+    String argument,
+  ) async {
+    final TelegramDreamController? controller = _inspectors.dream;
+    if (controller == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    final int? minutes = int.tryParse(argument.trim());
+    if (minutes == null || minutes <= 0) {
+      await _send(
+        receiver,
+        'Usage: /dream_now <minutes> (a positive whole number of minutes, '
+        'e.g. /dream_now 30).',
+      );
+      return;
+    }
+    await _sendSplit(receiver, await controller.dreamNow(minutes));
+  }
+
+  /// Handles `/dream_status`: renders the current dreaming state. Replies the
+  /// unavailable message when no dream controller is wired.
+  Future<void> _handleDreamStatus(ChatReceiver receiver) async {
+    final TelegramDreamController? controller = _inspectors.dream;
+    if (controller == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    await _sendSplit(receiver, await controller.dreamStatus());
+  }
+
+  /// Handles `/dream_start`: resumes normal scheduled dreaming. Replies the
+  /// unavailable message when no dream controller is wired.
+  Future<void> _handleDreamStart(ChatReceiver receiver) async {
+    final TelegramDreamController? controller = _inspectors.dream;
+    if (controller == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    await _sendSplit(receiver, await controller.dreamStart());
+  }
+
+  /// Handles `/dream_stop`: stops normal scheduled dreaming. Replies the
+  /// unavailable message when no dream controller is wired.
+  Future<void> _handleDreamStop(ChatReceiver receiver) async {
+    final TelegramDreamController? controller = _inspectors.dream;
+    if (controller == null) {
+      await _send(receiver, telegramInspectorUnavailableMessage);
+      return;
+    }
+    await _sendSplit(receiver, await controller.dreamStop());
   }
 
   /// Sends [text] as the minimum number of size-compliant Telegram messages,

@@ -147,6 +147,26 @@ enum TelegramCommandKind {
   /// search found as its own out-of-band message. The same command turns it
   /// back off; the reply states the resulting state.
   traceMemory,
+
+  /// `/dream_now <minutes>` — open a manual dreaming window for `<minutes>` and
+  /// fire one immediate out-of-band pass. The window admits dreaming regardless
+  /// of the configured schedule for its duration; it does not "start" dreaming
+  /// (the base mode is untouched) and its pass never counts toward the repeat
+  /// cap.
+  dreamNow,
+
+  /// `/dream_status` — show the dreaming state: base mode, whether it is active
+  /// now, the configured windows, the repeat cap, and every lane's interval /
+  /// agent count / scheduled-run tally.
+  dreamStatus,
+
+  /// `/dream_start` — resume normal scheduled dreaming (follow the configured
+  /// windows again and re-baseline the repeat tally).
+  dreamStart,
+
+  /// `/dream_stop` — stop normal scheduled dreaming (suspend the base mode and
+  /// close any open manual window).
+  dreamStop,
 }
 
 /// The command word a user types for each [TelegramCommandKind], without the
@@ -183,6 +203,10 @@ const Map<TelegramCommandKind, String> telegramCommandWords =
   TelegramCommandKind.cliServerPort: 'cli_server_port',
   TelegramCommandKind.createApiKey: 'create_api_key',
   TelegramCommandKind.traceMemory: 'trace_memory',
+  TelegramCommandKind.dreamNow: 'dream_now',
+  TelegramCommandKind.dreamStatus: 'dream_status',
+  TelegramCommandKind.dreamStart: 'dream_start',
+  TelegramCommandKind.dreamStop: 'dream_stop',
 };
 
 /// The reverse of [telegramCommandWords]: the command word (lower-cased,
@@ -276,6 +300,11 @@ String telegramHelpText() {
         'key (live now + persisted); key value is both prefixes if none given')
     ..write('\n/trace_memory — toggle messages tracing what each memory search '
         'finds (same command turns it off)')
+    ..write('\n\nDreaming:')
+    ..write('\n/dream_status — show the dreaming mode, windows, and lane cadence')
+    ..write('\n/dream_now <minutes> — open a manual dreaming window and dream now')
+    ..write('\n/dream_start — resume normal scheduled dreaming')
+    ..write('\n/dream_stop — stop normal scheduled dreaming')
     ..write('\n\n/help — show this list');
   return buffer.toString();
 }
