@@ -90,7 +90,7 @@ environment:
 dependencies:
   tom_brain_shared:
     path: ../tom_brain_shared
-  tom_basics: ^1.0.0
+  tom_basics: ">=1.0.0"
   #   - tom_core_agentic   — generic, domain-free agentic building
   #                          blocks (cooperative cancellation,
   #                          `CloseGuard`, `buildUniqueById`,

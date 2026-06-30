@@ -64,8 +64,8 @@ dependencies:
   # (`--samples` / `--warmup` / `--output`), `--version`, and `--help` are built
   # on the shared `tom_build_base` framework rather than hand-rolled — the
   # workspace rule that every CLI tool consumes that parser.
-  tom_build_base: ^2.6.21
-  tom_basics: ^1.0.0
+  tom_build_base: ">=2.6.25"
+  tom_basics: ">=1.0.0"
 
 dev_dependencies:
   lints: ^6.0.0
@@ -73,7 +73,7 @@ dev_dependencies:
   # The Telegram smoke (E.49) injects a loopback `ChatApi` double through the
   # access process's `TelegramChatApiFactory` seam. The double `implements
   # ChatApi`, so the test layer needs `tom_chattools`; production code does not.
-  tom_chattools: ^1.0.2
+  tom_chattools: ">=1.0.2"
   # The OpenAI conformance suite (E.53) drives the running process over a real
   # TCP socket with `tom_core_kernel`'s HTTP client (`TomServerChannel` /
   # `TomServerCall`) — the plan names this client by name. Test-only: the
@@ -85,7 +85,7 @@ dev_dependencies:
   # default is the fallback (which throws `UnimplementedError`), so the E.53
   # suite registers the standalone (`dart:io`) platform — `IOClient` — once in
   # `setUpAll`. Test-only.
-  tom_basics_console: ^1.0.0
+  tom_basics_console: ">=1.0.0"
   # The E.55 end-to-end conformance suite inspects the post-run memory graph
   # *through the memory MCP server* (the brain's real external memory-inspection
   # surface). It stands `TomBrainMemoryMcpServer` up over an in-memory

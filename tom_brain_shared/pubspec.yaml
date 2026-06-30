@@ -21,7 +21,7 @@ environment:
 # enforces this contract at build time. Adding anything else here without
 # updating that test will fail CI.
 dependencies:
-  tom_basics: ^1.0.0
+  tom_basics: ">=1.0.0"
   tom_core_agentic:
     path: ../../tom_ai/core/tom_core_agentic
 

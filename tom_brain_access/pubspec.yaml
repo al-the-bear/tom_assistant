@@ -121,7 +121,7 @@ dependencies:
     path: ../tom_brain_shared
   tom_brain_procedure:
     path: ../tom_brain_procedure
-  tom_basics: ^1.0.0
+  tom_basics: ">=1.0.0"
   # ADDED for the Section-G cleanup. Generic, domain-free agentic building
   # blocks the access edge no longer re-implements per file: the keyed
   # `TokenBucket` (rate limiter), the `TtlCache` (embedding cache, now
@@ -136,8 +136,8 @@ dependencies:
     path: ../../tom_ai/core/tom_core_kernel
   tom_core_server:
     path: ../../tom_ai/core/tom_core_server
-  tom_chattools: ^1.0.2
-  tom_build_base: ^2.6.21
+  tom_chattools: ">=1.0.2"
+  tom_build_base: ">=2.6.25"
   # ADDED AT E.11 (Q-E.3.2 strategy 2 / Q-E.3.1 / Q-E.7.1). The OpenAI
   # `/v1/` adapter is mounted as a raw `shelf_router.Router`, NOT via
   # `tom_core_server` annotation classes. Strategy 2 matches the plan's
