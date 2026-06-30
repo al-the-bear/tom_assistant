@@ -66,12 +66,22 @@ final class ProcedurePrimitiveNode extends ProcedureTreeNode {
 }
 
 /// A note node — the engine's `note` trail entry (`step_truncated`,
-/// `run_cancelled`, an `automation_candidate` signal, …).
+/// `run_cancelled`, an `automation_candidate` signal, a `progress` step, …).
 final class ProcedureNoteNode extends ProcedureTreeNode {
-  /// The note category (`step_truncated`, `run_cancelled`, …).
+  /// The note category (`step_truncated`, `run_cancelled`, `progress`, …).
   final String category;
 
-  const ProcedureNoteNode({required this.category});
+  /// The note's structured payload (the `TrailNote.payload` map) — the
+  /// "additional information" a category alone elides (a `progress` step's
+  /// stage/count, a `memory_write_skipped` note's primitive/reason, …). Empty
+  /// for a payload-less note; the writer renders a compact single-line summary
+  /// of it after the category.
+  final Map<String, Object?> payload;
+
+  const ProcedureNoteNode({
+    required this.category,
+    this.payload = const <String, Object?>{},
+  });
 }
 
 /// Which outcome a [ProcedureToolNode] records — the three `tool.invoke`-family

@@ -70,6 +70,7 @@
 
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show
+        Node,
         StackEntry,
         StackSummary,
         TomBrainMemoryClient,
@@ -99,6 +100,49 @@ import 'run_coordinator.dart' show RunBody, RunCoordinator, RunSlotBusy;
 /// answer lane's `priorTurns` / `compactedSummary` binding discipline). A
 /// procedure that does not read the key is unaffected.
 const String recentRunsArgumentKey = 'recentRuns';
+
+/// Procedure-input key under which [FreeTimeScheduler.triggerMaintenance] seeds
+/// a dreaming lane's recall focus — the term the dream "dreams about".
+///
+/// The recall-seeded dream agents (`dream_extract_v1`, `dream_connect_v1`, …)
+/// declare `source` as a *required* input and read it (`inputs.get('source')`)
+/// before any memory/LLM work. A scheduled cadence firing carries no inbound
+/// prompt, so without this seam the body crashes at that first read with `no
+/// input named "source"`. The seam supplies the seed at the single dream-fire
+/// point so the agents need no defensive fallback of their own. A caller that
+/// already supplied `source` (a test harness, a manual invocation) always wins.
+const String dreamSeedArgumentKey = 'source';
+
+/// The mind-state stacks the dream-seed seam draws a recall focus from, in
+/// priority order: the brain's active interests first, then its open questions.
+/// "A dream dreams about what is on the brain's mind" — the seed is the salient
+/// text of the top entry of the first of these stacks that yields one.
+const List<String> dreamSeedStacks = <String>['interests', 'questions_open'];
+
+/// How many entries of a [dreamSeedStacks] stack the seam peeks when resolving
+/// a seed. "Top entry" is the intent, but a degenerate top node carrying no
+/// salient text field is skipped for the next, so a small window is scanned.
+const int dreamSeedScanDepth = 8;
+
+/// The stable seed a dreaming lane is fired with when neither [dreamSeedStacks]
+/// yields a salient term — so a dream cycle on an empty-minded brain still runs
+/// (recalling around a neutral focus) rather than crashing on a missing input.
+const String defaultDreamSeed = 'recent memory';
+
+/// The node value fields the dream-seed seam reads a salient term from, in
+/// priority order. The first non-empty string field of a mind-state node
+/// becomes the seed — covering the bootstrap node types parked on the seed
+/// stacks (`InterestItem.title`, `Question.statement`, …) and degrading to
+/// generic text fields for any future type.
+const List<String> _dreamSeedFields = <String>[
+  'statement',
+  'title',
+  'question',
+  'summary',
+  'name',
+  'text',
+  'label',
+];
 
 /// The *floor* on how many `recent_runs` entries
 /// [FreeTimeScheduler.triggerMaintenance] scans when building a lane's prior-run
@@ -430,6 +474,7 @@ final class FreeTimeScheduler {
       () async {
         var enriched = await _withRecentRunsContext(procedureId, arguments);
         enriched = _withLaneSessionContext(procedureId, enriched);
+        enriched = await _withDreamSeedContext(enriched);
         final outcome = await engine
             .invoke(
               ProcedureInvocation(
@@ -561,6 +606,70 @@ final class FreeTimeScheduler {
       ...arguments,
       recentRunsArgumentKey: priorRuns,
     };
+  }
+
+  /// Returns [arguments] augmented with a dreaming-lane recall seed under
+  /// [dreamSeedArgumentKey], or [arguments] unchanged when a caller already
+  /// supplied one.
+  ///
+  /// The recall-seeded dream agents require `source`; a scheduled cadence
+  /// firing carries no inbound prompt, so the seam supplies the seed here —
+  /// always, since the seed always resolves (to [defaultDreamSeed] in the
+  /// worst case). An explicit caller-supplied `source` is never clobbered.
+  Future<Map<String, Object?>> _withDreamSeedContext(
+    Map<String, Object?> arguments,
+  ) async {
+    if (arguments.containsKey(dreamSeedArgumentKey)) {
+      return arguments;
+    }
+    return <String, Object?>{
+      ...arguments,
+      dreamSeedArgumentKey: await _resolveDreamSeed(),
+    };
+  }
+
+  /// Resolves the term a dream cycle "dreams about": the salient text of the
+  /// top entry of the first [dreamSeedStacks] stack that yields one, falling
+  /// back to [defaultDreamSeed] when neither does.
+  ///
+  /// Best-effort: a stack-read failure, a dangling entry, or a node with no
+  /// salient text field is skipped rather than failing the dream run — the
+  /// brain's mind-state seed is an enhancement, never a precondition (mirroring
+  /// the `recent_runs` scan's best-effort discipline).
+  Future<String> _resolveDreamSeed() async {
+    for (final stackName in dreamSeedStacks) {
+      final List<StackEntry> entries;
+      try {
+        entries = await memory.stacks.peek(stackName, k: dreamSeedScanDepth);
+      } on Object {
+        continue;
+      }
+      for (final entry in entries) {
+        final node = await memory.get(entry.nodeId);
+        if (node == null) {
+          continue;
+        }
+        final salient = _salientText(node);
+        if (salient != null) {
+          return salient;
+        }
+      }
+    }
+    return defaultDreamSeed;
+  }
+
+  /// The first non-empty string value of [node] among [_dreamSeedFields], or
+  /// `null` when the node carries no salient text — the seed term harvested
+  /// from a mind-state node (an `InterestItem`'s title, a `Question`'s
+  /// statement, …).
+  String? _salientText(Node node) {
+    for (final field in _dreamSeedFields) {
+      final value = node.values[field];
+      if (value is String && value.trim().isNotEmpty) {
+        return value;
+      }
+    }
+    return null;
   }
 
   /// Reads the global `recent_runs` stack and distils the completed

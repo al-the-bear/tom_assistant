@@ -145,8 +145,10 @@ final class ProcedureTreeWriter {
         buffer.writeln('$prefix$connector ${_primitiveLine(node)}');
       case ProcedureToolNode():
         buffer.writeln('$prefix$connector ${_toolLine(node)}');
-      case ProcedureNoteNode(:final category):
-        buffer.writeln('$prefix$connector note $category');
+      case ProcedureNoteNode(:final category, :final payload):
+        final detail = _compactPayload(payload);
+        buffer.writeln('$prefix$connector note $category'
+            '${detail.isEmpty ? '' : ' — $detail'}');
       case ProcedureErrorNode(:final errorKind, :final message):
         buffer.writeln('$prefix$connector error $errorKind: $message');
     }
@@ -172,6 +174,17 @@ final class ProcedureTreeWriter {
       )}';
       return 'llm ${llm.callType} → ${llm.tokensIn}→${llm.tokensOut} tok'
           '  → $link';
+    }
+    // A `stackPeek` read renders its stack name, the requested `k`, and the
+    // number of entries it returned — the "what was on the brain's mind" detail
+    // a bare `stackPeek` line elided (the dream lanes poll the mind-state
+    // stacks, so this is the most frequent read in a dream tree).
+    if (node.primitive == 'stackPeek') {
+      final name = node.input['name'];
+      final k = node.input['k'];
+      final entries = node.result['entries'] as List?;
+      final count = entries?.length ?? 0;
+      return 'stackPeek $name (k=$k → $count entries)';
     }
     if (node.primitive == 'recall') {
       final modes = (node.input['modes'] as List?)
@@ -214,6 +227,49 @@ final class ProcedureTreeWriter {
       ProcedureToolOutcome.denied => '$head → denied: ${node.reason}',
     };
   }
+
+  /// A compact, single-line `key=value, key=value` rendering of a note's
+  /// [payload], length-capped, for the `note category — detail` line.
+  ///
+  /// Empty for an empty payload (the writer then renders the bare `note
+  /// category` line). Each value is collapsed to a single line and a list /
+  /// map is abbreviated to a count so the detail stays scannable; the ` — `
+  /// note/detail delimiter is replaced with ` - ` in any value so it can never
+  /// collide with the line's own separator. The whole detail is capped at
+  /// [_payloadDetailCap] characters with a trailing `…`.
+  static String _compactPayload(Map<String, Object?> payload) {
+    if (payload.isEmpty) {
+      return '';
+    }
+    final parts = <String>[
+      for (final entry in payload.entries)
+        '${entry.key}=${_compactValue(entry.value)}',
+    ];
+    final joined = parts.join(', ');
+    if (joined.length <= _payloadDetailCap) {
+      return joined;
+    }
+    return '${joined.substring(0, _payloadDetailCap)}…';
+  }
+
+  /// One payload value as a single short token: a scalar verbatim, a list / map
+  /// as a `[<n>]` / `{<n>}` count, all newlines collapsed and the ` — `
+  /// delimiter neutralised.
+  static String _compactValue(Object? value) {
+    final String text;
+    if (value is List) {
+      text = '[${value.length}]';
+    } else if (value is Map) {
+      text = '{${value.length}}';
+    } else {
+      text = '$value';
+    }
+    return text.replaceAll(RegExp(r'\s+'), ' ').replaceAll(' — ', ' - ').trim();
+  }
+
+  /// The character cap on a rendered note-detail line (§5.7) — long enough to
+  /// carry a step's stage + counters, short enough to stay one scannable line.
+  static const int _payloadDetailCap = 160;
 
   /// The §5.7 outcome line: `outcome <status> (entries=<n>, <elapsed>)`, where
   /// elapsed renders in seconds (one decimal) at or above a second, else in

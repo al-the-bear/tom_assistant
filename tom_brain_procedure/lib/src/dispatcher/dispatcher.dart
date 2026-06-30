@@ -469,9 +469,13 @@ export 'free_time_scheduler.dart'
         FreeTimeSchedulerTick,
         ScheduledBackgroundWork,
         ScheduledPick,
+        defaultDreamSeed,
         defaultHotPriorityThreshold,
         defaultHotSizeThreshold,
         defaultSchedulableStacks,
+        dreamSeedArgumentKey,
+        dreamSeedScanDepth,
+        dreamSeedStacks,
         recentRunsArgumentKey,
         recentRunsContextDepth;
 // `InboundKinds` moved to `tom_brain_shared` at the D.52 reuse-extraction

@@ -235,6 +235,43 @@ void main() {
     });
   });
 
+  group('parseRunTree — note detail + stackPeek read (§5.7)', () {
+    const log = 'procedure dream_extract_v1  run r0  turn t0\n'
+        '├─ stackPeek interests (k=16 → 3 entries)\n'
+        '├─ note progress — stage=extract, claims=5\n'
+        '├─ note run_cancelled\n'
+        '└─ outcome accepted (entries=4, 250ms)\n';
+    final run = parseRunTree(log)!;
+
+    test('a stackPeek read parses its name / k / entry count into detail', () {
+      final peek = run.nodes[0] as PrimitiveCallNode;
+      expect(peek.primitive, 'stackPeek');
+      expect(peek.detail, 'interests (k=16 → 3 entries)');
+      expect(peek.resultId, isNull);
+    });
+
+    test('a note carrying a payload splits its category from the detail tail',
+        () {
+      final note = run.nodes[1] as NoteNode;
+      expect(note.category, 'progress');
+      expect(note.detail, 'stage=extract, claims=5');
+    });
+
+    test('a payload-less note carries a null detail', () {
+      final note = run.nodes[2] as NoteNode;
+      expect(note.category, 'run_cancelled');
+      expect(note.detail, isNull);
+    });
+
+    test('the detail round-trips through toJson (omitted when absent)', () {
+      expect((run.nodes[1] as NoteNode).toJson()['detail'],
+          'stage=extract, claims=5');
+      expect((run.nodes[2] as NoteNode).toJson().containsKey('detail'), isFalse);
+      expect((run.nodes[0] as PrimitiveCallNode).toJson()['detail'],
+          'interests (k=16 → 3 entries)');
+    });
+  });
+
   group('parseRunTree — malformed input degrades, never throws', () {
     test('empty content → null', () => expect(parseRunTree(''), isNull));
     test('no header → null', () => expect(parseRunTree('not a run\n'), isNull));

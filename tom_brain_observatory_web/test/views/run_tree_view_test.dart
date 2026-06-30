@@ -410,6 +410,42 @@ void main() {
     expect(row.emphasis, CollapsedRowEmphasis.error);
   });
 
+  testWidgets('renders a note with its payload detail and a stackPeek read '
+      '(§5.7)', (tester) async {
+    await _pump(
+      tester,
+      RunTreeView(
+        run: const ProcedureRun(
+          procedureId: 'dream_extract_v1',
+          runId: 'r',
+          turnId: null,
+          status: 'accepted',
+          elapsedMs: 250,
+          entryCount: 2,
+          nodes: <RunNode>[
+            PrimitiveCallNode(
+              primitive: 'stackPeek',
+              resultId: null,
+              recall: null,
+              detail: 'interests (k=16 → 3 entries)',
+            ),
+            NoteNode(category: 'progress', detail: 'stage=extract, claims=5'),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.textContaining('dream_extract_v1'));
+    await tester.pumpAndSettle();
+
+    // The stackPeek read shows its name / k / entry count inline…
+    expect(find.textContaining('stackPeek interests (k=16 → 3 entries)'),
+        findsOneWidget);
+    // …and the note shows its category plus the payload detail tail.
+    expect(find.textContaining('note progress — stage=extract, claims=5'),
+        findsOneWidget);
+  });
+
   testWidgets('renders an error node with error emphasis', (tester) async {
     await _pump(
       tester,

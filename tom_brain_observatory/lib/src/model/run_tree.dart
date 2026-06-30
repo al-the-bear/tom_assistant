@@ -107,11 +107,17 @@ final class PrimitiveCallNode extends RunNode {
   /// deep-link source. Absent on a bare `edge → <id>` line.
   final EdgeDescriptor? edge;
 
+  /// A free-form detail tail the writer rendered for a primitive that carries
+  /// neither an id nor a [recall] / [edge] descriptor — currently a `stackPeek`
+  /// read's `<name> (k=<k> → <n> entries)`. `null` for a bare primitive.
+  final String? detail;
+
   const PrimitiveCallNode({
     required this.primitive,
     this.resultId,
     this.recall,
     this.edge,
+    this.detail,
   });
 
   @override
@@ -121,6 +127,7 @@ final class PrimitiveCallNode extends RunNode {
         if (resultId != null) 'resultId': resultId,
         if (recall != null) 'recall': recall!.toJson(),
         if (edge != null) 'edge': edge!.toJson(),
+        if (detail != null) 'detail': detail,
       };
 }
 
@@ -266,17 +273,24 @@ final class ToolCallNode extends RunNode {
 /// §5.7.1 writer renders (`ok` / `failed` / `denied`).
 enum ToolCallOutcome { invoked, failed, denied }
 
-/// A note node — the engine's `note` entry (`step_truncated`, `run_cancelled`, …).
+/// A note node — the engine's `note` entry (`step_truncated`, `run_cancelled`,
+/// `progress`, …).
 final class NoteNode extends RunNode {
   /// The note category.
   final String category;
 
-  const NoteNode({required this.category});
+  /// The compact single-line summary of the note's structured payload the
+  /// writer appended after the category (`note <category> — <detail>`), or
+  /// `null` for a payload-less note.
+  final String? detail;
+
+  const NoteNode({required this.category, this.detail});
 
   @override
   Map<String, Object?> toJson() => <String, Object?>{
         'kind': 'note',
         'category': category,
+        if (detail != null) 'detail': detail,
       };
 }
 

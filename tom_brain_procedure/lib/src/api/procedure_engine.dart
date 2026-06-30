@@ -1544,7 +1544,10 @@ final class ProcedureEngine {
             llm: llm,
           ));
         case TrailEntryKind.note:
-          nodes.add(ProcedureNoteNode(category: '${entry.payload['category']}'));
+          nodes.add(ProcedureNoteNode(
+            category: '${entry.payload['category']}',
+            payload: _asStringMap(entry.payload['payload']),
+          ));
         case TrailEntryKind.error:
           nodes.add(ProcedureErrorNode(
             errorKind: '${entry.payload['errorKind']}',

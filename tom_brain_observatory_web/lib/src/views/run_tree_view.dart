@@ -186,9 +186,9 @@ class _RunNodeRow extends StatelessWidget {
                 ? CollapsedRowEmphasis.normal
                 : CollapsedRowEmphasis.error,
           ),
-        NoteNode(:final category) => CollapsedRow(
+        NoteNode(:final category, :final detail) => CollapsedRow(
             icon: Icons.sticky_note_2,
-            label: 'note $category',
+            label: detail == null ? 'note $category' : 'note $category — $detail',
             expandable: false,
             expanded: false,
             onTap: null,
@@ -289,6 +289,9 @@ class _RunNodeRow extends StatelessWidget {
     final e = n.edge;
     if (e != null) {
       return 'edge ${e.from} -${e.type}-> ${e.to}';
+    }
+    if (n.detail != null) {
+      return '${n.primitive} ${n.detail}';
     }
     return n.resultId == null ? n.primitive : '${n.primitive} → ${n.resultId}';
   }

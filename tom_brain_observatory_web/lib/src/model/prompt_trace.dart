@@ -222,11 +222,16 @@ class PrimitiveCallNode extends RunNode {
   final RecallDescriptor? recall;
   final EdgeDescriptor? edge;
 
+  /// A free-form detail tail (a `stackPeek` read's `name (k=k → n entries)`),
+  /// or `null` for a bare primitive.
+  final String? detail;
+
   const PrimitiveCallNode({
     required this.primitive,
     required this.resultId,
     required this.recall,
     this.edge,
+    this.detail,
   });
 
   factory PrimitiveCallNode.fromJson(Map<String, dynamic> json) => PrimitiveCallNode(
@@ -234,6 +239,7 @@ class PrimitiveCallNode extends RunNode {
         resultId: json['resultId'] as String?,
         recall: _maybe(json['recall'], RecallDescriptor.fromJson),
         edge: _maybe(json['edge'], EdgeDescriptor.fromJson),
+        detail: json['detail'] as String?,
       );
 }
 
@@ -337,13 +343,18 @@ class ToolCallNode extends RunNode {
       );
 }
 
-/// `kind: note` — a cognitive-step note.
+/// `kind: note` — a cognitive-step note. [detail] is the compact summary of the
+/// note's structured payload (the "additional information" a category elides),
+/// or `null` for a payload-less note.
 class NoteNode extends RunNode {
   final String category;
-  const NoteNode({required this.category});
+  final String? detail;
+  const NoteNode({required this.category, this.detail});
 
-  factory NoteNode.fromJson(Map<String, dynamic> json) =>
-      NoteNode(category: json['category'] as String);
+  factory NoteNode.fromJson(Map<String, dynamic> json) => NoteNode(
+        category: json['category'] as String,
+        detail: json['detail'] as String?,
+      );
 }
 
 /// `kind: error` — a typed error raised within the run.

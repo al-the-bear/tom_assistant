@@ -181,8 +181,15 @@ final RegExp _llmPattern =
     RegExp(r'^llm (\S+) → (\d+)→(\d+) tok  → (\S+)$');
 final RegExp _recallPattern =
     RegExp(r'^recall \((.*?) k=(\S*) → (\d+)(?:: (.+))?\)$');
-final RegExp _notePattern = RegExp(r'^note (.+)$');
+// `note <category>` or `note <category> — <detail>`. The category is matched
+// non-greedily so the optional ` — <detail>` tail (the compact payload summary
+// the writer appends) splits off cleanly; a payload-less note has no tail.
+final RegExp _notePattern = RegExp(r'^note (.+?)(?: — (.+))?$');
 final RegExp _errorPattern = RegExp(r'^error (\S+): (.+)$');
+// `stackPeek <name> (k=<k> → <n> entries)` — a mind-state stack read, with the
+// stack name, requested depth, and returned entry count the bare line elided.
+final RegExp _stackPeekPattern =
+    RegExp(r'^stackPeek (\S+) \(k=(\S*) → (\d+) entries\)$');
 // `tool <name>(<argSummary>) → <outcome>` (§5.7.1). The name carries no spaces or
 // `(`; the arg summary is everything between the parens (it never contains ` → `,
 // which the writer elides). The outcome tail is then sub-classified below.
@@ -228,7 +235,18 @@ RunNode _leafNode(String content) {
 
   final note = _notePattern.firstMatch(content);
   if (note != null) {
-    return NoteNode(category: note.group(1)!);
+    return NoteNode(category: note.group(1)!, detail: note.group(2));
+  }
+
+  // A `stackPeek` read — its name / k / entry count surfaced as the node's
+  // `detail` (the §4.7 deep-link machinery does not apply to a stack read).
+  final stackPeek = _stackPeekPattern.firstMatch(content);
+  if (stackPeek != null) {
+    return PrimitiveCallNode(
+      primitive: 'stackPeek',
+      detail: '${stackPeek.group(1)!} '
+          '(k=${stackPeek.group(2)!} → ${stackPeek.group(3)!} entries)',
+    );
   }
 
   // A `tool.invoke` node — checked before the generic id fallback. The outcome

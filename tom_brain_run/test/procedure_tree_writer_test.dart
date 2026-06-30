@@ -357,6 +357,48 @@ void main() {
       expect(text, contains('└─ outcome accepted (entries=3, 90ms)'));
     });
 
+    test('renders a note payload as a compact detail tail and a stackPeek read '
+        'with its name / k / entry count (§5.7)', () async {
+      final record = ProcedureTreeRecord(
+        procedureId: 'dream_extract_v1',
+        version: 1,
+        runId: 'dream-run-1',
+        parentRunId: null,
+        turnId: null,
+        depth: 1,
+        status: TrailOutcomeStatus.accepted,
+        elapsedMs: 250,
+        entryCount: 4,
+        nodes: <ProcedureTreeNode>[
+          // A mind-state stack read — name, k, and returned entry count.
+          ProcedurePrimitiveNode(
+            primitive: 'stackPeek',
+            input: <String, Object?>{'name': 'interests', 'k': 16},
+            result: <String, Object?>{
+              'entries': List<Object?>.filled(3, <String, Object?>{}),
+            },
+          ),
+          // A note carrying a structured payload — rendered as a detail tail.
+          const ProcedureNoteNode(
+            category: 'progress',
+            payload: <String, Object?>{'stage': 'extract', 'claims': 5},
+          ),
+          // A payload-less note — bare, no detail tail.
+          const ProcedureNoteNode(category: 'run_cancelled'),
+        ],
+      );
+
+      ProcedureTreeWriter(root: tempRoot).write(record);
+      final text = File(
+        '${tempRoot.path}/procedures/dream_extract_v1/dream-run-1.log',
+      ).readAsStringSync();
+
+      expect(text, contains('├─ stackPeek interests (k=16 → 3 entries)'));
+      expect(text, contains('├─ note progress — stage=extract, claims=5'));
+      // A payload-less note keeps the bare form (no trailing ` — `).
+      expect(text, contains('├─ note run_cancelled\n'));
+    });
+
     test('is best-effort: a write under an unusable root never throws', () {
       // Point the root *inside* a regular file, so creating the
       // `procedures/<proc>/` parent must fail. The writer swallows it (§9).
