@@ -214,6 +214,7 @@ export 'src/cli/serve_runner.dart'
         BrainServeSession,
         ServeBoot,
         ServeNarrate,
+        cohostReadMemoryConfig,
         defaultServeBoot,
         runBrainServe;
 export 'src/cli/cli_executors.dart'

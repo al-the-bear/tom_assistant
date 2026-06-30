@@ -18,7 +18,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:tom_basics/tom_basics.dart' show TomPlatformUtils, tomLog;
-import 'package:tom_brain_memory/tom_brain_memory.dart' show FanoutLogOutput;
+import 'package:tom_brain_memory/tom_brain_memory.dart'
+    show FanoutLogOutput, MemoryConfig, resolveMcpServerMemoryConfig;
 import 'package:tom_core_server/tom_core_server.dart'
     show standalonePlatformUtils;
 
@@ -127,6 +128,20 @@ Future<int> runBrainServe(
   return code;
 }
 
+/// The profile-bound memory config the co-hosted read surfaces open.
+///
+/// The brain's own store opens at `withProfile(defaultMemoryProfile)`, so every
+/// node it writes lives under `<root>/profiles/defaultmemory_default/`. The
+/// co-hosted memory MCP isolate (which the `--observatory` Trail Observatory
+/// reads through) must open that *same* store, not the profile-unbound
+/// [configuredMemory] — opening the latter lands on the retired bare root and
+/// resolves none of the brain's node ids, which surfaced in the Observatory as
+/// `No node '<id>'` on every node deep-link. This routes the co-host through the
+/// same binding decision the standalone `bin/memory_mcp_server.dart` uses, so
+/// both external read surfaces agree on the store.
+MemoryConfig cohostReadMemoryConfig(MemoryConfig configuredMemory) =>
+    resolveMcpServerMemoryConfig(configuredMemory);
+
 /// The production boot: the exact sequence the old `bin/brain_serve.dart` ran.
 Future<BrainServeSession> defaultServeBoot(
   BrainRunConfig config,
@@ -163,9 +178,12 @@ Future<BrainServeSession> defaultServeBoot(
   if (runtime.memoryMcpEnabled && config.trail != null) {
     // The isolate boots from the resolved `config.memory` — never a re-read of
     // `runConfigPath`, which in `--home` mode is a partial overlay with no
-    // `memory:` block (the convention fills `memory.root`).
+    // `memory:` block (the convention fills `memory.root`). It is bound to the
+    // default memory profile the brain writes (`cohostReadMemoryConfig`), so the
+    // Observatory's node deep-links resolve against the populated store rather
+    // than the retired bare root.
     memoryMcp = await spawnMemoryMcpIsolate(
-      config.memory,
+      cohostReadMemoryConfig(config.memory),
       port: runtime.memoryMcpPort,
       onInfo: (m) => tomLog.status('[tom_brain.memory.mcp] $m'),
       onWarning: (m) => tomLog.status('[tom_brain.memory.mcp] $m'),
