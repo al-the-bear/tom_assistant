@@ -459,3 +459,50 @@ tools:
 # here) and the named-route resolver. Version-controlled alongside this config.
 cognition:
   root: /srv/repos/al_the_bear/inhouse/second_wind/enterprise_flutter/tom_agent_container/tom_assistant/tom_brain_run/config/bomber/cognition
+# Dreaming cadence (dream-redesign parts b/d/e). The run assembly stands up the
+# DreamController and auto-starts the cadence at boot because `enabled: true`.
+# All four lanes carry the canonical agent rosters from
+# `CadenceSchedule.defaults()` but are deliberately pinned to the SAME
+# 86400-second (one-day) repeat "for now" during bring-up — the redesign keeps
+# the per-lane interval as the only knob that distinguishes their cadence, so a
+# uniform value collapses them onto a single daily beat without a code change.
+# Omitting `windows:` leaves dreaming always-active (dream whenever otherwise
+# idle); the daily beat plus the safety bounds below keep that from running away.
+#
+# Safety bounds during bring-up:
+#   * throttle.maxLlmCallsPerWindow: 40 — at most 40 dream LLM calls per
+#     throttle window (the window is the same one-day span as the cadence), so a
+#     day's dreaming can never exceed 40 substrate calls regardless of lane mix.
+#   * maxRepeatCount: 3 — each lane fires on the SCHEDULE at most three times
+#     before it stops auto-firing. A manual `/dream_now <minutes>` burst never
+#     counts against this cap, and `/dream_start` resets it.
+dream:
+  enabled: true
+  throttle:
+    maxLlmCallsPerWindow: 40
+    windowSeconds: 86400
+  maxRepeatCount: 3
+  lanes:
+    - id: fast
+      intervalSeconds: 86400
+      agents:
+        - dream_extract_v1
+        - dream_connect_v1
+    - id: slow
+      intervalSeconds: 86400
+      agents:
+        - dream_synthesise_v1
+        - dream_procedure_metrics_v1
+        - dream_inquisitor_v1
+        - dream_recentroid_v1
+        - dream_repetition_detect_v1
+    - id: deep
+      intervalSeconds: 86400
+      agents:
+        - research_v1
+        - dream_prune_v1
+        - dream_decay_v1
+    - id: monthly
+      intervalSeconds: 86400
+      agents:
+        - restructure_tree_v1
