@@ -120,7 +120,9 @@ void main() {
       expect(recall.primitive, 'recall');
       expect(recall.recall, isNotNull);
       expect(recall.recall!.modes, <String>['bm25', 'vector']);
-      expect(recall.recall!.k, '4');
+      // §3.9: `k` is a parsed int, not the raw string. The Module-2 web client
+      // decodes it as `int?`; emitting a String here crashes its `fromJson`.
+      expect(recall.recall!.k, 4);
       expect(recall.recall!.returned, 2);
       expect(recall.recall!.returnedIds, <String>['n_alpha', 'n_beta']);
     });
@@ -136,6 +138,61 @@ void main() {
       expect(withIds['returnedIds'], <String>['n_alpha', 'n_beta']);
       final empty = (run.nodes[1] as PrimitiveCallNode).recall!.toJson();
       expect(empty.containsKey('returnedIds'), isFalse);
+    });
+
+    test('k serializes as an int (the wire contract the web client decodes)',
+        () {
+      final withK = (run.nodes[0] as PrimitiveCallNode).recall!.toJson();
+      expect(withK['k'], 4);
+      expect(withK['k'], isA<int>());
+    });
+  });
+
+  group('parseRunTree — recall family + substrate detail (§3.9)', () {
+    const log = 'procedure answer_with_thinking_v1  run r0  turn t0\n'
+        '├─ recallOld (bm25 k=3 → 1: n_old1)\n'
+        '├─ recallMulti (k=10 → 2: n_m1, n_m2)\n'
+        '├─ embed (42 chars → 768d vec)\n'
+        '├─ search ("why is the sky blue" → 5 hits)\n'
+        '├─ fetch (https://example.com → status 200, 1234 chars)\n'
+        '└─ outcome accepted (entries=5, 100ms)\n';
+    final run = parseRunTree(log)!;
+
+    test('a named recall variant keeps its primitive name', () {
+      final old = run.nodes[0] as PrimitiveCallNode;
+      expect(old.primitive, 'recallOld');
+      expect(old.recall!.modes, <String>['bm25']);
+      expect(old.recall!.k, 3);
+      expect(old.recall!.returned, 1);
+      expect(old.recall!.returnedIds, <String>['n_old1']);
+    });
+
+    test('recallMulti without modes parses an empty modes list', () {
+      final multi = run.nodes[1] as PrimitiveCallNode;
+      expect(multi.primitive, 'recallMulti');
+      expect(multi.recall!.modes, isEmpty);
+      expect(multi.recall!.k, 10);
+      expect(multi.recall!.returned, 2);
+      expect(multi.recall!.returnedIds, <String>['n_m1', 'n_m2']);
+    });
+
+    test('embed carries its size-only detail', () {
+      final embed = run.nodes[2] as PrimitiveCallNode;
+      expect(embed.primitive, 'embed');
+      expect(embed.detail, '(42 chars → 768d vec)');
+      expect(embed.recall, isNull);
+    });
+
+    test('search carries its query → hit-count detail', () {
+      final search = run.nodes[3] as PrimitiveCallNode;
+      expect(search.primitive, 'search');
+      expect(search.detail, '("why is the sky blue" → 5 hits)');
+    });
+
+    test('fetch carries its url → status/size detail', () {
+      final fetch = run.nodes[4] as PrimitiveCallNode;
+      expect(fetch.primitive, 'fetch');
+      expect(fetch.detail, '(https://example.com → status 200, 1234 chars)');
     });
   });
 

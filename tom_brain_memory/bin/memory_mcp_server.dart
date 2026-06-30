@@ -10,12 +10,17 @@
 // matter).
 //
 // Usage:
-//   dart run bin/memory_mcp_server.dart <run-config.yaml> [--port N]
+//   dart run bin/memory_mcp_server.dart <run-config.yaml> [--port N] \
+//       [--profile NAME]
 //
 // `<run-config.yaml>` is the same whole-process config the brain launcher
 // consumes; only its `memory:` section is read here. `--port` defaults to 8765
-// (pass 0 for an OS-assigned port). The process prints one machine-readable
-// handshake line — `MCP_HTTP_PORT=<port>` — then serves until SIGINT/SIGTERM.
+// (pass 0 for an OS-assigned port). `--profile` selects the memory profile the
+// server reads; it defaults to the default memory profile
+// (`defaultMemoryProfile`), so the server opens the same profile-scoped store
+// the live brain writes (`<root>/profiles/<name>/`) rather than the retired
+// bare-root layout. The process prints one machine-readable handshake line —
+// `MCP_HTTP_PORT=<port>` — then serves until SIGINT/SIGTERM.
 import 'dart:async';
 import 'dart:io';
 
@@ -33,7 +38,8 @@ Future<void> main(List<String> args) async {
   } on FormatException catch (e) {
     stderr.writeln('memory_mcp_server: ${e.message}');
     stderr.writeln(
-      'usage: dart run bin/memory_mcp_server.dart <run-config.yaml> [--port N]',
+      'usage: dart run bin/memory_mcp_server.dart <run-config.yaml> '
+      '[--port N] [--profile NAME]',
     );
     exitCode = 64; // EX_USAGE
     return;
@@ -42,7 +48,13 @@ Future<void> main(List<String> args) async {
   // The store loads the sqlite-vec extension at open() and refuses to boot
   // without it; the config's `memory.sqliteVec.binariesRoot` must point at the
   // packaged vec0 for this platform.
-  final MemoryConfig config = MemoryConfigLoader.loadFromFile(parsed.configPath);
+  final MemoryConfig baseConfig =
+      MemoryConfigLoader.loadFromFile(parsed.configPath);
+
+  // Bind the profile-scoped store the live brain writes (default profile unless
+  // overridden), never the retired bare root — see `mcp_server_config.dart`.
+  final MemoryConfig config =
+      resolveMcpServerMemoryConfig(baseConfig, profile: parsed.profile);
 
   final SqliteTomBrainMemory memory = SqliteTomBrainMemory();
   await memory.open(config);
@@ -56,7 +68,8 @@ Future<void> main(List<String> args) async {
   stdout.writeln('$_portMarker${server.port}');
   stdout.writeln(
     'memory MCP server (read-only v1) serving at '
-    'http://127.0.0.1:${server.port}/mcp — store root: ${config.root}',
+    'http://127.0.0.1:${server.port}/mcp — store root: ${config.root}, '
+    'profile: ${config.profile}',
   );
   await stdout.flush();
 
@@ -80,16 +93,19 @@ Future<void> main(List<String> args) async {
   await memory.close();
 }
 
-/// Parsed command line: the required config path and the optional `--port`.
+/// Parsed command line: the required config path, the optional `--port`, and
+/// the optional `--profile` override (`null` ⇒ the default memory profile).
 final class _Args {
   final String configPath;
   final int port;
+  final String? profile;
 
-  const _Args._(this.configPath, this.port);
+  const _Args._(this.configPath, this.port, this.profile);
 
   static _Args parse(List<String> args) {
     String? configPath;
     int port = _defaultPort;
+    String? profile;
 
     for (int i = 0; i < args.length; i++) {
       final String arg = args[i];
@@ -100,6 +116,13 @@ final class _Args {
         port = _parsePort(args[++i]);
       } else if (arg.startsWith('--port=')) {
         port = _parsePort(arg.substring('--port='.length));
+      } else if (arg == '--profile') {
+        if (i + 1 >= args.length) {
+          throw const FormatException('--profile requires a value');
+        }
+        profile = args[++i];
+      } else if (arg.startsWith('--profile=')) {
+        profile = arg.substring('--profile='.length);
       } else if (arg.startsWith('-')) {
         throw FormatException('unknown option: $arg');
       } else if (configPath == null) {
@@ -112,7 +135,7 @@ final class _Args {
     if (configPath == null) {
       throw const FormatException('missing required <run-config.yaml> argument');
     }
-    return _Args._(configPath, port);
+    return _Args._(configPath, port, profile);
   }
 
   static int _parsePort(String raw) {

@@ -27,17 +27,9 @@
 import 'package:tom_brain_memory/tom_brain_memory.dart'
     show MemoryConfig, TomBrainMemoryClient;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show validateMemoryProfileName;
+    show defaultMemoryProfile, validateMemoryProfileName;
 
 import 'memory_provisioning.dart' show ProvisionedMemory;
-
-/// The canonical default memory profile (`memory_session_profiles.md` § 8.1 /
-/// MSP-4: the unprofiled root becomes `defaultmemory_default` after migration).
-///
-/// A request whose `memoryProfile` is `null`, empty, or exactly this value runs
-/// against the boot-provisioned default client rather than a separately
-/// provisioned per-profile transport.
-const String defaultMemoryProfile = 'defaultmemory_default';
 
 /// Provisions one opened [ProvisionedMemory] for the given profile-bound
 /// [MemoryConfig]. Supplied by the assembler so [ProfiledMemory] stays

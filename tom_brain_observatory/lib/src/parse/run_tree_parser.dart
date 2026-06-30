@@ -179,8 +179,17 @@ int _parseElapsed(String text) {
 
 final RegExp _llmPattern =
     RegExp(r'^llm (\S+) → (\d+)→(\d+) tok  → (\S+)$');
+// `<recall-variant> (<modes> k=<k> → <returned>[: <id>, <id>])`. Group 1 is the
+// exact recall primitive (`recall`, `recallOld`, `recallMulti`, …); the modes
+// field is optional (the seed-fused `recallMulti` writes none, so the line is
+// `recallMulti (k=… → …)`).
 final RegExp _recallPattern =
-    RegExp(r'^recall \((.*?) k=(\S*) → (\d+)(?:: (.+))?\)$');
+    RegExp(r'^(recall\w*) \((?:(\S+) )?k=(\S*) → (\d+)(?:: (.+))?\)$');
+// `<primitive> (<detail>)` for the three substrate reads (`embed` / `search` /
+// `fetch`). The whole parenthesised group is kept verbatim as the node's
+// `detail`; the payload itself never reaches the trail, only its shape/size.
+final RegExp _substrateDetailPattern =
+    RegExp(r'^(embed|search|fetch) (\(.*\))$');
 // `note <category>` or `note <category> — <detail>`. The category is matched
 // non-greedily so the optional ` — <detail>` tail (the compact payload summary
 // the writer appends) splits off cleanly; a payload-less note has no tail.
@@ -213,18 +222,31 @@ RunNode _leafNode(String content) {
 
   final recall = _recallPattern.firstMatch(content);
   if (recall != null) {
-    final modesRaw = recall.group(1)!;
-    final kRaw = recall.group(2)!;
-    final idsRaw = recall.group(4);
+    final modesRaw = recall.group(2);
+    final kRaw = recall.group(3)!;
+    final idsRaw = recall.group(5);
     return PrimitiveCallNode(
-      primitive: 'recall',
+      primitive: recall.group(1)!,
       recall: RecallDescriptor(
-        modes: modesRaw.isEmpty ? const <String>[] : modesRaw.split('+'),
-        k: kRaw.isEmpty ? null : kRaw,
-        returned: int.parse(recall.group(3)!),
+        modes: (modesRaw == null || modesRaw.isEmpty)
+            ? const <String>[]
+            : modesRaw.split('+'),
+        k: kRaw.isEmpty ? null : int.tryParse(kRaw),
+        returned: int.parse(recall.group(4)!),
         returnedIds:
             idsRaw == null ? const <String>[] : idsRaw.split(', '),
       ),
+    );
+  }
+
+  // `embed` / `search` / `fetch` — the parenthesised size-only detail rides as
+  // the node's `detail` (checked before the generic id fallback, whose ` → `
+  // requirement these lines also satisfy *inside* the parens).
+  final substrate = _substrateDetailPattern.firstMatch(content);
+  if (substrate != null) {
+    return PrimitiveCallNode(
+      primitive: substrate.group(1)!,
+      detail: substrate.group(2)!,
     );
   }
 

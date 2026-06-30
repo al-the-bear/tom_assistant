@@ -489,8 +489,7 @@ export 'memory_provisioning.dart'
         MemoryProvisioningConfig,
         MemoryTransport,
         ProvisionedMemory;
-export 'profiled_memory.dart'
-    show ProfiledMemory, ProvisionForConfig, defaultMemoryProfile;
+export 'profiled_memory.dart' show ProfiledMemory, ProvisionForConfig;
 export 'preemption_controller.dart'
     show PreemptionClock, PreemptionController;
 export 'preemption_event.dart'

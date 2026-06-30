@@ -71,6 +71,7 @@ export 'package:tom_core_agentic/tom_core_agentic.dart'
         bearerTokenMetaKey;
 export 'bearer_auth.dart'
     show JwtBearerTokenAuthenticator, StaticBearerTokenAuthenticator;
+export 'mcp_server_config.dart' show resolveMcpServerMemoryConfig;
 export 'mcp_tools.dart' show registerMemoryTools;
 export 'mcp_transports.dart';
 export 'mcp_write_forbidden.dart';

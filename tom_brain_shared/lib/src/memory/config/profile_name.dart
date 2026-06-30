@@ -29,6 +29,18 @@
 /// Aggregator can address it.
 const String reservedGlobalProfile = 'global';
 
+/// The canonical default memory profile (memory_specification.md § 2.5;
+/// `memory_session_profiles.md` § 8.1 / MSP-4).
+///
+/// The brain boots its default store at `<root>/profiles/defaultmemory_default/`
+/// (`MemoryConfig.withProfile(defaultMemoryProfile)`): the legacy pre-profiles
+/// bare-root store is migrated *into* this profile, so this — never the bare
+/// root — is the brain's canonical store. A request whose `memoryProfile` is
+/// `null`, empty, or exactly this value runs against that boot-provisioned
+/// client, and every external inspection surface (the memory MCP server) must
+/// bind the same profile so it sees what the brain actually wrote.
+const String defaultMemoryProfile = 'defaultmemory_default';
+
 /// Whether [name] is the reserved global-aggregation profile (GA-10).
 ///
 /// Consumers that must distinguish a user profile from the aggregation tier

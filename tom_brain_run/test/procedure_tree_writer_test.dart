@@ -185,6 +185,83 @@ void main() {
       expect(text, contains('recall (bm25+vector k=4 → 2: n_alpha, n_beta)'));
     });
 
+    test('renders the recall family + the three substrate reads (§5.7 / §3.9)',
+        () async {
+      final record = ProcedureTreeRecord(
+        procedureId: 'answer_with_thinking_v1',
+        version: 1,
+        runId: 'detail-run-1',
+        parentRunId: null,
+        turnId: 'turn_DET',
+        depth: 1,
+        status: TrailOutcomeStatus.accepted,
+        elapsedMs: 200,
+        entryCount: 5,
+        nodes: <ProcedureTreeNode>[
+          // A named recall variant keeps its primitive prefix.
+          ProcedurePrimitiveNode(
+            primitive: 'recallOld',
+            input: <String, Object?>{
+              'modes': <String>['bm25'],
+              'k': 3,
+            },
+            result: <String, Object?>{
+              'nodes': <Object?>[
+                <String, Object?>{'id': 'n_old1'},
+              ],
+            },
+          ),
+          // recallMulti carries no `modes` — the field drops out entirely.
+          ProcedurePrimitiveNode(
+            primitive: 'recallMulti',
+            input: <String, Object?>{'k': 10},
+            result: <String, Object?>{
+              'nodes': <Object?>[
+                <String, Object?>{'id': 'n_m1'},
+                <String, Object?>{'id': 'n_m2'},
+              ],
+            },
+          ),
+          ProcedurePrimitiveNode(
+            primitive: 'embed',
+            input: <String, Object?>{'text': 'why is the sky blue today'},
+            result: <String, Object?>{
+              'vec': <double>[0.1, 0.2],
+              'modelIdentity': <String, Object?>{'dims': 768},
+            },
+          ),
+          ProcedurePrimitiveNode(
+            primitive: 'search',
+            input: <String, Object?>{'query': 'rayleigh scattering'},
+            result: <String, Object?>{
+              'hits': <Object?>[<String, Object?>{}, <String, Object?>{}],
+            },
+          ),
+          ProcedurePrimitiveNode(
+            primitive: 'fetch',
+            input: <String, Object?>{'url': 'https://example.com/a'},
+            result: <String, Object?>{
+              'status': 200,
+              'text': '12345',
+            },
+          ),
+        ],
+      );
+
+      ProcedureTreeWriter(root: tempRoot).write(record);
+      final text = File(
+        '${tempRoot.path}/procedures/answer_with_thinking_v1/'
+        'turn_DET__detail-run-1.log',
+      ).readAsStringSync();
+
+      expect(text, contains('recallOld (bm25 k=3 → 1: n_old1)'));
+      // No modes for recallMulti — the line opens straight at `k=`.
+      expect(text, contains('recallMulti (k=10 → 2: n_m1, n_m2)'));
+      expect(text, contains('embed (25 chars → 768d vec)'));
+      expect(text, contains('search (rayleigh scattering → 2 hits)'));
+      expect(text, contains('fetch (https://example.com/a → status 200, 5 chars)'));
+    });
+
     test('renders an edge\'s endpoints + type after the id (§3.8 / §3.9)',
         () async {
       final record = ProcedureTreeRecord(

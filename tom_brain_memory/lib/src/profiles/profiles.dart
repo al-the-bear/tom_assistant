@@ -16,7 +16,7 @@
 // in-process admin surface, never exposed over the wire.
 
 export 'package:tom_brain_shared/tom_brain_shared.dart'
-    show MemoryProfileRegistry;
+    show defaultMemoryProfile, MemoryProfileRegistry, validateMemoryProfileName;
 export 'profile_events.dart' show ProfileCreated, ProfileDropped;
 export 'sqlite_memory_profile_registry.dart'
     show SqliteMemoryProfileRegistry;

@@ -155,8 +155,11 @@ void main() {
     expect(find.byIcon(Icons.code), findsNothing);
   });
 
-  testWidgets('tapping a primitive with a resultId invokes onOpenNode (PT-7.1)',
-      (tester) async {
+  testWidgets('a persist whose result id names a node deep-links it via a chip '
+      '(PT-7.1 / §4.7)', (tester) async {
+    // A node-producing primitive (`persist`) gets the same deep-link chip the
+    // edge endpoints get, not just a tappable row — the affordance the user
+    // expected ("there should be buttons as there are for 'edge'").
     String? opened;
     await _pump(
       tester,
@@ -179,7 +182,11 @@ void main() {
 
     await tester.tap(find.textContaining('p · accepted'));
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('persist → n_fixtureA1'));
+
+    // The persisted node is openable through a chip keyed like NodeLinkChip.
+    final chip = find.byKey(const ValueKey<String>('node-link:n_fixtureA1'));
+    expect(chip, findsOneWidget);
+    await tester.tap(chip);
     await tester.pumpAndSettle();
 
     expect(opened, 'n_fixtureA1');
@@ -444,6 +451,84 @@ void main() {
     // …and the note shows its category plus the payload detail tail.
     expect(find.textContaining('note progress — stage=extract, claims=5'),
         findsOneWidget);
+  });
+
+  testWidgets('renders the three substrate reads with their inline detail '
+      '(§5.7 / Issue 2)', (tester) async {
+    // embed / search / fetch used to render as bare primitive names with no
+    // insight into what they did. Each now carries a `detail` the summary
+    // shows inline, so a reader can see the work that happened.
+    await _pump(
+      tester,
+      RunTreeView(
+        run: const ProcedureRun(
+          procedureId: 'research_v1',
+          runId: 'r',
+          turnId: null,
+          status: 'accepted',
+          elapsedMs: 400,
+          entryCount: 3,
+          nodes: <RunNode>[
+            PrimitiveCallNode(
+                primitive: 'embed',
+                resultId: null,
+                recall: null,
+                detail: '(25 chars → 768d vec)'),
+            PrimitiveCallNode(
+                primitive: 'search',
+                resultId: null,
+                recall: null,
+                detail: '(rayleigh scattering → 2 hits)'),
+            PrimitiveCallNode(
+                primitive: 'fetch',
+                resultId: null,
+                recall: null,
+                detail: '(https://example.com/a → status 200, 5 chars)'),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.textContaining('research_v1'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('embed (25 chars → 768d vec)'), findsOneWidget);
+    expect(find.textContaining('search (rayleigh scattering → 2 hits)'),
+        findsOneWidget);
+    expect(
+        find.textContaining('fetch (https://example.com/a → status 200, 5 chars)'),
+        findsOneWidget);
+  });
+
+  testWidgets('a recall-family member renders under its own primitive name '
+      '(§3.9 / Issue 2)', (tester) async {
+    // recallOld / recallMulti etc. are distinct reads; the summary keeps their
+    // real name rather than collapsing every recall-family call to "recall".
+    await _pump(
+      tester,
+      RunTreeView(
+        run: const ProcedureRun(
+          procedureId: 'dream_consolidate_v1',
+          runId: 'r',
+          turnId: null,
+          status: 'accepted',
+          elapsedMs: 120,
+          entryCount: 1,
+          nodes: <RunNode>[
+            PrimitiveCallNode(
+              primitive: 'recallMulti',
+              resultId: null,
+              recall: RecallDescriptor(modes: <String>[], k: 10, returned: 2),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.textContaining('dream_consolidate_v1'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('recallMulti (k=10 → 2)'), findsOneWidget);
   });
 
   testWidgets('renders an error node with error emphasis', (tester) async {

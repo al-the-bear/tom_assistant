@@ -222,6 +222,14 @@ class _RunNodeRow extends StatelessWidget {
       return _primitiveWithChips(node, <String>[edge.from, edge.to], open);
     }
     final resultId = node.resultId;
+    // A node-producing primitive (e.g. `persist`) whose result id names a node
+    // (`n_…`) gets the same deep-link chip the edge endpoints get (§ 4.7), so
+    // the persisted node is openable — the gap the user hit. An edge or
+    // stack-entry result id (`e_…` / `se_…`) is not a node, so those primitives
+    // keep the inert summary row below.
+    if (resultId != null && resultId.startsWith('n_') && open != null) {
+      return _primitiveWithChips(node, <String>[resultId], open);
+    }
     return CollapsedRow(
       icon: Icons.memory,
       label: _primitiveSummary(node),
@@ -277,14 +285,18 @@ class _RunNodeRow extends StatelessWidget {
   static String _llmSummary(LlmCallNode n) =>
       'llm ${n.callType} · ${n.tokensIn}→${n.tokensOut} tok';
 
-  /// `recall (<modes> k=<k> → <returned>)` for a recall,
-  /// `edge <from> -<type>-> <to>` for an edge with endpoints,
-  /// else `<primitive>[ → id]`.
+  /// `<recall-variant> (<modes> k=<k> → <returned>)` for a recall-family read
+  /// (the prefix is the exact primitive — `recall`, `recallOld`, `recallMulti`,
+  /// …), `edge <from> -<type>-> <to>` for an edge with endpoints, else
+  /// `<primitive>[ → id]`.
   static String _primitiveSummary(PrimitiveCallNode n) {
     final r = n.recall;
     if (r != null) {
-      final k = r.k == null ? '' : ' k=${r.k}';
-      return 'recall (${r.modes.join('+')}$k → ${r.returned})';
+      final parts = <String>[
+        if (r.modes.isNotEmpty) r.modes.join('+'),
+        if (r.k != null) 'k=${r.k}',
+      ];
+      return '${n.primitive} (${parts.join(' ')} → ${r.returned})';
     }
     final e = n.edge;
     if (e != null) {

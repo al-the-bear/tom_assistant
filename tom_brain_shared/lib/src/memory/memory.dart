@@ -48,6 +48,7 @@ export 'config/memory_config.dart'
         TrailsConfig;
 export 'config/profile_name.dart'
     show
+        defaultMemoryProfile,
         isReservedGlobalProfile,
         isValidMemoryProfileName,
         reservedGlobalProfile,

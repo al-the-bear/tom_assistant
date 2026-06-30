@@ -70,7 +70,6 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         FileScope,
         DartMcpConnector,
         defaultCompactionTemplate,
-        defaultMemoryProfile,
         FreeTimeScheduler,
         HistoryCompactor,
         HistoryCompactionTemplateStore,
@@ -97,7 +96,13 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         TurnSummary,
         TurnSummarySink;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show Clock, HistoryConfig, ResolvedProfile, SystemClock, TomBrainMemoryClient;
+    show
+        Clock,
+        defaultMemoryProfile,
+        HistoryConfig,
+        ResolvedProfile,
+        SystemClock,
+        TomBrainMemoryClient;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show
         InProcessTomBrainSubstrate,

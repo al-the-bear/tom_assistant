@@ -155,13 +155,17 @@ final class ProcedureTreeWriter {
   }
 
   /// One primitive-call line. An `llm` node renders its token counts plus a
-  /// relative link to its raw dump; a `recall` renders its modes / k / returned
-  /// count, then the returned node ids the writer could resolve
+  /// relative link to its raw dump; a `recall`-family read (`recall`,
+  /// `recallOld`, `recallMulti`, …) renders its primitive name, modes / k /
+  /// returned count, then the returned node ids the writer could resolve
   /// (`→ <count>: <id>, <id>` — the §4.7 cross-link source; no link — a memory
-  /// primitive has no raw LLM file); an `edge` renders its endpoints + relation
-  /// then the new edge's id (`<from> -<type>-> <to> → <id>` — the §4.7 source,
-  /// where the *endpoints* deep-link, not the edge id); any other primitive
-  /// renders its name, with `→ <id>` when its result carries one.
+  /// primitive has no raw LLM file); the three substrate reads render a
+  /// size-only detail (`embed (<n> chars → <dims>d vec)`,
+  /// `search (<query> → <n> hits)`, `fetch (<url> → status <s>, <n> chars)`);
+  /// an `edge` renders its endpoints + relation then the new edge's id
+  /// (`<from> -<type>-> <to> → <id>` — the §4.7 source, where the *endpoints*
+  /// deep-link, not the edge id); any other primitive renders its name, with
+  /// `→ <id>` when its result carries one.
   String _primitiveLine(ProcedurePrimitiveNode node) {
     final llm = node.llm;
     if (llm != null) {
@@ -186,7 +190,13 @@ final class ProcedureTreeWriter {
       final count = entries?.length ?? 0;
       return 'stackPeek $name (k=$k → $count entries)';
     }
-    if (node.primitive == 'recall') {
+    // Every recall-family read (`recall`, `recallOld`, `recallCold`,
+    // `recallPrompts`, `recallAnswers`, `recallMulti`, …) renders the same
+    // form: its modes (absent for the seed-fused `recallMulti`), the requested
+    // `k`, the returned count, and the resolved ids (the §4.7 cross-link
+    // source). The leading `recall` prefix carries the exact primitive name so
+    // the reader can tell which recall variant ran.
+    if (node.primitive.startsWith('recall')) {
       final modes = (node.input['modes'] as List?)
               ?.map((Object? m) => '$m')
               .join('+') ??
@@ -199,7 +209,33 @@ final class ProcedureTreeWriter {
           if (n is Map && n['id'] is String) n['id'] as String,
       ];
       final idSuffix = ids.isEmpty ? '' : ': ${ids.join(', ')}';
-      return 'recall ($modes k=$k → $returned$idSuffix)';
+      // No `modes` for `recallMulti`; drop the field (and its space) entirely so
+      // the line never carries a stray double space the parser must tolerate.
+      final modesPart = modes.isEmpty ? '' : '$modes ';
+      return '${node.primitive} (${modesPart}k=$k → $returned$idSuffix)';
+    }
+    // The three substrate reads carry a one-line `(<input> → <result-size>)`
+    // detail so a bare `embed`/`search`/`fetch` line stops being opaque (the
+    // Observatory rendered just the primitive name before). The payloads
+    // themselves never land in the trail — only their shape/size.
+    if (node.primitive == 'embed') {
+      final text = node.input['text'];
+      final chars = text is String ? text.length : 0;
+      final identity = node.result['modelIdentity'];
+      final dims = identity is Map ? identity['dims'] : null;
+      return 'embed ($chars chars → ${dims ?? '?'}d vec)';
+    }
+    if (node.primitive == 'search') {
+      final query = _compactInline(node.input['query']);
+      final hits = node.result['hits'] as List?;
+      return 'search ($query → ${hits?.length ?? 0} hits)';
+    }
+    if (node.primitive == 'fetch') {
+      final url = _compactInline(node.input['url']);
+      final status = node.result['status'];
+      final text = node.result['text'];
+      final chars = text is String ? text.length : 0;
+      return 'fetch ($url → status ${status ?? '?'}, $chars chars)';
     }
     final id = node.result['id'];
     if (node.primitive == 'edge') {
@@ -266,6 +302,21 @@ final class ProcedureTreeWriter {
     }
     return text.replaceAll(RegExp(r'\s+'), ' ').replaceAll(' — ', ' - ').trim();
   }
+
+  /// A scalar input ([value]) as one short, single-line token for an
+  /// `embed`/`search`/`fetch` detail: all whitespace collapsed (so a multi-line
+  /// query/url can never break the line-based trail) and capped at
+  /// [_inlineDetailCap] with a trailing `…`.
+  static String _compactInline(Object? value) {
+    final text = '$value'.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (text.length <= _inlineDetailCap) {
+      return text;
+    }
+    return '${text.substring(0, _inlineDetailCap)}…';
+  }
+
+  /// The character cap on an inline `embed`/`search`/`fetch` detail field.
+  static const int _inlineDetailCap = 80;
 
   /// The character cap on a rendered note-detail line (§5.7) — long enough to
   /// carry a step's stage + counters, short enough to stay one scannable line.

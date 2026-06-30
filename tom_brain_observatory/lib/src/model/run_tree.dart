@@ -137,9 +137,10 @@ final class RecallDescriptor {
   /// The recall modes the call ran (`bm25`, `vector`, `graphWalk`, `symbolic`).
   final List<String> modes;
 
-  /// The requested `k`, verbatim as rendered (the writer prints the raw value);
-  /// `null` when the line carried none.
-  final String? k;
+  /// The requested `k` (recall fan-out), parsed from the rendered line;
+  /// `null` when the line carried none or the value was non-numeric. The
+  /// Module-2 web client decodes this as `int?`, so it must serialize as an int.
+  final int? k;
 
   /// The number of fused nodes the recall returned.
   final int returned;

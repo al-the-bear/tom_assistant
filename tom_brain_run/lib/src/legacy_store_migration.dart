@@ -20,9 +20,8 @@
 import 'dart:io';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart' show MemoryConfigPaths;
-import 'package:tom_brain_procedure/tom_brain_procedure.dart'
-    show defaultMemoryProfile;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryConfig;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show defaultMemoryProfile, MemoryConfig;
 
 /// Outcome of a [migrateLegacyMemoryRoot] attempt.
 enum LegacyMigrationOutcome {

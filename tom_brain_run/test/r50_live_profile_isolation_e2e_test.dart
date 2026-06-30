@@ -38,9 +38,9 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 import 'package:tom_brain_access/tom_brain_access.dart' show serveWithShelfIo;
-import 'package:tom_brain_procedure/tom_brain_procedure.dart'
-    show defaultMemoryProfile;
 import 'package:tom_brain_run/tom_brain_run.dart';
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show defaultMemoryProfile;
 
 import 'support/live_e2e_harness.dart';
 
