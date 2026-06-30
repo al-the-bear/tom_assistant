@@ -68,7 +68,7 @@ import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart' show CloseGuard;
-import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock, MemoryEvent, ProcedureRunRef, SystemClock, TrailEntry, TrailEntryKind, TrailId, TrailOutcome;
+import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock, MemoryEvent, ProcedureRunRef, SystemClock, TrailEntry, TrailEntryKind, TrailId, TrailOutcome, TrailOutcomeStatus;
 
 import '../observability/memory_log.dart';
 
@@ -265,10 +265,19 @@ final class SqliteTrailStore with CloseGuard {
     // A.84 — visible status line on close. Mirrors the `openTrail`
     // debug line and gives the operator a single grep-friendly entry
     // per completed trail (with outcome + entry count).
+    //
+    // For a non-`accepted` close (errored / rejected / aborted / preempted /
+    // budgetExceeded) the outcome `summary` carries the *cause* — the engine
+    // threads the crash text / failure reason into it. Append it to the live
+    // status line so an operator grepping the log sees WHY a lane closed badly,
+    // not just that it did. Accepted runs keep the terse line (no cause to
+    // report).
+    final isClean = outcome.status == TrailOutcomeStatus.accepted;
     MemoryLog.trail.status(
       () => 'closed trail ${open.id} for run ${open.runRef.runId} '
           '(outcome=${outcome.status.name}, '
-          'entries=${open.writer.entryCount})',
+          'entries=${open.writer.entryCount})'
+          '${isClean || outcome.summary.isEmpty ? '' : ' — ${outcome.summary}'}',
     );
   }
 

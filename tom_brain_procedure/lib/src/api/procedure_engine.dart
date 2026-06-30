@@ -1190,7 +1190,7 @@ final class ProcedureEngine {
         ),
       );
       return finish(record: aborted, result: null, error: error);
-    } catch (error) {
+    } catch (error, stack) {
       // The step threw before the deadline. Classify it: a source-parse
       // failure (the procedure never ran — the host raises
       // `ProcedureSourceParseException`) is `procedure.parse.failed`; any other
@@ -1200,17 +1200,35 @@ final class ProcedureEngine {
       // a parse error (Q-C.46.1). Either way the run closes `errored` and the
       // outcome carries the error so the caller (and the Phase-D fallback
       // executor) sees the typed class.
+      //
+      // The exact error text and stack are threaded into BOTH the trail's
+      // `error` entry (details) AND the terminal `errored` outcome — the
+      // close-time status line reads the outcome summary, so an operator
+      // grepping the live log sees *why* the lane crashed, not just that it
+      // did. Without this the failure cause lives only in a separate `error`
+      // trail line and the live log shows a bare `outcome=errored`.
       final isParseFailure = error is ProcedureSourceParseException;
+      final errorKind = isParseFailure ? _parseFailedKind : _runtimeCrashKind;
+      final errorText = '$error';
       await recorder.recordError(
-        isParseFailure ? _parseFailedKind : _runtimeCrashKind,
-        '$error',
+        errorKind,
+        errorText,
+        details: <String, Object?>{
+          'errorType': error.runtimeType.toString(),
+          'stack': '$stack',
+        },
       );
       final crashed = await recorder.complete(
         RunCompletion(
           status: TrailOutcomeStatus.errored,
           summary: isParseFailure
-              ? 'procedure ${loaded.header.id} failed to parse'
-              : 'procedure ${loaded.header.id} crashed',
+              ? 'procedure ${loaded.header.id} failed to parse: $errorText'
+              : 'procedure ${loaded.header.id} crashed: $errorText',
+          details: <String, Object?>{
+            'errorKind': errorKind,
+            'errorType': error.runtimeType.toString(),
+            'error': errorText,
+          },
         ),
       );
       return finish(record: crashed, result: null, error: error);
@@ -1237,13 +1255,25 @@ final class ProcedureEngine {
         final status = result.isSuccess
             ? TrailOutcomeStatus.accepted
             : TrailOutcomeStatus.errored;
+        // A body that explicitly returns `ProcedureResult.failed` reports its
+        // reason through the result outputs (there is no dedicated reason
+        // field); surface them on the errored summary/details so the
+        // close-time log carries *why* the procedure reported failure rather
+        // than a bare "reported failure".
+        final failureOutputs = result.isSuccess
+            ? const <String, Object?>{}
+            : Map<String, Object?>.of(result.outputs);
         final record = await recorder.complete(
           RunCompletion(
             status: status,
             summary: result.isSuccess
                 ? 'ran ${loaded.header.id} to completion'
-                : 'procedure ${loaded.header.id} reported failure',
+                : 'procedure ${loaded.header.id} reported failure'
+                    '${failureOutputs.isEmpty ? '' : ': $failureOutputs'}',
             producedNodeIds: producedNodeIds,
+            details: failureOutputs.isEmpty
+                ? const <String, Object?>{}
+                : <String, Object?>{'failure': failureOutputs},
           ),
         );
         return finish(record: record, result: result);
