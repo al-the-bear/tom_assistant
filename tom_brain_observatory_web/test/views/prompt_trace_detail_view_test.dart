@@ -228,10 +228,13 @@ void main() {
     await tester.pumpAndSettle();
 
     // The run-tree section is expanded; expand the root run to reveal the
-    // persisted-node row, then tap it to walk into Module 2.
+    // persisted-node row. A node-producing primitive (`persist`) keeps an inert
+    // summary row and exposes its deep-link as a `node-link:<id>` chip beneath
+    // it, so walk into Module 2 by tapping that chip.
     await tester.tap(find.textContaining('answer_with_memory_v1'));
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('persist → n_fixtureA1'));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('node-link:n_fixtureA1')));
     await tester.pumpAndSettle();
 
     expect(find.byType(NodeDetailView), findsOneWidget);

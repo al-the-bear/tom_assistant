@@ -206,7 +206,8 @@ class _EdgesSectionState extends State<_EdgesSection> {
 }
 
 /// One edge: the `from` and `to` endpoints as chips around its type + weight.
-/// The endpoint equal to the current node is shown plain ("here").
+/// The endpoint equal to the current node carries the "you are here" target
+/// marker but stays tappable, so every node on the page is inspectable.
 class _EdgeRow extends StatelessWidget {
   final MemoryApiClient client;
   final MemoryEdge edge;
@@ -233,7 +234,6 @@ class _EdgeRow extends StatelessWidget {
     );
   }
 
-  Widget _endpoint(String id) => id == here
-      ? Chip(label: Text(id), avatar: const Icon(Icons.my_location, size: 16))
-      : NodeLinkChip(client: client, nodeId: id);
+  Widget _endpoint(String id) =>
+      NodeLinkChip(client: client, nodeId: id, isCurrent: id == here);
 }

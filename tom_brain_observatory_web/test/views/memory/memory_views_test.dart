@@ -91,9 +91,54 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('—supports (0.90)→'), findsOneWidget);
-      // The other endpoint is a walkable chip; the current node is plain.
+      // Both endpoints are walkable chips so every node is inspectable; the
+      // current node ("here") keeps the target marker but is no longer inert.
       expect(find.byKey(const ValueKey<String>('node-link:n2')), findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('node-link:n1')), findsNothing);
+      expect(find.byKey(const ValueKey<String>('node-link:n1')), findsOneWidget);
+      // The current-node endpoint carries the "you are here" target icon; the
+      // other endpoint carries the default tree icon.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('node-link:n1')),
+          matching: find.byIcon(Icons.my_location),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('node-link:n2')),
+          matching: find.byIcon(Icons.account_tree),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('tapping the current-node ("here") endpoint re-opens its detail',
+        (tester) async {
+      final client = StubMemoryApiClient(
+        nodes: <String, MemoryNode>{'n1': _node('n1'), 'n2': _node('n2')},
+        edgesByNode: <String, List<MemoryEdge>>{
+          'n1': const <MemoryEdge>[
+            MemoryEdge(
+                id: 'e1', from: 'n1', type: 'supports', to: 'n2', weight: 0.9),
+          ],
+        },
+      );
+      await tester
+          .pumpWidget(_host(NodeDetailView(client: client, nodeId: 'n1')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey<String>('node-link:n1')));
+      await tester.pumpAndSettle();
+
+      // A fresh detail page for the same node is pushed — proof it is
+      // inspectable. The original route is now offstage beneath it, so count it
+      // too (skipOffstage: false).
+      expect(
+        find.byType(NodeDetailView, skipOffstage: false),
+        findsNWidgets(2),
+      );
+      expect(find.widgetWithText(AppBar, 'Node n1'), findsOneWidget);
     });
 
     testWidgets('a missing node shows the absence note', (tester) async {
