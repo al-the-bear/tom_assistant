@@ -97,7 +97,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         TurnSummary,
         TurnSummarySink;
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show HistoryConfig, ResolvedProfile, TomBrainMemoryClient;
+    show Clock, HistoryConfig, ResolvedProfile, SystemClock, TomBrainMemoryClient;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show
         InProcessTomBrainSubstrate,
@@ -438,11 +438,17 @@ DreamController _startDreamLoop(
     templatesDir: historyCompactionTemplatesDir,
     substrate: booted.substrate,
   );
+  // One wall clock shared by both the *timing* driver (which lanes are due) and
+  // the *pass-clock* seam (the `nowMs` stamp `dream_decay_v1` ages coldness
+  // against): the lane that decides a decay pass is due and the instant that
+  // pass measures against read the same source.
+  const Clock clock = SystemClock();
   final scheduler = FreeTimeScheduler(
     coordinator: booted.coordinator,
     memory: booted.memory.client,
     workFactory: (_) => null,
     engine: booted.engine,
+    clock: clock,
     // Each dreaming lane resolves its own prior-run window from the shared
     // `history:` block (todo #14): `history.lanes.<dreamLaneId>` sizes a lane's
     // `recentRuns` context independently of the foreground answer lane.
@@ -473,6 +479,7 @@ DreamController _startDreamLoop(
   final controller = DreamController(
     driver: dreamCadenceDriverOverScheduler(
       scheduler,
+      clock: clock,
       schedule: schedule,
       throttle: throttle,
       maxRepeatCount: dream.maxRepeatCount,
