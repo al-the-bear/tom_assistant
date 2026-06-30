@@ -72,7 +72,7 @@ void main() {
       expect(status['active'], isTrue);
       expect(status['running'], isFalse);
       expect(status['alwaysActive'], isTrue);
-      expect(status['forcedUntil'], isNull);
+      expect(status['manualUntil'], isNull);
     });
   });
 }
@@ -82,7 +82,7 @@ class _RecordingDream implements ToolDreamSurface {
   final List<String> calls = <String>[];
   Duration? lastPeriod;
   final Map<String, Object?> statusReturn = const <String, Object?>{
-    'mode': 'forced',
+    'mode': 'scheduled',
     'active': true,
     'running': true,
   };

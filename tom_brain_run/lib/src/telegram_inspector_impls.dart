@@ -28,6 +28,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
     show
         QueueSnapshot,
         QueueSnapshotSource,
+        TelegramDreamController,
         TelegramLogInspector,
         TelegramLogTail,
         TelegramMcpInspector,
@@ -57,6 +58,9 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show ProviderAuthConfigCases, ProviderProfile, SubstrateConfig;
 
 import 'cognition_config.dart';
+import 'dream_cadence_driver.dart' show DreamLaneSpec;
+import 'dream_controller.dart' show DreamController, DreamModeKind, DreamStatus;
+import 'dream_window_schedule.dart' show DreamWindow;
 
 /// Reads the §5.3 `incoming/` raw-prompt trail back for the `/observatory_*`
 /// commands (parts b + c).
@@ -1153,4 +1157,133 @@ final class McpServersInspector implements TelegramMcpInspector {
   /// Two-space-indented JSON rendering of an advertised tool's input schema.
   String _prettyJson(Object? value) =>
       const JsonEncoder.withIndent('  ').convert(value);
+}
+
+/// Drives the live [DreamController] for the Telegram dream commands
+/// (`/dream_now`, `/dream_start`, `/dream_stop`, `/dream_status`) — the run-layer
+/// implementation of the access port [TelegramDreamController]
+/// (dream-redesign item 5).
+///
+/// The access package owns the command-parse + presentation; this adapter owns
+/// the mapping onto the controller's base/manual model and the channel-neutral
+/// rendering of its state. Each verb maps directly:
+///   * `/dream_now N` → [DreamController.dreamNow] (a manual window; not a
+///     "start", never counts toward the repeat cap);
+///   * `/dream_start` → [DreamController.startNormal];
+///   * `/dream_stop`  → [DreamController.stopNormal];
+///   * `/dream_status` → [DreamController.status] rendered with the configured
+///     windows and lanes, so config shows even before any run.
+final class DreamControllerTelegramAdapter implements TelegramDreamController {
+  /// Wraps the live [controller] the run assembly built.
+  DreamControllerTelegramAdapter(this._controller);
+
+  final DreamController _controller;
+
+  @override
+  Future<String> dreamNow(int windowMinutes) async {
+    await _controller.dreamNow(Duration(minutes: windowMinutes));
+    final plural = windowMinutes == 1 ? 'minute' : 'minutes';
+    return 'Opened a manual dreaming window for $windowMinutes $plural; a dream '
+        'pass is starting now. The base schedule is unchanged.';
+  }
+
+  @override
+  Future<String> dreamStart() async {
+    _controller.startNormal();
+    return 'Scheduled dreaming resumed — the brain follows its configured '
+        'windows again and the repeat tally is reset.';
+  }
+
+  @override
+  Future<String> dreamStop() async {
+    _controller.stopNormal();
+    return 'Scheduled dreaming stopped. Use /dream_start to resume or '
+        '/dream_now <minutes> for a one-off window.';
+  }
+
+  @override
+  Future<String> dreamStatus() async => _render(_controller.status());
+
+  /// Renders [status] plus the configured windows + lanes to channel-neutral
+  /// text.
+  String _render(DreamStatus status) {
+    final buffer = StringBuffer('Dreaming status')
+      ..write('\n  mode: ${_modeLabel(status.mode)}')
+      ..write('\n  active now: ${status.active ? 'yes' : 'no'}')
+      ..write('\n  loop running: ${status.running ? 'yes' : 'no'}')
+      ..write('\n  windows: ${_windowsLabel()}')
+      ..write('\n  repeat cap: ${_repeatCapLabel(status.maxRepeatCount)}');
+    final manualUntil = status.manualUntil;
+    if (manualUntil != null) {
+      buffer.write('\n  manual window until: '
+          '${manualUntil.toIso8601String()}');
+    }
+    buffer.write('\n  lanes:');
+    for (final lane in _controller.cadenceSchedule.lanes) {
+      buffer.write('\n    - ${_laneLabel(lane, status)}');
+    }
+    return buffer.toString();
+  }
+
+  /// The human label for a base mode.
+  String _modeLabel(DreamModeKind mode) {
+    switch (mode) {
+      case DreamModeKind.scheduled:
+        return 'scheduled';
+      case DreamModeKind.suspended:
+        return 'suspended';
+    }
+  }
+
+  /// `always active` for an empty schedule, else the `HH:MM–HH:MM` slot list.
+  String _windowsLabel() {
+    final schedule = _controller.windowSchedule;
+    if (schedule.isAlwaysActive) {
+      return 'always active (no time-slots configured)';
+    }
+    return schedule.windows.map(_windowLabel).join(', ');
+  }
+
+  /// One `HH:MM–HH:MM` slot.
+  String _windowLabel(DreamWindow window) =>
+      '${_minuteLabel(window.startMinute)}–${_minuteLabel(window.endMinute)}';
+
+  /// A minute-of-day as zero-padded `HH:MM` (1440 renders as `24:00`).
+  String _minuteLabel(int minuteOfDay) {
+    final hours = (minuteOfDay ~/ 60).toString().padLeft(2, '0');
+    final minutes = (minuteOfDay % 60).toString().padLeft(2, '0');
+    return '$hours:$minutes';
+  }
+
+  /// `unlimited` when no cap, else the integer cap.
+  String _repeatCapLabel(int? cap) => cap == null ? 'unlimited' : '$cap';
+
+  /// One lane line: id, interval, agent count, and the scheduled-run tally
+  /// (count of the cap when a cap is set).
+  String _laneLabel(DreamLaneSpec lane, DreamStatus status) {
+    final ran = status.laneRunCounts[lane.id] ?? 0;
+    final cap = status.maxRepeatCount;
+    final tally = cap == null ? 'runs $ran' : 'runs $ran/$cap';
+    final agents = lane.agents.length == 1 ? 'agent' : 'agents';
+    return '${lane.id}: every ${_intervalLabel(lane.interval)}, '
+        '${lane.agents.length} $agents, $tally';
+  }
+
+  /// A compact interval label (`external-only` for a zero interval).
+  String _intervalLabel(Duration interval) {
+    if (interval == Duration.zero) {
+      return 'external trigger only';
+    }
+    final seconds = interval.inSeconds;
+    if (seconds % 86400 == 0) {
+      return '${seconds ~/ 86400}d';
+    }
+    if (seconds % 3600 == 0) {
+      return '${seconds ~/ 3600}h';
+    }
+    if (seconds % 60 == 0) {
+      return '${seconds ~/ 60}m';
+    }
+    return '${seconds}s';
+  }
 }

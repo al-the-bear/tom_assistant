@@ -1,27 +1,29 @@
 // DreamController (items b + c) — the runtime gate over the dream cadence loop.
 //
 // Item b wires the dream cadence into startup with *configurable daily
-// time-slots*. Item c adds an operator/tool surface to start dreaming for a
-// period, stop it, resume the configured schedule, and ask whether the brain is
-// dreaming. Both reduce to one decision the loop asks each heartbeat — *may
-// dreaming fire right now?* — so both live here.
+// time-slots*. Item c adds an operator/tool surface to start dreaming, stop it,
+// open an immediate manual dreaming window, and ask whether the brain is
+// dreaming. All reduce to one decision the loop asks each heartbeat — *may
+// dreaming fire right now?* — so all live here.
 //
-// The decision is the product of:
+// The decision is the product of two layers:
 //
-//   * the configured [DreamWindowSchedule] (the daily time-slots), and
-//   * a runtime [DreamModeKind]:
-//       - `scheduled`  — follow the windows (the boot default);
-//       - `forced`     — dream regardless of the window until a deadline, then
-//                        auto-revert to `scheduled` (the tool's "start for N
-//                        minutes" / "continue an interrupted schedule" path);
-//       - `suspended`  — never dream until explicitly resumed (the tool's
-//                        "stop" path).
+//   * a persistent **base mode** ([DreamModeKind]):
+//       - `scheduled`  — follow the configured windows (the boot default and the
+//                        `/dream_start` state);
+//       - `suspended`  — never dream on the schedule (the `/dream_stop` state);
+//   * a transient **manual window** — a `/dream_now N` burst opens a window of N
+//     minutes during which dreaming is active regardless of the base mode, and
+//     immediately fires one out-of-band all-lanes pass. The manual window is an
+//     *overlay*: it never changes the base mode (it "must not imply a start")
+//     and its immediate pass never counts toward the scheduled-repeat cap.
 //
 // The controller owns the [DreamCadenceLoop] and feeds it its [isDreamingActive]
 // gate, so the heartbeat keeps ticking but only *fires* dream passes when the
-// mode + window agree. It holds no write path and no substrate — gating *when*
-// the cadence runs cannot affect *what* an agent writes (the no-overwrite
-// invariant, hard principle 6, is the agents' property).
+// base mode or an open manual window admits it. It holds no write path and no
+// substrate — gating *when* the cadence runs cannot affect *what* an agent
+// writes (the no-overwrite invariant, hard principle 6, is the agents'
+// property).
 //
 // Time source: a human configures windows in *local* wall-clock terms
 // ("between 02:00 and 05:00 at night"), so the controller reads a local
@@ -31,23 +33,25 @@
 // measures elapsed *intervals* — wall-clock zone is irrelevant there but
 // load-bearing here.
 
+import 'dart:async';
+
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show ToolDreamSurface;
 
-import 'dream_cadence_driver.dart' show DreamCadenceDriver;
+import 'dream_cadence_driver.dart' show CadenceSchedule, DreamCadenceDriver;
 import 'dream_cadence_wiring.dart' show DreamCadenceLoop;
 import 'dream_window_schedule.dart' show DreamWindowSchedule;
 
-/// The runtime dreaming mode the control surface drives (item c).
+/// The persistent base dreaming mode the control surface drives (item c).
+///
+/// A transient manual window ([DreamController.dreamNow]) overlays this base
+/// without changing it — the overlay is reported separately as
+/// [DreamStatus.manualUntil], never as a mode.
 enum DreamModeKind {
-  /// Follow the configured daily windows (the boot default).
+  /// Follow the configured daily windows (the boot default; `/dream_start`).
   scheduled,
 
-  /// Dream regardless of the window until a deadline, then revert to
-  /// [scheduled].
-  forced,
-
-  /// Never dream until explicitly resumed.
+  /// Never dream on the schedule until `/dream_start` (`/dream_stop`).
   suspended,
 }
 
@@ -60,13 +64,16 @@ final class DreamStatus {
     required this.active,
     required this.running,
     required this.alwaysActive,
-    this.forcedUntil,
+    this.manualUntil,
+    this.maxRepeatCount,
+    this.laneRunCounts = const <String, int>{},
   });
 
-  /// The current runtime mode.
+  /// The current persistent base mode.
   final DreamModeKind mode;
 
-  /// Whether dreaming may fire *right now* (mode + window agree).
+  /// Whether dreaming may fire *right now* (base mode or a manual window
+  /// admits it).
   final bool active;
 
   /// Whether the heartbeat loop is currently running.
@@ -75,33 +82,44 @@ final class DreamStatus {
   /// Whether the schedule imposes no window restriction (empty windows).
   final bool alwaysActive;
 
-  /// When a [DreamModeKind.forced] period ends, or `null` outside forced mode.
-  final DateTime? forcedUntil;
+  /// When an open manual (`/dream_now`) window ends, or `null` when no manual
+  /// window is open.
+  final DateTime? manualUntil;
+
+  /// The global scheduled-repeat cap, or `null` when scheduled repeats are
+  /// unlimited.
+  final int? maxRepeatCount;
+
+  /// Per-lane count of scheduled passes completed (lane id → count). Manual
+  /// bursts never increment these.
+  final Map<String, int> laneRunCounts;
 
   /// The wire shape the `dream.control` tool returns to a procedure (the
-  /// [ToolDreamSurface.dreamStatus] contract). [forcedUntil] is emitted as an
+  /// [ToolDreamSurface.dreamStatus] contract). [manualUntil] is emitted as an
   /// ISO-8601 string so the map carries only JSON-native scalars.
   Map<String, Object?> toMap() => <String, Object?>{
         'mode': mode.name,
         'active': active,
         'running': running,
         'alwaysActive': alwaysActive,
-        'forcedUntil': forcedUntil?.toIso8601String(),
+        'manualUntil': manualUntil?.toIso8601String(),
+        'maxRepeatCount': maxRepeatCount,
+        'laneRunCounts': laneRunCounts,
       };
 }
 
-/// Owns the [DreamCadenceLoop] and gates it by the configured windows and the
-/// runtime mode (items b + c).
+/// Owns the [DreamCadenceLoop] and gates it by the configured windows, the
+/// persistent base mode, and any open manual window (items b + c).
 ///
 /// It is the live implementation of [ToolDreamSurface]: the `dream.control`
-/// tool drives `forceFor` / `suspend` / `resume` / `dreamStatus` straight onto
-/// the running controller (reached through the run assembly's late-bound
-/// holder).
+/// tool drives `forceFor` (→ [dreamNow]) / `suspend` (→ [stopNormal]) /
+/// `resume` (→ [startNormal]) / `dreamStatus` straight onto the running
+/// controller (reached through the run assembly's late-bound holder).
 final class DreamController implements ToolDreamSurface {
   /// Builds a controller over the already-assembled cadence [driver] and the
   /// configured [schedule].
   ///
-  /// [now] is the local wall-clock source the windows + forced deadlines are
+  /// [now] is the local wall-clock source the windows + manual deadlines are
   /// evaluated against (default [DateTime.now]); tests inject a mutable clock.
   /// [heartbeat] and [onTickError] are forwarded to the loop the controller
   /// constructs (and gates with [isDreamingActive]).
@@ -111,7 +129,8 @@ final class DreamController implements ToolDreamSurface {
     DateTime Function() now = DateTime.now,
     Duration heartbeat = const Duration(minutes: 1),
     void Function(Object error, StackTrace stack)? onTickError,
-  })  : _schedule = schedule,
+  })  : _driver = driver,
+        _schedule = schedule,
         _now = now {
     _loop = DreamCadenceLoop(
       driver: driver,
@@ -121,16 +140,25 @@ final class DreamController implements ToolDreamSurface {
     );
   }
 
+  final DreamCadenceDriver _driver;
   final DreamWindowSchedule _schedule;
   final DateTime Function() _now;
 
   late final DreamCadenceLoop _loop;
 
-  DreamModeKind _mode = DreamModeKind.scheduled;
-  DateTime? _forcedUntil;
+  DreamModeKind _baseMode = DreamModeKind.scheduled;
+  DateTime? _manualUntil;
 
   /// Whether the heartbeat loop is currently running.
   bool get isRunning => _loop.isRunning;
+
+  /// The configured cadence lanes (read-only), for the `/dream_status` surface
+  /// to render each lane's interval and agents even before any run.
+  CadenceSchedule get cadenceSchedule => _driver.schedule;
+
+  /// The configured daily dream windows (read-only), for the `/dream_status`
+  /// surface to render the allowed time-slots.
+  DreamWindowSchedule get windowSchedule => _schedule;
 
   /// Starts the gated heartbeat. Idempotent.
   void start() => _loop.start();
@@ -140,66 +168,94 @@ final class DreamController implements ToolDreamSurface {
 
   /// Whether dreaming may fire as of [at] (default: the current local time).
   ///
-  /// Resolves the mode against the window:
+  /// An open manual window admits dreaming regardless of the base mode; once it
+  /// lapses the decision falls back to the base mode:
   ///   * `suspended` → never;
-  ///   * `forced` → until the deadline, then auto-revert to `scheduled` and
-  ///     re-evaluate the window (so a forced period that lapses outside a window
-  ///     correctly goes idle);
   ///   * `scheduled` → whether [at] falls in any configured window.
   bool isDreamingActive([DateTime? at]) {
     final instant = at ?? _now();
-    switch (_mode) {
+    final manual = _manualUntil;
+    if (manual != null) {
+      if (instant.isBefore(manual)) {
+        return true;
+      }
+      // The manual window lapsed: drop it and fall back to the base mode.
+      _manualUntil = null;
+    }
+    switch (_baseMode) {
       case DreamModeKind.suspended:
         return false;
-      case DreamModeKind.forced:
-        final deadline = _forcedUntil;
-        if (deadline != null && instant.isBefore(deadline)) {
-          return true;
-        }
-        // The forced period lapsed: fall back to the schedule from here on.
-        _mode = DreamModeKind.scheduled;
-        _forcedUntil = null;
-        return _schedule.isActiveAt(instant);
       case DreamModeKind.scheduled:
         return _schedule.isActiveAt(instant);
     }
   }
 
-  /// Forces dreaming on for [period], regardless of the configured windows
-  /// (item c — "start dreaming for a certain period"). After the period the
-  /// controller reverts to [DreamModeKind.scheduled].
+  /// Opens a manual dreaming window for [period] and fires one immediate
+  /// out-of-band all-lanes pass (item c — `/dream_now`).
+  ///
+  /// The window admits dreaming regardless of the base mode for [period]; the
+  /// immediate pass is fired through [DreamCadenceDriver.tickManual], so it
+  /// neither counts toward the scheduled-repeat cap nor changes the base mode
+  /// (it "must not imply a start").
+  Future<void> dreamNow(Duration period) async {
+    _manualUntil = _now().add(period);
+    await _driver.tickManual();
+  }
+
+  /// Resumes normal scheduled dreaming and re-arms the schedule
+  /// (item c — `/dream_start`): the base mode returns to [DreamModeKind.scheduled]
+  /// and the scheduled-repeat tally is cleared and re-baselined, so a cadence
+  /// that had reached [DreamCadenceDriver.maxRepeatCount] fires afresh.
+  void startNormal() {
+    _baseMode = DreamModeKind.scheduled;
+    _driver.resetScheduledRunCounts();
+    _driver.rebaseline();
+  }
+
+  /// Stops normal scheduled dreaming (item c — `/dream_stop`): the base mode
+  /// becomes [DreamModeKind.suspended] and any open manual window is closed.
+  void stopNormal() {
+    _baseMode = DreamModeKind.suspended;
+    _manualUntil = null;
+  }
+
+  /// [ToolDreamSurface] — "start dreaming for a period" maps onto a manual
+  /// [dreamNow] window. Fired-and-forgotten because the tool surface is `void`;
+  /// the immediate pass runs on its own microtask.
   @override
   void forceFor(Duration period) {
-    _mode = DreamModeKind.forced;
-    _forcedUntil = _now().add(period);
+    unawaited(dreamNow(period));
   }
 
-  /// Suspends dreaming until [resume] is called, even inside a configured window
-  /// (item c — "stop dreaming").
+  /// [ToolDreamSurface] — "stop" maps onto [stopNormal].
   @override
-  void suspend() {
-    _mode = DreamModeKind.suspended;
-    _forcedUntil = null;
-  }
+  void suspend() => stopNormal();
 
-  /// Returns to following the configured schedule (item c — "continue dreaming
-  /// if the configured schedule was interrupted"). Clears any forced deadline or
-  /// suspension.
+  /// [ToolDreamSurface] — "resume" maps onto [startNormal].
   @override
-  void resume() {
-    _mode = DreamModeKind.scheduled;
-    _forcedUntil = null;
-  }
+  void resume() => startNormal();
 
   /// A snapshot of the current dreaming state (item c — "find out if the brain
-  /// is currently dreaming").
+  /// is currently dreaming"), enriched with the scheduled-repeat cap and the
+  /// per-lane scheduled-run tally for the `/dream_status` surface.
   DreamStatus status() => DreamStatus(
-        mode: _mode,
+        mode: _baseMode,
         active: isDreamingActive(),
         running: isRunning,
         alwaysActive: _schedule.isAlwaysActive,
-        forcedUntil: _forcedUntil,
+        manualUntil: _manualUntil,
+        maxRepeatCount: _driver.maxRepeatCount,
+        laneRunCounts: _laneRunCounts(),
       );
+
+  /// The current per-lane scheduled-run tally, keyed by lane id.
+  Map<String, int> _laneRunCounts() {
+    final counts = <String, int>{};
+    for (final lane in _driver.schedule.lanes) {
+      counts[lane.id] = _driver.scheduledRunCount(lane.id);
+    }
+    return counts;
+  }
 
   /// The [ToolDreamSurface] read the `dream.control` tool returns for every
   /// action — the [status] snapshot as a JSON-native map.

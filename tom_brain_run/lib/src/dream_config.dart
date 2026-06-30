@@ -63,6 +63,7 @@ final class DreamConfig {
     this.heartbeat,
     this.cadence,
     this.throttle,
+    this.maxRepeatCount,
   });
 
   /// Whether the run assembly starts the dream loop at boot. A `false` here
@@ -85,4 +86,10 @@ final class DreamConfig {
   /// is unthrottled (the behaviour before part d); present ⇒ the run assembly
   /// builds a [DreamThrottle] the cadence driver paces LLM-using agents through.
   final DreamThrottleSettings? throttle;
+
+  /// The optional global cap on how many times each lane fires on the
+  /// *schedule* before it stops auto-firing (a "for now" safety bound during
+  /// bring-up). `null` ⇒ unlimited scheduled repeats. Manual `/dream_now`
+  /// bursts never count against this cap; `startNormal` resets it.
+  final int? maxRepeatCount;
 }

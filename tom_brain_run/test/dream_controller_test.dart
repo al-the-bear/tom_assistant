@@ -88,48 +88,76 @@ void main() {
       addTearDown(() => controller.stop());
     });
 
-    test('forceFor dreams regardless of the window until the deadline expires',
-        () {
+    test('dreamNow opens a manual window that dreams regardless of the base '
+        'schedule until it lapses, without changing the base mode', () async {
       expect(controller.isDreamingActive(), isFalse); // scheduled, outside window
+      expect(controller.status().mode, DreamModeKind.scheduled);
 
-      controller.forceFor(const Duration(minutes: 30));
-      expect(controller.status().mode, DreamModeKind.forced);
-      expect(controller.isDreamingActive(), isTrue); // forced overrides window
+      await controller.dreamNow(const Duration(minutes: 30));
+      // The manual window overrides the closed schedule window…
+      expect(controller.isDreamingActive(), isTrue);
+      // …but it is NOT a "start": the base mode is untouched.
+      expect(controller.status().mode, DreamModeKind.scheduled);
+      expect(controller.status().manualUntil, isNotNull);
 
-      // 29 minutes later: still forced.
+      // 29 minutes later: still inside the manual window.
       localNow = localNow.add(const Duration(minutes: 29));
       expect(controller.isDreamingActive(), isTrue);
 
-      // Past the deadline: auto-revert to scheduled (still outside the window).
+      // Past the manual window: back to the (still-closed) base schedule.
       localNow = localNow.add(const Duration(minutes: 2));
       expect(controller.isDreamingActive(), isFalse);
-      expect(controller.status().mode, DreamModeKind.scheduled);
+      expect(controller.status().manualUntil, isNull);
     });
 
-    test('suspend stops dreaming even inside a window', () {
+    test('a manual window dreams even when the base mode is stopped', () async {
+      controller.stopNormal();
+      expect(controller.isDreamingActive(), isFalse);
+
+      await controller.dreamNow(const Duration(minutes: 15));
+      expect(controller.isDreamingActive(), isTrue);
+      // The base mode stays suspended — the window is an overlay, not a start.
+      expect(controller.status().mode, DreamModeKind.suspended);
+    });
+
+    test('stopNormal stops dreaming even inside a window', () {
       localNow = DateTime(2026, 6, 10, 3, 0); // inside the window
       expect(controller.isDreamingActive(), isTrue);
-      controller.suspend();
+      controller.stopNormal();
       expect(controller.status().mode, DreamModeKind.suspended);
       expect(controller.isDreamingActive(), isFalse);
     });
 
-    test('resume returns to following the configured schedule', () {
-      controller.suspend();
+    test('startNormal returns to following the configured schedule', () {
+      controller.stopNormal();
       expect(controller.isDreamingActive(), isFalse);
-      controller.resume();
+      controller.startNormal();
       expect(controller.status().mode, DreamModeKind.scheduled);
       localNow = DateTime(2026, 6, 10, 3, 0); // inside the window
       expect(controller.isDreamingActive(), isTrue);
     });
 
-    test('status reports mode, activity, and the forced deadline', () {
-      controller.forceFor(const Duration(hours: 1));
+    test('status reports mode, activity, and the manual-window deadline',
+        () async {
+      await controller.dreamNow(const Duration(hours: 1));
       final status = controller.status();
-      expect(status.mode, DreamModeKind.forced);
+      expect(status.mode, DreamModeKind.scheduled);
       expect(status.active, isTrue);
-      expect(status.forcedUntil, isNotNull);
-      expect(status.forcedUntil!.isAfter(localNow), isTrue);
+      expect(status.manualUntil, isNotNull);
+      expect(status.manualUntil!.isAfter(localNow), isTrue);
+    });
+
+    test('the ToolDreamSurface verbs map onto the base/manual model', () {
+      // forceFor opens a manual window (the procedure-facing "start dreaming
+      // for a period" verb); suspend/resume drive the base mode.
+      controller.forceFor(const Duration(minutes: 10));
+      expect(controller.status().manualUntil, isNotNull);
+
+      controller.suspend();
+      expect(controller.status().mode, DreamModeKind.suspended);
+
+      controller.resume();
+      expect(controller.status().mode, DreamModeKind.scheduled);
     });
   });
 

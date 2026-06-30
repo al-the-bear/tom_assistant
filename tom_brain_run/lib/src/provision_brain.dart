@@ -50,6 +50,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
         QueueSnapshotSource,
         TelegramChatApiFactory,
         TelegramCliServerPortController,
+        TelegramDreamController,
         TelegramInspectors,
         TelegramStopController,
         TelegramTodosInspector,
@@ -144,6 +145,7 @@ import 'summary_fanout.dart' show SummaryFanout;
 import 'telegram_inspector_impls.dart'
     show
         CognitionPromptsInspector,
+        DreamControllerTelegramAdapter,
         LiveStopController,
         LiveUsageInspector,
         McpServersInspector,
@@ -388,6 +390,13 @@ Future<ProvisionedBrain> provisionBrain({
     // Telegram `/stop_prompt` command over the engine's `LiveRunRegistry`
     // without the access package depending on `tom_brain_procedure`.
     stopController: LiveStopController(registry: booted.engine.liveRunRegistry),
+    // Surface the live dream cadence behind the access package's
+    // `TelegramDreamController` port for `/dream_now` / `/dream_start` /
+    // `/dream_stop` / `/dream_status`. `null` when dreaming is disabled — the
+    // edge then answers those commands "not available on this deployment".
+    dreamController: dreamController == null
+        ? null
+        : DreamControllerTelegramAdapter(dreamController),
   );
 }
 
@@ -466,6 +475,7 @@ DreamController _startDreamLoop(
       scheduler,
       schedule: schedule,
       throttle: throttle,
+      maxRepeatCount: dream.maxRepeatCount,
     ),
     schedule: dream.schedule,
     heartbeat: dream.heartbeat ?? const Duration(minutes: 1),
@@ -678,6 +688,7 @@ Future<BrainProcess> standUpBrainProcess({
         todos: provisioned.todosInspector,
         usage: provisioned.usageInspector,
         stop: provisioned.stopController,
+        dream: provisioned.dreamController,
         substrateConfig: substrateConfig,
         cognitionConfig: cognitionConfig,
         mcpClient: mcpClient,
@@ -718,6 +729,7 @@ TelegramInspectors _telegramInspectorsFor({
   required TelegramTodosInspector? todos,
   required TelegramUsageInspector? usage,
   required TelegramStopController? stop,
+  required TelegramDreamController? dream,
   required SubstrateConfig? substrateConfig,
   required CognitionConfig? cognitionConfig,
   required McpClient? mcpClient,
@@ -744,6 +756,9 @@ TelegramInspectors _telegramInspectorsFor({
     // The stop controller acts on the same live `LiveRunRegistry`, also
     // independent of `trailRoot`, so it is wired whenever one is exposed.
     stop: stop,
+    // The dream controller drives the live cadence (not the trail), so it is
+    // wired whenever the provisioner ran a dream loop (dreaming enabled).
+    dream: dream,
     // The models inspector reads the parsed substrate config (not the trail),
     // so it is wired whenever the boot threaded one in.
     models: substrateConfig == null

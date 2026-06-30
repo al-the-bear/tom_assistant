@@ -39,6 +39,7 @@ abstract final class DreamConfigLoader {
     'heartbeatSeconds',
     'lanes',
     'throttle',
+    'maxRepeatCount',
   };
 
   /// The keys a `dream.throttle` block may carry (part d).
@@ -104,12 +105,21 @@ abstract final class DreamConfigLoader {
 
     final DreamThrottleSettings? throttle = _parseThrottle(dream);
 
+    final num? maxRepeatCount =
+        _reader.optionalNum(dream, 'maxRepeatCount', 'dream.maxRepeatCount');
+    if (maxRepeatCount != null && maxRepeatCount <= 0) {
+      throw const DreamConfigException(
+        'dream.maxRepeatCount must be a positive integer.',
+      );
+    }
+
     return DreamConfig(
       enabled: enabled,
       schedule: schedule,
       heartbeat: heartbeat,
       cadence: cadence,
       throttle: throttle,
+      maxRepeatCount: maxRepeatCount?.toInt(),
     );
   }
 
@@ -165,9 +175,10 @@ abstract final class DreamConfigLoader {
   ///
   /// Each entry is a `{id, intervalSeconds, agents, maxLlmCallsPerWindow?}` map.
   /// The lanes *replace* the defaults wholesale (HP1: the config is the lane
-  /// set). Structural validity — non-empty unique ids, positive intervals,
-  /// non-empty agents — is enforced by the [CadenceSchedule] constructor; an
-  /// `ArgumentError` from it is rewrapped into a located [DreamConfigException].
+  /// set). Structural validity — non-empty unique ids, non-negative intervals
+  /// (a zero interval marks an external-trigger-only lane), non-empty agents —
+  /// is enforced by the [CadenceSchedule] constructor; an `ArgumentError` from
+  /// it is rewrapped into a located [DreamConfigException].
   static CadenceSchedule? _parseLanes(Map<Object?, Object?> dream) {
     final List<Object?>? rawLanes =
         _reader.optionalList(dream, 'lanes', 'dream.lanes');
@@ -191,9 +202,13 @@ abstract final class DreamConfigLoader {
           'Missing required field: $lanePath.intervalSeconds',
         );
       }
-      if (intervalSeconds <= 0) {
+      // A zero interval is legal: it marks an external-trigger-only lane that
+      // the scheduled cadence never auto-fires (it runs solely on a manual
+      // `/dream_now` burst). Only a negative interval is malformed.
+      if (intervalSeconds < 0) {
         throw DreamConfigException(
-          '$lanePath.intervalSeconds must be a positive number of seconds.',
+          '$lanePath.intervalSeconds must not be negative '
+          '(0 ⇒ external-trigger-only).',
         );
       }
 

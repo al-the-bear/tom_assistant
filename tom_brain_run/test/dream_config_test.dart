@@ -178,12 +178,12 @@ dream:
       );
     });
 
-    test('a non-positive lane interval is a located error', () {
+    test('a negative lane interval is a located error', () {
       const yaml = '''
 dream:
   lanes:
     - id: fast
-      intervalSeconds: 0
+      intervalSeconds: -1
       agents: [dream_extract_v1]
 ''';
       expect(
@@ -194,6 +194,19 @@ dream:
           contains('dream.lanes[0].intervalSeconds'),
         )),
       );
+    });
+
+    test('a zero lane interval is legal — an external-trigger-only lane', () {
+      const yaml = '''
+dream:
+  lanes:
+    - id: ondemand
+      intervalSeconds: 0
+      agents: [dream_extract_v1]
+''';
+      final config = DreamConfigLoader.parse(yaml)!;
+      final lane = config.cadence!.laneById('ondemand')!;
+      expect(lane.interval, Duration.zero);
     });
 
     test('a lane missing its agents is a located error', () {
@@ -348,6 +361,29 @@ dream:
         () => DreamConfigLoader.parse(yaml),
         throwsA(isA<DreamConfigException>()
             .having((e) => e.message, 'message', contains('bogus'))),
+      );
+    });
+  });
+
+  // maxRepeatCount — the global cap on how many times each lane fires on the
+  // *schedule* (manual `/dream_now` bursts never count). Absent ⇒ unlimited;
+  // present must be a strictly-positive integer.
+  group('DreamConfigLoader.parse — dream.maxRepeatCount', () {
+    test('an absent maxRepeatCount leaves it null (unlimited)', () {
+      final config = DreamConfigLoader.parse('dream: {}\n')!;
+      expect(config.maxRepeatCount, isNull);
+    });
+
+    test('a maxRepeatCount parses into the typed field', () {
+      final config = DreamConfigLoader.parse('dream:\n  maxRepeatCount: 3\n')!;
+      expect(config.maxRepeatCount, 3);
+    });
+
+    test('a non-positive maxRepeatCount is a located error', () {
+      expect(
+        () => DreamConfigLoader.parse('dream:\n  maxRepeatCount: 0\n'),
+        throwsA(isA<DreamConfigException>().having((e) => e.message, 'message',
+            contains('dream.maxRepeatCount'))),
       );
     });
   });

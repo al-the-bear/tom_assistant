@@ -128,8 +128,9 @@ final class CadenceSchedule {
   ///
   /// Validates the lane set up front so a malformed schedule is a
   /// construction-time error, not a silent no-fire: at least one lane, unique
-  /// non-empty ids, a strictly positive interval per lane, and at least one
-  /// agent per lane.
+  /// non-empty ids, a non-negative interval per lane (a zero interval marks an
+  /// external-trigger-only lane the scheduled cadence never auto-fires), and at
+  /// least one agent per lane.
   CadenceSchedule({
     required this.lanes,
     this.shakingAgent = 'dream_reconsolidate_v1',
@@ -145,9 +146,9 @@ final class CadenceSchedule {
       if (!seen.add(lane.id)) {
         throw ArgumentError.value(lane.id, 'lane.id', 'duplicate lane id');
       }
-      if (lane.interval <= Duration.zero) {
-        throw ArgumentError.value(
-            lane.interval, 'lane.interval', 'must be positive for "${lane.id}"');
+      if (lane.interval < Duration.zero) {
+        throw ArgumentError.value(lane.interval, 'lane.interval',
+            'must not be negative for "${lane.id}" (0 ⇒ external-only)');
       }
       if (lane.agents.isEmpty) {
         throw ArgumentError.value(
@@ -236,6 +237,7 @@ final class DreamCadenceDriver {
     required this.fire,
     CadenceSchedule? schedule,
     this.throttle,
+    this.maxRepeatCount,
   }) : schedule = schedule ?? CadenceSchedule.defaults() {
     final start = clock.nowMs();
     for (final lane in this.schedule.lanes) {
@@ -258,14 +260,27 @@ final class DreamCadenceDriver {
   /// dropped — only paced.
   final DreamThrottle? throttle;
 
+  /// The optional global cap on how many times each lane fires on the
+  /// *schedule* before it stops auto-firing (a "for now" bring-up bound).
+  /// `null` ⇒ unlimited. Manual [tickManual] bursts never count against it;
+  /// [resetScheduledRunCounts] clears the tally.
+  final int? maxRepeatCount;
+
   /// Per-lane last-fired instant (ms since epoch), seeded at construction and
   /// advanced when a lane is enqueued (so a waiting lane is not re-enqueued on
   /// every heartbeat).
   final Map<String, int> _lastFiredMs = <String, int>{};
 
-  /// The durable serial run queue (lane ids, in-order). Survives across ticks
-  /// so a deferred lane retries on a later tick.
-  final Queue<String> _laneQueue = Queue<String>();
+  /// The durable serial run queue (in-order). Survives across ticks so a
+  /// deferred lane retries on a later tick. Each entry carries whether it was a
+  /// scheduled or a manual ([tickManual]) run, so the pump knows whether to
+  /// count a completed pass against [maxRepeatCount].
+  final Queue<_LaneRun> _laneQueue = Queue<_LaneRun>();
+
+  /// Per-lane count of *scheduled* full passes completed since construction (or
+  /// the last [resetScheduledRunCounts]). Manual bursts never increment it. The
+  /// scheduled tick stops enqueuing a lane once this reaches [maxRepeatCount].
+  final Map<String, int> _scheduledRunCounts = <String, int>{};
 
   /// Per-lane resume cursor: the agent index a mid-pass lane resumes from after
   /// a defer. Absent ⇒ start from the first agent. A lane that defers part-way
@@ -291,12 +306,39 @@ final class DreamCadenceDriver {
   Future<List<String>> tick() async {
     final now = clock.nowMs();
     for (final lane in schedule.lanes) {
+      // External-trigger-only lanes (zero interval) never auto-fire — they run
+      // solely on a manual [tickManual] burst.
+      if (lane.interval <= Duration.zero) {
+        continue;
+      }
+      // A lane that has reached the global scheduled-repeat cap stops
+      // auto-firing (a manual burst can still run it, and a reset re-arms it).
+      if (_isRepeatExhausted(lane.id)) {
+        continue;
+      }
       if (!_isDue(lane.id, now)) {
         continue;
       }
       _lastFiredMs[lane.id] = now;
-      if (!_laneQueue.contains(lane.id)) {
-        _laneQueue.add(lane.id);
+      if (!_isQueued(lane.id)) {
+        _laneQueue.add(_LaneRun(lane.id, manual: false));
+      }
+    }
+    return _pump();
+  }
+
+  /// Fires *every* lane once, immediately, as a manual burst (the `/dream_now`
+  /// path) — including external-trigger-only (zero-interval) and
+  /// repeat-exhausted lanes, bypassing the due/cap gates.
+  ///
+  /// A manual burst neither advances a lane's schedule baseline nor counts
+  /// toward [maxRepeatCount]: it is an out-of-band run that "must not count as a
+  /// scheduled run and must not imply a start". Lanes still run serially through
+  /// the same pump (throttle and busy-slot deferral honoured).
+  Future<List<String>> tickManual() async {
+    for (final lane in schedule.lanes) {
+      if (!_isQueued(lane.id)) {
+        _laneQueue.add(_LaneRun(lane.id, manual: true));
       }
     }
     return _pump();
@@ -316,7 +358,8 @@ final class DreamCadenceDriver {
     final ran = <String>[];
     try {
       while (_laneQueue.isNotEmpty) {
-        final laneId = _laneQueue.removeFirst();
+        final run = _laneQueue.removeFirst();
+        final laneId = run.laneId;
         final lane = schedule.laneById(laneId);
         if (lane == null) {
           _laneResumeIndex.remove(laneId);
@@ -344,16 +387,21 @@ final class DreamCadenceDriver {
         }
         if (deferred) {
           // Resume from the agent that did not run (index [i]) on the retry, so
-          // the already-run prefix is neither re-fired nor re-charged.
+          // the already-run prefix is neither re-fired nor re-charged. The same
+          // run object is re-enqueued so its manual/scheduled nature is kept.
           _laneResumeIndex[laneId] = i;
-          if (!_laneQueue.contains(laneId)) {
-            _laneQueue.add(laneId);
+          if (!_isQueued(laneId)) {
+            _laneQueue.add(run);
           }
           break;
         }
         // A full pass completed: drop the cursor so the lane restarts cleanly
-        // on its next due interval.
+        // on its next due interval, and tally a *scheduled* pass against the cap
+        // (manual bursts are out-of-band and never count).
         _laneResumeIndex.remove(laneId);
+        if (!run.manual) {
+          _scheduledRunCounts[laneId] = (_scheduledRunCounts[laneId] ?? 0) + 1;
+        }
       }
     } finally {
       _running = false;
@@ -365,6 +413,43 @@ final class DreamCadenceDriver {
   bool _isDue(String laneId, int nowMs) =>
       nowMs - _lastFiredMs[laneId]! >= schedule.laneById(laneId)!.interval.inMilliseconds;
 
+  /// Whether [laneId] is already sitting in the serial run queue (the dedupe
+  /// that keeps a waiting lane from being enqueued twice).
+  bool _isQueued(String laneId) {
+    for (final run in _laneQueue) {
+      if (run.laneId == laneId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether [laneId] has reached the global scheduled-repeat cap.
+  bool _isRepeatExhausted(String laneId) {
+    final cap = maxRepeatCount;
+    if (cap == null) {
+      return false;
+    }
+    return (_scheduledRunCounts[laneId] ?? 0) >= cap;
+  }
+
+  /// The number of *scheduled* full passes [laneId] has completed since
+  /// construction (or the last [resetScheduledRunCounts]).
+  int scheduledRunCount(String laneId) => _scheduledRunCounts[laneId] ?? 0;
+
+  /// Clears every lane's scheduled-run tally, re-arming the schedule after the
+  /// [maxRepeatCount] cap was reached (the `/dream_start` path).
+  void resetScheduledRunCounts() => _scheduledRunCounts.clear();
+
+  /// Re-baselines every lane to "now", so the next scheduled fire is one full
+  /// interval away — the fresh-start companion to [resetScheduledRunCounts].
+  void rebaseline() {
+    final now = clock.nowMs();
+    for (final lane in schedule.lanes) {
+      _lastFiredMs[lane.id] = now;
+    }
+  }
+
   /// Fires the reconsolidator for a raised `ShakingEvent`
   /// (`memory_specification.md` § 9.4) — the event-driven path, off the timer.
   ///
@@ -373,4 +458,20 @@ final class DreamCadenceDriver {
   Future<void> handleShakingEvent() async {
     await fire(schedule.shakingAgent);
   }
+}
+
+/// One queued lane run: which lane, and whether it was queued by a manual
+/// `/dream_now` burst.
+///
+/// Manual runs bypass the due/cap gates at enqueue time and never tally against
+/// [DreamCadenceDriver.maxRepeatCount] when they complete; scheduled runs do.
+final class _LaneRun {
+  /// Builds a queued run for [laneId], [manual] iff queued by [tickManual].
+  const _LaneRun(this.laneId, {required this.manual});
+
+  /// The lane this run fires.
+  final String laneId;
+
+  /// Whether this run was queued by a manual burst (vs. the scheduled tick).
+  final bool manual;
 }

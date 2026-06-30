@@ -273,6 +273,7 @@ export 'src/incoming_trail_writer.dart' show IncomingTrailWriter;
 export 'src/telegram_inspector_impls.dart'
     show
         CognitionPromptsInspector,
+        DreamControllerTelegramAdapter,
         LiveStopController,
         LiveUsageInspector,
         McpServersInspector,

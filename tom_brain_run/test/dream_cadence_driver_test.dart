@@ -422,13 +422,23 @@ void main() {
         ]),
         throwsArgumentError,
       );
-      // Non-positive interval.
+      // Negative interval (a zero interval is legal — external-trigger-only).
+      expect(
+        () => CadenceSchedule(lanes: <DreamLaneSpec>[
+          const DreamLaneSpec(
+              id: 'x',
+              interval: Duration(seconds: -1),
+              agents: <String>['a']),
+        ]),
+        throwsArgumentError,
+      );
+      // A zero interval is accepted (external-trigger-only lane).
       expect(
         () => CadenceSchedule(lanes: <DreamLaneSpec>[
           const DreamLaneSpec(
               id: 'x', interval: Duration.zero, agents: <String>['a']),
         ]),
-        throwsArgumentError,
+        returnsNormally,
       );
       // Empty agents.
       expect(
@@ -452,6 +462,77 @@ void main() {
       // Default schedule lanes carry no per-lane override.
       expect(CadenceSchedule.defaults().laneById('fast')!.maxLlmCallsPerWindow,
           isNull);
+    });
+
+    // ── External-trigger-only lanes + maxRepeatCount + manual burst ─────
+
+    test('DC-X1: a zero-interval lane never fires on the scheduled tick, however '
+        'much time elapses', () async {
+      final clock = MutableTestClock(BrainTime.fromMs(0));
+      final schedule = CadenceSchedule(lanes: <DreamLaneSpec>[
+        const DreamLaneSpec(
+            id: 'ondemand', interval: Duration.zero, agents: <String>['a']),
+      ]);
+      final driver = driverAt(clock, schedule: schedule);
+
+      clock.advance(const Duration(days: 365));
+      expect(await driver.tick(), isEmpty);
+      expect(fired, isEmpty);
+    });
+
+    test('DC-X2: tickManual fires every lane once — including a zero-interval '
+        'one — without advancing the schedule baseline or counting', () async {
+      final clock = MutableTestClock(BrainTime.fromMs(0));
+      final schedule = CadenceSchedule(lanes: <DreamLaneSpec>[
+        const DreamLaneSpec(
+            id: 'fast', interval: Duration(minutes: 5), agents: <String>['f']),
+        const DreamLaneSpec(
+            id: 'ondemand', interval: Duration.zero, agents: <String>['o']),
+      ]);
+      final driver = driverAt(clock, schedule: schedule);
+
+      final ran = await driver.tickManual();
+      expect(ran, <String>['f', 'o']);
+      // Manual bursts never count as scheduled runs.
+      expect(driver.scheduledRunCount('fast'), 0);
+      expect(driver.scheduledRunCount('ondemand'), 0);
+    });
+
+    test('DC-X3: maxRepeatCount caps how many times a lane fires on the '
+        'schedule; manual bursts and resets are exempt', () async {
+      final clock = MutableTestClock(BrainTime.fromMs(0));
+      final schedule = CadenceSchedule(lanes: <DreamLaneSpec>[
+        const DreamLaneSpec(
+            id: 'fast', interval: Duration(minutes: 5), agents: <String>['f']),
+      ]);
+      final driver = DreamCadenceDriver(
+        clock: clock,
+        fire: fire,
+        schedule: schedule,
+        maxRepeatCount: 2,
+      );
+
+      // Two scheduled fires are allowed.
+      clock.advance(const Duration(minutes: 5));
+      expect(await driver.tick(), <String>['f']);
+      clock.advance(const Duration(minutes: 5));
+      expect(await driver.tick(), <String>['f']);
+      expect(driver.scheduledRunCount('fast'), 2);
+
+      // The third is capped — the lane stops auto-firing.
+      clock.advance(const Duration(minutes: 5));
+      expect(await driver.tick(), isEmpty);
+
+      // A manual burst still fires it (and does not count).
+      expect(await driver.tickManual(), <String>['f']);
+      expect(driver.scheduledRunCount('fast'), 2);
+
+      // Resetting the counts lets the schedule fire again.
+      driver.resetScheduledRunCounts();
+      driver.rebaseline();
+      clock.advance(const Duration(minutes: 5));
+      expect(await driver.tick(), <String>['f']);
+      expect(driver.scheduledRunCount('fast'), 1);
     });
 
     // ── Dream throttle (dream-redesign part d) ──────────────────────────

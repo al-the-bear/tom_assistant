@@ -56,12 +56,14 @@ DreamCadenceDriver dreamCadenceDriverOverScheduler(
   Clock clock = const SystemClock(),
   CadenceSchedule? schedule,
   DreamThrottle? throttle,
+  int? maxRepeatCount,
 }) =>
     DreamCadenceDriver(
       clock: clock,
       fire: fireThroughScheduler(scheduler),
       schedule: schedule,
       throttle: throttle,
+      maxRepeatCount: maxRepeatCount,
     );
 
 /// The wall-clock heartbeat that drives a [DreamCadenceDriver]
