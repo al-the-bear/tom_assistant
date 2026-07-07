@@ -302,6 +302,10 @@ export 'src/memory_profile_log_writer.dart' show MemoryProfileLogWriter;
 // ── Per-procedure combined run-tree writer (logging-spec §5.7; §10 step #9) ─
 export 'src/procedure_tree_writer.dart' show ProcedureTreeWriter;
 
+// ── Creation-trail writer: projects a `create_v1` run into the typed
+//    CreationEvent family (creation-spec §9.2 / §12; UB5) ──────────────────
+export 'src/creation_trail_writer.dart' show CreationTrailWriter;
+
 // ── Trail janitor: raw-tier count/size caps + .gitignore (logging-spec §7 /
 //    §8; §10 step #10) ──────────────────────────────────────────────────
 export 'src/trail_janitor.dart' show TrailJanitor;

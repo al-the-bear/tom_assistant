@@ -86,6 +86,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         MemoryProvisioningConfig,
         MemoryRetrievalConfig,
         OverlayResolverFactory,
+        ProcedureTreeRecord,
         ProcedureTreeSink,
         PromptResolver,
         RouteChainResolver,
@@ -143,6 +144,7 @@ import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
 import 'procedure_tree_writer.dart' show ProcedureTreeWriter;
+import 'creation_trail_writer.dart' show CreationTrailWriter;
 import 'profile/profile_config_errors.dart' show UnknownProfileException;
 import 'streaming_live_trail.dart' show StreamingLiveTrailWriter;
 import 'substrate_memory_profile_selector.dart'
@@ -1263,6 +1265,16 @@ List<String> _listMemoryProfiles(String profilesDir) {
   final incomingWriter = IncomingTrailWriter(root: root);
   final memoryWriter = MemoryProfileLogWriter(root: root);
   final treeWriter = ProcedureTreeWriter(root: root);
+  final creationWriter = CreationTrailWriter(root: root);
+
+  // The one combined run-tree record fans out to both the §5.7 per-procedure
+  // `.log` tree and — for a `create_v1` run only — the creation trail
+  // (creation-spec §9.2 / §12; UB5). The creation writer self-guards on the
+  // procedure id, so every non-creation run is a cheap no-op.
+  void procedureTreeSink(ProcedureTreeRecord record) {
+    treeWriter.write(record);
+    creationWriter.write(record);
+  }
 
   // Single source (§5.8): one record both lands as the raw §5.2 dump and fans
   // out to the summary projections — and now also streams into the live-trail.
@@ -1300,7 +1312,7 @@ List<String> _listMemoryProfiles(String profilesDir) {
     incomingTrailSink: incomingTrailSink,
     memoryAccessSink: memoryAccessSink,
     toolAccessSink: toolAccessSink,
-    procedureTreeSink: treeWriter.write,
+    procedureTreeSink: procedureTreeSink,
   );
 }
 

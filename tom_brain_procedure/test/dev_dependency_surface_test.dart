@@ -4,7 +4,7 @@
 // adds, with the exact pin the C.5 record fixed as the single source of
 // truth:
 //
-//   - tom_d4rt_generator: ^1.9.1   — the bridge generator. The build runs
+//   - tom_d4rt_generator: >=1.12.1 — the bridge generator. The build runs
 //                                    its standalone `d4rtgen` CLI
 //                                    (`dart run tom_d4rt_generator:d4rtgen`,
 //                                    or the installed `d4rtgen` binary)
@@ -88,18 +88,21 @@ void main() {
       devBlock = pubspec.substring(devIdx);
     });
 
-    test('tom_d4rt_generator is a dev-dep pinned ^1.9.6 (barrel-template fix)',
+    test('tom_d4rt_generator is a dev-dep pinned >=1.12.1 (barrel-template fix)',
         () {
       expect(
         devBlock.contains(
-            RegExp(r'^  tom_d4rt_generator:\s*\^1\.9\.6', multiLine: true)),
+            RegExp(r'^  tom_d4rt_generator:\s*">=1\.12\.1"', multiLine: true)),
         isTrue,
-        reason: 'tom_d4rt_generator was bumped to ^1.9.6: 1.9.2..1.9.7 fixed '
-            'the dartscript/AllBridge template desync (the barrel surface — '
-            'sourceLibraries/getImportBlock/subPackageBarrels — is now emitted '
-            'by the generator again), retiring the temporary hand-patch of '
-            'brain_bridges.b.dart (HC-71). dev_dependencies must adopt it '
-            'verbatim.',
+        reason: 'tom_d4rt_generator is pinned >=1.12.1. The 1.9.2..1.9.7 line '
+            'fixed the dartscript/AllBridge template desync (the barrel surface '
+            '— sourceLibraries/getImportBlock/subPackageBarrels — is emitted by '
+            'the generator again), retiring the temporary hand-patch of '
+            'brain_bridges.b.dart (HC-71); the constraint has since advanced to '
+            '>=1.12.1. Verified 2026-07-07 (UB2): regenerating the bridges with '
+            'the resolved generator reproduces the committed barrels '
+            'byte-for-byte (statics intact), so no hand-patch remains. '
+            'dev_dependencies must adopt the current pin verbatim.',
       );
     });
 

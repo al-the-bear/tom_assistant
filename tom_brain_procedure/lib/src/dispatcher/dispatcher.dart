@@ -423,6 +423,12 @@
 // for the authoritative contract this module implements.
 library;
 
+export 'authoring_work_factory.dart'
+    show
+        authorNewProcedureV1,
+        authoringWorkFactory,
+        automationIdeaIntentFields,
+        defaultAuthoringIntentPrefix;
 export 'brain_process_boot.dart'
     show
         AccessLayerInstaller,

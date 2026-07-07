@@ -2,21 +2,27 @@
 //
 // Locks the eight runtime dependencies named in the plan (C.7) and the
 // specific identifiers from each that the procedure prototype will lean
-// on. For seven of the eight, the act of compiling the import and
-// referencing one symbol is the assertion — if a dependency disappears
-// from `pubspec.yaml` or a referenced identifier is renamed away from
-// us, this test fails to load before the rest of the suite runs.
+// on. For each, the act of compiling the import and referencing one
+// symbol is the assertion — if a dependency disappears from
+// `pubspec.yaml` or a referenced identifier is renamed away from us,
+// this test fails to load before the rest of the suite runs.
 //
-// The eighth — `tom_core_d4rt` — cannot be import-locked on POSIX yet:
-// its only public barrels re-export a generated bridge file
-// (`dartscript.b.dart`) whose `import 'src\\...'` statements use
-// Windows-style backslashes and do not compile on Linux/macOS
-// (Q-C.7.3). Importing any tom_core_d4rt barrel here would break the
-// whole suite. So `tom_core_d4rt` is locked by parsing `pubspec.yaml`
-// and asserting the declaration is present — the dependency contract is
-// still enforced, just at the manifest level rather than the import
-// level. The import-level lock moves to C.14/C.16, gated on the
-// upstream regeneration fix.
+// Seven of the eight are import-locked. `tom_core_d4rt` is still
+// manifest-locked — but for a NEW reason. The original Q-C.7.3 blocker
+// (its generated `dartscript.b.dart` carried `import 'src\\...'`
+// statements with Windows-style backslashes that would not compile on
+// Linux/macOS) is RESOLVED: the regenerated barrels use POSIX `/`
+// separators (verified UB1 — zero backslashes, no absolute `C:` import).
+// However, importing the barrel here still fails to compile on POSIX on
+// a *different* generator defect: `tom_core_kernel_bridges.b.dart`
+// emits `D4.getRequiredArg<Iterable>(...)` for `TomList.followedBy`,
+// whose parameter is `Iterable<TomObject>`, so the front-end rejects the
+// call (`Iterable<dynamic>` not assignable to `Iterable<TomObject>`).
+// Until that generator type-inference bug is fixed upstream (owned by
+// the d4rt / tom_core quests — see UC1), `tom_core_d4rt` stays locked at
+// the manifest level so importing it does not break the whole suite. The
+// import-level lock lands with the C.14/C.16 host work once the barrel
+// import-compiles clean.
 //
 // The C.7 dependencies (in plan order):
 //
@@ -32,8 +38,10 @@
 //   4. tom_basics          — `TomLogger` / `tomLog` (the only log
 //                            surface permitted at this layer).
 //   5. tom_core_kernel     — `TomBean` (the bean-locator surface).
-//   6. tom_core_d4rt       — bridge-registration layer (manifest-locked
-//                            only — see the note above and Q-C.7.3).
+//   6. tom_core_d4rt       — bridge-registration layer (manifest-locked;
+//                            the Q-C.7.3 backslash blocker is fixed, but a
+//                            separate generator type bug still blocks the
+//                            import-compile — see the note above and UC1).
 //   7. tom_d4rt            — the sandboxed interpreter `D4rt` the host
 //                            (C.16) runs procedure scripts on.
 //   8. tom_d4rt_dcli       — `D4rtCliApi`, the REPL/CLI base the host
@@ -60,6 +68,9 @@ import 'package:tom_brain_memory/tom_brain_memory.dart' as memory;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart' as substrate;
 import 'package:tom_basics/tom_basics.dart' as basics;
 import 'package:tom_core_kernel/tom_core_kernel.dart' as kernel;
+// tom_core_d4rt is intentionally NOT imported here — its generated barrel
+// does not yet import-compile on POSIX (see the header note / UC1). It is
+// locked at the manifest level in the group below instead.
 import 'package:tom_d4rt/tom_d4rt.dart' as d4rt;
 import 'package:tom_d4rt_dcli/tom_d4rt_cli_api.dart' as dcli;
 
@@ -118,11 +129,15 @@ void main() {
   });
 
   group('C.7 dependency surface (manifest-locked)', () {
-    // tom_core_d4rt cannot be import-locked on POSIX (Q-C.7.3 — backslash
-    // imports in its generated bridge barrel). Lock the declaration at
-    // the manifest level instead so the dependency contract is still
-    // enforced: if `tom_core_d4rt` is removed from pubspec.yaml, this
-    // test fails.
+    // tom_core_d4rt cannot yet be import-locked on POSIX. Its Q-C.7.3
+    // backslash-import blocker is fixed (regenerated barrels are POSIX-
+    // clean, verified UB1), but importing the barrel still fails to
+    // compile on a separate generator type bug in
+    // `tom_core_kernel_bridges.b.dart` (`getRequiredArg<Iterable>` vs
+    // `Iterable<TomObject>` on `TomList.followedBy` — UC1). So the
+    // dependency is locked at the manifest level: if `tom_core_d4rt` is
+    // removed from pubspec.yaml, this test fails. This group also pins the
+    // tom_d4rt_dcli constraint and the tom_core_server scope-exclusion.
     late final String pubspec;
 
     setUpAll(() {
@@ -151,12 +166,17 @@ void main() {
       }
     });
 
-    test('tom_d4rt_dcli is pinned to the C.4 workspace constraint ^1.1.3', () {
+    test('tom_d4rt_dcli is pinned to the workspace constraint >=1.1.6', () {
+      // Bumped from the original C.4 `^1.1.3` pin: tom_d4rt_dcli 1.1.6 hides
+      // tom_vscode_scripting_api's ProjectInfo/WorkspaceInfo upstream, which
+      // the tom_dartscript_bridges barrel relies on to avoid a re-export
+      // collision. The pubspec adopts `>=1.1.6`; this assertion tracks it.
       expect(
-        pubspec.contains(RegExp(r'^  tom_d4rt_dcli:\s*\^1\.1\.3', multiLine: true)),
+        pubspec.contains(RegExp(r'^  tom_d4rt_dcli:\s*">=1\.1\.6"', multiLine: true)),
         isTrue,
-        reason: 'C.4 declared tom_d4rt_dcli: ^1.1.3 as the workspace pin; '
-            'C.7 must adopt it verbatim.',
+        reason: 'tom_d4rt_dcli must be pinned to >=1.1.6 (the constraint that '
+            'hides ProjectInfo/WorkspaceInfo so the bridge barrel re-exports '
+            'do not collide).',
       );
     });
 

@@ -298,6 +298,32 @@ export 'src/planning/planning.dart'
         planStepNodeTypeName,
         planningEventKinds;
 
+// UB5 — creation/ module: the sealed `CreationEvent` family (twelve leaves) is
+// the creation loop's observability surface. It is cross-component (the
+// `create_v1` procedure realises it, the `tom_brain_run` creation-trail writer
+// projects a `create_v1` run into it, and a Forge session inspector renders
+// it), and its `kind` discriminators ([creationEventKinds]) are the categories
+// the `create_v1` d4rt body emits via `note(...)`. Declared here — the first
+// real consumer that `creation_specification.md` § 12.1 decision 4 deferred the
+// typed family to (spec § 12 topology — "CreationEvent value types →
+// tom_brain_shared").
+export 'src/creation/creation.dart'
+    show
+        CreationAccepted,
+        CreationEvent,
+        CreationRequested,
+        CreationRolledBack,
+        CritiqueProduced,
+        DraftProduced,
+        DraftWritten,
+        EnvironmentObserved,
+        PostObservationCaptured,
+        ScopeViolation,
+        SuccessChecked,
+        TestDrafted,
+        TestRun,
+        creationEventKinds;
+
 // G.21 — history/ module: the brain's own running record of a conversation
 // — `ConversationHistory` (raw window + pending batch + bounded
 // `compactedSummary` + a durable append-only record), the `HistoryTurn` it

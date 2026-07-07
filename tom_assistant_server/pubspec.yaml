@@ -1,16 +1,26 @@
 name: tom_assistant_server
-description: A starting point for Dart libraries or applications.
+description: >-
+  The Tom Assistant server — the product-side consumer of the Tom Brain
+  cognition. Ships TomBrainClient, the OpenAI-format client that points a Tom
+  Assistant process at a stood-up Tom Brain's /v1/chat/completions gateway.
 publish_to: none
 version: 1.0.0
-# repository: https://github.com/my_org/my_repo
 
 environment:
   sdk: ^3.10.8
 
-# Add regular dependencies here.
 dependencies:
-  # path: ^1.9.0
+  # TomBrainClient speaks the OpenAI wire format over HTTP (buffered + SSE). It
+  # depends on the published gateway contract, not on any tom_brain_* package.
+  http: ^1.2.0
 
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
+  # The UB6 end-to-end test proves TomBrainClient against a REAL stood-up brain
+  # process: the smoke assembly (`standUpSmokeProcess` + `SmokeSubstrate`) binds
+  # the real OpenAI edge over an in-isolate memory double and a stub LLM, so the
+  # round-trip needs no live model, no Ollama, and no packaged vec0 binary. This
+  # is the same stub the run package reuses as a dev-only substrate double.
+  tom_brain_smoke_prototype:
+    path: ../tom_brain_smoke_prototype
