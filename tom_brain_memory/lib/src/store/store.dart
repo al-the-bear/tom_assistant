@@ -106,6 +106,7 @@ export 'boot_integrity.dart'
         IntegrityProbeResult,
         IntegrityProbeStatus,
         LoadExtensionProbe,
+        classifyLoadExtensionCapability,
         defaultEmbeddingMarkerProbe,
         defaultFts5Probe,
         defaultLoadExtensionProbe,

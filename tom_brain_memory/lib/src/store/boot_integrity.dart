@@ -21,11 +21,11 @@
 //             - `fts5Available`            — SQLite build includes FTS5
 //                                            (create+drop a temp FTS5
 //                                            virtual table).
-//             - `loadExtensionCapable`     — SQLite build was compiled
-//                                            with ENABLE_LOAD_EXTENSION
-//                                            so the sqlite-vec FFI
-//                                            extension (§ 2.2 Option A)
-//                                            can be loaded at A.50+.
+//             - `loadExtensionCapable`     — SQLite build supports
+//                                            extension loading, so the
+//                                            sqlite-vec FFI extension
+//                                            (§ 2.2 Option A) can be
+//                                            loaded at A.50+.
 //             - `embeddingModelMarker`     — placeholder probe; returns
 //                                            `skipped` with a reference
 //                                            to Q-A.26.2. The marker
@@ -65,13 +65,18 @@
 // Why probes are constructor-injectable:
 //
 //   Two of the four production probes (FTS5, loadExtension) can only
-//   be tested for the *success* path in this workspace, because the
-//   bundled `sqlite3` Dart package ships an SQLite build that includes
-//   both. Testing the *failure* path requires either swapping the
-//   linked binary (out of scope) or injecting a probe that returns
-//   failure deterministically. The constructor accepts overrides for
-//   exactly this reason — the production wiring uses the defaults,
+//   be tested against whichever SQLite build the running process
+//   happens to resolve. Driving the *other* verdict requires either
+//   swapping the linked binary (out of scope) or injecting a probe
+//   that answers deterministically. The constructor accepts overrides
+//   for exactly this reason — the production wiring uses the defaults,
 //   tests pass synthetic probes to drive the failure paths.
+//
+//   `loadExtensionCapable` goes one step further: its verdict logic is
+//   factored out as the pure `classifyLoadExtensionCapability`, so the
+//   full build-signature matrix is testable on any host. That split is
+//   what makes the "stock build with ENABLE_LOAD_EXTENSION unset is
+//   still capable" case assertable without owning such a build.
 //
 //   The marker probe is also injectable for symmetry; the default
 //   today returns `skipped`, but tests can pass an injected probe
@@ -409,50 +414,115 @@ IntegrityProbeResult defaultFts5Probe(Database db) {
   }
 }
 
+/// Name of the load-extension capability probe.
+const String _loadExtensionProbeName = 'loadExtensionCapable';
+
 /// Default `loadExtension` capability probe.
 ///
-/// Asks SQLite whether `ENABLE_LOAD_EXTENSION` was set at compile
-/// time via `sqlite_compileoption_used()`. This does **not** attempt
-/// to load `vec0` — actually loading the extension is A.50+
-/// territory; the boot check only confirms the capability exists.
+/// Reads three signals off the live build and hands them to
+/// [classifyLoadExtensionCapability]. This does **not** attempt to
+/// load `vec0` — actually loading the extension is A.50+ territory;
+/// the boot check only confirms the capability exists.
 ///
 /// Public so the production wiring can reference it directly.
 IntegrityProbeResult defaultLoadExtensionProbe(Database db) {
-  const probeName = 'loadExtensionCapable';
   try {
-    final rows = db.select(
-      "SELECT sqlite_compileoption_used('ENABLE_LOAD_EXTENSION') AS x",
-    );
-    if (rows.isEmpty) {
-      return const IntegrityProbeResult(
-        name: probeName,
-        status: IntegrityProbeStatus.failed,
-        summary: 'sqlite_compileoption_used returned no rows; '
-            'cannot determine load_extension capability',
-      );
-    }
-    final used = rows.first['x'];
-    if (used is int && used == 1) {
-      return const IntegrityProbeResult(
-        name: probeName,
-        status: IntegrityProbeStatus.ok,
-        summary: 'SQLite was compiled with ENABLE_LOAD_EXTENSION; '
-            'sqlite-vec (vec0) can be loaded at A.50+',
-      );
-    }
-    return IntegrityProbeResult(
-      name: probeName,
-      status: IntegrityProbeStatus.failed,
-      summary: 'SQLite was NOT compiled with ENABLE_LOAD_EXTENSION '
-          '(value=$used); sqlite-vec cannot be loaded',
+    return classifyLoadExtensionCapability(
+      omitCompiledIn: _compileOptionUsed(db, 'OMIT_LOAD_EXTENSION'),
+      enableCompiledIn: _compileOptionUsed(db, 'ENABLE_LOAD_EXTENSION'),
+      functionAvailable: _loadExtensionFunctionAvailable(db),
     );
   } on Object catch (e) {
     return IntegrityProbeResult(
-      name: probeName,
+      name: _loadExtensionProbeName,
       status: IntegrityProbeStatus.failed,
       summary: 'load_extension capability probe failed: $e',
       cause: e,
     );
+  }
+}
+
+/// Decides the load-extension verdict from a build's capability
+/// signature. Pure, so the whole matrix is testable on any host — no
+/// single machine can exhibit every combination.
+///
+/// The signals are not equal in weight:
+///
+///   * [omitCompiledIn] (`SQLITE_OMIT_LOAD_EXTENSION`) is the only
+///     *definitive* one. SQLite ships extension loading enabled and
+///     this option is what compiles it out, so it settles the question
+///     on its own and overrides every positive signal.
+///   * [functionAvailable] — the `load_extension` SQL function exists.
+///     Present exactly when the feature was not omitted, so it
+///     corroborates the above from the other direction.
+///   * [enableCompiledIn] (`SQLITE_ENABLE_LOAD_EXTENSION`) is a *weak
+///     positive*: builds that set it are certainly capable, but stock
+///     builds leave it unset while remaining fully capable. It can
+///     therefore confirm capability and must never be used to deny it.
+///
+/// Reading [enableCompiledIn] alone — the obvious-looking probe —
+/// rejects every stock SQLite, including Homebrew's and the distro
+/// builds on Linux. It only appears to work against
+/// `sqlite3_flutter_libs`, which compiles the define in explicitly.
+IntegrityProbeResult classifyLoadExtensionCapability({
+  required bool omitCompiledIn,
+  required bool enableCompiledIn,
+  required bool functionAvailable,
+}) {
+  if (omitCompiledIn) {
+    return const IntegrityProbeResult(
+      name: _loadExtensionProbeName,
+      status: IntegrityProbeStatus.failed,
+      summary: 'SQLite was compiled with OMIT_LOAD_EXTENSION; extension '
+          'loading is absent from this build and sqlite-vec (vec0) '
+          'cannot be loaded',
+    );
+  }
+  if (functionAvailable) {
+    return const IntegrityProbeResult(
+      name: _loadExtensionProbeName,
+      status: IntegrityProbeStatus.ok,
+      summary: 'extension loading is available (load_extension resolves and '
+          'OMIT_LOAD_EXTENSION is not set); sqlite-vec (vec0) can be loaded',
+    );
+  }
+  if (enableCompiledIn) {
+    return const IntegrityProbeResult(
+      name: _loadExtensionProbeName,
+      status: IntegrityProbeStatus.ok,
+      summary: 'SQLite was compiled with ENABLE_LOAD_EXTENSION; '
+          'sqlite-vec (vec0) can be loaded',
+    );
+  }
+  return const IntegrityProbeResult(
+    name: _loadExtensionProbeName,
+    status: IntegrityProbeStatus.failed,
+    summary: 'no load_extension capability signal: the load_extension '
+        'function does not resolve and ENABLE_LOAD_EXTENSION is not set; '
+        'sqlite-vec (vec0) cannot be loaded',
+  );
+}
+
+/// Whether [option] appears in this build's compile-option list.
+bool _compileOptionUsed(Database db, String option) {
+  final rows = db.select("SELECT sqlite_compileoption_used(?) AS x", [option]);
+  return rows.isNotEmpty && rows.first['x'] == 1;
+}
+
+/// Whether the `load_extension` SQL function resolves in this build.
+///
+/// Only *prepares* the statement — that is where name resolution
+/// happens. Running it would fail with "not authorized" on a perfectly
+/// capable build, because runtime loading stays off until
+/// `sqlite3_enable_load_extension` is called, so preparation is the
+/// step that answers the question asked here and the only one with no
+/// side effects.
+bool _loadExtensionFunctionAvailable(Database db) {
+  try {
+    db.prepare("SELECT load_extension('')").dispose();
+    return true;
+  } on Object {
+    return false;
   }
 }
 

@@ -99,9 +99,76 @@ void main() {
           equals(IntegrityProbeStatus.ok),
           equals(IntegrityProbeStatus.failed),
         ),
-        reason: 'capability is binary; sqlite_compileoption_used must answer',
+        reason: 'capability is binary; the probe must answer',
       );
       expect(r.isSkipped, isFalse);
+    });
+
+    test(
+        'defaultLoadExtensionProbe agrees with this build\'s actual '
+        'load_extension availability', () {
+      // Ground truth, read straight from the live build: extension loading
+      // exists unless OMIT_LOAD_EXTENSION was compiled in. This holds on every
+      // host — Apple's system SQLite omits it, Homebrew's and
+      // sqlite3_flutter_libs' builds do not — so the assertion is a real
+      // agreement check rather than a host-specific expectation.
+      final omitted = db.select(
+            "SELECT sqlite_compileoption_used('OMIT_LOAD_EXTENSION') AS x",
+          ).first['x'] ==
+          1;
+
+      expect(defaultLoadExtensionProbe(db).isOk, equals(!omitted));
+    });
+
+    // The verdict logic is tested apart from the live build because no single
+    // host can exhibit every signature: the workspace baseline is whichever
+    // SQLite the running process resolved. Driving the classifier directly
+    // covers the builds this code must get right without owning three of them.
+    group('classifyLoadExtensionCapability', () {
+      IntegrityProbeResult classify({
+        required bool omit,
+        required bool enable,
+        required bool fn,
+      }) =>
+          classifyLoadExtensionCapability(
+            omitCompiledIn: omit,
+            enableCompiledIn: enable,
+            functionAvailable: fn,
+          );
+
+      test('a stock build is capable even though ENABLE_LOAD_EXTENSION is 0',
+          () {
+        // Homebrew sqlite 3.53.3, measured: omit=0, enable=0, load_extension
+        // prepares. SQLite enables extension loading by default and only
+        // *removes* it under OMIT_LOAD_EXTENSION, so ENABLE_LOAD_EXTENSION
+        // being unset proves nothing. Treating it as the verdict rejects every
+        // stock build.
+        final r = classify(omit: false, enable: false, fn: true);
+        expect(r.name, equals('loadExtensionCapable'));
+        expect(r.isOk, isTrue);
+      });
+
+      test('OMIT_LOAD_EXTENSION is the definitive negative', () {
+        // Apple's system SQLite, measured: omit=1, enable=0, and the
+        // load_extension SQL function does not exist.
+        final r = classify(omit: true, enable: false, fn: false);
+        expect(r.isFailed, isTrue);
+        expect(r.summary, contains('OMIT_LOAD_EXTENSION'));
+      });
+
+      test('OMIT wins over every positive signal', () {
+        expect(classify(omit: true, enable: true, fn: true).isFailed, isTrue);
+      });
+
+      test('an explicit ENABLE define is honoured on its own', () {
+        // sqlite3_flutter_libs compiles the define in; keep accepting it even
+        // if the function probe could not be run.
+        expect(classify(omit: false, enable: true, fn: false).isOk, isTrue);
+      });
+
+      test('no capability signal at all → failed', () {
+        expect(classify(omit: false, enable: false, fn: false).isFailed, isTrue);
+      });
     });
 
     test('defaultEmbeddingMarkerProbe returns skipped with Q-A.26.2 reference',
