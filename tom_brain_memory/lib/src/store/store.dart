@@ -134,6 +134,15 @@ export 'two_db_coordinator.dart'
         TwoDbReplayFailure,
         TwoDbReplayReport,
         VectorApplier;
+export 'sqlite_host_library.dart'
+    show
+        SqliteHostLibrary,
+        SqliteHostLibraryOutcome,
+        SqliteHostLibraryResolution,
+        ensureExtensionCapableSqlite,
+        extensionCapableSqlite3,
+        sqliteHostLibraryResolution,
+        sqliteLibraryEnvVar;
 export 'sqlite_vec_binary_resolver.dart'
     show SqliteVecBinaryResolver, UnsupportedSqliteVecPlatform;
 export 'vec_extension_loader.dart'
@@ -147,6 +156,8 @@ export 'vec_extension_loader.dart'
         VecUnavailableReason,
         VectorRuntimeUnavailable,
         loadVecExtensionOrRefuseToBoot;
+export 'vector_runtime_probe.dart'
+    show VectorRuntimeProbe, discoverSqliteVecBinariesRoot;
 export 'vector_table.dart'
     show
         PlainBlobTableBackend,

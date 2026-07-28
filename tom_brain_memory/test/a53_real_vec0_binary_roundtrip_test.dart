@@ -16,47 +16,24 @@
 // `tom_binaries/sqlite_vec`, platform resolved by
 // `SqliteVecBinaryResolver`.
 //
-// It is skipped (not failed) when the running platform has no packaged
-// binary (e.g. linux-armhf, which upstream does not publish), so the
-// suite stays green on hosts the tree does not cover while still proving
-// the real load on every host it does.
+// It is skipped (not failed) when this process has no vector runtime —
+// either because the platform has no packaged binary (e.g. linux-armhf,
+// which upstream does not publish) or because the host `libsqlite3`
+// cannot load extensions at all. The gate is `VectorRuntimeProbe`, which
+// runs the real load rather than checking the binary's presence: a
+// presence check passes on macOS, where the file is there and the load
+// still fails, so it would put a green gate in front of a red test.
 
 import 'dart:io';
 
-import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 
-/// Locates `<workspace>/tom_binaries/sqlite_vec`.
-///
-/// Tests run with the package root (`tom_brain_memory`) as the working
-/// directory; the workspace root is two levels up
-/// (`tom_assistant/tom_brain_memory` → workspace). Falls back to walking
-/// parents so the test is robust to the runner's CWD.
-String? _findSqliteVecRoot() {
-  var dir = Directory.current.absolute;
-  for (var i = 0; i < 8; i++) {
-    final candidate =
-        Directory('${dir.path}${Platform.pathSeparator}tom_binaries'
-            '${Platform.pathSeparator}sqlite_vec');
-    if (candidate.existsSync()) return candidate.path;
-    final parent = dir.parent;
-    if (parent.path == dir.path) break;
-    dir = parent;
-  }
-  return null;
-}
-
 void main() {
-  final vecRoot = _findSqliteVecRoot();
-  final resolver = SqliteVecBinaryResolver();
-
-  // Compute the resolved path for the running platform, if supported.
-  String? resolvedPath;
-  if (vecRoot != null && resolver.isSupported) {
-    final path = resolver.resolve(vecRoot);
-    if (File(path).existsSync()) resolvedPath = path;
-  }
+  final runtime = VectorRuntimeProbe.probe();
+  final resolvedPath = runtime.binariesRoot == null
+      ? null
+      : SqliteVecBinaryResolver().resolve(runtime.requireBinariesRoot);
 
   group('Real packaged vec0 binary roundtrip', () {
     test(
@@ -69,20 +46,23 @@ void main() {
 
         final config = MemoryConfig.forTesting(
           root: root.path,
-          binariesRoot: vecRoot!,
+          binariesRoot: runtime.requireBinariesRoot,
         );
 
         // Production wiring: resolve via binariesRoot, dlopen the real
         // binary, register with sqlite3_auto_extension. No injection.
+        // `extensionCapableSqlite3` — not `sqlite3` — because that is
+        // what the store's own default is, and the whole point of this
+        // test is to exercise the production path.
         final result = loadVecExtensionOrRefuseToBoot(
-          sqlite: sqlite3,
+          sqlite: extensionCapableSqlite3,
           config: config,
         );
         expect(result.isLoaded, isTrue);
         expect(result.extensionPath, equals(resolvedPath));
 
         // Every Database opened after registration gets vec0.
-        final db = sqlite3.openInMemory();
+        final db = extensionCapableSqlite3.openInMemory();
         addTearDown(db.dispose);
 
         final version =
@@ -103,11 +83,7 @@ void main() {
         expect(match.first['rowid'], equals(1));
         expect(match.first['distance'] as double, closeTo(0.0, 1e-6));
       },
-      skip: resolvedPath == null
-          ? 'No packaged vec0 binary for this platform under '
-              'tom_binaries/sqlite_vec (resolver.isSupported='
-              '${resolver.isSupported}, vecRoot=$vecRoot).'
-          : null,
+      skip: runtime.skipReason,
     );
   });
 }

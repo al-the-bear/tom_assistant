@@ -66,8 +66,9 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
-
 import 'package:tom_brain_shared/tom_brain_shared.dart' show MemoryConfig;
+
+import 'sqlite_host_library.dart';
 import 'sqlite_vec_binary_resolver.dart';
 
 /// Outcome of one `VecExtensionLoader.load(...)` call.
@@ -436,10 +437,26 @@ final class VectorRuntimeUnavailable implements Exception {
         cause: result.cause,
       );
 
+  /// The host-library situation, appended to [toString] when it is the
+  /// actual cause.
+  ///
+  /// A `registrationFailed` on a host whose `libsqlite3` cannot load
+  /// extensions is not a broken binary — it is a deficient SQLite, and
+  /// the two need different fixes. Without this, that case reads as an
+  /// unexplained failure and every store-touching test in the suite
+  /// fails the same way with no hint of a remedy. Reads the resolution
+  /// [ensureExtensionCapableSqlite] already reached; it does not probe,
+  /// so building the message has no side effects.
+  String get _hostLibraryNote {
+    final resolution = sqliteHostLibraryResolution;
+    if (resolution == null || resolution.isExtensionCapable) return '';
+    return ' [host libsqlite3: ${resolution.summary}]';
+  }
+
   @override
   String toString() =>
       'VectorRuntimeUnavailable(reason: ${reason.name}, '
-      'extensionPath: $extensionPath): $summary';
+      'extensionPath: $extensionPath): $summary$_hostLibraryNote';
 }
 
 /// Production wiring helper for the open() path.

@@ -27,6 +27,15 @@
 //      `readSchemaVersion == 1` with no migration applied on the
 //      second pass.
 //
+// Handles come from `extensionCapableSqlite3`, not the bare `sqlite3`
+// getter, because this file drives `BootIntegrityCheck` — which probes
+// for extension-loading support, exactly as the production opener does.
+// The bare getter resolves the platform default, which on macOS is
+// Apple's `SQLITE_OMIT_LOAD_EXTENSION` build, so it would fail the
+// `loadExtensionCapable` probe against a SQLite that production never
+// uses. Going through the production accessor is also what keeps the
+// host-library repair from arriving too late in this isolate.
+//
 //   3. FTS5 unavailable error path
 //      `boot_integrity_test.dart` injects all-failing probes; here we
 //      inject *only* the FTS5 probe as failed and prove the integrated
@@ -115,7 +124,7 @@ void main() {
 
       // First DB open: bring the file up to the latest version via the
       // migrator (v0 → v1 → v2).
-      final db1 = sqlite3.open(dir1.memoryDbPath);
+      final db1 = extensionCapableSqlite3.open(dir1.memoryDbPath);
       try {
         final report1 = SchemaMigrator().migrate(db1);
         expect(report1.fromVersion, equals(0));
@@ -128,7 +137,7 @@ void main() {
 
       // The file must now exist on disk.
       expect(File(dir1.memoryDbPath).existsSync(), isTrue,
-          reason: 'sqlite3.open should have materialised the file');
+          reason: 'extensionCapableSqlite3.open should have materialised the file');
 
       // Second open of the *same root* — directory reports wasCreated
       // == false; the DB file is no longer fresh.
@@ -142,7 +151,7 @@ void main() {
       expect(dir2.isFresh, isFalse);
 
       // Second DB open: migrator must be a no-op.
-      final db2 = sqlite3.open(dir2.memoryDbPath);
+      final db2 = extensionCapableSqlite3.open(dir2.memoryDbPath);
       try {
         final report2 = SchemaMigrator().migrate(db2);
         expect(report2.fromVersion, equals(2));
@@ -171,7 +180,7 @@ void main() {
       final dir3 = MemoryDirectory.openOrCreate(cfg);
       expect(dir3.wasCreated, isFalse);
 
-      final db3 = sqlite3.open(dir3.memoryDbPath);
+      final db3 = extensionCapableSqlite3.open(dir3.memoryDbPath);
       try {
         expect(readSchemaVersion(db3), equals(2));
         final report3 = SchemaMigrator().migrate(db3);
@@ -193,7 +202,7 @@ void main() {
       final cfg = MemoryConfig.forTesting(root: root);
       final dir = MemoryDirectory.openOrCreate(cfg);
 
-      final db = sqlite3.open(dir.memoryDbPath);
+      final db = extensionCapableSqlite3.open(dir.memoryDbPath);
       SchemaMigrator().migrate(db);
       db.dispose();
 
@@ -204,7 +213,7 @@ void main() {
 
       // Re-open the directory + DB; subdirs unchanged.
       final dir2 = MemoryDirectory.openOrCreate(cfg);
-      final db2 = sqlite3.open(dir2.memoryDbPath);
+      final db2 = extensionCapableSqlite3.open(dir2.memoryDbPath);
       db2.dispose();
 
       for (final sub in [
@@ -236,7 +245,7 @@ void main() {
       // *before* the migrator runs. We assert this explicitly because
       // the v0 = "empty" semantics is part of the contract that lets
       // the migrator detect "fresh DB" without a separate marker.
-      final db = sqlite3.open(dir.memoryDbPath);
+      final db = extensionCapableSqlite3.open(dir.memoryDbPath);
       try {
         expect(readSchemaVersion(db), equals(0),
             reason: 'a never-migrated file must read as v0 — the migrator '
@@ -264,7 +273,7 @@ void main() {
 
       // Durability check: re-open the same file in a *new* sqlite3
       // process-local handle and confirm the bump survived.
-      final db2 = sqlite3.open(dir.memoryDbPath);
+      final db2 = extensionCapableSqlite3.open(dir.memoryDbPath);
       try {
         expect(readSchemaVersion(db2), equals(2),
             reason: 'the v0 → latest bump must survive a close+reopen');
@@ -292,7 +301,7 @@ void main() {
       );
       final cfg = MemoryConfig.forTesting(root: dir.root);
 
-      final db = sqlite3.open(dir.memoryDbPath);
+      final db = extensionCapableSqlite3.open(dir.memoryDbPath);
       try {
         // Inject a pass-through marker probe so the report stays
         // failure-free; FTS5 + loadExtension defaults are fine on the
@@ -345,7 +354,7 @@ void main() {
       );
       final cfg = MemoryConfig.forTesting(root: dir.root);
 
-      final db = sqlite3.open(dir.memoryDbPath);
+      final db = extensionCapableSqlite3.open(dir.memoryDbPath);
       try {
         final check = BootIntegrityCheck(
           fts5Probe: (_) => const IntegrityProbeResult(
@@ -413,7 +422,7 @@ void main() {
       );
       final cfg = MemoryConfig.forTesting(root: dir.root);
 
-      final db = sqlite3.open(dir.memoryDbPath);
+      final db = extensionCapableSqlite3.open(dir.memoryDbPath);
       try {
         final check = BootIntegrityCheck(
           loadExtensionProbe: (_) => const IntegrityProbeResult(
@@ -469,7 +478,7 @@ void main() {
       // proxy for a process exit). The pending row is now on disk; the
       // process is gone.
       {
-        final db = sqlite3.open(dir.memoryDbPath);
+        final db = extensionCapableSqlite3.open(dir.memoryDbPath);
         try {
           SchemaMigrator().migrate(db);
 
@@ -512,7 +521,7 @@ void main() {
       // clears, and both stores are consistent.
       final healthy = _FakeVectorApplier();
       {
-        final db = sqlite3.open(dir.memoryDbPath);
+        final db = extensionCapableSqlite3.open(dir.memoryDbPath);
         try {
           // The schema is already at v1; migrate must be a no-op here
           // (this is also the open/close-idempotency invariant, but
@@ -565,7 +574,7 @@ void main() {
       // verify that the recovery delete is durable; a re-open must
       // observe zero pending rows even without running recovery again.
       {
-        final db = sqlite3.open(dir.memoryDbPath);
+        final db = extensionCapableSqlite3.open(dir.memoryDbPath);
         try {
           final c = db
               .select('SELECT COUNT(*) AS c FROM pending_vector_writes')
@@ -588,7 +597,7 @@ void main() {
         'probes → recover', () {
       // The production open sequence (when it lands at A.32+) is:
       //   1. MemoryDirectory.openOrCreate
-      //   2. sqlite3.open(memoryDbPath)
+      //   2. extensionCapableSqlite3.open(memoryDbPath)
       //   3. BootIntegrityCheck.run (migration + probes)
       //   4. coordinator.recoverPending()
       //
@@ -606,7 +615,7 @@ void main() {
 
       // Phase 1 — leave a pending row behind via a failing applier.
       {
-        final db = sqlite3.open(dir.memoryDbPath);
+        final db = extensionCapableSqlite3.open(dir.memoryDbPath);
         try {
           SchemaMigrator().migrate(db);
           final crashy = TwoDbCoordinator(
@@ -631,7 +640,7 @@ void main() {
       // (must be clean), then recovery.
       final healthy = _FakeVectorApplier();
       {
-        final db = sqlite3.open(dir.memoryDbPath);
+        final db = extensionCapableSqlite3.open(dir.memoryDbPath);
         try {
           final integrity = BootIntegrityCheck(
             embeddingMarkerProbe: (_, _) => const IntegrityProbeResult(

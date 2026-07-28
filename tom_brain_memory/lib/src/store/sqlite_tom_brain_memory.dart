@@ -119,6 +119,7 @@ import '../stacks/sqlite_stack_api.dart';
 import '../trails/sqlite_trail_store.dart';
 import 'boot_integrity.dart';
 import 'memory_directory.dart';
+import 'sqlite_host_library.dart';
 import 'two_db_coordinator.dart';
 import 'vec_extension_loader.dart';
 import 'vector_table.dart';
@@ -278,7 +279,15 @@ final class SqliteTomBrainMemory extends TomBrainMemory
 
   /// Creates an unopened store.
   ///
-  /// [sqlite] defaults to the process-global `sqlite3` instance;
+  /// [sqlite] defaults to [extensionCapableSqlite3] — the process-global
+  /// `sqlite3`, with the host-library repair applied first. Reaching for
+  /// it here rather than for `sqlite3` directly is what guarantees the
+  /// repair lands *before* the first SQLite access: the `Sqlite3`
+  /// instance is cached on first touch, so an override installed later
+  /// would silently do nothing. On a host whose default already loads
+  /// extensions (Linux, or a Flutter host bundling its own SQLite) it is
+  /// a no-op — see [SqliteHostLibrary].
+  ///
   /// [clock] defaults to `const SystemClock()`.
   ///
   /// [embedder] is the optional storage-stack embedding model (Q-H.1,
@@ -289,7 +298,7 @@ final class SqliteTomBrainMemory extends TomBrainMemory
     Sqlite3? sqlite,
     Clock clock = const SystemClock(),
     RecallEmbedder? embedder,
-  })  : _sqlite = sqlite ?? sqlite3,
+  })  : _sqlite = sqlite ?? extensionCapableSqlite3,
         _clock = clock,
         _embedder = embedder;
 
