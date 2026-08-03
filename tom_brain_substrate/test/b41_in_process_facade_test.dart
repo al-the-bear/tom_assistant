@@ -4,7 +4,7 @@
 //
 //   "Implement `TomBrainSubstrateInProcessClient`. (Isolate variant is
 //    not needed at prototype scope; document it as future work in
-//    `completion_steps.tom_brain.md`.)"
+//    `deferred.tom_brain.md`.)"
 //
 // The class-name divergence (plan: `TomBrainSubstrateInProcessClient`;
 // in-tree: `InProcessTomBrainSubstrate`) is captured in

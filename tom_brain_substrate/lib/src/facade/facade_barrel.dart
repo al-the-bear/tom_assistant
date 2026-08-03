@@ -8,7 +8,7 @@
 // a `SubstrateEventBus`, and a lazy MCP-client cache.
 //
 // The isolate adapter variant the substrate spec § 16 mentions is
-// deferred to `completion_steps.tom_brain.md`; the prototype ships
+// deferred to `deferred.tom_brain.md`; the prototype ships
 // the in-process variant only, and the engine binds against
 // `TomBrainSubstrateClient` (B.40 boundary lock) so a future isolate
 // adapter ships through the same consumer surface.

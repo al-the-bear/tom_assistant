@@ -62,7 +62,7 @@
 //     buffered + streaming paths; B.46 will lock it conformance-wide.
 //
 //   * No isolate-adapter exercise. The isolate variant is deferred to
-//     `completion_steps.tom_brain.md`; the engine will consume the
+//     `deferred.tom_brain.md`; the engine will consume the
 //     future isolate adapter through the same `TomBrainSubstrateClient`
 //     surface this bridge already binds against.
 

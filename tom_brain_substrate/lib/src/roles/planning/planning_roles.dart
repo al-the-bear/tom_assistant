@@ -215,7 +215,7 @@ RoleTemplate _decomposer() {
 // hint and any dependency edges the decomposer missed. The step set is fed as
 // inputs, so the role is `llmCall`-only — no `memoryRead`. (Cost roll-up /
 // critical-path scoring is deferred — see
-// `completion_steps.tom_brain.md`, `rollUpStepCost` — so the estimator's
+// `deferred.tom_brain.md`, `rollUpStepCost` — so the estimator's
 // numeric-cost remit is not yet wired.)
 RoleTemplate _estimator() {
   return RoleTemplate(

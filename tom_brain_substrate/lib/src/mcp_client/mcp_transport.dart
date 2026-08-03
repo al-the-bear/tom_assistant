@@ -28,7 +28,7 @@
 //     (server-initiated messages over GET-based SSE). The
 //     POST-with-JSON-response subset is enough for the v1 tools list
 //     and call surface; richer behaviour is documented in
-//     `completion_steps.tom_brain.md` as future work.
+//     `deferred.tom_brain.md` as future work.
 //   - It does not bake retry / cooldown policy in — that lives one
 //     layer up in `McpClient`. The transport surfaces failures as
 //     typed errors and lets the client decide.

@@ -4,7 +4,7 @@
 //
 //   "Implement `TomBrainSubstrateInProcessClient`. (Isolate variant is
 //    not needed at prototype scope; document it as future work in
-//    `completion_steps.tom_brain.md`.)"
+//    `deferred.tom_brain.md`.)"
 //
 // **Class-name divergence (Q-B.41.1).** The plan text names the class
 // `TomBrainSubstrateInProcessClient`; everywhere else in the in-tree
@@ -100,7 +100,7 @@
 //     manufacturing.
 //
 //   * The isolate / remote adapter variant. The plan defers it to
-//     `completion_steps.tom_brain.md`; the engine binds against
+//     `deferred.tom_brain.md`; the engine binds against
 //     [TomBrainSubstrateClient] (B.40 lock) so this facade and a
 //     future isolate adapter ship through the same consumer surface.
 //
