@@ -88,21 +88,55 @@ void main() {
       devBlock = pubspec.substring(devIdx);
     });
 
-    test('tom_d4rt_generator is a dev-dep pinned >=1.12.1 (barrel-template fix)',
-        () {
+    test('tom_d4rt_generator is a dev-dep floored at >=1.12.1 (barrel-template '
+        'fix)', () {
+      // Why a floor and not an exact string: what this test protects is that
+      // the resolved generator is new enough to emit the barrel surface
+      // itself. The 1.9.2..1.9.7 line fixed the dartscript/AllBridge template
+      // desync — sourceLibraries/getImportBlock/subPackageBarrels are emitted
+      // by the generator again — which retired the temporary hand-patch of
+      // brain_bridges.b.dart (HC-71). Verified 2026-07-07 (UB2): regenerating
+      // the bridges with the resolved generator reproduces the committed
+      // barrels byte-for-byte, statics intact, so no hand-patch remains.
+      //
+      // Anything at or above 1.12.1 satisfies that. Matching the literal
+      // `">=1.12.1"` instead made the test fail every time the pin was
+      // advanced — a manifest moving *forward* is the one outcome this test
+      // must never object to.
+      final match = RegExp(r'^  tom_d4rt_generator:\s*">=(\d+)\.(\d+)\.(\d+)"',
+              multiLine: true)
+          .firstMatch(devBlock);
+
       expect(
-        devBlock.contains(
-            RegExp(r'^  tom_d4rt_generator:\s*">=1\.12\.1"', multiLine: true)),
+        match,
+        isNotNull,
+        reason: 'tom_d4rt_generator must appear in dev_dependencies with an '
+            'inclusive lower-bound constraint of the form ">=X.Y.Z".',
+      );
+
+      final pin = [
+        int.parse(match!.group(1)!),
+        int.parse(match.group(2)!),
+        int.parse(match.group(3)!),
+      ];
+      const floor = [1, 12, 1];
+
+      // Lexicographic compare over [major, minor, patch].
+      var atOrAboveFloor = true;
+      for (var i = 0; i < 3; i++) {
+        if (pin[i] != floor[i]) {
+          atOrAboveFloor = pin[i] > floor[i];
+          break;
+        }
+      }
+
+      expect(
+        atOrAboveFloor,
         isTrue,
-        reason: 'tom_d4rt_generator is pinned >=1.12.1. The 1.9.2..1.9.7 line '
-            'fixed the dartscript/AllBridge template desync (the barrel surface '
-            '— sourceLibraries/getImportBlock/subPackageBarrels — is emitted by '
-            'the generator again), retiring the temporary hand-patch of '
-            'brain_bridges.b.dart (HC-71); the constraint has since advanced to '
-            '>=1.12.1. Verified 2026-07-07 (UB2): regenerating the bridges with '
-            'the resolved generator reproduces the committed barrels '
-            'byte-for-byte (statics intact), so no hand-patch remains. '
-            'dev_dependencies must adopt the current pin verbatim.',
+        reason: 'tom_d4rt_generator is pinned ">=${pin.join('.')}", which is '
+            'below the ">=${floor.join('.')}" floor that guarantees the '
+            'generator emits the barrel surface. Below it, brain_bridges.b.dart '
+            'needs the retired HC-71 hand-patch to work.',
       );
     });
 
