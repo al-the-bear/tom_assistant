@@ -81,7 +81,7 @@ final class MemoryWorkerContext extends TomWorkerContext {
   }) : super(tomEnvironment, tomPlatform, args, namePrefix);
 
   @override
-  Future<bool> initializeIsolate() async {
+  Future<void> initializeIsolate() async {
     // Install the component file sink before the executor registers, so
     // anything this isolate logs from boot onward reaches the same trail
     // surface as the host (§5.1 / §10 step #3). `FanoutLogOutput` tees to a
@@ -96,6 +96,5 @@ final class MemoryWorkerContext extends TomWorkerContext {
     // is intentionally separated from opening (see file-level
     // doc above).
     TomWorker.executors.add(MemoryIsolateExecutor(factory));
-    return true;
   }
 }

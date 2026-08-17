@@ -49,9 +49,8 @@ final class SubstrateWorkerContext extends TomWorkerContext {
   }) : super(tomEnvironment, tomPlatform, args, namePrefix);
 
   @override
-  Future<bool> initializeIsolate() async {
+  Future<void> initializeIsolate() async {
     final client = await factory();
     TomWorker.executors.add(SubstrateIsolateExecutor(client));
-    return true;
   }
 }
