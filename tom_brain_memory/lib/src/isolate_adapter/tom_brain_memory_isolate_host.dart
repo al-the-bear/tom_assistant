@@ -13,8 +13,8 @@
 //   * Owns the host-side `IsolateCancellationTokenAllocator` and
 //     `StreamIdAllocator` so every cancellable request /
 //     stream-open carries a fresh id.
-//   * Registers a creator-side `TomExecutor` (`_StreamRouter`) on
-//     `TomWorker.executors` that intercepts
+//   * Registers a creator-side `TomExecutor` (`_StreamRouter`) via
+//     `TomWorker.addExecutor` that intercepts
 //     `StreamSideChannelMessage`s sent from the isolate via
 //     `sendToCreator(...)` and forwards them to the right
 //     `StreamController`.
@@ -222,7 +222,7 @@ class TomBrainMemoryIsolateHost {
       // A.81: install the creator-side router so the isolate can push
       // stream chunks back to us via `sendToCreator(...)`.
       _router = _StreamRouter(_streamSinks, _exceptionRegistry);
-      TomWorker.executors.add(_router!);
+      TomWorker.addExecutor(_router!);
       // A.84 — host spawn is a major lifecycle event; one `status`
       // line so operators see the boot in any log filter.
       MemoryLog.isolate.status(
@@ -284,7 +284,7 @@ class TomBrainMemoryIsolateHost {
     _streamSinks.clear();
     final router = _router;
     if (router != null) {
-      TomWorker.executors.remove(router);
+      TomWorker.removeExecutor(router);
       _router = null;
     }
     // Stop listening for the isolate exit before we close the worker:
@@ -518,7 +518,7 @@ class _StreamSink {
 /// One router per [TomBrainMemoryIsolateHost]. Messages whose
 /// `streamId` is not registered are silently dropped — they belong
 /// to another host that shares the static `TomWorker.executors`
-/// list. Returning [TomExecutor.noResult] would not be right here
+/// registry. Returning [TomExecutor.noResult] would not be right here
 /// because the message is no-one else's either; we just drop it
 /// without emitting a "no result" cascade.
 class _StreamRouter extends TomExecutor {

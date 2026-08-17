@@ -3,8 +3,8 @@
 // `TomBrainMemory` instance (plan step A.79, extended in A.81).
 //
 // Constructed inside `MemoryWorkerContext.initializeIsolate` and
-// registered onto `TomWorker.executors` (the per-isolate static
-// list). One instance per isolate; lifetime equals isolate
+// registered via `TomWorker.addExecutor` (the per-isolate
+// registry). One instance per isolate; lifetime equals isolate
 // lifetime.
 //
 // Dispatch rules:

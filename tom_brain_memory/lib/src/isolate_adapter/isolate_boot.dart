@@ -15,8 +15,8 @@
 //
 //   1. The spawned isolate sends its receive port back to the
 //      creator (this happens before `initializeIsolate` is called).
-//   2. `initializeIsolate()` runs here: register the executor on
-//      `TomWorker.executors` so subsequent envelopes have a
+//   2. `initializeIsolate()` runs here: register the executor via
+//      `TomWorker.addExecutor` so subsequent envelopes have a
 //      dispatch target.
 //   3. `_handleCommandsToIsolate` starts listening — the worker
 //      signals `readyMessage` to the creator at this point.
@@ -95,6 +95,6 @@ final class MemoryWorkerContext extends TomWorkerContext {
     // when the first `OpenMemoryRequest` arrives. Construction
     // is intentionally separated from opening (see file-level
     // doc above).
-    TomWorker.executors.add(MemoryIsolateExecutor(factory));
+    TomWorker.addExecutor(MemoryIsolateExecutor(factory));
   }
 }

@@ -4,7 +4,7 @@
 // item #12).
 //
 // Constructed inside `SubstrateWorkerContext.initializeIsolate` and
-// registered onto `TomWorker.executors` (the per-isolate static list).
+// registered via `TomWorker.addExecutor` (the per-isolate registry).
 // One instance per isolate; lifetime equals isolate lifetime. Unlike
 // the memory executor, the client is built *eagerly* by the boot
 // context and handed to this executor's constructor — the substrate

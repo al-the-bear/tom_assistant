@@ -132,7 +132,7 @@ class TomBrainSubstrateIsolateHost {
       });
       _worker!.isolate.addOnExitListener(_exitPort!.sendPort);
       _router = _StreamRouter(_streamSinks, _exceptionRegistry);
-      TomWorker.executors.add(_router!);
+      TomWorker.addExecutor(_router!);
       _spawnSettled.complete();
     } catch (error, stack) {
       _spawnSettled.completeError(error, stack);
@@ -161,7 +161,7 @@ class TomBrainSubstrateIsolateHost {
     _streamSinks.clear();
     final router = _router;
     if (router != null) {
-      TomWorker.executors.remove(router);
+      TomWorker.removeExecutor(router);
       _router = null;
     }
     _exitPort?.close();
@@ -293,7 +293,7 @@ class _StreamSink {
 ///
 /// One router per host. Messages whose `streamId` is not registered are
 /// claimed (and dropped) rather than cascaded — they belong to another
-/// host that shares the static `TomWorker.executors` list, and a
+/// host that shares the static `TomWorker.executors` registry, and a
 /// side-channel envelope is no other executor's business.
 class _StreamRouter extends TomExecutor {
   final Map<int, _StreamSink> sinks;

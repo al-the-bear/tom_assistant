@@ -13,7 +13,7 @@
 //
 //   1. The spawned isolate sends its receive port back to the creator.
 //   2. `initializeIsolate()` runs here: build the client eagerly and
-//      register the executor on `TomWorker.executors`.
+//      register the executor via `TomWorker.addExecutor`.
 //   3. `_handleCommandsToIsolate` starts listening — the worker signals
 //      ready to the creator.
 //
@@ -51,6 +51,6 @@ final class SubstrateWorkerContext extends TomWorkerContext {
   @override
   Future<void> initializeIsolate() async {
     final client = await factory();
-    TomWorker.executors.add(SubstrateIsolateExecutor(client));
+    TomWorker.addExecutor(SubstrateIsolateExecutor(client));
   }
 }
