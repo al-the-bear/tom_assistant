@@ -6,7 +6,7 @@
 //      `authenticator` parameter accepts `initialize` with no bearer
 //      token, and exposes `principal == null` afterwards.
 //   2. When an authenticator is supplied, `initialize` rejects a
-//      request that carries no `_meta.tomBrainBearerToken`. The
+//      request that carries no `_meta.tomBearerToken`. The
 //      rejection arrives as a JSON-RPC error so the client cannot
 //      proceed to call tools.
 //   3. When an authenticator is supplied, a wrong / unknown token
@@ -171,7 +171,7 @@ void main() {
       expect(BearerAuthFailureReason.values, hasLength(3));
       expect(StaticBearerTokenAuthenticator, isNotNull);
       expect(JwtBearerTokenAuthenticator, isNotNull);
-      expect(bearerTokenMetaKey, equals('tomBrainBearerToken'));
+      expect(bearerTokenMetaKey, equals('tomBearerToken'));
     });
   });
 
@@ -287,7 +287,7 @@ TomPrincipal _testPrincipal(String username) {
 ///
 /// Extended over A.75's `_TestEnv` by accepting an optional
 /// [authenticator] and an optional `bearerToken` on the handshake
-/// helper. The token is placed under `_meta.tomBrainBearerToken` so
+/// helper. The token is placed under `_meta.tomBearerToken` so
 /// the server's `initialize` override picks it up.
 class _TestEnv {
   final clientController = StreamController<String>();

@@ -21,7 +21,7 @@
 //   - An optional [BearerTokenAuthenticator] parameter. When non-null,
 //     the server overrides `initialize` and rejects the handshake
 //     unless the client supplied a valid bearer token via the
-//     `_meta.tomBrainBearerToken` extensibility slot
+//     `_meta.tomBearerToken` extensibility slot
 //     ([bearerTokenMetaKey]).
 //   - A [principal] accessor that exposes the authenticated
 //     [TomPrincipal] to A.77 tool handlers. Stays `null` for the
@@ -54,7 +54,7 @@
 //   - § 1.7 — "no backwards compatibility". The instructions
 //     advertise the seven-tool v1 surface as a *closed* set; future
 //     tool additions are a version bump, never a silent extension.
-//     Likewise the `_meta.tomBrainBearerToken` key is part of the v1
+//     Likewise the `_meta.tomBearerToken` key is part of the v1
 //     contract and is version-bumped, never silently renamed.
 //   - § 3.2 — read-only by default, with `memory.persistNote` as the
 //     one constrained write (NodeType ∈ {Claim, Question,
@@ -167,7 +167,7 @@ tests), listTools returns an empty list.
   /// trust boundary to defend).
   ///
   /// When non-null, the `initialize` override consults this object
-  /// against the value at `_meta.tomBrainBearerToken` on the request.
+  /// against the value at `_meta.tomBearerToken` on the request.
   /// Failure surfaces as a JSON-RPC error and the handshake is
   /// aborted; success caches the principal on [principal] for A.77
   /// tool handlers.
@@ -249,7 +249,7 @@ tests), listTools returns an empty list.
   ///
   /// When [authenticator] is non-null:
   ///
-  ///   - The request's `_meta.tomBrainBearerToken` field is read.
+  ///   - The request's `_meta.tomBearerToken` field is read.
   ///     A missing value raises a JSON-RPC error tagged
   ///     [BearerAuthFailureReason.missing].
   ///   - The token is passed to [authenticator]. Any
