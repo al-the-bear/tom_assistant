@@ -164,6 +164,18 @@ void _runConformance(_HarnessBuilder buildHarness) {
         anyOf(isA<LlmStreamCompleted>(), isA<LlmStreamFailed>()),
         reason: 'last event must be Completed or Failed (spec § 4.3)',
       );
+
+      // Started and the terminal report must name the *same* route. Checking
+      // each `modelId` is merely non-empty pins two values but not the
+      // relation between them, which is how a provider that hardcodes its
+      // Started stamp slips through a conformance suite: it announces one
+      // model and completes on another, and consumers that log the route from
+      // the first event disagree with those that read it from the report.
+      final terminalReport = terminal is LlmStreamCompleted
+          ? terminal.report
+          : (terminal as LlmStreamFailed).report;
+      expect(started.providerId, terminalReport.providerId);
+      expect(started.modelId, terminalReport.modelId);
     });
   });
 
