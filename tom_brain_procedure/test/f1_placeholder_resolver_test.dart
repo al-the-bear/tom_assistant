@@ -12,8 +12,12 @@
 // What this file proves end-to-end over the real `D4rtExpressionEvaluator`
 // (a bare `D4rt` interpreter — PE-10 reuse, no bridges needed):
 //
-//   - the `${{ expr }}` form evaluates against the live scope, and the simple
-//     `${name}` form is equivalent to `${{ name }}`;
+//   - the `${{ expr }}` form evaluates against the live scope, and for an
+//     identifier-shaped *bound* name the simple `${name}` form agrees with
+//     `${{ name }}` (the forms are not equivalent in general — see the
+//     divergence tests in `tom_core_agentic`);
+//   - a non-identifier binding is dropped from the synthesised locals, which
+//     is where the `isSimpleIdentifier` rule is actually enforced;
 //   - a `setup` script returns a bindings map the caller seeds into the
 //     stack, which a later expression then reads;
 //   - an expression that references an unknown name / will not parse surfaces
@@ -31,13 +35,40 @@ PlaceholderResolver _resolver() =>
 
 void main() {
   group(r'D4rtExpressionContext — ${{ … }} evaluation', () {
-    test('the simple form is equivalent to the d4rt-expression form',
-        () async {
+    test('a bound identifier reads the same through either form', () async {
+      // The one case in which the two forms agree. They are NOT equivalent in
+      // general: without a backing, or on resolveSync, or for an unbound name,
+      // they diverge (pinned in tom_core_agentic).
       final resolver = _resolver();
       resolver.stack.bind('v', 'X');
       expect(
         await resolver.resolve(r'${v}'),
         await resolver.resolve(r'${{ v }}'),
+      );
+    });
+
+    test('a non-identifier binding is dropped from the expression locals',
+        () async {
+      // This is the enforcement point for `isSimpleIdentifier`: the predicate
+      // is not the simple form's grammar (which has none), it is the shape a
+      // binding needs to become a d4rt parameter name. A dotted name — the
+      // shape the brain substrate's `role.anchor` built-in uses — resolves
+      // through the simple form and is invisible to the expression form.
+      final resolver = _resolver();
+      resolver.stack.bind('role.anchor', 'ANCHOR');
+      expect(isSimpleIdentifier('role.anchor'), isFalse);
+
+      // Readable through the simple form...
+      expect(await resolver.resolve(r'${role.anchor}'), 'ANCHOR');
+
+      // ...and absent from the locals, so naming it in an expression is an
+      // unknown-name failure rather than a malformed-source one. The binding
+      // is dropped silently; it does not corrupt the synthesised parameter
+      // list.
+      await expectLater(
+        resolver.resolve(r'${{ 1 + 1 }}'),
+        completion(equals('2')),
+        reason: 'the dropped binding must not break source synthesis',
       );
     });
 
