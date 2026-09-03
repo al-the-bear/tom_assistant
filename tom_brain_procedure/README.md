@@ -6,7 +6,7 @@ Procedure prototype for Tom Brain — a thin d4rt-hosted **engine** (Phase C) pl
 
 The prototype ships exactly one hand-written sequence — `answer_with_memory_v1` (recall → answer → persist) — and proves the *machinery* that runs it:
 
-- **A sandboxed d4rt host** built on `tom_d4rt_dcli` / `tom_core_d4rt`. A procedure is a d4rt script, never a workflow definition (PE-2).
+- **A sandboxed d4rt host** built on `tom_d4rt` / `tom_d4rt_dcli`. A procedure is a d4rt script, never a workflow definition (PE-2).
 - **A bridged primitive API** that re-exposes `tom_brain_memory` + `tom_brain_substrate` plus four engine-native primitives (`runProcedure`, `note`, `yield_if_foreground_waiting`, depth handling). This bridged surface is the *only* thing a procedure can touch (PE-1).
 - **A run recorder** — every run (success or fail) opens a memory trail, appends every primitive call, and persists a `ProcedureRun` node with the closed effort-metric set (PE-4).
 - **A fallback chain** — the dispatcher steps down the version chain `[v_latest, …, v1]` on the four typed run-failure classes only (PE-6).

@@ -21,7 +21,7 @@ It owns nothing memory or substrate already owns. The engine half (Phase C) runs
 7. **PE-7 — Every prompt the machinery issues carries the assistant-dedication anchor.** `llm(...)` always routes through substrate; the engine has no raw-completion path that skips it.
 8. **PE-8 — Sandboxed and budgeted.** A bridged call that would exceed any applicable budget is refused with `procedure.budget.exceeded`; the smallest applicable budget wins.
 9. **PE-9 — No backwards compatibility.** Bridged-API surface, procedure headers, run-record shape, and config schema roll forward only; consumers migrate in the same change. No compat shim.
-10. **PE-10 — Reuse before rebuild.** Built on `tom_d4rt_dcli` / `tom_core_d4rt` (d4rt host), `tom_brain_memory` + `tom_brain_substrate` *at the interface boundary only* (never reaching into `lib/src/`), `tom_core_kernel` (logging/locator), `tom_brain_shared` (shared types). No new d4rt interpreter, no new logger, no new HTTP stack.
+10. **PE-10 — Reuse before rebuild.** Built on `tom_d4rt` / `tom_d4rt_dcli` (d4rt host), `tom_brain_memory` + `tom_brain_substrate` *at the interface boundary only* (never reaching into `lib/src/`), `tom_core_kernel` (logging/locator), `tom_brain_shared` (shared types). No new d4rt interpreter, no new logger, no new HTTP stack.
 11. **PE-11 — The dispatcher consumes `Access`, never a channel.** Single entry point `accept(Access)`; delivery happens through the `Access.deliver` callback.
 
 ## What belongs here

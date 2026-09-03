@@ -1,7 +1,7 @@
 // C.14 generated-bridge contract test.
 //
 // Plan step C.14: "Run the bridge generator. Verify generated bridges
-// compile and register with tom_core_d4rt." The generator runs via its
+// compile and register." The generator runs via its
 // standalone `d4rtgen` CLI (`dart run tom_d4rt_generator:d4rtgen`, or the
 // installed `d4rtgen` binary) against the `d4rtgen:` block in
 // `buildkit.yaml` (C.11) — the build no longer drives it through
@@ -25,9 +25,9 @@
 //      Extension F step 8; `VsCodeScriptingBridge` at Extension F step 14)
 //      with their canonical source URIs.
 //   3. REGISTERS — `BrainBridges.register(D4rt())` registers those
-//      classes with a real D4rt interpreter (the tom_core_d4rt
-//      registration layer), and a d4rt script imported under a bridge
-//      library path resolves the registered class. A fresh, unregistered
+//      classes with a real D4rt interpreter, and a d4rt script imported
+//      under a bridge library path resolves the registered class. A
+//      fresh, unregistered
 //      interpreter fails the same resolution — the negative control that
 //      proves it is registration, not leniency, doing the work.
 //

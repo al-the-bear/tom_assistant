@@ -73,19 +73,6 @@ environment:
 #                           substrate (B.7) adopted.
 #   - tom_core_kernel     — `TomBean` (bean-locator surface), `TomLogger`
 #                           categories, isolate utilities. Path dep.
-#   - tom_core_d4rt       — the Tom-Framework D4rt bridge-registration
-#                           layer the generated bridges register against
-#                           (C.14). Path dep — `publish_to: none`.
-#                           NOTE: the workspace copy's generated bridge
-#                           barrel (`dartscript.b.dart`) currently ships
-#                           Windows-backslash imports that do not compile
-#                           on POSIX — see Q-C.7.3. The dependency is
-#                           declared here per the plan; the actual import
-#                           of its bridge barrel is deferred to C.14/C.16
-#                           and is gated on the upstream regeneration
-#                           fix. `dart analyze` on this package is
-#                           unaffected because no prototype source imports
-#                           that barrel yet.
 #   - tom_d4rt            — the sandboxed D4rt interpreter (`D4rt`) the
 #                           host (C.16) runs procedure scripts on. Hosted
 #                           `^1.10.1` — the version published to pub.dev
@@ -93,13 +80,10 @@ environment:
 #                           the d4rt runtime uniform with the hosted
 #                           `tom_d4rt_dcli` below (which pulls `tom_d4rt`
 #                           with an `any` constraint). See Q-C.7.2.
-#   - tom_d4rt_dcli       — `^1.1.3`, the C.4 workspace pin. Provides
-#                           `D4rtCliApi` (`lib/src/api/cli_api.dart`),
-#                           the REPL/CLI base `D4rtDcliHost` (C.16)
-#                           composes. Hosted; the published 1.1.3 bridge
-#                           barrel is correctly generated (forward-slash
-#                           imports), unlike the workspace `tom_core_d4rt`
-#                           copy.
+#   - tom_d4rt_dcli       — `>=1.1.6`, the workspace floor. Provides
+#                           `D4rtCliApi` (`lib/src/api/cli_api.dart`), the
+#                           REPL/CLI base `D4rtDcliHost` (C.16) composes.
+#                           Hosted.
 #
 # Explicitly NOT here (scope discipline):
 #
@@ -161,8 +145,6 @@ dependencies:
     path: ../../tom_ai/core/tom_core_agentic
   tom_core_kernel:
     path: ../../tom_ai/core/tom_core_kernel
-  tom_core_d4rt:
-    path: ../../tom_ai/core/tom_core_d4rt
   tom_d4rt: ">=1.11.0"
   tom_d4rt_dcli: ">=1.1.6"
   # C.24 procedure loader — the structured header (§ 4.4) is a YAML

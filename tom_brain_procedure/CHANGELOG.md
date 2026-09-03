@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — drop the `tom_core_d4rt` dependency
+
+`tom_core_d4rt` was deleted from `tom_ai/core`. Its path dependency here was
+dangling, so `dart pub get` failed and the whole suite was unrunnable; `dart
+analyze` kept passing only because `.dart_tool/` predated the deletion.
+
+- Removed the `tom_core_d4rt` path dependency. Nothing in `lib/`, `test/` or
+  `bin/` imported it — the package's own generated `dartscript.b.dart`
+  registers `BrainBridges` against `tom_d4rt` directly, so there is no
+  replacement to adopt.
+- `dependency_surface_test.dart` now locks seven C.7 dependencies instead of
+  eight, and all seven are import-locked. The manifest-locked group survives
+  for the three facts an import cannot express: directness, the
+  `tom_d4rt_dcli >=1.1.6` floor, and the `tom_core_server` scope exclusion.
+
 ## Unreleased — re-enable `generateDartscript`; delete hand-authored registrar (plan-2 #13a)
 
 `tom_d4rt_generator 1.9.1` fixed the dartscript template that blocked C.14: the

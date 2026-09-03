@@ -25,8 +25,7 @@
 ///   `_copilot_guidelines/`).
 /// - C.7 — Runtime dependencies (`tom_brain_shared`,
 ///   `tom_brain_memory` interface, `tom_brain_substrate` interface,
-///   `tom_basics`, `tom_core_kernel`, `tom_core_d4rt`, `tom_d4rt`,
-///   `tom_d4rt_dcli`).
+///   `tom_basics`, `tom_core_kernel`, `tom_d4rt`, `tom_d4rt_dcli`).
 /// - C.8 ✅ — `lib/src/` folder layout (`d4rt_host/`, `bridges/`,
 ///   `primitives_native/`, `procedure_store/`, `validator/`,
 ///   `recorder/`, `preemption/`, `api/`, `config/`).
