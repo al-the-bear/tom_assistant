@@ -43,10 +43,10 @@ A type belongs here if (a) more than one Tom Brain component will reference it, 
 
 | Document | Purpose |
 |----------|---------|
-| [Coding Guidelines](/_copilot_guidelines/dart/coding_guidelines.md) | Naming, error handling, structure |
-| [Clean Code Principles](/_copilot_guidelines/dart/clean_code_principles.md) | DRY, abstraction, code smells |
-| [Unit Tests](/_copilot_guidelines/dart/unit_tests.md) | Test layout, matchers, mocking |
-| [Test-Driven Development](/_copilot_guidelines/test_driven_development.md) | Red → green → refactor |
+| [Coding Guidelines](../../../_copilot_guidelines/dart/coding_guidelines.md) | Naming, error handling, structure |
+| [Clean Code Principles](../../../_copilot_guidelines/dart/clean_code_principles.md) | DRY, abstraction, code smells |
+| [Unit Tests](../../../_copilot_guidelines/dart/unit_tests.md) | Test layout, matchers, mocking |
+| [Test-Driven Development](../../../_copilot_guidelines/test_driven_development.md) | Red → green → refactor |
 
 ## Driving documents
 
