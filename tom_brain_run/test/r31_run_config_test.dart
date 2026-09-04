@@ -49,10 +49,14 @@
 // ── Why no live oMLX / Ollama is needed ──────────────────────────────
 //
 // Standing the process up and hitting `/healthz` + `/v1/models` never issues a
-// chat completion or an embedding call, so the oMLX / Ollama transports are
-// constructed but never dialed (same rationale as the #30 suite). Group C's
-// only precondition is the packaged `vec0` binary the real on-disk memory loads
-// at `open`; absent it, Group C is *skipped*, not failed.
+// chat completion or an embedding call, so the oMLX transport is constructed
+// but never dialed (same rationale as the #30 suite). Boot *does* probe the
+// embedding backend once, and tolerates an unreachable one — Group C points
+// that probe at a closed loopback port so it is refused immediately rather
+// than waiting out an OS connect timeout against a host that may be down; see
+// [_unreachableEmbeddingBaseUrl]. Group C's only precondition is the packaged
+// `vec0` binary the real on-disk memory loads at `open`; absent it, Group C is
+// *skipped*, not failed.
 
 import 'dart:convert';
 import 'dart:io';
@@ -96,6 +100,22 @@ String? _findSqliteVecRoot() {
   return null;
 }
 
+/// The prototype deployment's embedding endpoint (Ollama on the fleet host).
+const String _ollamaBaseUrl = 'http://10.8.0.9:11434';
+
+/// An endpoint nothing can ever be listening on, for the boot embedding probe.
+///
+/// Port 1 on loopback refuses immediately on every platform, so the probe's
+/// tolerated failure resolves in microseconds. Aiming it at a real off-host
+/// backend instead makes the test's wall-clock hostage to whether that host
+/// happens to be up: reachable it answers, *unreachable* it costs a full OS
+/// connect timeout — longer than the test's own — so the suite would pass or
+/// fail on the state of the network rather than on the code. The live
+/// embedding path belongs to the `live_e2e_harness` suites, which gate on
+/// reachability; this one is a config-to-process test and only needs the probe
+/// to be over.
+const String _unreachableEmbeddingBaseUrl = 'http://127.0.0.1:1';
+
 /// The `substrate:` section in the prototype's real deployment shape: oMLX
 /// (OpenAI-compatible LLM) for the two routed roles, Ollama for embeddings.
 const String _substrateSection = '''
@@ -108,7 +128,7 @@ substrate:
         - gemma-4-26b-a4b-it-4bit
     - id: ollama
       kind: ollama
-      baseUrl: http://10.8.0.9:11434
+      baseUrl: $_ollamaBaseUrl
       models:
         - nomic-embed-text
   roleRoutes:
@@ -145,8 +165,16 @@ access:
 
 /// Builds a whole-process YAML doc with a `memory:` section pointed at
 /// [memoryRoot] + [binariesRoot] (the packaged vec0 root).
-String _runYaml({required String memoryRoot, required String binariesRoot}) =>
-    '$_substrateSection\n'
+///
+/// [embeddingBaseUrl] re-points the Ollama provider. It defaults to the real
+/// deployment endpoint, which is what the parse groups should read; only a
+/// group that actually *boots* needs [_unreachableEmbeddingBaseUrl].
+String _runYaml({
+  required String memoryRoot,
+  required String binariesRoot,
+  String embeddingBaseUrl = _ollamaBaseUrl,
+}) =>
+    '${_substrateSection.replaceFirst(_ollamaBaseUrl, embeddingBaseUrl)}\n'
     'memory:\n'
     '  root: "$memoryRoot"\n'
     '  sqliteVec:\n'
@@ -934,7 +962,11 @@ tools:
 
       final File cfgFile = File('${cfgDir.path}/tom_brain.yaml');
       cfgFile.writeAsStringSync(
-        _runYaml(memoryRoot: memoryRoot.path, binariesRoot: vecRoot!),
+        _runYaml(
+          memoryRoot: memoryRoot.path,
+          binariesRoot: vecRoot!,
+          embeddingBaseUrl: _unreachableEmbeddingBaseUrl,
+        ),
       );
       // Snapshot the on-disk bytes before the process touches the file.
       final List<int> bytesBefore = cfgFile.readAsBytesSync();
