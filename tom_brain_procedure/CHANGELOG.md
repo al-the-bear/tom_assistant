@@ -12,8 +12,13 @@ analyze` kept passing only because `.dart_tool/` predated the deletion.
   replacement to adopt.
 - `dependency_surface_test.dart` now locks seven C.7 dependencies instead of
   eight, and all seven are import-locked. The manifest-locked group survives
-  for the three facts an import cannot express: directness, the
-  `tom_d4rt_dcli >=1.1.6` floor, and the `tom_core_server` scope exclusion.
+  for the four facts an import cannot express: directness, the
+  `tom_d4rt_dcli >=1.1.6` floor, the `tom_core_server` scope exclusion, and
+  the absence of `tom_core_d4rt` itself. That last one is the guard the
+  deletion tripped, kept rather than dropped: the positive assertion could
+  not survive the package going away, but the fact it protected can, so it is
+  now stated the only way it still can be — as an absence, alongside the
+  reason there is nothing to re-adopt.
 
 ## Unreleased — re-enable `generateDartscript`; delete hand-authored registrar (plan-2 #13a)
 

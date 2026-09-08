@@ -10,6 +10,8 @@
 // All seven are import-locked. The manifest-level group below covers what
 // an import cannot express: that a dependency is *direct* rather than
 // transitive, that a version floor holds, and that a package is absent.
+// Two packages are asserted absent, for different reasons — one is out of
+// scope, the other no longer exists.
 //
 // The C.7 dependencies (in plan order):
 //
@@ -112,11 +114,11 @@ void main() {
   });
 
   group('C.7 dependency surface (manifest-locked)', () {
-    // Three facts an import cannot express. That a dependency is *direct*
+    // Four facts an import cannot express. That a dependency is *direct*
     // rather than pulled in transitively — an import compiles either way,
     // so only the manifest proves it. That `tom_d4rt_dcli` clears its
-    // version floor. And that `tom_core_server` is absent: you cannot
-    // import a package to assert it is not there.
+    // version floor. And that `tom_core_server` and `tom_core_d4rt` are
+    // absent: you cannot import a package to assert it is not there.
     late final String pubspec;
 
     setUpAll(() {
@@ -164,6 +166,27 @@ void main() {
         isFalse,
         reason: 'tom_core_server is out of scope for the engine — memory '
             'owns the MCP server, access owns the inbound edge.',
+      );
+    });
+
+    test('tom_core_d4rt is NOT a dependency (the package is gone)', () {
+      // This one is not scope discipline — the package was deleted from
+      // `tom_ai/core`, so a path dependency on it cannot resolve at all.
+      // It was once the eighth entry of this surface, manifest-locked
+      // rather than import-locked because no `lib/` source imported it,
+      // and its disappearance is what this file caught. The positive
+      // assertion could not survive the deletion, but the fact it was
+      // guarding can: the host registers `BrainBridges` against
+      // `tom_d4rt` directly (`dartscript.b.dart`, proven by
+      // `generated_bridges_test.dart`), so there is no registry package
+      // to re-adopt and re-adding one would be a regression rather than
+      // a repair.
+      expect(
+        pubspec.contains(RegExp(r'^  tom_core_d4rt:', multiLine: true)),
+        isFalse,
+        reason: 'tom_core_d4rt was deleted from tom_ai/core — the generated '
+            'bridge barrel registers against tom_d4rt directly, so nothing '
+            'here needs a bridge-registration package.',
       );
     });
   });
