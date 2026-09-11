@@ -29,8 +29,8 @@
 //      `relaxers.b.dart` and `AllBridge.subPackageBarrels()`, so the generated
 //      `dartscript.b.dart` compiles). The config carries a `dartscriptPath` and
 //      `registrationClass: BrainBridges`; the hand-authored registrar is
-//      deleted (no shim). `libraryPath` is pinned to `lib/src/bridges` so the
-//      per-package generator output does not introduce a tenth `lib/src/` folder.
+//      deleted (no shim). `libraryPath` is absent: only the build_runner
+//      builder reads it, so under the CLI it would configure nothing.
 //   5. `helpersImport` points at `package:tom_d4rt/tom_d4rt.dart` (C.3
 //      convention 3 -- required for generated code to resolve the `D4` helper).
 //   6. No STALE option keys leak in -- the C.3-flagged deltas (`barrelFile`
@@ -169,12 +169,11 @@ void main() {
             '(BrainBridges) the host calls register() on.',
       );
       expect(
-        buildkitYaml.contains(
-            RegExp(r'^\s*libraryPath:\s*lib/src/bridges', multiLine: true)),
-        isTrue,
-        reason: 'libraryPath is pinned to lib/src/bridges so per-package '
-            'generator output stays inside the existing folder (keeps the C.8 '
-            'inventory intact).',
+        buildkitYaml.contains(RegExp(r'^\s*libraryPath:', multiLine: true)),
+        isFalse,
+        reason: 'libraryPath is read only by the build_runner builder, for '
+            'its per-package output; the d4rtgen CLI ignores it, so setting '
+            'it here would configure nothing.',
       );
     });
 

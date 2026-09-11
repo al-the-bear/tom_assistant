@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — delete the generated files no generation writes
+
+`package_tom_brain_procedure_bridges.b.dart` and `bridges_trigger.b.dart` were
+written by the build_runner builder's per-package orchestrator. The `d4rtgen`
+CLI that replaced it writes a self-contained module file instead and never
+runs the orchestrator, so the two had not been regenerated since 2026-06-16.
+Nothing imported them. `generated_bridges_test.dart` nevertheless required
+both to exist, and `buildkit.yaml` said the generator always wrote them; one
+was hand-edited to track generator output because no run would.
+
+- Deleted both files. A `d4rtgen` 1.21.0 dry run writes four files —
+  `brain_bridges.b.dart`, `d4rt_bridges.b.dart`, `dartscript.b.dart`,
+  `relaxers.b.dart` — and reports all four unchanged.
+- `buildkit.yaml`: dropped `libraryPath`, which only the builder reads, and the
+  comment claiming per-package output. The comment now names the four files.
+- `generated_bridges_test.dart` asserts that `lib/src/bridges/` holds exactly
+  those four `*.b.dart` files, so a generated file that no run produces fails
+  the suite rather than going stale. `buildkit_yaml_config_test.dart` asserts
+  `libraryPath` is absent.
+
 ## Unreleased — drop the `tom_core_d4rt` dependency
 
 `tom_core_d4rt` was deleted from `tom_ai/core`. Its path dependency here was

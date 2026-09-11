@@ -15,7 +15,6 @@
 //     `search(query, provider, k)`, `fetch(url, budget)`. ✅ C.13.
 //   - The `tom_d4rt_generator`-produced `*.b.dart` companions
 //     (`brain_bridges.b.dart` → `AllBridge`,
-//     `package_tom_brain_procedure_bridges.b.dart`,
 //     `d4rt_bridges.b.dart` barrel, `relaxers.b.dart`,
 //     `dartscript.b.dart` → `BrainBridges`). ✅ C.14.
 //   - `BrainBridges.register(d4rt)` — the generator-produced registration

@@ -45,7 +45,7 @@
 # so the generator never has to bridge the memory/substrate domain-type graph and
 # there is no cross-package bridged type to import.
 #
-# `generateDartscript` is ON (re-enabled by plan-2 item #13a). The orchestrator
+# `generateDartscript` is ON (re-enabled by plan-2 item #13a). The generator
 # writes `relaxers.b.dart` (no-op stubs when there are no generic-extraction
 # sites) and emits `AllBridge.subPackageBarrels()`, so the generated
 # `dartscript.b.dart` compiles. The generated `BrainBridges.register` (in
@@ -60,14 +60,11 @@ name: tom_brain_procedure
 
 d4rtgen:
   name: tom_brain_procedure
-  # Keep every generated artifact inside the existing `bridges/` folder. The
-  # generator always runs the per-package orchestrator, which writes
-  # `package_<pkg>_bridges.b.dart` + `bridges_trigger.b.dart` under
-  # `libraryPath` (default: a NEW `lib/src/d4rt_library_bridges/` folder).
-  # Pinning it to `lib/src/bridges` avoids introducing a tenth `lib/src/`
-  # subfolder outside the C.8 engine inventory (the folder-layout test treats
-  # `bridges/`-local `*.b.dart` as generated).
-  libraryPath: lib/src/bridges
+  # Every path below is inside the existing `bridges/` folder, so generation
+  # adds no `lib/src/` subfolder outside the C.8 engine inventory. `d4rtgen`
+  # writes exactly four `*.b.dart` files: `barrelPath`, `dartscriptPath`, the
+  # module's `outputPath` and `relaxers.b.dart` beside that output.
+  # `libraryPath` is not set: only the build_runner builder reads it.
   helpersImport: package:tom_d4rt/tom_d4rt.dart
   generateBarrel: true
   barrelPath: lib/src/bridges/d4rt_bridges.b.dart

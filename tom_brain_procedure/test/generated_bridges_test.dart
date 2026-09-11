@@ -47,21 +47,29 @@ import 'package:tom_brain_procedure/src/bridges/dartscript.b.dart';
 
 void main() {
   group('C.14 generated bridge output — files', () {
-    test('expected generator outputs exist under lib/src/bridges/', () {
-      for (final name in const <String>[
-        'brain_bridges.b.dart', // delegating barrel (AllBridge)
-        'package_tom_brain_procedure_bridges.b.dart', // per-package
-        'd4rt_bridges.b.dart', // generateBarrel output
-        'bridges_trigger.b.dart', // regeneration trigger
-        'dartscript.b.dart', // BrainBridges registration entrypoint (#13a)
-        'relaxers.b.dart', // generic/relaxer factory stubs (#13a)
-      ]) {
-        expect(
-          File('lib/src/bridges/$name').existsSync(),
-          isTrue,
-          reason: 'generator must produce lib/src/bridges/$name',
-        );
-      }
+    test('lib/src/bridges/ holds exactly the files d4rtgen writes', () {
+      // `d4rtgen` writes these four from buildkit.yaml and nothing else. A
+      // generated file outside the set is output no run produces any more:
+      // it cannot be regenerated, only hand-edited, and nothing notices it
+      // going stale. The build_runner builder's per-package file and
+      // regeneration trigger were exactly that once the build moved to the
+      // CLI.
+      final generated = Directory('lib/src/bridges')
+          .listSync()
+          .whereType<File>()
+          .map((f) => f.uri.pathSegments.last)
+          .where((name) => name.endsWith('.b.dart'))
+          .toSet();
+      expect(
+        generated,
+        equals(const <String>{
+          'brain_bridges.b.dart', // module outputPath (AllBridge)
+          'd4rt_bridges.b.dart', // generateBarrel output
+          'dartscript.b.dart', // BrainBridges registration entrypoint (#13a)
+          'relaxers.b.dart', // generic/relaxer factory stubs (#13a)
+        }),
+        reason: 'run d4rtgen; delete any *.b.dart it does not write',
+      );
     });
 
     test('the hand-authored registrar is gone (#13a — no shim)', () {
@@ -76,14 +84,14 @@ void main() {
       );
     });
 
-    test('per-package generator output stays inside lib/src/bridges/', () {
-      // libraryPath is pinned so the generator does not introduce a
-      // tenth lib/src/ subfolder (keeps the C.8 inventory intact).
+    test('no generated output lands outside lib/src/bridges/', () {
+      // The build_runner builder's default per-package folder; the d4rtgen
+      // CLI never writes it. A tenth lib/src/ subfolder would break the C.8
+      // inventory.
       expect(
         Directory('lib/src/d4rt_library_bridges').existsSync(),
         isFalse,
-        reason: 'libraryPath=lib/src/bridges must suppress the default '
-            'lib/src/d4rt_library_bridges/ folder.',
+        reason: 'generated output belongs in lib/src/bridges/ (C.8).',
       );
     });
   });
