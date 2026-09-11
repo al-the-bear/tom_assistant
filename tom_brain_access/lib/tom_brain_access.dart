@@ -368,9 +368,10 @@
 ///   signal, no real `exit`). The first signal wins; a second signal mid-drain
 ///   is logged and ignored; a teardown that throws still exits, with
 ///   `shutdownExitError`. `tom_basics` has no signal-handling surface and
-///   `tom_core_kernel`'s `TomShutdownCleanup` is synchronous fire-and-forget
-///   (cannot await an async drain), so a purpose-built async coordinator is used
-///   — logged in the questions doc. Mirrors D.45 shutdown orchestration.
+///   `tom_core_kernel`'s `TomShutdownCleanup` watches signals through a
+///   process-wide singleton with no injectable signal or exit seam, so a
+///   purpose-built async coordinator is used — logged in the questions doc.
+///   Mirrors D.45 shutdown orchestration.
 /// - E.43 ✅ — health check (boot/): `HealthCheck` is the `GET /healthz`
 ///   liveness endpoint, a mountable `shelf` handler rendering
 ///   `{ status, uptime_s, queues }`. `status` is `ok` while the process serves

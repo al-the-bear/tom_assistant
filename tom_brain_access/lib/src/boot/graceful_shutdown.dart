@@ -23,12 +23,11 @@
 // The plan names "`tom_basics`' signal handling", but `tom_basics` exposes no
 // signal-handling surface (it ships `tomLog`, the platform/runtime helpers,
 // and the exception base — nothing that watches `ProcessSignal`). The closest
-// workspace facility is `tom_core_kernel`'s `TomShutdownCleanup`, but its
-// handler model is *synchronous* fire-and-forget (`void Function(ProcessSignal)`
-// over `close()` / `dispose()`): it cannot *await* an async drain, so it would
-// race the process exit and drop the very in-flight foreground work the spec
-// requires us to drain. It also auto-watches signals from a global singleton at
-// import time, which is hostile to a deterministic test. So E.42 implements a
+// workspace facility is `tom_core_kernel`'s `TomShutdownCleanup`. It awaits
+// asynchronous teardown, within a per-phase budget, but it watches SIGHUP and
+// SIGINT through a process-wide singleton and takes neither its signal streams
+// nor the process exit as a seam, which is hostile to a deterministic test —
+// and it never exits the process itself. So E.42 implements a
 // small async coordinator here that (a) awaits the async teardown to completion
 // before terminating, (b) takes its signal streams and its process-terminator
 // as injectable seams so a test drives the whole sequence with no real signal
