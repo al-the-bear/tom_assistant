@@ -1,6 +1,6 @@
 // D4rt Bridge - Generated file, do not edit
 // Dartscript registration for tom_brain_procedure
-// Generated: 2026-08-03T11:41:02.127826
+// Generated: 2026-09-18T00:47:02.850576 by tom_d4rt_generator 1.26.0
 
 /// D4rt Bridge Registration for tom_brain_procedure
 library;
