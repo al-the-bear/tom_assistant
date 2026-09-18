@@ -877,10 +877,10 @@ packages:
     dependency: "direct main"
     description:
       name: tom_basics
-      sha256: "27443b9d12d56630cd8051319da70ee0031213e44723995cfdb2e706435b62d2"
+      sha256: f8a144af49c9bf286c2226c39e8275e6e8d5e832bbac86194940e72754507848
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.3"
+    version: "3.1.1"
   tom_basics_console:
     dependency: transitive
     description:
@@ -958,10 +958,10 @@ packages:
     dependency: transitive
     description:
       name: tom_crypto
-      sha256: "75310d578724a02e2e268b9ee56e3db0f4d5f439520bbf271546340f008418ef"
+      sha256: e229c05c4d5ed9e1f5c6fc79ec560161f1e300ec18c9d9dbe76611fe9a0feb8f
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.0"
+    version: "1.2.1"
   tom_d4rt:
     dependency: transitive
     description:
