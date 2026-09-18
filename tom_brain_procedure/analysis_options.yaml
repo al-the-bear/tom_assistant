@@ -19,4 +19,8 @@ analyzer:
     # trips the `void_checks` info. Exclude the generated outputs from static
     # analysis; their correctness is proven by the bridge/host test suites
     # that register and exercise them. (See plan item 1 / tom_d4rt_generator.)
+    # hides: 0 errors (measured 2026-09-18) — generated d4rt bridges, rewritten
+    #   by tom_d4rt_generator and never hand-edited, so lint findings here are
+    #   not actionable. Measured rather than assumed: GEN-119 was an exclusion of
+    #   exactly this shape hiding a generated import that resolved nowhere.
     - lib/src/bridges/*.b.dart
