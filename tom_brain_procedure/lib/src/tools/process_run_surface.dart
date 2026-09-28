@@ -16,7 +16,7 @@
 // The allow-list is exactly the executables the shipped process tools name:
 //
 //   - `dart`     — `analyze.dart` (`dart analyze`), `analyze.format`
-//                  (`dart format --set-exit-if-changed`).
+//                  (`dart format -o none --set-exit-if-changed`).
 //   - `testkit`  — `test.run` (`testkit :test`), `test.baseline`
 //                  (`testkit :baseline`).
 //   - `tom`      — `analyze.schema` (`tom schema validate …`).

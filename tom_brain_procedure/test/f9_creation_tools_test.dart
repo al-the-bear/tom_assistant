@@ -12,6 +12,8 @@
 //           `ToolProcessSurface`, each naming exactly one fixed executable —
 //           never a raw `Process.run` (no general shell, § 5.4) — and raise
 //           `ToolSurfaceUnavailable` when the run carries no process surface.
+//           `analyze.format` is `readOnly`, so it is also run for real to
+//           prove it writes nothing (`-o none`).
 //   F.9-4 — `file.delete` is the reversible counterpart to `file.write`: it
 //           removes a file within scope (the rollback of a rejected draft,
 //           § 4.7), is idempotent on a missing target, and refuses an escaping
@@ -151,7 +153,8 @@ void main() {
       expect(out['exitCode'], 0);
     });
 
-    test('analyze.format runs `dart format --set-exit-if-changed`', () async {
+    test('analyze.format runs `dart format -o none --set-exit-if-changed`',
+        () async {
       File(p.join(root.path, 'lib.dart')).writeAsStringSync('void main(){}');
       final process = _FakeProcess(
           result: const ProcessRunResult(
@@ -163,8 +166,31 @@ void main() {
 
       expect(process.calls.single.exe, 'dart');
       expect(process.calls.single.args,
-          containsAllInOrder(<String>['format', '--set-exit-if-changed']));
+          containsAllInOrder(
+              <String>['format', '-o', 'none', '--set-exit-if-changed']));
       expect(out['ok'], isFalse);
+    });
+
+    // `readOnly` is the axis the read-only tool-policy profile admits on, so a
+    // tool declaring it must write nothing. `--set-exit-if-changed` only sets
+    // the exit code; `dart format` still writes unless told `-o none`. The case
+    // above asserts the command and would pass either way, so this one runs
+    // the REAL formatter and compares bytes.
+    test('analyze.format reports drift and leaves the file byte-identical',
+        () async {
+      const unformatted = 'void main(){print( 1 );}\n';
+      final file = File(p.join(root.path, 'lib.dart'))
+        ..writeAsStringSync(unformatted);
+      final ctx = _ctx(
+          roots: <String>[root.path], process: const ProcessRunToolSurface());
+
+      final out =
+          await _run('analyze.format', {'path': 'lib.dart'}, ctx) as Map;
+
+      expect(file.readAsStringSync(), unformatted,
+          reason: 'a readOnly tool rewrote the file it was pointed at');
+      expect(out['ok'], isFalse, reason: 'the drift must still be reported');
+      expect(out['exitCode'], 1);
     });
 
     test('analyze.schema validates via the `tom` CLI', () async {

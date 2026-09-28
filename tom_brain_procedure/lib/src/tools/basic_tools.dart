@@ -719,8 +719,9 @@ final class _AnalyzeFormatTool extends BrainTool {
   bool get readOnly => true;
   @override
   String get description =>
-      'Runs `dart format --set-exit-if-changed` over a path under the '
-      'file-scope root (allow-listed process; reports formatting drift).';
+      'Runs `dart format -o none --set-exit-if-changed` over a path under '
+      'the file-scope root (allow-listed process; reports formatting drift '
+      'without writing).';
   @override
   Map<String, Object?> get inputSchema => _pathOnlySchema;
 
@@ -732,7 +733,9 @@ final class _AnalyzeFormatTool extends BrainTool {
       ctx,
       name,
       'dart',
-      <String>['format', '--set-exit-if-changed', hit.path],
+      // `-o none` is what makes this read-only: `--set-exit-if-changed` only
+      // sets the exit code, and `dart format` writes by default.
+      <String>['format', '-o', 'none', '--set-exit-if-changed', hit.path],
       workingDirectory: hit.root,
     );
     return _processResultMap(relative, result);
