@@ -75,10 +75,12 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'answer_with_memory_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'answer_with_memory_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
@@ -130,86 +132,106 @@ void main() {
       await runWith('how do I automate backups?');
 
       final conclusion = memory.persistedOfType('Conclusion').single;
-      expect(conclusion.draft.values['statement'],
-          'Back up by rsyncing nightly.');
-    });
-  });
-
-  group('D.39-2 a derived_from edge ties the Conclusion to each recalled node',
-      () {
-    test('one derived_from edge per cited node, from the Conclusion', () async {
-      seedRecall();
-
-      await runWith('how do I automate backups?');
-
-      final conclusionId = memory.persistedOfType('Conclusion').single.id;
-      final derivedTargets = memory.recordedEdges
-          .where((e) => e.type == EdgeType.derivedFrom && e.from == conclusionId)
-          .map((e) => e.to)
-          .toSet();
-
-      expect(derivedTargets, <NodeId>{citedA, citedB});
-    });
-
-    test('no derived_from edges when recall returned nothing', () async {
-      // Default recallResult is empty.
-      await runWith('plain question');
-
-      final conclusionId = memory.persistedOfType('Conclusion').single.id;
-      final derivedFromConclusion = memory.recordedEdges.where(
-        (e) => e.type == EdgeType.derivedFrom && e.from == conclusionId,
+      expect(
+        conclusion.draft.values['statement'],
+        'Back up by rsyncing nightly.',
       );
-      expect(derivedFromConclusion, isEmpty);
     });
   });
 
-  group('D.39-3 a produced_by edge ties the Conclusion to the ProcedureRun',
-      () {
-    test('the recorder draws produced_by from the Conclusion to the run node',
+  group(
+    'D.39-2 a derived_from edge ties the Conclusion to each recalled node',
+    () {
+      test(
+        'one derived_from edge per cited node, from the Conclusion',
         () async {
-      seedRecall();
+          seedRecall();
 
-      await runWith('how do I automate backups?');
+          await runWith('how do I automate backups?');
 
-      final conclusionId = memory.persistedOfType('Conclusion').single.id;
-      // The authoritative final ProcedureRun node for the top-level answer run
-      // is the one persisted with a terminal status (the inflight marker
-      // carries status 'running') whose procedureId is the answer procedure —
-      // step-1 recall now fans out through the conductor + four `recall_*`
-      // sub-procedures (Extension-H step #30), each of which records its own
-      // ProcedureRun, so the run must be matched by procedureId, not just by a
-      // terminal status.
-      final finalRun = memory.persistedOfType('ProcedureRun').firstWhere(
-            (p) =>
-                p.draft.values['status'] != 'running' &&
-                p.draft.values['procedureId'] == 'answer_with_memory_v1',
+          final conclusionId = memory.persistedOfType('Conclusion').single.id;
+          final derivedTargets = memory.recordedEdges
+              .where(
+                (e) => e.type == EdgeType.derivedFrom && e.from == conclusionId,
+              )
+              .map((e) => e.to)
+              .toSet();
+
+          expect(derivedTargets, <NodeId>{citedA, citedB});
+        },
+      );
+
+      test('no derived_from edges when recall returned nothing', () async {
+        // Default recallResult is empty.
+        await runWith('plain question');
+
+        final conclusionId = memory.persistedOfType('Conclusion').single.id;
+        final derivedFromConclusion = memory.recordedEdges.where(
+          (e) => e.type == EdgeType.derivedFrom && e.from == conclusionId,
+        );
+        expect(derivedFromConclusion, isEmpty);
+      });
+    },
+  );
+
+  group('D.39-3 a produced_by edge ties the Conclusion to the ProcedureRun', () {
+    test(
+      'the recorder draws produced_by from the Conclusion to the run node',
+      () async {
+        seedRecall();
+
+        await runWith('how do I automate backups?');
+
+        final conclusionId = memory.persistedOfType('Conclusion').single.id;
+        // The authoritative final ProcedureRun node for the top-level answer run
+        // is the one persisted with a terminal status (the inflight marker
+        // carries status 'running') whose procedureId is the answer procedure —
+        // step-1 recall now fans out through the conductor + four `recall_*`
+        // sub-procedures (Extension-H step #30), each of which records its own
+        // ProcedureRun, so the run must be matched by procedureId, not just by a
+        // terminal status.
+        final finalRun = memory
+            .persistedOfType('ProcedureRun')
+            .firstWhere(
+              (p) =>
+                  p.draft.values['status'] != 'running' &&
+                  p.draft.values['procedureId'] == 'answer_with_memory_v1',
+            );
+
+        final producedBy = memory.recordedEdges.where(
+          (e) => e.type == EdgeType.producedBy && e.from == conclusionId,
+        );
+        expect(producedBy, hasLength(1));
+        expect(producedBy.single.to, finalRun.id);
+      },
+    );
+  });
+
+  group(
+    'D.39-4 the run succeeds and producedNodeIds is not a surfaced output',
+    () {
+      test(
+        'the outcome is accepted, answer is present, producedNodeIds stripped',
+        () async {
+          seedRecall();
+          substrate.answerChunks = <String>['Back up by ', 'rsyncing nightly.'];
+
+          final outcome = await runWith('how do I automate backups?');
+
+          expect(outcome.status, TrailOutcomeStatus.accepted);
+          expect(
+            outcome.result!.output<String>('answer'),
+            'Back up by rsyncing nightly.',
           );
-
-      final producedBy = memory.recordedEdges.where(
-        (e) => e.type == EdgeType.producedBy && e.from == conclusionId,
+          // The reserved transport key never surfaces as a declared output.
+          expect(
+            outcome.result!.outputs.containsKey(producedNodeIdsOutputKey),
+            isFalse,
+          );
+        },
       );
-      expect(producedBy, hasLength(1));
-      expect(producedBy.single.to, finalRun.id);
-    });
-  });
-
-  group('D.39-4 the run succeeds and producedNodeIds is not a surfaced output',
-      () {
-    test('the outcome is accepted, answer is present, producedNodeIds stripped',
-        () async {
-      seedRecall();
-      substrate.answerChunks = <String>['Back up by ', 'rsyncing nightly.'];
-
-      final outcome = await runWith('how do I automate backups?');
-
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'),
-          'Back up by rsyncing nightly.');
-      // The reserved transport key never surfaces as a declared output.
-      expect(outcome.result!.outputs.containsKey(producedNodeIdsOutputKey),
-          isFalse);
-    });
-  });
+    },
+  );
 }
 
 // ── A persist + edge capturing `TomBrainMemoryClient` ────────────────
@@ -260,14 +282,14 @@ class _PersistCapturingMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -339,8 +361,7 @@ class _PersistCapturingMemory implements TomBrainMemory {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── An answer-capturing `TomBrainSubstrateClient` ───────────────────
@@ -352,11 +373,10 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
   List<String> answerChunks = <String>['ok'];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) {
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -374,18 +394,17 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -435,6 +454,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

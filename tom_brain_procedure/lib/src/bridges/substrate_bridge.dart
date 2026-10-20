@@ -41,11 +41,11 @@
 //
 // `TomBrainSubstrateClient.complete` returns an `LlmCallReport` only —
 // the report carries provenance/metrics but **not the generated text**
-// (the text lives on the stream's `LlmStreamChunk` events). The
+// (the text lives on the stream's `LlmTextDelta` events). The
 // prototype's `answer_with_memory_v1` needs the answer text (§ 5.1
 // step "answer"), so `llm` drains `completeStream`, concatenates the
 // chunk text, and returns `{ 'text': …, 'report': … }`. A
-// `LlmStreamFailed` terminal event is surfaced as a thrown
+// `LlmRunFailed` terminal event is surfaced as a thrown
 // [LlmCompletionFailure] carrying the typed failure class.
 //
 // ── The streaming variant (P1.3 #7) ─────────────────────────────────
@@ -74,7 +74,8 @@
 
 import 'dart:convert' show jsonDecode;
 
-import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget, TurnContext;
+import 'package:tom_brain_shared/tom_brain_shared.dart'
+    show Budget, TurnContext;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show MapFieldReader, looksLikeToolCallAttempt, parseToolCallsFromText;
@@ -284,19 +285,19 @@ class SubstrateBridge {
     bool anchored = true,
     TurnContext? turn,
     LlmTrailObserver? onLlmTrail,
-  })  : _onCall = onCall,
-        _onToken = onToken,
-        _budget = budget,
-        _onNote = onNote,
-        _onThinking = onThinking,
-        _toolProtocolOf = toolProtocolOf,
-        _routeChainOf = routeChainOf,
-        _promptResolver = promptResolver,
-        _runProcedure = runProcedure,
-        _profileRole = profileRole,
-        _anchored = anchored,
-        _turn = turn,
-        _onLlmTrail = onLlmTrail;
+  }) : _onCall = onCall,
+       _onToken = onToken,
+       _budget = budget,
+       _onNote = onNote,
+       _onThinking = onThinking,
+       _toolProtocolOf = toolProtocolOf,
+       _routeChainOf = routeChainOf,
+       _promptResolver = promptResolver,
+       _runProcedure = runProcedure,
+       _profileRole = profileRole,
+       _anchored = anchored,
+       _turn = turn,
+       _onLlmTrail = onLlmTrail;
 
   /// The injected route-chain resolver this bridge was built with, or `null`.
   ///
@@ -353,8 +354,12 @@ class SubstrateBridge {
     final result = resultOf(value);
     budget?.charge(primitive, result: result);
     if (onCall != null) {
-      await onCall(primitive, input, result,
-          elapsedMs: watch.elapsedMilliseconds);
+      await onCall(
+        primitive,
+        input,
+        result,
+        elapsedMs: watch.elapsedMilliseconds,
+      );
     }
     return value;
   }
@@ -372,11 +377,11 @@ class SubstrateBridge {
   /// then the bridge needs a concrete envelope to build an [LlmCall].
   /// (Q-C.13.2.)
   static Budget get defaultBudget => Budget(
-        wallClockMs: 86400000,
-        tokenSpend: 100000000,
-        toolCalls: 800,
-        memoryWrites: 1000000,
-      );
+    wallClockMs: 86400000,
+    tokenSpend: 100000000,
+    toolCalls: 800,
+    memoryWrites: 1000000,
+  );
 
   // ── send ──────────────────────────────────────────────────────────
 
@@ -535,9 +540,11 @@ class SubstrateBridge {
     // engine-bound `_profileRole` is used only when the resolved prompt leaves
     // the role unset.
     final effectiveRole =
-        (resolved.role.isEmpty && _profileRole != null && _profileRole.isNotEmpty)
-            ? _profileRole
-            : resolved.role;
+        (resolved.role.isEmpty &&
+            _profileRole != null &&
+            _profileRole.isNotEmpty)
+        ? _profileRole
+        : resolved.role;
 
     final loopInputs = ProcedureInputs(<String, Object?>{
       'transcript': transcript,
@@ -557,10 +564,7 @@ class SubstrateBridge {
 
     final answer = result.output<String>('answer') ?? '';
     final exhausted = result.output<bool>('toolLoopExhausted') ?? false;
-    return <String, Object?>{
-      'answer': answer,
-      'toolLoopExhausted': exhausted,
-    };
+    return <String, Object?>{'answer': answer, 'toolLoopExhausted': exhausted};
   }
 
   /// Resolves a registered prompt or fragment to its **rendered template body**,
@@ -643,8 +647,9 @@ class SubstrateBridge {
       if (name == null || '$name'.isEmpty) continue;
       final group = tool['group'];
       final description = tool['description'];
-      final groupSuffix =
-          (group != null && '$group'.isNotEmpty) ? ' ($group)' : '';
+      final groupSuffix = (group != null && '$group'.isNotEmpty)
+          ? ' ($group)'
+          : '';
       final descSuffix = (description != null && '$description'.isNotEmpty)
           ? ': $description'
           : '';
@@ -652,7 +657,8 @@ class SubstrateBridge {
       rendered += '- $name$groupSuffix$descSuffix$argsSuffix\n';
     }
     if (rendered.isEmpty) return '';
-    final howToCall = 'To use a tool, reply with ONLY a single call line and no '
+    final howToCall =
+        'To use a tool, reply with ONLY a single call line and no '
         'other text, using the exact tool name and argument keys from the list '
         'above:\n'
         '  call:TOOL_NAME{arg1: "value", arg2: 123}\n'
@@ -680,8 +686,9 @@ class SubstrateBridge {
     final parts = <String>[];
     properties.forEach((key, spec) {
       final keyName = '$key';
-      final type =
-          (spec is Map && spec['type'] != null) ? '${spec['type']}' : 'value';
+      final type = (spec is Map && spec['type'] != null)
+          ? '${spec['type']}'
+          : 'value';
       final requiredSuffix = required.contains(keyName) ? ' (required)' : '';
       parts.add('$keyName: $type$requiredSuffix');
     });
@@ -718,215 +725,217 @@ class SubstrateBridge {
     List<RouteEntry>? routeChain,
     Map<String, Object?>? budget,
     String? channel,
-  }) =>
-      _record<Map<String, Object?>>(
-        primitive,
-        recordInput,
-        () async {
-          final catalogue = options.toolCatalogue;
-          // Per-call stream routing (§ 9.2 Todo 6). The resolved channel says
-          // where this completion's text streams: the **answer** channel the
-          // user reads, or the out-of-band **thinking** channel. Explicit
-          // `channel` wins; otherwise it defaults by role (an
-          // `assistant_to_user` answer streams to the user; a deliberation role
-          // streams to thinking).
-          final toThinking = _resolvesToThinking(channel, role);
-          // A tools-bearing call is an agentic *decision* turn: any chunk could
-          // turn out to be a `call:NAME{…}` the user must never read, so its
-          // text is buffered and routed at completion (tool-deciding text →
-          // thinking; a plain answer is left for the body to deliver via
-          // `emit`). A tools-free call cannot be a tool decision, so an answer
-          // turn streams live token-by-token as before.
-          final hasTools = catalogue.isNotEmpty;
-          final liveAnswer = !toThinking && !hasTools;
-          // Turn-correlation stamp (logging-spec §3 / §9): when a turn is bound,
-          // name this completion with the turn's id and the next per-turn
-          // `callSeq`. The counter advances once per llm call (embeddings do not
-          // consume it) and spans the turn's nested runs because the one
-          // [TurnContext] is shared down. Unbound (internal / dream) ⇒ both null.
-          final turn = _turn;
-          // Hoisted so the same ordinal stamps both the outbound call and the
-          // raw-trail observation; calling `nextCallSeq()` twice would burn two
-          // ordinals for one completion (§5.2 `callSeq` must match §3's stamp).
-          final callSeq = turn?.nextCallSeq();
-          // Stamp the live tom_brain session id onto the call (agent-SDK spec
-          // § 1.5). Every HTTP / stub provider ignores `brainSessionId`; only
-          // the run-layer `AgentSdkLlmProvider` in `sessionMode: brain` reads it.
-          // A turn-less (internal / dream) call carries a null session id.
-          final stampedOptions = turn?.brainSessionId == null
-              ? options
-              : options.copyWith(brainSessionId: turn!.brainSessionId);
-          final call = LlmCall(
-            roleId: role,
-            inputs: <String, Object?>{'prompt': prompt},
-            options: stampedOptions,
-            budget: _buildBudget(budget),
-            turnId: turn?.turnId,
-            callSeq: callSeq,
-            // null for `llm` (route by role); the explicit chain for `send`.
-            routeChain: routeChain,
-            // Per-run profile anchoring toggle (§ 3.4, plan step 9): `false`
-            // omits the dedication anchor for the run's profile (the relay).
-            anchored: _anchored,
+  }) => _record<Map<String, Object?>>(primitive, recordInput, () async {
+    final catalogue = options.toolCatalogue;
+    // Per-call stream routing (§ 9.2 Todo 6). The resolved channel says
+    // where this completion's text streams: the **answer** channel the
+    // user reads, or the out-of-band **thinking** channel. Explicit
+    // `channel` wins; otherwise it defaults by role (an
+    // `assistant_to_user` answer streams to the user; a deliberation role
+    // streams to thinking).
+    final toThinking = _resolvesToThinking(channel, role);
+    // A tools-bearing call is an agentic *decision* turn: any chunk could
+    // turn out to be a `call:NAME{…}` the user must never read, so its
+    // text is buffered and routed at completion (tool-deciding text →
+    // thinking; a plain answer is left for the body to deliver via
+    // `emit`). A tools-free call cannot be a tool decision, so an answer
+    // turn streams live token-by-token as before.
+    final hasTools = catalogue.isNotEmpty;
+    final liveAnswer = !toThinking && !hasTools;
+    // Turn-correlation stamp (logging-spec §3 / §9): when a turn is bound,
+    // name this completion with the turn's id and the next per-turn
+    // `callSeq`. The counter advances once per llm call (embeddings do not
+    // consume it) and spans the turn's nested runs because the one
+    // [TurnContext] is shared down. Unbound (internal / dream) ⇒ both null.
+    final turn = _turn;
+    // Hoisted so the same ordinal stamps both the outbound call and the
+    // raw-trail observation; calling `nextCallSeq()` twice would burn two
+    // ordinals for one completion (§5.2 `callSeq` must match §3's stamp).
+    final callSeq = turn?.nextCallSeq();
+    // Stamp the live tom_brain session id onto the call (agent-SDK spec
+    // § 1.5). Every HTTP / stub provider ignores `brainSessionId`; only
+    // the run-layer `AgentSdkLlmProvider` in `sessionMode: brain` reads it.
+    // A turn-less (internal / dream) call carries a null session id.
+    final stampedOptions = turn?.brainSessionId == null
+        ? options
+        : options.copyWith(sessionId: turn!.brainSessionId);
+    final call = LlmCall(
+      roleId: role,
+      inputs: <String, Object?>{'prompt': prompt},
+      options: stampedOptions,
+      budget: _buildBudget(budget),
+      turnId: turn?.turnId,
+      callSeq: callSeq,
+      // null for `llm` (route by role); the explicit chain for `send`.
+      routeChain: routeChain,
+      // Per-run profile anchoring toggle (§ 3.4, plan step 9): `false`
+      // omits the dedication anchor for the run's profile (the relay).
+      anchored: _anchored,
+    );
+
+    // Raw-trail provenance (§5.2): when the engine bound a trail observer,
+    // record when this completion began so the writer can emit `startedAt`.
+    final onLlmTrail = _onLlmTrail;
+    final startedAt = DateTime.now().toUtc();
+
+    final buffer = StringBuffer();
+    // A buffered (tools-bearing or thinking) turn captures its deltas so
+    // they can be routed once at completion: a terminal answer replays
+    // them to the answer channel in their original chunk boundaries (so
+    // streaming UX survives), while a tool-deciding turn discards them
+    // from the answer and surfaces the whole text as one thinking notice.
+    final bufferedDeltas = liveAnswer ? null : <String>[];
+    final nativeToolCalls = <Object?>[];
+    final onToken = _onToken;
+    String? providerId;
+
+    await for (final event in client.completeStream(call)) {
+      switch (event) {
+        case LlmTextDelta(:final text):
+          buffer.write(text);
+          // External/user-request path (P1.3 #7): forward each delta
+          // live as it arrives, but ONLY when this is a live answer turn
+          // (no tools on offer, answer channel). A tools-bearing turn is
+          // buffered and routed once at completion (§ 9.2 Todo 6) so a
+          // `call:NAME{…}` decision never leaks onto the answer channel;
+          // its deltas are captured to be replayed verbatim if it turns
+          // out to be a terminal answer. Awaited so the downstream sink
+          // keeps ordering and backpressure. The buffer is still
+          // accumulated — the returned `text` feeds the procedure's
+          // persist step and preserves correct late-failure HTTP status.
+          // With no sink bound the chunk is only buffered (the internal /
+          // free-time path).
+          if (liveAnswer && onToken != null) {
+            await onToken(text);
+          } else {
+            bufferedDeltas?.add(text);
+          }
+        case LlmToolCall(
+          callId: final toolCallId,
+          name: final toolName,
+          :final arguments,
+        ):
+          // Native (openai-protocol) tool call: collect into the uniform
+          // shape. Under json_text the provider never emits these — the
+          // tool call rides in the completion text instead.
+          nativeToolCalls.add(<String, Object?>{
+            'id': toolCallId,
+            'name': toolName,
+            'arguments': arguments,
+          });
+        case LlmRunStarted(providerId: final id):
+          providerId = id;
+        case LlmRunCompleted(
+          :final report,
+          callId: final completedCallId,
+          :final wire,
+        ):
+          final protocol =
+              _toolProtocolOf?.call(providerId ?? report.providerId) ??
+              ToolProtocol.openai;
+          final answer = buffer.toString();
+          final resolved = await _resolveToolCalls(
+            protocol,
+            nativeToolCalls,
+            answer,
+            catalogue,
           );
-
-          // Raw-trail provenance (§5.2): when the engine bound a trail observer,
-          // record when this completion began so the writer can emit `startedAt`.
-          final onLlmTrail = _onLlmTrail;
-          final startedAt = DateTime.now().toUtc();
-
-          final buffer = StringBuffer();
-          // A buffered (tools-bearing or thinking) turn captures its deltas so
-          // they can be routed once at completion: a terminal answer replays
-          // them to the answer channel in their original chunk boundaries (so
-          // streaming UX survives), while a tool-deciding turn discards them
-          // from the answer and surfaces the whole text as one thinking notice.
-          final bufferedDeltas = liveAnswer ? null : <String>[];
-          final nativeToolCalls = <Object?>[];
-          final onToken = _onToken;
-          String? providerId;
-
-          await for (final event in client.completeStream(call)) {
-            switch (event) {
-              case LlmStreamChunk(:final text):
-                buffer.write(text);
-                // External/user-request path (P1.3 #7): forward each delta
-                // live as it arrives, but ONLY when this is a live answer turn
-                // (no tools on offer, answer channel). A tools-bearing turn is
-                // buffered and routed once at completion (§ 9.2 Todo 6) so a
-                // `call:NAME{…}` decision never leaks onto the answer channel;
-                // its deltas are captured to be replayed verbatim if it turns
-                // out to be a terminal answer. Awaited so the downstream sink
-                // keeps ordering and backpressure. The buffer is still
-                // accumulated — the returned `text` feeds the procedure's
-                // persist step and preserves correct late-failure HTTP status.
-                // With no sink bound the chunk is only buffered (the internal /
-                // free-time path).
-                if (liveAnswer && onToken != null) {
-                  await onToken(text);
-                } else {
-                  bufferedDeltas?.add(text);
-                }
-              case LlmStreamToolCallProposed(
-                  :final toolCallId,
-                  :final toolName,
-                  :final arguments,
-                ):
-                // Native (openai-protocol) tool call: collect into the uniform
-                // shape. Under json_text the provider never emits these — the
-                // tool call rides in the completion text instead.
-                nativeToolCalls.add(<String, Object?>{
-                  'id': toolCallId,
-                  'name': toolName,
-                  'arguments': arguments,
-                });
-              case LlmStreamStarted(providerId: final id):
-                providerId = id;
-              case LlmStreamCompleted(
-                  :final report,
-                  callId: final completedCallId,
-                  :final wire,
-                ):
-                final protocol = _toolProtocolOf
-                        ?.call(providerId ?? report.providerId) ??
-                    ToolProtocol.openai;
-                final answer = buffer.toString();
-                final resolved = await _resolveToolCalls(
-                  protocol,
-                  nativeToolCalls,
-                  answer,
-                  catalogue,
-                );
-                final toolCalls = resolved.calls;
-                // The § 9.1 Todo 8 guard: the text looked like a tool call but
-                // resolved to zero executable calls (a name not on offer, or
-                // args that failed every parse). It is the model *failing to
-                // work*, not an answer — so its text must be kept off the
-                // answer channel (routed to thinking below) and the flag is
-                // surfaced for the loop body to feed an error turn back.
-                final unresolvedToolCall = resolved.unresolvedAttempt;
-                // Buffered-turn routing (§ 9.2 Todo 6). A live answer turn
-                // already streamed its tokens, so it needs no completion
-                // routing. Otherwise route the buffered text by outcome:
-                //   - a tool-deciding turn (it resolved to a tool call) is the
-                //     model *working* — its text is the `call:NAME{…}` decision,
-                //     which goes to the thinking channel as one notice and never
-                //     to the answer the user reads;
-                //   - a plain completion on the thinking channel surfaces its
-                //     whole text as one thinking notice;
-                //   - a plain completion on the answer channel IS the answer:
-                //     replay its captured deltas to the answer channel in their
-                //     original chunk boundaries, so a buffered terminal answer
-                //     still streams to the user.
-                if (!liveAnswer) {
-                  if (toolCalls.isNotEmpty || toThinking || unresolvedToolCall) {
-                    // Label the streamed stage (§ 9.2 Todo 7): prefix the notice
-                    // with a short, role-keyed stage marker so the user can
-                    // follow the live process (`🧠 analysing… …`). The label
-                    // rides only on the notice — `answer` (returned to the body
-                    // for persist / transcript) stays unlabeled. An unresolved
-                    // tool-call attempt (§ 9.1 Todo 8) routes here too: its
-                    // `call:NAME{…}` text is working text, never the answer.
-                    _onThinking?.call(_labelThinkingStage(role, answer));
-                  } else if (onToken != null && bufferedDeltas != null) {
-                    for (final delta in bufferedDeltas) {
-                      await onToken(delta);
-                    }
-                  }
-                }
-                // Raw-trail observation (§5.2 / §10 step #4): fire the wire +
-                // answer + report to the run's writer. Separate from the
-                // result map (PE-1) and best-effort (logging-spec §9) — a
-                // throwing observer must not break the completion.
-                if (onLlmTrail != null) {
-                  try {
-                    onLlmTrail(LlmCallObservation(
-                      callType: role,
-                      turnId: turn?.turnId.value,
-                      callSeq: callSeq,
-                      callId: completedCallId,
-                      startedAt: startedAt,
-                      wire: wire,
-                      answer: answer,
-                      report: report,
-                      options: stampedOptions,
-                    ));
-                  } catch (_) {
-                    // Trail writing is non-essential; swallow to protect the
-                    // completion path.
-                  }
-                }
-                return <String, Object?>{
-                  'text': answer,
-                  'toolCalls': toolCalls,
-                  'unresolvedToolCall': unresolvedToolCall,
-                  'report': _reportToMap(report),
-                };
-              case LlmStreamFailed(:final failure, report: final failReport):
-                throw LlmCompletionFailure(
-                  classCode: failure.classCode,
-                  message: failure.message,
-                  report: _reportToMap(failReport),
-                );
+          final toolCalls = resolved.calls;
+          // The § 9.1 Todo 8 guard: the text looked like a tool call but
+          // resolved to zero executable calls (a name not on offer, or
+          // args that failed every parse). It is the model *failing to
+          // work*, not an answer — so its text must be kept off the
+          // answer channel (routed to thinking below) and the flag is
+          // surfaced for the loop body to feed an error turn back.
+          final unresolvedToolCall = resolved.unresolvedAttempt;
+          // Buffered-turn routing (§ 9.2 Todo 6). A live answer turn
+          // already streamed its tokens, so it needs no completion
+          // routing. Otherwise route the buffered text by outcome:
+          //   - a tool-deciding turn (it resolved to a tool call) is the
+          //     model *working* — its text is the `call:NAME{…}` decision,
+          //     which goes to the thinking channel as one notice and never
+          //     to the answer the user reads;
+          //   - a plain completion on the thinking channel surfaces its
+          //     whole text as one thinking notice;
+          //   - a plain completion on the answer channel IS the answer:
+          //     replay its captured deltas to the answer channel in their
+          //     original chunk boundaries, so a buffered terminal answer
+          //     still streams to the user.
+          if (!liveAnswer) {
+            if (toolCalls.isNotEmpty || toThinking || unresolvedToolCall) {
+              // Label the streamed stage (§ 9.2 Todo 7): prefix the notice
+              // with a short, role-keyed stage marker so the user can
+              // follow the live process (`🧠 analysing… …`). The label
+              // rides only on the notice — `answer` (returned to the body
+              // for persist / transcript) stays unlabeled. An unresolved
+              // tool-call attempt (§ 9.1 Todo 8) routes here too: its
+              // `call:NAME{…}` text is working text, never the answer.
+              _onThinking?.call(_labelThinkingStage(role, answer));
+            } else if (onToken != null && bufferedDeltas != null) {
+              for (final delta in bufferedDeltas) {
+                await onToken(delta);
+              }
             }
           }
-
-          // A well-behaved substrate always terminates with Completed or
-          // Failed. Reaching here means the stream closed without a terminal
-          // event — a substrate contract violation, surfaced loudly.
-          throw StateError(
-            'completeStream closed without a terminal '
-            'LlmStreamCompleted/LlmStreamFailed event.',
+          // Raw-trail observation (§5.2 / §10 step #4): fire the wire +
+          // answer + report to the run's writer. Separate from the
+          // result map (PE-1) and best-effort (logging-spec §9) — a
+          // throwing observer must not break the completion.
+          if (onLlmTrail != null) {
+            try {
+              onLlmTrail(
+                LlmCallObservation(
+                  callType: role,
+                  turnId: turn?.turnId.value,
+                  callSeq: callSeq,
+                  callId: completedCallId ?? '',
+                  startedAt: startedAt,
+                  wire: wire,
+                  answer: answer,
+                  report: report,
+                  options: stampedOptions,
+                ),
+              );
+            } catch (_) {
+              // Trail writing is non-essential; swallow to protect the
+              // completion path.
+            }
+          }
+          return <String, Object?>{
+            'text': answer,
+            'toolCalls': toolCalls,
+            'unresolvedToolCall': unresolvedToolCall,
+            'report': _reportToMap(report),
+          };
+        case LlmRunFailed(:final failure, report: final failReport):
+          throw LlmCompletionFailure(
+            classCode: failure.classCode,
+            message: failure.message,
+            report: failReport == null
+                ? const <String, Object?>{}
+                : _reportToMap(failReport),
           );
-        },
-        resultOf: (value) => value,
-      );
+        default:
+          // Thinking, usage and the other trail events carry nothing
+          // this bridge records.
+          break;
+      }
+    }
+
+    // A well-behaved substrate always terminates with Completed or
+    // Failed. Reaching here means the stream closed without a terminal
+    // event — a substrate contract violation, surfaced loudly.
+    throw StateError(
+      'completeStream closed without a terminal '
+      'LlmRunCompleted/LlmRunFailed event.',
+    );
+  }, resultOf: (value) => value);
 
   /// Resolves the uniform `toolCalls` list from a completion, recovering a
   /// text-format tool call whatever dialect the model wrote it in (Q-F.4).
   ///
   /// Native structured calls always win: under [ToolProtocol.openai] the
-  /// substrate surfaces them as [LlmStreamToolCallProposed] events collected
+  /// substrate surfaces them as [LlmToolCall] events collected
   /// into [native], and those are returned unchanged. When [native] is empty,
   /// the call may still be hiding in the completion [text] — the live failure
   /// mode is Gemma-on-oMLX, an `openai`-protocol provider that writes
@@ -970,27 +979,23 @@ class SubstrateBridge {
       }
       return const _ResolvedToolCalls(<Object?>[], unresolvedAttempt: false);
     }
-    return _ResolvedToolCalls(
-      <Object?>[
-        for (final call in parsed)
-          <String, Object?>{
-            'id': null,
-            'name': call.name,
-            'arguments': call.arguments,
-          },
-      ],
-      unresolvedAttempt: false,
-    );
+    return _ResolvedToolCalls(<Object?>[
+      for (final call in parsed)
+        <String, Object?>{
+          'id': null,
+          'name': call.name,
+          'arguments': call.arguments,
+        },
+    ], unresolvedAttempt: false);
   }
 
   /// Emits the `llm.toolcall.parse.failed` note when a `json_text` completion
   /// looked like a tool call but could not be read as one. A no-op when no
   /// [SubstrateNoteSink] is bound (the low-level path's default).
   Future<void> _noteToolCallParseFailed(String text) async {
-    await _onNote?.call(
-      'llm.toolcall.parse.failed',
-      <String, Object?>{'text': text},
-    );
+    await _onNote?.call('llm.toolcall.parse.failed', <String, Object?>{
+      'text': text,
+    });
   }
 
   /// Strips a leading/trailing markdown code fence (```` ```json `` … `` ``` ````)
@@ -1062,15 +1067,21 @@ class SubstrateBridge {
       final name = _reader.requireString(map, 'name', 'tools[$i].name');
       final description =
           _reader.optionalString(map, 'description', 'tools[$i].description') ??
-              '';
-      final schema =
-          _reader.optionalMap(map, 'input_schema', 'tools[$i].input_schema');
-      descriptors.add(ToolDescriptor(
-        name: name,
-        description: description,
-        parametersSchema:
-            schema == null ? const <String, Object?>{} : _coerceStringKeys(schema),
-      ));
+          '';
+      final schema = _reader.optionalMap(
+        map,
+        'input_schema',
+        'tools[$i].input_schema',
+      );
+      descriptors.add(
+        ToolDescriptor(
+          name: name,
+          description: description,
+          parametersSchema: schema == null
+              ? const <String, Object?>{}
+              : _coerceStringKeys(schema),
+        ),
+      );
     }
     return ToolCatalogue(descriptors);
   }
@@ -1143,7 +1154,9 @@ class SubstrateBridge {
     try {
       decoded = jsonDecode(stripped);
     } on FormatException catch (e) {
-      return _retrievalDegraded('role "$roleId" output is not JSON: ${e.message}');
+      return _retrievalDegraded(
+        'role "$roleId" output is not JSON: ${e.message}',
+      );
     }
     if (decoded is! Map) {
       return _retrievalDegraded('role "$roleId" output is not a JSON object');
@@ -1183,10 +1196,10 @@ class SubstrateBridge {
       case QueryTermWriterOutput(:final query, :final synonyms):
         return <String, Object?>{'query': query, 'synonyms': synonyms};
       case CategorySelectorOutput(
-          :final nodeTypes,
-          :final edgeTypes,
-          :final conceptNames,
-        ):
+        :final nodeTypes,
+        :final edgeTypes,
+        :final conceptNames,
+      ):
         return <String, Object?>{
           'nodeTypes': nodeTypes,
           'edgeTypes': edgeTypes,
@@ -1235,19 +1248,18 @@ class SubstrateBridge {
     String query, {
     String? provider,
     int k = 10,
-  }) =>
-      _record<Map<String, Object?>>(
-        'search',
-        <String, Object?>{'query': query, 'provider': provider, 'k': k},
-        () async {
-          final result = await client.webSearch(
-            query,
-            options: WebSearchOptions(provider: provider, k: k),
-          );
-          return _searchToMap(result);
-        },
-        resultOf: (value) => value,
+  }) => _record<Map<String, Object?>>(
+    'search',
+    <String, Object?>{'query': query, 'provider': provider, 'k': k},
+    () async {
+      final result = await client.webSearch(
+        query,
+        options: WebSearchOptions(provider: provider, k: k),
       );
+      return _searchToMap(result);
+    },
+    resultOf: (value) => value,
+  );
 
   // ── fetch ─────────────────────────────────────────────────────────
 
@@ -1258,10 +1270,7 @@ class SubstrateBridge {
   /// `{'url', 'status', 'contentType', 'text'?, 'json'?, 'binaryMeta'?,
   /// 'truncated'}` — exactly one of `text` / `json` / `binaryMeta` is
   /// non-null per the resolved content type.
-  Future<Map<String, Object?>> fetch(
-    String url, {
-    int? budgetBytes,
-  }) =>
+  Future<Map<String, Object?>> fetch(String url, {int? budgetBytes}) =>
       _record<Map<String, Object?>>(
         'fetch',
         <String, Object?>{'url': url, 'budgetBytes': budgetBytes},
@@ -1287,17 +1296,23 @@ class SubstrateBridge {
     final fallback = defaultBudget;
     return Budget(
       wallClockMs:
-          _reader.optionalNum(raw, 'wallClockMs', 'budget.wallClockMs')?.toInt() ??
-              fallback.wallClockMs,
+          _reader
+              .optionalNum(raw, 'wallClockMs', 'budget.wallClockMs')
+              ?.toInt() ??
+          fallback.wallClockMs,
       tokenSpend:
-          _reader.optionalNum(raw, 'tokenSpend', 'budget.tokenSpend')?.toInt() ??
-              fallback.tokenSpend,
+          _reader
+              .optionalNum(raw, 'tokenSpend', 'budget.tokenSpend')
+              ?.toInt() ??
+          fallback.tokenSpend,
       toolCalls:
           _reader.optionalNum(raw, 'toolCalls', 'budget.toolCalls')?.toInt() ??
-              fallback.toolCalls,
+          fallback.toolCalls,
       memoryWrites:
-          _reader.optionalNum(raw, 'memoryWrites', 'budget.memoryWrites')?.toInt() ??
-              fallback.memoryWrites,
+          _reader
+              .optionalNum(raw, 'memoryWrites', 'budget.memoryWrites')
+              ?.toInt() ??
+          fallback.memoryWrites,
     );
   }
 
@@ -1335,11 +1350,11 @@ class SubstrateBridge {
       };
 
   static Map<String, Object?> _hitToMap(SearchHit hit) => <String, Object?>{
-        'title': hit.title,
-        'url': hit.url.toString(),
-        'snippet': hit.snippet,
-        'rank': hit.rank,
-      };
+    'title': hit.title,
+    'url': hit.url.toString(),
+    'snippet': hit.snippet,
+    'rank': hit.rank,
+  };
 
   static Map<String, Object?> _fetchToMap(WebFetchResult result) =>
       <String, Object?>{
@@ -1380,7 +1395,7 @@ class _ResolvedToolCalls {
 /// internal secondary and free-time prompts leave it unbound and keep the
 /// buffered path (spec § 11 step 2 — streaming is required for incoming
 /// external requests, optional otherwise). [textDelta] is one substrate
-/// [LlmStreamChunk]'s text, in arrival order. The future is awaited per chunk
+/// [LlmTextDelta]'s text, in arrival order. The future is awaited per chunk
 /// so the downstream consumer (the OpenAI SSE edge, wired in #8–#9) preserves
 /// ordering and backpressure.
 typedef SubstrateTokenSink = Future<void> Function(String textDelta);
@@ -1395,10 +1410,8 @@ typedef SubstrateTokenSink = Future<void> Function(String textDelta);
 /// template bridge and internal paths leave it unbound and the note is
 /// dropped. [category] is the dotted note category; [payload] carries the
 /// diagnostic detail (the offending completion text).
-typedef SubstrateNoteSink = Future<void> Function(
-  String category,
-  Map<String, Object?> payload,
-);
+typedef SubstrateNoteSink =
+    Future<void> Function(String category, Map<String, Object?> payload);
 
 /// Receives the **thinking** channel text from [SubstrateBridge.send]
 /// (`agent_loop_completion.md` § 9.2 Todo 6).
@@ -1417,7 +1430,7 @@ typedef SubstrateThinkingSink = void Function(String text);
 /// step 2 / step 10).
 ///
 /// The substrate package is protocol-unaware, so the bridge needs this seam to
-/// know whether to collect native [LlmStreamToolCallProposed] events
+/// know whether to collect native [LlmToolCall] events
 /// ([ToolProtocol.openai]) or parse a JSON tool-call object out of the
 /// completion text ([ToolProtocol.jsonText]). The host binds a registry-backed
 /// resolver at boot wiring (plan step 15); an unbound resolver treats every
@@ -1446,10 +1459,11 @@ typedef RouteChainResolver = List<RouteEntry> Function(String routeName);
 /// [UnregisteredPromptException]. The bridge stays config-unaware — it is handed
 /// the id→settings function, the [RouteChainResolver] pattern applied to prompt
 /// resolution.
-typedef PromptResolver = Future<ResolvedPrompt?> Function(
-  String promptId,
-  Map<String, Object?> inputs,
-);
+typedef PromptResolver =
+    Future<ResolvedPrompt?> Function(
+      String promptId,
+      Map<String, Object?> inputs,
+    );
 
 /// Runs another procedure by id on behalf of [SubstrateBridge.run] (§7.2).
 ///
@@ -1458,13 +1472,14 @@ typedef PromptResolver = Future<ResolvedPrompt?> Function(
 /// depth bookkeeping and its own trail — exactly the path a scripted nested
 /// `runProcedure` takes. `run` is the only caller; it always targets the latest
 /// version, so the seam takes no `version`.
-typedef ProcedureRunner = Future<ProcedureResult> Function(
-  String procedureId,
-  ProcedureInputs inputs,
-);
+typedef ProcedureRunner =
+    Future<ProcedureResult> Function(
+      String procedureId,
+      ProcedureInputs inputs,
+    );
 
 /// Thrown by [SubstrateBridge.send] when the substrate stream terminates
-/// with [LlmStreamFailed].
+/// with [LlmRunFailed].
 ///
 /// Carries the substrate failure taxonomy's [classCode] (kebab-case;
 /// `rate_limit`, `timeout`, `auth`, `context_overflow`, …) so the

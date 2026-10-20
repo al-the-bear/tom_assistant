@@ -5,7 +5,7 @@
 // metrics scraper) subscribe to via
 // `TomBrainSubstrateClient.events()`.
 //
-// Sealed for the same reason `LlmStreamEvent` and `McpClientException`
+// Sealed for the same reason `LlmEvent` and `McpClientException`
 // are sealed: a new variant is a substrate contract change, not a
 // silent extension. Adding one bumps the substrate spec § 10.2 list
 // and the consumer-side switches must compile-error until they handle
@@ -28,7 +28,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 
 import 'embedding_result.dart' show EmbeddingModelIdentity;
 import 'llm_call.dart' show LlmCallReport;
-import 'llm_stream_event.dart' show LlmFailure;
+import 'package:tom_core_llm/tom_core_llm.dart' show LlmFailure;
 
 /// Marker / base for every typed substrate observability event.
 ///
@@ -43,7 +43,7 @@ sealed class SubstrateEvent extends BrainEvent {
 /// before the wire request fires).
 final class LlmCallStarted extends SubstrateEvent {
   /// Substrate-assigned call id. Matches the `callId` on
-  /// [LlmStreamStarted] etc.
+  /// [LlmRunStarted] etc.
   final String callId;
   final String roleId;
   final String providerId;
@@ -64,11 +64,11 @@ final class LlmCallStarted extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'callId': callId,
-        'roleId': roleId,
-        'providerId': providerId,
-        'modelId': modelId,
-      };
+    'callId': callId,
+    'roleId': roleId,
+    'providerId': providerId,
+    'modelId': modelId,
+  };
 }
 
 /// Sampled progress event for a streaming call. Emitted per-chunk
@@ -91,9 +91,9 @@ final class LlmCallChunk extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'callId': callId,
-        'charCount': charCount,
-      };
+    'callId': callId,
+    'charCount': charCount,
+  };
 }
 
 /// Successful completion. Carries the final [LlmCallReport]; trail
@@ -115,19 +115,19 @@ final class LlmCallCompleted extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'callId': callId,
-        'providerId': report.providerId,
-        'modelId': report.modelId,
-        'anchorHash': report.anchorHash,
-        'promptHash': report.promptHash,
-        'tokensIn': report.tokensIn,
-        'tokensOut': report.tokensOut,
-        'retries': report.retries,
-        'wallClockMs': report.wallClockMs,
-        if (report.cost != null) 'cost': report.cost,
-        if (report.templateSha != null) 'templateSha': report.templateSha,
-        if (report.notes.isNotEmpty) 'notes': report.notes,
-      };
+    'callId': callId,
+    'providerId': report.providerId,
+    'modelId': report.modelId,
+    'anchorHash': report.anchorHash,
+    'promptHash': report.promptHash,
+    'tokensIn': report.tokensIn,
+    'tokensOut': report.tokensOut,
+    'retries': report.retries,
+    'wallClockMs': report.wallClockMs,
+    if (report.cost != null) 'cost': report.cost,
+    if (report.templateSha != null) 'templateSha': report.templateSha,
+    if (report.notes.isNotEmpty) 'notes': report.notes,
+  };
 }
 
 /// Failure event. Carries the [failure] taxonomy + the partial
@@ -155,13 +155,13 @@ final class LlmCallFailed extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'callId': callId,
-        'errorClass': failure.classCode,
-        'message': failure.message,
-        'providerId': providerId,
-        'modelId': modelId,
-        'retryCount': retryCount,
-      };
+    'callId': callId,
+    'errorClass': failure.classCode,
+    'message': failure.message,
+    'providerId': providerId,
+    'modelId': modelId,
+    'retryCount': retryCount,
+  };
 }
 
 /// The router moved the call to a different provider after a
@@ -187,10 +187,10 @@ final class ProviderFailover extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'fromProviderId': fromProviderId,
-        'toProviderId': toProviderId,
-        'reason': reason,
-      };
+    'fromProviderId': fromProviderId,
+    'toProviderId': toProviderId,
+    'reason': reason,
+  };
 }
 
 /// A credential was placed on cooldown by the router.
@@ -221,11 +221,11 @@ final class CredentialCooldownStarted extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'profileId': profileId,
-        'credentialFingerprint': credentialFingerprint,
-        'errorClass': errorClass,
-        'untilMs': untilMs,
-      };
+    'profileId': profileId,
+    'credentialFingerprint': credentialFingerprint,
+    'errorClass': errorClass,
+    'untilMs': untilMs,
+  };
 }
 
 /// One embedding (or batch) completed.
@@ -250,11 +250,11 @@ final class EmbeddingComputed extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'providerId': providerId,
-        'modelId': modelId,
-        'dims': dims,
-        'batchSize': batchSize,
-      };
+    'providerId': providerId,
+    'modelId': modelId,
+    'dims': dims,
+    'batchSize': batchSize,
+  };
 }
 
 /// The embedding-model identity changed (configuration reload,
@@ -278,19 +278,19 @@ final class EmbeddingIdentityChanged extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'fromIdentity': <String, Object?>{
-          'providerId': fromIdentity.providerId,
-          'modelId': fromIdentity.modelId,
-          'dims': fromIdentity.dims,
-          'normalized': fromIdentity.normalized,
-        },
-        'toIdentity': <String, Object?>{
-          'providerId': toIdentity.providerId,
-          'modelId': toIdentity.modelId,
-          'dims': toIdentity.dims,
-          'normalized': toIdentity.normalized,
-        },
-      };
+    'fromIdentity': <String, Object?>{
+      'providerId': fromIdentity.providerId,
+      'modelId': fromIdentity.modelId,
+      'dims': fromIdentity.dims,
+      'normalized': fromIdentity.normalized,
+    },
+    'toIdentity': <String, Object?>{
+      'providerId': toIdentity.providerId,
+      'modelId': toIdentity.modelId,
+      'dims': toIdentity.dims,
+      'normalized': toIdentity.normalized,
+    },
+  };
 }
 
 /// A web search returned (or yielded zero results — still emitted).
@@ -315,11 +315,11 @@ final class WebSearchCompleted extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'provider': provider,
-        'query': query,
-        'k': k,
-        'hits': hits,
-      };
+    'provider': provider,
+    'query': query,
+    'k': k,
+    'hits': hits,
+  };
 }
 
 /// A web fetch returned. `truncated` reflects whether the response
@@ -345,11 +345,11 @@ final class WebFetchCompleted extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'url': url,
-        'status': status,
-        'bytes': bytes,
-        'truncated': truncated,
-      };
+    'url': url,
+    'status': status,
+    'bytes': bytes,
+    'truncated': truncated,
+  };
 }
 
 /// An outbound MCP handshake completed and the tool catalogue was
@@ -371,9 +371,9 @@ final class McpHandshakeCompleted extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'endpointId': endpointId,
-        'tools': tools,
-      };
+    'endpointId': endpointId,
+    'tools': tools,
+  };
 }
 
 /// One outbound MCP `callTool` round-trip completed.
@@ -398,9 +398,9 @@ final class McpCallCompleted extends SubstrateEvent {
 
   @override
   Map<String, Object?> payloadJson() => <String, Object?>{
-        'endpointId': endpointId,
-        'tool': tool,
-        'wallClockMs': wallClockMs,
-        'ok': ok,
-      };
+    'endpointId': endpointId,
+    'tool': tool,
+    'wallClockMs': wallClockMs,
+    'ok': ok,
+  };
 }

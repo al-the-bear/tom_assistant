@@ -76,144 +76,155 @@ void main() {
     DeadlineTimerFactory? deadlineTimerFactory,
     CancellationTimerFactory? cancellationTimerFactory,
     int hardDepthCap = RunProcedurePrimitive.defaultHardDepthCap,
-  }) =>
-      ProcedureEngine(
-        resolver: ProcedureResolver(procedures),
-        memory: memory,
-        memoryBridge: memoryBridge,
-        substrateBridge: substrateBridge,
-        stepDeadline: stepDeadline,
-        deadlineTimerFactory: deadlineTimerFactory,
-        cancellationTimerFactory: cancellationTimerFactory,
-        hardDepthCap: hardDepthCap,
-        now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
-      );
+  }) => ProcedureEngine(
+    resolver: ProcedureResolver(procedures),
+    memory: memory,
+    memoryBridge: memoryBridge,
+    substrateBridge: substrateBridge,
+    stepDeadline: stepDeadline,
+    deadlineTimerFactory: deadlineTimerFactory,
+    cancellationTimerFactory: cancellationTimerFactory,
+    hardDepthCap: hardDepthCap,
+    now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
+  );
 
   /// A procedure whose only step awaits a never-completing `sub.llm(...)`, so
   /// the step never settles on its own — the deadline / cancel path must be
   /// what closes it.
-  LoadedProcedure hangingProcedure(String id) => _procedure(
-        id,
-        '''
+  LoadedProcedure hangingProcedure(String id) => _procedure(id, '''
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.send('hang forever', llmRoute: 'fast');
   return 1;
 }
-''',
-      );
+''');
 
   group('C.49-1 invoke', () {
-    test('a trivial procedure resolves accepted and lands on recent_runs',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'answer_v1',
-          "Object? run(inputs) => {'answer': 'backup nightly'};",
-        ),
-      ]);
+    test(
+      'a trivial procedure resolves accepted and lands on recent_runs',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure(
+            'answer_v1',
+            "Object? run(inputs) => {'answer': 'backup nightly'};",
+          ),
+        ]);
 
-      final run = engine.invoke(ProcedureInvocation(procedureId: 'answer_v1'));
-      final outcome = await run.outcome;
+        final run = engine.invoke(
+          ProcedureInvocation(procedureId: 'answer_v1'),
+        );
+        final outcome = await run.outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.isSuccess, isTrue);
-      expect(outcome.result!.output<String>('answer'), 'backup nightly');
-      expect(outcome.procedureId, 'answer_v1');
-      expect(outcome.runId, run.runId);
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(outcome.isSuccess, isTrue);
+        expect(outcome.result!.output<String>('answer'), 'backup nightly');
+        expect(outcome.procedureId, 'answer_v1');
+        expect(outcome.runId, run.runId);
 
-      final recent = await memory.stacks.peek(recentRunsStackName);
-      expect(recent, hasLength(1));
-      expect(recent.single.nodeId, outcome.record.runNodeId);
-      expect(await memory.stacks.peek(inflightStackName), isEmpty);
-    });
+        final recent = await memory.stacks.peek(recentRunsStackName);
+        expect(recent, hasLength(1));
+        expect(recent.single.nodeId, outcome.record.runNodeId);
+        expect(await memory.stacks.peek(inflightStackName), isEmpty);
+      },
+    );
 
-    test('the trail streams invocation-first, outcome-last, args verbatim',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[
-        _procedure('answer_v1', 'Object? run(inputs) => 1;'),
-      ]);
+    test(
+      'the trail streams invocation-first, outcome-last, args verbatim',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure('answer_v1', 'Object? run(inputs) => 1;'),
+        ]);
 
-      final run = engine.invoke(
-        ProcedureInvocation(
-          procedureId: 'answer_v1',
-          arguments: <String, Object?>{'q': 'how to back up?'},
-        ),
-      );
-      final streamed = await run.trail.toList();
-      final outcome = await run.outcome;
+        final run = engine.invoke(
+          ProcedureInvocation(
+            procedureId: 'answer_v1',
+            arguments: <String, Object?>{'q': 'how to back up?'},
+          ),
+        );
+        final streamed = await run.trail.toList();
+        final outcome = await run.outcome;
 
-      expect(streamed.first.kind, TrailEntryKind.invocation);
-      expect(streamed.last.kind, TrailEntryKind.outcome);
-      // The streamed trail and the terminal entries agree.
-      expect(streamed.map((e) => e.kind).toList(),
-          outcome.entries.map((e) => e.kind).toList());
-      // The invocation entry records the bound arguments exactly.
-      expect(streamed.first.payload['arguments'],
-          <String, Object?>{'q': 'how to back up?'});
-    });
+        expect(streamed.first.kind, TrailEntryKind.invocation);
+        expect(streamed.last.kind, TrailEntryKind.outcome);
+        // The streamed trail and the terminal entries agree.
+        expect(
+          streamed.map((e) => e.kind).toList(),
+          outcome.entries.map((e) => e.kind).toList(),
+        );
+        // The invocation entry records the bound arguments exactly.
+        expect(streamed.first.payload['arguments'], <String, Object?>{
+          'q': 'how to back up?',
+        });
+      },
+    );
   });
 
   group('C.49-2 cancel', () {
-    test('an explicit cancel closes aborted with a run_cancelled note',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[hangingProcedure('hang_v1')]);
+    test(
+      'an explicit cancel closes aborted with a run_cancelled note',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[
+          hangingProcedure('hang_v1'),
+        ]);
 
-      final run = engine.invoke(ProcedureInvocation(procedureId: 'hang_v1'));
-      await run.trail.firstWhere(
-        (TrailEntry e) => e.kind == TrailEntryKind.invocation,
-      );
-      run.cancel();
-      final outcome = await run.outcome;
+        final run = engine.invoke(ProcedureInvocation(procedureId: 'hang_v1'));
+        await run.trail.firstWhere(
+          (TrailEntry e) => e.kind == TrailEntryKind.invocation,
+        );
+        run.cancel();
+        final outcome = await run.outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.aborted);
-      expect(outcome.result, isNull);
-      expect(run.isCancelled, isTrue);
+        expect(outcome.status, TrailOutcomeStatus.aborted);
+        expect(outcome.result, isNull);
+        expect(run.isCancelled, isTrue);
 
-      final cancelNotes = outcome.entries
-          .where((e) => e.kind == TrailEntryKind.note)
-          .where((e) => e.payload['category'] == runCancelledNoteCategory)
-          .toList();
-      expect(cancelNotes, hasLength(1));
-      // A cancelled run still lands on recent_runs, inflight cleared.
-      final recent = await memory.stacks.peek(recentRunsStackName);
-      expect(recent, hasLength(1));
-      expect(await memory.stacks.peek(inflightStackName), isEmpty);
-    });
+        final cancelNotes = outcome.entries
+            .where((e) => e.kind == TrailEntryKind.note)
+            .where((e) => e.payload['category'] == runCancelledNoteCategory)
+            .toList();
+        expect(cancelNotes, hasLength(1));
+        // A cancelled run still lands on recent_runs, inflight cleared.
+        final recent = await memory.stacks.peek(recentRunsStackName);
+        expect(recent, hasLength(1));
+        expect(await memory.stacks.peek(inflightStackName), isEmpty);
+      },
+    );
 
-    test('an external timeout closes aborted with a run_timed_out note',
-        () async {
-      _FakeTimer? scheduled;
-      final armed = Completer<void>();
+    test(
+      'an external timeout closes aborted with a run_timed_out note',
+      () async {
+        _FakeTimer? scheduled;
+        final armed = Completer<void>();
 
-      final engine = engineFor(
-        <LoadedProcedure>[hangingProcedure('hang_v1')],
-        cancellationTimerFactory: (duration, onExpire) {
-          scheduled = _FakeTimer(duration, onExpire);
-          if (!armed.isCompleted) armed.complete();
-          return scheduled!;
-        },
-      );
+        final engine = engineFor(
+          <LoadedProcedure>[hangingProcedure('hang_v1')],
+          cancellationTimerFactory: (duration, onExpire) {
+            scheduled = _FakeTimer(duration, onExpire);
+            if (!armed.isCompleted) armed.complete();
+            return scheduled!;
+          },
+        );
 
-      final run = engine.invoke(
-        ProcedureInvocation(procedureId: 'hang_v1'),
-        timeout: const Duration(seconds: 5),
-      );
-      await armed.future;
-      scheduled!.fire();
-      final outcome = await run.outcome;
+        final run = engine.invoke(
+          ProcedureInvocation(procedureId: 'hang_v1'),
+          timeout: const Duration(seconds: 5),
+        );
+        await armed.future;
+        scheduled!.fire();
+        final outcome = await run.outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.aborted);
-      expect(run.isCancelled, isTrue);
-      final timeoutNotes = outcome.entries
-          .where((e) => e.kind == TrailEntryKind.note)
-          .where((e) => e.payload['category'] == runTimedOutNoteCategory)
-          .toList();
-      expect(timeoutNotes, hasLength(1));
-      final payload = timeoutNotes.single.payload['payload']! as Map;
-      expect(payload['timeoutMs'], 5 * 1000);
-    });
+        expect(outcome.status, TrailOutcomeStatus.aborted);
+        expect(run.isCancelled, isTrue);
+        final timeoutNotes = outcome.entries
+            .where((e) => e.kind == TrailEntryKind.note)
+            .where((e) => e.payload['category'] == runTimedOutNoteCategory)
+            .toList();
+        expect(timeoutNotes, hasLength(1));
+        final payload = timeoutNotes.single.payload['payload']! as Map;
+        expect(payload['timeoutMs'], 5 * 1000);
+      },
+    );
 
     test('a late cancel on a finished run is a no-op', () async {
       final engine = engineFor(<LoadedProcedure>[
@@ -244,38 +255,40 @@ Future<Object?> run(inputs) async {
   });
 
   group('C.49-3 deadline', () {
-    test('an overrunning step closes preempted with a truncated note',
-        () async {
-      _FakeTimer? scheduled;
-      final armed = Completer<void>();
+    test(
+      'an overrunning step closes preempted with a truncated note',
+      () async {
+        _FakeTimer? scheduled;
+        final armed = Completer<void>();
 
-      final engine = engineFor(
-        <LoadedProcedure>[hangingProcedure('slow_v1')],
-        stepDeadline: const Duration(seconds: 30),
-        deadlineTimerFactory: (duration, onExpire) {
-          scheduled = _FakeTimer(duration, onExpire);
-          if (!armed.isCompleted) armed.complete();
-          return scheduled!;
-        },
-      );
+        final engine = engineFor(
+          <LoadedProcedure>[hangingProcedure('slow_v1')],
+          stepDeadline: const Duration(seconds: 30),
+          deadlineTimerFactory: (duration, onExpire) {
+            scheduled = _FakeTimer(duration, onExpire);
+            if (!armed.isCompleted) armed.complete();
+            return scheduled!;
+          },
+        );
 
-      final run = engine.invoke(ProcedureInvocation(procedureId: 'slow_v1'));
-      await armed.future; // the deadline timer is counting down
-      scheduled!.fire(); // force the deadline to expire
-      final outcome = await run.outcome;
+        final run = engine.invoke(ProcedureInvocation(procedureId: 'slow_v1'));
+        await armed.future; // the deadline timer is counting down
+        scheduled!.fire(); // force the deadline to expire
+        final outcome = await run.outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.preempted);
-      expect(outcome.result, isNull);
+        expect(outcome.status, TrailOutcomeStatus.preempted);
+        expect(outcome.result, isNull);
 
-      final truncationNotes = outcome.entries
-          .where((e) => e.kind == TrailEntryKind.note)
-          .where((e) => e.payload['category'] == stepTruncatedNoteCategory)
-          .toList();
-      expect(truncationNotes, hasLength(1));
-      final payload = truncationNotes.single.payload['payload']! as Map;
-      expect(payload['limitMs'], 30 * 1000);
-      expect(outcome.entries.last.payload['status'], 'preempted');
-    });
+        final truncationNotes = outcome.entries
+            .where((e) => e.kind == TrailEntryKind.note)
+            .where((e) => e.payload['category'] == stepTruncatedNoteCategory)
+            .toList();
+        expect(truncationNotes, hasLength(1));
+        final payload = truncationNotes.single.payload['payload']! as Map;
+        expect(payload['limitMs'], 30 * 1000);
+        expect(outcome.entries.last.payload['status'], 'preempted');
+      },
+    );
   });
 
   group('C.49-4 depth-cap', () {
@@ -285,25 +298,20 @@ Future<Object?> run(inputs) async {
       // exception propagates through d4rt unwrapped and the run closes errored
       // carrying it (the same propagation the C.41 ProcedureNotFound test
       // proves for resolution failures).
-      final engine = engineFor(
-        <LoadedProcedure>[
-          _procedure(
-            'jumper_v1',
-            '''
+      final engine = engineFor(<LoadedProcedure>[
+        _procedure('jumper_v1', '''
 import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {
   return await runProcedure('child_v1', inputs, depthDelta: 5);
 }
-''',
-          ),
-          _procedure('child_v1', 'Object? run(inputs) => 1;'),
-        ],
-        hardDepthCap: 3,
-      );
+'''),
+        _procedure('child_v1', 'Object? run(inputs) => 1;'),
+      ], hardDepthCap: 3);
 
-      final outcome =
-          await engine.invoke(ProcedureInvocation(procedureId: 'jumper_v1')).outcome;
+      final outcome = await engine
+          .invoke(ProcedureInvocation(procedureId: 'jumper_v1'))
+          .outcome;
 
       expect(outcome.status, TrailOutcomeStatus.errored);
       expect(outcome.result, isNull);
@@ -317,60 +325,49 @@ Future<Object?> run(inputs) async {
       expect(recent, hasLength(1));
     });
 
-    test('unbounded self-recursion terminates errored at exactly the cap',
-        () async {
-      // A procedure that always recurses into itself; with `depthDelta` 1 the
-      // chain advances one level per call. The hard cap bounds it: the cap-th
-      // frame's `runProcedure` is refused, so the recursion terminates rather
-      // than running away — proven by the recorded-run count equalling the cap.
-      const cap = 3;
-      final engine = engineFor(
-        <LoadedProcedure>[
-          _procedure(
-            'recurse_v1',
-            '''
+    test(
+      'unbounded self-recursion terminates errored at exactly the cap',
+      () async {
+        // A procedure that always recurses into itself; with `depthDelta` 1 the
+        // chain advances one level per call. The hard cap bounds it: the cap-th
+        // frame's `runProcedure` is refused, so the recursion terminates rather
+        // than running away — proven by the recorded-run count equalling the cap.
+        const cap = 3;
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure('recurse_v1', '''
 import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {
   return await runProcedure('recurse_v1', inputs);
 }
-''',
-          ),
-        ],
-        hardDepthCap: cap,
-      );
+'''),
+        ], hardDepthCap: cap);
 
-      final outcome = await engine
-          .invoke(ProcedureInvocation(procedureId: 'recurse_v1'))
-          .outcome;
+        final outcome = await engine
+            .invoke(ProcedureInvocation(procedureId: 'recurse_v1'))
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.errored);
-      // Exactly one run per depth 1..cap was recorded; the recursion did not
-      // run away.
-      final recent = await memory.stacks.peek(recentRunsStackName);
-      expect(recent, hasLength(cap));
-    });
+        expect(outcome.status, TrailOutcomeStatus.errored);
+        // Exactly one run per depth 1..cap was recorded; the recursion did not
+        // run away.
+        final recent = await memory.stacks.peek(recentRunsStackName);
+        expect(recent, hasLength(cap));
+      },
+    );
   });
 
   group('C.49-5 fallback selection', () {
     Iterable<LoadedProcedure> rankerVersions() => <LoadedProcedure>[
-          _procedure(
-            'ranker',
-            "Object? run(inputs) => {'v': 1};",
-            version: 1,
-          ),
-          _procedure(
-            'ranker',
-            "Object? run(inputs) => {'v': 2};",
-            version: 2,
-          ),
-        ];
+      _procedure('ranker', "Object? run(inputs) => {'v': 1};", version: 1),
+      _procedure('ranker', "Object? run(inputs) => {'v': 2};", version: 2),
+    ];
 
     test('an unpinned invoke resolves the latest version', () async {
       final engine = engineFor(rankerVersions());
 
-      final outcome =
-          await engine.invoke(ProcedureInvocation(procedureId: 'ranker')).outcome;
+      final outcome = await engine
+          .invoke(ProcedureInvocation(procedureId: 'ranker'))
+          .outcome;
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       // The descending fallback chain `[v2, v1]` resolves v2 as the head.
@@ -391,8 +388,9 @@ Future<Object?> run(inputs) async {
     test('an unknown pinned version surfaces ProcedureNotFound', () async {
       final engine = engineFor(rankerVersions());
 
-      final run =
-          engine.invoke(ProcedureInvocation(procedureId: 'ranker', version: 7));
+      final run = engine.invoke(
+        ProcedureInvocation(procedureId: 'ranker', version: 7),
+      );
 
       await expectLater(run.outcome, throwsA(isA<ProcedureNotFound>()));
       // Resolution failed before any run opened — nothing reached recent_runs.
@@ -405,7 +403,8 @@ Future<Object?> run(inputs) async {
 /// `@procedure` header (§ 4.4) so the resolver treats it as a real procedure.
 /// The ref carries the version so two versions of one id have distinct refs.
 LoadedProcedure _procedure(String id, String body, {int version = 1}) {
-  final source = '''
+  final source =
+      '''
 /// @procedure
 /// id: $id
 /// version: $version
@@ -461,23 +460,22 @@ final class _FakeTimer implements Timer {
 // and cancel paths must close. Copied from the C.38/C.39/C.41 suites.
 class _ControllableSubstrate implements TomBrainSubstrateClient {
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      StreamController<LlmStreamEvent>().stream;
+  Stream<LlmEvent> completeStream(LlmCall call) =>
+      StreamController<LlmEvent>().stream;
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A stateful in-memory `TomBrainMemoryClient` ─────────────────────
@@ -558,12 +556,10 @@ class _StatefulMemory implements TomBrainMemoryClient {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -613,6 +609,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

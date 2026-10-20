@@ -77,14 +77,16 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'answer_with_memory_v1',
-          arguments: <String, Object?>{
-            'text': text,
-            'priorTurns': ?priorTurns,
-            'compactedSummary': ?compactedSummary,
-          },
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'answer_with_memory_v1',
+            arguments: <String, Object?>{
+              'text': text,
+              'priorTurns': ?priorTurns,
+              'compactedSummary': ?compactedSummary,
+            },
+          ),
+        )
         .outcome;
   }
 
@@ -122,13 +124,14 @@ void main() {
       );
 
       final prompt = substrate.lastCall!.inputs['prompt']! as String;
-      expect(prompt.indexOf('My name is Alexis'),
-          lessThan(prompt.indexOf('what is my name?')));
+      expect(
+        prompt.indexOf('My name is Alexis'),
+        lessThan(prompt.indexOf('what is my name?')),
+      );
     });
   });
 
-  group('D.38b-3 the compacted summary reaches the prompt before the window',
-      () {
+  group('D.38b-3 the compacted summary reaches the prompt before the window', () {
     // The session's `compactedSummary` carries everything older than the raw
     // window (hub § 22.5). The procedure threads it alongside `priorTurns`, and
     // the answer prompt renders it *first* so context that has rolled past the
@@ -182,8 +185,10 @@ void main() {
     });
 
     test('an empty priorTurns list is treated as cold', () async {
-      await runWith('plain first question',
-          priorTurns: const <Map<String, Object?>>[]);
+      await runWith(
+        'plain first question',
+        priorTurns: const <Map<String, Object?>>[],
+      );
 
       final prompt = substrate.lastCall!.inputs['prompt']! as String;
       expect(prompt, isNot(contains('User:')));
@@ -204,17 +209,18 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
       'You have just produced an answer for the user.';
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final rawPrompt = call.inputs['prompt'];
-    final isConfirmation = call.roleId == 'assistant_to_user' &&
+    final isConfirmation =
+        call.roleId == 'assistant_to_user' &&
         rawPrompt is String &&
         rawPrompt.trimLeft().startsWith(_confirmationSentinel);
     // The confirmation call terminates the loop with `DONE`; only the answer
     // call is captured for assertion.
     if (isConfirmation) {
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c', text: 'DONE'),
-        const LlmStreamCompleted(
+      return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        const LlmTextDelta('DONE'),
+        const LlmRunCompleted(
           callId: 'c',
           report: LlmCallReport(
             providerId: 'p',
@@ -230,10 +236,9 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
       ]);
     }
     lastCall = call;
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -251,18 +256,17 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recall-capturing `TomBrainMemoryClient` ───────────────────────
@@ -302,8 +306,7 @@ class _RecallCapturingMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -368,12 +371,10 @@ class _RecallCapturingMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -423,6 +424,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

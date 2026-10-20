@@ -48,8 +48,9 @@ void main() {
     memoryBridge = MemoryBridge(memory);
     substrateBridge = SubstrateBridge(
       substrate,
-      routeChainOf: (_) =>
-          const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+      routeChainOf: (_) => const <RouteEntry>[
+        RouteEntry(providerId: 'p', model: 'm'),
+      ],
     );
   });
 
@@ -58,32 +59,28 @@ void main() {
     Duration stepDeadline = defaultStepDeadline,
     DeadlineTimerFactory? deadlineTimerFactory,
     CancellationTimerFactory? cancellationTimerFactory,
-  }) =>
-      ProcedureEngine(
-        resolver: ProcedureResolver(procedures),
-        memory: memory,
-        memoryBridge: memoryBridge,
-        substrateBridge: substrateBridge,
-        stepDeadline: stepDeadline,
-        deadlineTimerFactory: deadlineTimerFactory,
-        cancellationTimerFactory: cancellationTimerFactory,
-        now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
-      );
+  }) => ProcedureEngine(
+    resolver: ProcedureResolver(procedures),
+    memory: memory,
+    memoryBridge: memoryBridge,
+    substrateBridge: substrateBridge,
+    stepDeadline: stepDeadline,
+    deadlineTimerFactory: deadlineTimerFactory,
+    cancellationTimerFactory: cancellationTimerFactory,
+    now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
+  );
 
   /// A procedure whose only step awaits a never-completing `sub.send(...)`, so
   /// the step never settles on its own — the C.39 cancel / timeout path must
   /// be what closes it (mirrors the deadline test's runaway step).
-  LoadedProcedure hangingProcedure(String id) => _procedure(
-        id,
-        '''
+  LoadedProcedure hangingProcedure(String id) => _procedure(id, '''
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.send('hang forever', llmRoute: 'fast');
   return 1;
 }
-''',
-      );
+''');
 
   group('C.38-1 a trivial procedure roundtrips end-to-end', () {
     test('a value-returning procedure resolves an accepted outcome', () async {
@@ -91,9 +88,7 @@ Future<Object?> run(inputs) async {
         _procedure('answer_v1', 'Object? run(inputs) => 1;'),
       ]);
 
-      final run = engine.invoke(
-        ProcedureInvocation(procedureId: 'answer_v1'),
-      );
+      final run = engine.invoke(ProcedureInvocation(procedureId: 'answer_v1'));
       final outcome = await run.outcome;
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
@@ -113,8 +108,9 @@ Future<Object?> run(inputs) async {
         ),
       ]);
 
-      final outcome =
-          await engine.invoke(ProcedureInvocation(procedureId: 'answer_v1')).outcome;
+      final outcome = await engine
+          .invoke(ProcedureInvocation(procedureId: 'answer_v1'))
+          .outcome;
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       expect(outcome.result!.output<String>('answer'), 'backup nightly');
@@ -125,8 +121,9 @@ Future<Object?> run(inputs) async {
         _procedure('answer_v1', 'Object? run(inputs) => 1;'),
       ]);
 
-      final outcome =
-          await engine.invoke(ProcedureInvocation(procedureId: 'answer_v1')).outcome;
+      final outcome = await engine
+          .invoke(ProcedureInvocation(procedureId: 'answer_v1'))
+          .outcome;
 
       // The recorder persisted a final ProcedureRun and pushed it to
       // recent_runs; the outcome carries that record without a re-read.
@@ -157,25 +154,23 @@ Future<Object?> run(inputs) async {
       // arguments exactly as the caller passed them.
       final invocation = outcome.entries.first;
       expect(invocation.kind, TrailEntryKind.invocation);
-      expect(invocation.payload['arguments'],
-          <String, Object?>{'q': 'how to back up?'});
+      expect(invocation.payload['arguments'], <String, Object?>{
+        'q': 'how to back up?',
+      });
     });
   });
 
   group('C.38-2 the handle streams the run trail live', () {
     test('trail emits invocation first and outcome last, in order', () async {
       final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'answer_v1',
-          '''
+        _procedure('answer_v1', '''
 import '$engineNativeLibrary';
 
 Object? run(inputs) {
   note('progress', {'phase': 'mid'});
   return 1;
 }
-''',
-        ),
+'''),
       ]);
 
       final run = engine.invoke(ProcedureInvocation(procedureId: 'answer_v1'));
@@ -187,101 +182,103 @@ Object? run(inputs) {
       expect(streamed.first.kind, TrailEntryKind.invocation);
       expect(streamed.last.kind, TrailEntryKind.outcome);
       // The in-procedure note shows up between the two.
-      final notes =
-          streamed.where((e) => e.kind == TrailEntryKind.note).toList();
+      final notes = streamed
+          .where((e) => e.kind == TrailEntryKind.note)
+          .toList();
       expect(notes, hasLength(1));
       expect(notes.single.payload['category'], 'progress');
       // The streamed trail and the terminal entries agree.
-      expect(streamed.map((e) => e.kind).toList(),
-          outcome.entries.map((e) => e.kind).toList());
+      expect(
+        streamed.map((e) => e.kind).toList(),
+        outcome.entries.map((e) => e.kind).toList(),
+      );
     });
   });
 
   group('C.38-3 a step that overruns the deadline is preempted', () {
-    test('an overrunning procedure closes preempted with a truncated note',
-        () async {
-      // The procedure awaits an llm call whose stream never completes, so the
-      // step never finishes on its own — the deadline must force-yield it.
-      _FakeTimer? scheduled;
-      final armed = Completer<void>();
+    test(
+      'an overrunning procedure closes preempted with a truncated note',
+      () async {
+        // The procedure awaits an llm call whose stream never completes, so the
+        // step never finishes on its own — the deadline must force-yield it.
+        _FakeTimer? scheduled;
+        final armed = Completer<void>();
 
-      final engine = engineFor(
-        <LoadedProcedure>[
-          _procedure(
-            'slow_v1',
-            '''
+        final engine = engineFor(
+          <LoadedProcedure>[
+            _procedure('slow_v1', '''
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.send('think forever', llmRoute: 'fast');
   return 1;
 }
-''',
-          ),
-        ],
-        stepDeadline: const Duration(seconds: 30),
-        deadlineTimerFactory: (duration, onExpire) {
-          scheduled = _FakeTimer(duration, onExpire);
-          if (!armed.isCompleted) armed.complete();
-          return scheduled!;
-        },
-      );
+'''),
+          ],
+          stepDeadline: const Duration(seconds: 30),
+          deadlineTimerFactory: (duration, onExpire) {
+            scheduled = _FakeTimer(duration, onExpire);
+            if (!armed.isCompleted) armed.complete();
+            return scheduled!;
+          },
+        );
 
-      final run = engine.invoke(ProcedureInvocation(procedureId: 'slow_v1'));
-      await armed.future; // the deadline timer is now counting down
-      scheduled!.fire(); // force the deadline to expire
-      final outcome = await run.outcome;
+        final run = engine.invoke(ProcedureInvocation(procedureId: 'slow_v1'));
+        await armed.future; // the deadline timer is now counting down
+        scheduled!.fire(); // force the deadline to expire
+        final outcome = await run.outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.preempted);
-      expect(outcome.result, isNull);
+        expect(outcome.status, TrailOutcomeStatus.preempted);
+        expect(outcome.result, isNull);
 
-      final truncationNotes = outcome.entries
-          .where((e) => e.kind == TrailEntryKind.note)
-          .where((e) => e.payload['category'] == stepTruncatedNoteCategory)
-          .toList();
-      expect(truncationNotes, hasLength(1));
-      final payload = truncationNotes.single.payload['payload']! as Map;
-      expect(payload['limitMs'], 30 * 1000);
-      expect(outcome.entries.last.payload['status'], 'preempted');
-    });
+        final truncationNotes = outcome.entries
+            .where((e) => e.kind == TrailEntryKind.note)
+            .where((e) => e.payload['category'] == stepTruncatedNoteCategory)
+            .toList();
+        expect(truncationNotes, hasLength(1));
+        final payload = truncationNotes.single.payload['payload']! as Map;
+        expect(payload['limitMs'], 30 * 1000);
+        expect(outcome.entries.last.payload['status'], 'preempted');
+      },
+    );
   });
 
   group('C.38-4 a procedure that crashes closes errored', () {
-    test('a thrown procedure resolves an errored outcome carrying the error',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'boom_v1',
-          "Object? run(inputs) { throw StateError('kaboom'); }",
-        ),
-      ]);
-
-      final outcome =
-          await engine.invoke(ProcedureInvocation(procedureId: 'boom_v1')).outcome;
-
-      expect(outcome.status, TrailOutcomeStatus.errored);
-      expect(outcome.result, isNull);
-      expect(outcome.error, isNotNull);
-      // The crash is captured on the trail as a runtime-crash error entry.
-      final errors =
-          outcome.entries.where((e) => e.kind == TrailEntryKind.error).toList();
-      expect(errors, hasLength(1));
-      // A body that threw mid-execution is a runtime crash, not a parse
-      // failure (the source parsed and ran before it threw).
-      expect(errors.single.payload['errorKind'], 'procedure.runtime.crash');
-    });
-
     test(
-        'a syntactically invalid procedure surfaces procedure.parse.failed, '
+      'a thrown procedure resolves an errored outcome carrying the error',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure(
+            'boom_v1',
+            "Object? run(inputs) { throw StateError('kaboom'); }",
+          ),
+        ]);
+
+        final outcome = await engine
+            .invoke(ProcedureInvocation(procedureId: 'boom_v1'))
+            .outcome;
+
+        expect(outcome.status, TrailOutcomeStatus.errored);
+        expect(outcome.result, isNull);
+        expect(outcome.error, isNotNull);
+        // The crash is captured on the trail as a runtime-crash error entry.
+        final errors = outcome.entries
+            .where((e) => e.kind == TrailEntryKind.error)
+            .toList();
+        expect(errors, hasLength(1));
+        // A body that threw mid-execution is a runtime crash, not a parse
+        // failure (the source parsed and ran before it threw).
+        expect(errors.single.payload['errorKind'], 'procedure.runtime.crash');
+      },
+    );
+
+    test('a syntactically invalid procedure surfaces procedure.parse.failed, '
         'not procedure.runtime.crash (Q-C.46.1)', () async {
       final engine = engineFor(<LoadedProcedure>[
         // `return 1 1` is a parse error: the source never runs. It clears the
         // lexical sandbox validator (no disallowed directive / identifier) so
         // the host's runtime parser is the layer that rejects it.
-        _procedure(
-          'broken_v1',
-          'Object? run(inputs) { return 1 1; }',
-        ),
+        _procedure('broken_v1', 'Object? run(inputs) { return 1 1; }'),
       ]);
 
       final outcome = await engine
@@ -294,8 +291,9 @@ Future<Object?> run(inputs) async {
       expect(outcome.status, TrailOutcomeStatus.errored);
       expect(outcome.result, isNull);
       expect(outcome.error, isA<ProcedureSourceParseException>());
-      final errors =
-          outcome.entries.where((e) => e.kind == TrailEntryKind.error).toList();
+      final errors = outcome.entries
+          .where((e) => e.kind == TrailEntryKind.error)
+          .toList();
       expect(errors, hasLength(1));
       expect(errors.single.payload['errorKind'], 'procedure.parse.failed');
     });
@@ -319,24 +317,19 @@ Future<Object?> run(inputs) async {
   group('C.38-6 a procedure can run a nested procedure', () {
     test('runProcedure threads the child result back to the parent', () async {
       final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'parent_v1',
-          '''
+        _procedure('parent_v1', '''
 import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {
   return await runProcedure('child_v1', inputs);
 }
-''',
-        ),
-        _procedure(
-          'child_v1',
-          "Object? run(inputs) => {'v': 42};",
-        ),
+'''),
+        _procedure('child_v1', "Object? run(inputs) => {'v': 42};"),
       ]);
 
-      final outcome =
-          await engine.invoke(ProcedureInvocation(procedureId: 'parent_v1')).outcome;
+      final outcome = await engine
+          .invoke(ProcedureInvocation(procedureId: 'parent_v1'))
+          .outcome;
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       // The child's ProcedureResult passed through unchanged (Q-C.38.2).
@@ -348,48 +341,52 @@ Future<Object?> run(inputs) async {
   });
 
   group('E.3.2 bridged calls are recorded on the run trail', () {
-    test('a sub.embed call lands as a primitiveCall entry and counts effort',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'embed_v1',
-          '''
+    test(
+      'a sub.embed call lands as a primitiveCall entry and counts effort',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure('embed_v1', '''
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.embed('hello');
   return 1;
 }
-''',
-        ),
-      ]);
+'''),
+        ]);
 
-      final outcome =
-          await engine.invoke(ProcedureInvocation(procedureId: 'embed_v1')).outcome;
+        final outcome = await engine
+            .invoke(ProcedureInvocation(procedureId: 'embed_v1'))
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      // The bridged effect call landed on this run's trail as a primitiveCall
-      // entry naming the primitive (E.3.2).
-      final primitiveCalls = outcome.entries
-          .where((e) => e.kind == TrailEntryKind.primitiveCall)
-          .toList();
-      expect(primitiveCalls, hasLength(1));
-      expect(primitiveCalls.single.payload['primitive'], 'embed');
-      expect((primitiveCalls.single.payload['input']! as Map)['text'], 'hello');
+        // The bridged effect call landed on this run's trail as a primitiveCall
+        // entry naming the primitive (E.3.2).
+        final primitiveCalls = outcome.entries
+            .where((e) => e.kind == TrailEntryKind.primitiveCall)
+            .toList();
+        expect(primitiveCalls, hasLength(1));
+        expect(primitiveCalls.single.payload['primitive'], 'embed');
+        expect(
+          (primitiveCalls.single.payload['input']! as Map)['text'],
+          'hello',
+        );
 
-      // The call folded into the run's effort tally: embed is a substrate
-      // tool callout (+1 toolCalls) per the EffortAccountant.
-      expect(outcome.record.effort.toolCalls, 1);
-    });
+        // The call folded into the run's effort tally: embed is a substrate
+        // tool callout (+1 toolCalls) per the EffortAccountant.
+        expect(outcome.record.effort.toolCalls, 1);
+      },
+    );
 
     test('a procedure that makes no bridged call records none', () async {
       final engine = engineFor(<LoadedProcedure>[
         _procedure('answer_v1', 'Object? run(inputs) => 1;'),
       ]);
 
-      final outcome =
-          await engine.invoke(ProcedureInvocation(procedureId: 'answer_v1')).outcome;
+      final outcome = await engine
+          .invoke(ProcedureInvocation(procedureId: 'answer_v1'))
+          .outcome;
 
       final primitiveCalls = outcome.entries
           .where((e) => e.kind == TrailEntryKind.primitiveCall)
@@ -401,117 +398,129 @@ Future<Object?> run(inputs) async {
   });
 
   group('C.39-1 run.cancel() abandons a run and closes it aborted', () {
-    test('an explicit cancel closes aborted with a run_cancelled note',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[hangingProcedure('hang_v1')]);
+    test(
+      'an explicit cancel closes aborted with a run_cancelled note',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[
+          hangingProcedure('hang_v1'),
+        ]);
 
-      final run = engine.invoke(ProcedureInvocation(procedureId: 'hang_v1'));
-      // Cancel once the run has opened its trail (the invocation entry is the
-      // first thing the recorder emits, before the step race is set up).
-      await run.trail.firstWhere(
-        (TrailEntry e) => e.kind == TrailEntryKind.invocation,
-      );
-      run.cancel();
-      final outcome = await run.outcome;
+        final run = engine.invoke(ProcedureInvocation(procedureId: 'hang_v1'));
+        // Cancel once the run has opened its trail (the invocation entry is the
+        // first thing the recorder emits, before the step race is set up).
+        await run.trail.firstWhere(
+          (TrailEntry e) => e.kind == TrailEntryKind.invocation,
+        );
+        run.cancel();
+        final outcome = await run.outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.aborted);
-      expect(outcome.result, isNull);
-      expect(run.isCancelled, isTrue);
+        expect(outcome.status, TrailOutcomeStatus.aborted);
+        expect(outcome.result, isNull);
+        expect(run.isCancelled, isTrue);
 
-      final cancelNotes = outcome.entries
-          .where((e) => e.kind == TrailEntryKind.note)
-          .where((e) => e.payload['category'] == runCancelledNoteCategory)
-          .toList();
-      expect(cancelNotes, hasLength(1));
-      // A cancel carries no timeout budget.
-      expect(cancelNotes.single.payload['payload'], <String, Object?>{});
-      expect(outcome.entries.last.payload['status'], 'aborted');
-    });
+        final cancelNotes = outcome.entries
+            .where((e) => e.kind == TrailEntryKind.note)
+            .where((e) => e.payload['category'] == runCancelledNoteCategory)
+            .toList();
+        expect(cancelNotes, hasLength(1));
+        // A cancel carries no timeout budget.
+        expect(cancelNotes.single.payload['payload'], <String, Object?>{});
+        expect(outcome.entries.last.payload['status'], 'aborted');
+      },
+    );
 
-    test('a cancelled run still lands on recent_runs, inflight cleared',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[hangingProcedure('hang_v1')]);
+    test(
+      'a cancelled run still lands on recent_runs, inflight cleared',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[
+          hangingProcedure('hang_v1'),
+        ]);
 
-      final run = engine.invoke(ProcedureInvocation(procedureId: 'hang_v1'));
-      await run.trail.firstWhere(
-        (TrailEntry e) => e.kind == TrailEntryKind.invocation,
-      );
-      run.cancel();
-      final outcome = await run.outcome;
+        final run = engine.invoke(ProcedureInvocation(procedureId: 'hang_v1'));
+        await run.trail.firstWhere(
+          (TrailEntry e) => e.kind == TrailEntryKind.invocation,
+        );
+        run.cancel();
+        final outcome = await run.outcome;
 
-      expect(outcome.record.status, TrailOutcomeStatus.aborted);
-      final recent = await memory.stacks.peek(recentRunsStackName);
-      expect(recent, hasLength(1));
-      expect(recent.single.nodeId, outcome.record.runNodeId);
-      final inflight = await memory.stacks.peek(inflightStackName);
-      expect(inflight, isEmpty);
-    });
+        expect(outcome.record.status, TrailOutcomeStatus.aborted);
+        final recent = await memory.stacks.peek(recentRunsStackName);
+        expect(recent, hasLength(1));
+        expect(recent.single.nodeId, outcome.record.runNodeId);
+        final inflight = await memory.stacks.peek(inflightStackName);
+        expect(inflight, isEmpty);
+      },
+    );
   });
 
   group('C.39-2 an external timeout closes a run aborted', () {
-    test('an elapsed timeout closes aborted with a run_timed_out note',
-        () async {
-      _FakeTimer? scheduled;
-      final armed = Completer<void>();
+    test(
+      'an elapsed timeout closes aborted with a run_timed_out note',
+      () async {
+        _FakeTimer? scheduled;
+        final armed = Completer<void>();
 
-      final engine = engineFor(
-        <LoadedProcedure>[hangingProcedure('hang_v1')],
-        cancellationTimerFactory: (duration, onExpire) {
-          scheduled = _FakeTimer(duration, onExpire);
-          if (!armed.isCompleted) armed.complete();
-          return scheduled!;
-        },
-      );
+        final engine = engineFor(
+          <LoadedProcedure>[hangingProcedure('hang_v1')],
+          cancellationTimerFactory: (duration, onExpire) {
+            scheduled = _FakeTimer(duration, onExpire);
+            if (!armed.isCompleted) armed.complete();
+            return scheduled!;
+          },
+        );
 
-      final run = engine.invoke(
-        ProcedureInvocation(procedureId: 'hang_v1'),
-        timeout: const Duration(seconds: 5),
-      );
-      await armed.future; // the timeout timer is now counting down
-      scheduled!.fire(); // force the timeout to elapse
-      final outcome = await run.outcome;
+        final run = engine.invoke(
+          ProcedureInvocation(procedureId: 'hang_v1'),
+          timeout: const Duration(seconds: 5),
+        );
+        await armed.future; // the timeout timer is now counting down
+        scheduled!.fire(); // force the timeout to elapse
+        final outcome = await run.outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.aborted);
-      expect(outcome.result, isNull);
-      expect(run.isCancelled, isTrue);
+        expect(outcome.status, TrailOutcomeStatus.aborted);
+        expect(outcome.result, isNull);
+        expect(run.isCancelled, isTrue);
 
-      final timeoutNotes = outcome.entries
-          .where((e) => e.kind == TrailEntryKind.note)
-          .where((e) => e.payload['category'] == runTimedOutNoteCategory)
-          .toList();
-      expect(timeoutNotes, hasLength(1));
-      final payload = timeoutNotes.single.payload['payload']! as Map;
-      expect(payload['timeoutMs'], 5 * 1000);
-      expect(outcome.entries.last.payload['status'], 'aborted');
-    });
+        final timeoutNotes = outcome.entries
+            .where((e) => e.kind == TrailEntryKind.note)
+            .where((e) => e.payload['category'] == runTimedOutNoteCategory)
+            .toList();
+        expect(timeoutNotes, hasLength(1));
+        final payload = timeoutNotes.single.payload['payload']! as Map;
+        expect(payload['timeoutMs'], 5 * 1000);
+        expect(outcome.entries.last.payload['status'], 'aborted');
+      },
+    );
 
-    test('a run that finishes before its timeout closes normally, timer off',
-        () async {
-      _FakeTimer? scheduled;
+    test(
+      'a run that finishes before its timeout closes normally, timer off',
+      () async {
+        _FakeTimer? scheduled;
 
-      final engine = engineFor(
-        <LoadedProcedure>[
-          _procedure('answer_v1', 'Object? run(inputs) => 1;'),
-        ],
-        cancellationTimerFactory: (duration, onExpire) {
-          scheduled = _FakeTimer(duration, onExpire);
-          return scheduled!;
-        },
-      );
+        final engine = engineFor(
+          <LoadedProcedure>[
+            _procedure('answer_v1', 'Object? run(inputs) => 1;'),
+          ],
+          cancellationTimerFactory: (duration, onExpire) {
+            scheduled = _FakeTimer(duration, onExpire);
+            return scheduled!;
+          },
+        );
 
-      final run = engine.invoke(
-        ProcedureInvocation(procedureId: 'answer_v1'),
-        timeout: const Duration(seconds: 60),
-      );
-      final outcome = await run.outcome;
+        final run = engine.invoke(
+          ProcedureInvocation(procedureId: 'answer_v1'),
+          timeout: const Duration(seconds: 60),
+        );
+        final outcome = await run.outcome;
 
-      // The run finished on its own: accepted, not aborted.
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(run.isCancelled, isFalse);
-      // The timeout timer was disarmed when the run resolved.
-      expect(scheduled, isNotNull);
-      expect(scheduled!.isActive, isFalse);
-    });
+        // The run finished on its own: accepted, not aborted.
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(run.isCancelled, isFalse);
+        // The timeout timer was disarmed when the run resolved.
+        expect(scheduled, isNotNull);
+        expect(scheduled!.isActive, isFalse);
+      },
+    );
 
     test('a non-positive timeout is rejected', () {
       final engine = engineFor(<LoadedProcedure>[
@@ -546,29 +555,31 @@ Future<Object?> run(inputs) async {
   });
 
   group('E.3.5 the static sandbox gate runs before the host', () {
-    test('a forbidden import surfaces a violation and records no run',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'rogue_v1',
-          "import 'dart:io';\nObject? run(inputs) => 1;",
-        ),
-      ]);
+    test(
+      'a forbidden import surfaces a violation and records no run',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure(
+            'rogue_v1',
+            "import 'dart:io';\nObject? run(inputs) => 1;",
+          ),
+        ]);
 
-      final run = engine.invoke(ProcedureInvocation(procedureId: 'rogue_v1'));
+        final run = engine.invoke(ProcedureInvocation(procedureId: 'rogue_v1'));
 
-      await expectLater(
-        run.outcome,
-        throwsA(
-          isA<ProcedureSandboxViolation>()
-              .having((e) => e.procedureId, 'procedureId', 'rogue_v1')
-              .having((e) => e.offender, 'offender', 'import'),
-        ),
-      );
-      // The gate fires before the recorder starts: nothing was recorded.
-      expect(await memory.stacks.peek(recentRunsStackName), isEmpty);
-      expect(await memory.stacks.peek(inflightStackName), isEmpty);
-    });
+        await expectLater(
+          run.outcome,
+          throwsA(
+            isA<ProcedureSandboxViolation>()
+                .having((e) => e.procedureId, 'procedureId', 'rogue_v1')
+                .having((e) => e.offender, 'offender', 'import'),
+          ),
+        );
+        // The gate fires before the recorder starts: nothing was recorded.
+        expect(await memory.stacks.peek(recentRunsStackName), isEmpty);
+        expect(await memory.stacks.peek(inflightStackName), isEmpty);
+      },
+    );
 
     test('a procedure importing only allow-listed libraries runs', () async {
       final engine = engineFor(<LoadedProcedure>[
@@ -579,8 +590,9 @@ Future<Object?> run(inputs) async {
         ),
       ]);
 
-      final outcome =
-          await engine.invoke(ProcedureInvocation(procedureId: 'clean_v1')).outcome;
+      final outcome = await engine
+          .invoke(ProcedureInvocation(procedureId: 'clean_v1'))
+          .outcome;
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       expect(outcome.result!.output<Object?>('value'), 1);
@@ -595,9 +607,7 @@ Future<Object?> run(inputs) async {
     ProcedureEngine streamingEngine(_StreamingSubstrate streaming) =>
         ProcedureEngine(
           resolver: ProcedureResolver(<LoadedProcedure>[
-            _procedure(
-              'stream_v1',
-              '''
+            _procedure('stream_v1', '''
 import '${BridgeLibraries.substrateLibrary}';
 import '$engineNativeLibrary';
 
@@ -606,22 +616,24 @@ Future<Object?> run(inputs) async {
   final res = await sub.send('prompt', llmRoute: 'fast');
   return {'answer': res['text']};
 }
-''',
-            ),
+'''),
           ]),
           memory: memory,
           memoryBridge: memoryBridge,
           substrateBridge: SubstrateBridge(
             streaming,
-            routeChainOf: (_) =>
-                const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+            routeChainOf: (_) => const <RouteEntry>[
+              RouteEntry(providerId: 'p', model: 'm'),
+            ],
           ),
           now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
         );
 
     test('an external run (tokenSink supplied) forwards both the emit delta '
         'and each sub.send chunk in body order', () async {
-      final engine = streamingEngine(_StreamingSubstrate(<String>['He', 'llo']));
+      final engine = streamingEngine(
+        _StreamingSubstrate(<String>['He', 'llo']),
+      );
 
       final deltas = <String>[];
       final outcome = await engine
@@ -641,10 +653,13 @@ Future<Object?> run(inputs) async {
 
     test('an internal run (no tokenSink) streams nothing but still completes '
         'with the full answer', () async {
-      final engine = streamingEngine(_StreamingSubstrate(<String>['He', 'llo']));
+      final engine = streamingEngine(
+        _StreamingSubstrate(<String>['He', 'llo']),
+      );
 
-      final outcome =
-          await engine.invoke(ProcedureInvocation(procedureId: 'stream_v1')).outcome;
+      final outcome = await engine
+          .invoke(ProcedureInvocation(procedureId: 'stream_v1'))
+          .outcome;
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       expect(outcome.result!.output<String>('answer'), 'Hello');
@@ -656,7 +671,8 @@ Future<Object?> run(inputs) async {
 /// `@procedure` header so the resolver and loader treat it as a real
 /// procedure (§ 4.4).
 LoadedProcedure _procedure(String id, String body, {int version = 1}) {
-  final source = '''
+  final source =
+      '''
 /// @procedure
 /// id: $id
 /// version: $version
@@ -712,28 +728,27 @@ final class _FakeTimer implements Timer {
 // `sub.send(...)` hangs — exactly the runaway step the deadline test needs.
 class _ControllableSubstrate implements TomBrainSubstrateClient {
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      StreamController<LlmStreamEvent>().stream;
+  Stream<LlmEvent> completeStream(LlmCall call) =>
+      StreamController<LlmEvent>().stream;
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A streaming `TomBrainSubstrateClient` ───────────────────────────
 //
-// `completeStream` emits one `LlmStreamChunk` per configured chunk and then
+// `completeStream` emits one `LlmTextDelta` per configured chunk and then
 // completes — so a procedure that awaits `sub.send(...)` gets the concatenated
 // text back while each chunk is forwarded live to the per-run token sink
 // (P1.3 #8). Used by the token-sink streaming tests.
@@ -743,10 +758,10 @@ class _StreamingSubstrate implements TomBrainSubstrateClient {
   final List<String> chunks;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        for (final chunk in chunks) LlmStreamChunk(callId: 'c', text: chunk),
-        const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) =>
+      Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        for (final chunk in chunks) LlmTextDelta(chunk),
+        const LlmRunCompleted(
           callId: 'c',
           report: LlmCallReport(
             providerId: 'p',
@@ -763,18 +778,17 @@ class _StreamingSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A stateful in-memory `TomBrainMemoryClient` ─────────────────────
@@ -856,12 +870,10 @@ class _StatefulMemory implements TomBrainMemoryClient {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -911,6 +923,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -33,53 +33,61 @@ void main() {
   });
 
   group('§7.4 SubstrateBridge.send — explicit-route completion', () {
-    test('resolves the route name and rides the chain onto LlmCall.routeChain',
-        () async {
-      String? resolvedName;
-      final bridge = SubstrateBridge(
-        client,
-        routeChainOf: (name) {
-          resolvedName = name;
-          return const <RouteEntry>[
-            RouteEntry(providerId: 'fast-provider', model: 'fast-model'),
-            RouteEntry(providerId: 'backup-provider', model: 'backup-model'),
-          ];
-        },
-      );
-      client.streamEvents = _completedStream('answer');
+    test(
+      'resolves the route name and rides the chain onto LlmCall.routeChain',
+      () async {
+        String? resolvedName;
+        final bridge = SubstrateBridge(
+          client,
+          routeChainOf: (name) {
+            resolvedName = name;
+            return const <RouteEntry>[
+              RouteEntry(providerId: 'fast-provider', model: 'fast-model'),
+              RouteEntry(providerId: 'backup-provider', model: 'backup-model'),
+            ];
+          },
+        );
+        client.streamEvents = _completedStream('answer');
 
-      await bridge.send('a transcript', llmRoute: 'fast');
+        await bridge.send('a transcript', llmRoute: 'fast');
 
-      // The resolver was consulted with the route NAME.
-      expect(resolvedName, 'fast');
-      // The resolved chain rides onto the call, NOT a role-keyed lookup.
-      final call = client.lastCall!;
-      expect(call.routeChain, isNotNull);
-      expect(call.routeChain!.map((e) => e.providerId),
-          <String>['fast-provider', 'backup-provider']);
-      // The prompt body is the transcript, under the role template's `prompt`.
-      expect(call.inputs, <String, Object?>{'prompt': 'a transcript'});
-    });
+        // The resolver was consulted with the route NAME.
+        expect(resolvedName, 'fast');
+        // The resolved chain rides onto the call, NOT a role-keyed lookup.
+        final call = client.lastCall!;
+        expect(call.routeChain, isNotNull);
+        expect(call.routeChain!.map((e) => e.providerId), <String>[
+          'fast-provider',
+          'backup-provider',
+        ]);
+        // The prompt body is the transcript, under the role template's `prompt`.
+        expect(call.inputs, <String, Object?>{'prompt': 'a transcript'});
+      },
+    );
 
-    test('still carries the role as LlmCall.roleId (role assembles the prompt)',
-        () async {
-      final bridge = SubstrateBridge(
-        client,
-        routeChainOf: (_) =>
-            const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
-      );
-      client.streamEvents = _completedStream('ok');
+    test(
+      'still carries the role as LlmCall.roleId (role assembles the prompt)',
+      () async {
+        final bridge = SubstrateBridge(
+          client,
+          routeChainOf: (_) => const <RouteEntry>[
+            RouteEntry(providerId: 'p', model: 'm'),
+          ],
+        );
+        client.streamEvents = _completedStream('ok');
 
-      await bridge.send('q', llmRoute: 'deep', role: 'sub_thinker');
+        await bridge.send('q', llmRoute: 'deep', role: 'sub_thinker');
 
-      expect(client.lastCall!.roleId, 'sub_thinker');
-    });
+        expect(client.lastCall!.roleId, 'sub_thinker');
+      },
+    );
 
     test('defaults the role to assistant_to_user when none is named', () async {
       final bridge = SubstrateBridge(
         client,
-        routeChainOf: (_) =>
-            const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+        routeChainOf: (_) => const <RouteEntry>[
+          RouteEntry(providerId: 'p', model: 'm'),
+        ],
       );
       client.streamEvents = _completedStream('ok');
 
@@ -88,39 +96,45 @@ void main() {
       expect(client.lastCall!.roleId, SubstrateBridge.defaultRole);
     });
 
-    test('carries temperature / maxOutputTokens / responseFormat onto options',
-        () async {
-      final bridge = SubstrateBridge(
-        client,
-        routeChainOf: (_) =>
-            const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
-      );
-      client.streamEvents = _completedStream('ok');
+    test(
+      'carries temperature / maxOutputTokens / responseFormat onto options',
+      () async {
+        final bridge = SubstrateBridge(
+          client,
+          routeChainOf: (_) => const <RouteEntry>[
+            RouteEntry(providerId: 'p', model: 'm'),
+          ],
+        );
+        client.streamEvents = _completedStream('ok');
 
-      await bridge.send(
-        'q',
-        llmRoute: 'fast',
-        temperature: 0.2,
-        maxOutputTokens: 256,
-        responseFormat: const <String, Object?>{'type': 'json_object'},
-      );
+        await bridge.send(
+          'q',
+          llmRoute: 'fast',
+          temperature: 0.2,
+          maxOutputTokens: 256,
+          responseFormat: const <String, Object?>{'type': 'json_object'},
+        );
 
-      final options = client.lastCall!.options;
-      expect(options.temperature, 0.2);
-      expect(options.maxOutputTokens, 256);
-      expect(options.responseFormat, <String, Object?>{'type': 'json_object'});
-    });
+        final options = client.lastCall!.options;
+        expect(options.temperature, 0.2);
+        expect(options.maxOutputTokens, 256);
+        expect(options.responseFormat, <String, Object?>{
+          'type': 'json_object',
+        });
+      },
+    );
 
     test('returns the same shape as llm (text, toolCalls, report)', () async {
       final bridge = SubstrateBridge(
         client,
-        routeChainOf: (_) =>
-            const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+        routeChainOf: (_) => const <RouteEntry>[
+          RouteEntry(providerId: 'p', model: 'm'),
+        ],
       );
-      client.streamEvents = <LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c', text: 'one '),
-        const LlmStreamChunk(callId: 'c', text: 'two'),
-        const LlmStreamCompleted(
+      client.streamEvents = <LlmEvent>[
+        const LlmTextDelta('one '),
+        const LlmTextDelta('two'),
+        const LlmRunCompleted(
           callId: 'c',
           report: LlmCallReport(
             providerId: 'p',
@@ -150,11 +164,13 @@ void main() {
       final bridge = SubstrateBridge(client); // no routeChainOf
       expect(
         () => bridge.send('q', llmRoute: 'fast'),
-        throwsA(isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          contains('sub.send requires a RouteChainResolver'),
-        )),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('sub.send requires a RouteChainResolver'),
+          ),
+        ),
       );
     });
 
@@ -173,35 +189,34 @@ void main() {
 }
 
 /// Builds a minimal Started→Chunk→Completed stream emitting [text].
-List<LlmStreamEvent> _completedStream(String text) => <LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: text),
-      const LlmStreamCompleted(
-        callId: 'c',
-        report: LlmCallReport(
-          providerId: 'p',
-          modelId: 'm',
-          anchorHash: 'a',
-          promptHash: 'pr',
-          tokensIn: 1,
-          tokensOut: 1,
-          retries: 0,
-          wallClockMs: 1,
-        ),
-      ),
-    ];
+List<LlmEvent> _completedStream(String text) => <LlmEvent>[
+  LlmTextDelta(text),
+  const LlmRunCompleted(
+    callId: 'c',
+    report: LlmCallReport(
+      providerId: 'p',
+      modelId: 'm',
+      anchorHash: 'a',
+      promptHash: 'pr',
+      tokensIn: 1,
+      tokensOut: 1,
+      retries: 0,
+      wallClockMs: 1,
+    ),
+  ),
+];
 
 /// Fake `TomBrainSubstrateClient` capturing the `LlmCall` `send` issues.
 class _FakeSubstrateClient implements TomBrainSubstrateClient {
   LlmCall? lastCall;
-  List<LlmStreamEvent> streamEvents = const <LlmStreamEvent>[];
+  List<LlmEvent> streamEvents = const <LlmEvent>[];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     lastCall = call;
-    return Stream<LlmStreamEvent>.fromIterable(streamEvents);
+    return Stream<LlmEvent>.fromIterable(streamEvents);
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

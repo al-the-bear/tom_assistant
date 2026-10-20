@@ -90,11 +90,9 @@ void main() {
 
       // An AutomationIdea on the automation_ideas work stack: the brain's note
       // that some intent recurs often enough to deserve a procedure.
-      memory.seedIdea(
-        'automation_ideas',
-        <String, Object?>{'description': 'greet the user by their stored name'},
-        priority: 9,
-      );
+      memory.seedIdea('automation_ideas', <String, Object?>{
+        'description': 'greet the user by their stored name',
+      }, priority: 9);
 
       final engine = await systemEngine();
       final scheduler = FreeTimeScheduler(
@@ -129,11 +127,9 @@ void main() {
     test("the idea's description becomes the authoring intent", () async {
       substrate.authorDrafts = <String>[_validCandidate];
       substrate.criticVerdicts = <String>['accept'];
-      memory.seedIdea(
-        'automation_ideas',
-        <String, Object?>{'description': 'summarise my unread mail each morning'},
-        priority: 9,
-      );
+      memory.seedIdea('automation_ideas', <String, Object?>{
+        'description': 'summarise my unread mail each morning',
+      }, priority: 9);
 
       final engine = await systemEngine();
       final scheduler = FreeTimeScheduler(
@@ -148,8 +144,10 @@ void main() {
 
       // The author stage ran under an intent carrying the idea's text — the
       // scripted substrate records the drafting call's user text.
-      expect(substrate.authorUserTexts.single,
-          contains('summarise my unread mail each morning'));
+      expect(
+        substrate.authorUserTexts.single,
+        contains('summarise my unread mail each morning'),
+      );
     });
 
     test('an idea with no salient text still authors under a node-scoped '
@@ -157,11 +155,9 @@ void main() {
       substrate.authorDrafts = <String>[_validCandidate];
       substrate.criticVerdicts = <String>['accept'];
       // A textless idea node: the arm degrades to a traceable default intent.
-      final ideaId = memory.seedIdea(
-        'automation_ideas',
-        <String, Object?>{'unrelated': 42},
-        priority: 9,
-      );
+      final ideaId = memory.seedIdea('automation_ideas', <String, Object?>{
+        'unrelated': 42,
+      }, priority: 9);
 
       final engine = await systemEngine();
       final scheduler = FreeTimeScheduler(
@@ -180,28 +176,29 @@ void main() {
       expect(substrate.authorUserTexts.single, contains(ideaId.value));
     });
 
-    test('a pick from a non-authoring stack is declined (idle cycle)', () async {
-      // The author arm claims automation_ideas only: a questions_open pick is
-      // declined so the arm composes with the scheduler's other routing arms.
-      memory.seedIdea(
-        'questions_open',
-        <String, Object?>{'statement': 'an open question'},
-        priority: 9,
-      );
+    test(
+      'a pick from a non-authoring stack is declined (idle cycle)',
+      () async {
+        // The author arm claims automation_ideas only: a questions_open pick is
+        // declined so the arm composes with the scheduler's other routing arms.
+        memory.seedIdea('questions_open', <String, Object?>{
+          'statement': 'an open question',
+        }, priority: 9);
 
-      final engine = await systemEngine();
-      final scheduler = FreeTimeScheduler(
-        coordinator: coordinator,
-        memory: memory,
-        workFactory: authoringWorkFactory(engine: engine, memory: memory),
-      );
+        final engine = await systemEngine();
+        final scheduler = FreeTimeScheduler(
+          coordinator: coordinator,
+          memory: memory,
+          workFactory: authoringWorkFactory(engine: engine, memory: memory),
+        );
 
-      final tick = await scheduler.tick();
+        final tick = await scheduler.tick();
 
-      expect(tick.decision, FreeTimeDecision.idle);
-      expect(tick.didSchedule, isFalse);
-      expect(memory.persistedOfType('Procedure'), isEmpty);
-    });
+        expect(tick.decision, FreeTimeDecision.idle);
+        expect(tick.didSchedule, isFalse);
+        expect(memory.persistedOfType('Procedure'), isEmpty);
+      },
+    );
   });
 }
 
@@ -293,8 +290,7 @@ class _RoutingMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      const ClassificationResult.unknown();
+  }) async => const ClassificationResult.unknown();
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -366,8 +362,7 @@ class _RoutingMemory implements TomBrainMemory {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// A `StackApi` double that models a priority stack: `list` reports size + top
@@ -424,16 +419,16 @@ class _RoutingStacks implements StackApi {
 
   @override
   Future<List<StackSummary>> list() async => <StackSummary>[
-        for (final entry in _entries.entries)
-          StackSummary(
-            name: entry.key,
-            size: entry.value.length,
-            topPriority: entry.value.isEmpty
-                ? 0.0
-                : _ordered(entry.key).first.priority,
-            bootstrap: false,
-          ),
-      ];
+    for (final entry in _entries.entries)
+      StackSummary(
+        name: entry.key,
+        size: entry.value.length,
+        topPriority: entry.value.isEmpty
+            ? 0.0
+            : _ordered(entry.key).first.priority,
+        bootstrap: false,
+      ),
+  ];
 
   @override
   Future<List<StackEntry>> peek(String name, {int k = 16}) async =>
@@ -451,8 +446,7 @@ class _RoutingStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A role-scripted `TomBrainSubstrateClient` ───────────────────────────────
@@ -469,7 +463,7 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
   int _criticIdx = 0;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final String text;
     switch (call.roleId) {
       case 'procedure_author':
@@ -480,9 +474,9 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
       default:
         text = 'ok';
     }
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: text),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(text),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -508,16 +502,15 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

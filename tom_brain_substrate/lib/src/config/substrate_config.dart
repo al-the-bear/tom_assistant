@@ -71,10 +71,9 @@
 //   there, and consumers using `package:tom_brain_substrate/
 //   tom_brain_substrate.dart` see no change.
 
-import '../llm/llm_provider.dart' show LlmProvider;
+import 'package:tom_core_llm/tom_core_llm.dart' show LlmProvider;
 import '../mcp_client/mcp_auth.dart' show McpAuthConfig;
-import '../roles/role_registry.dart'
-    show RoleRegistry, RoleTemplateNotFound;
+import '../roles/role_registry.dart' show RoleRegistry, RoleTemplateNotFound;
 import '../router/llm_failure_classifier.dart' show LlmFailureClass;
 import '../router/route_entry.dart' show RouteEntry, RouteConditions;
 import '../router/router_policy.dart' show RouterPolicy;
@@ -133,10 +132,7 @@ sealed class ProviderAuthConfig {
   /// the raw token. Read once at facade boot (mirrors the B.34
   /// `McpAuthResolver` posture); the file's contents are trimmed of
   /// surrounding whitespace before use.
-  factory ProviderAuthConfig.apiKey({
-    String? token,
-    String? secretRef,
-  }) {
+  factory ProviderAuthConfig.apiKey({String? token, String? secretRef}) {
     final hasInline = token != null;
     final hasRef = secretRef != null;
     if (hasInline == hasRef) {
@@ -147,9 +143,7 @@ sealed class ProviderAuthConfig {
       );
     }
     if (hasInline && token.isEmpty) {
-      throw ArgumentError(
-        'ProviderAuthConfig.apiKey.token must be non-empty.',
-      );
+      throw ArgumentError('ProviderAuthConfig.apiKey.token must be non-empty.');
     }
     if (hasRef && secretRef.isEmpty) {
       throw ArgumentError(
@@ -175,8 +169,7 @@ final class _ProviderAuthApiKey extends ProviderAuthConfig {
   /// [token].
   final String? secretRef;
 
-  const _ProviderAuthApiKey._({this.token, this.secretRef})
-      : super._();
+  const _ProviderAuthApiKey._({this.token, this.secretRef}) : super._();
 
   @override
   String toString() {
@@ -667,9 +660,7 @@ final class SubstrateConfig {
     }
   }
 
-  static RouteConditions _toRouteConditions(
-    RouteConditionsConfig? config,
-  ) {
+  static RouteConditions _toRouteConditions(RouteConditionsConfig? config) {
     if (config == null) return RouteConditions.empty;
     return RouteConditions(maxInputTokens: config.maxInputTokens);
   }

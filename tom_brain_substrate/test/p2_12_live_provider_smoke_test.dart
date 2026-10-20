@@ -79,65 +79,86 @@ void main() {
         daemonName: 'oMLX',
       );
 
-      test('complete: real answer from oMLX through the facade — anchored',
-          () async {
-        final reason = await target.unreachableReason();
-        if (reason != null) return markTestSkipped(reason);
+      test(
+        'complete: real answer from oMLX through the facade — anchored',
+        () async {
+          final reason = await target.unreachableReason();
+          if (reason != null) return markTestSkipped(reason);
 
-        final fixture = _buildLiveFacade(chat: target);
-        final TomBrainSubstrateClient client = fixture.client;
-        addTearDown(fixture.dispose);
-        await client.open(_liveConfig(chatModel: target.model));
+          final fixture = _buildLiveFacade(chat: target);
+          final TomBrainSubstrateClient client = fixture.client;
+          addTearDown(fixture.dispose);
+          await client.open(_liveConfig(chatModel: target.model));
 
-        final report = await client.complete(_assistantCall());
+          final report = await client.complete(_assistantCall());
 
-        expect(report.providerId, 'omlx');
-        expect(report.modelId, isNotEmpty);
-        expect(report.tokensOut, greaterThan(0),
-            reason: 'oMLX must return a non-empty completion');
-        expect(report.anchorHash, AnchorRegistry.currentHash);
-      }, timeout: const Timeout(Duration(minutes: 2)));
+          expect(report.providerId, 'omlx');
+          expect(report.modelId, isNotEmpty);
+          expect(
+            report.tokensOut,
+            greaterThan(0),
+            reason: 'oMLX must return a non-empty completion',
+          );
+          expect(report.anchorHash, AnchorRegistry.currentHash);
+        },
+        timeout: const Timeout(Duration(minutes: 2)),
+      );
 
-      test('completeStream: real streamed answer from oMLX — anchored',
-          () async {
-        final reason = await target.unreachableReason();
-        if (reason != null) return markTestSkipped(reason);
+      test(
+        'completeStream: real streamed answer from oMLX — anchored',
+        () async {
+          final reason = await target.unreachableReason();
+          if (reason != null) return markTestSkipped(reason);
 
-        final fixture = _buildLiveFacade(chat: target);
-        final TomBrainSubstrateClient client = fixture.client;
-        addTearDown(fixture.dispose);
-        await client.open(_liveConfig(chatModel: target.model));
+          final fixture = _buildLiveFacade(chat: target);
+          final TomBrainSubstrateClient client = fixture.client;
+          addTearDown(fixture.dispose);
+          await client.open(_liveConfig(chatModel: target.model));
 
-        final events = await client.completeStream(_assistantCall()).toList();
+          final events = await client.completeStream(_assistantCall()).toList();
 
-        expect(events, isNotEmpty);
-        expect(events.first, isA<LlmStreamStarted>());
+          expect(events, isNotEmpty);
+          expect(events.first, isA<LlmRunStarted>());
 
-        final chunks = events.whereType<LlmStreamChunk>().toList();
-        expect(chunks, isNotEmpty,
-            reason: 'a real streamed completion must emit ≥1 chunk');
-        final streamedText = chunks.map((c) => c.text).join();
-        expect(streamedText.trim(), isNotEmpty,
-            reason: 'oMLX must stream non-empty completion text');
+          final chunks = events.whereType<LlmTextDelta>().toList();
+          expect(
+            chunks,
+            isNotEmpty,
+            reason: 'a real streamed completion must emit ≥1 chunk',
+          );
+          final streamedText = chunks.map((c) => c.text).join();
+          expect(
+            streamedText.trim(),
+            isNotEmpty,
+            reason: 'oMLX must stream non-empty completion text',
+          );
 
-        final last = events.last;
-        if (last is LlmStreamCompleted) {
-          expect(last.report.providerId, 'omlx');
-          expect(last.report.anchorHash, AnchorRegistry.currentHash);
-        } else if (last is LlmStreamFailed) {
-          fail('oMLX stream failed: ${last.failure}');
-        } else {
-          fail('oMLX stream must terminate with LlmStreamCompleted, '
-              'got: $last');
-        }
-      }, timeout: const Timeout(Duration(minutes: 2)));
+          final last = events.last;
+          if (last is LlmRunCompleted) {
+            expect(last.report.providerId, 'omlx');
+            expect(last.report.anchorHash, AnchorRegistry.currentHash);
+          } else if (last is LlmRunFailed) {
+            fail('oMLX stream failed: ${last.failure}');
+          } else {
+            fail(
+              'oMLX stream must terminate with LlmRunCompleted, '
+              'got: $last',
+            );
+          }
+        },
+        timeout: const Timeout(Duration(minutes: 2)),
+      );
 
       test('target resolves to a well-formed http endpoint', () {
         expect(target.baseUri.host, isNotEmpty);
         expect(target.baseUri.hasPort, isTrue);
-        expect(target.baseUri.path, endsWith('/'),
-            reason: 'OpenAI client resolves v1/... relatively — the base '
-                'URI must end with a slash');
+        expect(
+          target.baseUri.path,
+          endsWith('/'),
+          reason:
+              'OpenAI client resolves v1/... relatively — the base '
+              'URI must end with a slash',
+        );
         expect(target.model, isNotEmpty);
       });
     });
@@ -152,43 +173,56 @@ void main() {
         daemonName: 'Ollama',
       );
 
-      test('embed: a real 768-d vector through the facade', () async {
-        final reason = await target.unreachableReason();
-        if (reason != null) return markTestSkipped(reason);
+      test(
+        'embed: a real 768-d vector through the facade',
+        () async {
+          final reason = await target.unreachableReason();
+          if (reason != null) return markTestSkipped(reason);
 
-        final fixture = _buildLiveFacade(embed: target);
-        final TomBrainSubstrateClient client = fixture.client;
-        addTearDown(fixture.dispose);
-        await client.open(_liveConfig(embedModel: target.model));
+          final fixture = _buildLiveFacade(embed: target);
+          final TomBrainSubstrateClient client = fixture.client;
+          addTearDown(fixture.dispose);
+          await client.open(_liveConfig(embedModel: target.model));
 
-        final result = await client.embed('the quick brown fox');
+          final result = await client.embed('the quick brown fox');
 
-        expect(result.vec.dimension, 768,
-            reason: 'nomic-embed-text produces 768-dimensional vectors');
-        expect(result.modelIdentity.providerId, 'ollama');
-        expect(result.modelIdentity.modelId, target.model);
-        expect(result.modelIdentity.dims, 768);
-      }, timeout: const Timeout(Duration(minutes: 2)));
+          expect(
+            result.vec.dimension,
+            768,
+            reason: 'nomic-embed-text produces 768-dimensional vectors',
+          );
+          expect(result.modelIdentity.providerId, 'ollama');
+          expect(result.modelIdentity.modelId, target.model);
+          expect(result.modelIdentity.dims, 768);
+        },
+        timeout: const Timeout(Duration(minutes: 2)),
+      );
 
-      test('embedBatch: each input yields a real 768-d vector', () async {
-        final reason = await target.unreachableReason();
-        if (reason != null) return markTestSkipped(reason);
+      test(
+        'embedBatch: each input yields a real 768-d vector',
+        () async {
+          final reason = await target.unreachableReason();
+          if (reason != null) return markTestSkipped(reason);
 
-        final fixture = _buildLiveFacade(embed: target);
-        final TomBrainSubstrateClient client = fixture.client;
-        addTearDown(fixture.dispose);
-        await client.open(_liveConfig(embedModel: target.model));
+          final fixture = _buildLiveFacade(embed: target);
+          final TomBrainSubstrateClient client = fixture.client;
+          addTearDown(fixture.dispose);
+          await client.open(_liveConfig(embedModel: target.model));
 
-        final results = await client.embedBatch(
-          const <String>['alpha', 'bravo', 'charlie'],
-        );
+          final results = await client.embedBatch(const <String>[
+            'alpha',
+            'bravo',
+            'charlie',
+          ]);
 
-        expect(results, hasLength(3));
-        for (final r in results) {
-          expect(r.vec.dimension, 768);
-          expect(r.modelIdentity.modelId, target.model);
-        }
-      }, timeout: const Timeout(Duration(minutes: 2)));
+          expect(results, hasLength(3));
+          for (final r in results) {
+            expect(r.vec.dimension, 768);
+            expect(r.modelIdentity.modelId, target.model);
+          }
+        },
+        timeout: const Timeout(Duration(minutes: 2)),
+      );
 
       test('target resolves to a well-formed http endpoint', () {
         expect(target.baseUri.host, isNotEmpty);
@@ -246,8 +280,9 @@ class _LiveTarget {
     } on FormatException {
       parsed = Uri.parse(defaultBaseUri);
     }
-    final port =
-        parsed.hasPort ? parsed.port : (parsed.scheme == 'https' ? 443 : 80);
+    final port = parsed.hasPort
+        ? parsed.port
+        : (parsed.scheme == 'https' ? 443 : 80);
     final path = parsed.path.endsWith('/') ? parsed.path : '${parsed.path}/';
     final normalised = parsed.replace(port: port, path: path);
     return _LiveTarget._(
@@ -264,8 +299,11 @@ class _LiveTarget {
     final host = baseUri.host;
     final port = baseUri.port;
     try {
-      final socket =
-          await Socket.connect(host, port, timeout: const Duration(seconds: 2));
+      final socket = await Socket.connect(
+        host,
+        port,
+        timeout: const Duration(seconds: 2),
+      );
       socket.destroy();
       return null;
     } on Object catch (e) {
@@ -362,42 +400,41 @@ _LiveFixture _buildLiveFacade({_LiveTarget? chat, _LiveTarget? embed}) {
 SubstrateConfig _liveConfig({
   String chatModel = 'stub-model',
   String embedModel = 'nomic-embed-text',
-}) =>
-    SubstrateConfig(
-      providers: const <ProviderProfile>[],
-      roleRoutes: <String, List<RoleRouteEntryConfig>>{
-        'assistant_to_user': <RoleRouteEntryConfig>[
-          RoleRouteEntryConfig(providerId: 'omlx', model: chatModel),
-        ],
-      },
-      embedding: EmbeddingChoice(
-        providerId: 'ollama',
-        model: embedModel,
-        dims: 768,
-        normalize: true,
-      ),
-      webSearch: const WebSearchConfig(
-        defaultProvider: 'duckduckgo',
-        providers: <String, WebSearchProviderConfig>{
-          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
-        },
-      ),
-      webFetch: const WebFetchConfig(),
-      mcpClient: const McpClientConfigBlock(),
-    );
+}) => SubstrateConfig(
+  providers: const <ProviderProfile>[],
+  roleRoutes: <String, List<RoleRouteEntryConfig>>{
+    'assistant_to_user': <RoleRouteEntryConfig>[
+      RoleRouteEntryConfig(providerId: 'omlx', model: chatModel),
+    ],
+  },
+  embedding: EmbeddingChoice(
+    providerId: 'ollama',
+    model: embedModel,
+    dims: 768,
+    normalize: true,
+  ),
+  webSearch: const WebSearchConfig(
+    defaultProvider: 'duckduckgo',
+    providers: <String, WebSearchProviderConfig>{
+      'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
+    },
+  ),
+  webFetch: const WebFetchConfig(),
+  mcpClient: const McpClientConfigBlock(),
+);
 
 LlmCall _assistantCall() => LlmCall(
-      roleId: 'assistant_to_user',
-      inputs: const <String, Object?>{
-        'question': 'Reply with the single word: pong.',
-      },
-      budget: Budget(
-        wallClockMs: 90000,
-        tokenSpend: 256,
-        toolCalls: 0,
-        memoryWrites: 0,
-      ),
-    );
+  roleId: 'assistant_to_user',
+  inputs: const <String, Object?>{
+    'question': 'Reply with the single word: pong.',
+  },
+  budget: Budget(
+    wallClockMs: 90000,
+    tokenSpend: 256,
+    toolCalls: 0,
+    memoryWrites: 0,
+  ),
+);
 
 // ─── Collaborator no-ops (web / embed) ────────────────────────────
 
@@ -413,10 +450,8 @@ final class _NoopEmbeddingService implements EmbeddingService {
   EmbeddingModelIdentity get currentModelIdentity => _identity;
 
   @override
-  Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec.zero(_identity.dims),
-        modelIdentity: _identity,
-      );
+  Future<EmbeddingResult> embed(String text) async =>
+      EmbeddingResult(vec: Vec.zero(_identity.dims), modelIdentity: _identity);
 
   @override
   Future<List<EmbeddingResult>> embedBatch(List<String> texts) async {
@@ -446,12 +481,11 @@ final class _NoopWebSearch implements WebSearch {
   Future<WebSearchResult> search(
     String query, {
     WebSearchOptions options = WebSearchOptions.empty,
-  }) async =>
-      WebSearchResult(
-        provider: 'stub-search',
-        query: query,
-        hits: const <SearchHit>[],
-      );
+  }) async => WebSearchResult(
+    provider: 'stub-search',
+    query: query,
+    hits: const <SearchHit>[],
+  );
 
   @override
   void close() {}
@@ -462,13 +496,12 @@ final class _NoopWebFetch implements WebFetch {
   Future<WebFetchResult> fetch(
     Uri url, {
     WebFetchOptions options = WebFetchOptions.empty,
-  }) async =>
-      WebFetchResult(
-        url: url,
-        status: 200,
-        contentType: 'text/plain',
-        text: '',
-      );
+  }) async => WebFetchResult(
+    url: url,
+    status: 200,
+    contentType: 'text/plain',
+    text: '',
+  );
 
   @override
   void close() {}

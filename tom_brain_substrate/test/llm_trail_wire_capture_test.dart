@@ -1,4 +1,4 @@
-// Wire-body capture on `LlmStreamCompleted` (`tom_brain_logging.md` §5.2 /
+// Wire-body capture on `LlmRunCompleted` (`tom_brain_logging.md` §5.2 /
 // §10 step #4).
 //
 // Step #4 (`LlmTrailWriter`) needs the **full wire body** — the anchor
@@ -6,7 +6,7 @@
 // The body lives only as a local `WirePrompt` inside the facade's
 // `_driveCompleteStream`; no event carried it (logging-spec "gap #3").
 //
-// This pins the seam that closes the gap: the terminal `LlmStreamCompleted`
+// This pins the seam that closes the gap: the terminal `LlmRunCompleted`
 // the facade yields now carries a `CapturedWirePrompt` (an api/-layer DTO —
 // `WirePrompt` itself stays confined to `lib/src/llm/` so consumers cannot
 // construct one and bypass the role registry). The DTO mirrors the wire's
@@ -26,41 +26,44 @@ import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 void main() {
-  group('§5.2 — wire body captured on LlmStreamCompleted', () {
+  group('§5.2 — wire body captured on LlmRunCompleted', () {
     test('terminal completed event carries the assembled wire body', () async {
       final f = _buildFacade();
       await f.facade.open(_minimalConfig());
       addTearDown(f.facade.close);
 
-      final events =
-          await f.facade.completeStream(_assistantCall()).toList();
-      final completed = events.last as LlmStreamCompleted;
+      final events = await f.facade.completeStream(_assistantCall()).toList();
+      final completed = events.last as LlmRunCompleted;
 
       final wire = completed.wire;
-      expect(wire, isNotNull,
-          reason: 'the wire body is the §5.2 raw-trail payload');
+      expect(
+        wire,
+        isNotNull,
+        reason: 'the wire body is the §5.2 raw-trail payload',
+      );
       expect(wire!.roleId, 'assistant_to_user');
-      expect(wire.body, isNotEmpty,
-          reason: 'the body is the anchor scaffold the provider saw');
+      expect(
+        wire.body,
+        isNotEmpty,
+        reason: 'the body is the anchor scaffold the provider saw',
+      );
       // The wire the consumer sees is the very prompt the report hashed:
       // its anchorHash must equal the report's (anchor invariant, B.46).
       expect(wire.anchorHash, completed.report.anchorHash);
       expect(wire.templateSha, completed.report.templateSha);
     });
 
-    test('the captured body begins with the dedication anchor block',
-        () async {
+    test('the captured body begins with the dedication anchor block', () async {
       final f = _buildFacade();
       await f.facade.open(_minimalConfig());
       addTearDown(f.facade.close);
 
-      final events =
-          await f.facade.completeStream(_assistantCall()).toList();
-      final wire = (events.last as LlmStreamCompleted).wire!;
+      final events = await f.facade.completeStream(_assistantCall()).toList();
+      final wire = (events.last as LlmRunCompleted).wire!;
 
       // The provider echoes `prompt.combined.length` as tokensIn; the captured
       // body must be that same string (one source of truth, not a re-render).
-      final report = (events.last as LlmStreamCompleted).report;
+      final report = (events.last as LlmRunCompleted).report;
       expect(wire.body.length, report.tokensIn);
     });
   });
@@ -101,42 +104,42 @@ _FacadeFixture _buildFacade() {
 }
 
 LlmCall _assistantCall() => LlmCall(
-      roleId: 'assistant_to_user',
-      inputs: const <String, Object?>{'question': 'hi'},
-      budget: Budget(
-        wallClockMs: 5000,
-        tokenSpend: 1000,
-        toolCalls: 1,
-        memoryWrites: 0,
-      ),
-    );
+  roleId: 'assistant_to_user',
+  inputs: const <String, Object?>{'question': 'hi'},
+  budget: Budget(
+    wallClockMs: 5000,
+    tokenSpend: 1000,
+    toolCalls: 1,
+    memoryWrites: 0,
+  ),
+);
 
 SubstrateConfig _minimalConfig() => SubstrateConfig(
-      providers: const <ProviderProfile>[],
-      roleRoutes: const <String, List<RoleRouteEntryConfig>>{
-        'assistant_to_user': <RoleRouteEntryConfig>[
-          RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
-        ],
-      },
-      embedding: const EmbeddingChoice(
-        providerId: 'stub',
-        model: 'nomic-embed-text',
-        dims: 768,
-        normalize: true,
-      ),
-      webSearch: const WebSearchConfig(
-        defaultProvider: 'duckduckgo',
-        providers: <String, WebSearchProviderConfig>{
-          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
-        },
-      ),
-      webFetch: const WebFetchConfig(),
-      mcpClient: const McpClientConfigBlock(),
-    );
+  providers: const <ProviderProfile>[],
+  roleRoutes: const <String, List<RoleRouteEntryConfig>>{
+    'assistant_to_user': <RoleRouteEntryConfig>[
+      RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
+    ],
+  },
+  embedding: const EmbeddingChoice(
+    providerId: 'stub',
+    model: 'nomic-embed-text',
+    dims: 768,
+    normalize: true,
+  ),
+  webSearch: const WebSearchConfig(
+    defaultProvider: 'duckduckgo',
+    providers: <String, WebSearchProviderConfig>{
+      'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
+    },
+  ),
+  webFetch: const WebFetchConfig(),
+  mcpClient: const McpClientConfigBlock(),
+);
 
 // ─── Test doubles ─────────────────────────────────────────────────
 
-final class _RecordingProvider implements LlmProvider {
+final class _RecordingProvider extends LlmProvider {
   @override
   final String id;
   final String defaultModel;
@@ -145,40 +148,41 @@ final class _RecordingProvider implements LlmProvider {
   _RecordingProvider({required this.id, required this.defaultModel});
 
   @override
-  Future<LlmCallReport> complete(WirePrompt prompt, LlmOptions options) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     return _report(prompt, options);
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     streamInvocations++;
     final modelId = options.model ?? defaultModel;
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
       callId: 'rec-$streamInvocations',
       providerId: id,
       modelId: modelId,
     );
-    yield LlmStreamCompleted(
+    yield LlmRunCompleted(
       callId: 'rec-$streamInvocations',
       report: _report(prompt, options),
     );
   }
 
   LlmCallReport _report(WirePrompt prompt, LlmOptions options) => LlmCallReport(
-        providerId: id,
-        modelId: options.model ?? defaultModel,
-        anchorHash: prompt.anchorHash,
-        promptHash: 'sha256:0',
-        tokensIn: prompt.combined.length,
-        tokensOut: 0,
-        retries: 0,
-        wallClockMs: 0,
-        templateSha: prompt.templateSha,
-        notes: const <String>['recording'],
-      );
+    providerId: id,
+    modelId: options.model ?? defaultModel,
+    anchorHash: prompt.anchorHash,
+    promptHash: 'sha256:0',
+    tokensIn: prompt.combined.length,
+    tokensOut: 0,
+    retries: 0,
+    wallClockMs: 0,
+    templateSha: prompt.templateSha,
+    notes: const <String>['recording'],
+  );
 }
 
 final class _NoopEmbeddingService implements EmbeddingService {
@@ -206,12 +210,11 @@ final class _NoopEmbeddingService implements EmbeddingService {
   Future<EmbeddingProbeResult> probeIdentity({
     EmbeddingModelIdentity? previousIdentity,
     String probeText = 'tom-brain embedding probe',
-  }) async =>
-      EmbeddingProbeResult(
-        currentIdentity: _identity,
-        probeResult: await embed(probeText),
-        driftEvent: null,
-      );
+  }) async => EmbeddingProbeResult(
+    currentIdentity: _identity,
+    probeResult: await embed(probeText),
+    driftEvent: null,
+  );
 
   @override
   Future<void> close() async {}
@@ -222,12 +225,11 @@ final class _NoopWebSearch implements WebSearch {
   Future<WebSearchResult> search(
     String query, {
     WebSearchOptions options = WebSearchOptions.empty,
-  }) async =>
-      WebSearchResult(
-        provider: 'noop',
-        query: query,
-        hits: const <SearchHit>[],
-      );
+  }) async => WebSearchResult(
+    provider: 'noop',
+    query: query,
+    hits: const <SearchHit>[],
+  );
 
   @override
   void close() {}
@@ -238,13 +240,12 @@ final class _NoopWebFetch implements WebFetch {
   Future<WebFetchResult> fetch(
     Uri url, {
     WebFetchOptions options = WebFetchOptions.empty,
-  }) async =>
-      WebFetchResult(
-        url: url,
-        status: 200,
-        contentType: 'text/plain',
-        text: '',
-      );
+  }) async => WebFetchResult(
+    url: url,
+    status: 200,
+    contentType: 'text/plain',
+    text: '',
+  );
 
   @override
   void close() {}

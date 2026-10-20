@@ -300,7 +300,7 @@ final class IdentityResolver {
   ResolvedIdentity _project(IdentityBinding binding) {
     final principal = TomPrincipal(
       user: TomUser(
-        id: binding.numericId,
+        id: binding.numericId.toString(),
         username: binding.username,
         firstname: binding.displayName,
       ),

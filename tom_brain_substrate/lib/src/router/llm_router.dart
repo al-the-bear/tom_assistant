@@ -44,8 +44,8 @@
 //     path).  Streaming is included at B.18 to satisfy the spec § 4.3
 //     invariant that a route chain works for SSE forwarding from day
 //     one of the router; the streaming path uses the same chain walk
-//     and reads the per-call result from `LlmStreamCompleted` /
-//     `LlmStreamFailed`.
+//     and reads the per-call result from `LlmRunCompleted` /
+//     `LlmRunFailed`.
 //   * The role registry (B.21+) — the router does NOT assemble prompts;
 //     it consumes a pre-built [WirePrompt]. The role registry is the
 //     only producer of `WirePrompt`. Callers wishing to dispatch by
@@ -77,7 +77,7 @@ import 'strict_format_adapter.dart';
 ///     [RoleNotFound] per the spec.
 ///   * [dispatchStream] — streaming call. Emits the stream of the first
 ///     route that produced a non-failure terminal result; if every
-///     route fails the stream terminates with a [LlmStreamFailed]
+///     route fails the stream terminates with a [LlmRunFailed]
 ///     wrapping the last classification and a one-line audit summary
 ///     in `notes`.
 ///
@@ -160,11 +160,10 @@ class LlmRouter {
     StrictFormatAdapter? strictFormatAdapter,
     DateTime Function()? now,
     Random? random,
-  })  : classifier = classifier ?? LlmFailureClassifier.shared,
-        strictFormatAdapter =
-            strictFormatAdapter ?? StrictFormatAdapter.shared,
-        now = now ?? DateTime.now,
-        _random = random ?? Random();
+  }) : classifier = classifier ?? LlmFailureClassifier.shared,
+       strictFormatAdapter = strictFormatAdapter ?? StrictFormatAdapter.shared,
+       now = now ?? DateTime.now,
+       _random = random ?? Random();
 
   /// Number of routes currently parked under a cooldown. Useful for
   /// tests and for `SubstrateStats` (B.34+).
@@ -181,10 +180,7 @@ class LlmRouter {
   /// at this instant. The filter step ([_filter]) calls this on every
   /// route before attempting it; it is also the public hook tests assert
   /// against.
-  bool isInCooldown({
-    required String providerId,
-    required String modelId,
-  }) {
+  bool isInCooldown({required String providerId, required String modelId}) {
     final t = now();
     for (final entry in _cooldownUntil.entries) {
       if (!entry.value.isAfter(t)) continue;
@@ -303,12 +299,14 @@ class LlmRouter {
       while (true) {
         if (cancellationToken.isCancelled) {
           lastClass = LlmFailureClass.cancelledByConsumer;
-          attempts.add(RouteAttempt(
-            routeKey: _routeKey(entry),
-            outcome: 'failed:cancelled_by_consumer:cancelled',
-            retries: retries,
-            classification: lastClass,
-          ));
+          attempts.add(
+            RouteAttempt(
+              routeKey: _routeKey(entry),
+              outcome: 'failed:cancelled_by_consumer:cancelled',
+              retries: retries,
+              classification: lastClass,
+            ),
+          );
           throw NoRouteAvailable(
             roleId: roleId,
             attempts: List<RouteAttempt>.unmodifiable(attempts),
@@ -317,14 +315,17 @@ class LlmRouter {
         }
 
         try {
-          final report =
-              await provider.complete(effectivePrompt, resolvedOptions);
-          attempts.add(RouteAttempt(
-            routeKey: _routeKey(entry),
-            outcome: 'succeeded',
-            retries: retries,
-            classification: null,
-          ));
+          final report = await provider.complete(
+            LlmRequest(prompt: effectivePrompt, options: resolvedOptions),
+          );
+          attempts.add(
+            RouteAttempt(
+              routeKey: _routeKey(entry),
+              outcome: 'succeeded',
+              retries: retries,
+              classification: null,
+            ),
+          );
           return _foldRetries(report, retries);
         } catch (e) {
           final cls = classifier.classify(e);
@@ -332,12 +333,15 @@ class LlmRouter {
           final action = cls.routerAction;
 
           if (cls == LlmFailureClass.contextOverflow) {
-            attempts.add(RouteAttempt(
-              routeKey: _routeKey(entry),
-              outcome: 'failed:context_overflow:${textPreview('$e', limit: 117, ellipsis: '...')}',
-              retries: retries,
-              classification: cls,
-            ));
+            attempts.add(
+              RouteAttempt(
+                routeKey: _routeKey(entry),
+                outcome:
+                    'failed:context_overflow:${textPreview('$e', limit: 117, ellipsis: '...')}',
+                retries: retries,
+                classification: cls,
+              ),
+            );
             throw ContextOverflowError(
               roleId: roleId,
               providerId: entry.providerId,
@@ -348,12 +352,15 @@ class LlmRouter {
           }
 
           if (cls == LlmFailureClass.cancelledByConsumer) {
-            attempts.add(RouteAttempt(
-              routeKey: _routeKey(entry),
-              outcome: 'failed:cancelled_by_consumer:${textPreview('$e', limit: 117, ellipsis: '...')}',
-              retries: retries,
-              classification: cls,
-            ));
+            attempts.add(
+              RouteAttempt(
+                routeKey: _routeKey(entry),
+                outcome:
+                    'failed:cancelled_by_consumer:${textPreview('$e', limit: 117, ellipsis: '...')}',
+                retries: retries,
+                classification: cls,
+              ),
+            );
             throw NoRouteAvailable(
               roleId: roleId,
               attempts: List<RouteAttempt>.unmodifiable(attempts),
@@ -378,12 +385,15 @@ class LlmRouter {
 
           // Rotate. Apply cooldown / removal per action.
           _applyAction(action, cls, entry);
-          attempts.add(RouteAttempt(
-            routeKey: _routeKey(entry),
-            outcome: 'failed:${cls.code}:${textPreview('$e', limit: 117, ellipsis: '...')}',
-            retries: retries,
-            classification: cls,
-          ));
+          attempts.add(
+            RouteAttempt(
+              routeKey: _routeKey(entry),
+              outcome:
+                  'failed:${cls.code}:${textPreview('$e', limit: 117, ellipsis: '...')}',
+              retries: retries,
+              classification: cls,
+            ),
+          );
           break;
         }
       }
@@ -405,22 +415,22 @@ class LlmRouter {
   /// The router buffers the upstream stream until it sees the terminal
   /// event:
   ///
-  ///   * On `LlmStreamCompleted` — the router forwards every observed
+  ///   * On `LlmRunCompleted` — the router forwards every observed
   ///     event (including the `Started` and any `Chunk` / `ToolCallProposed`)
   ///     to the returned stream and terminates with the same
   ///     `Completed` event, with `report.retries` adjusted to include
   ///     any router-level retries on the winning route.
   ///
-  ///   * On `LlmStreamFailed` — the router classifies the failure,
+  ///   * On `LlmRunFailed` — the router classifies the failure,
   ///     decides retry / rotate, and either re-issues the chain step
   ///     (retry) or moves to the next entry (rotate). Forwarded events
   ///     from the failed attempt are *not* relayed (the caller never
   ///     sees a half-stream that gave up).
   ///
-  /// On chain exhaustion the stream emits a single [LlmStreamFailed]
+  /// On chain exhaustion the stream emits a single [LlmRunFailed]
   /// carrying the classifier's last class and a synthetic report whose
   /// `notes` summarises the chain audit trail.
-  Stream<LlmStreamEvent> dispatchStream({
+  Stream<LlmEvent> dispatchStream({
     required String roleId,
     required WirePrompt prompt,
     required LlmOptions options,
@@ -455,7 +465,7 @@ class LlmRouter {
   ///
   /// Throws [EmptyRouteChain] if [chain] is empty (a route name that resolved
   /// to zero entries — a config error).
-  Stream<LlmStreamEvent> dispatchStreamOverChain({
+  Stream<LlmEvent> dispatchStreamOverChain({
     required String roleId,
     required List<RouteEntry> chain,
     required WirePrompt prompt,
@@ -476,7 +486,7 @@ class LlmRouter {
     );
   }
 
-  Stream<LlmStreamEvent> _dispatchStreamOverChain({
+  Stream<LlmEvent> _dispatchStreamOverChain({
     required String roleId,
     required List<RouteEntry> chain,
     required WirePrompt prompt,
@@ -528,12 +538,14 @@ class LlmRouter {
 
       while (true) {
         if (cancellationToken.isCancelled) {
-          attempts.add(RouteAttempt(
-            routeKey: _routeKey(entry),
-            outcome: 'failed:cancelled_by_consumer:cancelled',
-            retries: retries,
-            classification: LlmFailureClass.cancelledByConsumer,
-          ));
+          attempts.add(
+            RouteAttempt(
+              routeKey: _routeKey(entry),
+              outcome: 'failed:cancelled_by_consumer:cancelled',
+              retries: retries,
+              classification: LlmFailureClass.cancelledByConsumer,
+            ),
+          );
           yield _exhaustedFailedEvent(
             roleId: roleId,
             attempts: attempts,
@@ -544,28 +556,27 @@ class LlmRouter {
           return;
         }
 
-        final buffered = <LlmStreamEvent>[];
-        LlmStreamFailed? terminalFail;
-        LlmStreamCompleted? terminalDone;
+        final buffered = <LlmEvent>[];
+        LlmRunFailed? terminalFail;
+        LlmRunCompleted? terminalDone;
 
         try {
-          await for (final ev in provider.completeStream(
-            effectivePrompt,
-            resolvedOptions,
+          await for (final ev in provider.run(
+            LlmRequest(prompt: effectivePrompt, options: resolvedOptions),
           )) {
-            if (ev is LlmStreamCompleted) {
+            if (ev is LlmRunCompleted) {
               terminalDone = ev;
               buffered.add(ev);
               break;
             }
-            if (ev is LlmStreamFailed) {
+            if (ev is LlmRunFailed) {
               terminalFail = ev;
               break;
             }
             buffered.add(ev);
           }
         } catch (e) {
-          terminalFail = LlmStreamFailed(
+          terminalFail = LlmRunFailed(
             callId: 'router-${entry.providerId}-${entry.model}',
             failure: classifier.wrap(e),
             report: _syntheticReport(
@@ -586,12 +597,14 @@ class LlmRouter {
             yield ev;
           }
           final report = terminalDone.report;
-          attempts.add(RouteAttempt(
-            routeKey: _routeKey(entry),
-            outcome: 'succeeded',
-            retries: retries,
-          ));
-          yield LlmStreamCompleted(
+          attempts.add(
+            RouteAttempt(
+              routeKey: _routeKey(entry),
+              outcome: 'succeeded',
+              retries: retries,
+            ),
+          );
+          yield LlmRunCompleted(
             callId: terminalDone.callId,
             report: _foldRetries(report, retries),
           );
@@ -605,13 +618,15 @@ class LlmRouter {
         final action = cls.routerAction;
 
         if (cls == LlmFailureClass.contextOverflow) {
-          attempts.add(RouteAttempt(
-            routeKey: _routeKey(entry),
-            outcome: 'failed:context_overflow:${fail.failure.message}',
-            retries: retries,
-            classification: cls,
-          ));
-          yield LlmStreamFailed(
+          attempts.add(
+            RouteAttempt(
+              routeKey: _routeKey(entry),
+              outcome: 'failed:context_overflow:${fail.failure.message}',
+              retries: retries,
+              classification: cls,
+            ),
+          );
+          yield LlmRunFailed(
             callId: fail.callId,
             failure: LlmFailure(
               classCode: cls.code,
@@ -624,13 +639,15 @@ class LlmRouter {
         }
 
         if (cls == LlmFailureClass.cancelledByConsumer) {
-          attempts.add(RouteAttempt(
-            routeKey: _routeKey(entry),
-            outcome: 'failed:cancelled_by_consumer:${fail.failure.message}',
-            retries: retries,
-            classification: cls,
-          ));
-          yield LlmStreamFailed(
+          attempts.add(
+            RouteAttempt(
+              routeKey: _routeKey(entry),
+              outcome: 'failed:cancelled_by_consumer:${fail.failure.message}',
+              retries: retries,
+              classification: cls,
+            ),
+          );
+          yield LlmRunFailed(
             callId: fail.callId,
             failure: fail.failure,
             report: fail.report,
@@ -654,12 +671,14 @@ class LlmRouter {
         }
 
         _applyAction(action, cls, entry);
-        attempts.add(RouteAttempt(
-          routeKey: _routeKey(entry),
-          outcome: 'failed:${cls.code}:${fail.failure.message}',
-          retries: retries,
-          classification: cls,
-        ));
+        attempts.add(
+          RouteAttempt(
+            routeKey: _routeKey(entry),
+            outcome: 'failed:${cls.code}:${fail.failure.message}',
+            retries: retries,
+            classification: cls,
+          ),
+        );
         break;
       }
     }
@@ -675,8 +694,9 @@ class LlmRouter {
       roleId: roleId,
       attempts: attempts,
       lastClass: lastClass,
-      provider:
-          attributedEntry == null ? null : providers[attributedEntry.providerId],
+      provider: attributedEntry == null
+          ? null
+          : providers[attributedEntry.providerId],
       entry: attributedEntry,
     );
   }
@@ -696,28 +716,34 @@ class LlmRouter {
   }) {
     final provider = providers[entry.providerId];
     if (provider == null) {
-      attempts.add(RouteAttempt(
-        routeKey: _routeKey(entry),
-        outcome: 'skipped:no_provider',
-        retries: 0,
-      ));
+      attempts.add(
+        RouteAttempt(
+          routeKey: _routeKey(entry),
+          outcome: 'skipped:no_provider',
+          retries: 0,
+        ),
+      );
       return 'no_provider';
     }
     if (isInCooldown(providerId: entry.providerId, modelId: entry.model)) {
-      attempts.add(RouteAttempt(
-        routeKey: _routeKey(entry),
-        outcome: 'skipped:cooldown',
-        retries: 0,
-      ));
+      attempts.add(
+        RouteAttempt(
+          routeKey: _routeKey(entry),
+          outcome: 'skipped:cooldown',
+          retries: 0,
+        ),
+      );
       return 'cooldown';
     }
     final maxIn = entry.conditions.maxInputTokens;
     if (maxIn != null && inputTokensHint != null && inputTokensHint > maxIn) {
-      attempts.add(RouteAttempt(
-        routeKey: _routeKey(entry),
-        outcome: 'skipped:conditions:max_input_tokens',
-        retries: 0,
-      ));
+      attempts.add(
+        RouteAttempt(
+          routeKey: _routeKey(entry),
+          outcome: 'skipped:conditions:max_input_tokens',
+          retries: 0,
+        ),
+      );
       return 'conditions';
     }
     return null;
@@ -792,11 +818,13 @@ class LlmRouter {
     List<RouteAttempt> attempts,
   ) {
     if (overallWatch.elapsedMilliseconds < budget.wallClockMs) return false;
-    attempts.add(RouteAttempt(
-      routeKey: _routeKey(entry),
-      outcome: 'skipped:budget_wall_clock',
-      retries: 0,
-    ));
+    attempts.add(
+      RouteAttempt(
+        routeKey: _routeKey(entry),
+        outcome: 'skipped:budget_wall_clock',
+        retries: 0,
+      ),
+    );
     return true;
   }
 
@@ -813,7 +841,9 @@ class LlmRouter {
             entry.providerId,
             entry.model,
             cls.code,
-          )] = now().add(dur);
+          )] = now().add(
+            dur,
+          );
         }
       case LlmRouterAction.removeCredential:
         // Provider-wide park.
@@ -826,7 +856,9 @@ class LlmRouter {
           entry.providerId,
           entry.model,
           cls.code,
-        )] = now().add(dur);
+        )] = now().add(
+          dur,
+        );
       case LlmRouterAction.retryThenRotate:
         // No cooldown after a retry-exhausted rotation. The route stays
         // dispatchable on the next call; only the in-route retry budget
@@ -858,7 +890,7 @@ class LlmRouter {
     return options.copyWith(model: routeModel);
   }
 
-  LlmStreamFailed _exhaustedFailedEvent({
+  LlmRunFailed _exhaustedFailedEvent({
     required String roleId,
     required List<RouteAttempt> attempts,
     required LlmFailureClass? lastClass,
@@ -867,7 +899,7 @@ class LlmRouter {
   }) {
     final cls = lastClass ?? LlmFailureClass.unknown;
     final summary = attempts.map((a) => a.outcome).join(' | ');
-    return LlmStreamFailed(
+    return LlmRunFailed(
       callId: 'router-exhausted-$roleId',
       failure: LlmFailure(
         classCode: cls.code,
@@ -934,15 +966,12 @@ class _CooldownKey {
   const _CooldownKey._(this.providerId, this.modelId, this.classCode);
 
   /// Per-route, per-class cooldown.
-  const _CooldownKey.route(
-    String providerId,
-    String modelId,
-    String classCode,
-  ) : this._(providerId, modelId, classCode);
+  const _CooldownKey.route(String providerId, String modelId, String classCode)
+    : this._(providerId, modelId, classCode);
 
   /// Provider-wide, per-class cooldown (credential-scoped).
   const _CooldownKey.provider(String providerId, String classCode)
-      : this._(providerId, null, classCode);
+    : this._(providerId, null, classCode);
 
   /// Whether this key covers the `(providerId, modelId)` route. A
   /// provider-wide key ([modelId] null) covers every model of the

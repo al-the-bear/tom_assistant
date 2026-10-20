@@ -85,24 +85,30 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'passthrough_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'passthrough_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
   group('d55-1 the relay streams the upstream completion back', () {
-    test('the run is accepted and surfaces the completion as `answer`',
-        () async {
-      substrate.reply = 'The capital of France is Paris.';
+    test(
+      'the run is accepted and surfaces the completion as `answer`',
+      () async {
+        substrate.reply = 'The capital of France is Paris.';
 
-      final outcome = await relay('what is the capital of France?');
+        final outcome = await relay('what is the capital of France?');
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'),
-          'The capital of France is Paris.');
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(
+          outcome.result!.output<String>('answer'),
+          'The capital of France is Paris.',
+        );
+      },
+    );
   });
 
   group('d55-2 exactly one sub.run, no extra orchestration', () {
@@ -118,35 +124,46 @@ void main() {
   });
 
   group('d55-3 the body persists nothing (no memory writes)', () {
-    test('the only persisted nodes are the recorder ProcedureRun markers',
-        () async {
-      substrate.reply = 'ok';
+    test(
+      'the only persisted nodes are the recorder ProcedureRun markers',
+      () async {
+        substrate.reply = 'ok';
 
-      await relay('relay this verbatim');
+        await relay('relay this verbatim');
 
-      // The run recorder persists the start + final ProcedureRun markers
-      // (Q-C.31.1); the body itself writes no Event / Conclusion / any node.
-      // Anything other than ProcedureRun in the persisted set would be a body
-      // write — the no-memory guarantee broken.
-      expect(memory.persistedTypeNames.toSet(), <String>{procedureRunNodeType});
-    });
+        // The run recorder persists the start + final ProcedureRun markers
+        // (Q-C.31.1); the body itself writes no Event / Conclusion / any node.
+        // Anything other than ProcedureRun in the persisted set would be a body
+        // write — the no-memory guarantee broken.
+        expect(memory.persistedTypeNames.toSet(), <String>{
+          procedureRunNodeType,
+        });
+      },
+    );
   });
 
   group('d55-4 the no-memory guarantee is structural (missing import)', () {
     test('the shipped script does not import the memory bridge', () async {
-      final source =
-          File('scripts/system/passthrough_v1.dart').readAsStringSync();
+      final source = File(
+        'scripts/system/passthrough_v1.dart',
+      ).readAsStringSync();
 
       // The sandbox enforces "no mem.*" by the *absence* of this import — pin it
       // so a future edit that re-adds memory access trips here, not production.
       // Match an actual `import …memory_bridge.dart…` statement, not a mere
       // mention of the file name in a comment (the doc header explains the
       // deliberate omission).
-      final importsMemoryBridge = RegExp(r"^\s*import\s+[^\n]*memory_bridge\.dart",
-          multiLine: true);
-      expect(importsMemoryBridge.hasMatch(source), isFalse,
-          reason: 'passthrough_v1 must never import the memory bridge (SC-3); '
-              'the missing import is the sandbox-enforced no-memory guarantee.');
+      final importsMemoryBridge = RegExp(
+        r"^\s*import\s+[^\n]*memory_bridge\.dart",
+        multiLine: true,
+      );
+      expect(
+        importsMemoryBridge.hasMatch(source),
+        isFalse,
+        reason:
+            'passthrough_v1 must never import the memory bridge (SC-3); '
+            'the missing import is the sandbox-enforced no-memory guarantee.',
+      );
     });
   });
 }
@@ -163,12 +180,12 @@ class _RelaySubstrate implements TomBrainSubstrateClient {
   String reply = 'ok';
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     lastCall = call;
     callCount++;
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: reply),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(reply),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -186,18 +203,17 @@ class _RelaySubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recorder-only `TomBrainMemory` ────────────────────────────────
@@ -284,12 +300,10 @@ class _RecorderMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -339,6 +353,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

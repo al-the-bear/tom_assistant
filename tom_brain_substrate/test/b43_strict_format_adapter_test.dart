@@ -67,8 +67,10 @@ void main() {
           'answer': <String, Object?>{'type': 'string'},
         },
       };
-      final reinforced =
-          adapter.reinforce(_prompt('body'), responseFormat: schema);
+      final reinforced = adapter.reinforce(
+        _prompt('body'),
+        responseFormat: schema,
+      );
 
       expect(reinforced.combined, contains('conforming to this schema'));
       expect(reinforced.combined, contains(jsonEncode(schema)));
@@ -163,12 +165,14 @@ void main() {
       await router.dispatch(
         roleId: 'r',
         prompt: _prompt('original body'),
-        options: const LlmOptions(responseFormat: <String, Object?>{
-          'type': 'object',
-          'properties': <String, Object?>{
-            'answer': <String, Object?>{'type': 'string'},
+        options: const LlmOptions(
+          responseFormat: <String, Object?>{
+            'type': 'object',
+            'properties': <String, Object?>{
+              'answer': <String, Object?>{'type': 'string'},
+            },
           },
-        }),
+        ),
         budget: _bigBudget,
       );
 
@@ -259,7 +263,7 @@ void main() {
           )
           .toList();
 
-      expect(events.last, isA<LlmStreamCompleted>());
+      expect(events.last, isA<LlmRunCompleted>());
       expect(failing.streamCallCount, 2);
       expect(failing.bodies[0], 'original body');
       expect(
@@ -273,11 +277,11 @@ void main() {
 // ─── Test helpers ────────────────────────────────────────────────
 
 WirePrompt _prompt(String body) => WirePrompt(
-      system: body,
-      anchorHash: 'sha256:anchor',
-      roleId: 'analyser',
-      templateSha: 'sha-abc',
-    );
+  system: body,
+  anchorHash: 'sha256:anchor',
+  roleId: 'analyser',
+  templateSha: 'sha-abc',
+);
 
 final Budget _bigBudget = Budget(
   wallClockMs: 60000,
@@ -293,7 +297,7 @@ final Budget _bigBudget = Budget(
 /// Recording the bodies lets the format-adapter tests prove that the
 /// *second* attempt carried the reinforcement block while the *first*
 /// carried the verbatim prompt.
-class _RecordingFailureProvider implements LlmProvider {
+class _RecordingFailureProvider extends LlmProvider {
   @override
   final String id;
   final String defaultModel;
@@ -314,10 +318,9 @@ class _RecordingFailureProvider implements LlmProvider {
   }) : _exceptions = List<Object>.of(exceptions);
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     callCount++;
     bodies.add(prompt.combined);
     if (_exceptions.isNotEmpty) {
@@ -338,21 +341,20 @@ class _RecordingFailureProvider implements LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     streamCallCount++;
     bodies.add(prompt.combined);
     final callId = 'rfp-$id-$streamCallCount';
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
       callId: callId,
       providerId: id,
       modelId: options.model ?? defaultModel,
     );
     if (_exceptions.isNotEmpty) {
       final ex = _exceptions.removeAt(0);
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: callId,
         failure: LlmFailure(
           classCode: 'unknown',
@@ -372,7 +374,7 @@ class _RecordingFailureProvider implements LlmProvider {
       );
       return;
     }
-    yield LlmStreamCompleted(
+    yield LlmRunCompleted(
       callId: callId,
       report: LlmCallReport(
         providerId: id,

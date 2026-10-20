@@ -1,6 +1,6 @@
 // Reconstructs the §3.4 [Configuration] that *actually ran* for a turn from the
 // LLM-call trail — never from the YAML. Each `llm` node in the run-tree links to
-// its authoritative `llm/<role>/<stem>.raw.json` dump (`LlmTrailRecord`,
+// its authoritative `llm/<role>/<stem>.raw.json` dump (`LlmCallTrailRecord`,
 // `tom_brain_logging.md` § 5.2); reading the distinct (role, provider, model,
 // profile) tuples off those dumps is the only honest answer to "what config was
 // in effect" (§ 3.4 / § 4.3). A free-tier rotation mid-turn therefore shows both
@@ -39,20 +39,24 @@ Configuration buildConfiguration({
       if (!raw.existsSync()) continue;
       final decoded = jsonDecode(raw.readAsStringSync());
       if (decoded is! Map<String, Object?>) continue;
-      entries.add(ConfigEntry(
-        role: decoded['callType'] as String? ?? llm.callType,
-        provider: decoded['provider'] as String? ?? 'unknown',
-        model: decoded['model'] as String? ?? 'unknown',
-        profile: decoded['profile'] as String? ??
-            decoded['memoryProfile'] as String?,
-        temperature: (decoded['temperature'] as num?)?.toDouble(),
-        maxOutputTokens: decoded['maxOutputTokens'] as int?,
-        stopSequences: <String>[
-          for (final s in (decoded['stopSequences'] as List<Object?>? ??
-              const <Object?>[]))
-            s as String,
-        ],
-      ));
+      entries.add(
+        ConfigEntry(
+          role: decoded['callType'] as String? ?? llm.callType,
+          provider: decoded['provider'] as String? ?? 'unknown',
+          model: decoded['model'] as String? ?? 'unknown',
+          profile:
+              decoded['profile'] as String? ??
+              decoded['memoryProfile'] as String?,
+          temperature: (decoded['temperature'] as num?)?.toDouble(),
+          maxOutputTokens: decoded['maxOutputTokens'] as int?,
+          stopSequences: <String>[
+            for (final s
+                in (decoded['stopSequences'] as List<Object?>? ??
+                    const <Object?>[]))
+              s as String,
+          ],
+        ),
+      );
     }
   }
   return Configuration(entries: entries.toList(), memoryProfile: memoryProfile);

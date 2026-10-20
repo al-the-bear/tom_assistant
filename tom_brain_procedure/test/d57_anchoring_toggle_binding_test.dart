@@ -54,8 +54,9 @@ void main() {
       );
       return ProcedureEngine(
         resolver: ProcedureResolver(<LoadedProcedure>[]),
-        procedureReloadStore:
-            DiskProcedureStore(systemDir: Directory('scripts/system')),
+        procedureReloadStore: DiskProcedureStore(
+          systemDir: Directory('scripts/system'),
+        ),
         memory: memory,
         memoryBridge: MemoryBridge(memory),
         substrateBridge: substrateBridge,
@@ -64,23 +65,25 @@ void main() {
     }
 
     ResolvedProfile passthrough({bool anchored = true}) => ResolvedProfile(
-          id: 'r',
-          mode: ProfileMode.passthrough,
-          entryProcedure: 'passthrough_v1',
-          role: 'assistant_to_user',
-          anchored: anchored,
-        );
+      id: 'r',
+      mode: ProfileMode.passthrough,
+      entryProcedure: 'passthrough_v1',
+      role: 'assistant_to_user',
+      anchored: anchored,
+    );
 
     test('a default profile stamps anchored:true on the call', () async {
       final prompts = StubPromptResolver(role: 'assistant_to_user');
       final engine = engineFor(prompts);
 
       await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'passthrough_v1',
-            arguments: const <String, Object?>{'text': 'hi'},
-            profile: passthrough(),
-          ))
+          .invoke(
+            ProcedureInvocation(
+              procedureId: 'passthrough_v1',
+              arguments: const <String, Object?>{'text': 'hi'},
+              profile: passthrough(),
+            ),
+          )
           .outcome;
 
       expect(substrate.lastCall!.anchored, isTrue);
@@ -91,11 +94,13 @@ void main() {
       final engine = engineFor(prompts);
 
       await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'passthrough_v1',
-            arguments: const <String, Object?>{'text': 'hi'},
-            profile: passthrough(anchored: false),
-          ))
+          .invoke(
+            ProcedureInvocation(
+              procedureId: 'passthrough_v1',
+              arguments: const <String, Object?>{'text': 'hi'},
+              profile: passthrough(anchored: false),
+            ),
+          )
           .outcome;
 
       expect(substrate.lastCall!.anchored, isFalse);
@@ -106,10 +111,12 @@ void main() {
       final engine = engineFor(prompts);
 
       await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'passthrough_v1',
-            arguments: const <String, Object?>{'text': 'hi'},
-          ))
+          .invoke(
+            ProcedureInvocation(
+              procedureId: 'passthrough_v1',
+              arguments: const <String, Object?>{'text': 'hi'},
+            ),
+          )
           .outcome;
 
       expect(substrate.lastCall!.anchored, isTrue);
@@ -128,12 +135,12 @@ class _Substrate implements TomBrainSubstrateClient {
   String reply = 'ok';
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     lastCall = call;
     callCount++;
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: reply),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(reply),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -151,18 +158,17 @@ class _Substrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recorder-only `TomBrainMemory` ────────────────────────────────
@@ -241,12 +247,10 @@ class _Memory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -296,6 +300,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

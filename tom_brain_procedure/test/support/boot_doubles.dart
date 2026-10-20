@@ -81,14 +81,14 @@ class BootMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -164,12 +164,10 @@ class BootMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// In-process `StackApi` for the booted-dispatcher suites.
@@ -220,8 +218,7 @@ class InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// Prompt-answering substrate for the booted-dispatcher suites.
@@ -269,14 +266,15 @@ class BootSubstrate implements TomBrainSubstrateClient {
   Future<void> close() async {}
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     // Thinking lane self-critique: ACCEPT on the first pass so the recursive
     // loop exits after one iteration. Never invoked by the linear answer lanes.
     if (call.roleId == 'evaluator') {
       return _terminal('ACCEPT');
     }
     final rawPrompt = call.inputs['prompt'] as String?;
-    final isConfirmation = call.roleId == 'assistant_to_user' &&
+    final isConfirmation =
+        call.roleId == 'assistant_to_user' &&
         rawPrompt != null &&
         rawPrompt.trimLeft().startsWith(_confirmationSentinel);
     // The confirmation call terminates the loop with `DONE`; only the answer
@@ -286,10 +284,9 @@ class BootSubstrate implements TomBrainSubstrateClient {
     }
     lastPrompt = rawPrompt;
     answeredUnderSessionMode = sessionMode;
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      LlmRunCompleted(
         callId: 'c',
         wire: emitWire
             ? CapturedWirePrompt(
@@ -305,24 +302,23 @@ class BootSubstrate implements TomBrainSubstrateClient {
 
   /// A one-chunk completion carrying [text] — the short role-keyed replies
   /// (`DONE` / `ACCEPT`) that terminate a loop without contributing answer text.
-  Stream<LlmStreamEvent> _terminal(String text) =>
-      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        LlmStreamChunk(callId: 'c', text: text),
-        const LlmStreamCompleted(callId: 'c', report: _report),
+  Stream<LlmEvent> _terminal(String text) =>
+      Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        LlmTextDelta(text),
+        const LlmRunCompleted(callId: 'c', report: _report),
       ]);
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -39,28 +39,28 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
         LlmCall,
         LlmCallReport,
         LlmFailure,
-        LlmStreamChunk,
-        LlmStreamCompleted,
-        LlmStreamEvent,
-        LlmStreamFailed,
-        LlmStreamStarted,
+        LlmTextDelta,
+        LlmRunCompleted,
+        LlmEvent,
+        LlmRunFailed,
+        LlmRunStarted,
         TomBrainSubstrateClient;
 import 'package:test/test.dart';
 
 LlmCallReport _report() => const LlmCallReport(
-      providerId: 'fake',
-      modelId: 'm',
-      anchorHash: 'a',
-      promptHash: 'p',
-      tokensIn: 0,
-      tokensOut: 0,
-      retries: 0,
-      wallClockMs: 0,
-    );
+  providerId: 'fake',
+  modelId: 'm',
+  anchorHash: 'a',
+  promptHash: 'p',
+  tokensIn: 0,
+  tokensOut: 0,
+  retries: 0,
+  wallClockMs: 0,
+);
 
 /// A fake substrate that scripts the `profile_selector` completion: either a
-/// list of chunk texts terminated by `LlmStreamCompleted`, or — when [failure]
-/// is set — a terminal `LlmStreamFailed`, or — when [closeWithoutTerminal] is
+/// list of chunk texts terminated by `LlmRunCompleted`, or — when [failure]
+/// is set — a terminal `LlmRunFailed`, or — when [closeWithoutTerminal] is
 /// set — a stream that ends with neither (a contract violation). Records the
 /// last `LlmCall` so the role + inputs can be asserted. Every other
 /// `TomBrainSubstrateClient` member throws (the selector touches none of them).
@@ -78,22 +78,18 @@ final class _ScriptedSubstrate implements TomBrainSubstrateClient {
   LlmCall? lastCall;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) async* {
+  Stream<LlmEvent> completeStream(LlmCall call) async* {
     lastCall = call;
-    yield const LlmStreamStarted(
-      callId: 'c1',
-      providerId: 'fake',
-      modelId: 'm',
-    );
+    yield const LlmRunStarted(callId: 'c1', providerId: 'fake', modelId: 'm');
     for (final chunk in chunks) {
-      yield LlmStreamChunk(callId: 'c1', text: chunk);
+      yield LlmTextDelta(chunk);
     }
     if (closeWithoutTerminal) return;
     if (failure != null) {
-      yield LlmStreamFailed(callId: 'c1', failure: failure!, report: _report());
+      yield LlmRunFailed(callId: 'c1', failure: failure!, report: _report());
       return;
     }
-    yield LlmStreamCompleted(callId: 'c1', report: _report());
+    yield LlmRunCompleted(callId: 'c1', report: _report());
   }
 
   @override
@@ -103,18 +99,16 @@ final class _ScriptedSubstrate implements TomBrainSubstrateClient {
 SubstrateMemoryProfileSelector _selectorOver(
   _ScriptedSubstrate substrate, {
   List<String> profiles = const <String>['work', 'home'],
-}) =>
-    SubstrateMemoryProfileSelector(
-      substrate: substrate,
-      knownProfiles: () async => profiles,
-    );
+}) => SubstrateMemoryProfileSelector(
+  substrate: substrate,
+  knownProfiles: () async => profiles,
+);
 
 Future<ProfileSelection> _select(
   SubstrateMemoryProfileSelector selector, {
   String prompt = 'help me at the office',
   List<HistoryTurn> history = const <HistoryTurn>[],
-}) =>
-    selector.select(prompt: prompt, history: history);
+}) => selector.select(prompt: prompt, history: history);
 
 void main() {
   group('a well-formed pick returns a ProfileSelection', () {
@@ -144,44 +138,48 @@ void main() {
       expect(selection.isKnownProfile, isTrue);
     });
 
-    test('a pick of a name not in the known list reports isKnownProfile false',
-        () async {
-      final substrate = _ScriptedSubstrate(
-        chunks: <String>['{"profile": "nope", "confidence": 0.95}'],
-      );
-      final selection = await _select(
-        _selectorOver(substrate, profiles: <String>['work', 'home']),
-      );
+    test(
+      'a pick of a name not in the known list reports isKnownProfile false',
+      () async {
+        final substrate = _ScriptedSubstrate(
+          chunks: <String>['{"profile": "nope", "confidence": 0.95}'],
+        );
+        final selection = await _select(
+          _selectorOver(substrate, profiles: <String>['work', 'home']),
+        );
 
-      // The selector still returns the pick — mapping an off-list name to a
-      // fall-back is the manager's job, signalled by this flag.
-      expect(selection.profile, 'nope');
-      expect(selection.isKnownProfile, isFalse);
-    });
+        // The selector still returns the pick — mapping an off-list name to a
+        // fall-back is the manager's job, signalled by this flag.
+        expect(selection.profile, 'nope');
+        expect(selection.isKnownProfile, isFalse);
+      },
+    );
   });
 
   group('the LlmCall the selector builds', () {
-    test('carries the profile_selector role, anchored, with joined inputs',
-        () async {
-      final substrate = _ScriptedSubstrate(
-        chunks: <String>['{"profile": "work", "confidence": 0.9}'],
-      );
-      await _select(
-        _selectorOver(substrate, profiles: <String>['work', 'home']),
-        prompt: 'the prompt',
-        history: <HistoryTurn>[
-          const HistoryTurn(userPrompt: 'hi', brainAnswer: 'hello'),
-        ],
-      );
+    test(
+      'carries the profile_selector role, anchored, with joined inputs',
+      () async {
+        final substrate = _ScriptedSubstrate(
+          chunks: <String>['{"profile": "work", "confidence": 0.9}'],
+        );
+        await _select(
+          _selectorOver(substrate, profiles: <String>['work', 'home']),
+          prompt: 'the prompt',
+          history: <HistoryTurn>[
+            const HistoryTurn(userPrompt: 'hi', brainAnswer: 'hello'),
+          ],
+        );
 
-      final call = substrate.lastCall!;
-      expect(call.roleId, 'profile_selector');
-      expect(call.anchored, isTrue);
-      expect(call.inputs['prompt'], 'the prompt');
-      expect(call.inputs['knownProfiles'], 'work, home');
-      expect(call.inputs['history'], contains('user: hi'));
-      expect(call.inputs['history'], contains('assistant: hello'));
-    });
+        final call = substrate.lastCall!;
+        expect(call.roleId, 'profile_selector');
+        expect(call.anchored, isTrue);
+        expect(call.inputs['prompt'], 'the prompt');
+        expect(call.inputs['knownProfiles'], 'work, home');
+        expect(call.inputs['history'], contains('user: hi'));
+        expect(call.inputs['history'], contains('assistant: hello'));
+      },
+    );
 
     test('an empty history renders an empty history input', () async {
       final substrate = _ScriptedSubstrate(
@@ -296,31 +294,35 @@ void main() {
         channel: AccessChannel.openai,
         envelope: envelope,
       );
-      final outcome =
-          await manager.selectMemoryProfile(resolution: res, envelope: envelope);
+      final outcome = await manager.selectMemoryProfile(
+        resolution: res,
+        envelope: envelope,
+      );
       return outcome.status;
     }
 
-    test('enabled ⇒ non-null selector ⇒ a confident pick pins the session',
-        () async {
-      final substrate = _ScriptedSubstrate(
-        chunks: <String>['{"profile": "work", "confidence": 0.92}'],
-      );
-      final selector = buildMemoryProfileSelector(
-        substrate: substrate,
-        knownProfiles: () async => const <String>['work', 'home'],
-        selection: enabled,
-      );
-      expect(selector, isNotNull);
+    test(
+      'enabled ⇒ non-null selector ⇒ a confident pick pins the session',
+      () async {
+        final substrate = _ScriptedSubstrate(
+          chunks: <String>['{"profile": "work", "confidence": 0.92}'],
+        );
+        final selector = buildMemoryProfileSelector(
+          substrate: substrate,
+          knownProfiles: () async => const <String>['work', 'home'],
+          selection: enabled,
+        );
+        expect(selector, isNotNull);
 
-      final status = await driveFirstTurn(
-        selector,
-        selection: enabled,
-        text: 'help me at the office',
-      );
+        final status = await driveFirstTurn(
+          selector,
+          selection: enabled,
+          text: 'help me at the office',
+        );
 
-      expect(status, MemoryProfileSelectionStatus.pinned);
-    });
+        expect(status, MemoryProfileSelectionStatus.pinned);
+      },
+    );
 
     test('disabled ⇒ null selector ⇒ the manager reports disabled', () async {
       final selector = buildMemoryProfileSelector(

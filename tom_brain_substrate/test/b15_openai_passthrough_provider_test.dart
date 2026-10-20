@@ -12,7 +12,7 @@
 //     `stream: false|true`, generation knobs (`temperature`,
 //     `max_tokens`, `stop`, `response_format`), bearer-token plumbing
 //     (`apiKey`), extra-header forwarding.
-//   - Prove the streaming path emits one `LlmStreamChunk` per
+//   - Prove the streaming path emits one `LlmTextDelta` per
 //     non-empty SSE delta; the terminal report carries the usage
 //     counters surfaced via `stream_options: {include_usage: true}`;
 //     a content frame whose `finish_reason` is non-`stop` is recorded
@@ -20,7 +20,7 @@
 //   - Prove failure-shape: an HTTP failure on the non-streaming path
 //     surfaces as a thrown exception (per spec § 4.1 "router catches"
 //     contract); on the streaming path it surfaces as a terminal
-//     [LlmStreamFailed] event with a typed [LlmFailure] envelope
+//     [LlmRunFailed] event with a typed [LlmFailure] envelope
 //     (`classCode: 'unknown'` until B.18).
 //   - Prove `embedRaw`, `embedBatchRaw`, `listAvailableModels` (the
 //     off-interface helpers landed at B.15 for B.18 / B.25 / B.26
@@ -57,55 +57,62 @@ void main() {
       expect(provider, isA<LlmProvider>());
     });
 
-    test('complete stamps anchor + provider + template metadata onto the report',
-        () async {
+    test(
+      'complete stamps anchor + provider + template metadata onto the report',
+      () async {
+        final fake = _FakeOpenAiHttpClient()
+          ..chatResponse = const OpenAiChatResponse(
+            model: 'gpt-4o-mini',
+            content: 'hello back',
+            promptTokens: 12,
+            completionTokens: 5,
+            finishReason: 'stop',
+          );
+        final provider = _newProvider(httpClient: fake);
+
+        final report = await provider.complete(
+          LlmRequest(
+            prompt: const WirePrompt(
+              system: 'anchor + body',
+              anchorHash: 'sha256:anchor-stamp',
+              roleId: 'assistant_to_user',
+              templateSha: 'tpl-1',
+            ),
+            options: const LlmOptions(),
+          ),
+        );
+
+        expect(report.providerId, 'openai:passthrough');
+        expect(report.modelId, 'gpt-4o-mini'); // echo from response
+        expect(report.anchorHash, 'sha256:anchor-stamp');
+        expect(report.templateSha, 'tpl-1');
+        expect(report.tokensIn, 12);
+        expect(report.tokensOut, 5);
+        expect(report.retries, 0);
+        expect(report.wallClockMs, greaterThanOrEqualTo(0));
+        expect(report.promptHash, _sha256Stamp('anchor + body'));
+      },
+    );
+
+    test('complete sends system + user as two messages '
+        '([{role:system}, {role:user}])', () async {
       final fake = _FakeOpenAiHttpClient()
         ..chatResponse = const OpenAiChatResponse(
           model: 'gpt-4o-mini',
-          content: 'hello back',
-          promptTokens: 12,
-          completionTokens: 5,
-          finishReason: 'stop',
+          content: '',
         );
       final provider = _newProvider(httpClient: fake);
 
-      final report = await provider.complete(
-        const WirePrompt(
-          system: 'anchor + body',
-          anchorHash: 'sha256:anchor-stamp',
-          roleId: 'assistant_to_user',
-          templateSha: 'tpl-1',
-        ),
-        const LlmOptions(),
-      );
-
-      expect(report.providerId, 'openai:passthrough');
-      expect(report.modelId, 'gpt-4o-mini'); // echo from response
-      expect(report.anchorHash, 'sha256:anchor-stamp');
-      expect(report.templateSha, 'tpl-1');
-      expect(report.tokensIn, 12);
-      expect(report.tokensOut, 5);
-      expect(report.retries, 0);
-      expect(report.wallClockMs, greaterThanOrEqualTo(0));
-      expect(report.promptHash, _sha256Stamp('anchor + body'));
-    });
-
-    test(
-        'complete sends system + user as two messages '
-        '([{role:system}, {role:user}])', () async {
-      final fake = _FakeOpenAiHttpClient()
-        ..chatResponse =
-            const OpenAiChatResponse(model: 'gpt-4o-mini', content: '');
-      final provider = _newProvider(httpClient: fake);
-
       await provider.complete(
-        const WirePrompt(
-          system: 'I am dedicated to this user.',
-          user: 'user question',
-          anchorHash: 'sha256:x',
-          roleId: 'assistant_to_user',
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'I am dedicated to this user.',
+            user: 'user question',
+            anchorHash: 'sha256:x',
+            roleId: 'assistant_to_user',
+          ),
+          options: const LlmOptions(),
         ),
-        const LlmOptions(),
       );
 
       final call = fake.chatCalls.single;
@@ -121,18 +128,22 @@ void main() {
 
     test('complete omits the system message when system is empty', () async {
       final fake = _FakeOpenAiHttpClient()
-        ..chatResponse =
-            const OpenAiChatResponse(model: 'gpt-4o-mini', content: '');
+        ..chatResponse = const OpenAiChatResponse(
+          model: 'gpt-4o-mini',
+          content: '',
+        );
       final provider = _newProvider(httpClient: fake);
 
       await provider.complete(
-        const WirePrompt(
-          system: '',
-          user: 'just the user turn',
-          anchorHash: 'sha256:x',
-          roleId: 'assistant_to_user',
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: '',
+            user: 'just the user turn',
+            anchorHash: 'sha256:x',
+            roleId: 'assistant_to_user',
+          ),
+          options: const LlmOptions(),
         ),
-        const LlmOptions(),
       );
 
       final call = fake.chatCalls.single;
@@ -153,88 +164,115 @@ void main() {
       );
 
       final report = await provider.complete(
-        const WirePrompt(system: 'x', anchorHash: 'sha256:y', roleId: 'analyser'),
-        const LlmOptions(model: 'mistralai/mistral-7b-instruct'),
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'x',
+            anchorHash: 'sha256:y',
+            roleId: 'analyser',
+          ),
+          options: const LlmOptions(model: 'mistralai/mistral-7b-instruct'),
+        ),
       );
 
       expect(fake.chatCalls.single.model, 'mistralai/mistral-7b-instruct');
       expect(report.modelId, 'mistralai/mistral-7b-instruct');
     });
 
-    test('options knobs translate onto the OpenAI generation fragment',
-        () async {
-      final fake = _FakeOpenAiHttpClient()
-        ..chatResponse =
-            const OpenAiChatResponse(model: 'gpt-4o-mini', content: '');
-      final provider = _newProvider(httpClient: fake);
+    test(
+      'options knobs translate onto the OpenAI generation fragment',
+      () async {
+        final fake = _FakeOpenAiHttpClient()
+          ..chatResponse = const OpenAiChatResponse(
+            model: 'gpt-4o-mini',
+            content: '',
+          );
+        final provider = _newProvider(httpClient: fake);
 
-      await provider.complete(
-        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(
-          temperature: 0.42,
-          maxOutputTokens: 256,
-          stopSequences: <String>['STOP', 'END'],
-        ),
-      );
+        await provider.complete(
+          LlmRequest(
+            prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+            options: const LlmOptions(
+              temperature: 0.42,
+              maxOutputTokens: 256,
+              stopSequences: <String>['STOP', 'END'],
+            ),
+          ),
+        );
 
-      final opts = fake.chatCalls.single.options;
-      expect(opts.temperature, 0.42);
-      expect(opts.maxOutputTokens, 256);
-      expect(opts.stopSequences, <String>['STOP', 'END']);
-      expect(opts.responseFormat, isNull);
-    });
+        final opts = fake.chatCalls.single.options;
+        expect(opts.temperature, 0.42);
+        expect(opts.maxOutputTokens, 256);
+        expect(opts.stopSequences, <String>['STOP', 'END']);
+        expect(opts.responseFormat, isNull);
+      },
+    );
 
     test('responseFormat propagates onto the OpenAI request', () async {
       final fake = _FakeOpenAiHttpClient()
-        ..chatResponse =
-            const OpenAiChatResponse(model: 'gpt-4o-mini', content: '');
+        ..chatResponse = const OpenAiChatResponse(
+          model: 'gpt-4o-mini',
+          content: '',
+        );
       final provider = _newProvider(httpClient: fake);
 
       await provider.complete(
-        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(responseFormat: <String, Object?>{'type': 'json_object'}),
+        LlmRequest(
+          prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+          options: const LlmOptions(
+            responseFormat: <String, Object?>{'type': 'json_object'},
+          ),
+        ),
       );
 
-      expect(
-        fake.chatCalls.single.options.responseFormat,
-        <String, Object?>{'type': 'json_object'},
-      );
+      expect(fake.chatCalls.single.options.responseFormat, <String, Object?>{
+        'type': 'json_object',
+      });
     });
 
-    test('bearer token + extra headers are forwarded on every chat call',
-        () async {
-      final fake = _FakeOpenAiHttpClient()
-        ..chatResponse =
-            const OpenAiChatResponse(model: 'gpt-4o-mini', content: '');
-      final provider = _newProvider(
-        httpClient: fake,
-        apiKey: 'sk-test',
-        extraHeaders: const <String, String>{
-          'HTTP-Referer': 'https://tom-brain.local',
-          'X-Title': 'Tom Brain',
-        },
-      );
+    test(
+      'bearer token + extra headers are forwarded on every chat call',
+      () async {
+        final fake = _FakeOpenAiHttpClient()
+          ..chatResponse = const OpenAiChatResponse(
+            model: 'gpt-4o-mini',
+            content: '',
+          );
+        final provider = _newProvider(
+          httpClient: fake,
+          apiKey: 'sk-test',
+          extraHeaders: const <String, String>{
+            'HTTP-Referer': 'https://tom-brain.local',
+            'X-Title': 'Tom Brain',
+          },
+        );
 
-      await provider.complete(
-        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
-      );
+        await provider.complete(
+          LlmRequest(
+            prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+            options: const LlmOptions(),
+          ),
+        );
 
-      final call = fake.chatCalls.single;
-      expect(call.apiKey, 'sk-test');
-      expect(call.extraHeaders['HTTP-Referer'], 'https://tom-brain.local');
-      expect(call.extraHeaders['X-Title'], 'Tom Brain');
-    });
+        final call = fake.chatCalls.single;
+        expect(call.apiKey, 'sk-test');
+        expect(call.extraHeaders['HTTP-Referer'], 'https://tom-brain.local');
+        expect(call.extraHeaders['X-Title'], 'Tom Brain');
+      },
+    );
 
     test('missing usage counters surface as 0 + notes', () async {
       final fake = _FakeOpenAiHttpClient()
-        ..chatResponse =
-            const OpenAiChatResponse(model: 'gpt-4o-mini', content: '');
+        ..chatResponse = const OpenAiChatResponse(
+          model: 'gpt-4o-mini',
+          content: '',
+        );
       final provider = _newProvider(httpClient: fake);
 
       final report = await provider.complete(
-        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
+        LlmRequest(
+          prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+          options: const LlmOptions(),
+        ),
       );
 
       expect(report.tokensIn, 0);
@@ -255,44 +293,22 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final report = await provider.complete(
-        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
+        LlmRequest(
+          prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+          options: const LlmOptions(),
+        ),
       );
 
       expect(report.notes, contains('openai:finish_reason=length'));
     });
 
-    test('stop / tool_calls finish_reason does NOT pollute the notes',
-        () async {
-      final fake = _FakeOpenAiHttpClient()
-        ..chatResponse = const OpenAiChatResponse(
-          model: 'gpt-4o-mini',
-          content: 'fine',
-          promptTokens: 1,
-          completionTokens: 1,
-          finishReason: 'stop',
-        );
-      final provider = _newProvider(httpClient: fake);
-
-      final report = await provider.complete(
-        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
-      );
-
-      expect(
-        report.notes.where((n) => n.startsWith('openai:finish_reason')),
-        isEmpty,
-      );
-    });
-
     test(
-      'tool catalogue present surfaces a "not yet dispatched" note '
-      '(spec § 4.1; tool dispatch lands at B.27)',
+      'stop / tool_calls finish_reason does NOT pollute the notes',
       () async {
         final fake = _FakeOpenAiHttpClient()
           ..chatResponse = const OpenAiChatResponse(
             model: 'gpt-4o-mini',
-            content: '',
+            content: 'fine',
             promptTokens: 1,
             completionTokens: 1,
             finishReason: 'stop',
@@ -300,8 +316,35 @@ void main() {
         final provider = _newProvider(httpClient: fake);
 
         final report = await provider.complete(
-          const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-          const LlmOptions(
+          LlmRequest(
+            prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+            options: const LlmOptions(),
+          ),
+        );
+
+        expect(
+          report.notes.where((n) => n.startsWith('openai:finish_reason')),
+          isEmpty,
+        );
+      },
+    );
+
+    test('tool catalogue present surfaces a "not yet dispatched" note '
+        '(spec § 4.1; tool dispatch lands at B.27)', () async {
+      final fake = _FakeOpenAiHttpClient()
+        ..chatResponse = const OpenAiChatResponse(
+          model: 'gpt-4o-mini',
+          content: '',
+          promptTokens: 1,
+          completionTokens: 1,
+          finishReason: 'stop',
+        );
+      final provider = _newProvider(httpClient: fake);
+
+      final report = await provider.complete(
+        LlmRequest(
+          prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+          options: const LlmOptions(
             toolCatalogue: ToolCatalogue(<ToolDescriptor>[
               ToolDescriptor(
                 name: 'noop',
@@ -310,14 +353,14 @@ void main() {
               ),
             ]),
           ),
-        );
+        ),
+      );
 
-        expect(
-          report.notes,
-          contains('tool_catalogue_present:not_yet_dispatched'),
-        );
-      },
-    );
+      expect(
+        report.notes,
+        contains('tool_catalogue_present:not_yet_dispatched'),
+      );
+    });
 
     test('complete re-throws transport failures unclassified', () async {
       final fake = _FakeOpenAiHttpClient()
@@ -330,8 +373,10 @@ void main() {
 
       await expectLater(
         provider.complete(
-          const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-          const LlmOptions(),
+          LlmRequest(
+            prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+            options: const LlmOptions(),
+          ),
         ),
         throwsA(isA<OpenAiHttpException>()),
       );
@@ -344,14 +389,8 @@ void main() {
       () async {
         final fake = _FakeOpenAiHttpClient()
           ..streamFragments = const <OpenAiStreamFragment>[
-            OpenAiStreamFragment(
-              model: 'gpt-4o-mini',
-              contentDelta: 'Hello ',
-            ),
-            OpenAiStreamFragment(
-              model: 'gpt-4o-mini',
-              contentDelta: 'world',
-            ),
+            OpenAiStreamFragment(model: 'gpt-4o-mini', contentDelta: 'Hello '),
+            OpenAiStreamFragment(model: 'gpt-4o-mini', contentDelta: 'world'),
             OpenAiStreamFragment(
               model: 'gpt-4o-mini',
               contentDelta: '',
@@ -367,33 +406,31 @@ void main() {
         final provider = _newProvider(httpClient: fake);
 
         final events = await provider
-            .completeStream(
-              const WirePrompt(
-                system: 'streaming body',
-                anchorHash: 'sha256:stream-anchor',
-                roleId: 'assistant_to_user',
-                templateSha: 'tpl-2',
+            .run(
+              LlmRequest(
+                prompt: const WirePrompt(
+                  system: 'streaming body',
+                  anchorHash: 'sha256:stream-anchor',
+                  roleId: 'assistant_to_user',
+                  templateSha: 'tpl-2',
+                ),
+                options: const LlmOptions(),
               ),
-              const LlmOptions(),
             )
             .toList();
 
-        expect(events.first, isA<LlmStreamStarted>());
-        expect(events.last, isA<LlmStreamCompleted>());
+        expect(events.first, isA<LlmRunStarted>());
+        expect(events.last, isA<LlmRunCompleted>());
 
-        final started = events.first as LlmStreamStarted;
+        final started = events.first as LlmRunStarted;
         expect(started.providerId, 'openai:passthrough');
         expect(started.modelId, 'gpt-4o-mini');
         expect(started.callId, isNotEmpty);
 
-        final chunks =
-            events.whereType<LlmStreamChunk>().toList(growable: false);
+        final chunks = events.whereType<LlmTextDelta>().toList(growable: false);
         expect(chunks.map((c) => c.text).toList(), <String>['Hello ', 'world']);
-        for (final chunk in chunks) {
-          expect(chunk.callId, started.callId);
-        }
 
-        final completed = events.last as LlmStreamCompleted;
+        final completed = events.last as LlmRunCompleted;
         expect(completed.callId, started.callId);
         expect(completed.report.providerId, 'openai:passthrough');
         expect(completed.report.modelId, 'gpt-4o-mini');
@@ -422,49 +459,65 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final events = await provider
-          .completeStream(
-            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-            const LlmOptions(),
+          .run(
+            LlmRequest(
+              prompt: const WirePrompt(
+                system: 'x',
+                anchorHash: 'a',
+                roleId: 'r',
+              ),
+              options: const LlmOptions(),
+            ),
           )
           .toList();
 
-      final chunks = events.whereType<LlmStreamChunk>().toList();
+      final chunks = events.whereType<LlmTextDelta>().toList();
       expect(chunks, hasLength(1));
       expect(chunks.single.text, 'first text');
     });
 
-    test('SSE stream without usage frame still completes (tokens default to 0)',
-        () async {
-      final fake = _FakeOpenAiHttpClient()
-        ..streamFragments = const <OpenAiStreamFragment>[
-          OpenAiStreamFragment(
-            model: 'gpt-4o-mini',
-            contentDelta: 'partial',
-            finishReason: 'stop',
-          ),
-        ];
-      final provider = _newProvider(httpClient: fake);
+    test(
+      'SSE stream without usage frame still completes (tokens default to 0)',
+      () async {
+        final fake = _FakeOpenAiHttpClient()
+          ..streamFragments = const <OpenAiStreamFragment>[
+            OpenAiStreamFragment(
+              model: 'gpt-4o-mini',
+              contentDelta: 'partial',
+              finishReason: 'stop',
+            ),
+          ];
+        final provider = _newProvider(httpClient: fake);
 
-      final events = await provider
-          .completeStream(
-            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-            const LlmOptions(),
-          )
-          .toList();
+        final events = await provider
+            .run(
+              LlmRequest(
+                prompt: const WirePrompt(
+                  system: 'x',
+                  anchorHash: 'a',
+                  roleId: 'r',
+                ),
+                options: const LlmOptions(),
+              ),
+            )
+            .toList();
 
-      expect(events.last, isA<LlmStreamCompleted>());
-      final completed = events.last as LlmStreamCompleted;
-      expect(completed.report.tokensIn, 0);
-      expect(completed.report.tokensOut, 0);
-      expect(completed.report.notes, contains('openai:prompt_tokens_missing'));
-      expect(
-        completed.report.notes,
-        contains('openai:completion_tokens_missing'),
-      );
-    });
+        expect(events.last, isA<LlmRunCompleted>());
+        final completed = events.last as LlmRunCompleted;
+        expect(completed.report.tokensIn, 0);
+        expect(completed.report.tokensOut, 0);
+        expect(
+          completed.report.notes,
+          contains('openai:prompt_tokens_missing'),
+        );
+        expect(
+          completed.report.notes,
+          contains('openai:completion_tokens_missing'),
+        );
+      },
+    );
 
-    test('non-stop finish_reason recorded in terminal report notes',
-        () async {
+    test('non-stop finish_reason recorded in terminal report notes', () async {
       final fake = _FakeOpenAiHttpClient()
         ..streamFragments = const <OpenAiStreamFragment>[
           OpenAiStreamFragment(
@@ -478,58 +531,81 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final events = await provider
-          .completeStream(
-            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-            const LlmOptions(),
+          .run(
+            LlmRequest(
+              prompt: const WirePrompt(
+                system: 'x',
+                anchorHash: 'a',
+                roleId: 'r',
+              ),
+              options: const LlmOptions(),
+            ),
           )
           .toList();
 
-      final completed = events.last as LlmStreamCompleted;
+      final completed = events.last as LlmRunCompleted;
       expect(completed.report.notes, contains('openai:finish_reason=length'));
     });
 
-    test(
-      'transport failure mid-stream surfaces as LlmStreamFailed(unknown) '
-      '(B.18 will reclassify)',
-      () async {
-        final fake = _FakeOpenAiHttpClient()
-          ..streamException = OpenAiHttpException(
-            statusCode: 500,
-            body: 'boom',
-            endpoint: Uri.parse('https://api.openai.com/v1/chat/completions'),
-          );
-        final provider = _newProvider(httpClient: fake);
+    test('transport failure mid-stream surfaces as LlmRunFailed(unknown) '
+        '(B.18 will reclassify)', () async {
+      final fake = _FakeOpenAiHttpClient()
+        ..streamException = OpenAiHttpException(
+          statusCode: 500,
+          body: 'boom',
+          endpoint: Uri.parse('https://api.openai.com/v1/chat/completions'),
+        );
+      final provider = _newProvider(httpClient: fake);
 
-        final events = await provider
-            .completeStream(
-              const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-              const LlmOptions(),
-            )
-            .toList();
+      final events = await provider
+          .run(
+            LlmRequest(
+              prompt: const WirePrompt(
+                system: 'x',
+                anchorHash: 'a',
+                roleId: 'r',
+              ),
+              options: const LlmOptions(),
+            ),
+          )
+          .toList();
 
-        expect(events.first, isA<LlmStreamStarted>());
-        expect(events.last, isA<LlmStreamFailed>());
-        final failed = events.last as LlmStreamFailed;
-        expect(failed.failure.classCode, 'unknown');
-        expect(failed.failure.cause, isA<OpenAiHttpException>());
-      },
-    );
+      expect(events.first, isA<LlmRunStarted>());
+      expect(events.last, isA<LlmRunFailed>());
+      final failed = events.last as LlmRunFailed;
+      expect(failed.failure.classCode, 'unknown');
+      expect(failed.failure.cause, isA<OpenAiHttpException>());
+    });
   });
 
   group('B.15 / OpenAiPassthroughProvider — promptHash determinism', () {
     test('same prompt body → same promptHash', () async {
       final fake = _FakeOpenAiHttpClient()
-        ..chatResponse =
-            const OpenAiChatResponse(model: 'gpt-4o-mini', content: '');
+        ..chatResponse = const OpenAiChatResponse(
+          model: 'gpt-4o-mini',
+          content: '',
+        );
       final provider = _newProvider(httpClient: fake);
 
       final r1 = await provider.complete(
-        const WirePrompt(system: 'deterministic', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'deterministic',
+            anchorHash: 'a',
+            roleId: 'r',
+          ),
+          options: const LlmOptions(),
+        ),
       );
       final r2 = await provider.complete(
-        const WirePrompt(system: 'deterministic', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'deterministic',
+            anchorHash: 'a',
+            roleId: 'r',
+          ),
+          options: const LlmOptions(),
+        ),
       );
       expect(r1.promptHash, r2.promptHash);
       expect(r1.promptHash, startsWith('sha256:'));
@@ -537,47 +613,63 @@ void main() {
 
     test('different prompt body → different promptHash', () async {
       final fake = _FakeOpenAiHttpClient()
-        ..chatResponse =
-            const OpenAiChatResponse(model: 'gpt-4o-mini', content: '');
+        ..chatResponse = const OpenAiChatResponse(
+          model: 'gpt-4o-mini',
+          content: '',
+        );
       final provider = _newProvider(httpClient: fake);
 
       final r1 = await provider.complete(
-        const WirePrompt(system: 'first', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'first',
+            anchorHash: 'a',
+            roleId: 'r',
+          ),
+          options: const LlmOptions(),
+        ),
       );
       final r2 = await provider.complete(
-        const WirePrompt(system: 'second', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'second',
+            anchorHash: 'a',
+            roleId: 'r',
+          ),
+          options: const LlmOptions(),
+        ),
       );
       expect(r1.promptHash, isNot(equals(r2.promptHash)));
     });
   });
 
   group('B.15 / OpenAiPassthroughProvider — off-interface helpers', () {
-    test('embedRaw forwards single-element list + bearer to the seam',
-        () async {
-      final fake = _FakeOpenAiHttpClient()
-        ..embedResponse = const OpenAiEmbeddingResponse(
-          model: 'text-embedding-3-small',
-          embeddings: <List<double>>[
-            <double>[0.1, 0.2, 0.3],
-          ],
-          promptTokens: 4,
+    test(
+      'embedRaw forwards single-element list + bearer to the seam',
+      () async {
+        final fake = _FakeOpenAiHttpClient()
+          ..embedResponse = const OpenAiEmbeddingResponse(
+            model: 'text-embedding-3-small',
+            embeddings: <List<double>>[
+              <double>[0.1, 0.2, 0.3],
+            ],
+            promptTokens: 4,
+          );
+        final provider = _newProvider(
+          httpClient: fake,
+          defaultEmbeddingModel: 'text-embedding-3-small',
+          apiKey: 'sk-embed',
         );
-      final provider = _newProvider(
-        httpClient: fake,
-        defaultEmbeddingModel: 'text-embedding-3-small',
-        apiKey: 'sk-embed',
-      );
 
-      final v = await provider.embedRaw(input: 'a body');
-      expect(v, <double>[0.1, 0.2, 0.3]);
+        final v = await provider.embedRaw(input: 'a body');
+        expect(v, <double>[0.1, 0.2, 0.3]);
 
-      final call = fake.embedCalls.single;
-      expect(call.model, 'text-embedding-3-small');
-      expect(call.input, <String>['a body']);
-      expect(call.apiKey, 'sk-embed');
-    });
+        final call = fake.embedCalls.single;
+        expect(call.model, 'text-embedding-3-small');
+        expect(call.input, <String>['a body']);
+        expect(call.apiKey, 'sk-embed');
+      },
+    );
 
     test('embedRaw honours an explicit model id', () async {
       final fake = _FakeOpenAiHttpClient()
@@ -623,8 +715,9 @@ void main() {
         defaultEmbeddingModel: 'text-embedding-3-small',
       );
 
-      final vecs = await provider
-          .embedBatchRaw(inputs: <String>['a', 'b', 'c']);
+      final vecs = await provider.embedBatchRaw(
+        inputs: <String>['a', 'b', 'c'],
+      );
       expect(vecs, hasLength(3));
       expect(vecs[0], <double>[1.0, 2.0]);
       expect(vecs[1], <double>[3.0, 4.0]);
@@ -632,15 +725,17 @@ void main() {
       expect(fake.embedCalls.single.input, <String>['a', 'b', 'c']);
     });
 
-    test('embedBatchRaw with empty inputs short-circuits and returns []',
-        () async {
-      final fake = _FakeOpenAiHttpClient();
-      final provider = _newProvider(httpClient: fake);
+    test(
+      'embedBatchRaw with empty inputs short-circuits and returns []',
+      () async {
+        final fake = _FakeOpenAiHttpClient();
+        final provider = _newProvider(httpClient: fake);
 
-      final vecs = await provider.embedBatchRaw(inputs: const <String>[]);
-      expect(vecs, isEmpty);
-      expect(fake.embedCalls, isEmpty);
-    });
+        final vecs = await provider.embedBatchRaw(inputs: const <String>[]);
+        expect(vecs, isEmpty);
+        expect(fake.embedCalls, isEmpty);
+      },
+    );
 
     test(
       'embedBatchRaw throws when the vendor returns a vector count mismatch',
@@ -674,37 +769,45 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final models = await provider.listAvailableModels();
-      expect(
-        models.map((m) => m.id).toList(),
-        <String>['gpt-4o-mini', 'gpt-4o'],
-      );
+      expect(models.map((m) => m.id).toList(), <String>[
+        'gpt-4o-mini',
+        'gpt-4o',
+      ]);
     });
   });
 
-  group('B.15 / OpenAiHttpClient — wire decoding (DefaultOpenAiHttpClient)', () {
-    test('decoded chat response handles missing usage / finish_reason',
+  group(
+    'B.15 / OpenAiHttpClient — wire decoding (DefaultOpenAiHttpClient)',
+    () {
+      test(
+        'decoded chat response handles missing usage / finish_reason',
         () async {
-      // Indirect test: the default client's decoder lives in
-      // openai_http_client.dart; we exercise it through the provider
-      // by feeding the fake whatever the decoder would have produced,
-      // and a few canonical edge cases. Doubled-up here so a future
-      // decoder change can't regress without a test catching it.
-      final fake = _FakeOpenAiHttpClient()
-        ..chatResponse = const OpenAiChatResponse(
-          model: '',
-          content: '',
-        );
-      final provider = _newProvider(httpClient: fake);
+          // Indirect test: the default client's decoder lives in
+          // openai_http_client.dart; we exercise it through the provider
+          // by feeding the fake whatever the decoder would have produced,
+          // and a few canonical edge cases. Doubled-up here so a future
+          // decoder change can't regress without a test catching it.
+          final fake = _FakeOpenAiHttpClient()
+            ..chatResponse = const OpenAiChatResponse(model: '', content: '');
+          final provider = _newProvider(httpClient: fake);
 
-      final report = await provider.complete(
-        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(model: 'fallback-model'),
+          final report = await provider.complete(
+            LlmRequest(
+              prompt: const WirePrompt(
+                system: 'x',
+                anchorHash: 'a',
+                roleId: 'r',
+              ),
+              options: const LlmOptions(model: 'fallback-model'),
+            ),
+          );
+
+          // Empty model from response → falls back to the requested model.
+          expect(report.modelId, 'fallback-model');
+        },
       );
-
-      // Empty model from response → falls back to the requested model.
-      expect(report.modelId, 'fallback-model');
-    });
-  });
+    },
+  );
 
   group('B.15 / barrel surface', () {
     test(
@@ -763,8 +866,10 @@ final class _FakeOpenAiHttpClient implements OpenAiHttpClient {
   final List<_OpenAiChatInvocation> chatCalls = <_OpenAiChatInvocation>[];
   final List<_OpenAiEmbedInvocation> embedCalls = <_OpenAiEmbedInvocation>[];
 
-  OpenAiChatResponse chatResponse =
-      const OpenAiChatResponse(model: 'gpt-4o-mini', content: '');
+  OpenAiChatResponse chatResponse = const OpenAiChatResponse(
+    model: 'gpt-4o-mini',
+    content: '',
+  );
   Object? chatException;
 
   List<OpenAiStreamFragment> streamFragments = const <OpenAiStreamFragment>[];
@@ -789,14 +894,16 @@ final class _FakeOpenAiHttpClient implements OpenAiHttpClient {
     Map<String, String> extraHeaders = const <String, String>{},
     Duration? requestTimeout,
   }) async {
-    chatCalls.add(_OpenAiChatInvocation(
-      baseUri: baseUri,
-      model: model,
-      messages: messages,
-      options: options,
-      apiKey: apiKey,
-      extraHeaders: extraHeaders,
-    ));
+    chatCalls.add(
+      _OpenAiChatInvocation(
+        baseUri: baseUri,
+        model: model,
+        messages: messages,
+        options: options,
+        apiKey: apiKey,
+        extraHeaders: extraHeaders,
+      ),
+    );
     if (chatException != null) throw chatException!;
     return chatResponse;
   }
@@ -812,14 +919,16 @@ final class _FakeOpenAiHttpClient implements OpenAiHttpClient {
     Duration? requestTimeout,
     CancellationToken? cancellationToken,
   }) async* {
-    chatCalls.add(_OpenAiChatInvocation(
-      baseUri: baseUri,
-      model: model,
-      messages: messages,
-      options: options,
-      apiKey: apiKey,
-      extraHeaders: extraHeaders,
-    ));
+    chatCalls.add(
+      _OpenAiChatInvocation(
+        baseUri: baseUri,
+        model: model,
+        messages: messages,
+        options: options,
+        apiKey: apiKey,
+        extraHeaders: extraHeaders,
+      ),
+    );
     if (streamException != null) throw streamException!;
     for (final frag in streamFragments) {
       yield frag;
@@ -835,12 +944,14 @@ final class _FakeOpenAiHttpClient implements OpenAiHttpClient {
     Map<String, String> extraHeaders = const <String, String>{},
     Duration? requestTimeout,
   }) async {
-    embedCalls.add(_OpenAiEmbedInvocation(
-      baseUri: baseUri,
-      model: model,
-      input: input,
-      apiKey: apiKey,
-    ));
+    embedCalls.add(
+      _OpenAiEmbedInvocation(
+        baseUri: baseUri,
+        model: model,
+        input: input,
+        apiKey: apiKey,
+      ),
+    );
     return embedResponse;
   }
 

@@ -73,7 +73,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         FreeTimeScheduler,
         HistoryCompactor,
         HistoryCompactionTemplateStore,
-        LlmTrailRecord,
+        LlmCallTrailRecord,
         LlmTrailSink,
         McpClient,
         McpClientToolSource,
@@ -138,8 +138,7 @@ import 'mcp_channel_factory.dart' show productionMcpChannelFactory;
 import 'mcp_liveness_monitor.dart' show McpLivenessMonitor;
 import 'mcp_offered_wiring.dart'
     show mcpLivenessMonitorOverClient, mcpOfferedGate;
-import 'model_switch.dart'
-    show CognitionModelWriter, TomBrainModelSwitcher;
+import 'model_switch.dart' show CognitionModelWriter, TomBrainModelSwitcher;
 import 'incoming_trail_writer.dart' show IncomingTrailWriter;
 import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
@@ -147,8 +146,7 @@ import 'procedure_tree_writer.dart' show ProcedureTreeWriter;
 import 'creation_trail_writer.dart' show CreationTrailWriter;
 import 'profile/profile_config_errors.dart' show UnknownProfileException;
 import 'streaming_live_trail.dart' show StreamingLiveTrailWriter;
-import 'substrate_memory_profile_selector.dart'
-    show buildMemoryProfileSelector;
+import 'substrate_memory_profile_selector.dart' show buildMemoryProfileSelector;
 import 'summary_fanout.dart' show SummaryFanout;
 import 'telegram_inspector_impls.dart'
     show
@@ -272,8 +270,9 @@ Future<ProvisionedBrain> provisionBrain({
   // to the real controller after the cadence is up (below). When dreaming is
   // off, no holder is wired and the tool raises `ToolSurfaceUnavailable`.
   final bool dreamEnabled = dream != null && dream.enabled;
-  final LateDreamSurface? dreamHolder =
-      dreamEnabled ? LateDreamSurface() : null;
+  final LateDreamSurface? dreamHolder = dreamEnabled
+      ? LateDreamSurface()
+      : null;
 
   // The foreground answer lane's history compactor (HC-81 activation). Built
   // from the incoming substrate (the boot consumes the same client, so no boot
@@ -386,8 +385,9 @@ Future<ProvisionedBrain> provisionBrain({
     // the Telegram `/todos_list` / `/todos_clear` commands over the engine's
     // `SessionTodoStores` without the access package depending on
     // `tom_brain_procedure`.
-    todosInspector:
-        SessionTodosInspector(stores: booted.engine.sessionTodoStores),
+    todosInspector: SessionTodosInspector(
+      stores: booted.engine.sessionTodoStores,
+    ),
     // Surface the engine's live-run registry behind the access package's
     // `TelegramUsageInspector` port, so the running process can build the
     // Telegram `/check_usage` command over the engine's `LiveRunRegistry`
@@ -431,8 +431,9 @@ DreamController _startDreamLoop(
   // rehydrates every lane on boot and is written back after each firing, so the
   // dreaming lanes resume mid-narrative across a process restart instead of
   // forgetting what they were doing.
-  final JsonFileHistoryStore dreamStore =
-      JsonFileHistoryStore('$memoryRoot/dream_lane_sessions.json');
+  final JsonFileHistoryStore dreamStore = JsonFileHistoryStore(
+    '$memoryRoot/dream_lane_sessions.json',
+  );
   // Each lane keeps its own compactable activity history, sized through the
   // same `history:` block, persisted through the durable store above. When a
   // `compact_history_v1` template is present in the cognition tree (I-2), wire
@@ -471,8 +472,7 @@ DreamController _startDreamLoop(
   // Part d: when a throttle is configured, build it over the active schedule so
   // its per-lane caps (`DreamLaneSpec.maxLlmCallsPerWindow`) are honoured on top
   // of the global budget. Absent ⇒ unthrottled.
-  final CadenceSchedule schedule =
-      dream.cadence ?? CadenceSchedule.defaults();
+  final CadenceSchedule schedule = dream.cadence ?? CadenceSchedule.defaults();
   final DreamThrottle? throttle = dream.throttle == null
       ? null
       : DreamThrottle(
@@ -513,13 +513,9 @@ DreamController _startDreamLoop(
 HistoryCompactor? historyCompactorFor({
   required Directory? templatesDir,
   required TomBrainSubstrateClient substrate,
-}) =>
-    templatesDir != null && _hasCompactionTemplate(templatesDir)
-        ? buildHistoryCompactor(
-            templatesDir: templatesDir,
-            substrate: substrate,
-          )
-        : null;
+}) => templatesDir != null && _hasCompactionTemplate(templatesDir)
+    ? buildHistoryCompactor(templatesDir: templatesDir, substrate: substrate)
+    : null;
 
 /// Whether [dir] holds the production `compact_history_v1` template the
 /// compactor folds through. The store resolves `<dir>/<type>.yaml`, so the file
@@ -545,11 +541,10 @@ bool _hasCompactionTemplate(Directory dir) =>
 HistoryCompactor buildHistoryCompactor({
   required Directory templatesDir,
   required TomBrainSubstrateClient substrate,
-}) =>
-    HistoryCompactor(
-      templates: HistoryCompactionTemplateStore(templatesDir),
-      substrate: SubstrateHistoryCompaction(client: substrate).call,
-    );
+}) => HistoryCompactor(
+  templates: HistoryCompactionTemplateStore(templatesDir),
+  substrate: SubstrateHistoryCompaction(client: substrate).call,
+);
 
 /// Binds [provisionBrain] into a value matching the access package's
 /// `BrainProvisioner` typedef (`(AccessConfig) → ProvisionedBrain`).
@@ -569,14 +564,14 @@ BrainProvisioner brainProvisioner({
   FileScope? toolFileScope,
 }) =>
     (AccessConfig config) => provisionBrain(
-          substrate: substrate,
-          memoryConfig: memoryConfig,
-          substrateConfig: substrateConfig,
-          systemScriptsDir: systemScriptsDir,
-          classifyFallback: classifyFallback,
-          foregroundQueueDepth: foregroundQueueDepth,
-          toolFileScope: toolFileScope,
-        );
+      substrate: substrate,
+      memoryConfig: memoryConfig,
+      substrateConfig: substrateConfig,
+      systemScriptsDir: systemScriptsDir,
+      classifyFallback: classifyFallback,
+      foregroundQueueDepth: foregroundQueueDepth,
+      toolFileScope: toolFileScope,
+    );
 
 /// A booted, running brain process — the bound socket plus the graceful
 /// teardown that tears the cognition (and its memory isolate) down.
@@ -753,11 +748,13 @@ TelegramInspectors _telegramInspectorsFor({
 }) {
   final Directory? root = trailRoot == null ? null : Directory(trailRoot);
   return TelegramInspectors(
-    prompts:
-        root == null ? null : TrailIncomingPromptInspector(trailRoot: root),
+    prompts: root == null
+        ? null
+        : TrailIncomingPromptInspector(trailRoot: root),
     logs: root == null ? null : TrailLogInspector(trailRoot: root),
-    memory:
-        memoryClient == null ? null : MemoryStatsInspector(client: memoryClient),
+    memory: memoryClient == null
+        ? null
+        : MemoryStatsInspector(client: memoryClient),
     status: root == null
         ? null
         : TrailStatusInspector(queueSnapshot: queueSnapshot, trailRoot: root),
@@ -854,7 +851,8 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // → the configured `scripts.systemDir` (CLI plan step 3) → the package-
   // relative prototype fallback (kept until a real bundle lands at step 4;
   // CLP decision).
-  final Directory scriptsDir = systemScriptsDir ??
+  final Directory scriptsDir =
+      systemScriptsDir ??
       runConfig.scripts?.systemDir ??
       await _resolveProcedurePrototypeScripts();
 
@@ -876,8 +874,10 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   final cognition = runConfig.cognition;
   final Map<String, String> environment = Platform.environment;
   if (cognition != null) {
-    cognitionConfig =
-        CognitionConfigLoader.loadFromDir(cognition.root, env: environment);
+    cognitionConfig = CognitionConfigLoader.loadFromDir(
+      cognition.root,
+      env: environment,
+    );
     // §7.1 / §11: role prose (persona + objective) is sourced from
     // `cognition/<rolesFolder>/<role>.persona.md` + `<role>.objective.md`,
     // overlaid on the full live roster. The in-code roster supplies the
@@ -938,14 +938,16 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // `<cognition.root>/overlays/<name>/`, which cannot exist when no cognition
   // tree is configured. No global ceiling exists yet, so none is passed (the
   // clamp composes against the real ceilings once they are wired, SCP-12).
-  final Set<String> knownRoles = (roleProseReload?.latest ??
-          bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory())
-      .ids
-      .toSet();
+  final Set<String> knownRoles =
+      (roleProseReload?.latest ??
+              bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory())
+          .ids
+          .toSet();
   final String? cognitionRoot = cognition?.root;
   runConfig.profiles.validateAtBoot(
     knownRoles: knownRoles,
-    overlayDirExists: (name) => cognitionRoot != null &&
+    overlayDirExists: (name) =>
+        cognitionRoot != null &&
         Directory('$cognitionRoot/overlays/$name').existsSync(),
     warn: (message) => stderr.writeln('[profile] $message'),
   );
@@ -1003,17 +1005,18 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // config (when [runConfigPath] is known) so it survives a restart. Wired only
   // when there is at least one agent-SDK provider to rebind; otherwise the
   // command reports as unavailable.
-  final List<AgentSdkLlmProvider> agentSdkProviders =
-      substrate.providers.values.whereType<AgentSdkLlmProvider>().toList();
+  final List<AgentSdkLlmProvider> agentSdkProviders = substrate.providers.values
+      .whereType<AgentSdkLlmProvider>()
+      .toList();
   final TelegramCliServerPortController? cliServerPortController =
       agentSdkProviders.isEmpty
-          ? null
-          : TomBrainCliServerPortController(
-              providers: agentSdkProviders,
-              configWriter: runConfigPath == null
-                  ? null
-                  : CliServerPortConfigWriter(File(runConfigPath)),
-            );
+      ? null
+      : TomBrainCliServerPortController(
+          providers: agentSdkProviders,
+          configWriter: runConfigPath == null
+              ? null
+              : CliServerPortConfigWriter(File(runConfigPath)),
+        );
 
   // The `/create_api_key` durable-persist closure (MSP-7, MSPP-42…47). The live
   // admission half is the access layer's own `AccessAssembler` operation; the
@@ -1054,9 +1057,10 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
       runConfig.profiles.namespacedDefinedServers;
   final McpServersConfig mcpServersConfig = profileServers.isEmpty
       ? runConfig.mcpServers
-      : McpServersConfig(
-          <McpServerConfig>[...runConfig.mcpServers.servers, ...profileServers],
-        );
+      : McpServersConfig(<McpServerConfig>[
+          ...runConfig.mcpServers.servers,
+          ...profileServers,
+        ]);
   final McpClient? mcpClient = mcpServersConfig.servers.isEmpty
       ? null
       : McpClient(
@@ -1103,11 +1107,13 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // the gate below builds no selector. The selector lists the *memory* profiles
   // (`<memory-root>/profiles/`, the recall axis) live, distinct from the SCP
   // processing-profile axis the channels operate over.
-  final SelectionSettings selection =
-      _resolveMemoryProfileSelection(cognitionRoot);
+  final SelectionSettings selection = _resolveMemoryProfileSelection(
+    cognitionRoot,
+  );
   final MemoryProfileSelector? profileSelector = buildMemoryProfileSelector(
     substrate: substrate,
-    knownProfiles: () async => _listMemoryProfiles(runConfig.memory.profilesDir),
+    knownProfiles: () async =>
+        _listMemoryProfiles(runConfig.memory.profilesDir),
     selection: selection,
   );
 
@@ -1138,8 +1144,9 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     // Pass the cognition root when one is configured; each lane guards on the
     // template's actual presence, so a cognition tree without the template still
     // boots compactor-less (the safe never-fold default).
-    historyCompactionTemplatesDir:
-        cognition != null ? Directory(cognition.root) : null,
+    historyCompactionTemplatesDir: cognition != null
+        ? Directory(cognition.root)
+        : null,
     promptResolver: promptResolver,
     routeChainOf: routeChainOf,
     overlayResolverFor: overlayResolverFor,
@@ -1230,9 +1237,8 @@ List<String> _listMemoryProfiles(String profilesDir) {
   MemoryAccessSink? memoryAccessSink,
   ToolAccessSink? toolAccessSink,
   ProcedureTreeSink? procedureTreeSink,
-}) _trailSinksFor(
-  TrailConfig? trail,
-) {
+})
+_trailSinksFor(TrailConfig? trail) {
   if (trail == null) {
     return (
       llmTrailSink: null,
@@ -1278,7 +1284,7 @@ List<String> _listMemoryProfiles(String profilesDir) {
 
   // Single source (§5.8): one record both lands as the raw §5.2 dump and fans
   // out to the summary projections — and now also streams into the live-trail.
-  void llmTrailSink(LlmTrailRecord record) {
+  void llmTrailSink(LlmCallTrailRecord record) {
     writer.write(record);
     fanout.onCall(record);
     liveTrail.onLlmCall(record);
@@ -1324,9 +1330,7 @@ List<String> _listMemoryProfiles(String profilesDir) {
 /// those scripts no matter where the process was launched from.
 Future<Directory> _resolveProcedurePrototypeScripts() async {
   final Uri? libUri = await Isolate.resolvePackageUri(
-    Uri.parse(
-      'package:tom_brain_procedure/tom_brain_procedure.dart',
-    ),
+    Uri.parse('package:tom_brain_procedure/tom_brain_procedure.dart'),
   );
   if (libUri == null) {
     throw StateError(

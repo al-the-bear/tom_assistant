@@ -87,10 +87,12 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'author_new_procedure_v1',
-          arguments: args,
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'author_new_procedure_v1',
+            arguments: args,
+          ),
+        )
         .outcome;
   }
 
@@ -100,24 +102,29 @@ void main() {
       memory.persistedOfType('Procedure').single;
 
   group('G-PR1-1 happy path — valid draft, critic accepts → draft status', () {
-    test('persists a Procedure node carrying the parsed header facts', () async {
-      substrate.authorDrafts = <String>[_validCandidate];
-      substrate.criticVerdicts = <String>['accept'];
+    test(
+      'persists a Procedure node carrying the parsed header facts',
+      () async {
+        substrate.authorDrafts = <String>[_validCandidate];
+        substrate.criticVerdicts = <String>['accept'];
 
-      final outcome = await runAuthor(<String, Object?>{
-        'intent': 'greet the user by name',
-      });
+        final outcome = await runAuthor(<String, Object?>{
+          'intent': 'greet the user by name',
+        });
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      final procedure = authoredProcedure();
-      expect(procedure.draft.values['name'], 'greet_user_v1');
-      expect(procedure.draft.values['summary'],
-          'Greets the user by their stored name.');
-      expect(procedure.draft.values['source'], _validCandidate);
-      expect(procedure.draft.values['status'], 'draft');
-      expect(procedure.draft.values['requires'], <String>['recall', 'note']);
-    });
+        final procedure = authoredProcedure();
+        expect(procedure.draft.values['name'], 'greet_user_v1');
+        expect(
+          procedure.draft.values['summary'],
+          'Greets the user by their stored name.',
+        );
+        expect(procedure.draft.values['source'], _validCandidate);
+        expect(procedure.draft.values['status'], 'draft');
+        expect(procedure.draft.values['requires'], <String>['recall', 'note']);
+      },
+    );
 
     test('reports the authored node id and produces it', () async {
       substrate.authorDrafts = <String>[_validCandidate];
@@ -137,33 +144,42 @@ void main() {
   });
 
   group('G-PR1-2 critic revise — valid draft, critic asks for revision', () {
-    test('records the draft at authored (not greenlit) but the run succeeds',
-        () async {
-      substrate.authorDrafts = <String>[_validCandidate];
-      substrate.criticVerdicts = <String>['revise: tighten the success check'];
+    test(
+      'records the draft at authored (not greenlit) but the run succeeds',
+      () async {
+        substrate.authorDrafts = <String>[_validCandidate];
+        substrate.criticVerdicts = <String>[
+          'revise: tighten the success check',
+        ];
 
-      final outcome = await runAuthor(<String, Object?>{'intent': 'x'});
+        final outcome = await runAuthor(<String, Object?>{'intent': 'x'});
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(authoredProcedure().draft.values['status'], 'authored');
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(authoredProcedure().draft.values['status'], 'authored');
+      },
+    );
   });
 
   group('G-PR1-3 re-draft — first draft invalid, second valid', () {
-    test('the fix pass salvages the draft and it lands at draft status',
-        () async {
-      // First draft reaches outside the sandbox (dart:io) → invalid; the fix
-      // pass returns a clean source.
-      substrate.authorDrafts = <String>[_sandboxViolatingCandidate, _validCandidate];
-      substrate.criticVerdicts = <String>['accept'];
+    test(
+      'the fix pass salvages the draft and it lands at draft status',
+      () async {
+        // First draft reaches outside the sandbox (dart:io) → invalid; the fix
+        // pass returns a clean source.
+        substrate.authorDrafts = <String>[
+          _sandboxViolatingCandidate,
+          _validCandidate,
+        ];
+        substrate.criticVerdicts = <String>['accept'];
 
-      final outcome = await runAuthor(<String, Object?>{'intent': 'x'});
+        final outcome = await runAuthor(<String, Object?>{'intent': 'x'});
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      final procedure = authoredProcedure();
-      expect(procedure.draft.values['source'], _validCandidate);
-      expect(procedure.draft.values['status'], 'draft');
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        final procedure = authoredProcedure();
+        expect(procedure.draft.values['source'], _validCandidate);
+        expect(procedure.draft.values['status'], 'draft');
+      },
+    );
   });
 
   group('G-PR1-4 unmakeable — invalid after the fix pass', () {
@@ -215,16 +231,19 @@ void main() {
       expect(superseded.single.to, newId);
     });
 
-    test('no superseded_by edge when there is no predecessor (a fresh id)',
-        () async {
-      substrate.authorDrafts = <String>[_validCandidate];
+    test(
+      'no superseded_by edge when there is no predecessor (a fresh id)',
+      () async {
+        substrate.authorDrafts = <String>[_validCandidate];
 
-      await runAuthor(<String, Object?>{'intent': 'x'});
+        await runAuthor(<String, Object?>{'intent': 'x'});
 
-      final superseded = memory.recordedEdges
-          .where((e) => e.type == EdgeType.supersededBy);
-      expect(superseded, isEmpty);
-    });
+        final superseded = memory.recordedEdges.where(
+          (e) => e.type == EdgeType.supersededBy,
+        );
+        expect(superseded, isEmpty);
+      },
+    );
   });
 }
 
@@ -315,14 +334,14 @@ class _CapturingMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -394,8 +413,7 @@ class _CapturingMemory implements TomBrainMemory {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A role-scripted `TomBrainSubstrateClient` ───────────────────────────────
@@ -411,7 +429,7 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
   int _criticIdx = 0;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final String text;
     switch (call.roleId) {
       case 'procedure_author':
@@ -421,9 +439,9 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
       default:
         text = 'ok';
     }
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: text),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(text),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -444,18 +462,17 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -505,6 +522,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

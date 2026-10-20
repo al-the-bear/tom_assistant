@@ -101,93 +101,102 @@ void main() {
   Iterable<({NodeId id, NodeDraft draft})> steps() =>
       memory.persistedOfType('PlanStep');
 
-  Iterable<_Edge> stepOfEdges() => memory.recordedEdges.where((e) =>
-      e.type == EdgeType.partOf && e.attrs?['kind'] != dependsOnEdgeKind);
+  Iterable<_Edge> stepOfEdges() => memory.recordedEdges.where(
+    (e) => e.type == EdgeType.partOf && e.attrs?['kind'] != dependsOnEdgeKind,
+  );
 
-  Iterable<_Edge> dependsOnEdges() => memory.recordedEdges.where((e) =>
-      e.type == EdgeType.partOf && e.attrs?['kind'] == dependsOnEdgeKind);
+  Iterable<_Edge> dependsOnEdges() => memory.recordedEdges.where(
+    (e) => e.type == EdgeType.partOf && e.attrs?['kind'] == dependsOnEdgeKind,
+  );
 
   group('G-P2 happy path — classify, decompose, order, accept', () {
-    test('persists an active Plan with ordered Steps + dependency edges',
-        () async {
-      substrate.planner = <String>['creation'];
-      substrate.decomposer = <String>[
-        'Build the schema\n'
-            'Write the migration <- 1\n'
-            'Wire the loader <- 2',
-      ];
-      substrate.estimator = <String>['1,2,3'];
-      substrate.evaluator = <String>['accept'];
+    test(
+      'persists an active Plan with ordered Steps + dependency edges',
+      () async {
+        substrate.planner = <String>['creation'];
+        substrate.decomposer = <String>[
+          'Build the schema\n'
+              'Write the migration <- 1\n'
+              'Wire the loader <- 2',
+        ];
+        substrate.estimator = <String>['1,2,3'];
+        substrate.evaluator = <String>['accept'];
 
-      final outcome = await runPlan(<String, Object?>{'goal': 'ship export'});
+        final outcome = await runPlan(<String, Object?>{'goal': 'ship export'});
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      final p = plan();
-      expect(p.draft.values['status'], 'active');
-      expect(p.draft.values['kind'], 'creation');
-      expect(p.draft.values['goal'], 'ship export');
+        final p = plan();
+        expect(p.draft.values['status'], 'active');
+        expect(p.draft.values['kind'], 'creation');
+        expect(p.draft.values['goal'], 'ship export');
 
-      // Three steps, all pending, all `create` (creation-kind leaf steps).
-      final stepList = steps().toList();
-      expect(stepList, hasLength(3));
-      for (final s in stepList) {
-        expect(s.draft.values['status'], 'pending');
-        expect(s.draft.values['kind'], 'create');
-        expect(s.draft.values['plan_id'], p.id.value);
-      }
+        // Three steps, all pending, all `create` (creation-kind leaf steps).
+        final stepList = steps().toList();
+        expect(stepList, hasLength(3));
+        for (final s in stepList) {
+          expect(s.draft.values['status'], 'pending');
+          expect(s.draft.values['kind'], 'create');
+          expect(s.draft.values['plan_id'], p.id.value);
+        }
 
-      // Three step→plan `part_of` edges, two `depends_on` dependency edges.
-      expect(stepOfEdges(), hasLength(3));
-      expect(dependsOnEdges(), hasLength(2));
+        // Three step→plan `part_of` edges, two `depends_on` dependency edges.
+        expect(stepOfEdges(), hasLength(3));
+        expect(dependsOnEdges(), hasLength(2));
 
-      // The plan id is reported and produced.
-      expect(outcome.result!.output<String>('plan'), p.id.value);
-      expect(outcome.result!.output<String>('status'), 'active');
-      final producedBy = memory.recordedEdges.where(
-        (e) => e.type == EdgeType.producedBy && e.from == p.id,
-      );
-      expect(producedBy, hasLength(1));
-    });
+        // The plan id is reported and produced.
+        expect(outcome.result!.output<String>('plan'), p.id.value);
+        expect(outcome.result!.output<String>('status'), 'active');
+        final producedBy = memory.recordedEdges.where(
+          (e) => e.type == EdgeType.producedBy && e.from == p.id,
+        );
+        expect(producedBy, hasLength(1));
+      },
+    );
   });
 
   group('G-P2 critique re-entry — revise then accept', () {
-    test('a revise verdict re-enters; the second pass commits one plan',
-        () async {
-      substrate.planner = <String>['creation'];
-      substrate.decomposer = <String>['Do the thing'];
-      substrate.estimator = <String>['1'];
-      // First critique rejects, second accepts.
-      substrate.evaluator = <String>['revise: missing a step', 'accept'];
+    test(
+      'a revise verdict re-enters; the second pass commits one plan',
+      () async {
+        substrate.planner = <String>['creation'];
+        substrate.decomposer = <String>['Do the thing'];
+        substrate.estimator = <String>['1'];
+        // First critique rejects, second accepts.
+        substrate.evaluator = <String>['revise: missing a step', 'accept'];
 
-      final outcome = await runPlan(<String, Object?>{'goal': 'x'});
+        final outcome = await runPlan(<String, Object?>{'goal': 'x'});
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      // Exactly one Plan committed (the accepted second pass), not one per
-      // iteration — rejected iterations persist nothing.
-      expect(memory.persistedOfType('Plan'), hasLength(1));
-      expect(plan().draft.values['status'], 'active');
-      // The evaluator role was consulted twice (reject, then accept).
-      expect(substrate.evaluatorCalls, 2);
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        // Exactly one Plan committed (the accepted second pass), not one per
+        // iteration — rejected iterations persist nothing.
+        expect(memory.persistedOfType('Plan'), hasLength(1));
+        expect(plan().draft.values['status'], 'active');
+        // The evaluator role was consulted twice (reject, then accept).
+        expect(substrate.evaluatorCalls, 2);
+      },
+    );
   });
 
   group('G-P2 unorderable — a cycle every iteration fails loudly', () {
-    test('no orderable graph after all iterations → errored, no Plan', () async {
-      substrate.planner = <String>['research'];
-      substrate.decomposer = <String>['A <- 2\nB <- 1'];
-      substrate.estimator = <String>['cycle'];
-      substrate.evaluator = <String>['accept'];
+    test(
+      'no orderable graph after all iterations → errored, no Plan',
+      () async {
+        substrate.planner = <String>['research'];
+        substrate.decomposer = <String>['A <- 2\nB <- 1'];
+        substrate.estimator = <String>['cycle'];
+        substrate.evaluator = <String>['accept'];
 
-      final outcome = await runPlan(<String, Object?>{
-        'goal': 'x',
-        'maxIterations': 2,
-      });
+        final outcome = await runPlan(<String, Object?>{
+          'goal': 'x',
+          'maxIterations': 2,
+        });
 
-      // A script signals failure by throwing → the run closes errored.
-      expect(outcome.status, TrailOutcomeStatus.errored);
-      expect(memory.persistedOfType('Plan'), isEmpty);
-    });
+        // A script signals failure by throwing → the run closes errored.
+        expect(outcome.status, TrailOutcomeStatus.errored);
+        expect(memory.persistedOfType('Plan'), isEmpty);
+      },
+    );
   });
 
   group('G-P2 best-effort draft — exhausted but an orderable graph exists', () {
@@ -224,51 +233,55 @@ void main() {
       expect(steps().single.draft.values['kind'], stepKind);
     }
 
-    test('research → research steps', () => expectStepKind('research', 'research'));
+    test(
+      'research → research steps',
+      () => expectStepKind('research', 'research'),
+    );
     test('decision → decide steps', () => expectStepKind('decision', 'decide'));
     test('composite → think steps', () => expectStepKind('composite', 'think'));
   });
 
   group('G-P4 re-planning — surgical, superseded_by, never destructive', () {
-    test('an observation rewrites a sub-graph and supersedes the old step',
-        () async {
-      final planId = NodeId.generate();
-      final oldStep = NodeId.generate();
-      substrate.rePlanner = <String>[
-        'Re-fetch the stale source\n'
-            'supersedes: ${oldStep.value}',
-      ];
+    test(
+      'an observation rewrites a sub-graph and supersedes the old step',
+      () async {
+        final planId = NodeId.generate();
+        final oldStep = NodeId.generate();
+        substrate.rePlanner = <String>[
+          'Re-fetch the stale source\n'
+              'supersedes: ${oldStep.value}',
+        ];
 
-      final outcome = await runPlan(<String, Object?>{
-        'goal': 'keep the export current',
-        'plan': planId.value,
-        'observation': 'the upstream export format changed',
-      });
+        final outcome = await runPlan(<String, Object?>{
+          'goal': 'keep the export current',
+          'plan': planId.value,
+          'observation': 'the upstream export format changed',
+        });
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('status'), 'revised');
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(outcome.result!.output<String>('status'), 'revised');
 
-      // A replacement PlanStep was persisted under the existing plan.
-      final newSteps = steps().toList();
-      expect(newSteps, hasLength(1));
-      expect(newSteps.single.draft.values['plan_id'], planId.value);
+        // A replacement PlanStep was persisted under the existing plan.
+        final newSteps = steps().toList();
+        expect(newSteps, hasLength(1));
+        expect(newSteps.single.draft.values['plan_id'], planId.value);
 
-      // The old step is superseded by the replacement (structural retention).
-      final superseded = memory.recordedEdges.where(
-        (e) => e.type == EdgeType.supersededBy && e.from == oldStep,
-      );
-      expect(superseded, hasLength(1));
-      expect(superseded.single.to, newSteps.single.id);
+        // The old step is superseded by the replacement (structural retention).
+        final superseded = memory.recordedEdges.where(
+          (e) => e.type == EdgeType.supersededBy && e.from == oldStep,
+        );
+        expect(superseded, hasLength(1));
+        expect(superseded.single.to, newSteps.single.id);
 
-      // The replacement is wired into the existing plan with a step-of edge.
-      expect(stepOfEdges(), hasLength(1));
-      expect(stepOfEdges().single.to, planId);
-    });
+        // The replacement is wired into the existing plan with a step-of edge.
+        expect(stepOfEdges(), hasLength(1));
+        expect(stepOfEdges().single.to, planId);
+      },
+    );
   });
 
   group('G-P6 trail vocabulary — the body never drifts from the shared set', () {
-    final source =
-        File('scripts/system/plan_v1.dart').readAsStringSync();
+    final source = File('scripts/system/plan_v1.dart').readAsStringSync();
 
     test('every note(...) category the body emits is a planningEventKind', () {
       final emitted = _noteCategories(source);
@@ -277,7 +290,8 @@ void main() {
         expect(
           planningEventKinds,
           contains(category),
-          reason: '$category is not in the shared planningEventKinds vocabulary',
+          reason:
+              '$category is not in the shared planningEventKinds vocabulary',
         );
       }
     });
@@ -292,18 +306,15 @@ void main() {
       final store = DiskProcedureStore(systemDir: Directory('scripts/system'));
       final resolver = await ProcedureResolver.fromStore(store);
       final loaded = resolver.resolve('plan_v1');
-      expect(
-        loaded.header.requires.toSet(),
-        <String>{
-          'recall',
-          'run',
-          'runProcedure',
-          'embed',
-          'persist',
-          'edge',
-          'note',
-        },
-      );
+      expect(loaded.header.requires.toSet(), <String>{
+        'recall',
+        'run',
+        'runProcedure',
+        'embed',
+        'persist',
+        'edge',
+        'note',
+      });
     });
   });
 }
@@ -366,14 +377,14 @@ class _CapturingMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -445,8 +456,7 @@ class _CapturingMemory implements TomBrainMemory {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A role-scripted `TomBrainSubstrateClient` ───────────────────────────────
@@ -471,7 +481,7 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
   int evaluatorCalls = 0;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final String text;
     switch (call.roleId) {
       case 'planner':
@@ -488,9 +498,9 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
       default:
         text = 'ok';
     }
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: text),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(text),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -511,18 +521,17 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -572,6 +581,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

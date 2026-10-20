@@ -20,7 +20,7 @@
 //   * [endPrompt]     ← `TurnSummarySink`     (turn complete → ✅ DONE banner)
 //
 // Routing is keyed by **`turnId`**, which is the one correlation id present on
-// every per-step record. `LlmTrailRecord.sessionId` is `null` in the live wiring
+// every per-step record. `LlmCallTrailRecord.sessionId` is `null` in the live wiring
 // and `MemoryAccessRecord` carries no session id at all, so the `turnId →
 // sessionId` map is built at [beginPrompt] (the `IncomingTrailRecord` is the only
 // record that carries both) and consulted by the per-step appenders to pick the
@@ -41,7 +41,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
     show IncomingTrailRecord;
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show
-        LlmTrailRecord,
+        LlmCallTrailRecord,
         MemoryAccessRecord,
         SubstrateBridge,
         ToolAccessRecord,
@@ -106,9 +106,12 @@ final class StreamingLiveTrailWriter {
     );
     _safe(() {
       final file = _sessionFile(record.sessionId);
-      final userPreview = _clip(record.text, _userTextPreviewChars)
-          .replaceAll(RegExp(r'\r?\n'), '\n> ');
-      final block = '$_promptHeaderPrefix$turnId '
+      final userPreview = _clip(
+        record.text,
+        _userTextPreviewChars,
+      ).replaceAll(RegExp(r'\r?\n'), '\n> ');
+      final block =
+          '$_promptHeaderPrefix$turnId '
           '[${record.channel.wireName} / ${record.profile ?? 'default'}]\n\n'
           '> User: $userPreview\n';
       _beginBlock(file, block);
@@ -117,10 +120,11 @@ final class StreamingLiveTrailWriter {
 
   /// Renders one completed LLM call: `### 🧠 thinking (<role>)` for an
   /// internal-role call, or `### 💬 assistant` for the user-facing default role.
-  void onLlmCall(LlmTrailRecord record) {
+  void onLlmCall(LlmCallTrailRecord record) {
     final obs = record.observation;
     final turnId = obs.turnId;
-    if (turnId == null) return; // turn-less (dream) call — not a live-trail turn.
+    // A turn-less (dream) call is not a live-trail turn.
+    if (turnId == null) return;
     final turn = _turns[turnId];
     if (turn == null) return; // no open block (header trimmed / never began).
 
@@ -132,7 +136,7 @@ final class StreamingLiveTrailWriter {
     final body = isUserFacing
         ? '\n### 💬 assistant\n\n${obs.answer.trim()}\n'
         : '\n### 🧠 thinking (${obs.callType})\n\n'
-            '${_clip(obs.answer.trim(), _thinkingPreviewChars)}\n';
+              '${_clip(obs.answer.trim(), _thinkingPreviewChars)}\n';
     _safe(() => _append(_sessionFile(turn.sessionId), body));
   }
 
@@ -152,8 +156,11 @@ final class StreamingLiveTrailWriter {
     final resultJson = _prettyJson(record.result);
     final fullLength = resultJson.length;
     final resultPreview = _clip(resultJson, _toolResultPreviewChars);
-    final truncatedNote = fullLength > _toolResultPreviewChars ? ' — preview' : '';
-    final body = '\n### 🔧 ${record.primitive} [${turnId}__$seq]\n\n'
+    final truncatedNote = fullLength > _toolResultPreviewChars
+        ? ' — preview'
+        : '';
+    final body =
+        '\n### 🔧 ${record.primitive} [${turnId}__$seq]\n\n'
         '```json\n$inputJson\n```\n'
         '\n<details><summary>📤 result ($fullLength chars)$truncatedNote'
         '</summary>\n\n'
@@ -176,8 +183,11 @@ final class StreamingLiveTrailWriter {
     turn.step++;
     final seq = turn.step.toString().padLeft(2, '0');
     final payloadJson = _clip(
-        _prettyJson(record.event.payloadJson()), _toolInputPreviewChars);
-    final body = '\n### 🔧 ${_toolLabel(record.event)} [${turnId}__$seq]\n\n'
+      _prettyJson(record.event.payloadJson()),
+      _toolInputPreviewChars,
+    );
+    final body =
+        '\n### 🔧 ${_toolLabel(record.event)} [${turnId}__$seq]\n\n'
         '```json\n$payloadJson\n```\n';
     _safe(() => _append(_sessionFile(turn.sessionId), body));
   }
@@ -186,19 +196,23 @@ final class StreamingLiveTrailWriter {
   /// (suffixed `(failed)` / `(denied)` on a non-success), or `tool.list` for an
   /// enumeration.
   static String _toolLabel(ToolEvent event) => switch (event) {
-        ToolInvoked(:final name) => 'tool $name',
-        ToolFailed(:final name) => 'tool $name (failed)',
-        ToolDenied(:final name) => 'tool $name (denied)',
-        ToolListed() => 'tool.list',
-      };
+    ToolInvoked(:final name) => 'tool $name',
+    ToolFailed(:final name) => 'tool $name (failed)',
+    ToolDenied(:final name) => 'tool $name (denied)',
+    ToolListed() => 'tool.list',
+  };
 
   /// Writes the `### ✅ DONE` banner and closes the turn's live state.
   void endPrompt(TurnSummary summary) {
     final turn = _turns.remove(summary.turnId);
     if (turn == null) return; // turn-less / never began — nothing to close.
     _safe(() {
-      final ms = DateTime.now().toUtc().difference(turn.startedAt).inMilliseconds;
-      final body = '\n\n### ✅ DONE '
+      final ms = DateTime.now()
+          .toUtc()
+          .difference(turn.startedAt)
+          .inMilliseconds;
+      final body =
+          '\n\n### ✅ DONE '
           '(llmCalls=${turn.llmCalls}, memCalls=${turn.memCalls}, '
           'toolCalls=${turn.toolCalls}, ${ms}ms)\n';
       _append(_sessionFile(turn.sessionId), body);
@@ -208,8 +222,8 @@ final class StreamingLiveTrailWriter {
   // ─── File I/O ──────────────────────────────────────────────────────
 
   File _sessionFile(String sessionId) => File(
-        '${root.path}/sessions/${sanitizeTrailFileToken(sessionId)}.live-trail.md',
-      );
+    '${root.path}/sessions/${sanitizeTrailFileToken(sessionId)}.live-trail.md',
+  );
 
   /// Trims the file to the last `turnsKept - 1` prompt blocks, then appends the
   /// new prompt [block] — so after the append exactly [turnsKept] blocks remain.

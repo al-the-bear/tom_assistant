@@ -116,8 +116,7 @@ void main() {
         expect(promptEmitting.intersection(nonPromptEmitting), isEmpty);
       });
 
-      test('partition is exhaustive: 2 prompt + 9 non-prompt = 11 methods',
-          () {
+      test('partition is exhaustive: 2 prompt + 9 non-prompt = 11 methods', () {
         // Dart has no portable runtime introspection of class members
         // outside `dart:mirrors` (banned at the substrate's tier per
         // `lib/src/api/api.dart` import discipline). The cardinality
@@ -130,7 +129,8 @@ void main() {
         expect(
           promptEmitting.length + nonPromptEmitting.length,
           11,
-          reason: 'TomBrainSubstrateClient public surface has exactly 11 '
+          reason:
+              'TomBrainSubstrateClient public surface has exactly 11 '
               'methods; if this fails, the partition above must be '
               'updated and the new method must be slotted into '
               'prompt-emitting (with parametric coverage below) or '
@@ -151,8 +151,9 @@ void main() {
           final captor = _PromptCaptor(
             inner: StubLlmProvider(id: 'stub', defaultModel: 'stub-model'),
           );
-          final TomBrainSubstrateClient client =
-              await _openClient(provider: captor);
+          final TomBrainSubstrateClient client = await _openClient(
+            provider: captor,
+          );
           addTearDown(client.close);
 
           await client.embed('hello');
@@ -168,7 +169,8 @@ void main() {
           expect(
             captor.prompts,
             isEmpty,
-            reason: 'No non-prompt-emitting method may construct a '
+            reason:
+                'No non-prompt-emitting method may construct a '
                 'WirePrompt — that is the structural guarantee the '
                 'surface partition pins.',
           );
@@ -203,11 +205,11 @@ void main() {
             'complete: role "$roleId" + shape "${shape.label}" → anchored prompt',
             () async {
               final captor = _PromptCaptor(
-                inner:
-                    StubLlmProvider(id: 'stub', defaultModel: 'stub-model'),
+                inner: StubLlmProvider(id: 'stub', defaultModel: 'stub-model'),
               );
-              final TomBrainSubstrateClient client =
-                  await _openClient(provider: captor);
+              final TomBrainSubstrateClient client = await _openClient(
+                provider: captor,
+              );
               addTearDown(client.close);
 
               final report = await client.complete(
@@ -223,13 +225,15 @@ void main() {
               expect(
                 AssistantDedicationAnchor.containsAnchor(wire.system),
                 isTrue,
-                reason: 'role $roleId / shape ${shape.label}: '
+                reason:
+                    'role $roleId / shape ${shape.label}: '
                     'WirePrompt.system must contain the anchor',
               );
               expect(
                 wire.system.startsWith(AssistantDedicationAnchor.text),
                 isTrue,
-                reason: 'role $roleId / shape ${shape.label}: '
+                reason:
+                    'role $roleId / shape ${shape.label}: '
                     'WirePrompt.system must START with the anchor text',
               );
               expect(wire.anchorHash, AnchorRegistry.currentHash);
@@ -242,11 +246,11 @@ void main() {
             'completeStream: role "$roleId" + shape "${shape.label}" → anchored prompt',
             () async {
               final captor = _PromptCaptor(
-                inner:
-                    StubLlmProvider(id: 'stub', defaultModel: 'stub-model'),
+                inner: StubLlmProvider(id: 'stub', defaultModel: 'stub-model'),
               );
-              final TomBrainSubstrateClient client =
-                  await _openClient(provider: captor);
+              final TomBrainSubstrateClient client = await _openClient(
+                provider: captor,
+              );
               addTearDown(client.close);
 
               final events = await client
@@ -272,8 +276,8 @@ void main() {
               expect(wire.anchorHash, AnchorRegistry.currentHash);
               expect(wire.roleId, roleId);
 
-              expect(events.last, isA<LlmStreamCompleted>());
-              final completed = events.last as LlmStreamCompleted;
+              expect(events.last, isA<LlmRunCompleted>());
+              final completed = events.last as LlmRunCompleted;
               expect(completed.report.anchorHash, AnchorRegistry.currentHash);
             },
           );
@@ -327,8 +331,9 @@ void main() {
               final tamper = vector.build(
                 StubLlmProvider(id: 'stub', defaultModel: 'stub-model'),
               );
-              final TomBrainSubstrateClient client =
-                  await _openClient(provider: tamper);
+              final TomBrainSubstrateClient client = await _openClient(
+                provider: tamper,
+              );
               addTearDown(client.close);
 
               await expectLater(
@@ -350,8 +355,9 @@ void main() {
               final tamper = vector.build(
                 StubLlmProvider(id: 'stub', defaultModel: 'stub-model'),
               );
-              final TomBrainSubstrateClient client =
-                  await _openClient(provider: tamper);
+              final TomBrainSubstrateClient client = await _openClient(
+                provider: tamper,
+              );
               addTearDown(client.close);
 
               await expectLater(
@@ -390,8 +396,9 @@ void main() {
             inner: StubLlmProvider(id: 'stub', defaultModel: 'stub-model'),
             replacement: 'sha256:dead',
           );
-          final TomBrainSubstrateClient client =
-              await _openClient(provider: tamper);
+          final TomBrainSubstrateClient client = await _openClient(
+            provider: tamper,
+          );
           addTearDown(client.close);
 
           AnchorViolation? caught;
@@ -443,7 +450,8 @@ void main() {
         expect(
           AnchorRegistry.currentVersion,
           AssistantDedicationAnchor.version,
-          reason: 'AnchorRegistry must re-export the shared anchor version. '
+          reason:
+              'AnchorRegistry must re-export the shared anchor version. '
               'A version bump in tom_brain_shared must reach the substrate '
               'in the same change.',
         );
@@ -467,12 +475,8 @@ void main() {
 // the SUT typing rule from B.45 is preserved.
 // ═════════════════════════════════════════════════════════════════════
 
-Budget _budget() => Budget(
-      wallClockMs: 5000,
-      tokenSpend: 1000,
-      toolCalls: 1,
-      memoryWrites: 0,
-    );
+Budget _budget() =>
+    Budget(wallClockMs: 5000, tokenSpend: 1000, toolCalls: 1, memoryWrites: 0);
 
 /// Builds + opens a client wired to [provider]. Routes every
 /// prototype role to `(stub, stub-model)` so the per-role tests share
@@ -507,28 +511,28 @@ Future<TomBrainSubstrateClient> _openClient({
 }
 
 SubstrateConfig _minimalConfig() => SubstrateConfig(
-      providers: const <ProviderProfile>[],
-      roleRoutes: <String, List<RoleRouteEntryConfig>>{
-        for (final roleId in prototypeRoleIds)
-          roleId: const <RoleRouteEntryConfig>[
-            RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
-          ],
-      },
-      embedding: const EmbeddingChoice(
-        providerId: 'stub',
-        model: 'nomic-embed-text',
-        dims: 768,
-        normalize: true,
-      ),
-      webSearch: const WebSearchConfig(
-        defaultProvider: 'duckduckgo',
-        providers: <String, WebSearchProviderConfig>{
-          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
-        },
-      ),
-      webFetch: const WebFetchConfig(),
-      mcpClient: const McpClientConfigBlock(),
-    );
+  providers: const <ProviderProfile>[],
+  roleRoutes: <String, List<RoleRouteEntryConfig>>{
+    for (final roleId in prototypeRoleIds)
+      roleId: const <RoleRouteEntryConfig>[
+        RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
+      ],
+  },
+  embedding: const EmbeddingChoice(
+    providerId: 'stub',
+    model: 'nomic-embed-text',
+    dims: 768,
+    normalize: true,
+  ),
+  webSearch: const WebSearchConfig(
+    defaultProvider: 'duckduckgo',
+    providers: <String, WebSearchProviderConfig>{
+      'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
+    },
+  ),
+  webFetch: const WebFetchConfig(),
+  mcpClient: const McpClientConfigBlock(),
+);
 
 // ─── Input-shape catalogue ───────────────────────────────────────────
 
@@ -542,10 +546,7 @@ class _InputShape {
 
 List<_InputShape> _inputShapes() {
   return <_InputShape>[
-    const _InputShape(
-      label: 'empty inputs',
-      inputs: <String, Object?>{},
-    ),
+    const _InputShape(label: 'empty inputs', inputs: <String, Object?>{}),
     const _InputShape(
       label: 'single key/value',
       inputs: <String, Object?>{'question': 'hello there'},
@@ -568,7 +569,7 @@ List<_InputShape> _inputShapes() {
       inputs: <String, Object?>{
         'prior_thought':
             '${AssistantDedicationAnchor.text}and then some additional '
-                'content the user asked me to consider',
+            'content the user asked me to consider',
       },
     ),
     const _InputShape(
@@ -604,17 +605,13 @@ List<_TamperingVector> _tamperingVectors() {
   return <_TamperingVector>[
     _TamperingVector(
       label: 'fixed-wrong-hash',
-      build: (inner) => _FixedHashTamperingProvider(
-        inner: inner,
-        replacement: 'sha256:dead',
-      ),
+      build: (inner) =>
+          _FixedHashTamperingProvider(inner: inner, replacement: 'sha256:dead'),
     ),
     _TamperingVector(
       label: 'empty-hash',
-      build: (inner) => _FixedHashTamperingProvider(
-        inner: inner,
-        replacement: '',
-      ),
+      build: (inner) =>
+          _FixedHashTamperingProvider(inner: inner, replacement: ''),
     ),
     _TamperingVector(
       label: 'past-version-shape',
@@ -627,10 +624,8 @@ List<_TamperingVector> _tamperingVectors() {
     ),
     _TamperingVector(
       label: 'wrong-prefix',
-      build: (inner) => _PrefixSwapTamperingProvider(
-        inner: inner,
-        newPrefix: 'sha512:',
-      ),
+      build: (inner) =>
+          _PrefixSwapTamperingProvider(inner: inner, newPrefix: 'sha512:'),
     ),
   ];
 }
@@ -641,7 +636,7 @@ List<_TamperingVector> _tamperingVectors() {
 /// Used by group (B) to assert the role layer's anchor prepend
 /// reaches the provider unchanged, and by group (A)'s sentinel to
 /// assert non-prompt-emitting methods never produce a `WirePrompt`.
-final class _PromptCaptor implements LlmProvider {
+final class _PromptCaptor extends LlmProvider {
   final LlmProvider inner;
   final List<WirePrompt> prompts = <WirePrompt>[];
 
@@ -651,78 +646,72 @@ final class _PromptCaptor implements LlmProvider {
   String get id => inner.id;
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) {
+  Future<LlmCallReport> complete(LlmRequest request) {
+    final prompt = request.prompt;
+    final options = request.options;
     prompts.add(prompt);
-    return inner.complete(prompt, options);
+    return inner.complete(LlmRequest(prompt: prompt, options: options));
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) {
+  Stream<LlmEvent> run(LlmRequest request) {
+    final prompt = request.prompt;
+    final options = request.options;
     prompts.add(prompt);
-    return inner.completeStream(prompt, options);
+    return inner.run(LlmRequest(prompt: prompt, options: options));
   }
 }
 
 /// Wraps an inner provider and rewrites every emitted report's
 /// `anchorHash` to a fixed [replacement]. Used by every tampering
 /// vector that wants a constant replacement.
-final class _FixedHashTamperingProvider implements LlmProvider {
+final class _FixedHashTamperingProvider extends LlmProvider {
   final LlmProvider inner;
   final String replacement;
 
-  _FixedHashTamperingProvider({
-    required this.inner,
-    required this.replacement,
-  });
+  _FixedHashTamperingProvider({required this.inner, required this.replacement});
 
   @override
   String get id => inner.id;
 
   LlmCallReport _rewrite(LlmCallReport r) => LlmCallReport(
-        providerId: r.providerId,
-        modelId: r.modelId,
-        anchorHash: replacement,
-        promptHash: r.promptHash,
-        tokensIn: r.tokensIn,
-        tokensOut: r.tokensOut,
-        retries: r.retries,
-        wallClockMs: r.wallClockMs,
-        cost: r.cost,
-        templateSha: r.templateSha,
-        notes: r.notes,
-      );
+    providerId: r.providerId,
+    modelId: r.modelId,
+    anchorHash: replacement,
+    promptHash: r.promptHash,
+    tokensIn: r.tokensIn,
+    tokensOut: r.tokensOut,
+    retries: r.retries,
+    wallClockMs: r.wallClockMs,
+    cost: r.cost,
+    templateSha: r.templateSha,
+    notes: r.notes,
+  );
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
-    final r = await inner.complete(prompt, options);
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
+    final r = await inner.complete(
+      LlmRequest(prompt: prompt, options: options),
+    );
     return _rewrite(r);
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
-    await for (final ev in inner.completeStream(prompt, options)) {
-      if (ev is LlmStreamCompleted) {
-        yield LlmStreamCompleted(
-          callId: ev.callId,
-          report: _rewrite(ev.report),
-        );
-      } else if (ev is LlmStreamFailed) {
-        yield LlmStreamFailed(
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
+    await for (final ev in inner.run(
+      LlmRequest(prompt: prompt, options: options),
+    )) {
+      if (ev is LlmRunCompleted) {
+        yield LlmRunCompleted(callId: ev.callId, report: _rewrite(ev.report));
+      } else if (ev is LlmRunFailed) {
+        yield LlmRunFailed(
           callId: ev.callId,
           failure: ev.failure,
-          report: _rewrite(ev.report),
+          report: _rewrite(ev.report!),
         );
       } else {
         yield ev;
@@ -738,14 +727,11 @@ final class _FixedHashTamperingProvider implements LlmProvider {
 /// expected sha256 hex would still mismatch under string equality —
 /// the test pins that the substrate's check uses the full string,
 /// not a prefix-tolerant comparator).
-final class _PrefixSwapTamperingProvider implements LlmProvider {
+final class _PrefixSwapTamperingProvider extends LlmProvider {
   final LlmProvider inner;
   final String newPrefix;
 
-  _PrefixSwapTamperingProvider({
-    required this.inner,
-    required this.newPrefix,
-  });
+  _PrefixSwapTamperingProvider({required this.inner, required this.newPrefix});
 
   @override
   String get id => inner.id;
@@ -757,44 +743,43 @@ final class _PrefixSwapTamperingProvider implements LlmProvider {
   }
 
   LlmCallReport _rewrite(LlmCallReport r) => LlmCallReport(
-        providerId: r.providerId,
-        modelId: r.modelId,
-        anchorHash: _swap(r.anchorHash),
-        promptHash: r.promptHash,
-        tokensIn: r.tokensIn,
-        tokensOut: r.tokensOut,
-        retries: r.retries,
-        wallClockMs: r.wallClockMs,
-        cost: r.cost,
-        templateSha: r.templateSha,
-        notes: r.notes,
-      );
+    providerId: r.providerId,
+    modelId: r.modelId,
+    anchorHash: _swap(r.anchorHash),
+    promptHash: r.promptHash,
+    tokensIn: r.tokensIn,
+    tokensOut: r.tokensOut,
+    retries: r.retries,
+    wallClockMs: r.wallClockMs,
+    cost: r.cost,
+    templateSha: r.templateSha,
+    notes: r.notes,
+  );
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
-    final r = await inner.complete(prompt, options);
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
+    final r = await inner.complete(
+      LlmRequest(prompt: prompt, options: options),
+    );
     return _rewrite(r);
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
-    await for (final ev in inner.completeStream(prompt, options)) {
-      if (ev is LlmStreamCompleted) {
-        yield LlmStreamCompleted(
-          callId: ev.callId,
-          report: _rewrite(ev.report),
-        );
-      } else if (ev is LlmStreamFailed) {
-        yield LlmStreamFailed(
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
+    await for (final ev in inner.run(
+      LlmRequest(prompt: prompt, options: options),
+    )) {
+      if (ev is LlmRunCompleted) {
+        yield LlmRunCompleted(callId: ev.callId, report: _rewrite(ev.report));
+      } else if (ev is LlmRunFailed) {
+        yield LlmRunFailed(
           callId: ev.callId,
           failure: ev.failure,
-          report: _rewrite(ev.report),
+          report: _rewrite(ev.report!),
         );
       } else {
         yield ev;

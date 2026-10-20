@@ -29,7 +29,7 @@
 import 'dart:io';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
-    show LlmTrailRecord, SubstrateBridge, TurnSummary;
+    show LlmCallTrailRecord, SubstrateBridge, TurnSummary;
 
 import 'llm_raw_path.dart'
     show llmRawPathFromRoot, llmRawStem, sanitizeTrailFileToken;
@@ -56,8 +56,11 @@ final class SessionSummaryWriter {
     final file = File(
       '${root.path}/sessions/${sanitizeTrailFileToken(summary.sessionId)}.summary.md',
     );
-    _TurnBlockFile(file: file, header: header, cap: cap)
-        .append(_renderTurnBlock(summary, includeSession: false));
+    _TurnBlockFile(
+      file: file,
+      header: header,
+      cap: cap,
+    ).append(_renderTurnBlock(summary, includeSession: false));
   }
 }
 
@@ -79,8 +82,11 @@ final class GlobalSummaryWriter {
   void writeTurn(TurnSummary summary) {
     const header = '$_globalFileMarker\n# all sessions';
     final file = File('${root.path}/summary/all-sessions.summary.md');
-    _TurnBlockFile(file: file, header: header, cap: cap)
-        .append(_renderTurnBlock(summary, includeSession: true));
+    _TurnBlockFile(
+      file: file,
+      header: header,
+      cap: cap,
+    ).append(_renderTurnBlock(summary, includeSession: true));
   }
 }
 
@@ -114,18 +120,21 @@ final class CallProjectionWriter {
 
   /// Maps a record to its bucket key (the file stem) — the call's role, or its
   /// `<provider>-<model>`.
-  final String Function(LlmTrailRecord record) bucketOf;
+  final String Function(LlmCallTrailRecord record) bucketOf;
 
   /// Prepends [record]'s projection entry to its bucket file (newest first).
   /// Projection files sit two hops under the root, so links use `../../`.
-  void writeCall(LlmTrailRecord record) {
+  void writeCall(LlmCallTrailRecord record) {
     final bucket = bucketOf(record);
     final header = '<!-- tom-brain $kind summary: $bucket -->\n# $kind $bucket';
     final file = File(
       '${root.path}/summary/$subdir/${sanitizeTrailFileToken(bucket)}.summary.md',
     );
-    _ProjectionFile(file: file, header: header, cap: cap)
-        .prepend(_renderProjectionEntry(record, '../../'));
+    _ProjectionFile(
+      file: file,
+      header: header,
+      cap: cap,
+    ).prepend(_renderProjectionEntry(record, '../../'));
   }
 }
 
@@ -141,11 +150,11 @@ final class SummaryFanout {
     required CallProjectionWriter byRole,
     required CallProjectionWriter byLlm,
     bool captureInternalRoles = true,
-  })  : _session = session,
-        _global = global,
-        _byRole = byRole,
-        _byLlm = byLlm,
-        _captureInternalRoles = captureInternalRoles;
+  }) : _session = session,
+       _global = global,
+       _byRole = byRole,
+       _byLlm = byLlm,
+       _captureInternalRoles = captureInternalRoles;
 
   /// Builds the standard fan-out for trail [root]: session files under
   /// `sessions/`, the global file + the two projections under `summary/`. The
@@ -160,29 +169,28 @@ final class SummaryFanout {
     Directory root, {
     int cap = 1000,
     bool captureInternalRoles = true,
-  }) =>
-      SummaryFanout(
-        session: SessionSummaryWriter(root: root, cap: cap),
-        global: GlobalSummaryWriter(root: root, cap: cap),
-        byRole: CallProjectionWriter(
-          root: root,
-          subdir: 'by-role',
-          kind: 'role',
-          cap: cap,
-          bucketOf: (record) => record.observation.callType,
-        ),
-        byLlm: CallProjectionWriter(
-          root: root,
-          subdir: 'by-llm',
-          kind: 'llm',
-          cap: cap,
-          bucketOf: (record) {
-            final report = record.observation.report;
-            return '${report.providerId}-${report.modelId}';
-          },
-        ),
-        captureInternalRoles: captureInternalRoles,
-      );
+  }) => SummaryFanout(
+    session: SessionSummaryWriter(root: root, cap: cap),
+    global: GlobalSummaryWriter(root: root, cap: cap),
+    byRole: CallProjectionWriter(
+      root: root,
+      subdir: 'by-role',
+      kind: 'role',
+      cap: cap,
+      bucketOf: (record) => record.observation.callType,
+    ),
+    byLlm: CallProjectionWriter(
+      root: root,
+      subdir: 'by-llm',
+      kind: 'llm',
+      cap: cap,
+      bucketOf: (record) {
+        final report = record.observation.report;
+        return '${report.providerId}-${report.modelId}';
+      },
+    ),
+    captureInternalRoles: captureInternalRoles,
+  );
 
   final SessionSummaryWriter _session;
   final GlobalSummaryWriter _global;
@@ -195,7 +203,7 @@ final class SummaryFanout {
   /// per-call records — they render the turn's prompt + answer directly (§5.4) —
   /// so nothing is buffered here. Best-effort (§9): a projection write that
   /// throws never escapes.
-  void onCall(LlmTrailRecord record) {
+  void onCall(LlmCallTrailRecord record) {
     final obs = record.observation;
     // §11.1 internal-role gate: when off, only the user-facing role is trailed.
     if (!_captureInternalRoles && obs.callType != SubstrateBridge.defaultRole) {
@@ -241,16 +249,16 @@ String _sessionHeaderBody(TurnSummary summary) =>
 /// the **complete** final answer under `### Answer`, both verbatim. No per-call
 /// metadata — that drill-down lives in the raw `llm/…` dumps (§5.2) and the
 /// by-role / by-llm projections (§5.8).
-String _renderTurnBlock(
-  TurnSummary summary, {
-  required bool includeSession,
-}) {
-  final sessionSegment =
-      includeSession ? 'session: ${summary.sessionId}  ·  ' : '';
+String _renderTurnBlock(TurnSummary summary, {required bool includeSession}) {
+  final sessionSegment = includeSession
+      ? 'session: ${summary.sessionId}  ·  '
+      : '';
   final answer = summary.finalAnswer;
   final buffer = StringBuffer()
-    ..writeln('## turn ${summary.turnId}  ·  ${_timestamp(summary.startedAt)}'
-        '  ·  ${sessionSegment}profile: ${summary.profile ?? 'default'}')
+    ..writeln(
+      '## turn ${summary.turnId}  ·  ${_timestamp(summary.startedAt)}'
+      '  ·  ${sessionSegment}profile: ${summary.profile ?? 'default'}',
+    )
     ..writeln()
     ..writeln('### Prompt')
     ..writeln()
@@ -258,16 +266,18 @@ String _renderTurnBlock(
     ..writeln()
     ..writeln('### Answer')
     ..writeln()
-    ..writeln(answer == null
-        ? '_(no answer — the turn did not complete)_'
-        : answer.trim());
+    ..writeln(
+      answer == null
+          ? '_(no answer — the turn did not complete)_'
+          : answer.trim(),
+    );
   return buffer.toString().trimRight();
 }
 
 /// One §5.8 projection entry: turn ref · compact prompt · compact answer · raw
 /// link. The compact prompt comes from the captured wire body when present; it
 /// is `—` when the wire was not captured (`trail.capture.wireBody=false`, §8).
-String _renderProjectionEntry(LlmTrailRecord record, String linkPrefix) {
+String _renderProjectionEntry(LlmCallTrailRecord record, String linkPrefix) {
   final obs = record.observation;
   final wire = obs.wire;
   final prompt = wire == null ? '—' : _truncate(_oneLine(wire.body), 80);
@@ -314,8 +324,9 @@ class _TurnBlockFile {
 
   void append(String block) {
     final blocks = _readBlocks()..add(block);
-    final kept =
-        blocks.length > cap ? blocks.sublist(blocks.length - cap) : blocks;
+    final kept = blocks.length > cap
+        ? blocks.sublist(blocks.length - cap)
+        : blocks;
     file.parent.createSync(recursive: true);
     file.writeAsStringSync('${<String>[header, ...kept].join(_separator)}\n');
   }
@@ -334,7 +345,11 @@ class _TurnBlockFile {
 /// one-line `- …` entries, newest at the top. Prepend is read-modify-rewrite;
 /// entries beyond [cap] drop from the tail (oldest first).
 class _ProjectionFile {
-  _ProjectionFile({required this.file, required this.header, required this.cap});
+  _ProjectionFile({
+    required this.file,
+    required this.header,
+    required this.cap,
+  });
 
   final File file;
   final String header;

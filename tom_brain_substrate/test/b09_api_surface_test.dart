@@ -6,7 +6,7 @@
 //     `lib/src/api/` against the substrate-spec § 3.1 surface, so
 //     a future edit cannot silently drop a field / method without
 //     a compile error here.
-//   - Prove the sealed sums (`LlmStreamEvent`, `SubstrateEvent`)
+//   - Prove the sealed sums (`LlmEvent`, `SubstrateEvent`)
 //     are exhaustively branchable — i.e. a `switch` on every
 //     subtype compiles cleanly under the strict-mode analyzer.
 //   - Prove the two-class split (`TomBrainSubstrate implements
@@ -130,7 +130,10 @@ void main() {
       expect(report.wallClockMs, equals(250));
       expect(report.cost, equals(0.0012));
       expect(report.templateSha, equals('abc123'));
-      expect(report.notes, equals(<String>['response_format downgraded to text']));
+      expect(
+        report.notes,
+        equals(<String>['response_format downgraded to text']),
+      );
     });
 
     test('LlmCallReport defaults cost / templateSha / notes', () {
@@ -149,27 +152,21 @@ void main() {
       expect(report.notes, isEmpty);
     });
 
-    // ─── LlmStreamEvent sealed sum exhaustiveness ───────────────
+    // ─── LlmEvent sealed sum exhaustiveness ───────────────
 
-    test('LlmStreamEvent variants compose into an exhaustive switch',
-        () {
+    test('LlmEvent variants compose into an exhaustive switch', () {
       // The compile-time guarantee is the analyzer treating the
       // switch as exhaustive; this test simply ensures every
       // variant constructs and routes through the switch.
-      final events = <LlmStreamEvent>[
-        const LlmStreamStarted(
-          callId: 'c1',
-          providerId: 'p',
-          modelId: 'm',
-        ),
-        const LlmStreamChunk(callId: 'c1', text: 'hello'),
-        const LlmStreamToolCallProposed(
-          callId: 'c1',
-          toolCallId: 't1',
-          toolName: 'web.search',
+      final events = <LlmEvent>[
+        const LlmRunStarted(callId: 'c1', providerId: 'p', modelId: 'm'),
+        const LlmTextDelta('hello'),
+        const LlmToolCall(
+          callId: 't1',
+          name: 'web.search',
           arguments: <String, Object?>{'q': 'foo'},
         ),
-        const LlmStreamCompleted(
+        const LlmRunCompleted(
           callId: 'c1',
           report: LlmCallReport(
             providerId: 'p',
@@ -182,7 +179,7 @@ void main() {
             wallClockMs: 0,
           ),
         ),
-        const LlmStreamFailed(
+        const LlmRunFailed(
           callId: 'c1',
           failure: LlmFailure(
             classCode: 'rate_limit',
@@ -201,30 +198,26 @@ void main() {
         ),
       ];
 
-      String classify(LlmStreamEvent e) {
+      String classify(LlmEvent e) {
         switch (e) {
-          case LlmStreamStarted _:
+          case LlmRunStarted _:
             return 'started';
-          case LlmStreamChunk _:
+          case LlmTextDelta _:
             return 'chunk';
-          case LlmStreamToolCallProposed _:
+          case LlmToolCall _:
             return 'tool';
-          case LlmStreamCompleted _:
+          case LlmRunCompleted _:
             return 'completed';
-          case LlmStreamFailed _:
+          case LlmRunFailed _:
             return 'failed';
+          default:
+            return 'other';
         }
       }
 
       expect(
         events.map(classify).toList(),
-        equals(<String>[
-          'started',
-          'chunk',
-          'tool',
-          'completed',
-          'failed',
-        ]),
+        equals(<String>['started', 'chunk', 'tool', 'completed', 'failed']),
       );
     });
 
@@ -498,8 +491,10 @@ void main() {
       final payload = ev.payloadJson();
       // The payload carries the fingerprint, never the token.
       expect(payload.containsKey('credentialFingerprint'), isTrue);
-      expect(payload.values.any((v) =>
-          v is String && v.contains('Bearer')), isFalse);
+      expect(
+        payload.values.any((v) => v is String && v.contains('Bearer')),
+        isFalse,
+      );
     });
 
     // ─── SubstrateStats ─────────────────────────────────────────
@@ -543,10 +538,7 @@ void main() {
       // it against a short timeout.
       final outcome = Future.any(<Future<String>>[
         token.whenCancelled.then((_) => 'cancelled'),
-        Future<String>.delayed(
-          const Duration(milliseconds: 30),
-          () => 'never',
-        ),
+        Future<String>.delayed(const Duration(milliseconds: 30), () => 'never'),
       ]);
       expect(outcome, completion(equals('never')));
     });
@@ -567,14 +559,16 @@ void main() {
       expect(await futureSeenCancel, isTrue);
     });
 
-    test('whenCancelled on already-cancelled source resolves immediately',
-        () async {
-      final src = CancellationTokenSource();
-      src.cancel();
-      // Awaiting after cancellation returns without blocking.
-      await src.token.whenCancelled.timeout(const Duration(milliseconds: 50));
-      expect(src.token.isCancelled, isTrue);
-    });
+    test(
+      'whenCancelled on already-cancelled source resolves immediately',
+      () async {
+        final src = CancellationTokenSource();
+        src.cancel();
+        // Awaiting after cancellation returns without blocking.
+        await src.token.whenCancelled.timeout(const Duration(milliseconds: 50));
+        expect(src.token.isCancelled, isTrue);
+      },
+    );
   });
 }
 
@@ -587,19 +581,16 @@ final class _DummySubstrate extends TomBrainSubstrate {
   const _DummySubstrate();
 
   @override
-  Future<void> open(SubstrateConfig config) async =>
-      throw UnimplementedError();
+  Future<void> open(SubstrateConfig config) async => throw UnimplementedError();
 
   @override
   Future<void> close() async => throw UnimplementedError();
 
   @override
-  Future<LlmCallReport> complete(LlmCall call) =>
-      throw UnimplementedError();
+  Future<LlmCallReport> complete(LlmCall call) => throw UnimplementedError();
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      throw UnimplementedError();
+  Stream<LlmEvent> completeStream(LlmCall call) => throw UnimplementedError();
 
   @override
   Future<EmbeddingResult> embed(String text) => throw UnimplementedError();
@@ -612,15 +603,13 @@ final class _DummySubstrate extends TomBrainSubstrate {
   Future<WebSearchResult> webSearch(
     String query, {
     WebSearchOptions options = WebSearchOptions.empty,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<WebFetchResult> webFetch(
     Uri url, {
     WebFetchOptions options = WebFetchOptions.empty,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   McpClient mcpClient(McpEndpoint endpoint) => throw UnimplementedError();
@@ -637,20 +626,18 @@ final class _DummySubstrate extends TomBrainSubstrate {
 // is the smallest valid value: empty providers + roleRoutes, a
 // placeholder embedding choice, and default web/MCP/price blocks.
 SubstrateConfig _minimalSubstrateConfig() => SubstrateConfig(
-      providers: const [],
-      roleRoutes: const {},
-      embedding: const EmbeddingChoice(
-        providerId: 'stub',
-        model: 'nomic-embed-text',
-        dims: 768,
-        normalize: true,
-      ),
-      webSearch: const WebSearchConfig(
-        defaultProvider: 'duckduckgo',
-        providers: {
-          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
-        },
-      ),
-      webFetch: const WebFetchConfig(),
-      mcpClient: const McpClientConfigBlock(),
-    );
+  providers: const [],
+  roleRoutes: const {},
+  embedding: const EmbeddingChoice(
+    providerId: 'stub',
+    model: 'nomic-embed-text',
+    dims: 768,
+    normalize: true,
+  ),
+  webSearch: const WebSearchConfig(
+    defaultProvider: 'duckduckgo',
+    providers: {'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html')},
+  ),
+  webFetch: const WebFetchConfig(),
+  mcpClient: const McpClientConfigBlock(),
+);

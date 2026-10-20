@@ -57,10 +57,10 @@ void main() {
   // Every acceptance test boots the host the way the prototype does: the
   // locked sandbox default, no opt-in surfaces, no native primitives.
   D4rtDcliHost makeLockedHost() => D4rtDcliHost(
-        memoryBridge: memoryBridge,
-        substrateBridge: substrateBridge,
-        sandbox: const SandboxConfig.locked(),
-      );
+    memoryBridge: memoryBridge,
+    substrateBridge: substrateBridge,
+    sandbox: const SandboxConfig.locked(),
+  );
 
   setUp(() {
     stacks = _RecordingStackApi();
@@ -69,23 +69,26 @@ void main() {
     memoryBridge = MemoryBridge(memoryClient);
     substrateBridge = SubstrateBridge(
       substrateClient,
-      routeChainOf: (_) =>
-          const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+      routeChainOf: (_) => const <RouteEntry>[
+        RouteEntry(providerId: 'p', model: 'm'),
+      ],
     );
   });
 
   group('C.18-1 host boots', () {
-    test('a locked host comes up runnable (live interpreter + CLI surface)',
-        () {
-      final host = makeLockedHost();
+    test(
+      'a locked host comes up runnable (live interpreter + CLI surface)',
+      () {
+        final host = makeLockedHost();
 
-      expect(host.interpreter, isA<D4rt>());
-      expect(host.cli, isA<D4rtCliApi>());
-      // The composition contract restated as an acceptance fact: the CLI
-      // surface wraps the same interpreter scripts run on, not a second.
-      expect(identical(host.cli.d4rt, host.interpreter), isTrue);
-      expect(host.sandbox.isLocked, isTrue);
-    });
+        expect(host.interpreter, isA<D4rt>());
+        expect(host.cli, isA<D4rtCliApi>());
+        // The composition contract restated as an acceptance fact: the CLI
+        // surface wraps the same interpreter scripts run on, not a second.
+        expect(identical(host.cli.d4rt, host.interpreter), isTrue);
+        expect(host.sandbox.isLocked, isTrue);
+      },
+    );
 
     test('a freshly-booted host runs a trivial string-source script', () async {
       final host = makeLockedHost();
@@ -111,8 +114,7 @@ Future<bool> run() async {
       expect(resolved, isTrue);
     });
 
-    test('the substrate bridge resolves from a string-source script',
-        () async {
+    test('the substrate bridge resolves from a string-source script', () async {
       substrateClient.streamEvents = _completedStream(text: 'ok');
       final host = makeLockedHost();
 
@@ -127,15 +129,15 @@ Future<bool> run() async {
       expect(resolved, isTrue);
     });
 
-    test('a bare, un-booted interpreter does NOT resolve the bridge',
-        () async {
+    test('a bare, un-booted interpreter does NOT resolve the bridge', () async {
       // Negative control: resolution is the host's boot, not interpreter
       // leniency. A bare interpreter has no `BrainBridges` registration and
       // no `mem` global, so importing the library and calling fails.
       final bare = D4rt();
       expect(
         () => bare.execute(
-          source: '''
+          source:
+              '''
 import '${BridgeLibraries.memoryLibrary}';
 
 Future<bool> run() async => (await mem.recall('x')).containsKey('nodes');
@@ -191,16 +193,17 @@ Future<Map<String, Object?>> run(String question) async {
       expect(out['nodeText'], 'rsync nightly to NAS');
     });
 
-    test('substrate: an llm call round-trips through the `sub` global',
-        () async {
-      substrateClient.streamEvents = _completedStream(
-        chunks: <String>['Back up ', 'nightly.'],
-      );
+    test(
+      'substrate: an llm call round-trips through the `sub` global',
+      () async {
+        substrateClient.streamEvents = _completedStream(
+          chunks: <String>['Back up ', 'nightly.'],
+        );
 
-      final host = makeLockedHost();
+        final host = makeLockedHost();
 
-      final result = await host.run(
-        '''
+        final result = await host.run(
+          '''
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<String> run(String prompt) async {
@@ -208,38 +211,41 @@ Future<String> run(String prompt) async {
   return answer['text'];
 }
 ''',
-        inputs: <Object?>['draft the answer'],
-      );
+          inputs: <Object?>['draft the answer'],
+        );
 
-      expect(substrateClient.lastCall!.inputs,
-          <String, Object?>{'prompt': 'draft the answer'});
-      expect(result, 'Back up nightly.');
-    });
+        expect(substrateClient.lastCall!.inputs, <String, Object?>{
+          'prompt': 'draft the answer',
+        });
+        expect(result, 'Back up nightly.');
+      },
+    );
 
-    test('both bridges in one procedure (the answer_with_memory_v1 shape)',
-        () async {
-      memoryClient.recallResult = RecallResult(
-        nodes: <Node>[
-          Node(
-            id: NodeId.fromString('n_00000000000000000000000007'),
-            typeName: 'Claim',
-            values: const <String, Object?>{'text': 'prior context'},
-            createdAt: DateTime.utc(2026, 6, 1),
+    test(
+      'both bridges in one procedure (the answer_with_memory_v1 shape)',
+      () async {
+        memoryClient.recallResult = RecallResult(
+          nodes: <Node>[
+            Node(
+              id: NodeId.fromString('n_00000000000000000000000007'),
+              typeName: 'Claim',
+              values: const <String, Object?>{'text': 'prior context'},
+              createdAt: DateTime.utc(2026, 6, 1),
+            ),
+          ],
+          report: const RecallReport(
+            candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 1},
+            fusionStrategy: FusionStrategy.rrf,
+            diversityStrategy: DiversityStrategy.mmr,
+            elapsedMs: 2,
           ),
-        ],
-        report: const RecallReport(
-          candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 1},
-          fusionStrategy: FusionStrategy.rrf,
-          diversityStrategy: DiversityStrategy.mmr,
-          elapsedMs: 2,
-        ),
-      );
-      substrateClient.streamEvents = _completedStream(text: 'final answer');
+        );
+        substrateClient.streamEvents = _completedStream(text: 'final answer');
 
-      final host = makeLockedHost();
+        final host = makeLockedHost();
 
-      final result = await host.run(
-        '''
+        final result = await host.run(
+          '''
 import '${BridgeLibraries.memoryLibrary}';
 import '${BridgeLibraries.substrateLibrary}';
 
@@ -252,29 +258,28 @@ Future<Map<String, Object?>> run(String question) async {
   };
 }
 ''',
-        inputs: <Object?>['prior?'],
-      );
+          inputs: <Object?>['prior?'],
+        );
 
-      expect(memoryClient.lastRecallQuery!.text, 'prior?');
-      expect(substrateClient.lastCall!.inputs,
-          <String, Object?>{'prompt': 'use the recalled context'});
-      final out = (result as Map).cast<String, Object?>();
-      expect(out['recalledId'], 'n_00000000000000000000000007');
-      expect(out['answer'], 'final answer');
-    });
+        expect(memoryClient.lastRecallQuery!.text, 'prior?');
+        expect(substrateClient.lastCall!.inputs, <String, Object?>{
+          'prompt': 'use the recalled context',
+        });
+        final out = (result as Map).cast<String, Object?>();
+        expect(out['recalledId'], 'n_00000000000000000000000007');
+        expect(out['answer'], 'final answer');
+      },
+    );
   });
 }
 
 /// Builds a minimal completed `llm` stream: optional [chunks] (or a single
-/// [text]) followed by an `LlmStreamCompleted` so `sub.send(...)` resolves.
-List<LlmStreamEvent> _completedStream({
-  String? text,
-  List<String>? chunks,
-}) {
+/// [text]) followed by an `LlmRunCompleted` so `sub.send(...)` resolves.
+List<LlmEvent> _completedStream({String? text, List<String>? chunks}) {
   final parts = chunks ?? <String>[?text];
-  return <LlmStreamEvent>[
-    for (final part in parts) LlmStreamChunk(callId: 'c', text: part),
-    const LlmStreamCompleted(
+  return <LlmEvent>[
+    for (final part in parts) LlmTextDelta(part),
+    const LlmRunCompleted(
       callId: 'c',
       report: LlmCallReport(
         providerId: 'ollama:local',
@@ -318,8 +323,7 @@ class _RecordingMemoryClient implements TomBrainMemoryClient {
   StackApi get stacks => _stacks;
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// Minimal recording `StackApi` — present only because
@@ -327,34 +331,32 @@ class _RecordingMemoryClient implements TomBrainMemoryClient {
 /// exercised by the C.18 acceptance scripts.
 class _RecordingStackApi implements StackApi {
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// Recording `TomBrainSubstrateClient` double — captures the `LlmCall` the
 /// bridge constructs and replays a canned stream (mirrors C.16).
 class _RecordingSubstrateClient implements TomBrainSubstrateClient {
   LlmCall? lastCall;
-  List<LlmStreamEvent> streamEvents = const <LlmStreamEvent>[];
+  List<LlmEvent> streamEvents = const <LlmEvent>[];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     lastCall = call;
-    return Stream<LlmStreamEvent>.fromIterable(streamEvents);
+    return Stream<LlmEvent>.fromIterable(streamEvents);
   }
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

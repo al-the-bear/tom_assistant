@@ -53,21 +53,19 @@ void main() {
       substrate,
       promptResolver: (String id, Map<String, Object?> inputs) async =>
           const ResolvedPrompt(
-        role: 'assistant',
-        llmRoute: 'assistant',
-        templateBody: 'curate',
-        tools: <Object?>[],
-        maxToolLoops: 64,
-        temperature: null,
-        channel: null,
-      ),
+            role: 'assistant',
+            llmRoute: 'assistant',
+            templateBody: 'curate',
+            tools: <Object?>[],
+            maxToolLoops: 64,
+            temperature: null,
+            channel: null,
+          ),
       routeChainOf: (String _) => const <RouteEntry>[],
     );
   });
 
-  Future<ProcedureOutcome> conduct(
-    Map<String, Object?> args,
-  ) async {
+  Future<ProcedureOutcome> conduct(Map<String, Object?> args) async {
     final store = DiskProcedureStore(systemDir: Directory('scripts/system'));
     final resolver = await ProcedureResolver.fromStore(store);
     final engine = ProcedureEngine(
@@ -78,10 +76,12 @@ void main() {
       now: () => DateTime.utc(2026, 6, 2, 12, 0, 0),
     );
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'recall_conductor_v1',
-          arguments: args,
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'recall_conductor_v1',
+            arguments: args,
+          ),
+        )
         .outcome;
   }
 
@@ -107,8 +107,11 @@ void main() {
       final curated = result.output<List>('curatedIds')!.cast<String>();
       expect(curated.length, 3, reason: 'curation is capped at volumeCap');
       for (final id in curated) {
-        expect(ids, contains(id),
-            reason: 'only nodes the loop surfaced may be curated');
+        expect(
+          ids,
+          contains(id),
+          reason: 'only nodes the loop surfaced may be curated',
+        );
       }
       // The KEEP path succeeded, so the run did not fall back to the seed.
       expect(result.output<bool>('degraded'), isFalse);
@@ -126,12 +129,18 @@ void main() {
       // just their ids: one node map per curated id, in curated order, each
       // carrying the `id` the answer's `recordAccess` call later marks.
       final curatedNodes = result.output<List>('curatedNodes')!;
-      expect(curatedNodes.length, curated.length,
-          reason: 'one node map per curated id');
+      expect(
+        curatedNodes.length,
+        curated.length,
+        reason: 'one node map per curated id',
+      );
       for (var i = 0; i < curated.length; i++) {
         final node = curatedNodes[i] as Map;
-        expect(node['id'], curated[i],
-            reason: 'curatedNodes are in curated order and carry their id');
+        expect(
+          node['id'],
+          curated[i],
+          reason: 'curatedNodes are in curated order and carry their id',
+        );
       }
     });
   });
@@ -151,8 +160,11 @@ void main() {
       // one of them counted as an access — curation must not warm memory.
       expect(memory.recallQueries.length, greaterThanOrEqualTo(2));
       for (final q in memory.recallQueries) {
-        expect(q.countsAsAccess, isFalse,
-            reason: 'conductor recalls are inspections, never uses');
+        expect(
+          q.countsAsAccess,
+          isFalse,
+          reason: 'conductor recalls are inspections, never uses',
+        );
       }
       // The re-search reached the cold corner (recallCold → ranking coldest).
       expect(
@@ -170,31 +182,33 @@ void main() {
   });
 
   group('RC-3 the loop degrades to the seed when the LLM is unavailable', () {
-    test('a failing conductor call returns a capped seed set, degraded:true',
-        () async {
-      substrate.failAll = true;
+    test(
+      'a failing conductor call returns a capped seed set, degraded:true',
+      () async {
+        substrate.failAll = true;
 
-      final outcome = await conduct(<String, Object?>{
-        'text': 'how do I automate backups?',
-        'volumeCap': 2,
-      });
+        final outcome = await conduct(<String, Object?>{
+          'text': 'how do I automate backups?',
+          'volumeCap': 2,
+        });
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      final result = outcome.result!;
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        final result = outcome.result!;
 
-      expect(result.output<bool>('degraded'), isTrue);
-      final curated = result.output<List>('curatedIds')!.cast<String>();
-      // Degrades to the seed, still volume-capped.
-      expect(curated.length, 2);
-      for (final id in curated) {
-        expect(memory.seedIds, contains(id));
-      }
-      // The seed recall still ran read-only even on the degrade path.
-      expect(memory.recallQueries, isNotEmpty);
-      for (final q in memory.recallQueries) {
-        expect(q.countsAsAccess, isFalse);
-      }
-    });
+        expect(result.output<bool>('degraded'), isTrue);
+        final curated = result.output<List>('curatedIds')!.cast<String>();
+        // Degrades to the seed, still volume-capped.
+        expect(curated.length, 2);
+        for (final id in curated) {
+          expect(memory.seedIds, contains(id));
+        }
+        // The seed recall still ran read-only even on the degrade path.
+        expect(memory.recallQueries, isNotEmpty);
+        for (final q in memory.recallQueries) {
+          expect(q.countsAsAccess, isFalse);
+        }
+      },
+    );
   });
 }
 
@@ -229,8 +243,7 @@ class _ConductorMemory implements TomBrainMemory {
   final List<Node> _seedNodes = <Node>[
     for (var i = 1; i <= 5; i++)
       Node(
-        id: NodeId.fromString(
-            'n_0000000000000000000000000$i'),
+        id: NodeId.fromString('n_0000000000000000000000000$i'),
         typeName: 'Claim',
         values: <String, Object?>{'statement': 'backup fact $i'},
         createdAt: DateTime.utc(2026, 6, 1),
@@ -241,14 +254,14 @@ class _ConductorMemory implements TomBrainMemory {
       _seedNodes.map((n) => n.id.value).toList(growable: false);
 
   RecallResult _seedResult() => RecallResult(
-        nodes: _seedNodes,
-        report: const RecallReport(
-          candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 5},
-          fusionStrategy: FusionStrategy.rrf,
-          diversityStrategy: DiversityStrategy.mmr,
-          elapsedMs: 3,
-        ),
-      );
+    nodes: _seedNodes,
+    report: const RecallReport(
+      candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 5},
+      fusionStrategy: FusionStrategy.rrf,
+      diversityStrategy: DiversityStrategy.mmr,
+      elapsedMs: 3,
+    ),
+  );
 
   @override
   StackApi get stacks => _stacks;
@@ -269,8 +282,7 @@ class _ConductorMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      const ClassificationResult.unknown();
+  }) async => const ClassificationResult.unknown();
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -335,12 +347,10 @@ class _ConductorMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A scripted `TomBrainSubstrateClient` ────────────────────────────
@@ -355,10 +365,10 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
   bool failAll = false;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     if (failAll) {
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamFailed(
+      return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        const LlmRunFailed(
           callId: 'c',
           failure: LlmFailure(classCode: 'network', message: 'stubbed'),
           report: LlmCallReport(
@@ -378,9 +388,9 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
         ? responses[completions]
         : (responses.isEmpty ? '' : responses.last);
     completions++;
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: text),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(text),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -398,18 +408,17 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.1, 0.2])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 2,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.1, 0.2])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 2,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -459,6 +468,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

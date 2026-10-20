@@ -39,8 +39,7 @@ void main() {
   });
 
   group('§7.4 SubstrateBridge.run — ID-driven prompt entry point', () {
-    test(
-        'resolves, renders the tool catalogue, and delegates to tool_loop_v1 '
+    test('resolves, renders the tool catalogue, and delegates to tool_loop_v1 '
         'with the resolved settings', () async {
       String? resolvedId;
       Map<String, Object?>? resolvedInputs;
@@ -118,72 +117,81 @@ void main() {
       expect(out['toolLoopExhausted'], false);
     });
 
-    test('forwards temperature only when the resolved prompt sets it', () async {
-      ProcedureInputs? ranInputs;
-      final bridge = SubstrateBridge(
-        client,
-        promptResolver: (_, _) async => const ResolvedPrompt(
-          role: 'assistant_to_user',
-          llmRoute: 'fast',
-          templateBody: 'body',
-          // No temperature.
-        ),
-        runProcedure: (_, inputs) async {
-          ranInputs = inputs;
-          return ProcedureResult.succeeded(
-            outputs: const <String, Object?>{'answer': 'ok'},
-          );
-        },
-      );
+    test(
+      'forwards temperature only when the resolved prompt sets it',
+      () async {
+        ProcedureInputs? ranInputs;
+        final bridge = SubstrateBridge(
+          client,
+          promptResolver: (_, _) async => const ResolvedPrompt(
+            role: 'assistant_to_user',
+            llmRoute: 'fast',
+            templateBody: 'body',
+            // No temperature.
+          ),
+          runProcedure: (_, inputs) async {
+            ranInputs = inputs;
+            return ProcedureResult.succeeded(
+              outputs: const <String, Object?>{'answer': 'ok'},
+            );
+          },
+        );
 
-      await bridge.run('p');
+        await bridge.run('p');
 
-      expect(ranInputs!.has('temperature'), isFalse);
-    });
+        expect(ranInputs!.has('temperature'), isFalse);
+      },
+    );
 
-    test('renders the catalogue marker away for the none profile (no tools)',
-        () async {
-      ProcedureInputs? ranInputs;
-      final bridge = SubstrateBridge(
-        client,
-        promptResolver: (_, _) async => const ResolvedPrompt(
-          role: 'assistant_to_user',
-          llmRoute: 'fast',
-          templateBody: 'before \${tools.catalogue} after',
-          tools: <Object?>[],
-        ),
-        runProcedure: (_, inputs) async {
-          ranInputs = inputs;
-          return ProcedureResult.succeeded(
-            outputs: const <String, Object?>{'answer': 'ok'},
-          );
-        },
-      );
+    test(
+      'renders the catalogue marker away for the none profile (no tools)',
+      () async {
+        ProcedureInputs? ranInputs;
+        final bridge = SubstrateBridge(
+          client,
+          promptResolver: (_, _) async => const ResolvedPrompt(
+            role: 'assistant_to_user',
+            llmRoute: 'fast',
+            templateBody: 'before \${tools.catalogue} after',
+            tools: <Object?>[],
+          ),
+          runProcedure: (_, inputs) async {
+            ranInputs = inputs;
+            return ProcedureResult.succeeded(
+              outputs: const <String, Object?>{'answer': 'ok'},
+            );
+          },
+        );
 
-      await bridge.run('p');
+        await bridge.run('p');
 
-      // The empty tool set renders the marker to the empty string.
-      expect(ranInputs!.get<String>('transcript'), 'before  after');
-    });
+        // The empty tool set renders the marker to the empty string.
+        expect(ranInputs!.get<String>('transcript'), 'before  after');
+      },
+    );
 
-    test('throws UnregisteredPromptException when the resolver returns null',
-        () {
-      final bridge = SubstrateBridge(
-        client,
-        promptResolver: (_, _) async => null,
-        runProcedure: (_, _) async =>
-            ProcedureResult.succeeded(outputs: const <String, Object?>{}),
-      );
+    test(
+      'throws UnregisteredPromptException when the resolver returns null',
+      () {
+        final bridge = SubstrateBridge(
+          client,
+          promptResolver: (_, _) async => null,
+          runProcedure: (_, _) async =>
+              ProcedureResult.succeeded(outputs: const <String, Object?>{}),
+        );
 
-      expect(
-        () => bridge.run('no.such.prompt'),
-        throwsA(isA<UnregisteredPromptException>().having(
-          (e) => e.promptId,
-          'promptId',
-          'no.such.prompt',
-        )),
-      );
-    });
+        expect(
+          () => bridge.run('no.such.prompt'),
+          throwsA(
+            isA<UnregisteredPromptException>().having(
+              (e) => e.promptId,
+              'promptId',
+              'no.such.prompt',
+            ),
+          ),
+        );
+      },
+    );
 
     test('throws StateError when no PromptResolver is bound', () {
       final bridge = SubstrateBridge(
@@ -194,11 +202,13 @@ void main() {
 
       expect(
         () => bridge.run('p'),
-        throwsA(isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          contains('sub.run requires a PromptResolver'),
-        )),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('sub.run requires a PromptResolver'),
+          ),
+        ),
       );
     });
 
@@ -214,11 +224,13 @@ void main() {
 
       expect(
         () => bridge.run('p'),
-        throwsA(isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          contains('sub.run requires a ProcedureRunner'),
-        )),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('sub.run requires a ProcedureRunner'),
+          ),
+        ),
       );
     });
   });
@@ -228,10 +240,9 @@ void main() {
 /// delegates the loop), so the client only has to satisfy the constructor.
 class _FakeSubstrateClient implements TomBrainSubstrateClient {
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      const Stream<LlmStreamEvent>.empty();
+  Stream<LlmEvent> completeStream(LlmCall call) =>
+      const Stream<LlmEvent>.empty();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

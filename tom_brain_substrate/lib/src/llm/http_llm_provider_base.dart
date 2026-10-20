@@ -32,9 +32,7 @@
 //     not classify; the router (B.18+) maps raw exceptions onto the
 //     spec § 5.4 taxonomy.
 
-import '../api/llm_call.dart' show LlmCallReport;
-import 'llm_provider.dart';
-import 'wire_prompt.dart';
+import 'package:tom_core_llm/tom_core_llm.dart';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show promptSha256;
 
@@ -50,7 +48,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart' show promptSha256;
 /// `extend` it (cross-file within the package) but nothing should
 /// `implement` it and re-supply the invariant plumbing by hand — that
 /// is exactly the duplication this class removes.
-abstract base class HttpLlmProviderBase implements LlmProvider {
+abstract base class HttpLlmProviderBase extends LlmProvider {
   @override
   final String id;
 

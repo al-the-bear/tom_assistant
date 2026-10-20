@@ -39,8 +39,9 @@ void main() {
           substrate,
           // Every script here completes through `sub.send`, which selects a
           // route by name (§ 7.4) and so needs a resolver bound.
-          routeChainOf: (_) =>
-              const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+          routeChainOf: (_) => const <RouteEntry>[
+            RouteEntry(providerId: 'p', model: 'm'),
+          ],
         ),
         now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
       );
@@ -57,12 +58,11 @@ void main() {
   });
 
   group('engine threads the turn onto substrate calls', () {
-    test('a turn stamps turnId + an incrementing callSeq on each llm call',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'two_calls_v1',
-          '''
+    test(
+      'a turn stamps turnId + an incrementing callSeq on each llm call',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure('two_calls_v1', '''
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
@@ -70,29 +70,30 @@ Future<Object?> run(inputs) async {
   await sub.send('second', llmRoute: 'fast');
   return 1;
 }
-''',
-        ),
-      ]);
+'''),
+        ]);
 
-      final turnId = TurnId.generate();
-      final outcome = await engine
-          .invoke(ProcedureInvocation(procedureId: 'two_calls_v1', turnId: turnId))
-          .outcome;
+        final turnId = TurnId.generate();
+        final outcome = await engine
+            .invoke(
+              ProcedureInvocation(procedureId: 'two_calls_v1', turnId: turnId),
+            )
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(substrate.calls, hasLength(2));
-      expect(substrate.calls[0].turnId, equals(turnId));
-      expect(substrate.calls[0].callSeq, equals(1));
-      expect(substrate.calls[1].turnId, equals(turnId));
-      expect(substrate.calls[1].callSeq, equals(2));
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(substrate.calls, hasLength(2));
+        expect(substrate.calls[0].turnId, equals(turnId));
+        expect(substrate.calls[0].callSeq, equals(1));
+        expect(substrate.calls[1].turnId, equals(turnId));
+        expect(substrate.calls[1].callSeq, equals(2));
+      },
+    );
 
-    test('the callSeq counter spans a nested runProcedure within one turn',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'parent_v1',
-          '''
+    test(
+      'the callSeq counter spans a nested runProcedure within one turn',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure('parent_v1', '''
 import '${BridgeLibraries.substrateLibrary}';
 import '$engineNativeLibrary';
 
@@ -100,49 +101,45 @@ Future<Object?> run(inputs) async {
   await sub.send('parent call', llmRoute: 'fast');
   return await runProcedure('child_v1', inputs);
 }
-''',
-        ),
-        _procedure(
-          'child_v1',
-          '''
+'''),
+          _procedure('child_v1', '''
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.send('child call', llmRoute: 'fast');
   return {'v': 1};
 }
-''',
-        ),
-      ]);
+'''),
+        ]);
 
-      final turnId = TurnId.generate();
-      final outcome = await engine
-          .invoke(ProcedureInvocation(procedureId: 'parent_v1', turnId: turnId))
-          .outcome;
+        final turnId = TurnId.generate();
+        final outcome = await engine
+            .invoke(
+              ProcedureInvocation(procedureId: 'parent_v1', turnId: turnId),
+            )
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(substrate.calls, hasLength(2));
-      // Both the parent's and the nested child's call share the turn id …
-      expect(substrate.calls[0].turnId, equals(turnId));
-      expect(substrate.calls[1].turnId, equals(turnId));
-      // … and the one counter advanced across the run boundary.
-      expect(substrate.calls[0].callSeq, equals(1));
-      expect(substrate.calls[1].callSeq, equals(2));
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(substrate.calls, hasLength(2));
+        // Both the parent's and the nested child's call share the turn id …
+        expect(substrate.calls[0].turnId, equals(turnId));
+        expect(substrate.calls[1].turnId, equals(turnId));
+        // … and the one counter advanced across the run boundary.
+        expect(substrate.calls[0].callSeq, equals(1));
+        expect(substrate.calls[1].callSeq, equals(2));
+      },
+    );
 
     test('a turn-less invocation leaves the llm calls unstamped', () async {
       final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'internal_v1',
-          '''
+        _procedure('internal_v1', '''
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.send('internal', llmRoute: 'fast');
   return 1;
 }
-''',
-        ),
+'''),
       ]);
 
       final outcome = await engine
@@ -157,7 +154,8 @@ Future<Object?> run(inputs) async {
 }
 
 LoadedProcedure _procedure(String id, String body, {int version = 1}) {
-  final source = '''
+  final source =
+      '''
 /// @procedure
 /// id: $id
 /// version: $version
@@ -180,11 +178,11 @@ class _RecordingSubstrate implements TomBrainSubstrateClient {
   final List<LlmCall> calls = <LlmCall>[];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     calls.add(call);
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      const LlmStreamChunk(callId: 'c', text: 'ok'),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      const LlmTextDelta('ok'),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -202,18 +200,17 @@ class _RecordingSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec.zero(1),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec.zero(1),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A stateful in-memory `TomBrainMemoryClient` (copied from the engine
@@ -290,12 +287,10 @@ class _StatefulMemory implements TomBrainMemoryClient {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -345,6 +340,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

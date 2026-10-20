@@ -49,10 +49,7 @@ void main() {
 
       expect(policy.roleRoutes, isEmpty);
       expect(policy.retriesPerClass, RouterPolicy.defaultRetriesPerClass);
-      expect(
-        policy.overloadedBackoff,
-        RouterPolicy.defaultOverloadedBackoff,
-      );
+      expect(policy.overloadedBackoff, RouterPolicy.defaultOverloadedBackoff);
       // Spec § 5.3 defaults — verify the named entries.
       expect(
         policy.cooldownFor(LlmFailureClass.rateLimit),
@@ -82,18 +79,9 @@ void main() {
       );
       // `overloaded` and `timeout` are intentionally not in the default
       // cooldown map — they are handled by retry, not cooldown.
-      expect(
-        policy.cooldownFor(LlmFailureClass.overloaded),
-        Duration.zero,
-      );
-      expect(
-        policy.cooldownFor(LlmFailureClass.timeout),
-        Duration.zero,
-      );
-      expect(
-        policy.cooldownFor(LlmFailureClass.network),
-        Duration.zero,
-      );
+      expect(policy.cooldownFor(LlmFailureClass.overloaded), Duration.zero);
+      expect(policy.cooldownFor(LlmFailureClass.timeout), Duration.zero);
+      expect(policy.cooldownFor(LlmFailureClass.network), Duration.zero);
     });
 
     test('policy with roleRoutes inherits default cooldowns', () {
@@ -124,10 +112,7 @@ void main() {
       );
       // `billing` was in the defaults; an explicit map replaces wholesale,
       // so the previously-default 24 h is no longer present.
-      expect(
-        policy.cooldownFor(LlmFailureClass.billing),
-        Duration.zero,
-      );
+      expect(policy.cooldownFor(LlmFailureClass.billing), Duration.zero);
     });
 
     test('explicit retriesPerClass + overloadedBackoff are honoured', () {
@@ -169,9 +154,9 @@ void main() {
         },
       );
       expect(
-        () => policy.routesFor('analyser')!.add(
-              const RouteEntry(providerId: 'b', model: 'm2'),
-            ),
+        () => policy
+            .routesFor('analyser')!
+            .add(const RouteEntry(providerId: 'b', model: 'm2')),
         throwsUnsupportedError,
       );
     });
@@ -189,9 +174,7 @@ void main() {
 
     test('mutating the source map after construction does not leak', () {
       final source = <String, List<RouteEntry>>{
-        'analyser': <RouteEntry>[
-          const RouteEntry(providerId: 'a', model: 'm'),
-        ],
+        'analyser': <RouteEntry>[const RouteEntry(providerId: 'a', model: 'm')],
       };
       final policy = RouterPolicy(roleRoutes: source);
       // Mutate the source after the policy is built.
@@ -312,10 +295,7 @@ void main() {
       final modified = original.copyWith(retriesPerClass: 7);
       expect(modified.retriesPerClass, 7);
       // Other fields unchanged.
-      expect(
-        modified.overloadedBackoff,
-        RouterPolicy.defaultOverloadedBackoff,
-      );
+      expect(modified.overloadedBackoff, RouterPolicy.defaultOverloadedBackoff);
       expect(
         modified.cooldownFor(LlmFailureClass.rateLimit),
         const Duration(seconds: 60),
@@ -323,10 +303,9 @@ void main() {
     });
 
     test('withRole adds a role to an empty policy', () {
-      final added = RouterPolicy.empty.withRole(
-        'analyser',
-        <RouteEntry>[const RouteEntry(providerId: 'a', model: 'm')],
-      );
+      final added = RouterPolicy.empty.withRole('analyser', <RouteEntry>[
+        const RouteEntry(providerId: 'a', model: 'm'),
+      ]);
       expect(added.routesFor('analyser'), hasLength(1));
     });
 
@@ -338,10 +317,9 @@ void main() {
           ],
         },
       );
-      final replaced = original.withRole(
-        'analyser',
-        <RouteEntry>[const RouteEntry(providerId: 'b', model: 'n')],
-      );
+      final replaced = original.withRole('analyser', <RouteEntry>[
+        const RouteEntry(providerId: 'b', model: 'n'),
+      ]);
       expect(replaced.routesFor('analyser')!.single.providerId, 'b');
       // Original untouched.
       expect(original.routesFor('analyser')!.single.providerId, 'a');
@@ -456,15 +434,9 @@ void main() {
         budget: _bigBudget,
       );
       // Cooldown active immediately, gone after 1 s.
-      expect(
-        router.isInCooldown(providerId: 'free', modelId: 'm'),
-        isTrue,
-      );
+      expect(router.isInCooldown(providerId: 'free', modelId: 'm'), isTrue);
       clock.advance(const Duration(milliseconds: 1100));
-      expect(
-        router.isInCooldown(providerId: 'free', modelId: 'm'),
-        isFalse,
-      );
+      expect(router.isInCooldown(providerId: 'free', modelId: 'm'), isFalse);
     });
 
     test('Router walks policy.roleRoutes (RoleNotFound on unknown role)', () {
@@ -516,11 +488,11 @@ void main() {
 // ─── Test helpers ────────────────────────────────────────────────
 
 WirePrompt _prompt(String body) => WirePrompt(
-      system: body,
-      anchorHash: 'sha256:anchor',
-      roleId: 'analyser',
-      templateSha: 'sha-abc',
-    );
+  system: body,
+  anchorHash: 'sha256:anchor',
+  roleId: 'analyser',
+  templateSha: 'sha-abc',
+);
 
 final Budget _bigBudget = Budget(
   wallClockMs: 60000,
@@ -540,7 +512,7 @@ class _MutableClock {
 /// (no `mocktail`, no `mockito`). Drains a queue of exceptions on each
 /// `complete()` call; after the queue is empty it falls back to throwing
 /// `StateError('script exhausted')`.
-class _ScriptedFailingProvider implements LlmProvider {
+class _ScriptedFailingProvider extends LlmProvider {
   @override
   final String id;
   final String defaultModel;
@@ -554,10 +526,7 @@ class _ScriptedFailingProvider implements LlmProvider {
   }) : _exceptions = List<Object>.of(exceptions);
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
     callCount++;
     if (_exceptions.isNotEmpty) {
       throw _exceptions.removeAt(0);
@@ -566,20 +535,19 @@ class _ScriptedFailingProvider implements LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     callCount++;
     final callId = 'sfp-$id-$callCount';
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
       callId: callId,
       providerId: id,
       modelId: options.model ?? defaultModel,
     );
     if (_exceptions.isNotEmpty) {
       final ex = _exceptions.removeAt(0);
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: callId,
         failure: LlmFailure(
           classCode: 'unknown',
@@ -599,7 +567,7 @@ class _ScriptedFailingProvider implements LlmProvider {
       );
       return;
     }
-    yield LlmStreamCompleted(
+    yield LlmRunCompleted(
       callId: callId,
       report: LlmCallReport(
         providerId: id,

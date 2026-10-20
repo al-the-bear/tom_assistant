@@ -33,9 +33,10 @@ import 'dart:async';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show IsolateStreamCloseSignal;
-import 'package:tom_core_kernel/tom_core_kernel.dart' show TomExecutor, TomWorker;
+import 'package:tom_core_kernel/tom_core_kernel.dart'
+    show TomExecutor, TomWorker;
 
-import '../api/llm_stream_event.dart';
+import 'package:tom_core_llm/tom_core_llm.dart';
 import '../api/substrate_event.dart';
 import '../api/tom_brain_substrate_client.dart';
 import 'substrate_isolate_exceptions.dart';
@@ -106,7 +107,7 @@ class SubstrateIsolateExecutor extends TomExecutor {
           return WebFetchResponse(result: result, stats: _client.stats());
 
         case OpenCompleteStreamRequest(:final streamId, :final call):
-          _startUnboundedProducer<LlmStreamEvent>(
+          _startUnboundedProducer<LlmEvent>(
             streamId: streamId,
             source: () => _client.completeStream(call),
             sanitize: _sanitizeStreamEvent,
@@ -128,7 +129,8 @@ class SubstrateIsolateExecutor extends TomExecutor {
         default:
           return IsolateErrorResponse(
             exceptionType: 'UnknownIsolateRequest',
-            message: 'No dispatch handler for ${req.runtimeType}. '
+            message:
+                'No dispatch handler for ${req.runtimeType}. '
                 'Was the envelope added to the catalogue but not wired '
                 'into SubstrateIsolateExecutor?',
           );
@@ -163,11 +165,13 @@ class SubstrateIsolateExecutor extends TomExecutor {
         sub = source().listen(
           (item) {
             if (control.closeRequested) return;
-            _sendStreamMessage(StreamChunkEnvelope(
-              streamId: streamId,
-              sequence: seq,
-              payload: sanitize(item),
-            ));
+            _sendStreamMessage(
+              StreamChunkEnvelope(
+                streamId: streamId,
+                sequence: seq,
+                payload: sanitize(item),
+              ),
+            );
             seq += 1;
           },
           onError: (Object e) {
@@ -178,10 +182,9 @@ class SubstrateIsolateExecutor extends TomExecutor {
           },
           onDone: () {
             if (!sourceFinished.isCompleted) {
-              _sendStreamMessage(StreamCompleteEnvelope(
-                streamId: streamId,
-                sequence: seq,
-              ));
+              _sendStreamMessage(
+                StreamCompleteEnvelope(streamId: streamId, sequence: seq),
+              );
               sourceFinished.complete();
             }
           },
@@ -229,9 +232,9 @@ class SubstrateIsolateExecutor extends TomExecutor {
 
   /// Strips the one non-sendable field (`LlmFailure.cause`) from a
   /// failure event; all other event shapes are already sendable.
-  static LlmStreamEvent _sanitizeStreamEvent(LlmStreamEvent e) {
-    if (e is LlmStreamFailed) {
-      return LlmStreamFailed(
+  static LlmEvent _sanitizeStreamEvent(LlmEvent e) {
+    if (e is LlmRunFailed) {
+      return LlmRunFailed(
         callId: e.callId,
         failure: LlmFailure(
           classCode: e.failure.classCode,

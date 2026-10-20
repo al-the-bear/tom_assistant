@@ -65,7 +65,7 @@
 //     split, empty chunks suppressed) or a custom callback.
 //
 // No tool-call simulation at B.16. The stub does not emit
-// [LlmStreamToolCallProposed]; routing through it must therefore not
+// [LlmToolCall]; routing through it must therefore not
 // configure a tool catalogue that the procedure dispatcher would expect
 // the provider to honour. A `notes` entry surfaces when a non-empty
 // catalogue is supplied (matching B.14 / B.15's `tool_catalogue_present:
@@ -75,7 +75,7 @@
 // need failure paths inject them through the [responder] callback (which
 // can `throw` or return a sentinel) or — for streaming-side failures —
 // use the dedicated [StubLlmProvider.alwaysFails] factory which emits
-// a terminal [LlmStreamFailed] in place of [LlmStreamCompleted]. The
+// a terminal [LlmRunFailed] in place of [LlmRunCompleted]. The
 // failure factory mirrors B.14 / B.15's "router classifies later"
 // posture: the emitted failure has `classCode: 'unknown'` so the B.18
 // router's `LlmFailureClassifier` is the single source of taxonomy
@@ -98,23 +98,17 @@ import 'dart:async';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show promptSha256;
 
-import '../api/llm_call.dart';
-import '../api/llm_stream_event.dart';
-import 'llm_provider.dart';
-import 'wire_prompt.dart';
+import 'package:tom_core_llm/tom_core_llm.dart';
 
 /// Caller-supplied response generator.
 ///
 /// Synchronous on purpose. Returning a `Future` would invite real I/O
 /// inside the stub, which would defeat the determinism guarantee.
 /// Tests that want to simulate a failure can `throw` from the callback;
-/// the thrown object surfaces as the cause on a [LlmStreamFailed] event
+/// the thrown object surfaces as the cause on a [LlmRunFailed] event
 /// on the streaming path and as a re-thrown exception on the
 /// non-streaming path.
-typedef StubResponder = String Function(
-  WirePrompt prompt,
-  LlmOptions options,
-);
+typedef StubResponder = String Function(WirePrompt prompt, LlmOptions options);
 
 /// Caller-supplied chunk splitter for the streaming path.
 ///
@@ -124,7 +118,7 @@ typedef StubResponder = String Function(
 /// to simulate any provider-side chunking shape they need.
 ///
 /// Empty strings in the returned list are suppressed by the stream
-/// emitter (no `LlmStreamChunk` with empty `text`), matching the
+/// emitter (no `LlmTextDelta` with empty `text`), matching the
 /// "empty deltas do not emit a chunk" convention from the B.14 / B.15
 /// providers.
 typedef StubChunkSplitter = List<String> Function(String response);
@@ -141,7 +135,7 @@ typedef StubChunkSplitter = List<String> Function(String response);
 /// Determinism: `wallClockMs: 0`; `tokensIn` / `tokensOut` are
 /// character counts; `retries: 0`; `cost: null`; `callId` derived from
 /// a monotonic counter + prompt body hash. The provider does no I/O.
-final class StubLlmProvider implements LlmProvider {
+final class StubLlmProvider extends LlmProvider {
   @override
   final String id;
 
@@ -184,12 +178,12 @@ final class StubLlmProvider implements LlmProvider {
     this.loopScript = false,
     this.responder,
     StubChunkSplitter? chunkSplitter,
-  })  : _script = script != null ? List<String>.of(script) : <String>[],
-        _scriptWasProvided = script != null && script.isNotEmpty,
-        chunkSplitter = chunkSplitter ?? singleChunk;
+  }) : _script = script != null ? List<String>.of(script) : <String>[],
+       _scriptWasProvided = script != null && script.isNotEmpty,
+       chunkSplitter = chunkSplitter ?? singleChunk;
 
   /// Convenience factory: a stub whose streaming path always emits a
-  /// terminal [LlmStreamFailed] and whose non-streaming path always
+  /// terminal [LlmRunFailed] and whose non-streaming path always
   /// re-throws [failure]'s `cause` (or a [StateError] derived from
   /// `failure.message` when `cause` is `null`).
   ///
@@ -247,7 +241,7 @@ final class StubLlmProvider implements LlmProvider {
   }
 
   /// Whitespace-split chunk splitter. Splits on `\s+`, drops empty
-  /// segments. Each non-empty segment becomes one `LlmStreamChunk`.
+  /// segments. Each non-empty segment becomes one `LlmTextDelta`.
   ///
   /// Useful for tests that want to exercise multi-chunk reassembly
   /// downstream of the stream.
@@ -260,10 +254,9 @@ final class StubLlmProvider implements LlmProvider {
   }
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     _callCounter++;
     final modelId = options.model ?? defaultModel;
     final response = _resolveResponse(prompt, options);
@@ -282,15 +275,15 @@ final class StubLlmProvider implements LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     _callCounter++;
     final modelId = options.model ?? defaultModel;
     final callId = _callIdFor(prompt);
 
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
+      purpose: request.purpose,
       callId: callId,
       providerId: id,
       modelId: modelId,
@@ -300,7 +293,7 @@ final class StubLlmProvider implements LlmProvider {
     try {
       response = _resolveResponse(prompt, options);
     } catch (e) {
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: callId,
         failure: LlmFailure(
           // Unclassified at B.16; B.18 maps onto the spec § 5.4 taxonomy.
@@ -327,10 +320,10 @@ final class StubLlmProvider implements LlmProvider {
     final chunks = chunkSplitter(response);
     for (final chunk in chunks) {
       if (chunk.isEmpty) continue;
-      yield LlmStreamChunk(callId: callId, text: chunk);
+      yield LlmTextDelta(chunk);
     }
 
-    yield LlmStreamCompleted(
+    yield LlmRunCompleted(
       callId: callId,
       report: LlmCallReport(
         providerId: id,
@@ -382,7 +375,7 @@ final class StubLlmProvider implements LlmProvider {
 }
 
 /// Internal variant returned by [StubLlmProvider.alwaysFails]. Always
-/// emits a terminal [LlmStreamFailed] on `completeStream` and re-throws
+/// emits a terminal [LlmRunFailed] on `completeStream` and re-throws
 /// from `complete`.
 ///
 /// Implemented as a separate type rather than a flag on
@@ -398,10 +391,7 @@ final class _AlwaysFailsStubProvider extends StubLlmProvider {
   });
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) {
+  Future<LlmCallReport> complete(LlmRequest request) {
     final cause = failure.cause;
     if (cause is Object) {
       return Future<LlmCallReport>.error(cause);
@@ -410,21 +400,21 @@ final class _AlwaysFailsStubProvider extends StubLlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     _callCounter++;
     final modelId = options.model ?? defaultModel;
     final callId = _callIdFor(prompt);
 
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
+      purpose: request.purpose,
       callId: callId,
       providerId: id,
       modelId: modelId,
     );
 
-    yield LlmStreamFailed(
+    yield LlmRunFailed(
       callId: callId,
       failure: failure,
       report: LlmCallReport(

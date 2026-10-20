@@ -5,7 +5,7 @@
 // call. The router and provider implementations check the token at
 // every await point; on cancellation the provider abandons the HTTP
 // response and the surface emits
-// `LlmStreamEvent.failed(CancelledByConsumer, ...)`.
+// `LlmEvent.failed(CancelledByConsumer, ...)`.
 //
 // The primitive itself is domain-free, so it now lives in
 // `tom_core_agentic` (prototype review B.1). This file re-exports the

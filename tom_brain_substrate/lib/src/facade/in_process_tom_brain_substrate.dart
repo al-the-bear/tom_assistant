@@ -289,17 +289,16 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     SubstrateConfig? config,
     McpClientFactory? mcpClientFactory,
     DateTime Function()? now,
-  })  : _roles =
-            roleProseReload ?? ReloadingRoleRegistry.fixed(roleRegistry),
-        _providers = Map<String, LlmProvider>.unmodifiable(providers),
-        _router = router,
-        _embeddingService = embeddingService,
-        _webSearch = webSearch,
-        _webFetch = webFetch,
-        _eventBus = eventBus ?? SubstrateEventBus(),
-        _mcpClientFactory = mcpClientFactory ?? _defaultMcpClientFactory,
-        _now = now ?? DateTime.now,
-        _config = config;
+  }) : _roles = roleProseReload ?? ReloadingRoleRegistry.fixed(roleRegistry),
+       _providers = Map<String, LlmProvider>.unmodifiable(providers),
+       _router = router,
+       _embeddingService = embeddingService,
+       _webSearch = webSearch,
+       _webFetch = webFetch,
+       _eventBus = eventBus ?? SubstrateEventBus(),
+       _mcpClientFactory = mcpClientFactory ?? _defaultMcpClientFactory,
+       _now = now ?? DateTime.now,
+       _config = config;
 
   // ─── Test / introspection accessors ─────────────────────────
 
@@ -378,8 +377,10 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     // § 6.3, AUTH-5). Signature-gated, so an unchanged prose set costs only a
     // stat sweep; a fixed holder is a no-op.
     final template = _roles.current().get(call.roleId);
-    final prompt =
-        template.assemble(inputs: call.inputs, anchored: call.anchored);
+    final prompt = template.assemble(
+      inputs: call.inputs,
+      anchored: call.anchored,
+    );
     final callId = _allocateCallId();
 
     // The router surfaces failures as typed router-layer exceptions
@@ -389,7 +390,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     // router-layer exception is not a per-call failure of *one*
     // provider — it is the chain's terminal verdict and carries no
     // provider/model triple. The streaming path (`completeStream`)
-    // does see `LlmStreamFailed` carriers and emits the matching
+    // does see `LlmRunFailed` carriers and emits the matching
     // event there. Trail consumers that need a structural
     // "the call ended in failure" signal for the buffered path read
     // the exception via `dart:async` zone hooks or wrap the call
@@ -431,15 +432,17 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     // Eager validation + prompt assembly so a closed substrate or an
     // unknown role surfaces synchronously to the caller (RoleNotFound),
     // not lazily on the first listen.
     _ensureNotClosed('completeStream');
     // Same AUTH-5 prose pickup as `complete`.
     final template = _roles.current().get(call.roleId);
-    final prompt =
-        template.assemble(inputs: call.inputs, anchored: call.anchored);
+    final prompt = template.assemble(
+      inputs: call.inputs,
+      anchored: call.anchored,
+    );
     final callId = _allocateCallId();
 
     // Returned as a lazy `async*` stream rather than pumped into a
@@ -457,7 +460,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
   /// on the terminal events, then forwards every event. A thrown
   /// exception (anchor violation or router-terminal failure) propagates
   /// as a stream error and terminates the stream.
-  Stream<LlmStreamEvent> _driveCompleteStream(
+  Stream<LlmEvent> _driveCompleteStream(
     LlmCall call,
     WirePrompt prompt,
     String callId,
@@ -481,16 +484,13 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
           );
     await for (final event in upstream) {
       var toYield = event;
-      if (event is LlmStreamCompleted) {
+      if (event is LlmRunCompleted) {
         _enforceAnchorOrThrow(
           report: event.report,
           roleId: call.roleId,
           anchored: call.anchored,
         );
-        _recordCallSuccess(
-          report: event.report,
-          roleId: call.roleId,
-        );
+        _recordCallSuccess(report: event.report, roleId: call.roleId);
         _safeEmit(
           LlmCallCompleted(
             occurredAt: _now().toUtc(),
@@ -504,7 +504,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
         // `prompt` is the very `WirePrompt` handed to the provider, so
         // its anchorHash / templateSha match `event.report` by
         // construction (anchor invariant).
-        toYield = LlmStreamCompleted(
+        toYield = LlmRunCompleted(
           callId: event.callId,
           report: event.report,
           wire: CapturedWirePrompt(
@@ -514,15 +514,15 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
             templateSha: prompt.templateSha,
           ),
         );
-      } else if (event is LlmStreamFailed) {
+      } else if (event is LlmRunFailed) {
         _safeEmit(
           LlmCallFailed(
             occurredAt: _now().toUtc(),
             callId: callId,
             failure: event.failure,
-            providerId: event.report.providerId,
-            modelId: event.report.modelId,
-            retryCount: event.report.retries,
+            providerId: event.report!.providerId,
+            modelId: event.report!.modelId,
+            retryCount: event.report!.retries,
           ),
         );
       }
@@ -609,7 +609,8 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
         // doubles); `DefaultWebFetch` always sets `contentBytes`, so
         // the JSON path reports its true byte length, not a 0/1
         // placeholder (B.3.5).
-        bytes: result.contentBytes ??
+        bytes:
+            result.contentBytes ??
             result.text?.length ??
             result.binaryMeta?.contentLength ??
             (result.json == null ? 0 : 1),
@@ -676,8 +677,9 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
     // call (`isCurrent` is false for it), so the default safety lever is intact:
     // an un-anchored prompt can surface only when the *caller* declared the call
     // un-anchored.
-    final expected =
-        anchored ? AnchorRegistry.currentHash : AnchorRegistry.unanchoredHash;
+    final expected = anchored
+        ? AnchorRegistry.currentHash
+        : AnchorRegistry.unanchoredHash;
     if (report.anchorHash == expected) return;
     throw AnchorViolation(
       expected: expected,
@@ -697,11 +699,7 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
       (v) => v + 1,
       ifAbsent: () => 1,
     );
-    _callsPerRole.update(
-      roleId,
-      (v) => v + 1,
-      ifAbsent: () => 1,
-    );
+    _callsPerRole.update(roleId, (v) => v + 1, ifAbsent: () => 1);
     if (report.retries > 0) {
       // A non-zero retry count on the surfacing report means the router
       // retried at least once (possibly on the same provider) before this

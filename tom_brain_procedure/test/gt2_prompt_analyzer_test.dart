@@ -92,10 +92,12 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'prompt_analyzer_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'prompt_analyzer_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
@@ -173,50 +175,61 @@ void main() {
       expect(outcome.result!.output<String>('branch'), 'normal');
     });
 
-    test('a chatty completion naming THINKING first resolves to thinking',
-        () async {
-      substrate.verdict = 'This looks like THINKING, definitely not just '
-          'a NORMAL request.';
+    test(
+      'a chatty completion naming THINKING first resolves to thinking',
+      () async {
+        substrate.verdict =
+            'This looks like THINKING, definitely not just '
+            'a NORMAL request.';
 
-      final outcome = await routeWith('reason carefully about X');
+        final outcome = await routeWith('reason carefully about X');
 
-      expect(outcome.result!.output<String>('branch'), 'thinking');
-    });
+        expect(outcome.result!.output<String>('branch'), 'thinking');
+      },
+    );
 
-    test('a chatty completion naming NORMAL first resolves to normal',
-        () async {
-      substrate.verdict = 'This is a NORMAL request, no THINKING required.';
+    test(
+      'a chatty completion naming NORMAL first resolves to normal',
+      () async {
+        substrate.verdict = 'This is a NORMAL request, no THINKING required.';
 
-      final outcome = await routeWith('what is 2 + 2?');
+        final outcome = await routeWith('what is 2 + 2?');
 
-      expect(outcome.result!.output<String>('branch'), 'normal');
-    });
+        expect(outcome.result!.output<String>('branch'), 'normal');
+      },
+    );
 
-    test('the same ambiguous prompt resolves identically across runs',
-        () async {
-      substrate.verdict = 'unreadable verdict';
+    test(
+      'the same ambiguous prompt resolves identically across runs',
+      () async {
+        substrate.verdict = 'unreadable verdict';
 
-      final first = await routeWith('ambiguous prompt');
-      final second = await routeWith('ambiguous prompt');
+        final first = await routeWith('ambiguous prompt');
+        final second = await routeWith('ambiguous prompt');
 
-      expect(first.result!.output<String>('branch'),
-          second.result!.output<String>('branch'));
-      expect(first.result!.output<String>('branch'), 'normal');
-    });
+        expect(
+          first.result!.output<String>('branch'),
+          second.result!.output<String>('branch'),
+        );
+        expect(first.result!.output<String>('branch'), 'normal');
+      },
+    );
   });
 
   group('G-T2-4 the router selects but does not run the branch '
       '(route-flip deferred to Todo 6)', () {
-    test('the classification is the only substrate call the run makes',
-        () async {
-      substrate.verdict = 'NORMAL';
+    test(
+      'the classification is the only substrate call the run makes',
+      () async {
+        substrate.verdict = 'NORMAL';
 
-      await routeWith('plain question');
+        await routeWith('plain question');
 
-      // answer_with_memory_v1 (had it been run) would make further llm / embed
-      // calls; the router makes exactly one — the classification.
-      expect(substrate.callCount, 1);
-    });
+        // answer_with_memory_v1 (had it been run) would make further llm / embed
+        // calls; the router makes exactly one — the classification.
+        expect(substrate.callCount, 1);
+      },
+    );
 
     test('the verdict output mirrors the chosen branch', () async {
       substrate.verdict = 'THINKING';
@@ -258,12 +271,12 @@ class _VerdictSubstrate implements TomBrainSubstrateClient {
   String verdict = 'NORMAL';
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     lastCall = call;
     callCount++;
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: verdict),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(verdict),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -281,18 +294,17 @@ class _VerdictSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recorder-only `TomBrainMemory` ────────────────────────────────
@@ -374,12 +386,10 @@ class _RecorderMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -429,6 +439,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

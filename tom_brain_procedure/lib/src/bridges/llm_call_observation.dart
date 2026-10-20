@@ -5,11 +5,11 @@
 // body** plus the answer and the call's provenance/metrics. Those three
 // facts only ever coexist in one place: [SubstrateBridge.send], which
 // drains the substrate stream — it holds the captured wire
-// ([CapturedWirePrompt], on the terminal `LlmStreamCompleted`), the
+// ([CapturedWirePrompt], on the terminal `LlmRunCompleted`), the
 // concatenated [answer], and the terminal [LlmCallReport]. This value
 // type bundles exactly what the bridge knows at that moment; the engine
 // (which knows the run) wraps it with run-correlation into the
-// `LlmTrailRecord` a writer consumes.
+// `LlmCallTrailRecord` a writer consumes.
 //
 // Deliberately **not** part of the d4rt-facing result map (PE-1): the
 // wire body must never cross into procedure scope. The bridge fires this
@@ -24,7 +24,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
 ///
 /// Carries everything §5.2 needs that the *bridge* can see; the
 /// run-scoped fields (`runId`, `trailId`, `sessionId`, …) are added by
-/// the engine when it wraps this into an `LlmTrailRecord`.
+/// the engine when it wraps this into an `LlmCallTrailRecord`.
 final class LlmCallObservation {
   /// The role the call was assembled for (`assistant_to_user`, …) — the
   /// §5.2 `callType` and the `llm/<callType>/…` path segment.
@@ -40,7 +40,7 @@ final class LlmCallObservation {
   final int? callSeq;
 
   /// The substrate-assigned call id (matches the terminal
-  /// `LlmStreamCompleted.callId`). Used as the path-stem fallback for a
+  /// `LlmRunCompleted.callId`). Used as the path-stem fallback for a
   /// turn-less call.
   final String callId;
 

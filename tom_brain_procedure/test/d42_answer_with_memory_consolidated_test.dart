@@ -87,10 +87,12 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'answer_with_memory_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'answer_with_memory_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
@@ -138,130 +140,148 @@ void main() {
   /// recall now fans out through the conductor + four `recall_*` sub-procedures
   /// (Extension-H step #30), each recording its own ProcedureRun, so the answer
   /// run must be matched by procedureId, not just by a terminal status.
-  ({NodeId id, NodeDraft draft}) finalRunNode() =>
-      memory.persistedOfType('ProcedureRun').firstWhere(
-            (p) =>
-                p.draft.values['status'] != 'running' &&
-                p.draft.values['procedureId'] == 'answer_with_memory_v1',
-          );
+  ({NodeId id, NodeDraft draft}) finalRunNode() => memory
+      .persistedOfType('ProcedureRun')
+      .firstWhere(
+        (p) =>
+            p.draft.values['status'] != 'running' &&
+            p.draft.values['procedureId'] == 'answer_with_memory_v1',
+      );
 
   group('D.42-1 a synthetic inbound prompt produces a streamed answer', () {
-    test('the multi-chunk substrate stream is drained into one answer output',
-        () async {
-      seedWarmRecall();
-      // A genuinely chunked stream: the proof that the body drains the whole
-      // stream is that `answer` is the concatenation of every chunk.
-      substrate.answerChunks = <String>[
-        'Back up by ',
-        'rsyncing ',
-        'nightly to the NAS.',
-      ];
+    test(
+      'the multi-chunk substrate stream is drained into one answer output',
+      () async {
+        seedWarmRecall();
+        // A genuinely chunked stream: the proof that the body drains the whole
+        // stream is that `answer` is the concatenation of every chunk.
+        substrate.answerChunks = <String>[
+          'Back up by ',
+          'rsyncing ',
+          'nightly to the NAS.',
+        ];
 
-      final outcome = await runWith('how do I automate backups?');
+        final outcome = await runWith('how do I automate backups?');
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'),
-          'Back up by rsyncing nightly to the NAS.');
-      // The reserved body→engine transport channel never surfaces as output.
-      expect(outcome.result!.outputs.containsKey(producedNodeIdsOutputKey),
-          isFalse);
-    });
-  });
-
-  group('D.42-2 warm path — event + conclusion + both edge kinds, no interest',
-      () {
-    test('a single run satisfies the full warm post-condition bundle',
-        () async {
-      seedWarmRecall();
-      substrate.answerChunks = <String>['Back up by rsyncing nightly.'];
-
-      final outcome = await runWith('how do I automate backups?');
-
-      // (a) The run is accepted.
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-
-      // (b) An Event carries the inbound prompt.
-      final event = memory.persistedOfType('Event').single;
-      expect(event.draft.values['summary'], 'how do I automate backups?');
-
-      // (c) A Conclusion carries the generated answer.
-      final conclusion = memory.persistedOfType('Conclusion').single;
-      expect(conclusion.draft.values['statement'],
-          'Back up by rsyncing nightly.');
-
-      // (d) A derived_from edge ties the Conclusion to each cited node.
-      final derivedTargets = memory.recordedEdges
-          .where((e) =>
-              e.type == EdgeType.derivedFrom && e.from == conclusion.id)
-          .map((e) => e.to)
-          .toSet();
-      expect(derivedTargets, <NodeId>{citedA, citedB});
-
-      // (e) A produced_by edge ties the Conclusion to the final run node.
-      final producedBy = memory.recordedEdges.where(
-        (e) => e.type == EdgeType.producedBy && e.from == conclusion.id,
-      );
-      expect(producedBy, hasLength(1));
-      expect(producedBy.single.to, finalRunNode().id);
-
-      // (f) No interest push: the prompt was not cold.
-      expect(memory.persistedOfType('InterestItem'), isEmpty);
-      expect(await memory.stacks.peek('interests'), isEmpty);
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(
+          outcome.result!.output<String>('answer'),
+          'Back up by rsyncing nightly to the NAS.',
+        );
+        // The reserved body→engine transport channel never surfaces as output.
+        expect(
+          outcome.result!.outputs.containsKey(producedNodeIdsOutputKey),
+          isFalse,
+        );
+      },
+    );
   });
 
   group(
-      'D.42-3 cold path — event + conclusion + produced_by + interest push, '
-      'no derived_from', () {
-    test('a single run satisfies the full cold post-condition bundle',
+    'D.42-2 warm path — event + conclusion + both edge kinds, no interest',
+    () {
+      test(
+        'a single run satisfies the full warm post-condition bundle',
         () async {
-      // Default classify `unknown` → the cold-classification path.
-      substrate.answerChunks = <String>['I have no notes on that yet.'];
+          seedWarmRecall();
+          substrate.answerChunks = <String>['Back up by rsyncing nightly.'];
 
-      final outcome = await runWith('what is a quasar?');
+          final outcome = await runWith('how do I automate backups?');
 
-      // (a) The run is accepted.
-      expect(outcome.status, TrailOutcomeStatus.accepted);
+          // (a) The run is accepted.
+          expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      // (b) An Event carries the inbound prompt.
-      final event = memory.persistedOfType('Event').single;
-      expect(event.draft.values['summary'], 'what is a quasar?');
+          // (b) An Event carries the inbound prompt.
+          final event = memory.persistedOfType('Event').single;
+          expect(event.draft.values['summary'], 'how do I automate backups?');
 
-      // (c) A Conclusion carries the generated answer.
-      final conclusion = memory.persistedOfType('Conclusion').single;
-      expect(conclusion.draft.values['statement'],
-          'I have no notes on that yet.');
+          // (c) A Conclusion carries the generated answer.
+          final conclusion = memory.persistedOfType('Conclusion').single;
+          expect(
+            conclusion.draft.values['statement'],
+            'Back up by rsyncing nightly.',
+          );
 
-      // (d) No derived_from edges — nothing was cited.
-      final derivedFromConclusion = memory.recordedEdges.where(
-        (e) => e.type == EdgeType.derivedFrom && e.from == conclusion.id,
+          // (d) A derived_from edge ties the Conclusion to each cited node.
+          final derivedTargets = memory.recordedEdges
+              .where(
+                (e) =>
+                    e.type == EdgeType.derivedFrom && e.from == conclusion.id,
+              )
+              .map((e) => e.to)
+              .toSet();
+          expect(derivedTargets, <NodeId>{citedA, citedB});
+
+          // (e) A produced_by edge ties the Conclusion to the final run node.
+          final producedBy = memory.recordedEdges.where(
+            (e) => e.type == EdgeType.producedBy && e.from == conclusion.id,
+          );
+          expect(producedBy, hasLength(1));
+          expect(producedBy.single.to, finalRunNode().id);
+
+          // (f) No interest push: the prompt was not cold.
+          expect(memory.persistedOfType('InterestItem'), isEmpty);
+          expect(await memory.stacks.peek('interests'), isEmpty);
+        },
       );
-      expect(derivedFromConclusion, isEmpty);
+    },
+  );
 
-      // (e) A produced_by edge ties the Conclusion to the final run node.
-      final producedBy = memory.recordedEdges.where(
-        (e) => e.type == EdgeType.producedBy && e.from == conclusion.id,
-      );
-      expect(producedBy, hasLength(1));
-      expect(producedBy.single.to, finalRunNode().id);
+  group('D.42-3 cold path — event + conclusion + produced_by + interest push, '
+      'no derived_from', () {
+    test(
+      'a single run satisfies the full cold post-condition bundle',
+      () async {
+        // Default classify `unknown` → the cold-classification path.
+        substrate.answerChunks = <String>['I have no notes on that yet.'];
 
-      // (f) Interest push when applicable: an InterestItem is persisted and
-      //     pushed onto the `interests` stack.
-      final interest = memory.persistedOfType('InterestItem').single;
-      expect(interest.draft.values['topic'], 'what is a quasar?');
-      expect((interest.draft.values['why'] as String).isNotEmpty, isTrue);
+        final outcome = await runWith('what is a quasar?');
 
-      final interests = await memory.stacks.peek('interests');
-      expect(interests, hasLength(1));
-      expect(interests.single.nodeId, interest.id);
+        // (a) The run is accepted.
+        expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      // (g) The InterestItem is NOT a produced result — no produced_by edge
-      //     points at it (its bootstrap schema forbids one, Q-D.40.2).
-      final producedToInterest = memory.recordedEdges.where(
-        (e) => e.type == EdgeType.producedBy && e.to == interest.id,
-      );
-      expect(producedToInterest, isEmpty);
-    });
+        // (b) An Event carries the inbound prompt.
+        final event = memory.persistedOfType('Event').single;
+        expect(event.draft.values['summary'], 'what is a quasar?');
+
+        // (c) A Conclusion carries the generated answer.
+        final conclusion = memory.persistedOfType('Conclusion').single;
+        expect(
+          conclusion.draft.values['statement'],
+          'I have no notes on that yet.',
+        );
+
+        // (d) No derived_from edges — nothing was cited.
+        final derivedFromConclusion = memory.recordedEdges.where(
+          (e) => e.type == EdgeType.derivedFrom && e.from == conclusion.id,
+        );
+        expect(derivedFromConclusion, isEmpty);
+
+        // (e) A produced_by edge ties the Conclusion to the final run node.
+        final producedBy = memory.recordedEdges.where(
+          (e) => e.type == EdgeType.producedBy && e.from == conclusion.id,
+        );
+        expect(producedBy, hasLength(1));
+        expect(producedBy.single.to, finalRunNode().id);
+
+        // (f) Interest push when applicable: an InterestItem is persisted and
+        //     pushed onto the `interests` stack.
+        final interest = memory.persistedOfType('InterestItem').single;
+        expect(interest.draft.values['topic'], 'what is a quasar?');
+        expect((interest.draft.values['why'] as String).isNotEmpty, isTrue);
+
+        final interests = await memory.stacks.peek('interests');
+        expect(interests, hasLength(1));
+        expect(interests.single.nodeId, interest.id);
+
+        // (g) The InterestItem is NOT a produced result — no produced_by edge
+        //     points at it (its bootstrap schema forbids one, Q-D.40.2).
+        final producedToInterest = memory.recordedEdges.where(
+          (e) => e.type == EdgeType.producedBy && e.to == interest.id,
+        );
+        expect(producedToInterest, isEmpty);
+      },
+    );
   });
 }
 
@@ -312,14 +332,14 @@ class _BrainMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -391,8 +411,7 @@ class _BrainMemory implements TomBrainMemory {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── An answer-capturing `TomBrainSubstrateClient` ───────────────────
@@ -404,11 +423,10 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
   List<String> answerChunks = <String>['ok'];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) {
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -426,18 +444,17 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -487,6 +504,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

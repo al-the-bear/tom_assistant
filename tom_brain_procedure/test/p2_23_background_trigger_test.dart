@@ -84,9 +84,10 @@ Vec _v768({required int seed}) {
 String? _findSqliteVecRoot() {
   var dir = Directory.current.absolute;
   for (var i = 0; i < 8; i++) {
-    final candidate =
-        Directory('${dir.path}${Platform.pathSeparator}tom_binaries'
-            '${Platform.pathSeparator}sqlite_vec');
+    final candidate = Directory(
+      '${dir.path}${Platform.pathSeparator}tom_binaries'
+      '${Platform.pathSeparator}sqlite_vec',
+    );
     if (candidate.existsSync()) return candidate.path;
     final parent = dir.parent;
     if (parent.path == dir.path) break;
@@ -97,7 +98,8 @@ String? _findSqliteVecRoot() {
 
 /// An Event [NodeDraft] sharing [_salientTerm] so the Extractor's BM25 recall
 /// surfaces it. Mirrors p2_21.
-NodeDraft _eventDraft({required String summary, required int seed}) => NodeDraft(
+NodeDraft _eventDraft({required String summary, required int seed}) =>
+    NodeDraft(
       typeName: 'Event',
       values: <String, Object?>{
         'summary': summary,
@@ -114,12 +116,12 @@ WriteBudget _unboundedBudget() =>
 
 /// Registers the Extractor agent with the `node:Claim` write scope.
 AgentRegistration _extractorAgent() => AgentRegistration(
-      agentName: 'dream_extract_v1',
-      procedureId: 'dream_extract_v1',
-      defaultBudget: _unboundedBudget(),
-      readScopes: const <String>{AgentRegistration.globalWildcard},
-      writeScopes: <String>{AgentRegistration.nodeScope('Claim')},
-    );
+  agentName: 'dream_extract_v1',
+  procedureId: 'dream_extract_v1',
+  defaultBudget: _unboundedBudget(),
+  readScopes: const <String>{AgentRegistration.globalWildcard},
+  writeScopes: <String>{AgentRegistration.nodeScope('Claim')},
+);
 
 void main() {
   final vecRoot = _findSqliteVecRoot();
@@ -133,8 +135,8 @@ void main() {
 
   final skipNoBinary = resolvedPath == null
       ? 'No packaged vec0 binary for this platform under '
-          'tom_binaries/sqlite_vec (resolver.isSupported='
-          '${resolver.isSupported}, vecRoot=$vecRoot).'
+            'tom_binaries/sqlite_vec (resolver.isSupported='
+            '${resolver.isSupported}, vecRoot=$vecRoot).'
       : null;
 
   MemoryConfig freshConfig() {
@@ -188,12 +190,10 @@ void main() {
     // text). Both that script and the resolver must be wired in.
     final prompts = StubPromptResolver();
     return ProcedureEngine(
-      resolver: ProcedureResolver(
-        <LoadedProcedure>[
-          system.resolve('dream_extract_v1'),
-          system.resolve('tool_loop_v1'),
-        ],
-      ),
+      resolver: ProcedureResolver(<LoadedProcedure>[
+        system.resolve('dream_extract_v1'),
+        system.resolve('tool_loop_v1'),
+      ]),
       memory: store,
       memoryBridge: MemoryBridge(store, agentName: 'dream_extract_v1'),
       substrateBridge: SubstrateBridge(
@@ -238,8 +238,11 @@ void main() {
         'dream_extract_v1',
         arguments: const <String, Object?>{'source': _salientTerm},
       );
-      expect(coordinator.hasBackgroundRun, isTrue,
-          reason: 'the named maintenance run occupies the background slot');
+      expect(
+        coordinator.hasBackgroundRun,
+        isTrue,
+        reason: 'the named maintenance run occupies the background slot',
+      );
 
       // The Extractor cleared its first checkpoint (no foreground yet) and is
       // genuinely mid-flight, blocked extracting the first event.
@@ -259,9 +262,13 @@ void main() {
       // it is blocked at the cooperative boundary, not merely slow.
       substrate.release(0);
       await pumpEventQueue(times: 50);
-      expect(substrate.hasReached(1), isFalse,
-          reason: 'parked at the yield checkpoint before the next event — the '
-              'run does not advance under foreground load');
+      expect(
+        substrate.hasReached(1),
+        isFalse,
+        reason:
+            'parked at the yield checkpoint before the next event — the '
+            'run does not advance under foreground load',
+      );
       expect(coordinator.hasBackgroundRun, isTrue);
       expect(coordinator.hasForegroundRun, isTrue);
 
@@ -276,18 +283,27 @@ void main() {
       substrate.release(2);
 
       final result = await outcome;
-      expect(result.status, TrailOutcomeStatus.accepted,
-          reason: 'a clean resume, not a force-yield or crash');
+      expect(
+        result.status,
+        TrailOutcomeStatus.accepted,
+        reason: 'a clean resume, not a force-yield or crash',
+      );
 
       final claimIds = result.result!.output<List<Object?>>('claimIds');
       expect(claimIds, isNotNull);
       expect(claimIds!.length, 3, reason: 'every seeded event was extracted');
 
       final stats = await store.stats();
-      expect(stats.nodeCountByType['Claim'], 3,
-          reason: 'the resumed run finished the remaining events');
-      expect(coordinator.hasBackgroundRun, isFalse,
-          reason: 'the background slot is freed once the run completes');
+      expect(
+        stats.nodeCountByType['Claim'],
+        3,
+        reason: 'the resumed run finished the remaining events',
+      );
+      expect(
+        coordinator.hasBackgroundRun,
+        isFalse,
+        reason: 'the background slot is freed once the run completes',
+      );
     });
 
     test('a second trigger while one is in flight is refused — at most one '
@@ -379,16 +395,13 @@ class _SteppedDreamSubstrate implements TomBrainSubstrateClient {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) async* {
+  Stream<LlmEvent> completeStream(LlmCall call) async* {
     final index = _llmCalls++;
     final reached = _reachedAt(index);
     if (!reached.isCompleted) reached.complete();
     await _releaseAt(index).future;
-    yield const LlmStreamChunk(
-      callId: 'c',
-      text: 'The project claim was extracted.',
-    );
-    yield const LlmStreamCompleted(
+    yield const LlmTextDelta('The project claim was extracted.');
+    yield const LlmRunCompleted(
       callId: 'c',
       report: LlmCallReport(
         providerId: 'p',
@@ -405,16 +418,15 @@ class _SteppedDreamSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: _v768(seed: text.length),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'nomic-embed-text',
-          dims: _bootstrapDims,
-          normalized: true,
-        ),
-      );
+    vec: _v768(seed: text.length),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'nomic-embed-text',
+      dims: _bootstrapDims,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -4,7 +4,7 @@
 // `BrainProcessConfig.llmTrailSink` is the production seam an `LlmTrailWriter`
 // binds onto. This suite proves boot threads that sink through `_wireEngine`
 // onto the `ProcedureEngine`, so a prompt submitted through the booted
-// dispatcher fires one [LlmTrailRecord] per completed `llm` call — carrying the
+// dispatcher fires one [LlmCallTrailRecord] per completed `llm` call — carrying the
 // run's id and the wire the substrate saw. A boot with no sink stays silent.
 //
 // Doubles mirror `d44_brain_process_boot_test.dart` (in-process memory +
@@ -49,65 +49,85 @@ void main() {
     parity = AnswerParityPrompts();
   });
 
-  BrainProcessConfig configWith({LlmTrailSink? llmTrailSink}) =>
-      BrainProcessConfig(
-        substrate: substrate,
-        memoryProvisioning: MemoryProvisioningConfig.inProcess(
-          client: memory,
-          memoryConfig: MemoryConfig.forTesting(root: 'ztmp/boot_trail_sink'),
-        ),
-        llmTrailSink: llmTrailSink,
-        // Increment 6 (§6): the booted answer step resolves its prompt through
-        // the host `PromptResolver`; the parity fake reproduces the pre-migration
-        // assembled prompt so the `sub.send` still fires the llm-trail records.
-        promptResolver: parity.resolver,
-        routeChainOf: parity.routeChainOf,
-      );
+  BrainProcessConfig configWith({
+    LlmTrailSink? llmTrailSink,
+  }) => BrainProcessConfig(
+    substrate: substrate,
+    memoryProvisioning: MemoryProvisioningConfig.inProcess(
+      client: memory,
+      memoryConfig: MemoryConfig.forTesting(root: 'ztmp/boot_trail_sink'),
+    ),
+    llmTrailSink: llmTrailSink,
+    // Increment 6 (§6): the booted answer step resolves its prompt through
+    // the host `PromptResolver`; the parity fake reproduces the pre-migration
+    // assembled prompt so the `sub.send` still fires the llm-trail records.
+    promptResolver: parity.resolver,
+    routeChainOf: parity.routeChainOf,
+  );
 
   Access userPrompt(String text) => Access(
-        envelope: InboundRequest(
-            text: text, kindHint: SystemProcedures.promptAnalyzerV1),
-        identity: ResolvedIdentity(principalId: 'p1'),
-        session: Session(sessionId: 's1'),
-        persona: Persona.assistant(),
-        deliver: (chunk) => Stream<OutboundChunk>.value(chunk),
-      );
+    envelope: InboundRequest(
+      text: text,
+      kindHint: SystemProcedures.promptAnalyzerV1,
+    ),
+    identity: ResolvedIdentity(principalId: 'p1'),
+    session: Session(sessionId: 's1'),
+    persona: Persona.assistant(),
+    deliver: (chunk) => Stream<OutboundChunk>.value(chunk),
+  );
 
   group('boot threads the llmTrailSink onto the engine (§10 step #4)', () {
-    test('a bound sink receives a run-correlated record per llm call', () async {
-      substrate.answerChunks = <String>['an answer'];
-      final records = <LlmTrailRecord>[];
+    test(
+      'a bound sink receives a run-correlated record per llm call',
+      () async {
+        substrate.answerChunks = <String>['an answer'];
+        final records = <LlmCallTrailRecord>[];
 
-      final booted =
-          await BrainProcessBoot.boot(configWith(llmTrailSink: records.add));
-      addTearDown(booted.shutdown);
+        final booted = await BrainProcessBoot.boot(
+          configWith(llmTrailSink: records.add),
+        );
+        addTearDown(booted.shutdown);
 
-      await booted.dispatcher.accept(userPrompt('what is a quasar?'));
+        await booted.dispatcher.accept(userPrompt('what is a quasar?'));
 
-      expect(records, isNotEmpty,
-          reason: 'the answer llm call fires one raw-trail record');
-      final record = records.first;
-      // The record is run-correlated (the only place the run id is known).
-      expect(record.runId, isNotNull);
-      expect(record.trailId, isNotNull,
-          reason: 'the recorder trail is open when the bridge fires');
-      // The wire the substrate saw survives onto the observation.
-      expect(record.observation.wire, isNotNull);
-      expect(record.observation.wire!.anchorHash,
-          record.observation.report.anchorHash);
-    });
+        expect(
+          records,
+          isNotEmpty,
+          reason: 'the answer llm call fires one raw-trail record',
+        );
+        final record = records.first;
+        // The record is run-correlated (the only place the run id is known).
+        expect(record.runId, isNotNull);
+        expect(
+          record.trailId,
+          isNotNull,
+          reason: 'the recorder trail is open when the bridge fires',
+        );
+        // The wire the substrate saw survives onto the observation.
+        expect(record.observation.wire, isNotNull);
+        expect(
+          record.observation.wire!.anchorHash,
+          record.observation.report.anchorHash,
+        );
+      },
+    );
 
-    test('with no sink bound boot wires no observer and stays silent', () async {
-      substrate.answerChunks = <String>['an answer'];
-      final booted = await BrainProcessBoot.boot(configWith());
-      addTearDown(booted.shutdown);
+    test(
+      'with no sink bound boot wires no observer and stays silent',
+      () async {
+        substrate.answerChunks = <String>['an answer'];
+        final booted = await BrainProcessBoot.boot(configWith());
+        addTearDown(booted.shutdown);
 
-      // The run still completes — the sink is purely observational. The
-      // exchange was persisted (cold path), proving the run actually ran.
-      await booted.dispatcher.accept(userPrompt('what is a quasar?'));
-      expect(memory.persistedOfType('Conclusion').single.draft.values['statement'],
-          'an answer');
-    });
+        // The run still completes — the sink is purely observational. The
+        // exchange was persisted (cold path), proving the run actually ran.
+        await booted.dispatcher.accept(userPrompt('what is a quasar?'));
+        expect(
+          memory.persistedOfType('Conclusion').single.draft.values['statement'],
+          'an answer',
+        );
+      },
+    );
   });
 }
 
@@ -149,14 +169,14 @@ class _BootMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -232,12 +252,10 @@ class _BootMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ─── Answer-capturing substrate carrying a wire on completion. ─────────
@@ -251,13 +269,12 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
   Future<void> close() async {}
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final prompt = call.inputs['prompt'] as String? ?? '';
     const anchorHash = 'sha256:anchor';
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      LlmRunCompleted(
         callId: 'c',
         wire: CapturedWirePrompt(
           body: 'ANCHOR\n\n$prompt',
@@ -280,18 +297,17 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -341,6 +357,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

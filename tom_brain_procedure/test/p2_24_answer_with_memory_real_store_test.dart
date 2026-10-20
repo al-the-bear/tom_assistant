@@ -74,9 +74,10 @@ Vec _v768({required int seed}) {
 String? _findSqliteVecRoot() {
   var dir = Directory.current.absolute;
   for (var i = 0; i < 8; i++) {
-    final candidate =
-        Directory('${dir.path}${Platform.pathSeparator}tom_binaries'
-            '${Platform.pathSeparator}sqlite_vec');
+    final candidate = Directory(
+      '${dir.path}${Platform.pathSeparator}tom_binaries'
+      '${Platform.pathSeparator}sqlite_vec',
+    );
     if (candidate.existsSync()) return candidate.path;
     final parent = dir.parent;
     if (parent.path == dir.path) break;
@@ -97,8 +98,8 @@ void main() {
 
   final skipNoBinary = resolvedPath == null
       ? 'No packaged vec0 binary for this platform under '
-          'tom_binaries/sqlite_vec (resolver.isSupported='
-          '${resolver.isSupported}, vecRoot=$vecRoot).'
+            'tom_binaries/sqlite_vec (resolver.isSupported='
+            '${resolver.isSupported}, vecRoot=$vecRoot).'
       : null;
 
   /// A fresh real-store config rooted in a unique temp dir, with teardown.
@@ -140,9 +141,7 @@ void main() {
       // dispatches the `retrieve_for_prompt_v1` conductor and its five
       // `recall_*` sub-procedures (Extension-H step #30), so they must all be
       // resolvable.
-      resolver: ProcedureResolver(
-        system.ids.map(system.resolve).toList(),
-      ),
+      resolver: ProcedureResolver(system.ids.map(system.resolve).toList()),
       memory: store,
       memoryBridge: MemoryBridge(store),
       substrateBridge: SubstrateBridge(
@@ -157,13 +156,14 @@ void main() {
   Future<ProcedureOutcome> runAnswer({
     required ProcedureEngine engine,
     required String text,
-  }) =>
-      engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'answer_with_memory_v1',
-            arguments: <String, Object?>{'text': text},
-          ))
-          .outcome;
+  }) => engine
+      .invoke(
+        ProcedureInvocation(
+          procedureId: 'answer_with_memory_v1',
+          arguments: <String, Object?>{'text': text},
+        ),
+      )
+      .outcome;
 
   group('answer_with_memory_v1 through real D4rt against real memory (needs '
       'vec0)', () {
@@ -182,23 +182,39 @@ void main() {
 
       // The run is accepted ⇒ the body's writes all landed in the real store
       // (a refused write — e.g. a missing embedding — closes the run errored).
-      expect(outcome.status, TrailOutcomeStatus.accepted,
-          reason: 'the body must persist into the real store without an '
-              'EmbeddingPolicyViolation: ${outcome.error}');
+      expect(
+        outcome.status,
+        TrailOutcomeStatus.accepted,
+        reason:
+            'the body must persist into the real store without an '
+            'EmbeddingPolicyViolation: ${outcome.error}',
+      );
 
       // The declared `answer` output is the substrate completion.
-      expect(outcome.result!.output<String>('answer'),
-          'Configure the bomber server via its provisioning manifest.');
+      expect(
+        outcome.result!.output<String>('answer'),
+        'Configure the bomber server via its provisioning manifest.',
+      );
 
       // The Verify: the script's writes appear in the real store.
       final stats = await store.stats();
-      expect(stats.nodeCountByType['Event'], 1,
-          reason: 'the inbound prompt becomes one Event');
-      expect(stats.nodeCountByType['Conclusion'], 1,
-          reason: 'the answer becomes one Conclusion');
-      expect(stats.nodeCountByType['InterestItem'], 1,
-          reason: 'a fresh store has no centroids, so classify is `unknown` '
-              '(cold start) and the body records an InterestItem');
+      expect(
+        stats.nodeCountByType['Event'],
+        1,
+        reason: 'the inbound prompt becomes one Event',
+      );
+      expect(
+        stats.nodeCountByType['Conclusion'],
+        1,
+        reason: 'the answer becomes one Conclusion',
+      );
+      expect(
+        stats.nodeCountByType['InterestItem'],
+        1,
+        reason:
+            'a fresh store has no centroids, so classify is `unknown` '
+            '(cold start) and the body records an InterestItem',
+      );
 
       // The interest was pushed onto the bootstrap `interests` stack.
       final interests = await store.stacks.peek('interests');
@@ -211,16 +227,17 @@ void main() {
       // Cold path: empty recall ⇒ no derived_from edges, no automation note.
       expect(stats.edgeCountByType['derived_from'] ?? 0, 0);
       expect(
-        outcome.entries.where((e) =>
-            e.kind == TrailEntryKind.note &&
-            e.payload['category'] == automationCandidateCategory),
+        outcome.entries.where(
+          (e) =>
+              e.kind == TrailEntryKind.note &&
+              e.payload['category'] == automationCandidateCategory,
+        ),
         isEmpty,
       );
     }, skip: skipNoBinary);
 
     test('warm + repeat path: a prompt that recalls a prior identical Event '
-        'draws a derived_from edge and emits an automation_candidate note',
-        () async {
+        'draws a derived_from edge and emits an automation_candidate note', () async {
       final store = await openStore();
       const prompt = 'what is the bomber project deployment cadence?';
 
@@ -250,24 +267,36 @@ void main() {
         ),
         text: prompt,
       );
-      expect(outcome.status, TrailOutcomeStatus.accepted,
-          reason: 'the run must stay within its header budget: '
-              '${outcome.error}');
+      expect(
+        outcome.status,
+        TrailOutcomeStatus.accepted,
+        reason:
+            'the run must stay within its header budget: '
+            '${outcome.error}',
+      );
 
       // The Verify: a derived_from edge from the new Conclusion to the recalled
       // prior Event appears in the real store.
       final stats = await store.stats();
-      expect(stats.edgeCountByType['derived_from'] ?? 0, greaterThan(0),
-          reason: 'the new Conclusion is derived_from the recalled prior Event');
-      expect(stats.nodeCountByType['Event'], 2,
-          reason: 'the seeded prior Event plus this run\'s inbound-prompt Event');
+      expect(
+        stats.edgeCountByType['derived_from'] ?? 0,
+        greaterThan(0),
+        reason: 'the new Conclusion is derived_from the recalled prior Event',
+      );
+      expect(
+        stats.nodeCountByType['Event'],
+        2,
+        reason: 'the seeded prior Event plus this run\'s inbound-prompt Event',
+      );
 
       // The automation_candidate note fired: recall surfaced an Event whose
       // summary equals this prompt (the cheap identical-shape repetition check).
       final notes = outcome.entries
-          .where((e) =>
-              e.kind == TrailEntryKind.note &&
-              e.payload['category'] == automationCandidateCategory)
+          .where(
+            (e) =>
+                e.kind == TrailEntryKind.note &&
+                e.payload['category'] == automationCandidateCategory,
+          )
           .map((e) => e.payload['payload'] as Map<String, Object?>)
           .toList();
       expect(notes, hasLength(1));
@@ -290,10 +319,10 @@ class _AnswerSubstrate implements TomBrainSubstrateClient {
   final String answer;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: answer),
-      const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) {
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(answer),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -311,16 +340,15 @@ class _AnswerSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: _v768(seed: text.length),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'nomic-embed-text',
-          dims: _bootstrapDims,
-          normalized: true,
-        ),
-      );
+    vec: _v768(seed: text.length),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'nomic-embed-text',
+      dims: _bootstrapDims,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

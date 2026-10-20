@@ -101,6 +101,12 @@ dependencies:
   #                          Path dep — `publish_to: none`.
   tom_core_agentic:
     path: ../../tom_ai/core/tom_core_agentic
+  #   - tom_core_llm       — the provider contract every substrate
+  #                          provider implements (`LlmProvider`,
+  #                          `LlmRequest`, the `LlmEvent` union,
+  #                          `LlmCallReport`). Path dep — `publish_to: none`.
+  tom_core_llm:
+    path: ../../tom_ai/core/tom_core_llm
   tom_core_kernel:
     path: ../../tom_ai/core/tom_core_kernel
   tom_core_server:

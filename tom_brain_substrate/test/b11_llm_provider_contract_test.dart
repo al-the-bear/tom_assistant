@@ -7,16 +7,17 @@
 //     `templateSha`) so a future drop / rename triggers a compile failure
 //     here. (`body` was replaced by the `system` + `user` split in
 //     `prompt_restructuring_and_configuration_plan.md` step 2.)
-//   - Pin the `LlmProvider` abstract interface shape:
+//   - Pin the `LlmProvider` contract shape (`tom_core_llm`):
 //       * `String get id;`
-//       * `Future<LlmCallReport> complete(WirePrompt, LlmOptions);`
-//       * `Stream<LlmStreamEvent> completeStream(WirePrompt, LlmOptions);`
+//       * `Stream<LlmEvent> run(LlmRequest);`
+//       * `Future<LlmCallReport> complete(LlmRequest);` (derived from `run`
+//         unless a provider overrides it)
 //     Use a `_FakeProvider` that implements the interface and a
 //     `_DummyProvider` that throws `UnimplementedError` from every
 //     override; both must compile and instantiate.
 //   - Prove the type-level statements about *what is NOT in the
-//     interface at B.11*: there is no `embed(...)`, no
-//     `embedBatch(...)`, no `health()` member yet. These are
+//     contract*: `embed(...)` is declared with a refusing default, and
+//     there is no `embedBatch(...)` and no `health()` member. These are
 //     deferred to later steps (B.18 / B.25 / B.26). A `noSuchMethod`
 //     check on a `_DummyProvider` instance, gated through `dynamic`
 //     dispatch, confirms the members do not exist on the interface.
@@ -84,11 +85,7 @@ void main() {
       // compile under the analyzer rule. The runtime equivalent
       // assertion: a constructed `WirePrompt` is exactly that runtime
       // type.
-      const wp = WirePrompt(
-        system: 'x',
-        anchorHash: 'y',
-        roleId: 'z',
-      );
+      const wp = WirePrompt(system: 'x', anchorHash: 'y', roleId: 'z');
 
       expect(wp.runtimeType, WirePrompt);
       expect(wp, isA<WirePrompt>());
@@ -97,10 +94,7 @@ void main() {
 
   group('B.11 / LlmProvider interface', () {
     test('exposes `String get id`', () {
-      final provider = _FakeProvider(
-        id: 'fake:test',
-        completeBody: 'ignored',
-      );
+      final provider = _FakeProvider(id: 'fake:test', completeBody: 'ignored');
 
       expect(provider.id, 'fake:test');
       expect(provider, isA<LlmProvider>());
@@ -115,13 +109,15 @@ void main() {
         );
 
         final report = await provider.complete(
-          const WirePrompt(
-            system: 'anchor + body',
-            anchorHash: 'sha256:expected-anchor',
-            roleId: 'assistant_to_user',
-            templateSha: 'tpl-1',
+          LlmRequest(
+            prompt: const WirePrompt(
+              system: 'anchor + body',
+              anchorHash: 'sha256:expected-anchor',
+              roleId: 'assistant_to_user',
+              templateSha: 'tpl-1',
+            ),
+            options: const LlmOptions(),
           ),
-          const LlmOptions(),
         );
 
         expect(report.providerId, 'fake:test');
@@ -145,35 +141,36 @@ void main() {
         );
 
         final events = await provider
-            .completeStream(
-              const WirePrompt(
-                system: 'anchor + body',
-                anchorHash: 'sha256:expected-anchor',
-                roleId: 'assistant_to_user',
+            .run(
+              LlmRequest(
+                prompt: const WirePrompt(
+                  system: 'anchor + body',
+                  anchorHash: 'sha256:expected-anchor',
+                  roleId: 'assistant_to_user',
+                ),
+                options: const LlmOptions(),
               ),
-              const LlmOptions(),
             )
             .toList();
 
-        expect(events.first, isA<LlmStreamStarted>());
-        expect(events.last, isA<LlmStreamCompleted>());
+        expect(events.first, isA<LlmRunStarted>());
+        expect(events.last, isA<LlmRunCompleted>());
 
         // Per spec § 4.3 a non-streaming provider chunks the final
         // string into one `Chunk` followed by one `Completed`.
         final middle = events.sublist(1, events.length - 1);
         expect(middle, hasLength(1));
-        expect(middle.single, isA<LlmStreamChunk>());
+        expect(middle.single, isA<LlmTextDelta>());
 
-        final chunk = middle.single as LlmStreamChunk;
+        final chunk = middle.single as LlmTextDelta;
         expect(chunk.text, 'one big chunk');
 
-        final started = events.first as LlmStreamStarted;
-        final completed = events.last as LlmStreamCompleted;
+        final started = events.first as LlmRunStarted;
+        final completed = events.last as LlmRunCompleted;
 
         expect(started.providerId, 'fake:test');
         expect(started.callId, isNotEmpty);
         expect(completed.callId, started.callId);
-        expect(chunk.callId, started.callId);
 
         // Report on the terminal event carries the same anchor hash
         // and provider id as `complete()` would.
@@ -182,76 +179,75 @@ void main() {
       },
     );
 
-    test(
-      'a DummyProvider that throws UnimplementedError compiles and '
-      'satisfies LlmProvider — the interface has no implemented members '
-      'subclasses must invoke through `super`',
-      () {
-        // If `LlmProvider` ever grew a concrete member that required
-        // a super-call in subclasses, this test would surface it
-        // (the dummy would either fail to compile or pass through
-        // a non-thrown method). Today every member is abstract.
-        const dummy = _DummyProvider();
+    test('a DummyProvider that throws UnimplementedError compiles and '
+        'satisfies LlmProvider — the interface has no implemented members '
+        'subclasses must invoke through `super`', () {
+      // If `LlmProvider` ever grew a concrete member that required
+      // a super-call in subclasses, this test would surface it
+      // (the dummy would either fail to compile or pass through
+      // a non-thrown method). Today every member is abstract.
+      const dummy = _DummyProvider();
 
-        expect(dummy, isA<LlmProvider>());
-        expect(() => dummy.id, throwsA(isA<UnimplementedError>()));
-        expect(
-          () => dummy.complete(
-            const WirePrompt(system: 'x', anchorHash: 'y', roleId: 'z'),
-            const LlmOptions(),
+      expect(dummy, isA<LlmProvider>());
+      expect(() => dummy.id, throwsA(isA<UnimplementedError>()));
+      expect(
+        () => dummy.complete(
+          LlmRequest(
+            prompt: const WirePrompt(system: 'x', anchorHash: 'y', roleId: 'z'),
+            options: const LlmOptions(),
           ),
-          throwsA(isA<UnimplementedError>()),
-        );
-        expect(
-          () => dummy.completeStream(
-            const WirePrompt(system: 'x', anchorHash: 'y', roleId: 'z'),
-            const LlmOptions(),
+        ),
+        throwsA(isA<UnimplementedError>()),
+      );
+      expect(
+        () => dummy.run(
+          LlmRequest(
+            prompt: const WirePrompt(system: 'x', anchorHash: 'y', roleId: 'z'),
+            options: const LlmOptions(),
           ),
-          throwsA(isA<UnimplementedError>()),
-        );
-      },
-    );
+        ),
+        throwsA(isA<UnimplementedError>()),
+      );
+    });
 
-    test(
-      'B.11 surface does not yet expose embed / embedBatch / health '
-      '(deferred per plan-step text + spec § 4.1)',
-      () {
-        // Dynamic dispatch lets us probe for members that should NOT
-        // exist on the interface at this step. If a future change
-        // adds `embed`/`embedBatch`/`health` to `LlmProvider`
-        // without also updating B.11's documented surface, this
-        // assertion fails — flagging the silent contract drift.
-        final dynamic dyn = const _DummyProvider();
-        expect(
-          () => dyn.embed('x'),
-          throwsA(isA<NoSuchMethodError>()),
-          reason: 'embed is deferred to B.25.',
-        );
-        expect(
-          () => dyn.embedBatch(<String>['x']),
-          throwsA(isA<NoSuchMethodError>()),
-          reason: 'embedBatch is deferred to B.26.',
-        );
-        expect(
-          () => dyn.health(),
-          throwsA(isA<NoSuchMethodError>()),
-          reason: 'health is deferred to B.18 (router owns the type).',
-        );
-      },
-    );
+    test('embed is declared and refuses by default; embedBatch and health '
+        'are not part of the provider contract', () async {
+      // The shared contract declares `embed` with a refusing default, so a
+      // provider that offers no embeddings needs no code for it; batching and
+      // health stay the substrate's own concerns (the embedding service and
+      // the router). Dynamic dispatch probes for the members that must not
+      // exist, so adding one without updating this surface fails here.
+      await expectLater(
+        _EchoProvider().embed('x'),
+        throwsA(isA<UnsupportedError>()),
+      );
+      final dynamic dyn = _EchoProvider();
+      expect(
+        () => dyn.embedBatch(<String>['x']),
+        throwsA(isA<NoSuchMethodError>()),
+        reason: 'embedBatch belongs to the embedding service.',
+      );
+      expect(
+        () => dyn.health(),
+        throwsA(isA<NoSuchMethodError>()),
+        reason: 'health belongs to the router.',
+      );
+    });
   });
 
   group('B.11 / llm/ surface is reachable via top-level package barrel', () {
-    test('WirePrompt and LlmProvider import from the top-level barrel only',
-        () {
-      // The single test-file import line is
-      //   import 'package:tom_brain_substrate/tom_brain_substrate.dart';
-      // — i.e. no `package:tom_brain_substrate/src/...` deep import.
-      // Reaching the two types under that constraint proves the
-      // top-level barrel re-exports the llm/ surface.
-      const _ = WirePrompt(system: 'x', anchorHash: 'y', roleId: 'z');
-      expect(_FakeProvider(id: 'x', completeBody: 'y'), isA<LlmProvider>());
-    });
+    test(
+      'WirePrompt and LlmProvider import from the top-level barrel only',
+      () {
+        // The single test-file import line is
+        //   import 'package:tom_brain_substrate/tom_brain_substrate.dart';
+        // — i.e. no `package:tom_brain_substrate/src/...` deep import.
+        // Reaching the two types under that constraint proves the
+        // top-level barrel re-exports the llm/ surface.
+        const _ = WirePrompt(system: 'x', anchorHash: 'y', roleId: 'z');
+        expect(_FakeProvider(id: 'x', completeBody: 'y'), isA<LlmProvider>());
+      },
+    );
   });
 
   group('B.11 / WirePrompt — two-channel (system + user) shape', () {
@@ -263,7 +259,11 @@ void main() {
         templateSha: 'sha-tmpl',
       );
       expect(p.system, 'anchor + framing');
-      expect(p.user, '', reason: 'user is optional; default is the empty string');
+      expect(
+        p.user,
+        '',
+        reason: 'user is optional; default is the empty string',
+      );
       expect(p.anchorHash, 'sha256:a');
       expect(p.roleId, 'analyser');
       expect(p.templateSha, 'sha-tmpl');
@@ -293,12 +293,20 @@ void main() {
 
     test('combined is system alone when user is empty (anchor leads)', () {
       const p = WirePrompt(system: 'SYS', anchorHash: 'sha256:a', roleId: 'r');
-      expect(p.combined, 'SYS', reason: 'no blank-line padding for an empty user');
+      expect(
+        p.combined,
+        'SYS',
+        reason: 'no blank-line padding for an empty user',
+      );
     });
 
     test('combined is user alone when system is empty', () {
-      const p =
-          WirePrompt(system: '', user: 'USR', anchorHash: 'sha256:a', roleId: 'r');
+      const p = WirePrompt(
+        system: '',
+        user: 'USR',
+        anchorHash: 'sha256:a',
+        roleId: 'r',
+      );
       expect(p.combined, 'USR');
     });
   });
@@ -315,7 +323,7 @@ void main() {
 /// This is *not* the prototype `StubLlmProvider` (that arrives at
 /// B.16 with the full provider conformance behaviour). It is the
 /// minimum surface needed to prove the B.11 interface holds.
-final class _FakeProvider implements LlmProvider {
+final class _FakeProvider extends LlmProvider {
   @override
   final String id;
 
@@ -324,7 +332,8 @@ final class _FakeProvider implements LlmProvider {
   _FakeProvider({required this.id, required this.completeBody});
 
   @override
-  Future<LlmCallReport> complete(WirePrompt prompt, LlmOptions options) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
     return LlmCallReport(
       providerId: id,
       modelId: 'fake-model',
@@ -340,44 +349,46 @@ final class _FakeProvider implements LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
     final callId =
         'fake-call-${DateTime.now().microsecondsSinceEpoch}-${prompt.combined.hashCode}';
 
-    yield LlmStreamStarted(
-      callId: callId,
-      providerId: id,
-      modelId: 'fake-model',
-    );
+    yield LlmRunStarted(callId: callId, providerId: id, modelId: 'fake-model');
 
     // Non-streaming providers (per spec § 4.3) emit one Chunk +
     // one Completed.
-    yield LlmStreamChunk(callId: callId, text: completeBody);
+    yield LlmTextDelta(completeBody);
 
-    final report = await complete(prompt, options);
-    yield LlmStreamCompleted(callId: callId, report: report);
+    final report = await complete(request);
+    yield LlmRunCompleted(callId: callId, report: report);
   }
 }
 
 /// A pure `UnimplementedError` dummy that proves the interface has
 /// no concrete members today.
-final class _DummyProvider implements LlmProvider {
+final class _DummyProvider extends LlmProvider {
   const _DummyProvider();
 
   @override
   String get id => throw UnimplementedError();
 
   @override
-  Future<LlmCallReport> complete(WirePrompt prompt, LlmOptions options) =>
-      throw UnimplementedError();
+  Future<LlmCallReport> complete(LlmRequest request) {
+    return throw UnimplementedError();
+  }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) =>
-      throw UnimplementedError();
+  Stream<LlmEvent> run(LlmRequest request) {
+    return throw UnimplementedError();
+  }
+}
+
+/// The smallest provider: implements only what the contract requires.
+final class _EchoProvider extends LlmProvider {
+  @override
+  String get id => 'echo';
+
+  @override
+  Stream<LlmEvent> run(LlmRequest request) => const Stream<LlmEvent>.empty();
 }

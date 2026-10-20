@@ -38,11 +38,9 @@
 import 'dart:async';
 
 import '../api/cancellation.dart';
-import '../api/llm_call.dart';
-import '../api/llm_stream_event.dart';
+import 'package:tom_core_llm/tom_core_llm.dart';
 import 'http_llm_provider_base.dart';
 import 'ollama_http_client.dart';
-import 'wire_prompt.dart';
 
 /// `LlmProvider` against a running Ollama daemon (`localhost:11434`
 /// by default).
@@ -59,9 +57,9 @@ import 'wire_prompt.dart';
 ///     `promptHash` = sha256 of `prompt.combined`; `templateSha` =
 ///     `prompt.templateSha`.
 ///   - Non-streaming `completeStream` shape: exactly one
-///     [LlmStreamStarted], then concatenated chunks (one per Ollama
-///     NDJSON frame), then exactly one [LlmStreamCompleted]. Failures
-///     terminate the stream with [LlmStreamFailed].
+///     [LlmRunStarted], then concatenated chunks (one per Ollama
+///     NDJSON frame), then exactly one [LlmRunCompleted]. Failures
+///     terminate the stream with [LlmRunFailed].
 ///
 /// **Cancellation.** Cancellation tokens at B.14 are honoured on the
 /// streaming path only (via [OllamaHttpClient.chatStream]). The
@@ -78,17 +76,16 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
     required super.defaultModel,
     OllamaHttpClient? httpClient,
     super.requestTimeout,
-  })  : httpClient = httpClient ?? DefaultOllamaHttpClient(),
-        super(ownsHttpClient: httpClient == null);
+  }) : httpClient = httpClient ?? DefaultOllamaHttpClient(),
+       super(ownsHttpClient: httpClient == null);
 
   @override
   String get callIdPrefix => 'ollama';
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     final stopwatch = Stopwatch()..start();
     final modelId = options.model ?? defaultModel;
     final ollamaOptions = _toOllamaOptions(options);
@@ -114,16 +111,16 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     final stopwatch = Stopwatch()..start();
     final modelId = options.model ?? defaultModel;
     final ollamaOptions = _toOllamaOptions(options);
     final callId = newCallId(prompt);
 
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
+      purpose: request.purpose,
       callId: callId,
       providerId: id,
       modelId: modelId,
@@ -142,14 +139,14 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
         requestTimeout: requestTimeout,
       )) {
         if (frag.contentDelta.isNotEmpty) {
-          yield LlmStreamChunk(callId: callId, text: frag.contentDelta);
+          yield LlmTextDelta(frag.contentDelta);
         }
         if (frag.promptEvalCount != null) promptEval = frag.promptEvalCount;
         if (frag.evalCount != null) eval = frag.evalCount;
         if (frag.model.isNotEmpty) echoedModel = frag.model;
         if (frag.done) {
           stopwatch.stop();
-          yield LlmStreamCompleted(
+          yield LlmRunCompleted(
             callId: callId,
             report: buildReport(
               prompt: prompt,
@@ -167,12 +164,11 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
       // Stream ended without a `done: true` frame — that is a
       // protocol-shape failure. Surface it.
       stopwatch.stop();
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: callId,
         failure: const LlmFailure(
           classCode: 'format',
-          message:
-              'Ollama stream ended without a terminal done=true frame.',
+          message: 'Ollama stream ended without a terminal done=true frame.',
         ),
         report: buildReport(
           prompt: prompt,
@@ -184,7 +180,7 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
       );
     } catch (e) {
       stopwatch.stop();
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: callId,
         failure: LlmFailure(
           // Unclassified at B.14; B.18 maps onto the spec § 5.4 taxonomy.
@@ -304,10 +300,7 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
   /// Surfaces only knobs that have a meaningful Ollama mapping; the
   /// router (B.18+) adds its own notes (retry decisions, downgrade
   /// reasons) on top.
-  List<String> _collectNotes(
-    LlmOptions options,
-    OllamaChatResponse response,
-  ) {
+  List<String> _collectNotes(LlmOptions options, OllamaChatResponse response) {
     final notes = <String>[];
     if (options.toolCatalogue.isNotEmpty) {
       // B.14 does not yet emit tool-call events on the non-streaming

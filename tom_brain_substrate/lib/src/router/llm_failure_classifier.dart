@@ -10,7 +10,7 @@
 // The B.14 / B.15 providers ship with `classCode: 'unknown'` on every
 // emitted `LlmFailure`, deferring to this step. B.18 keeps the deferral
 // where it is — the router calls the classifier on the *caught* exception
-// (or on the `LlmFailure` already attached to a `LlmStreamFailed.failure`)
+// (or on the `LlmFailure` already attached to a `LlmRunFailed.failure`)
 // and re-labels it before deciding the next action. Providers continue to
 // re-throw their wire exceptions; the classifier lives in `router/` and is
 // only consumed by `LlmRouter`. That keeps the wire layer and the
@@ -47,7 +47,7 @@
 import 'dart:async' show TimeoutException;
 import 'dart:io' show HandshakeException, SocketException, TlsException;
 
-import '../api/llm_stream_event.dart' show LlmFailure;
+import 'package:tom_core_llm/tom_core_llm.dart' show LlmFailure;
 import '../llm/wire_http_transport.dart' show WireHttpException;
 
 /// Closed taxonomy of LLM-call failure classes (spec § 5.4).
@@ -113,10 +113,7 @@ enum LlmFailureClass {
   network('network', LlmRouterAction.retryThenRotate),
 
   /// Consumer cancelled the call. Propagate cancellation; no rotate.
-  cancelledByConsumer(
-    'cancelled_by_consumer',
-    LlmRouterAction.surfaceToCaller,
-  ),
+  cancelledByConsumer('cancelled_by_consumer', LlmRouterAction.surfaceToCaller),
 
   /// Any error the classifier did not recognise. Per spec § 5.4 footer,
   /// the router treats this as `overloaded`-for-routing (retry once,

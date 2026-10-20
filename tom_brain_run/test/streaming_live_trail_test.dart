@@ -11,7 +11,7 @@
 //   onMemoryCall → `### 🔧 <primitive> [<turnId>__<seq>]` + json + 📤 details
 //   endPrompt    → `### ✅ DONE (llmCalls=…, memCalls=…, <ms>ms)`
 //
-// Routing is keyed by `turnId`: the per-step records (`LlmTrailRecord`,
+// Routing is keyed by `turnId`: the per-step records (`LlmCallTrailRecord`,
 // `MemoryAccessRecord`, `TurnSummary`) carry the turn id as a bare string equal
 // to `IncomingTrailRecord.turnId.value`, so the fixtures here use real
 // `YYMMDD-HHMMSS.ssssss` ids and thread the same string everywhere.
@@ -27,7 +27,7 @@ import 'package:tom_brain_access/tom_brain_access.dart'
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show
         LlmCallObservation,
-        LlmTrailRecord,
+        LlmCallTrailRecord,
         MemoryAccessRecord,
         ToolAccessRecord,
         ToolEvent,
@@ -36,7 +36,8 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
         TurnSummary;
 import 'package:tom_brain_run/tom_brain_run.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart' show TurnId;
-import 'package:tom_brain_substrate/tom_brain_substrate.dart' show LlmCallReport;
+import 'package:tom_brain_substrate/tom_brain_substrate.dart'
+    show LlmCallReport;
 import 'package:test/test.dart';
 
 // Real, distinct turn ids (logging-spec §3 timestamp form). Threaded as the
@@ -68,33 +69,40 @@ void main() {
 
   group('StreamingLiveTrailWriter — beginPrompt', () {
     test('writes the PROMPT header, channel/profile, and the user line', () {
-      StreamingLiveTrailWriter(root: root, turnsKept: 20).beginPrompt(_incoming(
-        turnId: _t1,
-        sessionId: 'sess-1',
-        channel: AccessChannel.telegram,
-        profile: 'default',
-        text: 'what did we decide about the backup topology?',
-      ));
+      StreamingLiveTrailWriter(root: root, turnsKept: 20).beginPrompt(
+        _incoming(
+          turnId: _t1,
+          sessionId: 'sess-1',
+          channel: AccessChannel.telegram,
+          profile: 'default',
+          text: 'what did we decide about the backup topology?',
+        ),
+      );
 
       expect(exists('sessions/sess-1.live-trail.md'), isTrue);
       final md = read('sessions/sess-1.live-trail.md');
       expect(md, contains('<!-- tom-brain session live-trail -->'));
       expect(md, contains('## 🚀 PROMPT $_t1 [telegram / default]'));
       expect(
-          md,
-          contains('> User: what did we decide about the backup topology?'));
+        md,
+        contains('> User: what did we decide about the backup topology?'),
+      );
     });
 
     test('a null profile renders as default', () {
-      StreamingLiveTrailWriter(root: root, turnsKept: 20).beginPrompt(_incoming(
-        turnId: _t1,
-        sessionId: 'sess-1',
-        channel: AccessChannel.openai,
-        profile: null,
-        text: 'hi',
-      ));
-      expect(read('sessions/sess-1.live-trail.md'),
-          contains('[openai / default]'));
+      StreamingLiveTrailWriter(root: root, turnsKept: 20).beginPrompt(
+        _incoming(
+          turnId: _t1,
+          sessionId: 'sess-1',
+          channel: AccessChannel.openai,
+          profile: null,
+          text: 'hi',
+        ),
+      );
+      expect(
+        read('sessions/sess-1.live-trail.md'),
+        contains('[openai / default]'),
+      );
     });
   });
 
@@ -103,7 +111,8 @@ void main() {
       final w = StreamingLiveTrailWriter(root: root, turnsKept: 20);
       w.beginPrompt(_incoming(turnId: _t1, sessionId: 'sess-1', text: 'q'));
       w.onLlmCall(
-          _llm(turnId: _t1, role: 'recaller', answer: 'I recall the topology.'));
+        _llm(turnId: _t1, role: 'recaller', answer: 'I recall the topology.'),
+      );
 
       final md = read('sessions/sess-1.live-trail.md');
       expect(md, contains('### 🧠 thinking (recaller)'));
@@ -113,43 +122,60 @@ void main() {
     test('the user-facing default role renders as 💬 assistant', () {
       final w = StreamingLiveTrailWriter(root: root, turnsKept: 20);
       w.beginPrompt(_incoming(turnId: _t1, sessionId: 'sess-1', text: 'q'));
-      w.onLlmCall(_llm(
+      w.onLlmCall(
+        _llm(
           turnId: _t1,
           role: 'assistant_to_user',
-          answer: 'The canonical authority is Big Beast.'));
+          answer: 'The canonical authority is Big Beast.',
+        ),
+      );
 
       final md = read('sessions/sess-1.live-trail.md');
       expect(md, contains('### 💬 assistant'));
       expect(md, contains('The canonical authority is Big Beast.'));
-      expect(md, isNot(contains('### 🧠 thinking')),
-          reason: 'the user-facing role is not a thinking step');
+      expect(
+        md,
+        isNot(contains('### 🧠 thinking')),
+        reason: 'the user-facing role is not a thinking step',
+      );
     });
 
     test('captureInternalRoles=false suppresses internal calls but keeps the '
         'user-facing one', () {
       final w = StreamingLiveTrailWriter(
-          root: root, turnsKept: 20, captureInternalRoles: false);
+        root: root,
+        turnsKept: 20,
+        captureInternalRoles: false,
+      );
       w.beginPrompt(_incoming(turnId: _t1, sessionId: 'sess-1', text: 'q'));
       w.onLlmCall(_llm(turnId: _t1, role: 'recaller', answer: 'internal'));
       w.onLlmCall(
-          _llm(turnId: _t1, role: 'assistant_to_user', answer: 'final'));
+        _llm(turnId: _t1, role: 'assistant_to_user', answer: 'final'),
+      );
 
       final md = read('sessions/sess-1.live-trail.md');
-      expect(md, isNot(contains('🧠 thinking')),
-          reason: 'internal roles gated off');
+      expect(
+        md,
+        isNot(contains('🧠 thinking')),
+        reason: 'internal roles gated off',
+      );
       expect(md, contains('### 💬 assistant'));
       expect(md, contains('final'));
     });
 
     test('a call with no open turn writes nothing', () {
-      StreamingLiveTrailWriter(root: root, turnsKept: 20)
-          .onLlmCall(_llm(turnId: _t1, role: 'recaller', answer: 'orphan'));
+      StreamingLiveTrailWriter(
+        root: root,
+        turnsKept: 20,
+      ).onLlmCall(_llm(turnId: _t1, role: 'recaller', answer: 'orphan'));
       expect(exists('sessions/sess-1.live-trail.md'), isFalse);
     });
 
     test('a turn-less (dream) call writes nothing', () {
-      StreamingLiveTrailWriter(root: root, turnsKept: 20)
-          .onLlmCall(_llm(turnId: null, role: 'connector', answer: 'dream'));
+      StreamingLiveTrailWriter(
+        root: root,
+        turnsKept: 20,
+      ).onLlmCall(_llm(turnId: null, role: 'connector', answer: 'dream'));
       final sessions = Directory('${root.path}/sessions');
       expect(sessions.existsSync() && sessions.listSync().isNotEmpty, isFalse);
     });
@@ -159,18 +185,23 @@ void main() {
     test('renders a 🔧 tool block with json input and a 📤 result details', () {
       final w = StreamingLiveTrailWriter(root: root, turnsKept: 20);
       w.beginPrompt(_incoming(turnId: _t1, sessionId: 'sess-1', text: 'q'));
-      w.onMemoryCall(MemoryAccessRecord(
-        primitive: 'recall',
-        input: const {'query': 'backup topology', 'k': 8},
-        result: const {'nodes': 8, 'degraded': false},
-        at: DateTime.utc(2026, 6, 8, 12, 8, 31),
-        turnId: _t1,
-        profile: 'default',
-      ));
+      w.onMemoryCall(
+        MemoryAccessRecord(
+          primitive: 'recall',
+          input: const {'query': 'backup topology', 'k': 8},
+          result: const {'nodes': 8, 'degraded': false},
+          at: DateTime.utc(2026, 6, 8, 12, 8, 31),
+          turnId: _t1,
+          profile: 'default',
+        ),
+      );
 
       final md = read('sessions/sess-1.live-trail.md');
-      expect(md, contains('### 🔧 recall [${_t1}__01]'),
-          reason: 'first step of the turn gets seq 01');
+      expect(
+        md,
+        contains('### 🔧 recall [${_t1}__01]'),
+        reason: 'first step of the turn gets seq 01',
+      );
       expect(md, contains('```json'));
       expect(md, contains('"query": "backup topology"'));
       expect(md, contains('<details><summary>📤 result'));
@@ -182,18 +213,25 @@ void main() {
     test('renders a 🔧 tool block naming the invoked tool', () {
       final w = StreamingLiveTrailWriter(root: root, turnsKept: 20);
       w.beginPrompt(_incoming(turnId: _t1, sessionId: 'sess-1', text: 'q'));
-      w.onToolCall(_tool(
+      w.onToolCall(
+        _tool(
           turnId: _t1,
           event: ToolInvoked(
-              occurredAt: _at,
-              name: 'memory.read',
-              group: 'memory',
-              argSummary: 'text: q',
-              resultSize: 12)));
+            occurredAt: _at,
+            name: 'memory.read',
+            group: 'memory',
+            argSummary: 'text: q',
+            resultSize: 12,
+          ),
+        ),
+      );
 
       final md = read('sessions/sess-1.live-trail.md');
-      expect(md, contains('### 🔧 tool memory.read [${_t1}__01]'),
-          reason: 'first step of the turn gets seq 01');
+      expect(
+        md,
+        contains('### 🔧 tool memory.read [${_t1}__01]'),
+        reason: 'first step of the turn gets seq 01',
+      );
       expect(md, contains('```json'));
       expect(md, contains('"name": "memory.read"'));
       expect(md, contains('"group": "memory"'));
@@ -202,13 +240,17 @@ void main() {
     test('a failed invocation is labelled (failed) and carries the reason', () {
       final w = StreamingLiveTrailWriter(root: root, turnsKept: 20);
       w.beginPrompt(_incoming(turnId: _t1, sessionId: 'sess-1', text: 'q'));
-      w.onToolCall(_tool(
+      w.onToolCall(
+        _tool(
           turnId: _t1,
           event: ToolFailed(
-              occurredAt: _at,
-              name: 'does.not.exist',
-              reason: 'unknown tool "does.not.exist"',
-              argSummary: '')));
+            occurredAt: _at,
+            name: 'does.not.exist',
+            reason: 'unknown tool "does.not.exist"',
+            argSummary: '',
+          ),
+        ),
+      );
 
       final md = read('sessions/sess-1.live-trail.md');
       expect(md, contains('### 🔧 tool does.not.exist (failed) [${_t1}__01]'));
@@ -216,27 +258,35 @@ void main() {
     });
 
     test('a turn-less (dream) tool call writes nothing', () {
-      StreamingLiveTrailWriter(root: root, turnsKept: 20).onToolCall(_tool(
+      StreamingLiveTrailWriter(root: root, turnsKept: 20).onToolCall(
+        _tool(
           turnId: null,
           event: ToolInvoked(
-              occurredAt: _at,
-              name: 'memory.read',
-              group: 'memory',
-              argSummary: 'text: q',
-              resultSize: 12)));
+            occurredAt: _at,
+            name: 'memory.read',
+            group: 'memory',
+            argSummary: 'text: q',
+            resultSize: 12,
+          ),
+        ),
+      );
       final sessions = Directory('${root.path}/sessions');
       expect(sessions.existsSync() && sessions.listSync().isNotEmpty, isFalse);
     });
 
     test('a tool call with no open turn writes nothing', () {
-      StreamingLiveTrailWriter(root: root, turnsKept: 20).onToolCall(_tool(
+      StreamingLiveTrailWriter(root: root, turnsKept: 20).onToolCall(
+        _tool(
           turnId: _t1,
           event: ToolInvoked(
-              occurredAt: _at,
-              name: 'memory.read',
-              group: 'memory',
-              argSummary: 'text: q',
-              resultSize: 12)));
+            occurredAt: _at,
+            name: 'memory.read',
+            group: 'memory',
+            argSummary: 'text: q',
+            resultSize: 12,
+          ),
+        ),
+      );
       expect(exists('sessions/sess-1.live-trail.md'), isFalse);
     });
   });
@@ -247,28 +297,36 @@ void main() {
       w.beginPrompt(_incoming(turnId: _t1, sessionId: 'sess-1', text: 'q'));
       w.onLlmCall(_llm(turnId: _t1, role: 'recaller', answer: 'r'));
       w.onMemoryCall(_mem(turnId: _t1, primitive: 'recall'));
-      w.onToolCall(_tool(
+      w.onToolCall(
+        _tool(
           turnId: _t1,
           event: ToolInvoked(
-              occurredAt: _at,
-              name: 'memory.read',
-              group: 'memory',
-              argSummary: 'text: q',
-              resultSize: 12)));
+            occurredAt: _at,
+            name: 'memory.read',
+            group: 'memory',
+            argSummary: 'text: q',
+            resultSize: 12,
+          ),
+        ),
+      );
       w.onLlmCall(_llm(turnId: _t1, role: 'assistant_to_user', answer: 'done'));
       w.endPrompt(_turn(turnId: _t1, sessionId: 'sess-1'));
 
       final md = read('sessions/sess-1.live-trail.md');
       expect(md, contains('### ✅ DONE (llmCalls=2, memCalls=1, toolCalls=1,'));
       expect(
-          md,
-          matches(RegExp(
-              r'### ✅ DONE \(llmCalls=2, memCalls=1, toolCalls=1, \d+ms\)')));
+        md,
+        matches(
+          RegExp(r'### ✅ DONE \(llmCalls=2, memCalls=1, toolCalls=1, \d+ms\)'),
+        ),
+      );
     });
 
     test('endPrompt with no open turn is a no-op', () {
-      StreamingLiveTrailWriter(root: root, turnsKept: 20)
-          .endPrompt(_turn(turnId: _t1, sessionId: 'sess-1'));
+      StreamingLiveTrailWriter(
+        root: root,
+        turnsKept: 20,
+      ).endPrompt(_turn(turnId: _t1, sessionId: 'sess-1'));
       expect(exists('sessions/sess-1.live-trail.md'), isFalse);
     });
   });
@@ -277,11 +335,13 @@ void main() {
     test('a full turn renders thinking → tool → assistant → DONE in order', () {
       final w = StreamingLiveTrailWriter(root: root, turnsKept: 20);
       w.beginPrompt(
-          _incoming(turnId: _t1, sessionId: 'sess-1', text: 'the question'));
+        _incoming(turnId: _t1, sessionId: 'sess-1', text: 'the question'),
+      );
       w.onLlmCall(_llm(turnId: _t1, role: 'recaller', answer: 'reasoning'));
       w.onMemoryCall(_mem(turnId: _t1, primitive: 'recall'));
       w.onLlmCall(
-          _llm(turnId: _t1, role: 'assistant_to_user', answer: 'the answer'));
+        _llm(turnId: _t1, role: 'assistant_to_user', answer: 'the answer'),
+      );
       w.endPrompt(_turn(turnId: _t1, sessionId: 'sess-1'));
 
       final md = read('sessions/sess-1.live-trail.md');
@@ -290,8 +350,13 @@ void main() {
       final iTool = md.indexOf('### 🔧 recall [${_t1}__02]');
       final iAssistant = md.indexOf('### 💬 assistant');
       final iDone = md.indexOf('### ✅ DONE');
-      expect([iPrompt, iThink, iTool, iAssistant, iDone],
-          everyElement(greaterThanOrEqualTo(0)));
+      expect([
+        iPrompt,
+        iThink,
+        iTool,
+        iAssistant,
+        iDone,
+      ], everyElement(greaterThanOrEqualTo(0)));
       expect(iPrompt, lessThan(iThink));
       expect(iThink, lessThan(iTool));
       expect(iTool, lessThan(iAssistant));
@@ -315,12 +380,17 @@ void main() {
     test('a new prompt past the window drops the oldest block', () {
       final w = StreamingLiveTrailWriter(root: root, turnsKept: 2);
       for (final id in <String>[_t1, _t2, _t3]) {
-        w.beginPrompt(_incoming(turnId: id, sessionId: 'sess-1', text: 'p-$id'));
+        w.beginPrompt(
+          _incoming(turnId: id, sessionId: 'sess-1', text: 'p-$id'),
+        );
         w.endPrompt(_turn(turnId: id, sessionId: 'sess-1'));
       }
       final md = read('sessions/sess-1.live-trail.md');
-      expect(md, isNot(contains('p-$_t1')),
-          reason: 'the oldest prompt block dropped at turnsKept=2');
+      expect(
+        md,
+        isNot(contains('p-$_t1')),
+        reason: 'the oldest prompt block dropped at turnsKept=2',
+      );
       expect(md, contains('p-$_t2'));
       expect(md, contains('p-$_t3'));
     });
@@ -350,50 +420,45 @@ IncomingTrailRecord _incoming({
   required String text,
   AccessChannel channel = AccessChannel.openai,
   String? profile = 'default',
-}) =>
-    IncomingTrailRecord(
-      turnId: TurnId.fromString(turnId),
-      channel: channel,
-      receivedAt: DateTime.utc(2026, 6, 8, 12, 8, 31),
-      principalId: 'owner',
-      sessionId: sessionId,
-      persona: 'assistant',
-      text: text,
-      profile: profile,
-    );
+}) => IncomingTrailRecord(
+  turnId: TurnId.fromString(turnId),
+  channel: channel,
+  receivedAt: DateTime.utc(2026, 6, 8, 12, 8, 31),
+  principalId: 'owner',
+  sessionId: sessionId,
+  persona: 'assistant',
+  text: text,
+  profile: profile,
+);
 
-LlmTrailRecord _llm({
+LlmCallTrailRecord _llm({
   required String? turnId,
   required String role,
   required String answer,
-}) =>
-    LlmTrailRecord(
-      observation: LlmCallObservation(
-        callType: role,
-        turnId: turnId,
-        callSeq: turnId == null ? null : 1,
-        callId: 'c1',
-        startedAt: DateTime.utc(2026, 6, 8, 12, 8, 31),
-        wire: null,
-        answer: answer,
-        report: const LlmCallReport(
-          providerId: 'omlx',
-          modelId: 'gemma-4',
-          anchorHash: 'sha256:anchor',
-          promptHash: 'sha256:prompt',
-          tokensIn: 1,
-          tokensOut: 1,
-          retries: 0,
-          wallClockMs: 5,
-        ),
-      ),
-      runId: 'run-7',
-    );
+}) => LlmCallTrailRecord(
+  observation: LlmCallObservation(
+    callType: role,
+    turnId: turnId,
+    callSeq: turnId == null ? null : 1,
+    callId: 'c1',
+    startedAt: DateTime.utc(2026, 6, 8, 12, 8, 31),
+    wire: null,
+    answer: answer,
+    report: const LlmCallReport(
+      providerId: 'omlx',
+      modelId: 'gemma-4',
+      anchorHash: 'sha256:anchor',
+      promptHash: 'sha256:prompt',
+      tokensIn: 1,
+      tokensOut: 1,
+      retries: 0,
+      wallClockMs: 5,
+    ),
+  ),
+  runId: 'run-7',
+);
 
-MemoryAccessRecord _mem({
-  required String turnId,
-  required String primitive,
-}) =>
+MemoryAccessRecord _mem({required String turnId, required String primitive}) =>
     MemoryAccessRecord(
       primitive: primitive,
       input: const {'query': 'x'},
@@ -403,10 +468,7 @@ MemoryAccessRecord _mem({
       profile: 'default',
     );
 
-ToolAccessRecord _tool({
-  required String? turnId,
-  required ToolEvent event,
-}) =>
+ToolAccessRecord _tool({required String? turnId, required ToolEvent event}) =>
     ToolAccessRecord(
       event: event,
       runId: 'run-7',
@@ -414,10 +476,7 @@ ToolAccessRecord _tool({
       turnId: turnId,
     );
 
-TurnSummary _turn({
-  required String turnId,
-  required String sessionId,
-}) =>
+TurnSummary _turn({required String turnId, required String sessionId}) =>
     TurnSummary(
       turnId: turnId,
       sessionId: sessionId,

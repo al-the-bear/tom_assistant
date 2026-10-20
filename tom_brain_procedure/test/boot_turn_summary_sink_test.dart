@@ -3,7 +3,7 @@
 //
 // `BrainProcessConfig.turnSummarySink` is the production seam the `SummaryFanout`
 // binds onto for its per-turn §5.4 / §5.5 narrative blocks. The user prompt and
-// the final answer are not on any `LlmTrailRecord` — they are only known at the
+// the final answer are not on any `LlmCallTrailRecord` — they are only known at the
 // dispatch edge — so the route emits one [TurnSummary] when a turn completes.
 // This suite proves boot threads that sink through `_buildRoute`, so a prompt
 // served through the booted dispatcher fires exactly one [TurnSummary] carrying
@@ -63,55 +63,73 @@ void main() {
       );
 
   Access userPrompt(String text, {TurnId? turnId}) => Access(
-        envelope: InboundRequest(
-            text: text, kindHint: SystemProcedures.promptAnalyzerV1),
-        identity: ResolvedIdentity(principalId: 'p1'),
-        session: Session(sessionId: 's1'),
-        persona: Persona.assistant(),
-        deliver: (chunk) => Stream<OutboundChunk>.value(chunk),
-        turnId: turnId,
-      );
+    envelope: InboundRequest(
+      text: text,
+      kindHint: SystemProcedures.promptAnalyzerV1,
+    ),
+    identity: ResolvedIdentity(principalId: 'p1'),
+    session: Session(sessionId: 's1'),
+    persona: Persona.assistant(),
+    deliver: (chunk) => Stream<OutboundChunk>.value(chunk),
+    turnId: turnId,
+  );
 
   group('boot threads the turnSummarySink onto the route (§10 step #5)', () {
-    test('a completed turn fires one summary carrying prompt + final answer',
-        () async {
-      substrate.answerChunks = <String>['an answer'];
-      final summaries = <TurnSummary>[];
-      final turnId = TurnId.generate();
+    test(
+      'a completed turn fires one summary carrying prompt + final answer',
+      () async {
+        substrate.answerChunks = <String>['an answer'];
+        final summaries = <TurnSummary>[];
+        final turnId = TurnId.generate();
 
-      final booted = await BrainProcessBoot.boot(
-          configWith(turnSummarySink: summaries.add));
-      addTearDown(booted.shutdown);
+        final booted = await BrainProcessBoot.boot(
+          configWith(turnSummarySink: summaries.add),
+        );
+        addTearDown(booted.shutdown);
 
-      await booted.dispatcher
-          .accept(userPrompt('what is a quasar?', turnId: turnId));
+        await booted.dispatcher.accept(
+          userPrompt('what is a quasar?', turnId: turnId),
+        );
 
-      expect(summaries, hasLength(1),
-          reason: 'one completed turn fires exactly one turn summary');
-      final summary = summaries.single;
-      expect(summary.turnId, turnId.value);
-      expect(summary.sessionId, 's1');
-      expect(summary.principalId, 'p1');
-      expect(summary.persona, Persona.assistant().personaId);
-      expect(summary.userPrompt, 'what is a quasar?');
-      expect(summary.finalAnswer, 'an answer',
-          reason: 'the answer the run produced rides onto the summary');
-    });
+        expect(
+          summaries,
+          hasLength(1),
+          reason: 'one completed turn fires exactly one turn summary',
+        );
+        final summary = summaries.single;
+        expect(summary.turnId, turnId.value);
+        expect(summary.sessionId, 's1');
+        expect(summary.principalId, 'p1');
+        expect(summary.persona, Persona.assistant().personaId);
+        expect(summary.userPrompt, 'what is a quasar?');
+        expect(
+          summary.finalAnswer,
+          'an answer',
+          reason: 'the answer the run produced rides onto the summary',
+        );
+      },
+    );
 
-    test('a turn with no turnId fires no summary (nothing to key a block on)',
-        () async {
-      substrate.answerChunks = <String>['an answer'];
-      final summaries = <TurnSummary>[];
+    test(
+      'a turn with no turnId fires no summary (nothing to key a block on)',
+      () async {
+        substrate.answerChunks = <String>['an answer'];
+        final summaries = <TurnSummary>[];
 
-      final booted = await BrainProcessBoot.boot(
-          configWith(turnSummarySink: summaries.add));
-      addTearDown(booted.shutdown);
+        final booted = await BrainProcessBoot.boot(
+          configWith(turnSummarySink: summaries.add),
+        );
+        addTearDown(booted.shutdown);
 
-      await booted.dispatcher.accept(userPrompt('what is a quasar?'));
+        await booted.dispatcher.accept(userPrompt('what is a quasar?'));
 
-      expect(summaries, isEmpty,
-          reason: 'no turnId → no §5.4 / §5.5 block can be keyed');
-    });
+        expect(
+          summaries,
+          isEmpty,
+          reason: 'no turnId → no §5.4 / §5.5 block can be keyed',
+        );
+      },
+    );
 
     test('with no sink bound boot wires no emitter and stays silent', () async {
       substrate.answerChunks = <String>['an answer'];
@@ -120,15 +138,13 @@ void main() {
 
       // The run still completes — the sink is purely observational. The
       // exchange was persisted (cold path), proving the run actually ran.
-      await booted.dispatcher
-          .accept(userPrompt('what is a quasar?', turnId: TurnId.generate()));
+      await booted.dispatcher.accept(
+        userPrompt('what is a quasar?', turnId: TurnId.generate()),
+      );
       expect(
-          memory
-              .persistedOfType('Conclusion')
-              .single
-              .draft
-              .values['statement'],
-          'an answer');
+        memory.persistedOfType('Conclusion').single.draft.values['statement'],
+        'an answer',
+      );
     });
   });
 }

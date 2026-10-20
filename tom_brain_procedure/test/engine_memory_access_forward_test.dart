@@ -47,25 +47,23 @@ void main() {
   ProcedureEngine engineFor(
     Iterable<LoadedProcedure> procedures, {
     MemoryAccessSink? memoryAccessSink,
-  }) =>
-      ProcedureEngine(
-        resolver: ProcedureResolver(procedures),
-        memory: memory,
-        memoryBridge: MemoryBridge(memory),
-        substrateBridge: SubstrateBridge(
-          substrate,
-          routeChainOf: (_) =>
-              const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
-        ),
-        now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
-        memoryAccessSink: memoryAccessSink,
-      );
+  }) => ProcedureEngine(
+    resolver: ProcedureResolver(procedures),
+    memory: memory,
+    memoryBridge: MemoryBridge(memory),
+    substrateBridge: SubstrateBridge(
+      substrate,
+      routeChainOf: (_) => const <RouteEntry>[
+        RouteEntry(providerId: 'p', model: 'm'),
+      ],
+    ),
+    now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
+    memoryAccessSink: memoryAccessSink,
+  );
 
   // A procedure that issues one substrate call (which must NOT reach the
   // memory sink) and three memory accesses (recall + persist + stackPush).
-  LoadedProcedure mixedAccessProcedure() => _procedure(
-        'mixed_access_v1',
-        '''
+  LoadedProcedure mixedAccessProcedure() => _procedure('mixed_access_v1', '''
 import '${BridgeLibraries.substrateLibrary}';
 import '${BridgeLibraries.memoryLibrary}';
 
@@ -76,18 +74,15 @@ Future<Object?> run(inputs) async {
   await mem.stackPush('recent', id, priority: 1.0, producer: 'p');
   return 1;
 }
-''',
-      );
+''');
 
   group('ProcedureEngine memory-access forwarding (§5.6 / §10 step #8)', () {
-    test(
-        'a bound sink receives one record per memory call, run-correlated, '
+    test('a bound sink receives one record per memory call, run-correlated, '
         'profile-stamped — and substrate llm calls do not reach it', () async {
       final records = <MemoryAccessRecord>[];
-      final engine = engineFor(
-        <LoadedProcedure>[mixedAccessProcedure()],
-        memoryAccessSink: records.add,
-      );
+      final engine = engineFor(<LoadedProcedure>[
+        mixedAccessProcedure(),
+      ], memoryAccessSink: records.add);
 
       final turnId = TurnId.generate();
       final run = engine.invoke(
@@ -103,17 +98,25 @@ Future<Object?> run(inputs) async {
 
       // Exactly the three memory primitives — the `llm` call rode the
       // substrate bridge and never reached the memory sink.
-      expect(records.map((r) => r.primitive).toList(),
-          <String>['recall', 'persist', 'stackPush'],
-          reason: 'one record per memory call, in call order; no llm record');
+      expect(
+        records.map((r) => r.primitive).toList(),
+        <String>['recall', 'persist', 'stackPush'],
+        reason: 'one record per memory call, in call order; no llm record',
+      );
 
       for (final record in records) {
         expect(record.runId, run.runId, reason: 'run-correlated');
-        expect(record.trailId, isNotNull,
-            reason: 'the recorder trail is open when the bridge fires');
+        expect(
+          record.trailId,
+          isNotNull,
+          reason: 'the recorder trail is open when the bridge fires',
+        );
         expect(record.turnId, turnId.value, reason: 'turn-stamped');
-        expect(record.profile, 'work',
-            reason: 'the memory profile threaded from the invocation');
+        expect(
+          record.profile,
+          'work',
+          reason: 'the memory profile threaded from the invocation',
+        );
         expect(record.at, DateTime.utc(2026, 6, 1, 12, 0, 0));
       }
 
@@ -143,29 +146,31 @@ Future<Object?> run(inputs) async {
       expect(memory.recallCalls, 1);
     });
 
-    test('a turn-less invocation leaves turnId null and profile null',
-        () async {
-      final records = <MemoryAccessRecord>[];
-      final engine = engineFor(
-        <LoadedProcedure>[mixedAccessProcedure()],
-        memoryAccessSink: records.add,
-      );
+    test(
+      'a turn-less invocation leaves turnId null and profile null',
+      () async {
+        final records = <MemoryAccessRecord>[];
+        final engine = engineFor(<LoadedProcedure>[
+          mixedAccessProcedure(),
+        ], memoryAccessSink: records.add);
 
-      await engine
-          .invoke(ProcedureInvocation(procedureId: 'mixed_access_v1'))
-          .outcome;
+        await engine
+            .invoke(ProcedureInvocation(procedureId: 'mixed_access_v1'))
+            .outcome;
 
-      expect(records, isNotEmpty);
-      for (final record in records) {
-        expect(record.turnId, isNull);
-        expect(record.profile, isNull);
-      }
-    });
+        expect(records, isNotEmpty);
+        for (final record in records) {
+          expect(record.turnId, isNull);
+          expect(record.profile, isNull);
+        }
+      },
+    );
   });
 }
 
 LoadedProcedure _procedure(String id, String body, {int version = 1}) {
-  final source = '''
+  final source =
+      '''
 /// @procedure
 /// id: $id
 /// version: $version
@@ -186,10 +191,10 @@ $body
 /// prove substrate calls do not reach the memory sink.
 class _StubSubstrate implements TomBrainSubstrateClient {
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c', text: 'ok'),
-        LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) =>
+      Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        const LlmTextDelta('ok'),
+        LlmRunCompleted(
           callId: 'c',
           wire: CapturedWirePrompt(
             body: 'ANCHOR',
@@ -211,18 +216,17 @@ class _StubSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec.zero(1),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec.zero(1),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// A stateful in-memory `TomBrainMemoryClient` that supports the recorder's
@@ -322,12 +326,10 @@ class _RecallingMemory implements TomBrainMemoryClient {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -377,6 +379,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

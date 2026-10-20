@@ -5,7 +5,7 @@
 // (`substrate_bridge_llm_trail_test.dart` covers that). The *engine* is the
 // only place that knows the run's correlation — its `runId` and the live
 // `trailId` the recorder opened — so it wraps each observation into an
-// [LlmTrailRecord] carrying both and hands it to the bound `llmTrailSink`.
+// [LlmCallTrailRecord] carrying both and hands it to the bound `llmTrailSink`.
 //
 // With no sink bound the engine wires no observer onto the per-run bridge, so
 // nothing is emitted and the run completes unchanged.
@@ -29,29 +29,27 @@ void main() {
   ProcedureEngine engineFor(
     Iterable<LoadedProcedure> procedures, {
     LlmTrailSink? llmTrailSink,
-  }) =>
-      ProcedureEngine(
-        resolver: ProcedureResolver(procedures),
-        memory: memory,
-        memoryBridge: MemoryBridge(memory),
-        substrateBridge: SubstrateBridge(
-          substrate,
-          routeChainOf: (_) =>
-              const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
-        ),
-        now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
-        llmTrailSink: llmTrailSink,
-      );
+  }) => ProcedureEngine(
+    resolver: ProcedureResolver(procedures),
+    memory: memory,
+    memoryBridge: MemoryBridge(memory),
+    substrateBridge: SubstrateBridge(
+      substrate,
+      routeChainOf: (_) => const <RouteEntry>[
+        RouteEntry(providerId: 'p', model: 'm'),
+      ],
+    ),
+    now: () => DateTime.utc(2026, 6, 1, 12, 0, 0),
+    llmTrailSink: llmTrailSink,
+  );
 
   group('ProcedureEngine raw-LLM-trail forwarding (§5.2 / §10 step #4)', () {
-    test('a bound sink receives one record per llm call, run-correlated',
-        () async {
-      final records = <LlmTrailRecord>[];
-      final engine = engineFor(
-        <LoadedProcedure>[
-          _procedure(
-            'two_calls_v1',
-            '''
+    test(
+      'a bound sink receives one record per llm call, run-correlated',
+      () async {
+        final records = <LlmCallTrailRecord>[];
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure('two_calls_v1', '''
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
@@ -59,56 +57,60 @@ Future<Object?> run(inputs) async {
   await sub.send('second', llmRoute: 'fast');
   return 1;
 }
-''',
-          ),
-        ],
-        llmTrailSink: records.add,
-      );
+'''),
+        ], llmTrailSink: records.add);
 
-      final turnId = TurnId.generate();
-      final run = engine.invoke(
-        ProcedureInvocation(procedureId: 'two_calls_v1', turnId: turnId),
-      );
-      final outcome = await run.outcome;
+        final turnId = TurnId.generate();
+        final run = engine.invoke(
+          ProcedureInvocation(procedureId: 'two_calls_v1', turnId: turnId),
+        );
+        final outcome = await run.outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(records, hasLength(2),
-          reason: 'one record per completed llm call');
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(
+          records,
+          hasLength(2),
+          reason: 'one record per completed llm call',
+        );
 
-      // Both records carry the run's id …
-      expect(records[0].runId, run.runId);
-      expect(records[1].runId, run.runId);
-      // … and the live trailId the recorder opened (non-null while the trail
-      // is open during the llm call).
-      expect(records[0].trailId, isNotNull,
-          reason: 'the recorder trail is open when the bridge fires');
-      expect(records[1].trailId, records[0].trailId,
-          reason: 'both calls of one run share the run trail');
+        // Both records carry the run's id …
+        expect(records[0].runId, run.runId);
+        expect(records[1].runId, run.runId);
+        // … and the live trailId the recorder opened (non-null while the trail
+        // is open during the llm call).
+        expect(
+          records[0].trailId,
+          isNotNull,
+          reason: 'the recorder trail is open when the bridge fires',
+        );
+        expect(
+          records[1].trailId,
+          records[0].trailId,
+          reason: 'both calls of one run share the run trail',
+        );
 
-      // The observation provenance survives the wrap (wire + turn stamp).
-      final first = records[0].observation;
-      expect(first.callType, 'assistant_to_user');
-      expect(first.answer, 'ok');
-      expect(first.wire, isNotNull);
-      expect(first.wire!.anchorHash, first.report.anchorHash);
-      expect(first.turnId, turnId.value);
-      expect(first.callSeq, 1);
-      expect(records[1].observation.callSeq, 2);
-    });
+        // The observation provenance survives the wrap (wire + turn stamp).
+        final first = records[0].observation;
+        expect(first.callType, 'assistant_to_user');
+        expect(first.answer, 'ok');
+        expect(first.wire, isNotNull);
+        expect(first.wire!.anchorHash, first.report.anchorHash);
+        expect(first.turnId, turnId.value);
+        expect(first.callSeq, 1);
+        expect(records[1].observation.callSeq, 2);
+      },
+    );
 
     test('with no sink bound the engine forwards nothing', () async {
       final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'one_call_v1',
-          '''
+        _procedure('one_call_v1', '''
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
   await sub.send('only', llmRoute: 'fast');
   return 1;
 }
-''',
-        ),
+'''),
       ]);
 
       final outcome = await engine
@@ -123,7 +125,8 @@ Future<Object?> run(inputs) async {
 }
 
 LoadedProcedure _procedure(String id, String body, {int version = 1}) {
-  final source = '''
+  final source =
+      '''
 /// @procedure
 /// id: $id
 /// version: $version
@@ -147,13 +150,13 @@ class _RecordingSubstrate implements TomBrainSubstrateClient {
   final List<LlmCall> calls = <LlmCall>[];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     calls.add(call);
     final prompt = call.inputs['prompt'] as String;
     const anchorHash = 'sha256:anchor';
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      const LlmStreamChunk(callId: 'c', text: 'ok'),
-      LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      const LlmTextDelta('ok'),
+      LlmRunCompleted(
         callId: 'c',
         wire: CapturedWirePrompt(
           body: 'ANCHOR\n\n$prompt',
@@ -176,18 +179,17 @@ class _RecordingSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec.zero(1),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec.zero(1),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A stateful in-memory `TomBrainMemoryClient` (just enough for the
@@ -264,12 +266,10 @@ class _StatefulMemory implements TomBrainMemoryClient {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -319,6 +319,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

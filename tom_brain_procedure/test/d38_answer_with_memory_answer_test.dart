@@ -78,10 +78,12 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'answer_with_memory_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'answer_with_memory_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
@@ -112,19 +114,21 @@ void main() {
   }
 
   group('D.38-1 the prompt is assembled from recall + the inbound text', () {
-    test('every recalled node text and the user prompt reach sub.llm',
-        () async {
-      seedRecall();
+    test(
+      'every recalled node text and the user prompt reach sub.llm',
+      () async {
+        seedRecall();
 
-      await runWith('how do I automate backups?');
+        await runWith('how do I automate backups?');
 
-      final prompt = substrate.lastCall!.inputs['prompt']! as String;
-      // The recalled node texts appear as context lines.
-      expect(prompt, contains('rsync nightly to the NAS'));
-      expect(prompt, contains('the NAS lives at 10.0.0.4'));
-      // The inbound prompt is folded in.
-      expect(prompt, contains('how do I automate backups?'));
-    });
+        final prompt = substrate.lastCall!.inputs['prompt']! as String;
+        // The recalled node texts appear as context lines.
+        expect(prompt, contains('rsync nightly to the NAS'));
+        expect(prompt, contains('the NAS lives at 10.0.0.4'));
+        // The inbound prompt is folded in.
+        expect(prompt, contains('how do I automate backups?'));
+      },
+    );
 
     test('with no recall the prompt is just the user prompt', () async {
       // Default recallResult is empty — no context block, only the prompt.
@@ -147,17 +151,21 @@ void main() {
   });
 
   group('D.38-3 the run succeeds and surfaces the generated answer', () {
-    test('the outcome is accepted and the answer output is the LLM text',
-        () async {
-      seedRecall();
-      substrate.answerChunks = <String>['Back up by ', 'rsyncing nightly.'];
+    test(
+      'the outcome is accepted and the answer output is the LLM text',
+      () async {
+        seedRecall();
+        substrate.answerChunks = <String>['Back up by ', 'rsyncing nightly.'];
 
-      final outcome = await runWith('how do I automate backups?');
+        final outcome = await runWith('how do I automate backups?');
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'),
-          'Back up by rsyncing nightly.');
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(
+          outcome.result!.output<String>('answer'),
+          'Back up by rsyncing nightly.',
+        );
+      },
+    );
   });
 }
 
@@ -179,17 +187,18 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
       'You have just produced an answer for the user.';
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final rawPrompt = call.inputs['prompt'];
-    final isConfirmation = call.roleId == 'assistant_to_user' &&
+    final isConfirmation =
+        call.roleId == 'assistant_to_user' &&
         rawPrompt is String &&
         rawPrompt.trimLeft().startsWith(_confirmationSentinel);
     // The confirmation call terminates the loop with `DONE`; the answer call is
     // the one the suite asserts against, so only it is captured.
     if (isConfirmation) {
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c', text: 'DONE'),
-        const LlmStreamCompleted(
+      return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        const LlmTextDelta('DONE'),
+        const LlmRunCompleted(
           callId: 'c',
           report: LlmCallReport(
             providerId: 'p',
@@ -205,10 +214,9 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
       ]);
     }
     lastCall = call;
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -226,18 +234,17 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recall-capturing `TomBrainMemoryClient` ───────────────────────
@@ -289,8 +296,7 @@ class _RecallCapturingMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -355,12 +361,10 @@ class _RecallCapturingMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -410,6 +414,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

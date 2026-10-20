@@ -42,11 +42,9 @@
 
 import 'dart:async';
 
-import '../api/llm_call.dart';
-import '../api/llm_stream_event.dart';
+import 'package:tom_core_llm/tom_core_llm.dart';
 import 'anthropic_http_client.dart';
 import 'http_llm_provider_base.dart';
-import 'wire_prompt.dart';
 
 /// `LlmProvider` against the Anthropic Messages API
 /// (`https://api.anthropic.com/v1/messages`).
@@ -62,10 +60,10 @@ import 'wire_prompt.dart';
 /// wins; fallback to `options.model` then [defaultModel]), `promptHash`
 /// = sha256 of `prompt.combined`, `templateSha` = `prompt.templateSha`.
 ///
-/// **Streaming shape.** Exactly one [LlmStreamStarted], then one
-/// [LlmStreamChunk] per non-empty `content_block_delta`, then exactly
-/// one [LlmStreamCompleted] when the SSE stream closes (`message_stop`).
-/// Failures terminate the stream with [LlmStreamFailed].
+/// **Streaming shape.** Exactly one [LlmRunStarted], then one
+/// [LlmTextDelta] per non-empty `content_block_delta`, then exactly
+/// one [LlmRunCompleted] when the SSE stream closes (`message_stop`).
+/// Failures terminate the stream with [LlmRunFailed].
 final class AnthropicLlmProvider extends HttpLlmProviderBase {
   /// Sent as the `x-api-key` header. `null` / empty ⇒ no auth header
   /// (useful for self-hosted gateways and for observing test fakes).
@@ -96,17 +94,16 @@ final class AnthropicLlmProvider extends HttpLlmProviderBase {
     this.extraHeaders = const <String, String>{},
     AnthropicHttpClient? httpClient,
     super.requestTimeout,
-  })  : httpClient = httpClient ?? DefaultAnthropicHttpClient(),
-        super(ownsHttpClient: httpClient == null);
+  }) : httpClient = httpClient ?? DefaultAnthropicHttpClient(),
+       super(ownsHttpClient: httpClient == null);
 
   @override
   String get callIdPrefix => 'anthropic';
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     final stopwatch = Stopwatch()..start();
     final modelId = options.model ?? defaultModel;
     final anthropicOptions = _toAnthropicOptions(options);
@@ -138,16 +135,16 @@ final class AnthropicLlmProvider extends HttpLlmProviderBase {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     final stopwatch = Stopwatch()..start();
     final modelId = options.model ?? defaultModel;
     final anthropicOptions = _toAnthropicOptions(options);
     final callId = newCallId(prompt);
 
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
+      purpose: request.purpose,
       callId: callId,
       providerId: id,
       modelId: modelId,
@@ -173,7 +170,7 @@ final class AnthropicLlmProvider extends HttpLlmProviderBase {
         requestTimeout: requestTimeout,
       )) {
         if (frag.textDelta.isNotEmpty) {
-          yield LlmStreamChunk(callId: callId, text: frag.textDelta);
+          yield LlmTextDelta(frag.textDelta);
         }
         if (frag.inputTokens != null) inputTokens = frag.inputTokens;
         if (frag.outputTokens != null) outputTokens = frag.outputTokens;
@@ -182,7 +179,7 @@ final class AnthropicLlmProvider extends HttpLlmProviderBase {
       }
 
       stopwatch.stop();
-      yield LlmStreamCompleted(
+      yield LlmRunCompleted(
         callId: callId,
         report: buildReport(
           prompt: prompt,
@@ -200,7 +197,7 @@ final class AnthropicLlmProvider extends HttpLlmProviderBase {
       );
     } catch (e) {
       stopwatch.stop();
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: callId,
         failure: LlmFailure(
           // Unclassified here; the router maps onto the spec § 5.4 taxonomy.

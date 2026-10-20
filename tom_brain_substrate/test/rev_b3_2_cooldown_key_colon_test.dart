@@ -23,8 +23,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 void main() {
-  group('B.3.2 / cooldown key does not collide on a colon in the model id',
-      () {
+  group('B.3.2 / cooldown key does not collide on a colon in the model id', () {
     test('parking gemma3:27b does not park sibling gemma3', () async {
       final clock = _MutableClock(DateTime.utc(2026, 1, 1, 12));
       final ollama = _ScriptedFailureProvider(
@@ -178,11 +177,11 @@ void main() {
 // ─── Test helpers ────────────────────────────────────────────────
 
 WirePrompt _prompt(String body) => WirePrompt(
-      system: body,
-      anchorHash: 'sha256:anchor',
-      roleId: 'analyser',
-      templateSha: 'sha-abc',
-    );
+  system: body,
+  anchorHash: 'sha256:anchor',
+  roleId: 'analyser',
+  templateSha: 'sha-abc',
+);
 
 final Budget _bigBudget = Budget(
   wallClockMs: 60000,
@@ -201,7 +200,7 @@ class _MutableClock {
 /// LlmProvider that throws a scripted exception on its first `complete`
 /// call, then succeeds. Mirrors the fake from `b18_llm_router_test.dart`
 /// kept local so this review-fix suite stands alone.
-class _ScriptedFailureProvider implements LlmProvider {
+class _ScriptedFailureProvider extends LlmProvider {
   @override
   final String id;
   final String defaultModel;
@@ -214,10 +213,9 @@ class _ScriptedFailureProvider implements LlmProvider {
   }) : _exceptions = List<Object>.of(exceptions);
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     if (_exceptions.isNotEmpty) {
       throw _exceptions.removeAt(0);
     }
@@ -235,19 +233,18 @@ class _ScriptedFailureProvider implements LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     final callId = 'sfp-$id';
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
       callId: callId,
       providerId: id,
       modelId: options.model ?? defaultModel,
     );
     if (_exceptions.isNotEmpty) {
       final ex = _exceptions.removeAt(0);
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: callId,
         failure: LlmFailure(
           classCode: 'unknown',
@@ -267,7 +264,7 @@ class _ScriptedFailureProvider implements LlmProvider {
       );
       return;
     }
-    yield LlmStreamCompleted(
+    yield LlmRunCompleted(
       callId: callId,
       report: LlmCallReport(
         providerId: id,

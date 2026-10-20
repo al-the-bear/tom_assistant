@@ -108,12 +108,12 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'answer_with_thinking_v1',
-          arguments: <String, Object?>{
-            'text': text,
-          },
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'answer_with_thinking_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
@@ -129,7 +129,9 @@ void main() {
         Node(
           id: citedA,
           typeName: 'Conclusion',
-          values: const <String, Object?>{'text': 'memory consolidates in sleep'},
+          values: const <String, Object?>{
+            'text': 'memory consolidates in sleep',
+          },
           createdAt: DateTime.utc(2026, 6, 1),
         ),
         Node(
@@ -151,58 +153,66 @@ void main() {
   /// The authoritative final `ProcedureRun` node for the top-level thinking run
   /// — matched by `procedureId`, since the nested recall conductor + `recall_*`
   /// sub-procedures each record their own ProcedureRun (Extension-H step #30).
-  ({NodeId id, NodeDraft draft}) finalRunNode() =>
-      memory.persistedOfType('ProcedureRun').firstWhere(
-            (p) =>
-                p.draft.values['status'] != 'running' &&
-                p.draft.values['procedureId'] == 'answer_with_thinking_v1',
-          );
+  ({NodeId id, NodeDraft draft}) finalRunNode() => memory
+      .persistedOfType('ProcedureRun')
+      .firstWhere(
+        (p) =>
+            p.draft.values['status'] != 'running' &&
+            p.draft.values['procedureId'] == 'answer_with_thinking_v1',
+      );
 
   group('GT1-1 accept on the first critique', () {
-    test('one draft, one critique, the answer is returned and complete',
-        () async {
-      seedRecall();
-      substrate.evaluatorVerdicts = <String>['ACCEPT'];
+    test(
+      'one draft, one critique, the answer is returned and complete',
+      () async {
+        seedRecall();
+        substrate.evaluatorVerdicts = <String>['ACCEPT'];
 
-      final outcome = await thinkAbout('think about how memory consolidates');
+        final outcome = await thinkAbout('think about how memory consolidates');
 
-      // (a) The run is accepted.
-      expect(outcome.status, TrailOutcomeStatus.accepted);
+        // (a) The run is accepted.
+        expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      // (b) The accepted draft is the answer; the loop ran exactly one
-      //     iteration (one synthesise, one critique).
-      expect(outcome.result!.output<String>('answer'),
-          substrate.draftFor(1));
-      expect(outcome.result!.output<bool>('incomplete'), isFalse);
-      expect(substrate.countOf('assistant_to_user'), 1);
-      expect(substrate.countOf('evaluator'), 1);
+        // (b) The accepted draft is the answer; the loop ran exactly one
+        //     iteration (one synthesise, one critique).
+        expect(outcome.result!.output<String>('answer'), substrate.draftFor(1));
+        expect(outcome.result!.output<bool>('incomplete'), isFalse);
+        expect(substrate.countOf('assistant_to_user'), 1);
+        expect(substrate.countOf('evaluator'), 1);
 
-      // (c) The trail is persisted: an Event for the prompt, a Conclusion for
-      //     the answer.
-      final event = memory.persistedOfType('Event').single;
-      expect(event.draft.values['summary'],
-          'think about how memory consolidates');
-      final conclusion = memory.persistedOfType('Conclusion').single;
-      expect(conclusion.draft.values['statement'], substrate.draftFor(1));
+        // (c) The trail is persisted: an Event for the prompt, a Conclusion for
+        //     the answer.
+        final event = memory.persistedOfType('Event').single;
+        expect(
+          event.draft.values['summary'],
+          'think about how memory consolidates',
+        );
+        final conclusion = memory.persistedOfType('Conclusion').single;
+        expect(conclusion.draft.values['statement'], substrate.draftFor(1));
 
-      // (d) derived_from edges tie the Conclusion to each cited recalled node.
-      final derivedTargets = memory.recordedEdges
-          .where((e) => e.type == EdgeType.derivedFrom && e.from == conclusion.id)
-          .map((e) => e.to)
-          .toSet();
-      expect(derivedTargets, <NodeId>{citedA, citedB});
+        // (d) derived_from edges tie the Conclusion to each cited recalled node.
+        final derivedTargets = memory.recordedEdges
+            .where(
+              (e) => e.type == EdgeType.derivedFrom && e.from == conclusion.id,
+            )
+            .map((e) => e.to)
+            .toSet();
+        expect(derivedTargets, <NodeId>{citedA, citedB});
 
-      // (e) a produced_by edge ties the Conclusion to the final run node.
-      final producedBy = memory.recordedEdges.where(
-        (e) => e.type == EdgeType.producedBy && e.from == conclusion.id,
-      );
-      expect(producedBy, hasLength(1));
-      expect(producedBy.single.to, finalRunNode().id);
+        // (e) a produced_by edge ties the Conclusion to the final run node.
+        final producedBy = memory.recordedEdges.where(
+          (e) => e.type == EdgeType.producedBy && e.from == conclusion.id,
+        );
+        expect(producedBy, hasLength(1));
+        expect(producedBy.single.to, finalRunNode().id);
 
-      // (f) the reserved transport channel never surfaces as an output.
-      expect(outcome.result!.outputs.containsKey(producedNodeIdsOutputKey),
-          isFalse);
-    });
+        // (f) the reserved transport channel never surfaces as an output.
+        expect(
+          outcome.result!.outputs.containsKey(producedNodeIdsOutputKey),
+          isFalse,
+        );
+      },
+    );
   });
 
   group('GT1-2 the loop dispatches sub-prompts (§ 4.2–4.4)', () {
@@ -226,21 +236,23 @@ void main() {
   });
 
   group('GT1-3 re-entry on rejection (stage E)', () {
-    test('a REJECT then an ACCEPT yields two drafts; the accepted draft wins',
-        () async {
-      seedRecall();
-      substrate.evaluatorVerdicts = <String>['REJECT', 'ACCEPT'];
+    test(
+      'a REJECT then an ACCEPT yields two drafts; the accepted draft wins',
+      () async {
+        seedRecall();
+        substrate.evaluatorVerdicts = <String>['REJECT', 'ACCEPT'];
 
-      final outcome = await thinkAbout('work through the backup topology');
+        final outcome = await thinkAbout('work through the backup topology');
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      // Two synthesise passes, two critiques: the loop re-entered once.
-      expect(substrate.countOf('assistant_to_user'), 2);
-      expect(substrate.countOf('evaluator'), 2);
-      // The second (accepted) draft is the returned answer.
-      expect(outcome.result!.output<String>('answer'), substrate.draftFor(2));
-      expect(outcome.result!.output<bool>('incomplete'), isFalse);
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        // Two synthesise passes, two critiques: the loop re-entered once.
+        expect(substrate.countOf('assistant_to_user'), 2);
+        expect(substrate.countOf('evaluator'), 2);
+        // The second (accepted) draft is the returned answer.
+        expect(outcome.result!.output<String>('answer'), substrate.draftFor(2));
+        expect(outcome.result!.output<bool>('incomplete'), isFalse);
+      },
+    );
   });
 
   group('GT1-6 tool-enabled synthesis (§9 — the "normal prompt")', () {
@@ -274,9 +286,14 @@ void main() {
       expect(ids, contains('assist_user.answer_with_thinking.analysis'));
       expect(ids, contains('assist_user.answer_with_thinking.synthesis'));
       // Second pass (after the REJECT): the re-entry variants.
-      expect(ids, contains('assist_user.answer_with_thinking.analysis_reentry'));
       expect(
-          ids, contains('assist_user.answer_with_thinking.synthesis_reentry'));
+        ids,
+        contains('assist_user.answer_with_thinking.analysis_reentry'),
+      );
+      expect(
+        ids,
+        contains('assist_user.answer_with_thinking.synthesis_reentry'),
+      );
     });
   });
 
@@ -361,19 +378,20 @@ class _RoleAwareSubstrate implements TomBrainSubstrateClient {
   String draftFor(int n) => 'draft #$n';
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final role = call.roleId;
     final rawPrompt = call.inputs['prompt'];
-    final isConfirmation = role == 'assistant_to_user' &&
+    final isConfirmation =
+        role == 'assistant_to_user' &&
         rawPrompt is String &&
         rawPrompt.trimLeft().startsWith(_confirmationSentinel);
     final text = isConfirmation ? _nextConfirmation() : _textForCounted(role);
     if (call.options.toolCatalogue.isNotEmpty) {
       rolesWithTools.add(role);
     }
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: text),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(text),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -429,18 +447,17 @@ class _RoleAwareSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A consolidated stateful `TomBrainMemory` ────────────────────────
@@ -497,8 +514,7 @@ class _BrainMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -570,8 +586,7 @@ class _BrainMemory implements TomBrainMemory {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -621,6 +636,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

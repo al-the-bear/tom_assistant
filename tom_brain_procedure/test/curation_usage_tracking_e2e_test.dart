@@ -69,9 +69,10 @@ Vec _v768({required int seed}) {
 String? _findSqliteVecRoot() {
   var dir = Directory.current.absolute;
   for (var i = 0; i < 8; i++) {
-    final candidate =
-        Directory('${dir.path}${Platform.pathSeparator}tom_binaries'
-            '${Platform.pathSeparator}sqlite_vec');
+    final candidate = Directory(
+      '${dir.path}${Platform.pathSeparator}tom_binaries'
+      '${Platform.pathSeparator}sqlite_vec',
+    );
     if (candidate.existsSync()) return candidate.path;
     final parent = dir.parent;
     if (parent.path == dir.path) break;
@@ -92,8 +93,8 @@ void main() {
 
   final skipNoBinary = resolvedPath == null
       ? 'No packaged vec0 binary for this platform under '
-          'tom_binaries/sqlite_vec (resolver.isSupported='
-          '${resolver.isSupported}, vecRoot=$vecRoot).'
+            'tom_binaries/sqlite_vec (resolver.isSupported='
+            '${resolver.isSupported}, vecRoot=$vecRoot).'
       : null;
 
   MemoryConfig freshConfig() {
@@ -183,71 +184,103 @@ void main() {
       final engine = await engineFor(store: store, substrate: substrate);
 
       final outcome = await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'answer_with_memory_v1',
-            arguments: <String, Object?>{
-              'text': 'how do I automate the bomber backups?',
-              'curate': true,
-            },
-          ))
+          .invoke(
+            ProcedureInvocation(
+              procedureId: 'answer_with_memory_v1',
+              arguments: <String, Object?>{
+                'text': 'how do I automate the bomber backups?',
+                'curate': true,
+              },
+            ),
+          )
           .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted,
-          reason: 'the curated run must land its writes in the real store: '
-              '${outcome.error}');
+      expect(
+        outcome.status,
+        TrailOutcomeStatus.accepted,
+        reason:
+            'the curated run must land its writes in the real store: '
+            '${outcome.error}',
+      );
       // The conductor actually ran its cheap-LLM curation turn (recaller role).
-      expect(substrate.curationTurns, greaterThanOrEqualTo(1),
-          reason: 'the conductor curation prompt must have been dispatched');
+      expect(
+        substrate.curationTurns,
+        greaterThanOrEqualTo(1),
+        reason: 'the conductor curation prompt must have been dispatched',
+      );
 
       // The answer saw ONLY the curated set: the Conclusion is derived_from
       // exactly the two kept Claims — not the four surfaced.
       final stats = await store.stats();
-      expect(stats.edgeCountByType['derived_from'] ?? 0, kept.length,
-          reason: 'derived_from edges trace exactly the curated nodes the '
-              'answer was shown');
+      expect(
+        stats.edgeCountByType['derived_from'] ?? 0,
+        kept.length,
+        reason:
+            'derived_from edges trace exactly the curated nodes the '
+            'answer was shown',
+      );
 
       // The used (curated) nodes were marked: access_count rose to 1.
       for (final id in kept) {
-        expect((await store.get(id))!.accessCount, 1,
-            reason: 'a curated node the answer cited is marked used');
+        expect(
+          (await store.get(id))!.accessCount,
+          1,
+          reason: 'a curated node the answer cited is marked used',
+        );
       }
       // The merely-surfaced (dropped) nodes were never used: access_count
       // stayed at 0.
       for (final id in dropped) {
-        expect((await store.get(id))!.accessCount, 0,
-            reason: 'surfacing a node is not using it — its counters stay put');
+        expect(
+          (await store.get(id))!.accessCount,
+          0,
+          reason: 'surfacing a node is not using it — its counters stay put',
+        );
       }
     }, skip: skipNoBinary);
 
-    test('without curate the usage signal is untouched (no recordAccess)',
-        () async {
-      final store = await openStore();
-      final seeded = await seedClaims(store, count: 4);
+    test(
+      'without curate the usage signal is untouched (no recordAccess)',
+      () async {
+        final store = await openStore();
+        final seeded = await seedClaims(store, count: 4);
 
-      final substrate = _CuratingSubstrate(
-        answer: 'Automate the bomber backups via the nightly provisioning job.',
-        keepIds: const <String>[],
-      );
-      final engine = await engineFor(store: store, substrate: substrate);
+        final substrate = _CuratingSubstrate(
+          answer:
+              'Automate the bomber backups via the nightly provisioning job.',
+          keepIds: const <String>[],
+        );
+        final engine = await engineFor(store: store, substrate: substrate);
 
-      final outcome = await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'answer_with_memory_v1',
-            arguments: <String, Object?>{
-              'text': 'how do I automate the bomber backups?',
-              // curate omitted → default off.
-            },
-          ))
-          .outcome;
+        final outcome = await engine
+            .invoke(
+              ProcedureInvocation(
+                procedureId: 'answer_with_memory_v1',
+                arguments: <String, Object?>{
+                  'text': 'how do I automate the bomber backups?',
+                  // curate omitted → default off.
+                },
+              ),
+            )
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted, reason: '${outcome.error}');
-      // No curation turn ran, and no node's access_count moved.
-      expect(substrate.curationTurns, 0);
-      for (final id in seeded) {
-        expect((await store.get(id))!.accessCount, 0,
-            reason: 'the default (non-curated) path never calls recordAccess');
-      }
-    }, skip: skipNoBinary);
+        expect(
+          outcome.status,
+          TrailOutcomeStatus.accepted,
+          reason: '${outcome.error}',
+        );
+        // No curation turn ran, and no node's access_count moved.
+        expect(substrate.curationTurns, 0);
+        for (final id in seeded) {
+          expect(
+            (await store.get(id))!.accessCount,
+            0,
+            reason: 'the default (non-curated) path never calls recordAccess',
+          );
+        }
+      },
+      skip: skipNoBinary,
+    );
   });
 }
 
@@ -281,11 +314,11 @@ class _CuratingSubstrate implements TomBrainSubstrateClient {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final text = _textFor(call);
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: text),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(text),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -303,16 +336,15 @@ class _CuratingSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: _v768(seed: text.length),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'nomic-embed-text',
-          dims: _bootstrapDims,
-          normalized: true,
-        ),
-      );
+    vec: _v768(seed: text.length),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'nomic-embed-text',
+      dims: _bootstrapDims,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

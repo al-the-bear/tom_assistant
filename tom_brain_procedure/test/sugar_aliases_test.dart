@@ -98,36 +98,35 @@ void main() {
   });
 
   group('C.40-2 think(inputs) resolves to think_v1 and runs the stub', () {
-    test('the stub result threads back to the caller via the think alias',
-        () async {
-      final thinkStub = await loadThinkStub();
-      final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'caller_v1',
-          '''
+    test(
+      'the stub result threads back to the caller via the think alias',
+      () async {
+        final thinkStub = await loadThinkStub();
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure('caller_v1', '''
 import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {
   return await think(inputs);
 }
-''',
-        ),
-        thinkStub,
-      ]);
+'''),
+          thinkStub,
+        ]);
 
-      final outcome = await engine
-          .invoke(ProcedureInvocation(procedureId: 'caller_v1'))
-          .outcome;
+        final outcome = await engine
+            .invoke(ProcedureInvocation(procedureId: 'caller_v1'))
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      // The stub's `{'stub': 'think_v1'}` flowed back unchanged through the
-      // sugar alias, the nested run, and the caller's return.
-      expect(outcome.result!.output<String>('stub'), 'think_v1');
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        // The stub's `{'stub': 'think_v1'}` flowed back unchanged through the
+        // sugar alias, the nested run, and the caller's return.
+        expect(outcome.result!.output<String>('stub'), 'think_v1');
 
-      // Two runs were recorded — the caller and the nested think_v1.
-      final recent = await memory.stacks.peek(recentRunsStackName);
-      expect(recent, hasLength(2));
-    });
+        // Two runs were recorded — the caller and the nested think_v1.
+        final recent = await memory.stacks.peek(recentRunsStackName);
+        expect(recent, hasLength(2));
+      },
+    );
 
     test('think forwards its named depthDelta to runProcedure', () async {
       // A depthDelta of 2 advances the chain two levels; think_v1 then runs
@@ -135,16 +134,13 @@ Future<Object?> run(inputs) async {
       // the delta is honoured, not the cap (well under 10).
       final thinkStub = await loadThinkStub();
       final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'caller_v1',
-          '''
+        _procedure('caller_v1', '''
 import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {
   return await think(inputs, depthDelta: 2);
 }
-''',
-        ),
+'''),
         thinkStub,
       ]);
 
@@ -168,43 +164,42 @@ Future<Object?> run(inputs) async {
     // `plan` is excluded: `plan_v1` ships as the real planning loop (Todo 8,
     // `plan_v1_test.dart`), so its sugar alias no longer resolves to a stub.
     for (final verb in const <String>['critique', 'decide']) {
-      test('$verb resolves to the shipped ${verb}_v1 stub and closes errored',
-          () async {
-        final engine = engineFor(<LoadedProcedure>[
-          _procedure(
-            'caller_v1',
-            '''
+      test(
+        '$verb resolves to the shipped ${verb}_v1 stub and closes errored',
+        () async {
+          final engine = engineFor(<LoadedProcedure>[
+            _procedure('caller_v1', '''
 import '$engineNativeLibrary';
 
 Future<Object?> run(inputs) async {
   return await $verb(inputs);
 }
-''',
-          ),
-          // The clear-error stub ships now (Todo 4) — the sugar resolves it.
-          await loadStub('${verb}_v1'),
-        ]);
+'''),
+            // The clear-error stub ships now (Todo 4) — the sugar resolves it.
+            await loadStub('${verb}_v1'),
+          ]);
 
-        final outcome = await engine
-            .invoke(ProcedureInvocation(procedureId: 'caller_v1'))
-            .outcome;
+          final outcome = await engine
+              .invoke(ProcedureInvocation(procedureId: 'caller_v1'))
+              .outcome;
 
-        // The stub resolved and ran (both runs recorded), then failed loudly.
-        // The caller did not crash: the nested stub's `ProcedureNotImplemented`
-        // is swallowed into a failed result on the sugar/nested path, so the
-        // caller closes `errored` with a null outcome error — never the bare
-        // `ProcedureNotFound` (the target was found). The typed signal is
-        // reachable via top-level invoke (g_pr_stub_verbs_and_tool_surface).
-        expect(outcome.status, TrailOutcomeStatus.errored);
-        expect(outcome.error, isNot(isA<ProcedureNotFound>()));
-        expect(outcome.result, isNotNull);
-        expect(outcome.result!.isSuccess, isFalse);
+          // The stub resolved and ran (both runs recorded), then failed loudly.
+          // The caller did not crash: the nested stub's `ProcedureNotImplemented`
+          // is swallowed into a failed result on the sugar/nested path, so the
+          // caller closes `errored` with a null outcome error — never the bare
+          // `ProcedureNotFound` (the target was found). The typed signal is
+          // reachable via top-level invoke (g_pr_stub_verbs_and_tool_surface).
+          expect(outcome.status, TrailOutcomeStatus.errored);
+          expect(outcome.error, isNot(isA<ProcedureNotFound>()));
+          expect(outcome.result, isNotNull);
+          expect(outcome.result!.isSuccess, isFalse);
 
-        // Two runs recorded — the caller and the nested ${verb}_v1 stub. A
-        // missing target would have thrown before the nested run was recorded.
-        final recent = await memory.stacks.peek(recentRunsStackName);
-        expect(recent, hasLength(2));
-      });
+          // Two runs recorded — the caller and the nested ${verb}_v1 stub. A
+          // missing target would have thrown before the nested run was recorded.
+          final recent = await memory.stacks.peek(recentRunsStackName);
+          expect(recent, hasLength(2));
+        },
+      );
     }
   });
 
@@ -217,17 +212,19 @@ Future<Object?> run(inputs) async {
       expect(stub.header.requires, isEmpty);
     });
 
-    test('invoking think_v1 directly resolves an accepted stub outcome',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[await loadThinkStub()]);
+    test(
+      'invoking think_v1 directly resolves an accepted stub outcome',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[await loadThinkStub()]);
 
-      final outcome = await engine
-          .invoke(ProcedureInvocation(procedureId: 'think_v1'))
-          .outcome;
+        final outcome = await engine
+            .invoke(ProcedureInvocation(procedureId: 'think_v1'))
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('stub'), 'think_v1');
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(outcome.result!.output<String>('stub'), 'think_v1');
+      },
+    );
   });
 }
 
@@ -235,7 +232,8 @@ Future<Object?> run(inputs) async {
 /// `@procedure` header (§ 4.4) so the resolver treats it as a real
 /// procedure. Mirrors the helper the C.38/C.39 engine suite uses.
 LoadedProcedure _procedure(String id, String body, {int version = 1}) {
-  final source = '''
+  final source =
+      '''
 /// @procedure
 /// id: $id
 /// version: $version
@@ -261,23 +259,22 @@ $body
 // never reached.
 class _InertSubstrate implements TomBrainSubstrateClient {
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      StreamController<LlmStreamEvent>().stream;
+  Stream<LlmEvent> completeStream(LlmCall call) =>
+      StreamController<LlmEvent>().stream;
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A stateful in-memory `TomBrainMemoryClient` ─────────────────────
@@ -359,12 +356,10 @@ class _StatefulMemory implements TomBrainMemoryClient {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -414,6 +409,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

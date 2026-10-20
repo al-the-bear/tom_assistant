@@ -36,16 +36,14 @@
 export 'effort_accountant.dart' show EffortAccountant;
 // §10 step #4 — the engine-layer raw-LLM-trail record (bridge observation +
 // run-correlation) and its sink type.
-export 'llm_trail_record.dart' show LlmTrailRecord, LlmTrailSink;
+export 'llm_trail_record.dart' show LlmCallTrailRecord, LlmTrailSink;
 // §10 step #8 — the engine-layer per-profile memory-access record (bridged
 // memory call + run-correlation) and its sink type.
-export 'memory_access_record.dart'
-    show MemoryAccessRecord, MemoryAccessSink;
+export 'memory_access_record.dart' show MemoryAccessRecord, MemoryAccessSink;
 // The per-run memory-recall trace notice (bridged recall rendered per mode) and
 // its sink type — surfaced to the originating channel as out-of-band notices by
 // the `/trace_memory` toggle.
-export 'memory_recall_notice.dart'
-    show MemoryNoticeSink, MemoryRecallNotice;
+export 'memory_recall_notice.dart' show MemoryNoticeSink, MemoryRecallNotice;
 // The engine-layer tool-access record (emitted tool event + run-correlation)
 // and its sink type — the trail half of "tool calls must be in the trails".
 export 'tool_access_record.dart' show ToolAccessRecord, ToolAccessSink;

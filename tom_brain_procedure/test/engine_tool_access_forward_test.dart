@@ -46,22 +46,19 @@ void main() {
   ProcedureEngine engineFor(
     Iterable<LoadedProcedure> procedures, {
     ToolAccessSink? toolAccessSink,
-  }) =>
-      ProcedureEngine(
-        resolver: ProcedureResolver(procedures),
-        memory: memory,
-        memoryBridge: MemoryBridge(memory),
-        substrateBridge: SubstrateBridge(substrate),
-        now: () => DateTime.utc(2026, 6, 2, 12, 0, 0),
-        toolAccessSink: toolAccessSink,
-      );
+  }) => ProcedureEngine(
+    resolver: ProcedureResolver(procedures),
+    memory: memory,
+    memoryBridge: MemoryBridge(memory),
+    substrateBridge: SubstrateBridge(substrate),
+    now: () => DateTime.utc(2026, 6, 2, 12, 0, 0),
+    toolAccessSink: toolAccessSink,
+  );
 
   // A procedure that lists tools, invokes one that runs (`memory.read`), and
   // invokes one that does not exist — exercising `ToolListed`, `ToolInvoked`,
   // and `ToolFailed` in one run.
-  LoadedProcedure toolUsingProcedure() => _procedure(
-        'tool_using_v1',
-        '''
+  LoadedProcedure toolUsingProcedure() => _procedure('tool_using_v1', '''
 import '${BridgeLibraries.toolLibrary}';
 
 Future<Object?> run(inputs) async {
@@ -70,42 +67,44 @@ Future<Object?> run(inputs) async {
   await tool.invoke('does.not.exist', {});
   return 1;
 }
-''',
-      );
+''');
 
   group('ProcedureEngine tool-access forwarding', () {
-    test(
-        'a bound sink receives one record per tool event, run-correlated and '
+    test('a bound sink receives one record per tool event, run-correlated and '
         'turn-stamped', () async {
       final records = <ToolAccessRecord>[];
-      final engine = engineFor(
-        <LoadedProcedure>[toolUsingProcedure()],
-        toolAccessSink: records.add,
-      );
+      final engine = engineFor(<LoadedProcedure>[
+        toolUsingProcedure(),
+      ], toolAccessSink: records.add);
 
       final turnId = TurnId.generate();
       final run = engine.invoke(
-        ProcedureInvocation(
-          procedureId: 'tool_using_v1',
-          turnId: turnId,
-        ),
+        ProcedureInvocation(procedureId: 'tool_using_v1', turnId: turnId),
       );
       final outcome = await run.outcome;
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
 
       // One record per emitted tool event, in call order.
-      expect(records.map((r) => r.event.kind).toList(),
-          <String>['tool.listed', 'tool.invoked', 'tool.failed'],
-          reason: 'list → invoke(ok) → invoke(unknown)');
+      expect(
+        records.map((r) => r.event.kind).toList(),
+        <String>['tool.listed', 'tool.invoked', 'tool.failed'],
+        reason: 'list → invoke(ok) → invoke(unknown)',
+      );
 
       for (final record in records) {
         expect(record.runId, run.runId, reason: 'run-correlated');
-        expect(record.trailId, isNotNull,
-            reason: 'the recorder trail is open when the bridge fires');
+        expect(
+          record.trailId,
+          isNotNull,
+          reason: 'the recorder trail is open when the bridge fires',
+        );
         expect(record.turnId, turnId.value, reason: 'turn-stamped');
-        expect(record.event.occurredAt, DateTime.utc(2026, 6, 2, 12, 0, 0),
-            reason: 'the bridge clock is the engine clock');
+        expect(
+          record.event.occurredAt,
+          DateTime.utc(2026, 6, 2, 12, 0, 0),
+          reason: 'the bridge clock is the engine clock',
+        );
       }
 
       // The invoked record names the tool that ran and its group.
@@ -131,10 +130,9 @@ Future<Object?> run(inputs) async {
 
     test('a turn-less invocation leaves turnId null', () async {
       final records = <ToolAccessRecord>[];
-      final engine = engineFor(
-        <LoadedProcedure>[toolUsingProcedure()],
-        toolAccessSink: records.add,
-      );
+      final engine = engineFor(<LoadedProcedure>[
+        toolUsingProcedure(),
+      ], toolAccessSink: records.add);
 
       await engine
           .invoke(ProcedureInvocation(procedureId: 'tool_using_v1'))
@@ -148,34 +146,40 @@ Future<Object?> run(inputs) async {
   });
 
   group('ProcedureEngine tool notice forwarding (P2)', () {
-    test('a per-run noticeSink fires once per tool event, in call order',
-        () async {
-      final notices = <ToolEvent>[];
-      final engine = engineFor(<LoadedProcedure>[toolUsingProcedure()]);
+    test(
+      'a per-run noticeSink fires once per tool event, in call order',
+      () async {
+        final notices = <ToolEvent>[];
+        final engine = engineFor(<LoadedProcedure>[toolUsingProcedure()]);
 
-      final outcome = await engine
-          .invoke(
-            ProcedureInvocation(procedureId: 'tool_using_v1'),
-            noticeSink: notices.add,
-          )
-          .outcome;
+        final outcome = await engine
+            .invoke(
+              ProcedureInvocation(procedureId: 'tool_using_v1'),
+              noticeSink: notices.add,
+            )
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(notices.map((e) => e.kind).toList(),
-          <String>['tool.listed', 'tool.invoked', 'tool.failed']);
-      // The notice line is the human-readable surface the route delivers.
-      expect((notices[1] as ToolInvoked).noticeLine(), '🔧 tool memory.read');
-      expect((notices[2] as ToolFailed).noticeLine(),
-          startsWith('⚠️ tool does.not.exist failed:'));
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(notices.map((e) => e.kind).toList(), <String>[
+          'tool.listed',
+          'tool.invoked',
+          'tool.failed',
+        ]);
+        // The notice line is the human-readable surface the route delivers.
+        expect((notices[1] as ToolInvoked).noticeLine(), '🔧 tool memory.read');
+        expect(
+          (notices[2] as ToolFailed).noticeLine(),
+          startsWith('⚠️ tool does.not.exist failed:'),
+        );
+      },
+    );
 
     test('both the trail sink and the notice sink see every event', () async {
       final records = <ToolAccessRecord>[];
       final notices = <ToolEvent>[];
-      final engine = engineFor(
-        <LoadedProcedure>[toolUsingProcedure()],
-        toolAccessSink: records.add,
-      );
+      final engine = engineFor(<LoadedProcedure>[
+        toolUsingProcedure(),
+      ], toolAccessSink: records.add);
 
       await engine
           .invoke(
@@ -184,7 +188,10 @@ Future<Object?> run(inputs) async {
           )
           .outcome;
 
-      expect(records.map((r) => r.event.kind).toList(), notices.map((e) => e.kind).toList());
+      expect(
+        records.map((r) => r.event.kind).toList(),
+        notices.map((e) => e.kind).toList(),
+      );
     });
 
     test('a throwing notice sink never breaks the run (best-effort)', () async {
@@ -203,7 +210,8 @@ Future<Object?> run(inputs) async {
 }
 
 LoadedProcedure _procedure(String id, String body, {int version = 1}) {
-  final source = '''
+  final source =
+      '''
 /// @procedure
 /// id: $id
 /// version: $version
@@ -224,10 +232,10 @@ $body
 /// issues no `sub.llm`, so it is only a structural collaborator.
 class _StubSubstrate implements TomBrainSubstrateClient {
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c', text: 'ok'),
-        LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) =>
+      Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        const LlmTextDelta('ok'),
+        LlmRunCompleted(
           callId: 'c',
           wire: CapturedWirePrompt(
             body: 'ANCHOR',
@@ -249,18 +257,17 @@ class _StubSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec.zero(1),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec.zero(1),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// A stateful in-memory `TomBrainMemoryClient` whose `recall` returns one node,
@@ -356,12 +363,10 @@ class _RecallingMemory implements TomBrainMemoryClient {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -411,6 +416,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

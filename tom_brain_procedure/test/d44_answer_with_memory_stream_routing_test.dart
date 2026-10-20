@@ -26,7 +26,7 @@
 //
 // The doubles mirror D.43's recall/substrate stubs; the substrate expresses its
 // first tool call as a TEXT completion (the text-protocol path) rather than a
-// native `LlmStreamToolCallProposed`, because the leak only manifests for text.
+// native `LlmToolCall`, because the leak only manifests for text.
 
 import 'dart:async';
 import 'dart:io';
@@ -83,66 +83,70 @@ void main() {
   }
 
   group('D.44-1 a tool-deciding turn never leaks onto the answer channel', () {
-    test('the answer channel carries the final answer, not the call: text',
-        () async {
-      substrate.proposeReadTextFor = 'the tool probe';
-      substrate.answerText = 'the final answer';
+    test(
+      'the answer channel carries the final answer, not the call: text',
+      () async {
+        substrate.proposeReadTextFor = 'the tool probe';
+        substrate.answerText = 'the final answer';
 
-      final answerDeltas = <String>[];
-      final resolver = await systemResolver();
-      final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
-      final outcome = await engine
-          .invoke(
-            ProcedureInvocation(
-              procedureId: 'answer_with_memory_v1',
-              arguments: <String, Object?>{'text': 'please use a tool'},
-            ),
-            tokenSink: (String delta) async => answerDeltas.add(delta),
-          )
-          .outcome;
+        final answerDeltas = <String>[];
+        final resolver = await systemResolver();
+        final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
+        final outcome = await engine
+            .invoke(
+              ProcedureInvocation(
+                procedureId: 'answer_with_memory_v1',
+                arguments: <String, Object?>{'text': 'please use a tool'},
+              ),
+              tokenSink: (String delta) async => answerDeltas.add(delta),
+            )
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      final answerStream = answerDeltas.join();
-      // The tool-deciding turn's text was the tool call itself; it must never
-      // reach the answer the user reads.
-      expect(answerStream, isNot(contains('call:memory.read')));
-      // The terminal answer is what the user gets.
-      expect(answerStream, contains('the final answer'));
-    });
+        final answerStream = answerDeltas.join();
+        // The tool-deciding turn's text was the tool call itself; it must never
+        // reach the answer the user reads.
+        expect(answerStream, isNot(contains('call:memory.read')));
+        // The terminal answer is what the user gets.
+        expect(answerStream, contains('the final answer'));
+      },
+    );
   });
 
   group('D.44-2 a tool-deciding turn streams on the thinking channel', () {
-    test('the thinking channel carries the call: text, the answer does not',
-        () async {
-      substrate.proposeReadTextFor = 'the tool probe';
-      substrate.answerText = 'the final answer';
+    test(
+      'the thinking channel carries the call: text, the answer does not',
+      () async {
+        substrate.proposeReadTextFor = 'the tool probe';
+        substrate.answerText = 'the final answer';
 
-      final answerDeltas = <String>[];
-      final thinkingDeltas = <String>[];
-      final resolver = await systemResolver();
-      final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
-      final outcome = await engine
-          .invoke(
-            ProcedureInvocation(
-              procedureId: 'answer_with_memory_v1',
-              arguments: <String, Object?>{'text': 'please use a tool'},
-            ),
-            tokenSink: (String delta) async => answerDeltas.add(delta),
-            thinkingSink: (String text) => thinkingDeltas.add(text),
-          )
-          .outcome;
+        final answerDeltas = <String>[];
+        final thinkingDeltas = <String>[];
+        final resolver = await systemResolver();
+        final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
+        final outcome = await engine
+            .invoke(
+              ProcedureInvocation(
+                procedureId: 'answer_with_memory_v1',
+                arguments: <String, Object?>{'text': 'please use a tool'},
+              ),
+              tokenSink: (String delta) async => answerDeltas.add(delta),
+              thinkingSink: (String text) => thinkingDeltas.add(text),
+            )
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      final thinkingStream = thinkingDeltas.join();
-      // The tool-deciding turn's text lands on the thinking channel…
-      expect(thinkingStream, contains('call:memory.read'));
-      // …and never on the answer the user reads.
-      final answerStream = answerDeltas.join();
-      expect(answerStream, isNot(contains('call:memory.read')));
-      expect(answerStream, contains('the final answer'));
-    });
+        final thinkingStream = thinkingDeltas.join();
+        // The tool-deciding turn's text lands on the thinking channel…
+        expect(thinkingStream, contains('call:memory.read'));
+        // …and never on the answer the user reads.
+        final answerStream = answerDeltas.join();
+        expect(answerStream, isNot(contains('call:memory.read')));
+        expect(answerStream, contains('the final answer'));
+      },
+    );
   });
 }
 
@@ -163,10 +167,10 @@ class _TextToolThenAnswerSubstrate implements TomBrainSubstrateClient {
   bool _proposed = false;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final hasTools = call.options.toolCatalogue.isNotEmpty;
 
-    const completed = LlmStreamCompleted(
+    const completed = LlmRunCompleted(
       callId: 'c',
       report: LlmCallReport(
         providerId: 'p',
@@ -185,35 +189,31 @@ class _TextToolThenAnswerSubstrate implements TomBrainSubstrateClient {
       // The tool call rides in the completion TEXT (the text tool protocol),
       // not as a native proposal — this is the only shape that can leak onto
       // the answer channel.
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        LlmStreamChunk(
-          callId: 'c',
-          text: 'call:memory.read{text: "$proposeReadTextFor"}',
-        ),
+      return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        LlmTextDelta('call:memory.read{text: "$proposeReadTextFor"}'),
         completed,
       ]);
     }
 
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: answerText),
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(answerText),
       completed,
     ]);
   }
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recall-capturing `TomBrainMemoryClient` (mirrors D.43) ────────
@@ -254,8 +254,7 @@ class _RecallCapturingMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -320,12 +319,10 @@ class _RecallCapturingMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -375,6 +372,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

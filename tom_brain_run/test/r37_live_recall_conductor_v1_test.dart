@@ -117,14 +117,14 @@ void main() {
           tee,
           promptResolver: (String id, Map<String, Object?> inputs) async =>
               ResolvedPrompt(
-            role: 'recaller',
-            llmRoute: 'recaller',
-            templateBody: _renderCurate(inputs),
-            tools: const <Object?>[],
-            maxToolLoops: 6,
-            temperature: null,
-            channel: null,
-          ),
+                role: 'recaller',
+                llmRoute: 'recaller',
+                templateBody: _renderCurate(inputs),
+                tools: const <Object?>[],
+                maxToolLoops: 6,
+                temperature: null,
+                channel: null,
+              ),
           routeChainOf: (String _) => <RouteEntry>[
             RouteEntry(providerId: 'omlx', model: omlx.model),
           ],
@@ -142,20 +142,25 @@ void main() {
         );
 
         final outcome = await engine
-            .invoke(ProcedureInvocation(
-              procedureId: 'recall_conductor_v1',
-              arguments: <String, Object?>{
-                'text': 'How do I automate my backups?',
-                'volumeCap': 3,
-                'maxRounds': 2,
-              },
-            ))
+            .invoke(
+              ProcedureInvocation(
+                procedureId: 'recall_conductor_v1',
+                arguments: <String, Object?>{
+                  'text': 'How do I automate my backups?',
+                  'volumeCap': 3,
+                  'maxRounds': 2,
+                },
+              ),
+            )
             .outcome;
 
         // The finding is the deliverable — extract and PRINT it first, so the
         // capture surfaces in the trail even when a later assert fails.
-        expect(outcome.status, TrailOutcomeStatus.accepted,
-            reason: 'the conductor must never fail the run — it degrades');
+        expect(
+          outcome.status,
+          TrailOutcomeStatus.accepted,
+          reason: 'the conductor must never fail the run — it degrades',
+        );
         final result = outcome.result!;
         final curated = result.output<List>('curatedIds')!.cast<String>();
         final degraded = result.output<bool>('degraded') ?? false;
@@ -177,8 +182,10 @@ void main() {
           ..writeln('rounds(calls): ${tee.calls.length}')
           ..writeln('searches     : $searches')
           ..writeln('degraded     : $degraded')
-          ..writeln('honoured     : $honoured  '
-              '(Gemma emitted parseable KEEP/SEARCH directives)')
+          ..writeln(
+            'honoured     : $honoured  '
+            '(Gemma emitted parseable KEEP/SEARCH directives)',
+          )
           ..writeln('curatedIds   : $curated')
           ..writeln('rationale    : $rationale');
         for (var i = 0; i < tee.calls.length; i++) {
@@ -191,21 +198,39 @@ void main() {
         print(capture.toString());
 
         // ── Hard robustness contract (holds regardless of Gemma's reply) ──
-        expect(curated, isNotEmpty,
-            reason: 'a curated set is always returned (§ 6.7)');
-        expect(curated.length, lessThanOrEqualTo(3),
-            reason: 'curation is capped at volumeCap');
+        expect(
+          curated,
+          isNotEmpty,
+          reason: 'a curated set is always returned (§ 6.7)',
+        );
+        expect(
+          curated.length,
+          lessThanOrEqualTo(3),
+          reason: 'curation is capped at volumeCap',
+        );
         for (final id in curated) {
-          expect(memory.seedIds, contains(id),
-              reason: 'only surfaced ids may be curated');
+          expect(
+            memory.seedIds,
+            contains(id),
+            reason: 'only surfaced ids may be curated',
+          );
         }
-        expect(curatedNodes.length, curated.length,
-            reason: 'one node map per curated id');
-        expect(tee.calls, isNotEmpty,
-            reason: 'the conductor must have issued ≥1 live completion');
+        expect(
+          curatedNodes.length,
+          curated.length,
+          reason: 'one node map per curated id',
+        );
+        expect(
+          tee.calls,
+          isNotEmpty,
+          reason: 'the conductor must have issued ≥1 live completion',
+        );
         for (final c in tee.calls) {
-          expect(c.anchorHash, AnchorRegistry.currentHash,
-              reason: 'the anchor invariant holds on every live call');
+          expect(
+            c.anchorHash,
+            AnchorRegistry.currentHash,
+            reason: 'the anchor invariant holds on every live call',
+          );
         }
       },
       timeout: const Timeout(Duration(minutes: 3)),
@@ -214,8 +239,11 @@ void main() {
     test('the oMLX endpoint resolves to a well-formed http target', () {
       expect(omlx.baseUri.host, isNotEmpty);
       expect(omlx.baseUri.hasPort, isTrue);
-      expect(omlx.baseUri.path, endsWith('/'),
-          reason: 'OpenAI client resolves v1/... relatively — needs a slash');
+      expect(
+        omlx.baseUri.path,
+        endsWith('/'),
+        reason: 'OpenAI client resolves v1/... relatively — needs a slash',
+      );
       expect(omlx.model, isNotEmpty);
     });
   });
@@ -225,7 +253,8 @@ void main() {
 /// `recaller` route (which the curate prompt assumes). An Ollama embedding
 /// block is declared for config-shape completeness but is never exercised — the
 /// fake memory does not embed, so no Ollama daemon is required.
-String _conductorSubstrateYaml(_LiveEndpoint omlx) => '''
+String _conductorSubstrateYaml(_LiveEndpoint omlx) =>
+    '''
 substrate:
   providers:
     - id: omlx
@@ -320,17 +349,24 @@ class _LiveEndpoint {
     } on FormatException {
       parsed = Uri.parse(defaultBaseUri);
     }
-    final port =
-        parsed.hasPort ? parsed.port : (parsed.scheme == 'https' ? 443 : 80);
+    final port = parsed.hasPort
+        ? parsed.port
+        : (parsed.scheme == 'https' ? 443 : 80);
     final path = parsed.path.endsWith('/') ? parsed.path : '${parsed.path}/';
-    return _LiveEndpoint._(parsed.replace(port: port, path: path), model,
-        daemonName);
+    return _LiveEndpoint._(
+      parsed.replace(port: port, path: path),
+      model,
+      daemonName,
+    );
   }
 
   Future<String?> unreachableReason() async {
     try {
-      final socket = await Socket.connect(baseUri.host, baseUri.port,
-          timeout: const Duration(seconds: 2));
+      final socket = await Socket.connect(
+        baseUri.host,
+        baseUri.port,
+        timeout: const Duration(seconds: 2),
+      );
       socket.destroy();
       return null;
     } on Object catch (e) {
@@ -361,19 +397,19 @@ class _TeeSubstrate implements TomBrainSubstrateClient {
   final List<_CapturedCall> calls = <_CapturedCall>[];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) async* {
+  Stream<LlmEvent> completeStream(LlmCall call) async* {
     // Record on the *terminal* event, not after the `await for` completes: the
     // bridge's consumer (`substrate_bridge.dart` line 747) breaks out of the
     // stream as soon as it sees the terminal event, which cancels this async*
     // generator — so any `calls.add` placed after the loop would never run.
     final buf = StringBuffer();
     await for (final ev in _inner.completeStream(call)) {
-      if (ev is LlmStreamChunk) buf.write(ev.text);
-      if (ev is LlmStreamCompleted) {
+      if (ev is LlmTextDelta) buf.write(ev.text);
+      if (ev is LlmRunCompleted) {
         calls.add(_CapturedCall(buf.toString(), ev.report.anchorHash));
       }
-      if (ev is LlmStreamFailed) {
-        calls.add(_CapturedCall(buf.toString(), ev.report.anchorHash));
+      if (ev is LlmRunFailed) {
+        calls.add(_CapturedCall(buf.toString(), ev.report!.anchorHash));
       }
       yield ev;
     }
@@ -437,14 +473,14 @@ class _ConductorFakeMemory implements TomBrainMemory {
       _seedNodes.map((n) => n.id.value).toList(growable: false);
 
   RecallResult _seedResult() => RecallResult(
-        nodes: _seedNodes,
-        report: const RecallReport(
-          candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 5},
-          fusionStrategy: FusionStrategy.rrf,
-          diversityStrategy: DiversityStrategy.mmr,
-          elapsedMs: 3,
-        ),
-      );
+    nodes: _seedNodes,
+    report: const RecallReport(
+      candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 5},
+      fusionStrategy: FusionStrategy.rrf,
+      diversityStrategy: DiversityStrategy.mmr,
+      elapsedMs: 3,
+    ),
+  );
 
   @override
   StackApi get stacks => _stacks;
@@ -465,8 +501,7 @@ class _ConductorFakeMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      const ClassificationResult.unknown();
+  }) async => const ClassificationResult.unknown();
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -531,12 +566,10 @@ class _ConductorFakeMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeStacks implements StackApi {
@@ -586,6 +619,5 @@ class _FakeStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

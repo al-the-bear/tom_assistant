@@ -1,4 +1,4 @@
-// LlmTrailRecord — a bridge [LlmCallObservation] enriched with the
+// LlmCallTrailRecord — a bridge [LlmCallObservation] enriched with the
 // run-correlation the engine knows (`tom_brain_logging.md` §5.2 / §10 step #4).
 //
 // The bridge fires an [LlmCallObservation] carrying what it can see — wire,
@@ -16,7 +16,7 @@ import '../bridges/llm_call_observation.dart';
 
 /// One completed LLM call, ready for the §5.2 raw-trail writer: the bridge's
 /// [observation] plus the run-correlation the engine supplies.
-final class LlmTrailRecord {
+final class LlmCallTrailRecord {
   /// What the substrate bridge observed (wire + answer + report + turn).
   final LlmCallObservation observation;
 
@@ -40,7 +40,7 @@ final class LlmTrailRecord {
   /// threading reaches the engine (follow-up).
   final String? principalId;
 
-  const LlmTrailRecord({
+  const LlmCallTrailRecord({
     required this.observation,
     this.runId,
     this.trailId,
@@ -50,8 +50,8 @@ final class LlmTrailRecord {
   });
 }
 
-/// The engine-level sink one [LlmTrailRecord] is handed to per completed LLM
+/// The engine-level sink one [LlmCallTrailRecord] is handed to per completed LLM
 /// call (`tom_brain_logging.md` §10 step #4). Bound by the host to an
 /// `LlmTrailWriter`; `null` leaves the engine emitting no raw LLM trail.
 /// Best-effort and non-blocking (logging-spec §9).
-typedef LlmTrailSink = void Function(LlmTrailRecord record);
+typedef LlmTrailSink = void Function(LlmCallTrailRecord record);

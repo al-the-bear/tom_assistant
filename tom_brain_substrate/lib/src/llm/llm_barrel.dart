@@ -29,7 +29,7 @@
 // Why this barrel does NOT pull in api/ types:
 //
 //   * `LlmProvider.complete` and `completeStream` reference
-//     `LlmCallReport`, `LlmOptions`, and `LlmStreamEvent` — those
+//     `LlmCallReport`, `LlmOptions`, and `LlmEvent` — those
 //     live in api/ (B.9). Importing the api/ barrel here would
 //     create a (harmless but noisy) circular re-export. The
 //     llm_provider.dart implementation file imports api/ types
@@ -131,13 +131,23 @@
 //     B.46 conformance test exercises every emitted report against
 //     the registry.
 
+export 'package:tom_core_llm/tom_core_llm.dart'
+    show
+        LlmCapabilities,
+        LlmContextSummary,
+        LlmErrorKind,
+        LlmProvider,
+        LlmRequest,
+        LlmToolAnswer,
+        LlmToolBinding,
+        LlmTransportException,
+        WirePrompt;
+
 export 'anchor_registry.dart';
 export 'anthropic_http_client.dart';
 export 'anthropic_llm_provider.dart';
-export 'llm_provider.dart';
 export 'ollama_http_client.dart';
 export 'ollama_llm_provider.dart';
 export 'openai_http_client.dart';
 export 'openai_passthrough_provider.dart';
 export 'stub_llm_provider.dart';
-export 'wire_prompt.dart';

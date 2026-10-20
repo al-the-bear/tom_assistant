@@ -36,7 +36,7 @@
 
 import 'dart:convert' show jsonEncode;
 
-import '../llm/wire_prompt.dart' show WirePrompt;
+import 'package:tom_core_llm/tom_core_llm.dart' show WirePrompt;
 
 /// Pure transform that re-emits a [WirePrompt] with a strict-format
 /// reinforcement block appended.

@@ -118,8 +118,8 @@ final class ProbeMemory implements TomBrainMemory {
 
   /// The drafts persisted with [typeName], for in-process post-condition checks.
   Iterable<({String typeName, Map<String, Object?> values})> persistedOfType(
-          String typeName) =>
-      persisted.where((p) => p.typeName == typeName);
+    String typeName,
+  ) => persisted.where((p) => p.typeName == typeName);
 
   @override
   Future<void> open(MemoryConfig config) async {
@@ -136,17 +136,17 @@ final class ProbeMemory implements TomBrainMemory {
 
   @override
   Future<MemoryStats> stats() async => MemoryStats(
-        nodeCountByType: Map<String, int>.of(_nodeCounts),
-        edgeCountByType: const <String, int>{},
-        stackSizes: const <String, int>{},
-        trailCount: 0,
-        trailBytes: 0,
-        recallLatencyPerMode: const <String, LatencyHistogram>{},
-        classificationConfidenceHistogram: const <String, int>{},
-        migrationProgress: const <String, double>{},
-        lifecycleEventCounts: const <String, int>{},
-        accessCountHistogram: const <String, int>{},
-      );
+    nodeCountByType: Map<String, int>.of(_nodeCounts),
+    edgeCountByType: const <String, int>{},
+    stackSizes: const <String, int>{},
+    trailCount: 0,
+    trailBytes: 0,
+    recallLatencyPerMode: const <String, LatencyHistogram>{},
+    classificationConfidenceHistogram: const <String, int>{},
+    migrationProgress: const <String, double>{},
+    lifecycleEventCounts: const <String, int>{},
+    accessCountHistogram: const <String, int>{},
+  );
 
   @override
   Future<NodeId> persist(NodeDraft draft, {required Scope scope}) async {
@@ -160,17 +160,17 @@ final class ProbeMemory implements TomBrainMemory {
 
   @override
   Future<RecallResult> recall(RecallQuery query) async => const RecallResult(
-        nodes: <Node>[],
-        report: RecallReport(
-          candidatesPerMode: <RecallMode, int>{},
-          fusionStrategy: FusionStrategy.rrf,
-          diversityStrategy: DiversityStrategy.mmr,
-          elapsedMs: 0,
-          embeddingsCallouts: 0,
-          reRankInvoked: false,
-          degraded: false,
-        ),
-      );
+    nodes: <Node>[],
+    report: RecallReport(
+      candidatesPerMode: <RecallMode, int>{},
+      fusionStrategy: FusionStrategy.rrf,
+      diversityStrategy: DiversityStrategy.mmr,
+      elapsedMs: 0,
+      embeddingsCallouts: 0,
+      reRankInvoked: false,
+      degraded: false,
+    ),
+  );
 
   // ─── Trail + run lifecycle: benign no-ops sufficient for the recorder ──
 
@@ -238,16 +238,14 @@ final class ProbeMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
   Future<List<Edge>> edgesOf(
     NodeId id, {
     EdgeDirection direction = EdgeDirection.both,
     Set<EdgeType>? types,
-  }) async =>
-      const <Edge>[];
+  }) async => const <Edge>[];
 
   @override
   Future<void> registerNodeType(NodeTypeDecl decl) async {}
@@ -265,8 +263,7 @@ final class ProbeMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      const ClassificationResult.unknown();
+  }) async => const ClassificationResult.unknown();
 
   @override
   Future<void> updateCentroid(String forKey, Vec centroid) async {}
@@ -277,8 +274,7 @@ final class ProbeMemory implements TomBrainMemory {
     required double low,
     required double high,
     int limit = 200,
-  }) async =>
-      const <NodeId>[];
+  }) async => const <NodeId>[];
 
   @override
   MigrationApi get migrations => _NoopMigrationApi();
@@ -329,19 +325,17 @@ class _NoopProfileRegistry implements MemoryProfileRegistry {
   Future<T> readInProfile<T>(
     String name,
     Future<T> Function(TomBrainMemoryClient body) body,
-  ) =>
-      throw UnimplementedError(
-        'readInProfile is not exercised by this double.',
-      );
+  ) => throw UnimplementedError(
+    'readInProfile is not exercised by this double.',
+  );
 
   @override
   Future<T> writeInProfile<T>(
     String name,
     Future<T> Function(TomBrainMemoryClient body) body,
-  ) =>
-      throw UnimplementedError(
-        'writeInProfile is not exercised by this double.',
-      );
+  ) => throw UnimplementedError(
+    'writeInProfile is not exercised by this double.',
+  );
 }
 
 class _NoopStackApi implements StackApi {
@@ -367,8 +361,7 @@ class _NoopStackApi implements StackApi {
     double priority = 0.0,
     Map<String, Object?>? attrs,
     Scope? scope,
-  }) async =>
-      StackEntryId.generate();
+  }) async => StackEntryId.generate();
 
   @override
   Future<List<StackEntry>> peek(String name, {int k = 16}) async =>
@@ -430,11 +423,10 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
   Future<void> close() async {}
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) {
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -452,18 +444,17 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ─── A manual deadline-timer seam: captures the expiry callback and fires
@@ -514,15 +505,14 @@ Access _accessWith({
   // (entry `prompt_analyzer_v1`), so the existing scenarios route through the
   // two-phase entry-router path unchanged.
   ResolvedProfile profile = const ResolvedProfile.cognitiveDefault(),
-}) =>
-    Access(
-      envelope: InboundRequest(text: text, kindHint: kindHint),
-      identity: ResolvedIdentity(principalId: 'p1'),
-      session: Session(sessionId: 's1'),
-      persona: Persona.assistant(),
-      deliver: deliver ?? (chunk) => Stream<OutboundChunk>.value(chunk),
-      profile: profile,
-    );
+}) => Access(
+  envelope: InboundRequest(text: text, kindHint: kindHint),
+  identity: ResolvedIdentity(principalId: 'p1'),
+  session: Session(sessionId: 's1'),
+  persona: Persona.assistant(),
+  deliver: deliver ?? (chunk) => Stream<OutboundChunk>.value(chunk),
+  profile: profile,
+);
 
 BrainProcessConfig _bootConfig({
   required TomBrainMemoryClient memory,
@@ -547,31 +537,34 @@ BrainProcessConfig _bootConfig({
 
 void main() {
   group('D.53-1 success — an accepted user_prompt runs end-to-end', () {
-    test('accept runs answer_with_memory_v1 against the booted process',
-        () async {
-      final memory = ProbeMemory();
-      final substrate = _AnsweringSubstrate()
-        ..answerChunks = <String>['I have no notes on that yet.'];
-      final booted = await BrainProcessBoot.boot(_bootConfig(
-        memory: memory,
-        substrate: substrate,
-        memoryRoot: 'ztmp/d53_success',
-      ));
-      addTearDown(booted.shutdown);
+    test(
+      'accept runs answer_with_memory_v1 against the booted process',
+      () async {
+        final memory = ProbeMemory();
+        final substrate = _AnsweringSubstrate()
+          ..answerChunks = <String>['I have no notes on that yet.'];
+        final booted = await BrainProcessBoot.boot(
+          _bootConfig(
+            memory: memory,
+            substrate: substrate,
+            memoryRoot: 'ztmp/d53_success',
+          ),
+        );
+        addTearDown(booted.shutdown);
 
-      await booted.dispatcher.accept(_accessWith(text: 'what is a quasar?'));
+        await booted.dispatcher.accept(_accessWith(text: 'what is a quasar?'));
 
-      // Cold path (empty recall): the prompt is persisted as an Event and the
-      // answer as a Conclusion — the run completed through the entry surface.
-      final event = memory.persistedOfType('Event').single;
-      expect(event.values['summary'], 'what is a quasar?');
-      final conclusion = memory.persistedOfType('Conclusion').single;
-      expect(conclusion.values['statement'], 'I have no notes on that yet.');
-    });
+        // Cold path (empty recall): the prompt is persisted as an Event and the
+        // answer as a Conclusion — the run completed through the entry surface.
+        final event = memory.persistedOfType('Event').single;
+        expect(event.values['summary'], 'what is a quasar?');
+        final conclusion = memory.persistedOfType('Conclusion').single;
+        expect(conclusion.values['statement'], 'I have no notes on that yet.');
+      },
+    );
   });
 
-  group('D.53-2 unknown procedure-id hint — rejected loudly through accept',
-      () {
+  group('D.53-2 unknown procedure-id hint — rejected loudly through accept', () {
     test('an unknown procedure-id hint raises UnknownProcedureHint through '
         'accept', () async {
       // The real resolveProcedureId pipeline behind the entry surface, with a
@@ -583,8 +576,11 @@ void main() {
       final selector = ProcedureSelector();
       final dispatcher = Dispatcher(
         route: (access) async {
-          final id = resolveProcedureId(access,
-              classifier: classifier, selector: selector);
+          final id = resolveProcedureId(
+            access,
+            classifier: classifier,
+            selector: selector,
+          );
           scheduled.add(id);
         },
       );
@@ -594,15 +590,23 @@ void main() {
         throwsA(
           isA<UnknownProcedureHint>()
               .having(
-                  (e) => e.procedureId, 'procedureId', 'background_research')
-              .having((e) => e.knownProcedureIds, 'knownProcedureIds',
-                  <String>[SystemProcedures.promptAnalyzerV1]),
+                (e) => e.procedureId,
+                'procedureId',
+                'background_research',
+              )
+              .having((e) => e.knownProcedureIds, 'knownProcedureIds', <String>[
+                SystemProcedures.promptAnalyzerV1,
+              ]),
         ),
-        reason: 'the hint names no shipped procedure and the error propagates '
+        reason:
+            'the hint names no shipped procedure and the error propagates '
             'unchanged through accept (the D.14 failure-propagation contract)',
       );
-      expect(scheduled, isEmpty,
-          reason: 'rejection happens at routing, before scheduling');
+      expect(
+        scheduled,
+        isEmpty,
+        reason: 'rejection happens at routing, before scheduling',
+      );
     });
   });
 
@@ -612,8 +616,10 @@ void main() {
       final gate = Completer<String>();
       final dispatcher = Dispatcher(
         route: (access) async {
-          await coordinator.submitForeground(() => gate.future,
-              procedureId: 'p');
+          await coordinator.submitForeground(
+            () => gate.future,
+            procedureId: 'p',
+          );
         },
       );
 
@@ -627,9 +633,9 @@ void main() {
       // surfaces as a thrown ForegroundQueueFull through accept.
       await expectLater(
         dispatcher.accept(_accessWith()),
-        throwsA(isA<ForegroundQueueFull>()
-            .having((e) => e.depth, 'depth', 1)),
-        reason: 'the running run plus one queued run is the most a depth-1 '
+        throwsA(isA<ForegroundQueueFull>().having((e) => e.depth, 'depth', 1)),
+        reason:
+            'the running run plus one queued run is the most a depth-1 '
             'coordinator holds',
       );
 
@@ -641,54 +647,65 @@ void main() {
     });
   });
 
-  group('D.53-4 hard deadline — a hung run is force-yielded through accept',
-      () {
-    test('the coordinator hard-step deadline surfaces RunDeadlineExceeded',
-        () async {
-      final manual = _ManualDeadline();
-      final coordinator = RunCoordinator(
-        hardStepDeadline: const Duration(milliseconds: 50),
-        deadlineTimerFactory: manual.arm,
-      );
-      final neverCompletes = Completer<String>();
-      final dispatcher = Dispatcher(
-        route: (access) async {
-          await coordinator.submitForeground(() => neverCompletes.future,
-              procedureId: 'p');
-        },
-      );
+  group('D.53-4 hard deadline — a hung run is force-yielded through accept', () {
+    test(
+      'the coordinator hard-step deadline surfaces RunDeadlineExceeded',
+      () async {
+        final manual = _ManualDeadline();
+        final coordinator = RunCoordinator(
+          hardStepDeadline: const Duration(milliseconds: 50),
+          deadlineTimerFactory: manual.arm,
+        );
+        final neverCompletes = Completer<String>();
+        final dispatcher = Dispatcher(
+          route: (access) async {
+            await coordinator.submitForeground(
+              () => neverCompletes.future,
+              procedureId: 'p',
+            );
+          },
+        );
 
-      final accepted = dispatcher.accept(_accessWith());
-      await pumpEventQueue();
-      // The body never completes; fire the coordinator's deadline to force-yield
-      // it (the backstop the engine's own per-step deadline failed to bound).
-      manual.fire();
+        final accepted = dispatcher.accept(_accessWith());
+        await pumpEventQueue();
+        // The body never completes; fire the coordinator's deadline to force-yield
+        // it (the backstop the engine's own per-step deadline failed to bound).
+        manual.fire();
 
-      await expectLater(
-        accepted,
-        throwsA(
-          isA<RunDeadlineExceeded>()
-              .having((e) => e.slot, 'slot', RunSlot.foreground)
-              .having((e) => e.failureKind, 'failureKind',
-                  'procedure.deadline.exceeded'),
-        ),
-        reason: 'a hung body is force-yielded and the typed deadline failure '
-            'propagates through accept',
-      );
-      expect(coordinator.isIdle, isTrue,
-          reason: 'force-yield frees the slot even though the body runs on');
-    });
+        await expectLater(
+          accepted,
+          throwsA(
+            isA<RunDeadlineExceeded>()
+                .having((e) => e.slot, 'slot', RunSlot.foreground)
+                .having(
+                  (e) => e.failureKind,
+                  'failureKind',
+                  'procedure.deadline.exceeded',
+                ),
+          ),
+          reason:
+              'a hung body is force-yielded and the typed deadline failure '
+              'propagates through accept',
+        );
+        expect(
+          coordinator.isIdle,
+          isTrue,
+          reason: 'force-yield frees the slot even though the body runs on',
+        );
+      },
+    );
   });
 
   group('D.53-5 foreground preempting background', () {
-    test('a foreground accept preempts a live background and resumes it',
-        () async {
+    test('a foreground accept preempts a live background and resumes it', () async {
       final coordinator = RunCoordinator();
       final fgGate = Completer<String>();
       final dispatcher = Dispatcher(
         route: (access) async {
-          await coordinator.submitForeground(() => fgGate.future,
-              procedureId: 'fg');
+          await coordinator.submitForeground(
+            () => fgGate.future,
+            procedureId: 'fg',
+          );
         },
       );
 
@@ -715,9 +732,13 @@ void main() {
       // A foreground prompt arrives through accept while the background is live.
       final accepted = dispatcher.accept(_accessWith());
       await pumpEventQueue();
-      expect(coordinator.preemption.isForegroundWaiting, isTrue,
-          reason: 'admitting a foreground while a background run is live '
-              'requests cooperative preemption');
+      expect(
+        coordinator.preemption.isForegroundWaiting,
+        isTrue,
+        reason:
+            'admitting a foreground while a background run is live '
+            'requests cooperative preemption',
+      );
 
       // The background reaches its checkpoint and parks; the foreground then
       // drains, which signals resume and releases the parked background.
@@ -727,15 +748,17 @@ void main() {
       await accepted;
 
       expect(await background, 'bg-done');
-      expect(bgResumed.isCompleted, isTrue,
-          reason: 'the background resumed once the whole foreground drained');
+      expect(
+        bgResumed.isCompleted,
+        isTrue,
+        reason: 'the background resumed once the whole foreground drained',
+      );
       expect(coordinator.preemption.isForegroundWaiting, isFalse);
     });
   });
 
   group('D.53-6 fallback — a fallback-class failure surfaces an event', () {
-    test('a contract violation emits one FallbackTried and surfaces',
-        () async {
+    test('a contract violation emits one FallbackTried and surfaces', () async {
       // The real fallback chain for the shipped procedure (a v1-only singleton
       // in the prototype), driven behind the dispatcher's schedule stage.
       final resolver = await ProcedureResolver.fromStore(
@@ -761,20 +784,28 @@ void main() {
       await expectLater(
         dispatcher.accept(_accessWith()),
         throwsA(isA<_ContractViolation>()),
-        reason: 'the v1-only chain has nowhere to step, so the fallback-class '
+        reason:
+            'the v1-only chain has nowhere to step, so the fallback-class '
             'failure surfaces through accept',
       );
 
-      expect(events, hasLength(1),
-          reason: 'every fallback-class failure emits exactly one '
-              'FallbackTried (def § 6)');
+      expect(
+        events,
+        hasLength(1),
+        reason:
+            'every fallback-class failure emits exactly one '
+            'FallbackTried (def § 6)',
+      );
       final fallback = events.single;
       expect(fallback.procedureId, SystemProcedures.answerWithMemoryV1);
       expect(fallback.trigger, FallbackTrigger.contractViolation);
       expect(fallback.fromVersion, 1);
       expect(fallback.toVersion, isNull);
-      expect(fallback.surfaced, isTrue,
-          reason: 'the failing version is the oldest in the chain');
+      expect(
+        fallback.surfaced,
+        isTrue,
+        reason: 'the failing version is the oldest in the chain',
+      );
     });
   });
 
@@ -783,25 +814,29 @@ void main() {
         'transports', () async {
       // In-process: the probe memory constructed in this isolate.
       final inProcMemory = ProbeMemory();
-      final inProc = await BrainProcessBoot.boot(_bootConfig(
-        memory: inProcMemory,
-        substrate: _AnsweringSubstrate(),
-        memoryRoot: 'ztmp/d53_parity_in',
-      ));
+      final inProc = await BrainProcessBoot.boot(
+        _bootConfig(
+          memory: inProcMemory,
+          substrate: _AnsweringSubstrate(),
+          memoryRoot: 'ztmp/d53_parity_in',
+        ),
+      );
       // Isolate: the same probe memory constructed in the spawned worker.
       final isoParity = AnswerParityPrompts();
-      final iso = await BrainProcessBoot.boot(BrainProcessConfig(
-        substrate: _AnsweringSubstrate(),
-        memoryProvisioning: MemoryProvisioningConfig.isolate(
-          factory: spawnProbeMemory,
-          memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d53_parity_iso'),
+      final iso = await BrainProcessBoot.boot(
+        BrainProcessConfig(
+          substrate: _AnsweringSubstrate(),
+          memoryProvisioning: MemoryProvisioningConfig.isolate(
+            factory: spawnProbeMemory,
+            memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d53_parity_iso'),
+          ),
+          // Increment 6 (§6): same host `PromptResolver` wiring as the in-process
+          // boot — the isolate transport does not change how the answer step
+          // resolves its prompt (the PE-10 parity claim under test).
+          promptResolver: isoParity.resolver,
+          routeChainOf: isoParity.routeChainOf,
         ),
-        // Increment 6 (§6): same host `PromptResolver` wiring as the in-process
-        // boot — the isolate transport does not change how the answer step
-        // resolves its prompt (the PE-10 parity claim under test).
-        promptResolver: isoParity.resolver,
-        routeChainOf: isoParity.routeChainOf,
-      ));
+      );
       try {
         // The same synthetic prompt through each booted dispatcher.
         await inProc.dispatcher.accept(_accessWith(text: 'what is a quasar?'));
@@ -811,11 +846,18 @@ void main() {
         // the two transports must agree on what the run persisted.
         final inProcStats = await inProc.memory.client.stats();
         final isoStats = await iso.memory.client.stats();
-        expect(inProcStats.nodeCountByType, isNotEmpty,
-            reason: 'the run actually persisted nodes (not a vacuous match)');
-        expect(isoStats.nodeCountByType, equals(inProcStats.nodeCountByType),
-            reason: 'the dispatcher is indifferent to the memory transport '
-                '(PE-10) — the D.53 parity claim');
+        expect(
+          inProcStats.nodeCountByType,
+          isNotEmpty,
+          reason: 'the run actually persisted nodes (not a vacuous match)',
+        );
+        expect(
+          isoStats.nodeCountByType,
+          equals(inProcStats.nodeCountByType),
+          reason:
+              'the dispatcher is indifferent to the memory transport '
+              '(PE-10) — the D.53 parity claim',
+        );
         expect(inProc.memory.transport, MemoryTransport.inProcess);
         expect(iso.memory.transport, MemoryTransport.isolate);
       } finally {
@@ -832,25 +874,29 @@ void main() {
       final memory = ProbeMemory();
       final substrate = _AnsweringSubstrate()
         ..answerChunks = <String>['I have no notes on that yet.'];
-      final booted = await BrainProcessBoot.boot(_bootConfig(
-        memory: memory,
-        substrate: substrate,
-        memoryRoot: 'ztmp/d53_profile_direct',
-      ));
+      final booted = await BrainProcessBoot.boot(
+        _bootConfig(
+          memory: memory,
+          substrate: substrate,
+          memoryRoot: 'ztmp/d53_profile_direct',
+        ),
+      );
       addTearDown(booted.shutdown);
 
       // A profile whose `mode: answer` resolves the entry directly to
       // `answer_with_memory_v1` (the § 5.1 profile-entry door). No centroid
       // hint — door 0 routes before the hint/classifier doors.
-      await booted.dispatcher.accept(_accessWith(
-        text: 'what is a quasar?',
-        kindHint: null,
-        profile: ResolvedProfile(
-          id: 'quick',
-          mode: ProfileMode.answer,
-          entryProcedure: SystemProcedures.answerWithMemoryV1,
+      await booted.dispatcher.accept(
+        _accessWith(
+          text: 'what is a quasar?',
+          kindHint: null,
+          profile: ResolvedProfile(
+            id: 'quick',
+            mode: ProfileMode.answer,
+            entryProcedure: SystemProcedures.answerWithMemoryV1,
+          ),
         ),
-      ));
+      );
 
       // The answer branch ran ONCE: one Event (the prompt) + one Conclusion
       // (the answer). The pre-fix two-phase route ran it twice — an unstreamed
@@ -859,11 +905,18 @@ void main() {
       // the matching `passthrough` → `passthrough_v1` then phantom
       // `answer_with_memory_v1` the live r52 suite surfaced) is the regression
       // this pins: a direct-entry profile IS the top-level run, not a router.
-      expect(memory.persistedOfType('Event'), hasLength(1),
-          reason: 'the direct-entry profile dispatches the answer branch as '
-              'the single top-level run, never as a router + answer pair');
-      expect(memory.persistedOfType('Conclusion'), hasLength(1),
-          reason: 'exactly one answer was produced and persisted');
+      expect(
+        memory.persistedOfType('Event'),
+        hasLength(1),
+        reason:
+            'the direct-entry profile dispatches the answer branch as '
+            'the single top-level run, never as a router + answer pair',
+      );
+      expect(
+        memory.persistedOfType('Conclusion'),
+        hasLength(1),
+        reason: 'exactly one answer was produced and persisted',
+      );
     });
   });
 }

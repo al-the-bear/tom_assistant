@@ -68,6 +68,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' as shared;
 import 'package:tom_basics/tom_basics.dart' as basics;
 import 'package:tom_core_agentic/tom_core_agentic.dart' as agentic;
 import 'package:tom_core_kernel/tom_core_kernel.dart' as kernel;
+import 'package:tom_core_llm/tom_core_llm.dart' as llm;
 import 'package:tom_core_server/tom_core_server.dart' as server;
 import 'package:dart_mcp/client.dart' as mcp_client;
 import 'package:dart_mcp/server.dart' as mcp_server;
@@ -134,6 +135,15 @@ void main() {
       expect(agentic.HttpDate, isNotNull);
       expect(agentic.textPreview, isA<Function>());
       expect(agentic.buildUniqueById, isA<Function>());
+    });
+
+    test('tom_core_llm exposes the provider contract', () {
+      // Every substrate provider implements this contract; the substrate
+      // declares no provider interface of its own.
+      expect(llm.LlmProvider, isNotNull);
+      expect(llm.LlmRequest, isNotNull);
+      expect(llm.LlmEvent, isNotNull);
+      expect(llm.LlmCallReport, isNotNull);
     });
 
     test('dart_mcp exposes the client + protocol surface', () {

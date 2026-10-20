@@ -11,7 +11,7 @@
 //     `InProcessTomBrainSubstrate` (B.40+) extends this.
 //   * Value types in the surface: `LlmCall`, `LlmOptions`,
 //     `ToolCatalogue`, `ToolDescriptor`, `LlmCallReport`; sealed
-//     `LlmStreamEvent` family + `LlmFailure`; `EmbeddingResult` +
+//     `LlmEvent` family + `LlmFailure`; `EmbeddingResult` +
 //     `EmbeddingModelIdentity`; web-tool types
 //     (`WebSearchResult`, `WebSearchOptions`, `SearchHit`,
 //     `WebFetchResult`, `WebFetchOptions`, `BinaryFetchMeta`);
@@ -57,10 +57,20 @@
 //             `lib/src/facade/`.
 
 export 'cancellation.dart';
-export 'captured_wire.dart';
 export 'embedding_result.dart';
 export 'llm_call.dart';
-export 'llm_stream_event.dart';
+export 'package:tom_core_llm/tom_core_llm.dart'
+    show
+        CapturedWirePrompt,
+        LlmEvent,
+        LlmFailure,
+        LlmRunCompleted,
+        LlmRunEnded,
+        LlmRunFailed,
+        LlmRunOutcome,
+        LlmRunStarted,
+        LlmTextDelta,
+        LlmToolCall;
 export 'mcp_endpoint.dart';
 // B.36 — `SubstrateConfig` migrated from a B.9 placeholder under
 // api/ to the concrete typed model under config/. The api/ barrel

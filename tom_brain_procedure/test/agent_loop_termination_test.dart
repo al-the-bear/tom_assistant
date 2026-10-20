@@ -111,14 +111,13 @@ void main() {
   ProcedureEngine engineFor(
     Iterable<LoadedProcedure> procedures, {
     DateTime Function()? now,
-  }) =>
-      ProcedureEngine(
-        resolver: ProcedureResolver(procedures),
-        memory: memory,
-        memoryBridge: memoryBridge,
-        substrateBridge: substrateBridge,
-        now: now ?? () => DateTime.utc(2026, 6, 12, 12, 0, 0),
-      );
+  }) => ProcedureEngine(
+    resolver: ProcedureResolver(procedures),
+    memory: memory,
+    memoryBridge: memoryBridge,
+    substrateBridge: substrateBridge,
+    now: now ?? () => DateTime.utc(2026, 6, 12, 12, 0, 0),
+  );
 
   Future<ProcedureEngine> buildEngine({DateTime Function()? now}) async {
     final store = DiskProcedureStore(systemDir: Directory('scripts/system'));
@@ -130,27 +129,29 @@ void main() {
     ProcedureEngine engine,
     String text, {
     required String sessionId,
-  }) =>
-      engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'answer_with_memory_v1',
-            sessionId: sessionId,
-            arguments: <String, Object?>{'text': text},
-          ))
-          .outcome;
+  }) => engine
+      .invoke(
+        ProcedureInvocation(
+          procedureId: 'answer_with_memory_v1',
+          sessionId: sessionId,
+          arguments: <String, Object?>{'text': text},
+        ),
+      )
+      .outcome;
 
   Future<ProcedureOutcome> runThinking(
     ProcedureEngine engine,
     String text, {
     required String sessionId,
-  }) =>
-      engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'answer_with_thinking_v1',
-            sessionId: sessionId,
-            arguments: <String, Object?>{'text': text},
-          ))
-          .outcome;
+  }) => engine
+      .invoke(
+        ProcedureInvocation(
+          procedureId: 'answer_with_thinking_v1',
+          sessionId: sessionId,
+          arguments: <String, Object?>{'text': text},
+        ),
+      )
+      .outcome;
 
   // Two recalled, text-bearing nodes so the thinking path can draw provenance
   // edges (mirrors gt1's seed; not asserted here, just keeps recall non-empty).
@@ -160,7 +161,9 @@ void main() {
         Node(
           id: NodeId.fromString('n_00000000000000000000000042'),
           typeName: 'Conclusion',
-          values: const <String, Object?>{'text': 'memory consolidates in sleep'},
+          values: const <String, Object?>{
+            'text': 'memory consolidates in sleep',
+          },
           createdAt: DateTime.utc(2026, 6, 1),
         ),
       ],
@@ -174,8 +177,7 @@ void main() {
   }
 
   group('T1 completion-confirmation — memory path (§ 3 / § 6.1)', () {
-    test(
-        'a CONTINUE confirmation re-enters; the loop exits on DONE, returning '
+    test('a CONTINUE confirmation re-enters; the loop exits on DONE, returning '
         'the last draft', () async {
       final engine = await buildEngine();
       // Two answer drafts; the first confirmation says CONTINUE (re-enter), the
@@ -186,18 +188,21 @@ void main() {
       ];
       substrate.confirmationVerdicts = <String>['CONTINUE', 'DONE'];
 
-      final outcome =
-          await runMemory(engine, 'do a two-step task', sessionId: 's-mem');
+      final outcome = await runMemory(
+        engine,
+        'do a two-step task',
+        sessionId: 's-mem',
+      );
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       // The CONTINUE kept the loop going — the first draft must NOT win.
-      expect(
-        outcome.result!.output<String>('answer'),
-        'draft two',
-      );
+      expect(outcome.result!.output<String>('answer'), 'draft two');
       // The model was asked to confirm completion once per draft.
-      expect(substrate.confirmationCount, 2,
-          reason: 'one are-you-done confirmation per draft');
+      expect(
+        substrate.confirmationCount,
+        2,
+        reason: 'one are-you-done confirmation per draft',
+      );
     });
 
     test('a DONE confirmation on the first pass exits immediately', () async {
@@ -205,8 +210,11 @@ void main() {
       substrate.answerTurns = <_Turn>[_Turn.text('the only answer')];
       substrate.confirmationVerdicts = <String>['DONE'];
 
-      final outcome =
-          await runMemory(engine, 'a one-shot task', sessionId: 's-once');
+      final outcome = await runMemory(
+        engine,
+        'a one-shot task',
+        sessionId: 's-once',
+      );
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       expect(outcome.result!.output<String>('answer'), 'the only answer');
@@ -224,14 +232,16 @@ void main() {
       await runMemory(engine, 'task with an open todo', sessionId: 's-list');
 
       expect(substrate.confirmationPrompts, isNotEmpty);
-      expect(substrate.confirmationPrompts.last, contains('write the report'),
-          reason: 'the confirmation must present the live todo list as evidence');
+      expect(
+        substrate.confirmationPrompts.last,
+        contains('write the report'),
+        reason: 'the confirmation must present the live todo list as evidence',
+      );
     });
   });
 
   group('T2 completion-confirmation — thinking path (§ 3 / § 6.2)', () {
-    test(
-        'an ACCEPT reaches the confirmation gate; a CONTINUE re-enters and a DONE '
+    test('an ACCEPT reaches the confirmation gate; a CONTINUE re-enters and a DONE '
         'terminates', () async {
       seedRecall();
       substrate.thinkingMode = true;
@@ -241,43 +251,56 @@ void main() {
       substrate.confirmationVerdicts = <String>['CONTINUE', 'DONE'];
 
       final engine = await buildEngine();
-      final outcome =
-          await runThinking(engine, 'reflect on memory', sessionId: 's-think');
+      final outcome = await runThinking(
+        engine,
+        'reflect on memory',
+        sessionId: 's-think',
+      );
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       // Two synthesis passes: iter 1 ACCEPT → CONTINUE (re-enter); iter 2 ACCEPT
       // → DONE (terminate).
-      expect(substrate.synthCount, 2,
-          reason: 'the CONTINUE confirmation re-enters after the first ACCEPT');
-      expect(substrate.confirmationCount, 2,
-          reason: 'the confirmation runs once per ACCEPT');
+      expect(
+        substrate.synthCount,
+        2,
+        reason: 'the CONTINUE confirmation re-enters after the first ACCEPT',
+      );
+      expect(
+        substrate.confirmationCount,
+        2,
+        reason: 'the confirmation runs once per ACCEPT',
+      );
       expect(outcome.result!.output<String>('answer'), substrate.draftFor(2));
       expect(outcome.result!.output<bool>('incomplete'), isFalse);
     });
   });
 
   group('T3 bootstrap (§ 3.2 / § 6.3)', () {
-    test('a trivial prompt that seeds no todos still produces an answer',
-        () async {
-      // Non-regression guard: a trivial prompt is answered once and the DONE
-      // confirmation exits — never silent.
-      final engine = await buildEngine();
-      substrate.answerTurns = <_Turn>[_Turn.text('hi there')];
-      substrate.confirmationVerdicts = <String>['DONE'];
+    test(
+      'a trivial prompt that seeds no todos still produces an answer',
+      () async {
+        // Non-regression guard: a trivial prompt is answered once and the DONE
+        // confirmation exits — never silent.
+        final engine = await buildEngine();
+        substrate.answerTurns = <_Turn>[_Turn.text('hi there')];
+        substrate.confirmationVerdicts = <String>['DONE'];
 
-      final outcome = await runMemory(engine, 'hello', sessionId: 's-boot');
+        final outcome = await runMemory(engine, 'hello', sessionId: 's-boot');
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      final answer = outcome.result!.output<String>('answer');
-      expect(answer, isNotNull);
-      expect(answer!.isNotEmpty, isTrue,
-          reason: 'never silent — a trivial prompt is still answered');
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        final answer = outcome.result!.output<String>('answer');
+        expect(answer, isNotNull);
+        expect(
+          answer!.isNotEmpty,
+          isTrue,
+          reason: 'never silent — a trivial prompt is still answered',
+        );
+      },
+    );
   });
 
   group('T4 a REJECT records missing work and re-enters directly (§ 6.4)', () {
-    test(
-        'a REJECT critique records at least one open todo and re-enters without '
+    test('a REJECT critique records at least one open todo and re-enters without '
         'asking for confirmation', () async {
       seedRecall();
       substrate.thinkingMode = true;
@@ -287,23 +310,38 @@ void main() {
       substrate.confirmationVerdicts = <String>['DONE'];
 
       final engine = await buildEngine();
-      final outcome = await runThinking(engine, 'work the backup topology',
-          sessionId: 's-reject');
+      final outcome = await runThinking(
+        engine,
+        'work the backup topology',
+        sessionId: 's-reject',
+      );
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       // The REJECT investigation fed its missing pieces back as a session todo —
       // tracked open work, even though termination no longer gates on it.
       final store = engine.sessionTodoStores.peek('s-reject');
-      expect(store, isNotNull,
-          reason: 'the rejection created a session todo for its missing pieces');
-      expect(store!.list(), isNotEmpty,
-          reason: 'at least one todo was pushed by the REJECT investigation');
+      expect(
+        store,
+        isNotNull,
+        reason: 'the rejection created a session todo for its missing pieces',
+      );
+      expect(
+        store!.list(),
+        isNotEmpty,
+        reason: 'at least one todo was pushed by the REJECT investigation',
+      );
       // Re-entered after the REJECT; produced a second draft.
-      expect(substrate.synthCount, greaterThanOrEqualTo(2),
-          reason: 'the REJECT re-entered to redraft');
+      expect(
+        substrate.synthCount,
+        greaterThanOrEqualTo(2),
+        reason: 'the REJECT re-entered to redraft',
+      );
       // Confirmation runs only after an ACCEPT — once here, not after the REJECT.
-      expect(substrate.confirmationCount, 1,
-          reason: 'the REJECT re-enters directly; only the ACCEPT confirms');
+      expect(
+        substrate.confirmationCount,
+        1,
+        reason: 'the REJECT re-enters directly; only the ACCEPT confirms',
+      );
     });
   });
 
@@ -316,27 +354,40 @@ void main() {
     final base = DateTime.utc(2026, 6, 12, 12, 0, 0);
 
     test(
-        'memory path: with the deadline tripped, the loop exits incomplete with '
-        'a non-empty answer (never silent)', () async {
-      var clock = base;
-      substrate.confirmationVerdicts = <String>[];
-      substrate.defaultConfirmation = 'CONTINUE';
-      substrate.answerTurns = <_Turn>[_Turn.text('best-effort partial answer')];
-      substrate.onCompletion = () => clock = base.add(const Duration(hours: 5));
+      'memory path: with the deadline tripped, the loop exits incomplete with '
+      'a non-empty answer (never silent)',
+      () async {
+        var clock = base;
+        substrate.confirmationVerdicts = <String>[];
+        substrate.defaultConfirmation = 'CONTINUE';
+        substrate.answerTurns = <_Turn>[
+          _Turn.text('best-effort partial answer'),
+        ];
+        substrate.onCompletion = () =>
+            clock = base.add(const Duration(hours: 5));
 
-      final engine = await buildEngine(now: () => clock);
-      final outcome = await runMemory(engine, 'a never-ending request',
-          sessionId: 's-deadline-mem');
+        final engine = await buildEngine(now: () => clock);
+        final outcome = await runMemory(
+          engine,
+          'a never-ending request',
+          sessionId: 's-deadline-mem',
+        );
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'), isNotEmpty,
-          reason: 'the runaway-stop returns the last best-effort draft');
-      expect(outcome.result!.output<bool>('incomplete'), isTrue,
-          reason: 'the wall-clock runaway-stop is the only incomplete exit');
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(
+          outcome.result!.output<String>('answer'),
+          isNotEmpty,
+          reason: 'the runaway-stop returns the last best-effort draft',
+        );
+        expect(
+          outcome.result!.output<bool>('incomplete'),
+          isTrue,
+          reason: 'the wall-clock runaway-stop is the only incomplete exit',
+        );
+      },
+    );
 
-    test(
-        'thinking path: with the deadline tripped, the loop exits incomplete '
+    test('thinking path: with the deadline tripped, the loop exits incomplete '
         'with a non-empty answer (never silent)', () async {
       seedRecall();
       var clock = base;
@@ -348,35 +399,52 @@ void main() {
       substrate.onCompletion = () => clock = base.add(const Duration(hours: 5));
 
       final engine = await buildEngine(now: () => clock);
-      final outcome = await runThinking(engine, 'a never-ending deliberation',
-          sessionId: 's-deadline-think');
+      final outcome = await runThinking(
+        engine,
+        'a never-ending deliberation',
+        sessionId: 's-deadline-think',
+      );
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'), isNotEmpty,
-          reason: 'the runaway-stop returns the last best-effort draft');
-      expect(outcome.result!.output<bool>('incomplete'), isTrue,
-          reason: 'the wall-clock runaway-stop is the only incomplete exit');
+      expect(
+        outcome.result!.output<String>('answer'),
+        isNotEmpty,
+        reason: 'the runaway-stop returns the last best-effort draft',
+      );
+      expect(
+        outcome.result!.output<bool>('incomplete'),
+        isTrue,
+        reason: 'the wall-clock runaway-stop is the only incomplete exit',
+      );
     });
   });
 
-  group('T6 the answering prompt carries the todo-discipline block (§ 4 / § 6.6)',
-      () {
-    test('the assembled prompt teaches the todo.* tools', () async {
-      final engine = await buildEngine();
-      substrate.answerTurns = <_Turn>[_Turn.text('plain answer')];
-      substrate.confirmationVerdicts = <String>['DONE'];
+  group(
+    'T6 the answering prompt carries the todo-discipline block (§ 4 / § 6.6)',
+    () {
+      test('the assembled prompt teaches the todo.* tools', () async {
+        final engine = await buildEngine();
+        substrate.answerTurns = <_Turn>[_Turn.text('plain answer')];
+        substrate.confirmationVerdicts = <String>['DONE'];
 
-      await runMemory(engine, 'hello', sessionId: 's-prompt');
+        await runMemory(engine, 'hello', sessionId: 's-prompt');
 
-      // The reminder the request mandates: the prompt must name the todo tools
-      // (with a worked sample the model can copy parameter names from, § 9.1).
-      final prompt = substrate.toolBearingPrompts.last.toLowerCase();
-      expect(prompt, contains('todo.add'),
-          reason: 'the prompt must instruct the model to seed todos');
-      expect(prompt, contains('todo.update'),
-          reason: 'the prompt must instruct the model to mark todos done');
-    });
-  });
+        // The reminder the request mandates: the prompt must name the todo tools
+        // (with a worked sample the model can copy parameter names from, § 9.1).
+        final prompt = substrate.toolBearingPrompts.last.toLowerCase();
+        expect(
+          prompt,
+          contains('todo.add'),
+          reason: 'the prompt must instruct the model to seed todos',
+        );
+        expect(
+          prompt,
+          contains('todo.update'),
+          reason: 'the prompt must instruct the model to mark todos done',
+        );
+      });
+    },
+  );
 }
 
 // ── A scripted, role-aware + tool-capable substrate double ──────────
@@ -444,7 +512,7 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
   String draftFor(int n) => 'draft #$n';
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final role = call.roleId;
     _byRole[role] = (_byRole[role] ?? 0) + 1;
     onCompletion?.call();
@@ -454,8 +522,9 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
 
     if (role == 'evaluator') {
       final idx = _evalIdx++;
-      final verdict =
-          idx < evaluatorVerdicts.length ? evaluatorVerdicts[idx] : defaultVerdict;
+      final verdict = idx < evaluatorVerdicts.length
+          ? evaluatorVerdicts[idx]
+          : defaultVerdict;
       return _text(verdict);
     }
 
@@ -488,7 +557,7 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
     return _text(_cannedFor(role));
   }
 
-  Stream<LlmStreamEvent> _consumeAnswerTurn() {
+  Stream<LlmEvent> _consumeAnswerTurn() {
     if (_answerIdx >= answerTurns.length) {
       return _text('done');
     }
@@ -506,40 +575,37 @@ class _ScriptedSubstrate implements TomBrainSubstrateClient {
     }
   }
 
-  Stream<LlmStreamEvent> _text(String text) =>
-      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        LlmStreamChunk(callId: 'c', text: text),
-        _completed(),
-      ]);
+  Stream<LlmEvent> _text(String text) => Stream<LlmEvent>.fromIterable(
+    <LlmEvent>[LlmTextDelta(text), _completed()],
+  );
 
-  LlmStreamCompleted _completed() => const LlmStreamCompleted(
-        callId: 'c',
-        report: LlmCallReport(
-          providerId: 'p',
-          modelId: 'm',
-          anchorHash: 'a',
-          promptHash: 'pr',
-          tokensIn: 1,
-          tokensOut: 1,
-          retries: 0,
-          wallClockMs: 1,
-        ),
-      );
+  LlmRunCompleted _completed() => const LlmRunCompleted(
+    callId: 'c',
+    report: LlmCallReport(
+      providerId: 'p',
+      modelId: 'm',
+      anchorHash: 'a',
+      promptHash: 'pr',
+      tokensIn: 1,
+      tokensOut: 1,
+      retries: 0,
+      wallClockMs: 1,
+    ),
+  );
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// One scripted memory-path answer turn — the plain-answer [text] the inner
@@ -585,14 +651,14 @@ class _BrainMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -664,8 +730,7 @@ class _BrainMemory implements TomBrainMemory {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -715,6 +780,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

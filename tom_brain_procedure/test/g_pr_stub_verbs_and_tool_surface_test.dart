@@ -98,15 +98,17 @@ void main() {
 
   group('G-PR6-1 the four stubs resolve with a notImplemented header', () {
     for (final verb in _stubVerbKinds.keys) {
-      test('${verb}_v1 resolves at v1 declaring requires: [notImplemented]',
-          () async {
-        final stub = await loadSystem('${verb}_v1');
-        expect(stub.header.id, '${verb}_v1');
-        expect(stub.header.version, 1);
-        // The stub fails loudly through the one engine-native primitive, so it
-        // declares exactly that primitive — nothing more.
-        expect(stub.header.requires, <String>['notImplemented']);
-      });
+      test(
+        '${verb}_v1 resolves at v1 declaring requires: [notImplemented]',
+        () async {
+          final stub = await loadSystem('${verb}_v1');
+          expect(stub.header.id, '${verb}_v1');
+          expect(stub.header.version, 1);
+          // The stub fails loudly through the one engine-native primitive, so it
+          // declares exactly that primitive — nothing more.
+          expect(stub.header.requires, <String>['notImplemented']);
+        },
+      );
     }
   });
 
@@ -118,85 +120,80 @@ void main() {
         // Unlike the no-op `think_v1` stub (which returns a Map and would fail
         // the return-type check), a clear-error stub uses the canonical strict
         // entry-point shape, so the contract validator accepts it whole.
-        expect(
-          () => ContractValidator.shared.validate(stub),
-          returnsNormally,
-        );
+        expect(() => ContractValidator.shared.validate(stub), returnsNormally);
       });
     }
   });
 
   group('G-PR6-3 invoking a stub at top level throws the clear error', () {
     _stubVerbKinds.forEach((verb, kind) {
-      test('$verb surfaces ProcedureNotImplemented, not ProcedureNotFound',
-          () async {
-        final engine = engineFor(<LoadedProcedure>[
-          await loadSystem('${verb}_v1'),
-        ]);
+      test(
+        '$verb surfaces ProcedureNotImplemented, not ProcedureNotFound',
+        () async {
+          final engine = engineFor(<LoadedProcedure>[
+            await loadSystem('${verb}_v1'),
+          ]);
 
-        final outcome = await engine
-            .invoke(ProcedureInvocation(procedureId: '${verb}_v1'))
-            .outcome;
+          final outcome = await engine
+              .invoke(ProcedureInvocation(procedureId: '${verb}_v1'))
+              .outcome;
 
-        // The stub threw, so the run closes errored carrying the typed error.
-        expect(outcome.status, TrailOutcomeStatus.errored);
-        expect(outcome.error, isA<ProcedureNotImplemented>());
-        // Crucially NOT the bare ProcedureNotFound — the stub resolved and ran.
-        expect(outcome.error, isNot(isA<ProcedureNotFound>()));
+          // The stub threw, so the run closes errored carrying the typed error.
+          expect(outcome.status, TrailOutcomeStatus.errored);
+          expect(outcome.error, isA<ProcedureNotImplemented>());
+          // Crucially NOT the bare ProcedureNotFound — the stub resolved and ran.
+          expect(outcome.error, isNot(isA<ProcedureNotFound>()));
 
-        final error = outcome.error! as ProcedureNotImplemented;
-        expect(error.verb, verb);
-        // The message is the fixed, actionable § 5.2.1 contract.
-        expect(error.toString(), contains('${verb}_v1 is a stub'));
-        expect(error.toString(), contains('implement the $kind loop'));
-        expect(error.toString(), contains('$verb()'));
-      });
+          final error = outcome.error! as ProcedureNotImplemented;
+          expect(error.verb, verb);
+          // The message is the fixed, actionable § 5.2.1 contract.
+          expect(error.toString(), contains('${verb}_v1 is a stub'));
+          expect(error.toString(), contains('implement the $kind loop'));
+          expect(error.toString(), contains('$verb()'));
+        },
+      );
     });
   });
 
   group('G-PR7-1 procedure.run drives the real bound engine surface', () {
-    test('runs an existing procedure (think_v1) and surfaces its result',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'caller_v1',
-          '''
+    test(
+      'runs an existing procedure (think_v1) and surfaces its result',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure('caller_v1', '''
 import '$_toolLibrary';
 
 Future<Object?> run(inputs) async {
   return await tool.invoke('procedure.run', {'id': 'think_v1'});
 }
-''',
-        ),
-        await loadSystem('think_v1'),
-      ]);
+'''),
+          await loadSystem('think_v1'),
+        ]);
 
-      final outcome = await engine
-          .invoke(ProcedureInvocation(procedureId: 'caller_v1'))
-          .outcome;
+        final outcome = await engine
+            .invoke(ProcedureInvocation(procedureId: 'caller_v1'))
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      // `tool.invoke` wraps a successful tool call as {ok: true, result: …};
-      // procedure.run's result is {status, outputs}.
-      expect(outcome.result!.output<bool>('ok'), isTrue);
-      final result = outcome.result!.output<Map<Object?, Object?>>('result')!;
-      expect(result['status'], 'succeeded');
-      expect((result['outputs']! as Map)['stub'], 'think_v1');
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        // `tool.invoke` wraps a successful tool call as {ok: true, result: …};
+        // procedure.run's result is {status, outputs}.
+        expect(outcome.result!.output<bool>('ok'), isTrue);
+        final result = outcome.result!.output<Map<Object?, Object?>>('result')!;
+        expect(result['status'], 'succeeded');
+        expect((result['outputs']! as Map)['stub'], 'think_v1');
+      },
+    );
 
     test('routing a stub surfaces a failed status (throw swallowed on the '
         'tool path)', () async {
       final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'caller_v1',
-          '''
+        _procedure('caller_v1', '''
 import '$_toolLibrary';
 
 Future<Object?> run(inputs) async {
   return await tool.invoke('procedure.run', {'id': 'decide_v1'});
 }
-''',
-        ),
+'''),
         await loadSystem('decide_v1'),
       ]);
 
@@ -212,87 +209,90 @@ Future<Object?> run(inputs) async {
     });
   });
 
-  group('G-PR7-2 procedure.list (bound surface) lists the shipped procedures',
-      () {
-    test('the shipped procedure ids surface through the tool', () async {
-      final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'caller_v1',
-          '''
+  group(
+    'G-PR7-2 procedure.list (bound surface) lists the shipped procedures',
+    () {
+      test('the shipped procedure ids surface through the tool', () async {
+        final engine = engineFor(<LoadedProcedure>[
+          _procedure('caller_v1', '''
 import '$_toolLibrary';
 
 Future<Object?> run(inputs) async {
   return await tool.invoke('procedure.list', {});
 }
-''',
-        ),
-        // plan_v1 is the real planning loop now, but still a listable shipped
-        // procedure; the two remaining stubs round out the set.
-        await loadSystem('plan_v1'),
-        for (final verb in _stubVerbKinds.keys) await loadSystem('${verb}_v1'),
-      ]);
+'''),
+          // plan_v1 is the real planning loop now, but still a listable shipped
+          // procedure; the two remaining stubs round out the set.
+          await loadSystem('plan_v1'),
+          for (final verb in _stubVerbKinds.keys)
+            await loadSystem('${verb}_v1'),
+        ]);
 
-      final outcome = await engine
-          .invoke(ProcedureInvocation(procedureId: 'caller_v1'))
-          .outcome;
+        final outcome = await engine
+            .invoke(ProcedureInvocation(procedureId: 'caller_v1'))
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<bool>('ok'), isTrue);
-      final result = outcome.result!.output<Map<Object?, Object?>>('result')!;
-      final procedures = (result['procedures']! as List)
-          .map((p) => (p as Map)['id'])
-          .toSet();
-      expect(
-        procedures,
-        containsAll(<String>['plan_v1', 'critique_v1', 'decide_v1']),
-      );
-    });
-  });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(outcome.result!.output<bool>('ok'), isTrue);
+        final result = outcome.result!.output<Map<Object?, Object?>>('result')!;
+        final procedures = (result['procedures']! as List)
+            .map((p) => (p as Map)['id'])
+            .toSet();
+        expect(
+          procedures,
+          containsAll(<String>['plan_v1', 'critique_v1', 'decide_v1']),
+        );
+      });
+    },
+  );
 
-  group('G-PR7-3 the explicit verb tools are registered and route to <verb>_v1',
-      () {
-    test('procedure.plan / critique / decide register under the '
-        'procedure group', () {
-      final registry = ToolRegistry();
-      registerBasicTools(registry);
-      for (final verb in _stubVerbKinds.keys) {
-        final tool = registry.lookup('procedure.$verb');
-        expect(tool, isNotNull, reason: 'missing tool procedure.$verb');
-        expect(tool!.group, ToolGroup.procedure);
-        expect(tool.readOnly, isFalse);
-      }
-    });
+  group(
+    'G-PR7-3 the explicit verb tools are registered and route to <verb>_v1',
+    () {
+      test('procedure.plan / critique / decide register under the '
+          'procedure group', () {
+        final registry = ToolRegistry();
+        registerBasicTools(registry);
+        for (final verb in _stubVerbKinds.keys) {
+          final tool = registry.lookup('procedure.$verb');
+          expect(tool, isNotNull, reason: 'missing tool procedure.$verb');
+          expect(tool!.group, ToolGroup.procedure);
+          expect(tool.readOnly, isFalse);
+        }
+      });
 
-    test('procedure.decide routes to decide_v1 through the engine surface',
+      test(
+        'procedure.decide routes to decide_v1 through the engine surface',
         () async {
-      // Through the real engine: invoking procedure.decide reaches the
-      // decide_v1 stub, which fails loudly — the explicit tool is a thin alias
-      // for procedure.run with the id fixed to decide_v1.
-      final engine = engineFor(<LoadedProcedure>[
-        _procedure(
-          'caller_v1',
-          '''
+          // Through the real engine: invoking procedure.decide reaches the
+          // decide_v1 stub, which fails loudly — the explicit tool is a thin alias
+          // for procedure.run with the id fixed to decide_v1.
+          final engine = engineFor(<LoadedProcedure>[
+            _procedure('caller_v1', '''
 import '$_toolLibrary';
 
 Future<Object?> run(inputs) async {
   return await tool.invoke('procedure.decide', {});
 }
-''',
-        ),
-        await loadSystem('decide_v1'),
-      ]);
+'''),
+            await loadSystem('decide_v1'),
+          ]);
 
-      final outcome = await engine
-          .invoke(ProcedureInvocation(procedureId: 'caller_v1'))
-          .outcome;
+          final outcome = await engine
+              .invoke(ProcedureInvocation(procedureId: 'caller_v1'))
+              .outcome;
 
-      expect(outcome.result!.output<bool>('ok'), isTrue);
-      final result = outcome.result!.output<Map<Object?, Object?>>('result')!;
-      // decide_v1 is still a clear-error stub: the run fails (the throw is
-      // swallowed on the tool path), proving the route reached decide_v1.
-      expect(result['status'], 'failed');
-    });
-  });
+          expect(outcome.result!.output<bool>('ok'), isTrue);
+          final result = outcome.result!.output<Map<Object?, Object?>>(
+            'result',
+          )!;
+          // decide_v1 is still a clear-error stub: the run fails (the throw is
+          // swallowed on the tool path), proving the route reached decide_v1.
+          expect(result['status'], 'failed');
+        },
+      );
+    },
+  );
 }
 
 /// Builds a [LoadedProcedure] from [body], wrapping it in a minimal valid
@@ -300,7 +300,8 @@ Future<Object?> run(inputs) async {
 /// callers do not declare `requires` because the engine runtime runs only the
 /// `SandboxValidator`, not the stricter `ContractValidator`.
 LoadedProcedure _procedure(String id, String body, {int version = 1}) {
-  final source = '''
+  final source =
+      '''
 /// @procedure
 /// id: $id
 /// version: $version
@@ -324,23 +325,22 @@ $body
 // `noSuchMethod`. Copied from the C.40 sugar suite.
 class _InertSubstrate implements TomBrainSubstrateClient {
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      StreamController<LlmStreamEvent>().stream;
+  Stream<LlmEvent> completeStream(LlmCall call) =>
+      StreamController<LlmEvent>().stream;
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A stateful in-memory `TomBrainMemoryClient` ─────────────────────
@@ -420,12 +420,10 @@ class _StatefulMemory implements TomBrainMemoryClient {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -475,6 +473,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

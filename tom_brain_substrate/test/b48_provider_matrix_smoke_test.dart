@@ -112,14 +112,18 @@ void main() {
 
       test('every conformance file exists under test/', () {
         final dir = Directory('test');
-        expect(dir.existsSync(), isTrue,
-            reason: 'B.48 must be run from the package root');
+        expect(
+          dir.existsSync(),
+          isTrue,
+          reason: 'B.48 must be run from the package root',
+        );
         for (final name in expected) {
           final file = File('test/$name');
           expect(
             file.existsSync(),
             isTrue,
-            reason: 'Conformance file "$name" is missing — the matrix '
+            reason:
+                'Conformance file "$name" is missing — the matrix '
                 'artefact at _ai/quests/tom_brain/provider_matrix_smoke.md '
                 'cites it as part of the "conformance suite". A rename '
                 'must land in both places at once.',
@@ -158,25 +162,29 @@ void main() {
         expect(report.anchorHash, AnchorRegistry.currentHash);
       });
 
-      test('completeStream: end-to-end via in-process facade — anchored',
-          () async {
-        final fixture = _buildStubFacade();
-        final TomBrainSubstrateClient client = fixture.client;
-        addTearDown(client.close);
-        await client.open(_minimalStubConfig());
+      test(
+        'completeStream: end-to-end via in-process facade — anchored',
+        () async {
+          final fixture = _buildStubFacade();
+          final TomBrainSubstrateClient client = fixture.client;
+          addTearDown(client.close);
+          await client.open(_minimalStubConfig());
 
-        final events = await client.completeStream(_assistantCall()).toList();
+          final events = await client.completeStream(_assistantCall()).toList();
 
-        expect(events, isNotEmpty);
-        final last = events.last;
-        if (last is LlmStreamCompleted) {
-          expect(last.report.providerId, 'stub');
-          expect(last.report.anchorHash, AnchorRegistry.currentHash);
-        } else {
-          fail('Stub matrix row must terminate with LlmStreamCompleted, '
-              'got: $last');
-        }
-      });
+          expect(events, isNotEmpty);
+          final last = events.last;
+          if (last is LlmRunCompleted) {
+            expect(last.report.providerId, 'stub');
+            expect(last.report.anchorHash, AnchorRegistry.currentHash);
+          } else {
+            fail(
+              'Stub matrix row must terminate with LlmRunCompleted, '
+              'got: $last',
+            );
+          }
+        },
+      );
     });
 
     // ─── Ollama matrix row (skipped when daemon unreachable) ──────
@@ -190,22 +198,18 @@ void main() {
       final probe = _OllamaProbe.detect();
       final skipReason = probe.reachable ? null : probe.unreachableReason;
 
-      test(
-        'complete: end-to-end via in-process facade — anchored',
-        () async {
-          final fixture = _buildOllamaFacade(probe);
-          final TomBrainSubstrateClient client = fixture.client;
-          addTearDown(client.close);
-          await client.open(_minimalOllamaConfig(probe.model));
+      test('complete: end-to-end via in-process facade — anchored', () async {
+        final fixture = _buildOllamaFacade(probe);
+        final TomBrainSubstrateClient client = fixture.client;
+        addTearDown(client.close);
+        await client.open(_minimalOllamaConfig(probe.model));
 
-          final report = await client.complete(_assistantCall());
+        final report = await client.complete(_assistantCall());
 
-          expect(report.providerId, 'ollama');
-          expect(report.modelId, isNotEmpty);
-          expect(report.anchorHash, AnchorRegistry.currentHash);
-        },
-        skip: skipReason,
-      );
+        expect(report.providerId, 'ollama');
+        expect(report.modelId, isNotEmpty);
+        expect(report.anchorHash, AnchorRegistry.currentHash);
+      }, skip: skipReason);
 
       test(
         'completeStream: end-to-end via in-process facade — anchored',
@@ -215,19 +219,20 @@ void main() {
           addTearDown(client.close);
           await client.open(_minimalOllamaConfig(probe.model));
 
-          final events =
-              await client.completeStream(_assistantCall()).toList();
+          final events = await client.completeStream(_assistantCall()).toList();
 
           expect(events, isNotEmpty);
           final last = events.last;
-          if (last is LlmStreamCompleted) {
+          if (last is LlmRunCompleted) {
             expect(last.report.providerId, 'ollama');
             expect(last.report.anchorHash, AnchorRegistry.currentHash);
-          } else if (last is LlmStreamFailed) {
+          } else if (last is LlmRunFailed) {
             fail('Ollama matrix row stream failed: ${last.failure}');
           } else {
-            fail('Ollama matrix row must terminate with LlmStreamCompleted, '
-                'got: $last');
+            fail(
+              'Ollama matrix row must terminate with LlmRunCompleted, '
+              'got: $last',
+            );
           }
         },
         skip: skipReason,
@@ -281,27 +286,27 @@ _StubFixture _buildStubFacade() {
 }
 
 SubstrateConfig _minimalStubConfig() => SubstrateConfig(
-      providers: const <ProviderProfile>[],
-      roleRoutes: const <String, List<RoleRouteEntryConfig>>{
-        'assistant_to_user': <RoleRouteEntryConfig>[
-          RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
-        ],
-      },
-      embedding: const EmbeddingChoice(
-        providerId: 'stub',
-        model: 'nomic-embed-text',
-        dims: 4,
-        normalize: true,
-      ),
-      webSearch: const WebSearchConfig(
-        defaultProvider: 'duckduckgo',
-        providers: <String, WebSearchProviderConfig>{
-          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
-        },
-      ),
-      webFetch: const WebFetchConfig(),
-      mcpClient: const McpClientConfigBlock(),
-    );
+  providers: const <ProviderProfile>[],
+  roleRoutes: const <String, List<RoleRouteEntryConfig>>{
+    'assistant_to_user': <RoleRouteEntryConfig>[
+      RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
+    ],
+  },
+  embedding: const EmbeddingChoice(
+    providerId: 'stub',
+    model: 'nomic-embed-text',
+    dims: 4,
+    normalize: true,
+  ),
+  webSearch: const WebSearchConfig(
+    defaultProvider: 'duckduckgo',
+    providers: <String, WebSearchProviderConfig>{
+      'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
+    },
+  ),
+  webFetch: const WebFetchConfig(),
+  mcpClient: const McpClientConfigBlock(),
+);
 
 // ─── Ollama fixture ───────────────────────────────────────────────
 
@@ -338,38 +343,38 @@ _OllamaFixture _buildOllamaFacade(_OllamaProbe probe) {
 }
 
 SubstrateConfig _minimalOllamaConfig(String model) => SubstrateConfig(
-      providers: const <ProviderProfile>[],
-      roleRoutes: <String, List<RoleRouteEntryConfig>>{
-        'assistant_to_user': <RoleRouteEntryConfig>[
-          RoleRouteEntryConfig(providerId: 'ollama', model: model),
-        ],
-      },
-      embedding: const EmbeddingChoice(
-        providerId: 'ollama',
-        model: 'nomic-embed-text',
-        dims: 768,
-        normalize: true,
-      ),
-      webSearch: const WebSearchConfig(
-        defaultProvider: 'duckduckgo',
-        providers: <String, WebSearchProviderConfig>{
-          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
-        },
-      ),
-      webFetch: const WebFetchConfig(),
-      mcpClient: const McpClientConfigBlock(),
-    );
+  providers: const <ProviderProfile>[],
+  roleRoutes: <String, List<RoleRouteEntryConfig>>{
+    'assistant_to_user': <RoleRouteEntryConfig>[
+      RoleRouteEntryConfig(providerId: 'ollama', model: model),
+    ],
+  },
+  embedding: const EmbeddingChoice(
+    providerId: 'ollama',
+    model: 'nomic-embed-text',
+    dims: 768,
+    normalize: true,
+  ),
+  webSearch: const WebSearchConfig(
+    defaultProvider: 'duckduckgo',
+    providers: <String, WebSearchProviderConfig>{
+      'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
+    },
+  ),
+  webFetch: const WebFetchConfig(),
+  mcpClient: const McpClientConfigBlock(),
+);
 
 LlmCall _assistantCall() => LlmCall(
-      roleId: 'assistant_to_user',
-      inputs: const <String, Object?>{'question': 'hi'},
-      budget: Budget(
-        wallClockMs: 30000,
-        tokenSpend: 256,
-        toolCalls: 1,
-        memoryWrites: 0,
-      ),
-    );
+  roleId: 'assistant_to_user',
+  inputs: const <String, Object?>{'question': 'hi'},
+  budget: Budget(
+    wallClockMs: 30000,
+    tokenSpend: 256,
+    toolCalls: 1,
+    memoryWrites: 0,
+  ),
+);
 
 // ─── Ollama reachability probe ────────────────────────────────────
 
@@ -414,9 +419,7 @@ class _OllamaProbe {
         ? parsed.port
         : (parsed.scheme == 'https' ? 443 : 80);
     final model = env['TOM_BRAIN_OLLAMA_MODEL'] ?? 'llama3.2:1b';
-    final ensuredUri = parsed.hasPort
-        ? parsed
-        : parsed.replace(port: port);
+    final ensuredUri = parsed.hasPort ? parsed : parsed.replace(port: port);
 
     bool ok = false;
     String? reason;
@@ -425,7 +428,8 @@ class _OllamaProbe {
       socket?.destroy();
       ok = socket != null;
       if (!ok) {
-        reason = 'no TCP connect to $host:$port within 2s (Ollama daemon not '
+        reason =
+            'no TCP connect to $host:$port within 2s (Ollama daemon not '
             'running; start with `ollama serve` to record this row green)';
       }
     } catch (e) {

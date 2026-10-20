@@ -35,7 +35,7 @@
 //        - LLM (`complete`, `completeStream`) — buffered + streaming,
 //          happy path, role coverage (×5), and the failure shapes
 //          named in the consumer contract: `RoleTemplateNotFound`,
-//          `NoRouteAvailable`, `AnchorViolation`, `LlmStreamFailed`,
+//          `NoRouteAvailable`, `AnchorViolation`, `LlmRunFailed`,
 //          and cancellation.
 //        - Embedding (`embed`, `embedBatch`).
 //        - Web tools (`webSearch`, `webFetch`) — happy path + each
@@ -137,10 +137,7 @@ void main() {
           client.embedBatch(const <String>['x']),
           throwsA(isA<StateError>()),
         );
-        await expectLater(
-          client.webSearch('q'),
-          throwsA(isA<StateError>()),
-        );
+        await expectLater(client.webSearch('q'), throwsA(isA<StateError>()));
         await expectLater(
           client.webFetch(Uri.parse('https://example.com/')),
           throwsA(isA<StateError>()),
@@ -244,8 +241,9 @@ void main() {
           inner: StubLlmProvider(id: 'stub', defaultModel: 'stub-model'),
           rewrittenHash: 'sha256:dead',
         );
-        final TomBrainSubstrateClient client =
-            await _openClient(provider: tampering);
+        final TomBrainSubstrateClient client = await _openClient(
+          provider: tampering,
+        );
         addTearDown(client.close);
         await expectLater(
           client.complete(_callFor('assistant_to_user')),
@@ -266,20 +264,19 @@ void main() {
           );
           addTearDown(client.close);
 
-          final events =
-              await client.completeStream(_callFor(roleId)).toList();
+          final events = await client.completeStream(_callFor(roleId)).toList();
 
-          expect(events.first, isA<LlmStreamStarted>());
-          expect(events.last, isA<LlmStreamCompleted>());
+          expect(events.first, isA<LlmRunStarted>());
+          expect(events.last, isA<LlmRunCompleted>());
           // At least one chunk between Started and Completed.
           expect(
-            events.whereType<LlmStreamChunk>(),
+            events.whereType<LlmTextDelta>(),
             isNotEmpty,
             reason: 'role $roleId did not emit any text chunks',
           );
 
-          final started = events.first as LlmStreamStarted;
-          final completed = events.last as LlmStreamCompleted;
+          final started = events.first as LlmRunStarted;
+          final completed = events.last as LlmRunCompleted;
           expect(started.providerId, 'stub');
           expect(started.modelId, 'stub-model');
           expect(completed.report.anchorHash, AnchorRegistry.currentHash);
@@ -294,18 +291,20 @@ void main() {
     // ═══════════════════════════════════════════════════════════════
 
     group('completeStream — failure paths', () {
-      test('unknown role surfaces RoleTemplateNotFound synchronously',
-          () async {
-        final TomBrainSubstrateClient client = await _openClient();
-        addTearDown(client.close);
-        expect(
-          () => client.completeStream(_callFor('not_a_role')),
-          throwsA(isA<RoleTemplateNotFound>()),
-        );
-      });
+      test(
+        'unknown role surfaces RoleTemplateNotFound synchronously',
+        () async {
+          final TomBrainSubstrateClient client = await _openClient();
+          addTearDown(client.close);
+          expect(
+            () => client.completeStream(_callFor('not_a_role')),
+            throwsA(isA<RoleTemplateNotFound>()),
+          );
+        },
+      );
 
       test(
-        'always-failing provider → stream terminates with LlmStreamFailed',
+        'always-failing provider → stream terminates with LlmRunFailed',
         () async {
           final TomBrainSubstrateClient client = await _openClient(
             provider: StubLlmProvider.alwaysFails(
@@ -318,18 +317,18 @@ void main() {
               .completeStream(_callFor('assistant_to_user'))
               .toList();
           expect(events, isNotEmpty);
-          expect(events.last, isA<LlmStreamFailed>());
+          expect(events.last, isA<LlmRunFailed>());
         },
       );
 
-      test('anchor-tampering provider → AnchorViolation on stream',
-          () async {
+      test('anchor-tampering provider → AnchorViolation on stream', () async {
         final tampering = _AnchorTamperingProvider(
           inner: StubLlmProvider(id: 'stub', defaultModel: 'stub-model'),
           rewrittenHash: 'sha256:dead',
         );
-        final TomBrainSubstrateClient client =
-            await _openClient(provider: tampering);
+        final TomBrainSubstrateClient client = await _openClient(
+          provider: tampering,
+        );
         addTearDown(client.close);
         await expectLater(
           client.completeStream(_callFor('assistant_to_user')).toList(),
@@ -338,16 +337,16 @@ void main() {
       });
 
       test(
-        'pre-cancelled token → stream terminates without LlmStreamCompleted',
+        'pre-cancelled token → stream terminates without LlmRunCompleted',
         () async {
           // The contract paragraph in `tom_brain_substrate_client.dart`
           // for `completeStream` says cancellation aborts and surfaces
-          // either `LlmStreamFailed(cancelled_by_consumer)` or — at the
+          // either `LlmRunFailed(cancelled_by_consumer)` or — at the
           // facade boundary — propagates the router's
           // `NoRouteAvailable(lastClass: cancelled_by_consumer)` as a
           // stream error. Either shape satisfies the surface contract;
           // the conformance gate is that the stream must not complete
-          // with `LlmStreamCompleted`.
+          // with `LlmRunCompleted`.
           final cts = CancellationTokenSource();
           cts.cancel();
 
@@ -364,7 +363,7 @@ void main() {
           var sawCompleted = false;
           try {
             await for (final ev in client.completeStream(call)) {
-              if (ev is LlmStreamCompleted) sawCompleted = true;
+              if (ev is LlmRunCompleted) sawCompleted = true;
             }
           } on Object {
             // Acceptable terminal shape.
@@ -372,7 +371,7 @@ void main() {
           expect(
             sawCompleted,
             isFalse,
-            reason: 'pre-cancelled call must not emit LlmStreamCompleted',
+            reason: 'pre-cancelled call must not emit LlmRunCompleted',
           );
         },
       );
@@ -448,8 +447,9 @@ void main() {
               rank: 2,
             ),
           ];
-        final TomBrainSubstrateClient client =
-            await _openClient(webSearch: search);
+        final TomBrainSubstrateClient client = await _openClient(
+          webSearch: search,
+        );
         addTearDown(client.close);
 
         final result = await client.webSearch('hello world');
@@ -470,8 +470,9 @@ void main() {
                 rank: i + 1,
               ),
           ];
-        final TomBrainSubstrateClient client =
-            await _openClient(webSearch: search);
+        final TomBrainSubstrateClient client = await _openClient(
+          webSearch: search,
+        );
         addTearDown(client.close);
 
         final result = await client.webSearch(
@@ -487,33 +488,37 @@ void main() {
     // ═══════════════════════════════════════════════════════════════
 
     group('webFetch', () {
-      test('text body — returns text result and emits WebFetchCompleted',
-          () async {
-        final fetch = _ScriptedWebFetch()
-          ..primedResult = WebFetchResult(
-            url: Uri.parse('https://example.com/'),
-            status: 200,
-            contentType: 'text/plain',
-            text: 'hello',
+      test(
+        'text body — returns text result and emits WebFetchCompleted',
+        () async {
+          final fetch = _ScriptedWebFetch()
+            ..primedResult = WebFetchResult(
+              url: Uri.parse('https://example.com/'),
+              status: 200,
+              contentType: 'text/plain',
+              text: 'hello',
+            );
+          final TomBrainSubstrateClient client = await _openClient(
+            webFetch: fetch,
           );
-        final TomBrainSubstrateClient client =
-            await _openClient(webFetch: fetch);
-        addTearDown(client.close);
+          addTearDown(client.close);
 
-        final events = <SubstrateEvent>[];
-        final sub = client.events().listen(events.add);
-        addTearDown(sub.cancel);
+          final events = <SubstrateEvent>[];
+          final sub = client.events().listen(events.add);
+          addTearDown(sub.cancel);
 
-        final result =
-            await client.webFetch(Uri.parse('https://example.com/'));
-        expect(result.status, 200);
-        expect(result.text, 'hello');
-        expect(result.json, isNull);
-        expect(result.binaryMeta, isNull);
-        await Future<void>.delayed(Duration.zero);
-        expect(events.whereType<WebFetchCompleted>(), hasLength(1));
-        expect(client.stats().webFetches, 1);
-      });
+          final result = await client.webFetch(
+            Uri.parse('https://example.com/'),
+          );
+          expect(result.status, 200);
+          expect(result.text, 'hello');
+          expect(result.json, isNull);
+          expect(result.binaryMeta, isNull);
+          await Future<void>.delayed(Duration.zero);
+          expect(events.whereType<WebFetchCompleted>(), hasLength(1));
+          expect(client.stats().webFetches, 1);
+        },
+      );
 
       test('json body — json non-null, text+binaryMeta null', () async {
         final fetch = _ScriptedWebFetch()
@@ -523,11 +528,13 @@ void main() {
             contentType: 'application/json',
             json: <String, Object?>{'ok': true},
           );
-        final TomBrainSubstrateClient client =
-            await _openClient(webFetch: fetch);
+        final TomBrainSubstrateClient client = await _openClient(
+          webFetch: fetch,
+        );
         addTearDown(client.close);
-        final result =
-            await client.webFetch(Uri.parse('https://api.example.com/x'));
+        final result = await client.webFetch(
+          Uri.parse('https://api.example.com/x'),
+        );
         expect(result.text, isNull);
         expect(result.json, isA<Map<String, Object?>>());
         expect(result.binaryMeta, isNull);
@@ -544,11 +551,13 @@ void main() {
               contentLength: 1024,
             ),
           );
-        final TomBrainSubstrateClient client =
-            await _openClient(webFetch: fetch);
+        final TomBrainSubstrateClient client = await _openClient(
+          webFetch: fetch,
+        );
         addTearDown(client.close);
-        final result =
-            await client.webFetch(Uri.parse('https://example.com/x.bin'));
+        final result = await client.webFetch(
+          Uri.parse('https://example.com/x.bin'),
+        );
         expect(result.text, isNull);
         expect(result.json, isNull);
         expect(result.binaryMeta, isNotNull);
@@ -564,11 +573,13 @@ void main() {
             text: 'first part',
             truncated: true,
           );
-        final TomBrainSubstrateClient client =
-            await _openClient(webFetch: fetch);
+        final TomBrainSubstrateClient client = await _openClient(
+          webFetch: fetch,
+        );
         addTearDown(client.close);
-        final result =
-            await client.webFetch(Uri.parse('https://example.com/big'));
+        final result = await client.webFetch(
+          Uri.parse('https://example.com/big'),
+        );
         expect(result.truncated, isTrue);
       });
 
@@ -579,8 +590,9 @@ void main() {
             contentType: 'application/pdf',
             rawContentType: 'application/pdf',
           );
-        final TomBrainSubstrateClient client =
-            await _openClient(webFetch: fetch);
+        final TomBrainSubstrateClient client = await _openClient(
+          webFetch: fetch,
+        );
         addTearDown(client.close);
         await expectLater(
           client.webFetch(Uri.parse('https://example.com/doc.pdf')),
@@ -596,8 +608,9 @@ void main() {
             contentType: 'text/plain',
             bodyExcerpt: 'not found',
           );
-        final TomBrainSubstrateClient client =
-            await _openClient(webFetch: fetch);
+        final TomBrainSubstrateClient client = await _openClient(
+          webFetch: fetch,
+        );
         addTearDown(client.close);
         await expectLater(
           client.webFetch(Uri.parse('https://example.com/missing')),
@@ -611,17 +624,19 @@ void main() {
     // ═══════════════════════════════════════════════════════════════
 
     group('mcpClient', () {
-      test('same endpoint id → identical instance; different id → not',
-          () async {
-        final TomBrainSubstrateClient client = await _openClient();
-        addTearDown(client.close);
-        final a1 = client.mcpClient(const McpEndpoint('memory'));
-        final a2 = client.mcpClient(const McpEndpoint('memory'));
-        final b = client.mcpClient(const McpEndpoint('tools'));
-        expect(identical(a1, a2), isTrue);
-        expect(identical(a1, b), isFalse);
-        expect(client.stats().mcpCalls, 2);
-      });
+      test(
+        'same endpoint id → identical instance; different id → not',
+        () async {
+          final TomBrainSubstrateClient client = await _openClient();
+          addTearDown(client.close);
+          final a1 = client.mcpClient(const McpEndpoint('memory'));
+          final a2 = client.mcpClient(const McpEndpoint('memory'));
+          final b = client.mcpClient(const McpEndpoint('tools'));
+          expect(identical(a1, a2), isTrue);
+          expect(identical(a1, b), isFalse);
+          expect(client.stats().mcpCalls, 2);
+        },
+      );
     });
 
     // ═══════════════════════════════════════════════════════════════
@@ -629,28 +644,30 @@ void main() {
     // ═══════════════════════════════════════════════════════════════
 
     group('events / stats', () {
-      test('events() is broadcast — late subscribers miss prior events',
-          () async {
-        final TomBrainSubstrateClient client = await _openClient();
-        addTearDown(client.close);
+      test(
+        'events() is broadcast — late subscribers miss prior events',
+        () async {
+          final TomBrainSubstrateClient client = await _openClient();
+          addTearDown(client.close);
 
-        // First call happens before subscribing.
-        await client.complete(_callFor('assistant_to_user'));
-        await Future<void>.delayed(Duration.zero);
+          // First call happens before subscribing.
+          await client.complete(_callFor('assistant_to_user'));
+          await Future<void>.delayed(Duration.zero);
 
-        final lateEvents = <SubstrateEvent>[];
-        final sub = client.events().listen(lateEvents.add);
-        addTearDown(sub.cancel);
+          final lateEvents = <SubstrateEvent>[];
+          final sub = client.events().listen(lateEvents.add);
+          addTearDown(sub.cancel);
 
-        await client.complete(_callFor('assistant_to_user'));
-        await Future<void>.delayed(Duration.zero);
+          await client.complete(_callFor('assistant_to_user'));
+          await Future<void>.delayed(Duration.zero);
 
-        expect(
-          lateEvents.whereType<LlmCallCompleted>(),
-          hasLength(1),
-          reason: 'broadcast subscribers must only see future events',
-        );
-      });
+          expect(
+            lateEvents.whereType<LlmCallCompleted>(),
+            hasLength(1),
+            reason: 'broadcast subscribers must only see future events',
+          );
+        },
+      );
 
       test('stats() reflects activity across surfaces', () async {
         final TomBrainSubstrateClient client = await _openClient();
@@ -755,50 +772,44 @@ Future<TomBrainSubstrateClient> _openClient({
 /// Minimal config that opens cleanly for the supplied [roles].
 SubstrateConfig _minimalConfig({
   Iterable<String> roles = const <String>['assistant_to_user'],
-}) =>
-    _configWithRoutes(<String, List<RoleRouteEntryConfig>>{
-      for (final roleId in roles)
-        roleId: const <RoleRouteEntryConfig>[
-          RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
-        ],
-    });
+}) => _configWithRoutes(<String, List<RoleRouteEntryConfig>>{
+  for (final roleId in roles)
+    roleId: const <RoleRouteEntryConfig>[
+      RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
+    ],
+});
 
 /// Variant of [_minimalConfig] that lets callers inject an arbitrary
 /// (possibly invalid) route map.
 SubstrateConfig _configWithRoutes(
   Map<String, List<RoleRouteEntryConfig>> roleRoutes,
-) =>
-    SubstrateConfig(
-      providers: const <ProviderProfile>[],
-      roleRoutes: roleRoutes,
-      embedding: const EmbeddingChoice(
-        providerId: 'stub',
-        model: 'nomic-embed-text',
-        dims: 768,
-        normalize: true,
-      ),
-      webSearch: const WebSearchConfig(
-        defaultProvider: 'duckduckgo',
-        providers: <String, WebSearchProviderConfig>{
-          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
-        },
-      ),
-      webFetch: const WebFetchConfig(),
-      mcpClient: const McpClientConfigBlock(),
-    );
+) => SubstrateConfig(
+  providers: const <ProviderProfile>[],
+  roleRoutes: roleRoutes,
+  embedding: const EmbeddingChoice(
+    providerId: 'stub',
+    model: 'nomic-embed-text',
+    dims: 768,
+    normalize: true,
+  ),
+  webSearch: const WebSearchConfig(
+    defaultProvider: 'duckduckgo',
+    providers: <String, WebSearchProviderConfig>{
+      'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
+    },
+  ),
+  webFetch: const WebFetchConfig(),
+  mcpClient: const McpClientConfigBlock(),
+);
 
-Budget _budget() => Budget(
-      wallClockMs: 5000,
-      tokenSpend: 1000,
-      toolCalls: 1,
-      memoryWrites: 0,
-    );
+Budget _budget() =>
+    Budget(wallClockMs: 5000, tokenSpend: 1000, toolCalls: 1, memoryWrites: 0);
 
 LlmCall _callFor(String roleId) => LlmCall(
-      roleId: roleId,
-      inputs: const <String, Object?>{'question': 'hi'},
-      budget: _budget(),
-    );
+  roleId: roleId,
+  inputs: const <String, Object?>{'question': 'hi'},
+  budget: _budget(),
+);
 
 // ═════════════════════════════════════════════════════════════════════
 // Test doubles
@@ -873,11 +884,7 @@ final class _ScriptedWebSearch implements WebSearch {
     final capped = primedHits.length > options.k
         ? primedHits.sublist(0, options.k)
         : primedHits;
-    return WebSearchResult(
-      provider: 'stub-search',
-      query: query,
-      hits: capped,
-    );
+    return WebSearchResult(provider: 'stub-search', query: query, hits: capped);
   }
 
   @override
@@ -900,7 +907,8 @@ final class _ScriptedWebFetch implements WebFetch {
     WebFetchOptions options = WebFetchOptions.empty,
   }) async {
     if (failureToThrow != null) throw failureToThrow!;
-    final base = primedResult ??
+    final base =
+        primedResult ??
         WebFetchResult(
           url: url,
           status: 200,
@@ -926,57 +934,53 @@ final class _ScriptedWebFetch implements WebFetch {
 /// `anchorHash` before returning. Used to drive the contract paragraph
 /// "a report whose anchorHash is not the current registry hash is
 /// AnchorViolation".
-final class _AnchorTamperingProvider implements LlmProvider {
+final class _AnchorTamperingProvider extends LlmProvider {
   final LlmProvider inner;
   final String rewrittenHash;
 
-  _AnchorTamperingProvider({
-    required this.inner,
-    required this.rewrittenHash,
-  });
+  _AnchorTamperingProvider({required this.inner, required this.rewrittenHash});
 
   @override
   String get id => inner.id;
 
   LlmCallReport _rewrite(LlmCallReport r) => LlmCallReport(
-        providerId: r.providerId,
-        modelId: r.modelId,
-        anchorHash: rewrittenHash,
-        promptHash: r.promptHash,
-        tokensIn: r.tokensIn,
-        tokensOut: r.tokensOut,
-        retries: r.retries,
-        wallClockMs: r.wallClockMs,
-        cost: r.cost,
-        templateSha: r.templateSha,
-        notes: r.notes,
-      );
+    providerId: r.providerId,
+    modelId: r.modelId,
+    anchorHash: rewrittenHash,
+    promptHash: r.promptHash,
+    tokensIn: r.tokensIn,
+    tokensOut: r.tokensOut,
+    retries: r.retries,
+    wallClockMs: r.wallClockMs,
+    cost: r.cost,
+    templateSha: r.templateSha,
+    notes: r.notes,
+  );
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
-    final r = await inner.complete(prompt, options);
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
+    final r = await inner.complete(
+      LlmRequest(prompt: prompt, options: options),
+    );
     return _rewrite(r);
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
-    await for (final ev in inner.completeStream(prompt, options)) {
-      if (ev is LlmStreamCompleted) {
-        yield LlmStreamCompleted(
-          callId: ev.callId,
-          report: _rewrite(ev.report),
-        );
-      } else if (ev is LlmStreamFailed) {
-        yield LlmStreamFailed(
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
+    await for (final ev in inner.run(
+      LlmRequest(prompt: prompt, options: options),
+    )) {
+      if (ev is LlmRunCompleted) {
+        yield LlmRunCompleted(callId: ev.callId, report: _rewrite(ev.report));
+      } else if (ev is LlmRunFailed) {
+        yield LlmRunFailed(
           callId: ev.callId,
           failure: ev.failure,
-          report: _rewrite(ev.report),
+          report: _rewrite(ev.report!),
         );
       } else {
         yield ev;

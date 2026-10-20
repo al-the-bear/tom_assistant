@@ -61,10 +61,10 @@ final class SmokeSubstrate implements TomBrainSubstrateClient {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     lastPrompt = call.inputs['prompt'];
     // A run expects at least one answer chunk: the procedure concatenates the
-    // emitted [LlmStreamChunk] texts into the answer, and an empty stream would
+    // emitted [LlmTextDelta] texts into the answer, and an empty stream would
     // yield an empty answer (and starve a consumer waiting on a first chunk).
     // The default `['ok']` satisfies this; guard against a caller clearing it.
     if (answerChunks.isEmpty) {
@@ -73,10 +73,9 @@ final class SmokeSubstrate implements TomBrainSubstrateClient {
         'one chunk to form a non-empty answer.',
       );
     }
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final String chunk in answerChunks)
-        LlmStreamChunk(callId: 'smoke', text: chunk),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final String chunk in answerChunks) LlmTextDelta(chunk),
+      const LlmRunCompleted(
         callId: 'smoke',
         report: LlmCallReport(
           providerId: 'smoke',
@@ -96,22 +95,22 @@ final class SmokeSubstrate implements TomBrainSubstrateClient {
   Future<LlmCallReport> complete(LlmCall call) async {
     // The contract's "complete == drain completeStream" equivalence (spec
     // § 3.1): buffer the canned stream and surface its terminal report.
-    await for (final LlmStreamEvent event in completeStream(call)) {
-      if (event is LlmStreamCompleted) return event.report;
+    await for (final LlmEvent event in completeStream(call)) {
+      if (event is LlmRunCompleted) return event.report;
     }
-    throw StateError('completeStream produced no LlmStreamCompleted event.');
+    throw StateError('completeStream produced no LlmRunCompleted event.');
   }
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'smoke',
-          modelId: 'smoke',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'smoke',
+      modelId: 'smoke',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
   Future<List<EmbeddingResult>> embedBatch(List<String> texts) async =>
@@ -127,15 +126,13 @@ final class SmokeSubstrate implements TomBrainSubstrateClient {
   Future<WebSearchResult> webSearch(
     String query, {
     WebSearchOptions options = WebSearchOptions.empty,
-  }) =>
-      throw UnsupportedError('SmokeSubstrate does not provide web search.');
+  }) => throw UnsupportedError('SmokeSubstrate does not provide web search.');
 
   @override
   Future<WebFetchResult> webFetch(
     Uri url, {
     WebFetchOptions options = WebFetchOptions.empty,
-  }) =>
-      throw UnsupportedError('SmokeSubstrate does not provide web fetch.');
+  }) => throw UnsupportedError('SmokeSubstrate does not provide web fetch.');
 
   @override
   McpClient mcpClient(McpEndpoint endpoint) =>

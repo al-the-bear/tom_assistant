@@ -81,10 +81,12 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'retrieve_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'retrieve_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
@@ -94,7 +96,9 @@ void main() {
         Node(
           id: NodeId.fromString('n_00000000000000000000000061'),
           typeName: 'Conclusion',
-          values: const <String, Object?>{'statement': 'the NAS lives at 10.0.0.4'},
+          values: const <String, Object?>{
+            'statement': 'the NAS lives at 10.0.0.4',
+          },
           createdAt: DateTime.utc(2026, 6, 1),
         ),
         Node(
@@ -126,70 +130,84 @@ void main() {
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       final answer = outcome.result!.output<String>('answer');
-      expect(answer, contains('Retrieved 0 memories for: nothing matches this'));
+      expect(
+        answer,
+        contains('Retrieved 0 memories for: nothing matches this'),
+      );
       expect(answer, contains('(no matches)'));
     });
   });
 
   group('d58-2 exactly one bm25, read-only recall (no embedding callout)', () {
-    test('the single recall is bm25-only and does not count as access', () async {
-      memory.recallResult = _recallWith(const <Node>[]);
+    test(
+      'the single recall is bm25-only and does not count as access',
+      () async {
+        memory.recallResult = _recallWith(const <Node>[]);
 
-      await retrieve('diagnostic probe');
+        await retrieve('diagnostic probe');
 
-      // One recall, no second pass.
-      expect(memory.recallQueries, hasLength(1));
-      final query = memory.recallQueries.single;
-      // bm25 only — the `vector` mode (which makes an embedding callout) is
-      // deliberately absent, so the read touches no embedding model (SC-Q4).
-      expect(query.modes, <RecallMode>{RecallMode.bm25});
-      // A diagnostic inspection must not perturb the recency/frequency signal.
-      expect(query.countsAsAccess, isFalse);
-    });
+        // One recall, no second pass.
+        expect(memory.recallQueries, hasLength(1));
+        final query = memory.recallQueries.single;
+        // bm25 only — the `vector` mode (which makes an embedding callout) is
+        // deliberately absent, so the read touches no embedding model (SC-Q4).
+        expect(query.modes, <RecallMode>{RecallMode.bm25});
+        // A diagnostic inspection must not perturb the recency/frequency signal.
+        expect(query.countsAsAccess, isFalse);
+      },
+    );
   });
 
   group('d58-3 the body persists nothing (no memory writes)', () {
-    test('the only persisted nodes are the recorder ProcedureRun markers',
-        () async {
-      memory.recallResult = _recallWith(const <Node>[]);
+    test(
+      'the only persisted nodes are the recorder ProcedureRun markers',
+      () async {
+        memory.recallResult = _recallWith(const <Node>[]);
 
-      await retrieve('diagnostic probe');
+        await retrieve('diagnostic probe');
 
-      // The run recorder persists the start + final ProcedureRun markers; the
-      // body itself writes no node. Anything other than ProcedureRun would be a
-      // body write — the diagnostic read is supposed to be side-effect-free.
-      expect(memory.persistedTypeNames.toSet(), <String>{procedureRunNodeType});
-    });
+        // The run recorder persists the start + final ProcedureRun markers; the
+        // body itself writes no node. Anything other than ProcedureRun would be a
+        // body write — the diagnostic read is supposed to be side-effect-free.
+        expect(memory.persistedTypeNames.toSet(), <String>{
+          procedureRunNodeType,
+        });
+      },
+    );
   });
 
   group('d58-4 the zero-LLM guarantee is structural (missing import)', () {
     test('the shipped script does not import the substrate bridge', () async {
-      final source =
-          File('scripts/system/retrieve_v1.dart').readAsStringSync();
+      final source = File('scripts/system/retrieve_v1.dart').readAsStringSync();
 
       // The sandbox enforces "no sub.*" by the *absence* of this import — pin it
       // so a future edit that re-adds a substrate call trips here, not
       // production. Match an actual `import …substrate_bridge.dart…` statement,
       // not a mere mention of the file name in a comment.
       final importsSubstrateBridge = RegExp(
-          r"^\s*import\s+[^\n]*substrate_bridge\.dart",
-          multiLine: true);
-      expect(importsSubstrateBridge.hasMatch(source), isFalse,
-          reason: 'retrieve_v1 must never import the substrate bridge (SC-Q4); '
-              'the missing import is the sandbox-enforced zero-LLM guarantee.');
+        r"^\s*import\s+[^\n]*substrate_bridge\.dart",
+        multiLine: true,
+      );
+      expect(
+        importsSubstrateBridge.hasMatch(source),
+        isFalse,
+        reason:
+            'retrieve_v1 must never import the substrate bridge (SC-Q4); '
+            'the missing import is the sandbox-enforced zero-LLM guarantee.',
+      );
     });
   });
 }
 
 RecallResult _recallWith(List<Node> nodes) => RecallResult(
-      nodes: nodes,
-      report: RecallReport(
-        candidatesPerMode: <RecallMode, int>{RecallMode.bm25: nodes.length},
-        fusionStrategy: FusionStrategy.rrf,
-        diversityStrategy: DiversityStrategy.mmr,
-        elapsedMs: 3,
-      ),
-    );
+  nodes: nodes,
+  report: RecallReport(
+    candidatesPerMode: <RecallMode, int>{RecallMode.bm25: nodes.length},
+    fusionStrategy: FusionStrategy.rrf,
+    diversityStrategy: DiversityStrategy.mmr,
+    elapsedMs: 3,
+  ),
+);
 
 // ── A recall-recording `TomBrainMemory` ─────────────────────────────────
 //
@@ -285,12 +303,10 @@ class _RecallMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A never-called `TomBrainSubstrateClient` ────────────────────────────
@@ -301,23 +317,23 @@ class _RecallMemory implements TomBrainMemory {
 // incidental engine bring-up need.
 class _SilentSubstrate implements TomBrainSubstrateClient {
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      throw StateError('retrieve_v1 must issue no substrate completion (SC-Q4)');
+  Stream<LlmEvent> completeStream(LlmCall call) => throw StateError(
+    'retrieve_v1 must issue no substrate completion (SC-Q4)',
+  );
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -367,6 +383,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -32,7 +32,7 @@ import '../mcp_client/mcp_client_barrel.dart';
 
 import 'embedding_result.dart';
 import 'llm_call.dart';
-import 'llm_stream_event.dart';
+import 'package:tom_core_llm/tom_core_llm.dart';
 import '../config/substrate_config.dart';
 import 'mcp_endpoint.dart';
 import 'substrate_event.dart';
@@ -88,7 +88,7 @@ abstract class TomBrainSubstrateClient {
   ///
   /// Buffers the underlying stream and returns a single
   /// [LlmCallReport]. Equivalent to draining
-  /// [completeStream] and returning the [LlmStreamCompleted]'s
+  /// [completeStream] and returning the [LlmRunCompleted]'s
   /// report.
   ///
   /// Failure shape:
@@ -102,22 +102,22 @@ abstract class TomBrainSubstrateClient {
 
   /// Streams the LLM call.
   ///
-  /// The returned stream emits exactly one [LlmStreamStarted], zero
-  /// or more [LlmStreamChunk] / [LlmStreamToolCallProposed] events,
-  /// then exactly one of [LlmStreamCompleted] / [LlmStreamFailed].
+  /// The returned stream emits exactly one [LlmRunStarted], zero
+  /// or more [LlmTextDelta] / [LlmToolCall] events,
+  /// then exactly one of [LlmRunCompleted] / [LlmRunFailed].
   ///
   /// Cancellation: completing [LlmCall.cancellationToken] aborts the
   /// underlying provider connection and surfaces
-  /// `LlmStreamFailed(LlmFailure(classCode: 'cancelled_by_consumer',
+  /// `LlmRunFailed(LlmFailure(classCode: 'cancelled_by_consumer',
   /// ...))`.
   ///
   /// Non-streaming providers (those whose underlying API does not
   /// support streaming): the substrate buffers the response, emits
-  /// one [LlmStreamChunk] with the full text, then
-  /// [LlmStreamCompleted]. Consumers cannot distinguish a
+  /// one [LlmTextDelta] with the full text, then
+  /// [LlmRunCompleted]. Consumers cannot distinguish a
   /// non-streaming provider from one that simply chose to emit one
   /// large chunk.
-  Stream<LlmStreamEvent> completeStream(LlmCall call);
+  Stream<LlmEvent> completeStream(LlmCall call);
 
   // ─── Embedding ───────────────────────────────────────────────
 
@@ -190,7 +190,7 @@ abstract class TomBrainSubstrateClient {
   ///
   /// **Buffered-vs-streaming failure asymmetry.** A failed
   /// [completeStream] call emits a terminal `LlmCallFailed` event here,
-  /// because the router surfaces it as an `LlmStreamFailed` carrier that
+  /// because the router surfaces it as an `LlmRunFailed` carrier that
   /// names the provider/model triple. A failed [complete] call does
   /// **not** emit `LlmCallFailed`: the router surfaces buffered failures
   /// as typed router-layer exceptions (`NoRouteAvailable`,

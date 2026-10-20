@@ -39,23 +39,25 @@ void main() {
       );
     });
 
-    test('dispatchOverChain routes over the supplied chain, not roleRoutes',
-        () async {
-      final report = await router.dispatchOverChain(
-        // `unmapped` is not in roleRoutes; role-keyed routing would throw.
-        roleId: 'unmapped',
-        chain: const <RouteEntry>[
-          RouteEntry(providerId: 'primary', model: 'p-model'),
-          RouteEntry(providerId: 'secondary', model: 's-model'),
-        ],
-        prompt: _prompt('hello'),
-        options: LlmOptions.empty,
-        budget: _bigBudget,
-      );
-      expect(report.providerId, 'primary');
-      expect(report.modelId, 'p-model');
-      expect(report.retries, 0);
-    });
+    test(
+      'dispatchOverChain routes over the supplied chain, not roleRoutes',
+      () async {
+        final report = await router.dispatchOverChain(
+          // `unmapped` is not in roleRoutes; role-keyed routing would throw.
+          roleId: 'unmapped',
+          chain: const <RouteEntry>[
+            RouteEntry(providerId: 'primary', model: 'p-model'),
+            RouteEntry(providerId: 'secondary', model: 's-model'),
+          ],
+          prompt: _prompt('hello'),
+          options: LlmOptions.empty,
+          budget: _bigBudget,
+        );
+        expect(report.providerId, 'primary');
+        expect(report.modelId, 'p-model');
+        expect(report.retries, 0);
+      },
+    );
 
     test('dispatchStreamOverChain routes over the supplied chain', () async {
       final stub = StubLlmProvider(
@@ -79,46 +81,48 @@ void main() {
           )
           .toList();
 
-      expect(events.first, isA<LlmStreamStarted>());
-      expect(events.last, isA<LlmStreamCompleted>());
-      final chunks = events.whereType<LlmStreamChunk>().toList();
+      expect(events.first, isA<LlmRunStarted>());
+      expect(events.last, isA<LlmRunCompleted>());
+      final chunks = events.whereType<LlmTextDelta>().toList();
       expect(chunks.map((c) => c.text), <String>['one', 'two', 'three']);
     });
 
-    test('failover within the explicit chain rotates to the second entry',
-        () async {
-      final failing = _ScriptedFailureProvider(
-        id: 'free',
-        defaultModel: 'free-model',
-        exceptions: <Object>[
-          OllamaHttpException(
-            statusCode: 429,
-            body: 'rate',
-            endpoint: Uri.parse('http://x/y'),
+    test(
+      'failover within the explicit chain rotates to the second entry',
+      () async {
+        final failing = _ScriptedFailureProvider(
+          id: 'free',
+          defaultModel: 'free-model',
+          exceptions: <Object>[
+            OllamaHttpException(
+              statusCode: 429,
+              body: 'rate',
+              endpoint: Uri.parse('http://x/y'),
+            ),
+          ],
+        );
+        final paid = StubLlmProvider(id: 'paid', defaultModel: 'paid-model');
+        final foRouter = LlmRouter(
+          providers: <String, LlmProvider>{'free': failing, 'paid': paid},
+          policy: RouterPolicy(
+            roleRoutes: const <String, List<RouteEntry>>{},
+            retriesPerClass: 0,
           ),
-        ],
-      );
-      final paid = StubLlmProvider(id: 'paid', defaultModel: 'paid-model');
-      final foRouter = LlmRouter(
-        providers: <String, LlmProvider>{'free': failing, 'paid': paid},
-        policy: RouterPolicy(
-          roleRoutes: const <String, List<RouteEntry>>{},
-          retriesPerClass: 0,
-        ),
-      );
+        );
 
-      final report = await foRouter.dispatchOverChain(
-        roleId: 'unmapped',
-        chain: const <RouteEntry>[
-          RouteEntry(providerId: 'free', model: 'free-model'),
-          RouteEntry(providerId: 'paid', model: 'paid-model'),
-        ],
-        prompt: _prompt('hi'),
-        options: LlmOptions.empty,
-        budget: _bigBudget,
-      );
-      expect(report.providerId, 'paid');
-    });
+        final report = await foRouter.dispatchOverChain(
+          roleId: 'unmapped',
+          chain: const <RouteEntry>[
+            RouteEntry(providerId: 'free', model: 'free-model'),
+            RouteEntry(providerId: 'paid', model: 'paid-model'),
+          ],
+          prompt: _prompt('hi'),
+          options: LlmOptions.empty,
+          budget: _bigBudget,
+        );
+        expect(report.providerId, 'paid');
+      },
+    );
 
     test('empty explicit chain raises EmptyRouteChain (buffered)', () {
       expect(
@@ -153,11 +157,11 @@ void main() {
 // ─── Test helpers ────────────────────────────────────────────────
 
 WirePrompt _prompt(String body) => WirePrompt(
-      system: body,
-      anchorHash: 'sha256:anchor',
-      roleId: 'assistant_to_user',
-      templateSha: 'sha-abc',
-    );
+  system: body,
+  anchorHash: 'sha256:anchor',
+  roleId: 'assistant_to_user',
+  templateSha: 'sha-abc',
+);
 
 final Budget _bigBudget = Budget(
   wallClockMs: 60000,
@@ -169,7 +173,7 @@ final Budget _bigBudget = Budget(
 /// LlmProvider that throws a scripted exception on its first `complete` call,
 /// forcing the router to rotate to the next chain entry. Mirrors the helper in
 /// `b18_llm_router_test.dart` (kept local to avoid cross-test coupling).
-class _ScriptedFailureProvider implements LlmProvider {
+class _ScriptedFailureProvider extends LlmProvider {
   @override
   final String id;
   final String defaultModel;
@@ -183,7 +187,9 @@ class _ScriptedFailureProvider implements LlmProvider {
   }) : _exceptions = List<Object>.of(exceptions);
 
   @override
-  Future<LlmCallReport> complete(WirePrompt prompt, LlmOptions options) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     callCount++;
     if (_exceptions.isNotEmpty) throw _exceptions.removeAt(0);
     return LlmCallReport(
@@ -200,20 +206,19 @@ class _ScriptedFailureProvider implements LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     callCount++;
     final callId = 'sfp-$id-$callCount';
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
       callId: callId,
       providerId: id,
       modelId: options.model ?? defaultModel,
     );
     if (_exceptions.isNotEmpty) {
       final ex = _exceptions.removeAt(0);
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: callId,
         failure: LlmFailure(
           classCode: 'unknown',
@@ -233,7 +238,7 @@ class _ScriptedFailureProvider implements LlmProvider {
       );
       return;
     }
-    yield LlmStreamCompleted(
+    yield LlmRunCompleted(
       callId: callId,
       report: LlmCallReport(
         providerId: id,

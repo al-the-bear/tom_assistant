@@ -59,36 +59,38 @@ void main() {
   });
 
   BrainProcessConfig config() => BrainProcessConfig(
-        substrate: substrate,
-        memoryProvisioning: MemoryProvisioningConfig.inProcess(
-          client: memory,
-          memoryConfig: MemoryConfig.forTesting(root: 'ztmp/gt3_dispatcher'),
-        ),
-        // Increment 6 (§6): the normal branch's `answer_with_memory_v1` resolves
-        // its prompt through the host `PromptResolver`. The thinking + router
-        // branches call `sub.llm`/`sub.send` directly and never consult it; the
-        // parity fake supplies the normal branch's assembled prompt.
-        promptResolver: parity.resolver,
-        routeChainOf: parity.routeChainOf,
-      );
+    substrate: substrate,
+    memoryProvisioning: MemoryProvisioningConfig.inProcess(
+      client: memory,
+      memoryConfig: MemoryConfig.forTesting(root: 'ztmp/gt3_dispatcher'),
+    ),
+    // Increment 6 (§6): the normal branch's `answer_with_memory_v1` resolves
+    // its prompt through the host `PromptResolver`. The thinking + router
+    // branches call `sub.llm`/`sub.send` directly and never consult it; the
+    // parity fake supplies the normal branch's assembled prompt.
+    promptResolver: parity.resolver,
+    routeChainOf: parity.routeChainOf,
+  );
 
   /// A live user prompt as the channel delivers it — un-hinted, so the
   /// dispatcher routes it through the entry router (§ 4.0.1). [delivered]
   /// captures the streamed answer.
   Access userPrompt(String text, {List<String>? delivered}) => Access(
-        envelope: InboundRequest(
-            text: text, kindHint: SystemProcedures.promptAnalyzerV1),
-        identity: ResolvedIdentity(principalId: 'p1'),
-        session: Session(sessionId: 's1'),
-        persona: Persona.assistant(),
-        deliver: (chunk) {
-          if (delivered != null && chunk.textDelta.isNotEmpty) {
-            delivered.add(chunk.textDelta);
-          }
-          return Stream<OutboundChunk>.value(chunk);
-        },
-        turnId: TurnId.generate(),
-      );
+    envelope: InboundRequest(
+      text: text,
+      kindHint: SystemProcedures.promptAnalyzerV1,
+    ),
+    identity: ResolvedIdentity(principalId: 'p1'),
+    session: Session(sessionId: 's1'),
+    persona: Persona.assistant(),
+    deliver: (chunk) {
+      if (delivered != null && chunk.textDelta.isNotEmpty) {
+        delivered.add(chunk.textDelta);
+      }
+      return Stream<OutboundChunk>.value(chunk);
+    },
+    turnId: TurnId.generate(),
+  );
 
   /// The `procedureId`s of every completed (status != 'running') answer/router
   /// run the loop persisted — the proof of which branches executed.
@@ -98,30 +100,44 @@ void main() {
       .map((p) => p.draft.values['procedureId'] as String)
       .toSet();
 
-  group('a deliberation-cued prompt runs the recursive loop through accept()',
-      () {
-    test('the thinking branch runs end-to-end; the normal branch is untouched',
-        () async {
-      final delivered = <String>[];
-      final booted = await BrainProcessBoot.boot(config());
-      addTearDown(booted.shutdown);
+  group('a deliberation-cued prompt runs the recursive loop through accept()', () {
+    test(
+      'the thinking branch runs end-to-end; the normal branch is untouched',
+      () async {
+        final delivered = <String>[];
+        final booted = await BrainProcessBoot.boot(config());
+        addTearDown(booted.shutdown);
 
-      // "think about" is a cue floor trigger; the fake router still classifies
-      // normal, so reaching the thinking branch can only be the cue floor.
-      await booted.dispatcher.accept(userPrompt(
-          'think about how memory consolidates', delivered: delivered));
+        // "think about" is a cue floor trigger; the fake router still classifies
+        // normal, so reaching the thinking branch can only be the cue floor.
+        await booted.dispatcher.accept(
+          userPrompt(
+            'think about how memory consolidates',
+            delivered: delivered,
+          ),
+        );
 
-      final completed = completedRunIds();
-      expect(completed, contains(SystemProcedures.answerWithThinkingV1),
-          reason: 'the cued prompt ran the recursive thinking loop');
-      expect(completed, isNot(contains(SystemProcedures.answerWithMemoryV1)),
-          reason: 'the normal branch is untouched for a cued prompt');
-      // Reached only via the router: phase-1 prompt_analyzer_v1 ran first.
-      expect(completed, contains(SystemProcedures.promptAnalyzerV1),
-          reason: 'the answer branch is reachable only through the router');
-      // A foreground prompt is never answered with silence (gap-hunt § 6.5).
-      expect(delivered.join().isNotEmpty, isTrue);
-    });
+        final completed = completedRunIds();
+        expect(
+          completed,
+          contains(SystemProcedures.answerWithThinkingV1),
+          reason: 'the cued prompt ran the recursive thinking loop',
+        );
+        expect(
+          completed,
+          isNot(contains(SystemProcedures.answerWithMemoryV1)),
+          reason: 'the normal branch is untouched for a cued prompt',
+        );
+        // Reached only via the router: phase-1 prompt_analyzer_v1 ran first.
+        expect(
+          completed,
+          contains(SystemProcedures.promptAnalyzerV1),
+          reason: 'the answer branch is reachable only through the router',
+        );
+        // A foreground prompt is never answered with silence (gap-hunt § 6.5).
+        expect(delivered.join().isNotEmpty, isTrue);
+      },
+    );
   });
 
   group('a normal prompt runs the memory branch through accept()', () {
@@ -131,16 +147,26 @@ void main() {
       addTearDown(booted.shutdown);
 
       // No cue word: the router classifies normal and the cue floor agrees.
-      await booted.dispatcher
-          .accept(userPrompt('what is a quasar?', delivered: delivered));
+      await booted.dispatcher.accept(
+        userPrompt('what is a quasar?', delivered: delivered),
+      );
 
       final completed = completedRunIds();
-      expect(completed, contains(SystemProcedures.answerWithMemoryV1),
-          reason: 'an un-cued prompt runs the normal memory branch');
-      expect(completed, isNot(contains(SystemProcedures.answerWithThinkingV1)),
-          reason: 'the thinking branch never runs for an un-cued prompt');
-      expect(completed, contains(SystemProcedures.promptAnalyzerV1),
-          reason: 'the memory branch is reachable only through the router');
+      expect(
+        completed,
+        contains(SystemProcedures.answerWithMemoryV1),
+        reason: 'an un-cued prompt runs the normal memory branch',
+      );
+      expect(
+        completed,
+        isNot(contains(SystemProcedures.answerWithThinkingV1)),
+        reason: 'the thinking branch never runs for an un-cued prompt',
+      );
+      expect(
+        completed,
+        contains(SystemProcedures.promptAnalyzerV1),
+        reason: 'the memory branch is reachable only through the router',
+      );
       expect(delivered.join().isNotEmpty, isTrue);
     });
   });
@@ -159,11 +185,11 @@ class _RoleAwareSubstrate implements TomBrainSubstrateClient {
   Future<void> close() async {}
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final text = call.roleId == 'evaluator' ? 'ACCEPT' : 'a thoughtful answer';
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: text),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(text),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -181,18 +207,17 @@ class _RoleAwareSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── In-process memory double (mirrors boot_turn_summary_sink_test). ──────
@@ -233,14 +258,14 @@ class _BootMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -316,12 +341,10 @@ class _BootMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -371,6 +394,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

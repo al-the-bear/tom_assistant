@@ -39,14 +39,13 @@ void main() {
     String objective = 'Do the role thing.',
     Set<AllowedAction> allowedActions = const {AllowedAction.llmCall},
     Map<String, Object?>? outputSchema,
-  }) =>
-      RoleTemplate(
-        id: id,
-        personaText: personaText,
-        objective: objective,
-        allowedActions: allowedActions,
-        outputSchema: outputSchema,
-      );
+  }) => RoleTemplate(
+    id: id,
+    personaText: personaText,
+    objective: objective,
+    allowedActions: allowedActions,
+    outputSchema: outputSchema,
+  );
 
   group('RoleTemplate.assemble anchoring toggle', () {
     test('default (anchored: true) carries the anchor + current hash', () {
@@ -65,34 +64,44 @@ void main() {
     });
 
     test('anchored: false omits the anchor from the system channel', () {
-      final p = makeRole(personaText: 'RELAY-PERSONA')
-          .assemble(anchored: false);
-      expect(p.system.startsWith(AssistantDedicationAnchor.text), isFalse,
-          reason: 'an un-anchored prompt must not lead with the anchor');
-      expect(p.system.contains(AssistantDedicationAnchor.text), isFalse,
-          reason: 'the anchor must not appear anywhere in an un-anchored system');
+      final p = makeRole(
+        personaText: 'RELAY-PERSONA',
+      ).assemble(anchored: false);
+      expect(
+        p.system.startsWith(AssistantDedicationAnchor.text),
+        isFalse,
+        reason: 'an un-anchored prompt must not lead with the anchor',
+      );
+      expect(
+        p.system.contains(AssistantDedicationAnchor.text),
+        isFalse,
+        reason: 'the anchor must not appear anywhere in an un-anchored system',
+      );
       // The persona/objective scaffold is still produced — only the anchor is
       // gone. (The relay still has a role; it just is not dedication-anchored.)
       expect(p.system, startsWith('PERSONA:'));
       expect(p.system, contains('RELAY-PERSONA'));
     });
 
-    test('the toggle is the ONLY difference (anchored == anchor + unanchored)',
-        () {
-      final inputs = <String, Object?>{'prompt': 'hello', 'k': 'v'};
-      final anchored = makeRole().assemble(inputs: inputs);
-      final unanchored = makeRole().assemble(inputs: inputs, anchored: false);
-      // System differs by exactly the leading anchor block, nothing else.
-      expect(
-        anchored.system,
-        equals('${AssistantDedicationAnchor.text}${unanchored.system}'),
-        reason: 'stripping the anchor lead from the anchored system must yield '
-            'the un-anchored system verbatim',
-      );
-      // User channel is anchor-independent: identical for both.
-      expect(unanchored.user, equals(anchored.user));
-      expect(unanchored.roleId, equals(anchored.roleId));
-    });
+    test(
+      'the toggle is the ONLY difference (anchored == anchor + unanchored)',
+      () {
+        final inputs = <String, Object?>{'prompt': 'hello', 'k': 'v'};
+        final anchored = makeRole().assemble(inputs: inputs);
+        final unanchored = makeRole().assemble(inputs: inputs, anchored: false);
+        // System differs by exactly the leading anchor block, nothing else.
+        expect(
+          anchored.system,
+          equals('${AssistantDedicationAnchor.text}${unanchored.system}'),
+          reason:
+              'stripping the anchor lead from the anchored system must yield '
+              'the un-anchored system verbatim',
+        );
+        // User channel is anchor-independent: identical for both.
+        expect(unanchored.user, equals(anchored.user));
+        expect(unanchored.roleId, equals(anchored.roleId));
+      },
+    );
 
     test('un-anchored anchorHash is the distinct unanchored sentinel', () {
       final p = makeRole().assemble(anchored: false);
@@ -106,31 +115,37 @@ void main() {
   });
 
   group('InProcessTomBrainSubstrate anchoring toggle', () {
-    test('default anchored call still proves the anchor on the report',
-        () async {
-      final fx = _buildFacade();
-      addTearDown(fx.facade.close);
-      final report = await fx.facade.complete(_assistantCall());
-      expect(report.anchorHash, equals(AnchorRegistry.currentHash));
-    });
+    test(
+      'default anchored call still proves the anchor on the report',
+      () async {
+        final fx = _buildFacade();
+        addTearDown(fx.facade.close);
+        final report = await fx.facade.complete(_assistantCall());
+        expect(report.anchorHash, equals(AnchorRegistry.currentHash));
+      },
+    );
 
-    test('un-anchored call passes enforcement and carries the sentinel',
-        () async {
-      final fx = _buildFacade();
-      addTearDown(fx.facade.close);
-      final report =
-          await fx.facade.complete(_assistantCall(anchored: false));
-      // No AnchorViolation thrown; the report echoes the un-anchored sentinel.
-      expect(report.anchorHash, equals(AnchorRegistry.unanchoredHash));
-    });
+    test(
+      'un-anchored call passes enforcement and carries the sentinel',
+      () async {
+        final fx = _buildFacade();
+        addTearDown(fx.facade.close);
+        final report = await fx.facade.complete(
+          _assistantCall(anchored: false),
+        );
+        // No AnchorViolation thrown; the report echoes the un-anchored sentinel.
+        expect(report.anchorHash, equals(AnchorRegistry.unanchoredHash));
+      },
+    );
 
     test('un-anchored stream call passes enforcement and completes', () async {
       final fx = _buildFacade();
       addTearDown(fx.facade.close);
       LlmCallReport? completed;
-      await for (final event
-          in fx.facade.completeStream(_assistantCall(anchored: false))) {
-        if (event is LlmStreamCompleted) completed = event.report;
+      await for (final event in fx.facade.completeStream(
+        _assistantCall(anchored: false),
+      )) {
+        if (event is LlmRunCompleted) completed = event.report;
       }
       expect(completed, isNotNull);
       expect(completed!.anchorHash, equals(AnchorRegistry.unanchoredHash));
@@ -147,8 +162,7 @@ class _FacadeFixture {
 
 _FacadeFixture _buildFacade() {
   final roles = bootstrapRoleRegistry();
-  final realProvider =
-      StubLlmProvider(id: 'stub', defaultModel: 'stub-model');
+  final realProvider = StubLlmProvider(id: 'stub', defaultModel: 'stub-model');
   final providers = <String, LlmProvider>{'stub': realProvider};
   final policy = RouterPolicy(
     roleRoutes: <String, List<RouteEntry>>{
@@ -170,16 +184,16 @@ _FacadeFixture _buildFacade() {
 }
 
 LlmCall _assistantCall({bool anchored = true}) => LlmCall(
-      roleId: 'assistant_to_user',
-      inputs: const <String, Object?>{'question': 'hi'},
-      anchored: anchored,
-      budget: Budget(
-        wallClockMs: 5000,
-        tokenSpend: 1000,
-        toolCalls: 1,
-        memoryWrites: 0,
-      ),
-    );
+  roleId: 'assistant_to_user',
+  inputs: const <String, Object?>{'question': 'hi'},
+  anchored: anchored,
+  budget: Budget(
+    wallClockMs: 5000,
+    tokenSpend: 1000,
+    toolCalls: 1,
+    memoryWrites: 0,
+  ),
+);
 
 // ─── Minimal test doubles (mirrors b41's) ─────────────────────────
 
@@ -208,12 +222,11 @@ final class _StubEmbeddingService implements EmbeddingService {
   Future<EmbeddingProbeResult> probeIdentity({
     EmbeddingModelIdentity? previousIdentity,
     String probeText = 'tom-brain embedding probe',
-  }) async =>
-      EmbeddingProbeResult(
-        currentIdentity: _identity,
-        probeResult: await embed(probeText),
-        driftEvent: null,
-      );
+  }) async => EmbeddingProbeResult(
+    currentIdentity: _identity,
+    probeResult: await embed(probeText),
+    driftEvent: null,
+  );
 
   @override
   Future<void> close() async {}
@@ -224,12 +237,11 @@ final class _StubWebSearch implements WebSearch {
   Future<WebSearchResult> search(
     String query, {
     WebSearchOptions options = WebSearchOptions.empty,
-  }) async =>
-      WebSearchResult(
-        provider: 'stub-search',
-        query: query,
-        hits: const <SearchHit>[],
-      );
+  }) async => WebSearchResult(
+    provider: 'stub-search',
+    query: query,
+    hits: const <SearchHit>[],
+  );
 
   @override
   void close() {}
@@ -240,13 +252,12 @@ final class _StubWebFetch implements WebFetch {
   Future<WebFetchResult> fetch(
     Uri url, {
     WebFetchOptions options = WebFetchOptions.empty,
-  }) async =>
-      WebFetchResult(
-        url: url,
-        status: 200,
-        contentType: 'text/plain',
-        text: '',
-      );
+  }) async => WebFetchResult(
+    url: url,
+    status: 200,
+    contentType: 'text/plain',
+    text: '',
+  );
 
   @override
   void close() {}

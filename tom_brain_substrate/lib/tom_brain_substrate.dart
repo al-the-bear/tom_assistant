@@ -31,7 +31,7 @@
 ///   bridge's single entry point) + `TomBrainSubstrateClient` (the
 ///   consumer-facing contract) + every value type from spec § 3.1
 ///   (`LlmCall`, `LlmOptions`, `ToolCatalogue`, `LlmCallReport`,
-///   sealed `LlmStreamEvent` family, `LlmFailure`,
+///   sealed `LlmEvent` family, `LlmFailure`,
 ///   `EmbeddingResult`, `EmbeddingModelIdentity`, web-tool result /
 ///   option types, `McpEndpoint`, sealed `SubstrateEvent` family,
 ///   `SubstrateStats`, `CancellationToken` /
@@ -42,11 +42,9 @@
 ///   implementations yet — interfaces and value classes only.
 /// - B.10 ✅ — Documented no-op per policy override 5
 ///   (`.tom_metadata/tom_master.yaml` is out of scope for Tom Brain).
-/// - B.11 ✅ — `LlmProvider` abstract interface + `WirePrompt`
-///   value class under `lib/src/llm/`. The provider-layer surface:
-///   `String get id`, `complete(WirePrompt, LlmOptions)` returning a
-///   `Future<LlmCallReport>`, `completeStream(WirePrompt, LlmOptions)`
-///   returning a `Stream<LlmStreamEvent>`. `WirePrompt` is the
+/// - B.11 ✅ — the provider contract, now `tom_core_llm`'s: `String get id`,
+///   `run(LlmRequest)` returning a `Stream<LlmEvent>`, and
+///   `complete(LlmRequest)` returning a `Future<LlmCallReport>`. `WirePrompt` is the
 ///   post-anchor-injection prompt; only the (B.21+) role registry
 ///   produces it, only providers consume it. Embedding / health
 ///   members of the spec § 4.1 surface land in their owning steps
@@ -314,7 +312,7 @@ export 'src/web/web_barrel.dart';
 //     anchored prompt body (B.23).
 //   * Enforces `report.anchorHash == AnchorRegistry.currentHash`
 //     on every `LlmCallReport` that crosses the consumer-facing
-//     surface (`complete` + the terminal `LlmStreamCompleted` of
+//     surface (`complete` + the terminal `LlmRunCompleted` of
 //     `completeStream`). A mismatch raises `AnchorViolation`
 //     (fatal — spec § 12). The B.46 conformance test pins this.
 //   * Dispatches to `LlmRouter.dispatch` / `dispatchStream` —

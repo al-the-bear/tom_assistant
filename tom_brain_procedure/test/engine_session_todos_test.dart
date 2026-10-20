@@ -49,9 +49,7 @@ void main() {
   // Appends one todo, then returns how many the run-visible list now holds.
   // Run repeatedly under one session id the count climbs (the list persists);
   // under a fresh session (or no session) it stays 1 (a fresh list per run).
-  LoadedProcedure addAndCountProcedure() => _procedure(
-        'todo_add_count_v1',
-        '''
+  LoadedProcedure addAndCountProcedure() => _procedure('todo_add_count_v1', '''
 import '${BridgeLibraries.toolLibrary}';
 
 Future<Object?> run(inputs) async {
@@ -60,8 +58,7 @@ Future<Object?> run(inputs) async {
   final todos = (listed['result'] as Map)['todos'] as List;
   return {'count': todos.length};
 }
-''',
-      );
+''');
 
   Future<int?> runCount(ProcedureEngine engine, {String? sessionId}) async {
     final outcome = await engine
@@ -81,8 +78,11 @@ Future<Object?> run(inputs) async {
       final engine = engineFor(<LoadedProcedure>[addAndCountProcedure()]);
 
       expect(await runCount(engine, sessionId: 'session-a'), 1);
-      expect(await runCount(engine, sessionId: 'session-a'), 2,
-          reason: 'the second run of the same session sees the first todo');
+      expect(
+        await runCount(engine, sessionId: 'session-a'),
+        2,
+        reason: 'the second run of the same session sees the first todo',
+      );
       expect(await runCount(engine, sessionId: 'session-a'), 3);
     });
 
@@ -90,28 +90,42 @@ Future<Object?> run(inputs) async {
       final engine = engineFor(<LoadedProcedure>[addAndCountProcedure()]);
 
       expect(await runCount(engine, sessionId: 'session-a'), 1);
-      expect(await runCount(engine, sessionId: 'session-b'), 1,
-          reason: 'session-b starts empty — it does not see session-a todos');
-      expect(await runCount(engine, sessionId: 'session-a'), 2,
-          reason: 'session-a still has its own list');
+      expect(
+        await runCount(engine, sessionId: 'session-b'),
+        1,
+        reason: 'session-b starts empty — it does not see session-a todos',
+      );
+      expect(
+        await runCount(engine, sessionId: 'session-a'),
+        2,
+        reason: 'session-a still has its own list',
+      );
     });
 
-    test('a session-less (internal / dream) run gets a fresh list each run',
-        () async {
-      final engine = engineFor(<LoadedProcedure>[addAndCountProcedure()]);
+    test(
+      'a session-less (internal / dream) run gets a fresh list each run',
+      () async {
+        final engine = engineFor(<LoadedProcedure>[addAndCountProcedure()]);
 
-      expect(await runCount(engine), 1);
-      expect(await runCount(engine), 1,
-          reason: 'no session id ⇒ run-scoped, ephemeral store as before');
-    });
+        expect(await runCount(engine), 1);
+        expect(
+          await runCount(engine),
+          1,
+          reason: 'no session id ⇒ run-scoped, ephemeral store as before',
+        );
+      },
+    );
 
     test('the engine exposes its process-lifetime session registry', () async {
       final engine = engineFor(<LoadedProcedure>[addAndCountProcedure()]);
 
       await runCount(engine, sessionId: 'session-a');
       final store = engine.sessionTodoStores.peek('session-a');
-      expect(store, isNotNull,
-          reason: 'the session store is readable for the inspector seam');
+      expect(
+        store,
+        isNotNull,
+        reason: 'the session store is readable for the inspector seam',
+      );
       expect(store!.list(), hasLength(1));
 
       expect(engine.sessionTodoStores.peek('never-seen'), isNull);
@@ -124,15 +138,19 @@ Future<Object?> run(inputs) async {
       expect(await runCount(engine, sessionId: 'session-a'), 2);
 
       expect(engine.sessionTodoStores.clearSession('session-a'), isTrue);
-      expect(await runCount(engine, sessionId: 'session-a'), 1,
-          reason: 'after a clear the list starts fresh');
+      expect(
+        await runCount(engine, sessionId: 'session-a'),
+        1,
+        reason: 'after a clear the list starts fresh',
+      );
       expect(engine.sessionTodoStores.clearSession('never-seen'), isFalse);
     });
   });
 }
 
 LoadedProcedure _procedure(String id, String body, {int version = 1}) {
-  final source = '''
+  final source =
+      '''
 /// @procedure
 /// id: $id
 /// version: $version
@@ -153,10 +171,10 @@ $body
 /// issues no `sub.llm`, so it is only a structural collaborator.
 class _StubSubstrate implements TomBrainSubstrateClient {
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c', text: 'ok'),
-        LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) =>
+      Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        const LlmTextDelta('ok'),
+        LlmRunCompleted(
           callId: 'c',
           wire: CapturedWirePrompt(
             body: 'ANCHOR',
@@ -178,18 +196,17 @@ class _StubSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec.zero(1),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec.zero(1),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// A minimal `TomBrainMemoryClient` that backs only the run recorder's trail +
@@ -267,12 +284,10 @@ class _TrailOnlyMemory implements TomBrainMemoryClient {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -322,6 +337,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

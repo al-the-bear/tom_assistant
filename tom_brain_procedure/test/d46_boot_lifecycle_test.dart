@@ -89,39 +89,49 @@ void main() {
       );
 
   Access userPrompt(String text) => Access(
-        // The entry router is the only routable procedure after the route-flip
-        // (§ 4.0.1); the two-phase route runs the answer branch it selects.
-        envelope:
-            InboundRequest(text: text, kindHint: SystemProcedures.promptAnalyzerV1),
-        identity: ResolvedIdentity(principalId: 'p1'),
-        session: Session(sessionId: 's1'),
-        persona: Persona.assistant(),
-        deliver: (chunk) => Stream<OutboundChunk>.value(chunk),
-      );
+    // The entry router is the only routable procedure after the route-flip
+    // (§ 4.0.1); the two-phase route runs the answer branch it selects.
+    envelope: InboundRequest(
+      text: text,
+      kindHint: SystemProcedures.promptAnalyzerV1,
+    ),
+    identity: ResolvedIdentity(principalId: 'p1'),
+    session: Session(sessionId: 's1'),
+    persona: Persona.assistant(),
+    deliver: (chunk) => Stream<OutboundChunk>.value(chunk),
+  );
 
   group('D.46-1 boot → submit → shutdown sequence completes', () {
-    test('an accepted prompt runs end-to-end, then shutdown closes cleanly',
-        () async {
-      substrate.answerChunks = <String>['a complete answer.'];
-      final booted = await BrainProcessBoot.boot(inProcessConfig());
+    test(
+      'an accepted prompt runs end-to-end, then shutdown closes cleanly',
+      () async {
+        substrate.answerChunks = <String>['a complete answer.'];
+        final booted = await BrainProcessBoot.boot(inProcessConfig());
 
-      // Submit: the prompt runs `answer_with_memory_v1` to completion.
-      await booted.dispatcher.accept(userPrompt('what is a pulsar?'));
+        // Submit: the prompt runs `answer_with_memory_v1` to completion.
+        await booted.dispatcher.accept(userPrompt('what is a pulsar?'));
 
-      expect(memory.persistedOfType('Event').single.draft.values['summary'],
-          'what is a pulsar?');
-      expect(
+        expect(
+          memory.persistedOfType('Event').single.draft.values['summary'],
+          'what is a pulsar?',
+        );
+        expect(
           memory.persistedOfType('Conclusion').single.draft.values['statement'],
-          'a complete answer.');
+          'a complete answer.',
+        );
 
-      // Shutdown: the whole sequence winds down with no leaked resources and
-      // every opened trail closed.
-      await booted.shutdown();
-      expect(memory.closeCount, 1);
-      expect(substrate.closeCount, 1);
-      expect(memory.allTrailsClosed, isTrue,
-          reason: 'every opened run trail was closed before memory disposal');
-    });
+        // Shutdown: the whole sequence winds down with no leaked resources and
+        // every opened trail closed.
+        await booted.shutdown();
+        expect(memory.closeCount, 1);
+        expect(substrate.closeCount, 1);
+        expect(
+          memory.allTrailsClosed,
+          isTrue,
+          reason: 'every opened run trail was closed before memory disposal',
+        );
+      },
+    );
 
     test('shutdown is idempotent across the completed sequence', () async {
       final booted = await BrainProcessBoot.boot(inProcessConfig());
@@ -136,76 +146,94 @@ void main() {
   });
 
   group('D.46-2 mid-flight foreground completion is respected', () {
-    test('a run in flight at shutdown finishes before memory is disposed',
-        () async {
-      substrate.answerChunks = <String>['mid-flight answer'];
-      substrate.llmGate = Completer<void>();
-      final booted = await BrainProcessBoot.boot(inProcessConfig());
+    test(
+      'a run in flight at shutdown finishes before memory is disposed',
+      () async {
+        substrate.answerChunks = <String>['mid-flight answer'];
+        substrate.llmGate = Completer<void>();
+        final booted = await BrainProcessBoot.boot(inProcessConfig());
 
-      // Admit a prompt; the route occupies the foreground slot synchronously
-      // and the run parks at the gated `llm` step.
-      final accept = booted.dispatcher.accept(userPrompt('a slow question?'));
-      await _tick();
-      expect(memory.persistedOfType('Conclusion'), isEmpty,
-          reason: 'the run is parked at the gated llm step');
+        // Admit a prompt; the route occupies the foreground slot synchronously
+        // and the run parks at the gated `llm` step.
+        final accept = booted.dispatcher.accept(userPrompt('a slow question?'));
+        await _tick();
+        expect(
+          memory.persistedOfType('Conclusion'),
+          isEmpty,
+          reason: 'the run is parked at the gated llm step',
+        );
 
-      // Shut down while the run is mid-flight: the drain must wait for it, so
-      // memory is not closed yet.
-      var shutdownDone = false;
-      final shutdownFuture = booted.shutdown().then((_) => shutdownDone = true);
-      await _tick();
-      expect(shutdownDone, isFalse,
-          reason: 'shutdown is draining the in-flight foreground run');
-      expect(memory.closeCount, 0,
-          reason: 'memory is not disposed while a run is still in flight');
+        // Shut down while the run is mid-flight: the drain must wait for it, so
+        // memory is not closed yet.
+        var shutdownDone = false;
+        final shutdownFuture = booted.shutdown().then(
+          (_) => shutdownDone = true,
+        );
+        await _tick();
+        expect(
+          shutdownDone,
+          isFalse,
+          reason: 'shutdown is draining the in-flight foreground run',
+        );
+        expect(
+          memory.closeCount,
+          0,
+          reason: 'memory is not disposed while a run is still in flight',
+        );
 
-      // Release the run: it finishes (trail closed, exchange persisted), and
-      // only then does shutdown proceed to close memory.
-      substrate.releaseLlm();
-      await accept;
-      await shutdownFuture;
+        // Release the run: it finishes (trail closed, exchange persisted), and
+        // only then does shutdown proceed to close memory.
+        substrate.releaseLlm();
+        await accept;
+        await shutdownFuture;
 
-      expect(shutdownDone, isTrue);
-      expect(memory.persistedOfType('Event').single.draft.values['summary'],
-          'a slow question?');
-      expect(
+        expect(shutdownDone, isTrue);
+        expect(
+          memory.persistedOfType('Event').single.draft.values['summary'],
+          'a slow question?',
+        );
+        expect(
           memory.persistedOfType('Conclusion').single.draft.values['statement'],
-          'mid-flight answer');
-      expect(memory.allTrailsClosed, isTrue);
-      expect(memory.closeCount, 1);
-      expect(substrate.closeCount, 1);
-    });
+          'mid-flight answer',
+        );
+        expect(memory.allTrailsClosed, isTrue);
+        expect(memory.closeCount, 1);
+        expect(substrate.closeCount, 1);
+      },
+    );
   });
 
   group('D.46-3 a bring-up crash surfaces as a typed startup error', () {
-    test('a crashing memory factory → BrainStartupError(phase: memory)',
-        () async {
-      // Isolate transport with a real spawned worker; the factory throws when
-      // boot opens the memory inside the isolate.
-      final crashSubstrate = _FakeSubstrate();
-      final config = BrainProcessConfig(
-        substrate: crashSubstrate,
-        memoryProvisioning: MemoryProvisioningConfig.isolate(
-          factory: crashingMemoryFactory,
-          memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d46_crash'),
-        ),
-      );
+    test(
+      'a crashing memory factory → BrainStartupError(phase: memory)',
+      () async {
+        // Isolate transport with a real spawned worker; the factory throws when
+        // boot opens the memory inside the isolate.
+        final crashSubstrate = _FakeSubstrate();
+        final config = BrainProcessConfig(
+          substrate: crashSubstrate,
+          memoryProvisioning: MemoryProvisioningConfig.isolate(
+            factory: crashingMemoryFactory,
+            memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d46_crash'),
+          ),
+        );
 
-      await expectLater(
-        BrainProcessBoot.boot(config),
-        throwsA(
-          isA<BrainStartupError>()
-              .having((e) => e.phase, 'phase', BootPhase.memory)
-              .having((e) => e.cause, 'cause', isNotNull),
-        ),
-      );
+        await expectLater(
+          BrainProcessBoot.boot(config),
+          throwsA(
+            isA<BrainStartupError>()
+                .having((e) => e.phase, 'phase', BootPhase.memory)
+                .having((e) => e.cause, 'cause', isNotNull),
+          ),
+        );
 
-      // Failure hygiene: no substrate was opened (none configured), and boot's
-      // teardown still closed it. The spawned worker isolate was torn down by
-      // the provisioner's open-failure path (not asserted here directly — the
-      // test process not hanging on a leaked isolate is the observable proof).
-      expect(crashSubstrate.closeCount, 1);
-    });
+        // Failure hygiene: no substrate was opened (none configured), and boot's
+        // teardown still closed it. The spawned worker isolate was torn down by
+        // the provisioner's open-failure path (not asserted here directly — the
+        // test process not hanging on a leaked isolate is the observable proof).
+        expect(crashSubstrate.closeCount, 1);
+      },
+    );
 
     test('a failing substrate open → BrainStartupError(phase: substrate), '
         'memory never provisioned', () async {
@@ -234,21 +262,21 @@ void main() {
 /// tests. The fake substrate's `open` records the call (and optionally throws);
 /// the config only needs to construct — it is never validated here.
 SubstrateConfig _minimalSubstrateConfig() => const SubstrateConfig(
-      providers: <ProviderProfile>[],
-      roleRoutes: <String, List<RoleRouteEntryConfig>>{},
-      embedding: EmbeddingChoice(
-        providerId: 'p',
-        model: 'm',
-        dims: 1,
-        normalize: true,
-      ),
-      webSearch: WebSearchConfig(
-        defaultProvider: 'none',
-        providers: <String, WebSearchProviderConfig>{},
-      ),
-      webFetch: WebFetchConfig(),
-      mcpClient: McpClientConfigBlock(),
-    );
+  providers: <ProviderProfile>[],
+  roleRoutes: <String, List<RoleRouteEntryConfig>>{},
+  embedding: EmbeddingChoice(
+    providerId: 'p',
+    model: 'm',
+    dims: 1,
+    normalize: true,
+  ),
+  webSearch: WebSearchConfig(
+    defaultProvider: 'none',
+    providers: <String, WebSearchProviderConfig>{},
+  ),
+  webFetch: WebFetchConfig(),
+  mcpClient: McpClientConfigBlock(),
+);
 
 // ─── A configurable `TomBrainSubstrateClient` ───────────────────────
 //
@@ -286,13 +314,13 @@ class _FakeSubstrate implements TomBrainSubstrateClient {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) async* {
+  Stream<LlmEvent> completeStream(LlmCall call) async* {
     final gate = llmGate;
     if (gate != null) await gate.future;
     for (final chunk in answerChunks) {
-      yield LlmStreamChunk(callId: 'c', text: chunk);
+      yield LlmTextDelta(chunk);
     }
-    yield const LlmStreamCompleted(
+    yield const LlmRunCompleted(
       callId: 'c',
       report: LlmCallReport(
         providerId: 'p',
@@ -309,18 +337,17 @@ class _FakeSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ─── A stateful in-process `TomBrainMemoryClient` ───────────────────
@@ -373,7 +400,8 @@ class _LifecycleMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -449,12 +477,10 @@ class _LifecycleMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -504,6 +530,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

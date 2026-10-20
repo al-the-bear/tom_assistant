@@ -134,12 +134,13 @@ void main() {
   /// recall now fans out through the conductor + four `recall_*` sub-procedures
   /// (Extension-H step #30), each recording its own ProcedureRun, so the answer
   /// run must be matched by procedureId, not just by a terminal status.
-  ({NodeId id, NodeDraft draft}) finalRunNode() =>
-      memory.persistedOfType('ProcedureRun').firstWhere(
-            (p) =>
-                p.draft.values['status'] != 'running' &&
-                p.draft.values['procedureId'] == 'answer_with_memory_v1',
-          );
+  ({NodeId id, NodeDraft draft}) finalRunNode() => memory
+      .persistedOfType('ProcedureRun')
+      .firstWhere(
+        (p) =>
+            p.draft.values['status'] != 'running' &&
+            p.draft.values['procedureId'] == 'answer_with_memory_v1',
+      );
 
   // The two recalled node ids the warm path should cite in its derived_from
   // edges.
@@ -162,8 +163,10 @@ void main() {
 
       // (b) A Conclusion carries the generated answer.
       final conclusion = memory.persistedOfType('Conclusion').single;
-      expect(conclusion.draft.values['statement'],
-          'I have no notes on that yet.');
+      expect(
+        conclusion.draft.values['statement'],
+        'I have no notes on that yet.',
+      );
 
       // (c) No derived_from edges — nothing was cited.
       final derivedFromConclusion = memory.recordedEdges.where(
@@ -226,8 +229,9 @@ void main() {
       substrate.answerChunks = <String>['Back up by rsyncing nightly.'];
       final booted = await bootBrain('ztmp/d54_warm');
 
-      await booted.dispatcher
-          .accept(_accessWith(text: 'how do I automate backups?'));
+      await booted.dispatcher.accept(
+        _accessWith(text: 'how do I automate backups?'),
+      );
 
       // (a) An Event carries the inbound prompt.
       final event = memory.persistedOfType('Event').single;
@@ -235,13 +239,16 @@ void main() {
 
       // (b) A Conclusion carries the generated answer.
       final conclusion = memory.persistedOfType('Conclusion').single;
-      expect(conclusion.draft.values['statement'],
-          'Back up by rsyncing nightly.');
+      expect(
+        conclusion.draft.values['statement'],
+        'Back up by rsyncing nightly.',
+      );
 
       // (c) A derived_from edge ties the Conclusion to each cited node.
       final derivedTargets = memory.recordedEdges
           .where(
-              (e) => e.type == EdgeType.derivedFrom && e.from == conclusion.id)
+            (e) => e.type == EdgeType.derivedFrom && e.from == conclusion.id,
+          )
           .map((e) => e.to)
           .toSet();
       expect(derivedTargets, <NodeId>{citedA, citedB});
@@ -260,43 +267,49 @@ void main() {
   });
 
   group('D.54-3 repeat path through accept — automation-candidate note', () {
-    test('a repeated prompt emits one automation_candidate note on the trail',
-        () async {
-      // Recall surfaces a prior Event whose summary == this prompt: an earlier
-      // identical-shape turn (the repetition signal, D.41).
-      memory.recallResult = _recallWith(<Node>[
-        Node(
-          id: NodeId.fromString('n_00000000000000000000000056'),
-          typeName: 'Event',
-          values: const <String, Object?>{'summary': 'what is a quasar?'},
-          createdAt: DateTime.utc(2026, 6, 1),
-        ),
-      ]);
-      // The topic is already known (the user asked it before), so it
-      // classifies confidently — the signal under test is repetition, not
-      // cold curiosity (Q-D.40.1 / Q-D.41.1).
-      memory.classifyResult = const ClassificationResult(
-        decision: ClassificationDecision.confident,
-        bestMatch: 'Event',
-        bestSimilarity: 0.95,
-        secondSimilarity: 0.10,
-      );
-      substrate.answerChunks = <String>['A quasar is a luminous galactic core.'];
-      final booted = await bootBrain('ztmp/d54_repeat');
+    test(
+      'a repeated prompt emits one automation_candidate note on the trail',
+      () async {
+        // Recall surfaces a prior Event whose summary == this prompt: an earlier
+        // identical-shape turn (the repetition signal, D.41).
+        memory.recallResult = _recallWith(<Node>[
+          Node(
+            id: NodeId.fromString('n_00000000000000000000000056'),
+            typeName: 'Event',
+            values: const <String, Object?>{'summary': 'what is a quasar?'},
+            createdAt: DateTime.utc(2026, 6, 1),
+          ),
+        ]);
+        // The topic is already known (the user asked it before), so it
+        // classifies confidently — the signal under test is repetition, not
+        // cold curiosity (Q-D.40.1 / Q-D.41.1).
+        memory.classifyResult = const ClassificationResult(
+          decision: ClassificationDecision.confident,
+          bestMatch: 'Event',
+          bestSimilarity: 0.95,
+          secondSimilarity: 0.10,
+        );
+        substrate.answerChunks = <String>[
+          'A quasar is a luminous galactic core.',
+        ];
+        final booted = await bootBrain('ztmp/d54_repeat');
 
-      await booted.dispatcher.accept(_accessWith(text: 'what is a quasar?'));
+        await booted.dispatcher.accept(_accessWith(text: 'what is a quasar?'));
 
-      // The note reached the run trail the recorder opened on the stub.
-      final notes = memory.automationNotes();
-      expect(notes, hasLength(1));
-      expect(notes.single['signature'], 'what is a quasar?');
-      expect((notes.single['why'] as String).isNotEmpty, isTrue);
+        // The note reached the run trail the recorder opened on the stub.
+        final notes = memory.automationNotes();
+        expect(notes, hasLength(1));
+        expect(notes.single['signature'], 'what is a quasar?');
+        expect((notes.single['why'] as String).isNotEmpty, isTrue);
 
-      // The run still produced the answer in memory.
-      final conclusion = memory.persistedOfType('Conclusion').single;
-      expect(conclusion.draft.values['statement'],
-          'A quasar is a luminous galactic core.');
-    });
+        // The run still produced the answer in memory.
+        final conclusion = memory.persistedOfType('Conclusion').single;
+        expect(
+          conclusion.draft.values['statement'],
+          'A quasar is a luminous galactic core.',
+        );
+      },
+    );
 
     test('a cold (non-repeat) prompt emits no automation note', () async {
       // Default classify `unknown` → cold path, not a repeat.
@@ -309,24 +322,29 @@ void main() {
   });
 
   group('D.54-4 streamed answer through accept', () {
-    test('a multi-chunk substrate stream is drained into the Conclusion',
-        () async {
-      // A genuinely chunked stream: the proof the body drained the whole stream
-      // is that the persisted Conclusion is the concatenation of every chunk.
-      substrate.answerChunks = <String>[
-        'Back up by ',
-        'rsyncing ',
-        'nightly to the NAS.',
-      ];
-      final booted = await bootBrain('ztmp/d54_stream');
+    test(
+      'a multi-chunk substrate stream is drained into the Conclusion',
+      () async {
+        // A genuinely chunked stream: the proof the body drained the whole stream
+        // is that the persisted Conclusion is the concatenation of every chunk.
+        substrate.answerChunks = <String>[
+          'Back up by ',
+          'rsyncing ',
+          'nightly to the NAS.',
+        ];
+        final booted = await bootBrain('ztmp/d54_stream');
 
-      await booted.dispatcher
-          .accept(_accessWith(text: 'how do I automate backups?'));
+        await booted.dispatcher.accept(
+          _accessWith(text: 'how do I automate backups?'),
+        );
 
-      final conclusion = memory.persistedOfType('Conclusion').single;
-      expect(conclusion.draft.values['statement'],
-          'Back up by rsyncing nightly to the NAS.');
-    });
+        final conclusion = memory.persistedOfType('Conclusion').single;
+        expect(
+          conclusion.draft.values['statement'],
+          'Back up by rsyncing nightly to the NAS.',
+        );
+      },
+    );
   });
 }
 
@@ -341,24 +359,23 @@ Access _accessWith({
   // so it still resolves the phase-2 run rather than the phase-1 router.
   String? kindHint = SystemProcedures.promptAnalyzerV1,
   DeliverCallback? deliver,
-}) =>
-    Access(
-      envelope: InboundRequest(text: text, kindHint: kindHint),
-      identity: ResolvedIdentity(principalId: 'p1'),
-      session: Session(sessionId: 's1'),
-      persona: Persona.assistant(),
-      deliver: deliver ?? (chunk) => Stream<OutboundChunk>.value(chunk),
-    );
+}) => Access(
+  envelope: InboundRequest(text: text, kindHint: kindHint),
+  identity: ResolvedIdentity(principalId: 'p1'),
+  session: Session(sessionId: 's1'),
+  persona: Persona.assistant(),
+  deliver: deliver ?? (chunk) => Stream<OutboundChunk>.value(chunk),
+);
 
 RecallResult _recallWith(List<Node> nodes) => RecallResult(
-      nodes: nodes,
-      report: RecallReport(
-        candidatesPerMode: <RecallMode, int>{RecallMode.bm25: nodes.length},
-        fusionStrategy: FusionStrategy.rrf,
-        diversityStrategy: DiversityStrategy.mmr,
-        elapsedMs: 7,
-      ),
-    );
+  nodes: nodes,
+  report: RecallReport(
+    candidatesPerMode: <RecallMode, int>{RecallMode.bm25: nodes.length},
+    fusionStrategy: FusionStrategy.rrf,
+    diversityStrategy: DiversityStrategy.mmr,
+    elapsedMs: 7,
+  ),
+);
 
 // ── A recording in-process `TomBrainMemoryClient` stub ──────────────────
 //
@@ -409,9 +426,11 @@ class _StubMemory implements TomBrainMemory {
   /// trail the recorder opened on this stub, not off a returned outcome.
   Iterable<Map<String, Object?>> automationNotes() => _trails.values
       .expand((entries) => entries)
-      .where((e) =>
-          e.kind == TrailEntryKind.note &&
-          e.payload['category'] == automationCandidateCategory)
+      .where(
+        (e) =>
+            e.kind == TrailEntryKind.note &&
+            e.payload['category'] == automationCandidateCategory,
+      )
       .map((e) => e.payload['payload'] as Map<String, Object?>);
 
   @override
@@ -427,14 +446,14 @@ class _StubMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -516,8 +535,7 @@ class _StubMemory implements TomBrainMemory {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── An answer-capturing `TomBrainSubstrateClient` stub ──────────────────
@@ -536,11 +554,10 @@ class _StubSubstrate implements TomBrainSubstrateClient {
   Future<void> close() async {}
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) {
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -558,18 +575,17 @@ class _StubSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -619,6 +635,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

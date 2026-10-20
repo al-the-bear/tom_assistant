@@ -79,38 +79,39 @@ void main() {
     return ProcedureResolver.fromStore(store);
   }
 
-  group('D.45 an unresolved tool-call attempt is not returned as the answer',
-      () {
-    test('the loop re-enters with an error turn and delivers the real answer',
-        () async {
-      substrate.bogusCallTextFor = 'totally.bogus';
-      substrate.answerText = 'the final answer';
+  group('D.45 an unresolved tool-call attempt is not returned as the answer', () {
+    test(
+      'the loop re-enters with an error turn and delivers the real answer',
+      () async {
+        substrate.bogusCallTextFor = 'totally.bogus';
+        substrate.answerText = 'the final answer';
 
-      final answerDeltas = <String>[];
-      final resolver = await systemResolver();
-      final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
-      final outcome = await engine
-          .invoke(
-            ProcedureInvocation(
-              procedureId: 'answer_with_memory_v1',
-              arguments: <String, Object?>{'text': 'please use a tool'},
-            ),
-            tokenSink: (String delta) async => answerDeltas.add(delta),
-          )
-          .outcome;
+        final answerDeltas = <String>[];
+        final resolver = await systemResolver();
+        final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
+        final outcome = await engine
+            .invoke(
+              ProcedureInvocation(
+                procedureId: 'answer_with_memory_v1',
+                arguments: <String, Object?>{'text': 'please use a tool'},
+              ),
+              tokenSink: (String delta) async => answerDeltas.add(delta),
+            )
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      // The bogus, unresolved call text must never reach the answer channel.
-      final answerStream = answerDeltas.join();
-      expect(answerStream, isNot(contains('call:totally.bogus')));
-      // The terminal, valid answer is what the user gets.
-      expect(answerStream, contains('the final answer'));
+        // The bogus, unresolved call text must never reach the answer channel.
+        final answerStream = answerDeltas.join();
+        expect(answerStream, isNot(contains('call:totally.bogus')));
+        // The terminal, valid answer is what the user gets.
+        expect(answerStream, contains('the final answer'));
 
-      // The loop did not exit on the bogus turn: it ran the error-turn re-entry
-      // and then the answer turn (≥ 2 substrate completions).
-      expect(substrate.callCount, greaterThanOrEqualTo(2));
-    });
+        // The loop did not exit on the bogus turn: it ran the error-turn re-entry
+        // and then the answer turn (≥ 2 substrate completions).
+        expect(substrate.callCount, greaterThanOrEqualTo(2));
+      },
+    );
   });
 }
 
@@ -134,11 +135,11 @@ class _UnknownToolThenAnswerSubstrate implements TomBrainSubstrateClient {
   bool _proposed = false;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     callCount += 1;
     final hasTools = call.options.toolCatalogue.isNotEmpty;
 
-    const completed = LlmStreamCompleted(
+    const completed = LlmRunCompleted(
       callId: 'c',
       report: LlmCallReport(
         providerId: 'p',
@@ -156,35 +157,31 @@ class _UnknownToolThenAnswerSubstrate implements TomBrainSubstrateClient {
       _proposed = true;
       // A text call to a tool not in the live catalogue — looks like a tool
       // call, resolves to zero executable calls (the unresolved path).
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        LlmStreamChunk(
-          callId: 'c',
-          text: 'call:$bogusCallTextFor{text: "probe"}',
-        ),
+      return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        LlmTextDelta('call:$bogusCallTextFor{text: "probe"}'),
         completed,
       ]);
     }
 
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: answerText),
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(answerText),
       completed,
     ]);
   }
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recall-capturing `TomBrainMemoryClient` (mirrors D.44) ────────
@@ -225,8 +222,7 @@ class _RecallCapturingMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -291,12 +287,10 @@ class _RecallCapturingMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -346,6 +340,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

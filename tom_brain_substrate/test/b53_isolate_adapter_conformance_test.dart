@@ -16,8 +16,8 @@
 //     `InProcessTomBrainSubstrate` (mirrors `_buildFacade` in
 //     `b41_in_process_facade_test.dart`). Used to prove the streaming
 //     surface behaves identically to the in-process facade: a
-//     `completeStream` call emits exactly one [LlmStreamStarted], one or
-//     more [LlmStreamChunk], then exactly one [LlmStreamCompleted].
+//     `completeStream` call emits exactly one [LlmRunStarted], one or
+//     more [LlmTextDelta], then exactly one [LlmRunCompleted].
 //
 //   * [buildBadAnchorSubstrate] — a hand-rolled, NON-enforcing
 //     `TomBrainSubstrateClient` whose `complete` / `completeStream`
@@ -52,38 +52,31 @@ void main() {
         final events = await adapter.completeStream(_assistantCall()).toList();
 
         expect(events, isNotEmpty);
-        expect(events.first, isA<LlmStreamStarted>());
-        expect(events.last, isA<LlmStreamCompleted>());
+        expect(events.first, isA<LlmRunStarted>());
+        expect(events.last, isA<LlmRunCompleted>());
 
         // Exactly one Started, exactly one terminal Completed, and at
         // least one Chunk in between — the spec § 4.3 streaming shape.
-        expect(events.whereType<LlmStreamStarted>().length, 1);
-        expect(events.whereType<LlmStreamCompleted>().length, 1);
-        expect(events.whereType<LlmStreamFailed>(), isEmpty);
-        expect(events.whereType<LlmStreamChunk>(), isNotEmpty);
+        expect(events.whereType<LlmRunStarted>().length, 1);
+        expect(events.whereType<LlmRunCompleted>().length, 1);
+        expect(events.whereType<LlmRunFailed>(), isEmpty);
+        expect(events.whereType<LlmTextDelta>(), isNotEmpty);
 
-        // Every chunk and the terminal share the started call id.
-        final started = events.first as LlmStreamStarted;
-        for (final e in events.whereType<LlmStreamChunk>()) {
-          expect(e.callId, started.callId);
-        }
-        final completed = events.last as LlmStreamCompleted;
+        // The terminal names the call the started event opened.
+        final started = events.first as LlmRunStarted;
+        final completed = events.last as LlmRunCompleted;
         expect(completed.callId, started.callId);
 
         // The surfaced report carries the current anchor (the worker
         // facade enforces; the proxy re-affirms).
-        expect(
-          AnchorRegistry.isCurrent(completed.report.anchorHash),
-          isTrue,
-        );
+        expect(AnchorRegistry.isCurrent(completed.report.anchorHash), isTrue);
       } finally {
         await host.shutdown();
       }
     });
 
     test('complete re-checks the anchor at the proxy and throws '
-        'AnchorViolation when the worker returns a tampered report',
-        () async {
+        'AnchorViolation when the worker returns a tampered report', () async {
       final host = TomBrainSubstrateIsolateHost(
         factory: buildBadAnchorSubstrate,
       );
@@ -116,27 +109,29 @@ void main() {
       }
     });
 
-    test('unary surface round-trips: embed + stats cross the boundary',
-        () async {
-      final host = TomBrainSubstrateIsolateHost(
-        factory: buildStubBackedSubstrate,
-      );
-      await host.spawn();
-      final adapter = IsolateTomBrainSubstrateAdapter(host: host);
-      try {
-        final embedding = await adapter.embed('hello');
-        expect(embedding.modelIdentity.modelId, 'stub-embedder');
-        expect(embedding.vec.values.length, 4);
+    test(
+      'unary surface round-trips: embed + stats cross the boundary',
+      () async {
+        final host = TomBrainSubstrateIsolateHost(
+          factory: buildStubBackedSubstrate,
+        );
+        await host.spawn();
+        final adapter = IsolateTomBrainSubstrateAdapter(host: host);
+        try {
+          final embedding = await adapter.embed('hello');
+          expect(embedding.modelIdentity.modelId, 'stub-embedder');
+          expect(embedding.vec.values.length, 4);
 
-        // A completed call bumps the per-provider / per-role counters.
-        await adapter.complete(_assistantCall());
-        final stats = adapter.stats();
-        expect(stats.callsPerProvider['stub'], 1);
-        expect(stats.embeddingsComputed, 1);
-      } finally {
-        await host.shutdown();
-      }
-    });
+          // A completed call bumps the per-provider / per-role counters.
+          await adapter.complete(_assistantCall());
+          final stats = adapter.stats();
+          expect(stats.callsPerProvider['stub'], 1);
+          expect(stats.embeddingsComputed, 1);
+        } finally {
+          await host.shutdown();
+        }
+      },
+    );
 
     test('mcpClient is unsupported across the boundary', () async {
       final host = TomBrainSubstrateIsolateHost(
@@ -159,15 +154,15 @@ void main() {
 // ─── Shared call fixture ──────────────────────────────────────────────
 
 LlmCall _assistantCall() => LlmCall(
-      roleId: 'assistant_to_user',
-      inputs: const <String, Object?>{'question': 'hi'},
-      budget: Budget(
-        wallClockMs: 5000,
-        tokenSpend: 1000,
-        toolCalls: 1,
-        memoryWrites: 0,
-      ),
-    );
+  roleId: 'assistant_to_user',
+  inputs: const <String, Object?>{'question': 'hi'},
+  budget: Budget(
+    wallClockMs: 5000,
+    tokenSpend: 1000,
+    toolCalls: 1,
+    memoryWrites: 0,
+  ),
+);
 
 // ─── Worker factories (top-level: sendable across the isolate) ────────
 
@@ -205,29 +200,29 @@ class _BadAnchorSubstrate implements TomBrainSubstrateClient {
   int _seq = 0;
 
   LlmCallReport _badReport() => LlmCallReport(
-        providerId: 'bad-provider',
-        modelId: 'bad-model',
-        anchorHash: _tamperedAnchorHash,
-        promptHash: 'sha256:0',
-        tokensIn: 1,
-        tokensOut: 1,
-        retries: 0,
-        wallClockMs: 1,
-      );
+    providerId: 'bad-provider',
+    modelId: 'bad-model',
+    anchorHash: _tamperedAnchorHash,
+    promptHash: 'sha256:0',
+    tokensIn: 1,
+    tokensOut: 1,
+    retries: 0,
+    wallClockMs: 1,
+  );
 
   @override
   Future<LlmCallReport> complete(LlmCall call) async => _badReport();
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) async* {
+  Stream<LlmEvent> completeStream(LlmCall call) async* {
     final callId = 'bad-${_seq++}';
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
       callId: callId,
       providerId: 'bad-provider',
       modelId: 'bad-model',
     );
-    yield LlmStreamChunk(callId: callId, text: 'tampered');
-    yield LlmStreamCompleted(callId: callId, report: _badReport());
+    yield LlmTextDelta('tampered');
+    yield LlmRunCompleted(callId: callId, report: _badReport());
   }
 
   @override
@@ -248,15 +243,13 @@ class _BadAnchorSubstrate implements TomBrainSubstrateClient {
   Future<WebSearchResult> webSearch(
     String query, {
     WebSearchOptions options = WebSearchOptions.empty,
-  }) =>
-      throw UnimplementedError('webSearch');
+  }) => throw UnimplementedError('webSearch');
 
   @override
   Future<WebFetchResult> webFetch(
     Uri url, {
     WebFetchOptions options = WebFetchOptions.empty,
-  }) =>
-      throw UnimplementedError('webFetch');
+  }) => throw UnimplementedError('webFetch');
 
   @override
   McpClient mcpClient(McpEndpoint endpoint) =>
@@ -320,12 +313,11 @@ final class _StubWebSearch implements WebSearch {
   Future<WebSearchResult> search(
     String query, {
     WebSearchOptions options = WebSearchOptions.empty,
-  }) async =>
-      WebSearchResult(
-        provider: 'stub-search',
-        query: query,
-        hits: const <SearchHit>[],
-      );
+  }) async => WebSearchResult(
+    provider: 'stub-search',
+    query: query,
+    hits: const <SearchHit>[],
+  );
 
   @override
   void close() {}
@@ -336,13 +328,12 @@ final class _StubWebFetch implements WebFetch {
   Future<WebFetchResult> fetch(
     Uri url, {
     WebFetchOptions options = WebFetchOptions.empty,
-  }) async =>
-      WebFetchResult(
-        url: url,
-        status: 200,
-        contentType: 'text/plain',
-        text: '',
-      );
+  }) async => WebFetchResult(
+    url: url,
+    status: 200,
+    contentType: 'text/plain',
+    text: '',
+  );
 
   @override
   void close() {}

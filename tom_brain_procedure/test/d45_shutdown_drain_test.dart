@@ -49,73 +49,80 @@ Future<void> _tick() => Future<void>.delayed(const Duration(milliseconds: 1));
 
 void main() {
   group('D.45-1 RunCoordinator.drain quiesces the coordinator', () {
-    test('drain waits for the in-flight foreground run, then resolves idle',
-        () async {
-      final coord = RunCoordinator();
-      final gate = Completer<void>();
-      final run = coord.submitForeground<String>(() async {
-        await gate.future;
-        return 'done';
-      });
-      expect(coord.hasForegroundRun, isTrue);
+    test(
+      'drain waits for the in-flight foreground run, then resolves idle',
+      () async {
+        final coord = RunCoordinator();
+        final gate = Completer<void>();
+        final run = coord.submitForeground<String>(() async {
+          await gate.future;
+          return 'done';
+        });
+        expect(coord.hasForegroundRun, isTrue);
 
-      var drained = false;
-      final drainFuture = coord.drain().then((_) => drained = true);
-      await _tick();
-      // The live run still holds the slot, so the drain has not resolved.
-      expect(drained, isFalse);
-      expect(coord.isDraining, isTrue);
+        var drained = false;
+        final drainFuture = coord.drain().then((_) => drained = true);
+        await _tick();
+        // The live run still holds the slot, so the drain has not resolved.
+        expect(drained, isFalse);
+        expect(coord.isDraining, isTrue);
 
-      gate.complete();
-      expect(await run, 'done');
-      await drainFuture;
-      expect(drained, isTrue);
-      expect(coord.isIdle, isTrue);
-    });
+        gate.complete();
+        expect(await run, 'done');
+        await drainFuture;
+        expect(drained, isTrue);
+        expect(coord.isIdle, isTrue);
+      },
+    );
 
-    test('drain refuses new foreground/background work with CoordinatorDraining',
-        () async {
-      final coord = RunCoordinator();
-      final gate = Completer<void>();
-      coord.submitForeground<void>(() => gate.future);
+    test(
+      'drain refuses new foreground/background work with CoordinatorDraining',
+      () async {
+        final coord = RunCoordinator();
+        final gate = Completer<void>();
+        coord.submitForeground<void>(() => gate.future);
 
-      final drainFuture = coord.drain();
-      expect(
-        () => coord.submitForeground<void>(() async {}),
-        throwsA(isA<CoordinatorDraining>()),
-      );
-      expect(
-        () => coord.submitBackground<void>(() async {}),
-        throwsA(isA<CoordinatorDraining>()),
-      );
+        final drainFuture = coord.drain();
+        expect(
+          () => coord.submitForeground<void>(() async {}),
+          throwsA(isA<CoordinatorDraining>()),
+        );
+        expect(
+          () => coord.submitBackground<void>(() async {}),
+          throwsA(isA<CoordinatorDraining>()),
+        );
 
-      gate.complete();
-      await drainFuture;
-      expect(coord.isIdle, isTrue);
-    });
+        gate.complete();
+        await drainFuture;
+        expect(coord.isIdle, isTrue);
+      },
+    );
 
-    test('drain lets the queued FIFO foreground runs finish in order', () async {
-      final coord = RunCoordinator();
-      final order = <String>[];
-      final gate1 = Completer<void>();
-      final r1 = coord.submitForeground<void>(() async {
-        await gate1.future;
-        order.add('r1');
-      });
-      // r2 is queued behind the running r1.
-      final r2 = coord.submitForeground<void>(() async {
-        order.add('r2');
-      });
-      expect(coord.foregroundQueueLength, 1);
+    test(
+      'drain lets the queued FIFO foreground runs finish in order',
+      () async {
+        final coord = RunCoordinator();
+        final order = <String>[];
+        final gate1 = Completer<void>();
+        final r1 = coord.submitForeground<void>(() async {
+          await gate1.future;
+          order.add('r1');
+        });
+        // r2 is queued behind the running r1.
+        final r2 = coord.submitForeground<void>(() async {
+          order.add('r2');
+        });
+        expect(coord.foregroundQueueLength, 1);
 
-      final drainFuture = coord.drain();
-      gate1.complete();
-      await Future.wait<void>(<Future<void>>[r1, r2, drainFuture]);
+        final drainFuture = coord.drain();
+        gate1.complete();
+        await Future.wait<void>(<Future<void>>[r1, r2, drainFuture]);
 
-      // The whole chain — running plus queued — drained to completion.
-      expect(order, <String>['r1', 'r2']);
-      expect(coord.isIdle, isTrue);
-    });
+        // The whole chain — running plus queued — drained to completion.
+        expect(order, <String>['r1', 'r2']);
+        expect(coord.isIdle, isTrue);
+      },
+    );
 
     test('drain waits for a live background run', () async {
       final coord = RunCoordinator();
@@ -134,24 +141,26 @@ void main() {
       expect(coord.isIdle, isTrue);
     });
 
-    test('drain is best-effort: a timeout returns even while a body runs',
-        () async {
-      final coord = RunCoordinator();
-      final gate = Completer<void>();
-      coord.submitForeground<void>(() => gate.future);
+    test(
+      'drain is best-effort: a timeout returns even while a body runs',
+      () async {
+        final coord = RunCoordinator();
+        final gate = Completer<void>();
+        coord.submitForeground<void>(() => gate.future);
 
-      // The body never completes within the bound, so the drain gives up
-      // waiting and returns rather than blocking shutdown forever.
-      await coord.drain(timeout: const Duration(milliseconds: 30));
-      expect(coord.hasForegroundRun, isTrue);
-      expect(coord.isDraining, isTrue);
+        // The body never completes within the bound, so the drain gives up
+        // waiting and returns rather than blocking shutdown forever.
+        await coord.drain(timeout: const Duration(milliseconds: 30));
+        expect(coord.hasForegroundRun, isTrue);
+        expect(coord.isDraining, isTrue);
 
-      // Release the body so the coordinator's hard-step-deadline timer is
-      // cancelled cleanly (no lingering timer past the test).
-      gate.complete();
-      await _tick();
-      expect(coord.isIdle, isTrue);
-    });
+        // Release the body so the coordinator's hard-step-deadline timer is
+        // cancelled cleanly (no lingering timer past the test).
+        gate.complete();
+        await _tick();
+        expect(coord.isIdle, isTrue);
+      },
+    );
 
     test('drain on an already-idle coordinator resolves immediately and is '
         'idempotent', () async {
@@ -176,30 +185,32 @@ void main() {
     });
 
     BrainProcessConfig config() => BrainProcessConfig(
-          substrate: substrate,
-          memoryProvisioning: MemoryProvisioningConfig.inProcess(
-            client: memory,
-            memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d45_drain'),
-          ),
-          // Increment 6 (§6): the booted answer step resolves its prompt through
-          // the host `PromptResolver`; the parity fake supplies it so the gated
-          // run reaches its answer `sub.send` after the gate releases.
-          promptResolver: parity.resolver,
-          routeChainOf: parity.routeChainOf,
-        );
+      substrate: substrate,
+      memoryProvisioning: MemoryProvisioningConfig.inProcess(
+        client: memory,
+        memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d45_drain'),
+      ),
+      // Increment 6 (§6): the booted answer step resolves its prompt through
+      // the host `PromptResolver`; the parity fake supplies it so the gated
+      // run reaches its answer `sub.send` after the gate releases.
+      promptResolver: parity.resolver,
+      routeChainOf: parity.routeChainOf,
+    );
 
     Access userPrompt(String text) => Access(
-          // The entry router is the only routable procedure (§ 4.0.1); the gate
-          // parks the router's `analyser` call first, then — once released —
-          // the answer branch's `llm` call passes through (the gate is a
-          // permanent open).
-          envelope: InboundRequest(
-              text: text, kindHint: SystemProcedures.promptAnalyzerV1),
-          identity: ResolvedIdentity(principalId: 'p1'),
-          session: Session(sessionId: 's1'),
-          persona: Persona.assistant(),
-          deliver: (chunk) => Stream<OutboundChunk>.value(chunk),
-        );
+      // The entry router is the only routable procedure (§ 4.0.1); the gate
+      // parks the router's `analyser` call first, then — once released —
+      // the answer branch's `llm` call passes through (the gate is a
+      // permanent open).
+      envelope: InboundRequest(
+        text: text,
+        kindHint: SystemProcedures.promptAnalyzerV1,
+      ),
+      identity: ResolvedIdentity(principalId: 'p1'),
+      session: Session(sessionId: 's1'),
+      persona: Persona.assistant(),
+      deliver: (chunk) => Stream<OutboundChunk>.value(chunk),
+    );
 
     test('an in-flight foreground run completes (trail closed, exchange '
         'persisted) before memory is disposed', () async {
@@ -210,16 +221,21 @@ void main() {
       // and the run parks at the gated `llm` step.
       final accept = booted.dispatcher.accept(userPrompt('a question?'));
       await _tick();
-      expect(memory.persistedOfType('Conclusion'), isEmpty,
-          reason: 'the run is parked at the gated llm step');
+      expect(
+        memory.persistedOfType('Conclusion'),
+        isEmpty,
+        reason: 'the run is parked at the gated llm step',
+      );
 
       // Shut down while the run is in-flight. The drain must wait for it.
       var shutdownDone = false;
-      final shutdownFuture =
-          booted.shutdown().then((_) => shutdownDone = true);
+      final shutdownFuture = booted.shutdown().then((_) => shutdownDone = true);
       await _tick();
-      expect(shutdownDone, isFalse,
-          reason: 'the drain is waiting for the in-flight foreground run');
+      expect(
+        shutdownDone,
+        isFalse,
+        reason: 'the drain is waiting for the in-flight foreground run',
+      );
       expect(memory.closeCount, 0, reason: 'memory is not closed mid-drain');
 
       // Release the run. It finishes, closing its trail and persisting the
@@ -229,12 +245,19 @@ void main() {
       await shutdownFuture;
 
       expect(shutdownDone, isTrue);
-      expect(memory.persistedOfType('Event').single.draft.values['summary'],
-          'a question?');
-      expect(memory.persistedOfType('Conclusion').single.draft.values['statement'],
-          'the answer');
-      expect(memory.allTrailsClosed, isTrue,
-          reason: 'every opened trail was closed before memory disposal');
+      expect(
+        memory.persistedOfType('Event').single.draft.values['summary'],
+        'a question?',
+      );
+      expect(
+        memory.persistedOfType('Conclusion').single.draft.values['statement'],
+        'the answer',
+      );
+      expect(
+        memory.allTrailsClosed,
+        isTrue,
+        reason: 'every opened trail was closed before memory disposal',
+      );
       expect(memory.closeCount, 1);
       expect(substrate.closeCount, 1);
     });
@@ -281,12 +304,12 @@ class _GatedSubstrate implements TomBrainSubstrateClient {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) async* {
+  Stream<LlmEvent> completeStream(LlmCall call) async* {
     await _gate.future;
     for (final chunk in answerChunks) {
-      yield LlmStreamChunk(callId: 'c', text: chunk);
+      yield LlmTextDelta(chunk);
     }
-    yield const LlmStreamCompleted(
+    yield const LlmRunCompleted(
       callId: 'c',
       report: LlmCallReport(
         providerId: 'p',
@@ -303,18 +326,17 @@ class _GatedSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ─── A stateful in-process `TomBrainMemoryClient` ───────────────────
@@ -364,7 +386,8 @@ class _DrainMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -440,12 +463,10 @@ class _DrainMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -495,6 +516,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -77,19 +77,23 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'answer_with_memory_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'answer_with_memory_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
   /// The `automation_candidate` notes a finished run wrote to its trail.
   Iterable<Map<String, Object?>> automationNotes(ProcedureOutcome outcome) =>
       outcome.entries
-          .where((e) =>
-              e.kind == TrailEntryKind.note &&
-              e.payload['category'] == automationCandidateCategory)
+          .where(
+            (e) =>
+                e.kind == TrailEntryKind.note &&
+                e.payload['category'] == automationCandidateCategory,
+          )
           .map((e) => e.payload['payload'] as Map<String, Object?>);
 
   /// Seeds the recall double with a prior `Event` carrying [summary] as its
@@ -148,37 +152,43 @@ void main() {
   }
 
   group('D.41-1 the repeat path emits an automation-candidate note', () {
-    test('a single automation_candidate note is written to the trail',
-        () async {
-      seedPriorEvent('what is a quasar?');
+    test(
+      'a single automation_candidate note is written to the trail',
+      () async {
+        seedPriorEvent('what is a quasar?');
 
-      final outcome = await runWith('what is a quasar?');
+        final outcome = await runWith('what is a quasar?');
 
-      expect(automationNotes(outcome), hasLength(1));
-    });
+        expect(automationNotes(outcome), hasLength(1));
+      },
+    );
 
-    test('the note carries a non-empty why and the prompt as signature',
-        () async {
-      seedPriorEvent('what is a quasar?');
+    test(
+      'the note carries a non-empty why and the prompt as signature',
+      () async {
+        seedPriorEvent('what is a quasar?');
 
-      final outcome = await runWith('what is a quasar?');
+        final outcome = await runWith('what is a quasar?');
 
-      final note = automationNotes(outcome).single;
-      expect(note['signature'], 'what is a quasar?');
-      expect(note['why'], isNotNull);
-      expect((note['why'] as String).isNotEmpty, isTrue);
-    });
+        final note = automationNotes(outcome).single;
+        expect(note['signature'], 'what is a quasar?');
+        expect(note['why'], isNotNull);
+        expect((note['why'] as String).isNotEmpty, isTrue);
+      },
+    );
   });
 
   group('D.41-2 the no-repeat paths emit nothing', () {
-    test('a warm recall with no matching Event emits no automation note',
-        () async {
-      seedUnrelatedRecall();
+    test(
+      'a warm recall with no matching Event emits no automation note',
+      () async {
+        seedUnrelatedRecall();
 
-      final outcome = await runWith('what is a quasar?');
+        final outcome = await runWith('what is a quasar?');
 
-      expect(automationNotes(outcome), isEmpty);
-    });
+        expect(automationNotes(outcome), isEmpty);
+      },
+    );
 
     test('a recalled Event with a different summary is not a repeat', () async {
       seedPriorEvent('how do I back up?');
@@ -200,13 +210,17 @@ void main() {
   group('D.41-3 the run still succeeds on the repeat path', () {
     test('repeat: accepted outcome with an answer output', () async {
       seedPriorEvent('what is a quasar?');
-      substrate.answerChunks = <String>['A quasar is a luminous galactic core.'];
+      substrate.answerChunks = <String>[
+        'A quasar is a luminous galactic core.',
+      ];
 
       final outcome = await runWith('what is a quasar?');
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'),
-          'A quasar is a luminous galactic core.');
+      expect(
+        outcome.result!.output<String>('answer'),
+        'A quasar is a luminous galactic core.',
+      );
     });
   });
 }
@@ -252,14 +266,14 @@ class _RepeatCapturingMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -331,8 +345,7 @@ class _RepeatCapturingMemory implements TomBrainMemory {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── An answer-capturing `TomBrainSubstrateClient` ───────────────────
@@ -344,11 +357,10 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
   List<String> answerChunks = <String>['ok'];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) {
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -366,18 +378,17 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -427,6 +438,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

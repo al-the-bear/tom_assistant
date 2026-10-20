@@ -28,7 +28,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
-    show LlmTrailRecord, SubstrateBridge;
+    show LlmCallTrailRecord, SubstrateBridge;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show CapturedWirePrompt, SubstrateLog;
 
@@ -72,12 +72,13 @@ final class LlmTrailWriter {
 
   /// Writes the raw dump and emits the `↳` headline for [record]. Best-effort:
   /// any failure is swallowed so a trail write never breaks the turn (§9).
-  void write(LlmTrailRecord record) {
+  void write(LlmCallTrailRecord record) {
     try {
       final obs = record.observation;
       // Internal-role gate (§11.1): when internal-role capture is off, only the
       // user-facing role is trailed.
-      if (!captureInternalRoles && obs.callType != SubstrateBridge.defaultRole) {
+      if (!captureInternalRoles &&
+          obs.callType != SubstrateBridge.defaultRole) {
         return;
       }
 
@@ -95,7 +96,7 @@ final class LlmTrailWriter {
   }
 
   /// Builds the §5.2 JSON map in the spec's field order.
-  Map<String, Object?> _rawJson(LlmTrailRecord record) {
+  Map<String, Object?> _rawJson(LlmCallTrailRecord record) {
     final obs = record.observation;
     final report = obs.report;
     final options = obs.options;
@@ -138,13 +139,13 @@ final class LlmTrailWriter {
   /// message carrying that whole body. The split into system/user is not
   /// available at this layer (and would be a lossy re-derivation).
   Map<String, Object?> _wireBlock(CapturedWirePrompt wire) => <String, Object?>{
-        'messages': <Object?>[
-          <String, Object?>{'role': 'user', 'content': wire.body},
-        ],
-      };
+    'messages': <Object?>[
+      <String, Object?>{'role': 'user', 'content': wire.body},
+    ],
+  };
 
   /// The compact §5.1 headline, ending in the `↳ <relative-path>` link.
-  String _headline(LlmTrailRecord record, String relativePath) {
+  String _headline(LlmCallTrailRecord record, String relativePath) {
     final obs = record.observation;
     final report = obs.report;
     return 'llm ${obs.callType} ${report.providerId}/${report.modelId} '

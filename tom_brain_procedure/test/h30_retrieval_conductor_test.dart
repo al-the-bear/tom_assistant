@@ -84,85 +84,95 @@ void main() {
   Future<ProcedureOutcome> retrieve(String text) async {
     final engine = await retrievalEngine();
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'retrieve_for_prompt_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'retrieve_for_prompt_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
-  group('H.30-1 PE-6 — the conductor degrades to a fused non-LLM result',
-      () {
-    test('a failing substrate still yields a fused recall over cheap seeds',
-        () async {
-      substrate.failAll = true;
+  group('H.30-1 PE-6 — the conductor degrades to a fused non-LLM result', () {
+    test(
+      'a failing substrate still yields a fused recall over cheap seeds',
+      () async {
+        substrate.failAll = true;
 
-      final outcome = await retrieve('how do I automate backups?');
+        final outcome = await retrieve('how do I automate backups?');
 
-      // The run still closes accepted — an environmental LLM failure does
-      // not fail retrieval.
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      // The fused `memory.recall.multi` ran over the surviving non-LLM
-      // seeds (the cheap prompt seeds + the classify-driven semantic seed +
-      // the symbolic seeds).
-      expect(memory.lastMultiRecallQuery, isNotNull);
-      expect(memory.lastMultiRecallQuery!.seeds, isNotEmpty);
-    });
+        // The run still closes accepted — an environmental LLM failure does
+        // not fail retrieval.
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        // The fused `memory.recall.multi` ran over the surviving non-LLM
+        // seeds (the cheap prompt seeds + the classify-driven semantic seed +
+        // the symbolic seeds).
+        expect(memory.lastMultiRecallQuery, isNotNull);
+        expect(memory.lastMultiRecallQuery!.seeds, isNotEmpty);
+      },
+    );
   });
 
   group('H.30-2 HyDE embeds answers, not questions', () {
-    test('the hypothetical answers are embedded; the questions are not',
-        () async {
-      await retrieve('how do I automate backups?');
+    test(
+      'the hypothetical answers are embedded; the questions are not',
+      () async {
+        await retrieve('how do I automate backups?');
 
-      // `recall_hyde_v1` ran `recall_planner` → `hypothesis_writer` →
-      // embedded the answers.
-      expect(substrate.embeddedTexts, contains('ans1'));
-      expect(substrate.embeddedTexts, contains('ans2'));
-      // The clarifying questions are never embedded — only the answers
-      // seed vector recall (HyDE).
-      expect(substrate.embeddedTexts, isNot(contains('q1')));
-      expect(substrate.embeddedTexts, isNot(contains('q2')));
-    });
+        // `recall_hyde_v1` ran `recall_planner` → `hypothesis_writer` →
+        // embedded the answers.
+        expect(substrate.embeddedTexts, contains('ans1'));
+        expect(substrate.embeddedTexts, contains('ans2'));
+        // The clarifying questions are never embedded — only the answers
+        // seed vector recall (HyDE).
+        expect(substrate.embeddedTexts, isNot(contains('q1')));
+        expect(substrate.embeddedTexts, isNot(contains('q2')));
+      },
+    );
   });
 
-  group('H.30-3 the semantic cheap path seeds from the nearest Concepts',
-      () {
-    test('a confident classify produces a symbolic seed on the Concept name',
-        () async {
-      memory.classifyResult = const ClassificationResult(
-        decision: ClassificationDecision.confident,
-        bestMatch: 'BackupConcept',
-        bestSimilarity: 0.91,
-        secondSimilarity: 0.40,
-      );
+  group('H.30-3 the semantic cheap path seeds from the nearest Concepts', () {
+    test(
+      'a confident classify produces a symbolic seed on the Concept name',
+      () async {
+        memory.classifyResult = const ClassificationResult(
+          decision: ClassificationDecision.confident,
+          bestMatch: 'BackupConcept',
+          bestSimilarity: 0.91,
+          secondSimilarity: 0.40,
+        );
 
-      await retrieve('how do I automate backups?');
+        await retrieve('how do I automate backups?');
 
-      final seeds = memory.lastMultiRecallQuery!.seeds;
-      final conceptSeeds = seeds.where(
-        (s) =>
-            s.mode == RecallMode.symbolic &&
-            (s.filter?.attributes
-                    .any((a) => a.value == 'BackupConcept') ??
-                false),
-      );
-      expect(conceptSeeds, isNotEmpty,
-          reason: 'the confident concept classification should seed a '
-              'symbolic recall on the Concept name');
-    });
+        final seeds = memory.lastMultiRecallQuery!.seeds;
+        final conceptSeeds = seeds.where(
+          (s) =>
+              s.mode == RecallMode.symbolic &&
+              (s.filter?.attributes.any((a) => a.value == 'BackupConcept') ??
+                  false),
+        );
+        expect(
+          conceptSeeds,
+          isNotEmpty,
+          reason:
+              'the confident concept classification should seed a '
+              'symbolic recall on the Concept name',
+        );
+      },
+    );
   });
 
-  group('H.30-4 PE-4 — every sub-procedure is recorded as a ProcedureRun',
-      () {
-    test('the conductor plus four sub-procedures each persist a run node',
-        () async {
-      await retrieve('how do I automate backups?');
+  group('H.30-4 PE-4 — every sub-procedure is recorded as a ProcedureRun', () {
+    test(
+      'the conductor plus four sub-procedures each persist a run node',
+      () async {
+        await retrieve('how do I automate backups?');
 
-      // One ProcedureRun per run: the conductor and the four `recall_*`
-      // sub-procedures it dispatches → at least five distinct run markers.
-      expect(memory.procedureRunPersists, greaterThanOrEqualTo(5));
-    });
+        // One ProcedureRun per run: the conductor and the four `recall_*`
+        // sub-procedures it dispatches → at least five distinct run markers.
+        expect(memory.procedureRunPersists, greaterThanOrEqualTo(5));
+      },
+    );
   });
 
   group('H.30-5 retrievalRole tolerates markdown-fenced JSON', () {
@@ -178,9 +188,13 @@ void main() {
         'recall_planner',
         'how do I automate backups?',
       );
-      expect(out['ok'], isTrue,
-          reason: 'a fenced but well-formed JSON answer must parse, not '
-              'degrade');
+      expect(
+        out['ok'],
+        isTrue,
+        reason:
+            'a fenced but well-formed JSON answer must parse, not '
+            'degrade',
+      );
       final output = out['output'] as Map<String, Object?>;
       expect(output['questions'], equals(<String>['q1', 'q2']));
     });
@@ -219,28 +233,28 @@ class _RetrievalMemory implements TomBrainMemory {
   ClassificationResult classifyResult = const ClassificationResult.unknown();
 
   RecallResult _cannedResult() => RecallResult(
-        nodes: <Node>[
-          Node(
-            id: NodeId.fromString('n_00000000000000000000000042'),
-            typeName: 'Conclusion',
-            values: const <String, Object?>{'text': 'rsync nightly to NAS'},
-            createdAt: DateTime.utc(2026, 6, 1),
-          ),
-        ],
-        report: const RecallReport(
-          candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 3},
-          fusionStrategy: FusionStrategy.rrf,
-          diversityStrategy: DiversityStrategy.mmr,
-          elapsedMs: 5,
-        ),
-        provenance: <RecallProvenanceEntry>[
-          RecallProvenanceEntry(
-            nodeId: NodeId.fromString('n_00000000000000000000000042'),
-            seedIndexes: const <int>[0],
-            fusedScore: 0.5,
-          ),
-        ],
-      );
+    nodes: <Node>[
+      Node(
+        id: NodeId.fromString('n_00000000000000000000000042'),
+        typeName: 'Conclusion',
+        values: const <String, Object?>{'text': 'rsync nightly to NAS'},
+        createdAt: DateTime.utc(2026, 6, 1),
+      ),
+    ],
+    report: const RecallReport(
+      candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 3},
+      fusionStrategy: FusionStrategy.rrf,
+      diversityStrategy: DiversityStrategy.mmr,
+      elapsedMs: 5,
+    ),
+    provenance: <RecallProvenanceEntry>[
+      RecallProvenanceEntry(
+        nodeId: NodeId.fromString('n_00000000000000000000000042'),
+        seedIndexes: const <int>[0],
+        fusedScore: 0.5,
+      ),
+    ],
+  );
 
   @override
   StackApi get stacks => _stacks;
@@ -258,8 +272,7 @@ class _RetrievalMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -325,12 +338,10 @@ class _RetrievalMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A role-aware `TomBrainSubstrateClient` ───────────────────────────
@@ -351,10 +362,10 @@ class _RoleSubstrate implements TomBrainSubstrateClient {
   bool fence = false;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     if (failAll) {
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamFailed(
+      return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        const LlmRunFailed(
           callId: 'c',
           failure: LlmFailure(classCode: 'network', message: 'stubbed'),
           report: LlmCallReport(
@@ -372,9 +383,9 @@ class _RoleSubstrate implements TomBrainSubstrateClient {
     }
     final payload = _jsonFor(call.roleId);
     final text = fence ? '```json\n$payload\n```' : payload;
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: text),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(text),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -421,8 +432,7 @@ class _RoleSubstrate implements TomBrainSubstrateClient {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -472,6 +482,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

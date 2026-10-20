@@ -22,8 +22,9 @@ import 'package:test/test.dart';
 /// low-level `llm` method was retired (Phase 5, step 12), so the bridge's
 /// completion entry is now `send`, which selects a route by name and needs a
 /// resolver bound. The fake client ignores the chain; only its presence matters.
-List<RouteEntry> _fastRoute(String _) =>
-    const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')];
+List<RouteEntry> _fastRoute(String _) => const <RouteEntry>[
+  RouteEntry(providerId: 'p', model: 'm'),
+];
 
 void main() {
   late _FakeSubstrateClient client;
@@ -41,58 +42,60 @@ void main() {
   });
 
   group('C.13 SubstrateBridge.send', () {
-    test('builds an LlmCall, concatenates chunk text, flattens report',
-        () async {
-      client.streamEvents = <LlmStreamEvent>[
-        const LlmStreamStarted(
-          callId: 'c1',
-          providerId: 'ollama:local',
-          modelId: 'gemma3:27b',
-        ),
-        const LlmStreamChunk(callId: 'c1', text: 'Hello, '),
-        const LlmStreamChunk(callId: 'c1', text: 'world.'),
-        const LlmStreamCompleted(
-          callId: 'c1',
-          report: LlmCallReport(
+    test(
+      'builds an LlmCall, concatenates chunk text, flattens report',
+      () async {
+        client.streamEvents = <LlmEvent>[
+          const LlmRunStarted(
+            callId: 'c1',
             providerId: 'ollama:local',
             modelId: 'gemma3:27b',
-            anchorHash: 'a1',
-            promptHash: 'p1',
-            tokensIn: 12,
-            tokensOut: 7,
-            retries: 1,
-            wallClockMs: 340,
-            cost: 0.0,
-            templateSha: 'sha1',
-            notes: <String>['note'],
           ),
-        ),
-      ];
+          const LlmTextDelta('Hello, '),
+          const LlmTextDelta('world.'),
+          const LlmRunCompleted(
+            callId: 'c1',
+            report: LlmCallReport(
+              providerId: 'ollama:local',
+              modelId: 'gemma3:27b',
+              anchorHash: 'a1',
+              promptHash: 'p1',
+              tokensIn: 12,
+              tokensOut: 7,
+              retries: 1,
+              wallClockMs: 340,
+              cost: 0.0,
+              templateSha: 'sha1',
+              notes: <String>['note'],
+            ),
+          ),
+        ];
 
-      final out = await bridge.send('what is X?', llmRoute: 'fast');
+        final out = await bridge.send('what is X?', llmRoute: 'fast');
 
-      // (a) Inbound conversion — role default + prompt input + budget.
-      final call = client.lastCall!;
-      expect(call.roleId, SubstrateBridge.defaultRole);
-      expect(call.inputs, <String, Object?>{'prompt': 'what is X?'});
-      expect(call.budget.wallClockMs, 86400000);
-      expect(call.budget.tokenSpend, 100000000);
+        // (a) Inbound conversion — role default + prompt input + budget.
+        final call = client.lastCall!;
+        expect(call.roleId, SubstrateBridge.defaultRole);
+        expect(call.inputs, <String, Object?>{'prompt': 'what is X?'});
+        expect(call.budget.wallClockMs, 86400000);
+        expect(call.budget.tokenSpend, 100000000);
 
-      // (b) Outbound flattening — concatenated text + report map.
-      expect(out['text'], 'Hello, world.');
-      final report = out['report']! as Map<String, Object?>;
-      expect(report['providerId'], 'ollama:local');
-      expect(report['modelId'], 'gemma3:27b');
-      expect(report['anchorHash'], 'a1');
-      expect(report['promptHash'], 'p1');
-      expect(report['tokensIn'], 12);
-      expect(report['tokensOut'], 7);
-      expect(report['retries'], 1);
-      expect(report['wallClockMs'], 340);
-      expect(report['cost'], 0.0);
-      expect(report['templateSha'], 'sha1');
-      expect(report['notes'], <String>['note']);
-    });
+        // (b) Outbound flattening — concatenated text + report map.
+        expect(out['text'], 'Hello, world.');
+        final report = out['report']! as Map<String, Object?>;
+        expect(report['providerId'], 'ollama:local');
+        expect(report['modelId'], 'gemma3:27b');
+        expect(report['anchorHash'], 'a1');
+        expect(report['promptHash'], 'p1');
+        expect(report['tokensIn'], 12);
+        expect(report['tokensOut'], 7);
+        expect(report['retries'], 1);
+        expect(report['wallClockMs'], 340);
+        expect(report['cost'], 0.0);
+        expect(report['templateSha'], 'sha1');
+        expect(report['notes'], <String>['note']);
+      },
+    );
 
     test('passes the caller-supplied role through', () async {
       client.streamEvents = _completedStream('ok');
@@ -105,39 +108,51 @@ void main() {
     // default envelope. So the budget-building behaviour (`_buildBudget`) is
     // proven through `retrievalRole`, which routes by role and asserts on
     // `client.lastCall!.budget` regardless of what the role text decodes to.
-    test('builds the budget from a primitive map, falling back per field',
-        () async {
-      client.streamEvents = _completedStream('ok');
-      await bridge.retrievalRole('recall_planner', 'q',
+    test(
+      'builds the budget from a primitive map, falling back per field',
+      () async {
+        client.streamEvents = _completedStream('ok');
+        await bridge.retrievalRole(
+          'recall_planner',
+          'q',
           budget: const <String, Object?>{
             'wallClockMs': 5000,
             'tokenSpend': 200,
             // toolCalls + memoryWrites omitted → default fallback.
-          });
-      final b = client.lastCall!.budget;
-      expect(b.wallClockMs, 5000);
-      expect(b.tokenSpend, 200);
-      expect(b.toolCalls, 800); // default
-      expect(b.memoryWrites, 1000000); // default
-    });
+          },
+        );
+        final b = client.lastCall!.budget;
+        expect(b.wallClockMs, 5000);
+        expect(b.tokenSpend, 200);
+        expect(b.toolCalls, 800); // default
+        expect(b.memoryWrites, 1000000); // default
+      },
+    );
 
-    test('rejects a non-numeric budget field with a FormatException (E.3.3)',
-        () async {
-      client.streamEvents = _completedStream('ok');
-      await expectLater(
-        bridge.retrievalRole('recall_planner', 'q',
-            budget: const <String, Object?>{'wallClockMs': 'lots'}),
-        throwsA(isA<FormatException>().having(
-          (e) => e.message,
-          'message',
-          contains('budget.wallClockMs must be a number (got'),
-        )),
-      );
-    });
+    test(
+      'rejects a non-numeric budget field with a FormatException (E.3.3)',
+      () async {
+        client.streamEvents = _completedStream('ok');
+        await expectLater(
+          bridge.retrievalRole(
+            'recall_planner',
+            'q',
+            budget: const <String, Object?>{'wallClockMs': 'lots'},
+          ),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('budget.wallClockMs must be a number (got'),
+            ),
+          ),
+        );
+      },
+    );
 
     test('omits null cost / templateSha from the report map', () async {
-      client.streamEvents = <LlmStreamEvent>[
-        const LlmStreamCompleted(
+      client.streamEvents = <LlmEvent>[
+        const LlmRunCompleted(
           callId: 'c1',
           report: LlmCallReport(
             providerId: 'p',
@@ -159,9 +174,9 @@ void main() {
     });
 
     test('throws LlmCompletionFailure on a failed stream', () async {
-      client.streamEvents = <LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c1', text: 'partial'),
-        const LlmStreamFailed(
+      client.streamEvents = <LlmEvent>[
+        const LlmTextDelta('partial'),
+        const LlmRunFailed(
           callId: 'c1',
           failure: LlmFailure(classCode: 'timeout', message: 'too slow'),
           report: LlmCallReport(
@@ -188,33 +203,38 @@ void main() {
       );
     });
 
-    test('throws StateError when the stream closes with no terminal event',
-        () async {
-      client.streamEvents = <LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c1', text: 'orphan'),
-      ];
-      await expectLater(
-          bridge.send('q', llmRoute: 'fast'), throwsA(isA<StateError>()));
-    });
+    test(
+      'throws StateError when the stream closes with no terminal event',
+      () async {
+        client.streamEvents = <LlmEvent>[const LlmTextDelta('orphan')];
+        await expectLater(
+          bridge.send('q', llmRoute: 'fast'),
+          throwsA(isA<StateError>()),
+        );
+      },
+    );
   });
 
   group('C.13 SubstrateBridge.send — streaming token sink (P1.3 #7)', () {
     test('forwards each chunk to the bound sink as it arrives, still '
         'returning the concatenated text', () async {
       final tokens = <String>[];
-      final streaming = SubstrateBridge(client, routeChainOf: _fastRoute,
-          onToken: (delta) async {
-        tokens.add(delta);
-      });
-      client.streamEvents = <LlmStreamEvent>[
-        const LlmStreamStarted(
+      final streaming = SubstrateBridge(
+        client,
+        routeChainOf: _fastRoute,
+        onToken: (delta) async {
+          tokens.add(delta);
+        },
+      );
+      client.streamEvents = <LlmEvent>[
+        const LlmRunStarted(
           callId: 'c1',
           providerId: 'ollama:local',
           modelId: 'gemma3:27b',
         ),
-        const LlmStreamChunk(callId: 'c1', text: 'Hello, '),
-        const LlmStreamChunk(callId: 'c1', text: 'world.'),
-        const LlmStreamCompleted(
+        const LlmTextDelta('Hello, '),
+        const LlmTextDelta('world.'),
+        const LlmRunCompleted(
           callId: 'c1',
           report: LlmCallReport(
             providerId: 'ollama:local',
@@ -241,14 +261,17 @@ void main() {
 
     test('forwards the partial deltas before a stream failure', () async {
       final tokens = <String>[];
-      final streaming = SubstrateBridge(client, routeChainOf: _fastRoute,
-          onToken: (delta) async {
-        tokens.add(delta);
-      });
-      client.streamEvents = <LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c1', text: 'par'),
-        const LlmStreamChunk(callId: 'c1', text: 'tial'),
-        const LlmStreamFailed(
+      final streaming = SubstrateBridge(
+        client,
+        routeChainOf: _fastRoute,
+        onToken: (delta) async {
+          tokens.add(delta);
+        },
+      );
+      client.streamEvents = <LlmEvent>[
+        const LlmTextDelta('par'),
+        const LlmTextDelta('tial'),
+        const LlmRunFailed(
           callId: 'c1',
           failure: LlmFailure(classCode: 'timeout', message: 'too slow'),
           report: LlmCallReport(
@@ -271,15 +294,17 @@ void main() {
       expect(tokens, <String>['par', 'tial']);
     });
 
-    test('with no sink bound the chunks are only buffered (internal path)',
-        () async {
-      // The default bridge (no onToken) must behave exactly as before — the
-      // internal/free-time path stays non-streaming. Proven by the existing
-      // send tests; this asserts the construction default explicitly.
-      client.streamEvents = _completedStream('ok');
-      final out = await bridge.send('q', llmRoute: 'fast');
-      expect(out['text'], 'ok');
-    });
+    test(
+      'with no sink bound the chunks are only buffered (internal path)',
+      () async {
+        // The default bridge (no onToken) must behave exactly as before — the
+        // internal/free-time path stays non-streaming. Proven by the existing
+        // send tests; this asserts the construction default explicitly.
+        client.streamEvents = _completedStream('ok');
+        final out = await bridge.send('q', llmRoute: 'fast');
+        expect(out['text'], 'ok');
+      },
+    );
   });
 
   group('C.13 SubstrateBridge.send — labeled thinking stages (§ 9.2 Todo 7)', () {
@@ -292,8 +317,11 @@ void main() {
 
     test('an analyser turn is labeled 🧠 analysing…', () async {
       final notices = <String>[];
-      final thinking = SubstrateBridge(client,
-          routeChainOf: _fastRoute, onThinking: (text) => notices.add(text));
+      final thinking = SubstrateBridge(
+        client,
+        routeChainOf: _fastRoute,
+        onThinking: (text) => notices.add(text),
+      );
       client.streamEvents = _completedStream('the analysis');
 
       final out = await thinking.send('q', llmRoute: 'fast', role: 'analyser');
@@ -307,8 +335,11 @@ void main() {
 
     test('a sub_thinker turn is labeled 🧩 reasoning…', () async {
       final notices = <String>[];
-      final thinking = SubstrateBridge(client,
-          routeChainOf: _fastRoute, onThinking: (text) => notices.add(text));
+      final thinking = SubstrateBridge(
+        client,
+        routeChainOf: _fastRoute,
+        onThinking: (text) => notices.add(text),
+      );
       client.streamEvents = _completedStream('a sub-answer');
 
       await thinking.send('q', llmRoute: 'fast', role: 'sub_thinker');
@@ -319,8 +350,11 @@ void main() {
 
     test('an evaluator turn is labeled 🔎 critiquing…', () async {
       final notices = <String>[];
-      final thinking = SubstrateBridge(client,
-          routeChainOf: _fastRoute, onThinking: (text) => notices.add(text));
+      final thinking = SubstrateBridge(
+        client,
+        routeChainOf: _fastRoute,
+        onThinking: (text) => notices.add(text),
+      );
       client.streamEvents = _completedStream('the critique');
 
       await thinking.send('q', llmRoute: 'fast', role: 'evaluator');
@@ -329,26 +363,31 @@ void main() {
       expect(notices.single, contains('the critique'));
     });
 
-    test('a thinking-channel turn with no stage role falls back to 🤔 thinking…',
-        () async {
-      final notices = <String>[];
-      final thinking = SubstrateBridge(client,
-          routeChainOf: _fastRoute, onThinking: (text) => notices.add(text));
-      client.streamEvents = _completedStream('working it out');
+    test(
+      'a thinking-channel turn with no stage role falls back to 🤔 thinking…',
+      () async {
+        final notices = <String>[];
+        final thinking = SubstrateBridge(
+          client,
+          routeChainOf: _fastRoute,
+          onThinking: (text) => notices.add(text),
+        );
+        client.streamEvents = _completedStream('working it out');
 
-      // `assistant_to_user` is not a deliberation stage; routed to thinking by
-      // an explicit channel, it gets the generic fallback label.
-      final out = await thinking.send(
-        'q',
-        llmRoute: 'fast',
-        role: 'assistant_to_user',
-        channel: 'thinking',
-      );
+        // `assistant_to_user` is not a deliberation stage; routed to thinking by
+        // an explicit channel, it gets the generic fallback label.
+        final out = await thinking.send(
+          'q',
+          llmRoute: 'fast',
+          role: 'assistant_to_user',
+          channel: 'thinking',
+        );
 
-      expect(notices.single, startsWith('🤔 thinking…'));
-      expect(notices.single, contains('working it out'));
-      expect(out['text'], 'working it out');
-    });
+        expect(notices.single, startsWith('🤔 thinking…'));
+        expect(notices.single, contains('working it out'));
+        expect(out['text'], 'working it out');
+      },
+    );
   });
 
   group('C.13 SubstrateBridge.embed', () {
@@ -422,8 +461,7 @@ void main() {
   });
 
   group('C.13 SubstrateBridge.fetch', () {
-    test('parses the url, passes the budget, flattens a text result',
-        () async {
+    test('parses the url, passes the budget, flattens a text result', () async {
       client.fetchResult = WebFetchResult(
         url: Uri.parse('https://example.com/page'),
         status: 200,
@@ -431,8 +469,10 @@ void main() {
         text: 'extracted prose',
       );
 
-      final out =
-          await bridge.fetch('https://example.com/page', budgetBytes: 1024);
+      final out = await bridge.fetch(
+        'https://example.com/page',
+        budgetBytes: 1024,
+      );
 
       expect(client.lastFetchUrl, Uri.parse('https://example.com/page'));
       expect(client.lastFetchOptions!.budgetBytes, 1024);
@@ -481,29 +521,29 @@ void main() {
 }
 
 /// Builds a minimal Started→Chunk→Completed stream emitting [text].
-List<LlmStreamEvent> _completedStream(String text) => <LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: text),
-      const LlmStreamCompleted(
-        callId: 'c',
-        report: LlmCallReport(
-          providerId: 'p',
-          modelId: 'm',
-          anchorHash: 'a',
-          promptHash: 'pr',
-          tokensIn: 1,
-          tokensOut: 1,
-          retries: 0,
-          wallClockMs: 1,
-        ),
-      ),
-    ];
+List<LlmEvent> _completedStream(String text) => <LlmEvent>[
+  LlmTextDelta(text),
+  const LlmRunCompleted(
+    callId: 'c',
+    report: LlmCallReport(
+      providerId: 'p',
+      modelId: 'm',
+      anchorHash: 'a',
+      promptHash: 'pr',
+      tokensIn: 1,
+      tokensOut: 1,
+      retries: 0,
+      wallClockMs: 1,
+    ),
+  ),
+];
 
 /// Fake `TomBrainSubstrateClient` capturing the subset of calls
 /// `SubstrateBridge` makes. Unused members fall through to
 /// `noSuchMethod`.
 class _FakeSubstrateClient implements TomBrainSubstrateClient {
   LlmCall? lastCall;
-  List<LlmStreamEvent> streamEvents = const <LlmStreamEvent>[];
+  List<LlmEvent> streamEvents = const <LlmEvent>[];
 
   String? lastEmbedText;
   EmbeddingResult embedResult = EmbeddingResult(
@@ -534,9 +574,9 @@ class _FakeSubstrateClient implements TomBrainSubstrateClient {
   );
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     lastCall = call;
-    return Stream<LlmStreamEvent>.fromIterable(streamEvents);
+    return Stream<LlmEvent>.fromIterable(streamEvents);
   }
 
   @override
@@ -566,6 +606,5 @@ class _FakeSubstrateClient implements TomBrainSubstrateClient {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

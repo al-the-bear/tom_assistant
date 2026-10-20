@@ -37,11 +37,7 @@
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
-    show
-        LlmCall,
-        LlmStreamChunk,
-        LlmStreamFailed,
-        TomBrainSubstrateClient;
+    show LlmCall, LlmTextDelta, LlmRunFailed, TomBrainSubstrateClient;
 
 import 'history_compactor.dart' show HistoryCompactionPrompt;
 
@@ -66,7 +62,7 @@ final Budget _defaultCompactionBudget = Budget(
   memoryWrites: 0,
 );
 
-/// Thrown when the substrate stream terminates in an [LlmStreamFailed] event.
+/// Thrown when the substrate stream terminates in an [LlmRunFailed] event.
 ///
 /// `HistoryCompactor._run` catches every throw from the seam and turns it into a
 /// failed run (the prior summary kept, `pending` retried — never silent data
@@ -117,7 +113,7 @@ final class SubstrateHistoryCompaction {
   /// Drains the role-routed completion stream and concatenates its chunks — the
   /// `complete` (buffered) surface returns only an `LlmCallReport`, so the text
   /// is recovered from the stream, exactly as `SubstrateBridge.llm` does.
-  /// A terminal [LlmStreamFailed] throws [HistoryCompactionSubstrateFailure],
+  /// A terminal [LlmRunFailed] throws [HistoryCompactionSubstrateFailure],
   /// which the [HistoryCompactor] turns into a failed run.
   Future<String> call(HistoryCompactionPrompt prompt) async {
     final llmCall = LlmCall(
@@ -128,9 +124,9 @@ final class SubstrateHistoryCompaction {
     final buffer = StringBuffer();
     await for (final event in client.completeStream(llmCall)) {
       switch (event) {
-        case LlmStreamChunk(:final text):
+        case LlmTextDelta(:final text):
           buffer.write(text);
-        case LlmStreamFailed(:final failure):
+        case LlmRunFailed(:final failure):
           throw HistoryCompactionSubstrateFailure(
             failure.classCode,
             failure.message,
@@ -148,6 +144,7 @@ final class SubstrateHistoryCompaction {
   /// path expects: the system scaffold (instruction + current summary) followed
   /// by the user scaffold (the pending batch). An empty user half degrades to
   /// the system scaffold alone.
-  static String _wire(HistoryCompactionPrompt prompt) =>
-      prompt.user.isEmpty ? prompt.system : '${prompt.system}\n\n${prompt.user}';
+  static String _wire(HistoryCompactionPrompt prompt) => prompt.user.isEmpty
+      ? prompt.system
+      : '${prompt.system}\n\n${prompt.user}';
 }

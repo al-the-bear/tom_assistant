@@ -1,5 +1,5 @@
 // The §5.2 raw-LLM-dump path — the single place that names where one
-// `LlmTrailRecord` is dumped (`tom_brain_logging.md` §5.2 / §5.1).
+// `LlmCallTrailRecord` is dumped (`tom_brain_logging.md` §5.2 / §5.1).
 //
 // The raw writer (`LlmTrailWriter`) writes the dump *here*, and the §5.4 / §5.5
 // / §5.8 summary surfaces all *link* here. They must agree byte-for-byte on the
@@ -7,7 +7,7 @@
 // consumers call it — never re-derive it.
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
-    show LlmTrailRecord;
+    show LlmCallTrailRecord;
 
 /// The file stem identifying one call's raw dump from its bare correlation
 /// facts: `<turnId>__<callSeq>` for a turn-bound call (`callSeq` zero-padded to
@@ -16,7 +16,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
 ///
 /// This is the single source of the stem rule. Both the raw writer (through
 /// [llmRawStem]) and the §5.7 per-procedure tree writer (which holds a
-/// `ProcedureTreeLlmRef`, not an `LlmTrailRecord`) call it, so a tree's link
+/// `ProcedureTreeLlmRef`, not an `LlmCallTrailRecord`) call it, so a tree's link
 /// and the raw file it points at agree byte-for-byte.
 String llmRawStemOf({
   required String? turnId,
@@ -46,7 +46,7 @@ String llmRawPathOf({
 /// turn-bound call (`callSeq` zero-padded to two digits, matching the §5.1
 /// `__01` form), falling back to `<runId>__<callId>` for a turn-less internal /
 /// dream call.
-String llmRawStem(LlmTrailRecord record) {
+String llmRawStem(LlmCallTrailRecord record) {
   final obs = record.observation;
   return llmRawStemOf(
     turnId: obs.turnId,
@@ -60,7 +60,7 @@ String llmRawStem(LlmTrailRecord record) {
 /// `llm/<callType>/<stem>.raw.json` (§5.2). The raw writer writes to it; the
 /// summary surfaces prefix it with the `../` / `../../` hop from their own
 /// directory to build the markdown link.
-String llmRawPathFromRoot(LlmTrailRecord record) =>
+String llmRawPathFromRoot(LlmCallTrailRecord record) =>
     'llm/${record.observation.callType}/${llmRawStem(record)}.raw.json';
 
 /// Characters that are illegal in a path component on at least one platform the

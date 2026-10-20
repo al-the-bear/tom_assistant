@@ -51,11 +51,9 @@
 
 import 'dart:async';
 
-import '../api/llm_call.dart';
-import '../api/llm_stream_event.dart';
+import 'package:tom_core_llm/tom_core_llm.dart';
 import 'http_llm_provider_base.dart';
 import 'openai_http_client.dart';
-import 'wire_prompt.dart';
 
 /// `LlmProvider` against any OpenAI-format Chat Completions endpoint
 /// (`https://api.openai.com/v1/`,
@@ -78,11 +76,11 @@ import 'wire_prompt.dart';
 ///     `promptHash` = sha256 of `prompt.combined`; `templateSha` =
 ///     `prompt.templateSha`.
 ///   - Streaming `completeStream` shape: exactly one
-///     [LlmStreamStarted], then one [LlmStreamChunk] per non-empty
-///     delta, then exactly one [LlmStreamCompleted] when the SSE
+///     [LlmRunStarted], then one [LlmTextDelta] per non-empty
+///     delta, then exactly one [LlmRunCompleted] when the SSE
 ///     stream's `[DONE]` sentinel arrives (or a content frame
 ///     carrying `finish_reason` closes the stream). Failures
-///     terminate the stream with [LlmStreamFailed].
+///     terminate the stream with [LlmRunFailed].
 ///
 /// **Cancellation.** Same posture as B.14: honoured on the streaming
 /// path only (via [OpenAiHttpClient.chatStream]). B.18 wires a
@@ -117,17 +115,16 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
     this.extraHeaders = const <String, String>{},
     OpenAiHttpClient? httpClient,
     super.requestTimeout,
-  })  : httpClient = httpClient ?? DefaultOpenAiHttpClient(),
-        super(ownsHttpClient: httpClient == null);
+  }) : httpClient = httpClient ?? DefaultOpenAiHttpClient(),
+       super(ownsHttpClient: httpClient == null);
 
   @override
   String get callIdPrefix => 'openai';
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     final stopwatch = Stopwatch()..start();
     final modelId = options.model ?? defaultModel;
     final openAiOptions = _toOpenAiOptions(options);
@@ -155,16 +152,16 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     final stopwatch = Stopwatch()..start();
     final modelId = options.model ?? defaultModel;
     final openAiOptions = _toOpenAiOptions(options);
     final callId = newCallId(prompt);
 
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
+      purpose: request.purpose,
       callId: callId,
       providerId: id,
       modelId: modelId,
@@ -186,7 +183,7 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
         requestTimeout: requestTimeout,
       )) {
         if (frag.contentDelta.isNotEmpty) {
-          yield LlmStreamChunk(callId: callId, text: frag.contentDelta);
+          yield LlmTextDelta(frag.contentDelta);
         }
         if (frag.promptTokens != null) promptTokens = frag.promptTokens;
         if (frag.completionTokens != null) {
@@ -200,7 +197,7 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
       // stream end). Emit the terminal Completed event with what we
       // accumulated.
       stopwatch.stop();
-      yield LlmStreamCompleted(
+      yield LlmRunCompleted(
         callId: callId,
         report: buildReport(
           prompt: prompt,
@@ -218,7 +215,7 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
       );
     } catch (e) {
       stopwatch.stop();
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: callId,
         failure: LlmFailure(
           // Unclassified at B.15; B.18 maps onto the spec § 5.4 taxonomy.
@@ -245,10 +242,7 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
   /// Not part of [LlmProvider] yet (spec § 4.1; B.25 / B.26 add the
   /// interface members). Exposed here so the embedding service can
   /// bind against it in the same change that grows the interface.
-  Future<List<double>> embedRaw({
-    required String input,
-    String? model,
-  }) async {
+  Future<List<double>> embedRaw({required String input, String? model}) async {
     final resolved = model ?? defaultEmbeddingModel;
     if (resolved == null) {
       throw StateError(
@@ -348,10 +342,7 @@ final class OpenAiPassthroughProvider extends HttpLlmProviderBase {
   /// Surfaces only knobs that have a meaningful OpenAI mapping; the
   /// router (B.18+) adds its own notes (retry decisions, downgrade
   /// reasons) on top.
-  List<String> _collectNotes(
-    LlmOptions options,
-    OpenAiChatResponse response,
-  ) {
+  List<String> _collectNotes(LlmOptions options, OpenAiChatResponse response) {
     final notes = <String>[];
     if (options.toolCatalogue.isNotEmpty) {
       // B.15 does not yet emit tool-call events; B.18 + B.27 wire

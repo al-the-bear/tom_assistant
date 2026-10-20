@@ -18,8 +18,9 @@ import 'package:test/test.dart';
 /// completion entry is now `send`, which selects a route by name and needs a
 /// resolver bound. The recording client ignores the chain; only its presence
 /// matters.
-List<RouteEntry> _fastRoute(String _) =>
-    const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')];
+List<RouteEntry> _fastRoute(String _) => const <RouteEntry>[
+  RouteEntry(providerId: 'p', model: 'm'),
+];
 
 void main() {
   late _RecordingSubstrate client;
@@ -27,33 +28,44 @@ void main() {
   setUp(() => client = _RecordingSubstrate());
 
   group('SubstrateBridge turn stamping', () {
-    test('with no turn bound the LlmCall carries no turnId / callSeq', () async {
-      final bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
-      await bridge.send('q', llmRoute: 'fast');
-      expect(client.calls.single.turnId, isNull);
-      expect(client.calls.single.callSeq, isNull);
-    });
+    test(
+      'with no turn bound the LlmCall carries no turnId / callSeq',
+      () async {
+        final bridge = SubstrateBridge(client, routeChainOf: _fastRoute);
+        await bridge.send('q', llmRoute: 'fast');
+        expect(client.calls.single.turnId, isNull);
+        expect(client.calls.single.callSeq, isNull);
+      },
+    );
 
-    test('a bound turn stamps the turnId and a monotonic callSeq per llm call',
-        () async {
-      final turn = TurnContext(TurnId.generate());
-      final bridge =
-          SubstrateBridge(client, routeChainOf: _fastRoute, turn: turn);
+    test(
+      'a bound turn stamps the turnId and a monotonic callSeq per llm call',
+      () async {
+        final turn = TurnContext(TurnId.generate());
+        final bridge = SubstrateBridge(
+          client,
+          routeChainOf: _fastRoute,
+          turn: turn,
+        );
 
-      await bridge.send('first', llmRoute: 'fast');
-      await bridge.send('second', llmRoute: 'fast');
+        await bridge.send('first', llmRoute: 'fast');
+        await bridge.send('second', llmRoute: 'fast');
 
-      expect(client.calls, hasLength(2));
-      expect(client.calls[0].turnId, same(turn.turnId));
-      expect(client.calls[0].callSeq, equals(1));
-      expect(client.calls[1].turnId, same(turn.turnId));
-      expect(client.calls[1].callSeq, equals(2));
-    });
+        expect(client.calls, hasLength(2));
+        expect(client.calls[0].turnId, same(turn.turnId));
+        expect(client.calls[0].callSeq, equals(1));
+        expect(client.calls[1].turnId, same(turn.turnId));
+        expect(client.calls[1].callSeq, equals(2));
+      },
+    );
 
     test('only llm calls consume a callSeq — embed does not', () async {
       final turn = TurnContext(TurnId.generate());
-      final bridge =
-          SubstrateBridge(client, routeChainOf: _fastRoute, turn: turn);
+      final bridge = SubstrateBridge(
+        client,
+        routeChainOf: _fastRoute,
+        turn: turn,
+      );
 
       await bridge.send('a', llmRoute: 'fast');
       await bridge.embed('not a completion');
@@ -67,29 +79,37 @@ void main() {
     });
 
     // The agent-SDK § 1.5 seam: a turn carrying a tom_brain session id stamps it
-    // onto the call's LlmOptions.brainSessionId; a turn without one (or no turn
+    // onto the call's LlmOptions.sessionId; a turn without one (or no turn
     // at all) leaves it null. HTTP providers ignore the field; the agent-SDK
     // provider in `sessionMode: brain` reads it.
     test('a turn with a brainSessionId stamps it onto LlmOptions', () async {
       final turn = TurnContext(TurnId.generate(), brainSessionId: 'tb-42');
-      final bridge =
-          SubstrateBridge(client, routeChainOf: _fastRoute, turn: turn);
+      final bridge = SubstrateBridge(
+        client,
+        routeChainOf: _fastRoute,
+        turn: turn,
+      );
 
       await bridge.send('q', llmRoute: 'fast');
 
-      expect(client.calls.single.options.brainSessionId, 'tb-42');
+      expect(client.calls.single.options.sessionId, 'tb-42');
     });
 
-    test('a turn without a brainSessionId leaves LlmOptions.brainSessionId null',
-        () async {
-      final turn = TurnContext(TurnId.generate());
-      final bridge =
-          SubstrateBridge(client, routeChainOf: _fastRoute, turn: turn);
+    test(
+      'a turn without a brainSessionId leaves LlmOptions.sessionId null',
+      () async {
+        final turn = TurnContext(TurnId.generate());
+        final bridge = SubstrateBridge(
+          client,
+          routeChainOf: _fastRoute,
+          turn: turn,
+        );
 
-      await bridge.send('q', llmRoute: 'fast');
+        await bridge.send('q', llmRoute: 'fast');
 
-      expect(client.calls.single.options.brainSessionId, isNull);
-    });
+        expect(client.calls.single.options.sessionId, isNull);
+      },
+    );
   });
 }
 
@@ -99,11 +119,11 @@ class _RecordingSubstrate implements TomBrainSubstrateClient {
   final List<LlmCall> calls = <LlmCall>[];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     calls.add(call);
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      const LlmStreamChunk(callId: 'c', text: 'ok'),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      const LlmTextDelta('ok'),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -121,16 +141,15 @@ class _RecordingSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec.zero(1),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec.zero(1),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -33,7 +33,7 @@
 //      returns an `LlmCallReport` whose `anchorHash` equals
 //      `AnchorRegistry.currentHash`.
 //      `completeStream` produces the same shape over a stream — every
-//      `LlmStreamCompleted` carries an anchored report and the facade
+//      `LlmRunCompleted` carries an anchored report and the facade
 //      emits a `LlmCallCompleted` event keyed to the same `callId` it
 //      stamped on the stream.
 //
@@ -170,14 +170,10 @@ void main() {
         () => f.facade.complete(_assistantCall()),
         throwsA(isA<StateError>()),
       );
-      expect(
-        () => f.facade.embed('hi'),
-        throwsA(isA<StateError>()),
-      );
+      expect(() => f.facade.embed('hi'), throwsA(isA<StateError>()));
     });
 
-    test('close shuts the embedding service / web tools / event bus',
-        () async {
+    test('close shuts the embedding service / web tools / event bus', () async {
       final f = _buildFacade();
       await f.facade.open(_minimalConfig());
       expect(f.embedding.isClosed, isFalse);
@@ -194,43 +190,41 @@ void main() {
       // closed). Build a second one, attach a listener, then close.
       final g = _buildFacade();
       final done = Completer<void>();
-      g.facade.events().listen(
-            (_) {},
-            onDone: done.complete,
-          );
+      g.facade.events().listen((_) {}, onDone: done.complete);
       await g.facade.close();
       await done.future.timeout(const Duration(seconds: 1));
     });
 
     // ─── LLM dispatch (buffered) ───────────────────────────────
 
-    test('complete returns an anchored report and emits LlmCallCompleted',
-        () async {
-      final f = _buildFacade();
-      await f.facade.open(_minimalConfig());
-      addTearDown(f.facade.close);
+    test(
+      'complete returns an anchored report and emits LlmCallCompleted',
+      () async {
+        final f = _buildFacade();
+        await f.facade.open(_minimalConfig());
+        addTearDown(f.facade.close);
 
-      final events = <SubstrateEvent>[];
-      final sub = f.facade.events().listen(events.add);
-      addTearDown(sub.cancel);
+        final events = <SubstrateEvent>[];
+        final sub = f.facade.events().listen(events.add);
+        addTearDown(sub.cancel);
 
-      final report = await f.facade.complete(_assistantCall());
+        final report = await f.facade.complete(_assistantCall());
 
-      expect(report.providerId, 'stub');
-      expect(report.modelId, 'stub-model');
-      expect(report.anchorHash, AnchorRegistry.currentHash);
-      // Allow the event microtask to fan out.
-      await Future<void>.delayed(Duration.zero);
+        expect(report.providerId, 'stub');
+        expect(report.modelId, 'stub-model');
+        expect(report.anchorHash, AnchorRegistry.currentHash);
+        // Allow the event microtask to fan out.
+        await Future<void>.delayed(Duration.zero);
 
-      expect(events, hasLength(1));
-      expect(events.single, isA<LlmCallCompleted>());
-      final completed = events.single as LlmCallCompleted;
-      expect(completed.callId, startsWith('sub-'));
-      expect(completed.report.anchorHash, AnchorRegistry.currentHash);
-    });
+        expect(events, hasLength(1));
+        expect(events.single, isA<LlmCallCompleted>());
+        final completed = events.single as LlmCallCompleted;
+        expect(completed.callId, startsWith('sub-'));
+        expect(completed.report.anchorHash, AnchorRegistry.currentHash);
+      },
+    );
 
-    test('complete updates per-provider + per-role stats counters',
-        () async {
+    test('complete updates per-provider + per-role stats counters', () async {
       final f = _buildFacade();
       await f.facade.open(_minimalConfig());
       addTearDown(f.facade.close);
@@ -260,29 +254,23 @@ void main() {
             .completeStream(_assistantCall())
             .toList();
 
-        expect(streamEvents.first, isA<LlmStreamStarted>());
-        expect(streamEvents.last, isA<LlmStreamCompleted>());
-        final completed = streamEvents.last as LlmStreamCompleted;
+        expect(streamEvents.first, isA<LlmRunStarted>());
+        expect(streamEvents.last, isA<LlmRunCompleted>());
+        final completed = streamEvents.last as LlmRunCompleted;
         expect(completed.report.anchorHash, AnchorRegistry.currentHash);
 
         await Future<void>.delayed(Duration.zero);
-        expect(
-          substrateEvents.whereType<LlmCallCompleted>(),
-          hasLength(1),
-        );
+        expect(substrateEvents.whereType<LlmCallCompleted>(), hasLength(1));
       },
     );
 
     test(
-      'completeStream relays LlmStreamFailed and emits LlmCallFailed',
+      'completeStream relays LlmRunFailed and emits LlmCallFailed',
       () async {
         final failingProvider = StubLlmProvider.alwaysFails(
           id: 'stub',
           defaultModel: 'stub-model',
-          failure: const LlmFailure(
-            classCode: 'unknown',
-            message: 'forced',
-          ),
+          failure: const LlmFailure(classCode: 'unknown', message: 'forced'),
         );
         final f = _buildFacade(provider: failingProvider);
         await f.facade.open(_minimalConfig());
@@ -297,15 +285,12 @@ void main() {
             .toList();
 
         // The router exhausts the single-entry chain and yields one
-        // terminal LlmStreamFailed.
+        // terminal LlmRunFailed.
         expect(streamEvents, isNotEmpty);
-        expect(streamEvents.last, isA<LlmStreamFailed>());
+        expect(streamEvents.last, isA<LlmRunFailed>());
 
         await Future<void>.delayed(Duration.zero);
-        expect(
-          substrateEvents.whereType<LlmCallFailed>(),
-          hasLength(1),
-        );
+        expect(substrateEvents.whereType<LlmCallFailed>(), hasLength(1));
       },
     );
 
@@ -381,8 +366,7 @@ void main() {
       final sub = f.facade.events().listen(events.add);
       addTearDown(sub.cancel);
 
-      final results =
-          await f.facade.embedBatch(const ['a', 'b', 'c']);
+      final results = await f.facade.embedBatch(const ['a', 'b', 'c']);
       expect(results, hasLength(3));
 
       await Future<void>.delayed(Duration.zero);
@@ -456,8 +440,7 @@ void main() {
       final sub = f.facade.events().listen(events.add);
       addTearDown(sub.cancel);
 
-      final result =
-          await f.facade.webFetch(Uri.parse('https://example.com/'));
+      final result = await f.facade.webFetch(Uri.parse('https://example.com/'));
       expect(result.status, 200);
 
       await Future<void>.delayed(Duration.zero);
@@ -517,8 +500,7 @@ void main() {
 
     // ─── Stats ─────────────────────────────────────────────────
 
-    test('stats() reflects the router cooldownsActive passthrough',
-        () async {
+    test('stats() reflects the router cooldownsActive passthrough', () async {
       final f = _buildFacade();
       await f.facade.open(_minimalConfig());
       addTearDown(f.facade.close);
@@ -535,25 +517,27 @@ void main() {
 
     // ─── Event broadcast semantics ─────────────────────────────
 
-    test('events() is a broadcast stream — late subscribers miss prior',
-        () async {
-      final f = _buildFacade();
-      await f.facade.open(_minimalConfig());
-      addTearDown(f.facade.close);
+    test(
+      'events() is a broadcast stream — late subscribers miss prior',
+      () async {
+        final f = _buildFacade();
+        await f.facade.open(_minimalConfig());
+        addTearDown(f.facade.close);
 
-      // First call happens before subscribing.
-      await f.facade.complete(_assistantCall());
-      await Future<void>.delayed(Duration.zero);
+        // First call happens before subscribing.
+        await f.facade.complete(_assistantCall());
+        await Future<void>.delayed(Duration.zero);
 
-      final lateEvents = <SubstrateEvent>[];
-      final sub = f.facade.events().listen(lateEvents.add);
-      addTearDown(sub.cancel);
+        final lateEvents = <SubstrateEvent>[];
+        final sub = f.facade.events().listen(lateEvents.add);
+        addTearDown(sub.cancel);
 
-      // Late subscriber sees only future events.
-      await f.facade.complete(_assistantCall());
-      await Future<void>.delayed(Duration.zero);
-      expect(lateEvents.whereType<LlmCallCompleted>(), hasLength(1));
-    });
+        // Late subscriber sees only future events.
+        await f.facade.complete(_assistantCall());
+        await Future<void>.delayed(Duration.zero);
+        expect(lateEvents.whereType<LlmCallCompleted>(), hasLength(1));
+      },
+    );
   });
 }
 
@@ -584,8 +568,8 @@ _FacadeFixture _buildFacade({
   McpClientFactory? mcpClientFactory,
 }) {
   final roles = bootstrapRoleRegistry();
-  final realProvider = provider ??
-      StubLlmProvider(id: 'stub', defaultModel: 'stub-model');
+  final realProvider =
+      provider ?? StubLlmProvider(id: 'stub', defaultModel: 'stub-model');
   final providers = <String, LlmProvider>{'stub': realProvider};
   final policy = RouterPolicy(
     roleRoutes: <String, List<RouteEntry>>{
@@ -621,38 +605,38 @@ _FacadeFixture _buildFacade({
 }
 
 LlmCall _assistantCall() => LlmCall(
-      roleId: 'assistant_to_user',
-      inputs: const <String, Object?>{'question': 'hi'},
-      budget: Budget(
-        wallClockMs: 5000,
-        tokenSpend: 1000,
-        toolCalls: 1,
-        memoryWrites: 0,
-      ),
-    );
+  roleId: 'assistant_to_user',
+  inputs: const <String, Object?>{'question': 'hi'},
+  budget: Budget(
+    wallClockMs: 5000,
+    tokenSpend: 1000,
+    toolCalls: 1,
+    memoryWrites: 0,
+  ),
+);
 
 SubstrateConfig _minimalConfig() => SubstrateConfig(
-      providers: const <ProviderProfile>[],
-      roleRoutes: const <String, List<RoleRouteEntryConfig>>{
-        'assistant_to_user': <RoleRouteEntryConfig>[
-          RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
-        ],
-      },
-      embedding: const EmbeddingChoice(
-        providerId: 'stub',
-        model: 'nomic-embed-text',
-        dims: 768,
-        normalize: true,
-      ),
-      webSearch: const WebSearchConfig(
-        defaultProvider: 'duckduckgo',
-        providers: <String, WebSearchProviderConfig>{
-          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
-        },
-      ),
-      webFetch: const WebFetchConfig(),
-      mcpClient: const McpClientConfigBlock(),
-    );
+  providers: const <ProviderProfile>[],
+  roleRoutes: const <String, List<RoleRouteEntryConfig>>{
+    'assistant_to_user': <RoleRouteEntryConfig>[
+      RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
+    ],
+  },
+  embedding: const EmbeddingChoice(
+    providerId: 'stub',
+    model: 'nomic-embed-text',
+    dims: 768,
+    normalize: true,
+  ),
+  webSearch: const WebSearchConfig(
+    defaultProvider: 'duckduckgo',
+    providers: <String, WebSearchProviderConfig>{
+      'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
+    },
+  ),
+  webFetch: const WebFetchConfig(),
+  mcpClient: const McpClientConfigBlock(),
+);
 
 // ─── Test doubles ─────────────────────────────────────────────────
 
@@ -717,11 +701,7 @@ final class _StubWebSearch implements WebSearch {
     final capped = primedHits.length > options.k
         ? primedHits.sublist(0, options.k)
         : primedHits;
-    return WebSearchResult(
-      provider: 'stub-search',
-      query: query,
-      hits: capped,
-    );
+    return WebSearchResult(provider: 'stub-search', query: query, hits: capped);
   }
 
   @override
@@ -740,7 +720,8 @@ final class _StubWebFetch implements WebFetch {
     WebFetchOptions options = WebFetchOptions.empty,
   }) async {
     if (isClosed) throw StateError('closed');
-    final base = primedResult ??
+    final base =
+        primedResult ??
         WebFetchResult(
           url: url,
           status: 200,
@@ -767,53 +748,51 @@ final class _StubWebFetch implements WebFetch {
 /// Wrapper around any [LlmProvider] that rewrites the report's
 /// `anchorHash` before returning. Used to prove the facade refuses
 /// to surface a report whose anchor has been tampered with.
-final class _AnchorTamperingProvider implements LlmProvider {
+final class _AnchorTamperingProvider extends LlmProvider {
   final LlmProvider inner;
   final String rewrittenHash;
 
-  _AnchorTamperingProvider({
-    required this.inner,
-    required this.rewrittenHash,
-  });
+  _AnchorTamperingProvider({required this.inner, required this.rewrittenHash});
 
   @override
   String get id => inner.id;
 
   LlmCallReport _rewrite(LlmCallReport r) => LlmCallReport(
-        providerId: r.providerId,
-        modelId: r.modelId,
-        anchorHash: rewrittenHash,
-        promptHash: r.promptHash,
-        tokensIn: r.tokensIn,
-        tokensOut: r.tokensOut,
-        retries: r.retries,
-        wallClockMs: r.wallClockMs,
-        cost: r.cost,
-        templateSha: r.templateSha,
-        notes: r.notes,
-      );
+    providerId: r.providerId,
+    modelId: r.modelId,
+    anchorHash: rewrittenHash,
+    promptHash: r.promptHash,
+    tokensIn: r.tokensIn,
+    tokensOut: r.tokensOut,
+    retries: r.retries,
+    wallClockMs: r.wallClockMs,
+    cost: r.cost,
+    templateSha: r.templateSha,
+    notes: r.notes,
+  );
 
   @override
-  Future<LlmCallReport> complete(WirePrompt prompt, LlmOptions options) async {
-    final r = await inner.complete(prompt, options);
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
+    final r = await inner.complete(
+      LlmRequest(prompt: prompt, options: options),
+    );
     return _rewrite(r);
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
-    await for (final ev in inner.completeStream(prompt, options)) {
-      if (ev is LlmStreamCompleted) {
-        yield LlmStreamCompleted(
-          callId: ev.callId,
-          report: _rewrite(ev.report),
-        );
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
+    await for (final ev in inner.run(
+      LlmRequest(prompt: prompt, options: options),
+    )) {
+      if (ev is LlmRunCompleted) {
+        yield LlmRunCompleted(callId: ev.callId, report: _rewrite(ev.report));
       } else {
         yield ev;
       }
     }
   }
 }
-

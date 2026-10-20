@@ -84,44 +84,50 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'answer_with_memory_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'answer_with_memory_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
   group('D.43-1 a proposed tool call is invoked end-to-end', () {
-    test('the model proposing memory.read reaches the real recall surface',
-        () async {
-      substrate.proposeReadFor = 'the tool probe';
+    test(
+      'the model proposing memory.read reaches the real recall surface',
+      () async {
+        substrate.proposeReadFor = 'the tool probe';
 
-      await runWith('please use a tool');
+        await runWith('please use a tool');
 
-      // The loop ran the proposed tool through `tool.invoke`, which reached the
-      // shipped `memory.read` tool, which called `memory.recall` with the text
-      // the model proposed. Only the tool issues a single `recall` (the
-      // retrieval conductor fuses into `recall.multi`), so this query is the
-      // tool's footprint.
-      expect(
-        memory.recallQueries.map((q) => q.text),
-        contains('the tool probe'),
-      );
-    });
+        // The loop ran the proposed tool through `tool.invoke`, which reached the
+        // shipped `memory.read` tool, which called `memory.recall` with the text
+        // the model proposed. Only the tool issues a single `recall` (the
+        // retrieval conductor fuses into `recall.multi`), so this query is the
+        // tool's footprint.
+        expect(
+          memory.recallQueries.map((q) => q.text),
+          contains('the tool probe'),
+        );
+      },
+    );
 
-    test('the tool result is folded into a later completion transcript',
-        () async {
-      substrate.proposeReadFor = 'the tool probe';
+    test(
+      'the tool result is folded into a later completion transcript',
+      () async {
+        substrate.proposeReadFor = 'the tool probe';
 
-      await runWith('please use a tool');
+        await runWith('please use a tool');
 
-      // The completion that produced the final answer saw the tool result —
-      // the loop appended a "Tool results:" block naming the tool before
-      // re-entering, so the model could answer from it.
-      final answeringPrompt = substrate.toolBearingPrompts.last;
-      expect(answeringPrompt, contains('Tool results:'));
-      expect(answeringPrompt, contains('memory.read'));
-    });
+        // The completion that produced the final answer saw the tool result —
+        // the loop appended a "Tool results:" block naming the tool before
+        // re-entering, so the model could answer from it.
+        final answeringPrompt = substrate.toolBearingPrompts.last;
+        expect(answeringPrompt, contains('Tool results:'));
+        expect(answeringPrompt, contains('memory.read'));
+      },
+    );
 
     test('the run answers after the tool turn and is accepted', () async {
       substrate.proposeReadFor = 'the tool probe';
@@ -130,36 +136,42 @@ void main() {
       final outcome = await runWith('please use a tool');
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'),
-          'answered after the tool ran');
+      expect(
+        outcome.result!.output<String>('answer'),
+        'answered after the tool ran',
+      );
     });
   });
 
-  group('D.43-2 a run with no proposed tool answers in one turn (PE-9 guard)',
-      () {
-    test('a substrate that never proposes a tool still answers', () async {
-      // proposeReadFor left null ⇒ the substrate answers every call.
-      substrate.answerText = 'plain answer';
+  group(
+    'D.43-2 a run with no proposed tool answers in one turn (PE-9 guard)',
+    () {
+      test('a substrate that never proposes a tool still answers', () async {
+        // proposeReadFor left null ⇒ the substrate answers every call.
+        substrate.answerText = 'plain answer';
 
-      final outcome = await runWith('no tools needed');
+        final outcome = await runWith('no tools needed');
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'), 'plain answer');
-      // The tool was never invoked, so memory saw no single-query recall from a
-      // tool (the conductor uses recall.multi, not recall).
-      expect(memory.recallQueries, isEmpty);
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(outcome.result!.output<String>('answer'), 'plain answer');
+        // The tool was never invoked, so memory saw no single-query recall from a
+        // tool (the conductor uses recall.multi, not recall).
+        expect(memory.recallQueries, isEmpty);
+      });
 
-    test('with no tool turn the answering prompt holds no tool-result block',
+      test(
+        'with no tool turn the answering prompt holds no tool-result block',
         () async {
-      substrate.answerText = 'plain answer';
+          substrate.answerText = 'plain answer';
 
-      await runWith('no tools needed');
+          await runWith('no tools needed');
 
-      final answeringPrompt = substrate.toolBearingPrompts.last;
-      expect(answeringPrompt, isNot(contains('Tool results:')));
-    });
-  });
+          final answeringPrompt = substrate.toolBearingPrompts.last;
+          expect(answeringPrompt, isNot(contains('Tool results:')));
+        },
+      );
+    },
+  );
 }
 
 // ── A substrate that proposes one tool call, then answers ───────────
@@ -186,13 +198,13 @@ class _ToolThenAnswerSubstrate implements TomBrainSubstrateClient {
   final List<String> toolBearingPrompts = <String>[];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final hasTools = call.options.toolCatalogue.isNotEmpty;
     if (hasTools) {
       toolBearingPrompts.add(call.inputs['prompt']! as String);
     }
 
-    const completed = LlmStreamCompleted(
+    const completed = LlmRunCompleted(
       callId: 'c',
       report: LlmCallReport(
         providerId: 'p',
@@ -208,37 +220,35 @@ class _ToolThenAnswerSubstrate implements TomBrainSubstrateClient {
 
     if (hasTools && proposeReadFor != null && !_proposed) {
       _proposed = true;
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        LlmStreamToolCallProposed(
-          callId: 'c',
-          toolCallId: 'tc1',
-          toolName: 'memory.read',
+      return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        LlmToolCall(
+          callId: 'tc1',
+          name: 'memory.read',
           arguments: <String, Object?>{'text': proposeReadFor!},
         ),
         completed,
       ]);
     }
 
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: answerText),
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(answerText),
       completed,
     ]);
   }
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recall-capturing `TomBrainMemoryClient` ───────────────────────
@@ -285,8 +295,7 @@ class _RecallCapturingMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -351,12 +360,10 @@ class _RecallCapturingMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -406,6 +413,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

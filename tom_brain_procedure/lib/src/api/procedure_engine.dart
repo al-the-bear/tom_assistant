@@ -130,8 +130,9 @@ import 'run_cancellation.dart';
 /// from `tools.readScope` / `tools.writeScope` in the run config); this single
 /// placeholder keeps the tool-calling path well-formed for the many tests that
 /// never touch a real filesystem.
-final FileScope _defaultToolFileScope =
-    FileScope(writeRoots: const <String>['/tom-brain-engine']);
+final FileScope _defaultToolFileScope = FileScope(
+  writeRoots: const <String>['/tom-brain-engine'],
+);
 
 /// The typed failure class a crashed run is recorded under (§ 10.4).
 const String _runtimeCrashKind = 'procedure.runtime.crash';
@@ -168,9 +169,8 @@ const int _topLevelDepth = 1;
 /// engine single-store — every run uses the captured [ProcedureEngine.memory] /
 /// [ProcedureEngine.memoryBridge] regardless of profile (today's behaviour and
 /// the in-process-boot path, which has no per-profile transport factory).
-typedef MemoryClientResolver = Future<TomBrainMemoryClient> Function(
-  String? profile,
-);
+typedef MemoryClientResolver =
+    Future<TomBrainMemoryClient> Function(String? profile);
 
 /// Builds the overlay [PromptResolver] for a profile's template-overlay name
 /// (`session_configuration.md` § 5.2, plan step 8 (b)). The engine calls it with
@@ -233,23 +233,23 @@ final class ProcedureEngine {
     this.memoryWriteLimits = MemoryWriteLimits.standard,
     SessionTodoStores? sessionTodoStores,
     OverlayResolverFactory? overlayResolverFor,
-  })  : _overlayResolverFor = overlayResolverFor,
-        _resolverHandle = procedureReloadStore == null
-            ? ProcedureResolverHandle.fixed(resolver)
-            : ProcedureResolverHandle.reloading(procedureReloadStore, resolver),
-        toolFileScope = toolFileScope ?? _defaultToolFileScope,
-        sessionTodoStores = sessionTodoStores ?? SessionTodoStores(),
-        preemptionState = preemptionState ?? PreemptionState(),
-        _stepDeadlineLimit = stepDeadline,
-        _deadlineTimerFactory = deadlineTimerFactory,
-        _cancellationTimerFactory = cancellationTimerFactory,
-        _hardDepthCap = hardDepthCap,
-        _now = now ?? defaultNowUtc,
-        _newRunId = newRunId ?? _defaultRunIdGenerator(),
-        _llmTrailSink = llmTrailSink,
-        _memoryAccessSink = memoryAccessSink,
-        _toolAccessSink = toolAccessSink,
-        _procedureTreeSink = procedureTreeSink;
+  }) : _overlayResolverFor = overlayResolverFor,
+       _resolverHandle = procedureReloadStore == null
+           ? ProcedureResolverHandle.fixed(resolver)
+           : ProcedureResolverHandle.reloading(procedureReloadStore, resolver),
+       toolFileScope = toolFileScope ?? _defaultToolFileScope,
+       sessionTodoStores = sessionTodoStores ?? SessionTodoStores(),
+       preemptionState = preemptionState ?? PreemptionState(),
+       _stepDeadlineLimit = stepDeadline,
+       _deadlineTimerFactory = deadlineTimerFactory,
+       _cancellationTimerFactory = cancellationTimerFactory,
+       _hardDepthCap = hardDepthCap,
+       _now = now ?? defaultNowUtc,
+       _newRunId = newRunId ?? _defaultRunIdGenerator(),
+       _llmTrailSink = llmTrailSink,
+       _memoryAccessSink = memoryAccessSink,
+       _toolAccessSink = toolAccessSink,
+       _procedureTreeSink = procedureTreeSink;
 
   /// The refreshable holder around the version resolver (C.25). Reloading
   /// when the engine was given a `procedureReloadStore`, fixed otherwise. The
@@ -409,7 +409,7 @@ final class ProcedureEngine {
   /// The raw-LLM-trail sink (`tom_brain_logging.md` §5.2 / §10 step #4).
   /// `null` leaves the engine emitting no raw LLM trail; when bound, each
   /// run's substrate bridge fires one [LlmCallObservation] per completed `llm`
-  /// call, which the engine wraps with run-correlation into an [LlmTrailRecord]
+  /// call, which the engine wraps with run-correlation into an [LlmCallTrailRecord]
   /// and hands here (the host binds an `LlmTrailWriter`).
   final LlmTrailSink? _llmTrailSink;
 
@@ -612,7 +612,10 @@ final class ProcedureEngine {
     ResolvedProfile? resolvedProfile,
     void Function(ProcedureTreeRecord tree)? onTree,
   }) async {
-    final LoadedProcedure loaded = resolver.resolve(procedureId, version: version);
+    final LoadedProcedure loaded = resolver.resolve(
+      procedureId,
+      version: version,
+    );
 
     // Static sandbox gate (§ 7, PE-1): a procedure that imports outside the
     // host-injected surface or names a disallowed identifier never reaches the
@@ -628,8 +631,9 @@ final class ProcedureEngine {
     // to the pre-routing behaviour (these are the same object in production,
     // but kept distinct here so a directly-constructed engine that passed
     // different instances is unchanged).
-    final TomBrainMemoryClient? routedClient =
-        memoryForProfile == null ? null : await memoryForProfile!(profile);
+    final TomBrainMemoryClient? routedClient = memoryForProfile == null
+        ? null
+        : await memoryForProfile!(profile);
     final TomBrainMemoryClient recorderClient = routedClient ?? memory;
     final TomBrainMemoryClient bridgeClient =
         routedClient ?? memoryBridge.client;
@@ -722,38 +726,39 @@ final class ProcedureEngine {
     final memoryAccessSink = _memoryAccessSink;
     final BridgeCallRecorder recordMemoryCall =
         (memoryAccessSink == null && memoryNoticeSink == null)
-            ? recordCall
-            : (primitive, input, result, {int? elapsedMs}) async {
-                await recordCall(primitive, input, result, elapsedMs: elapsedMs);
-                if (memoryAccessSink != null) {
-                  try {
-                    memoryAccessSink(MemoryAccessRecord(
-                      primitive: primitive,
-                      input: input,
-                      result: result,
-                      elapsedMs: elapsedMs,
-                      profile: profile,
-                      runId: runId,
-                      trailId: recorder.isOpen ? recorder.trailId.value : null,
-                      turnId: turn?.turnId.value,
-                      at: _now(),
-                    ));
-                  } catch (_) {
-                    // Trail writing is non-essential; never break the run.
-                  }
+        ? recordCall
+        : (primitive, input, result, {int? elapsedMs}) async {
+            await recordCall(primitive, input, result, elapsedMs: elapsedMs);
+            if (memoryAccessSink != null) {
+              try {
+                memoryAccessSink(
+                  MemoryAccessRecord(
+                    primitive: primitive,
+                    input: input,
+                    result: result,
+                    elapsedMs: elapsedMs,
+                    profile: profile,
+                    runId: runId,
+                    trailId: recorder.isOpen ? recorder.trailId.value : null,
+                    turnId: turn?.turnId.value,
+                    at: _now(),
+                  ),
+                );
+              } catch (_) {
+                // Trail writing is non-essential; never break the run.
+              }
+            }
+            if (memoryNoticeSink != null) {
+              final notice = MemoryRecallNotice.fromCall(primitive, result);
+              if (notice != null) {
+                try {
+                  memoryNoticeSink(notice);
+                } catch (_) {
+                  // A dropped trace must never break the run.
                 }
-                if (memoryNoticeSink != null) {
-                  final notice =
-                      MemoryRecallNotice.fromCall(primitive, result);
-                  if (notice != null) {
-                    try {
-                      memoryNoticeSink(notice);
-                    } catch (_) {
-                      // A dropped trace must never break the run.
-                    }
-                  }
-                }
-              };
+              }
+            }
+          };
     // Per-run non-fatal write backstop (spec § 5.4). A fresh guard over the
     // process's caps bounds this run's writes and dedups its edges; a skipped
     // write fires a `memory_write_skipped` note on the run trail (the recorder
@@ -769,15 +774,17 @@ final class ProcedureEngine {
       writeGuard: writeGuard,
       onWriteSkipped: (skip) {
         if (!recorder.isOpen) return;
-        recorder.noteSink(TrailNote(
-          category: 'memory_write_skipped',
-          recordedAt: _now(),
-          payload: <String, Object?>{
-            'primitive': skip.primitive,
-            'outcome': skip.outcome.name,
-            'detail': skip.detail,
-          },
-        ));
+        recorder.noteSink(
+          TrailNote(
+            category: 'memory_write_skipped',
+            recordedAt: _now(),
+            payload: <String, Object?>{
+              'primitive': skip.primitive,
+              'outcome': skip.outcome.name,
+              'detail': skip.detail,
+            },
+          ),
+        );
       },
     );
     // Bind the run's outbound channel (P1.3 #8) to both halves of the
@@ -836,7 +843,7 @@ final class ProcedureEngine {
           memoryNoticeSink: memoryNoticeSink,
           onTree: buildTree
               ? (childTree) =>
-                  childTrees.add(_PositionedChildTree(position, childTree))
+                    childTrees.add(_PositionedChildTree(position, childTree))
               : null,
         );
       },
@@ -857,11 +864,11 @@ final class ProcedureEngine {
     final overlayFactory = _overlayResolverFor;
     final PromptResolver? runPromptResolver =
         (overlayName != null && overlayFactory != null && baseResolver != null)
-            ? LayeredPromptResolver(
-                base: baseResolver,
-                overlay: overlayFactory(overlayName),
-              ).asResolver
-            : baseResolver;
+        ? LayeredPromptResolver(
+            base: baseResolver,
+            overlay: overlayFactory(overlayName),
+          ).asResolver
+        : baseResolver;
 
     final runSubstrateBridge = SubstrateBridge(
       substrateBridge.client,
@@ -900,11 +907,13 @@ final class ProcedureEngine {
               if (buildTree) llmObservations.add(observation);
               if (llmTrailSink != null) {
                 try {
-                  llmTrailSink(LlmTrailRecord(
-                    observation: observation,
-                    runId: runId,
-                    trailId: recorder.isOpen ? recorder.trailId.value : null,
-                  ));
+                  llmTrailSink(
+                    LlmCallTrailRecord(
+                      observation: observation,
+                      runId: runId,
+                      trailId: recorder.isOpen ? recorder.trailId.value : null,
+                    ),
+                  );
                 } catch (_) {
                   // Trail writing is non-essential; never break the run.
                 }
@@ -1004,10 +1013,7 @@ final class ProcedureEngine {
       // budget-charging bridge: the embedding is an internal step of the one
       // `memoryWrites` the write already charges (PE-8).
       embedder: SubstrateToolEmbedSurface(substrateBridge.client),
-      engine: EngineToolSurface(
-        resolver: resolver,
-        runPrimitive: runPrimitive,
-      ),
+      engine: EngineToolSurface(resolver: resolver, runPrimitive: runPrimitive),
       process: toolProcessSurface,
       mcp: runMcpSource,
       dream: toolDreamSurface,
@@ -1034,12 +1040,14 @@ final class ProcedureEngine {
               }
               if (toolAccessSink != null) {
                 try {
-                  toolAccessSink(ToolAccessRecord(
-                    event: event,
-                    runId: runId,
-                    trailId: recorder.isOpen ? recorder.trailId.value : null,
-                    turnId: turn?.turnId.value,
-                  ));
+                  toolAccessSink(
+                    ToolAccessRecord(
+                      event: event,
+                      runId: runId,
+                      trailId: recorder.isOpen ? recorder.trailId.value : null,
+                      turnId: turn?.turnId.value,
+                    ),
+                  );
                 } catch (_) {
                   // Trail writing is non-essential; never break the run.
                 }
@@ -1185,7 +1193,8 @@ final class ProcedureEngine {
       final aborted = await recorder.complete(
         RunCompletion(
           status: TrailOutcomeStatus.budgetExceeded,
-          summary: 'procedure ${loaded.header.id} exceeded its '
+          summary:
+              'procedure ${loaded.header.id} exceeded its '
               '${error.dimension.name} budget',
         ),
       );
@@ -1269,7 +1278,7 @@ final class ProcedureEngine {
             summary: result.isSuccess
                 ? 'ran ${loaded.header.id} to completion'
                 : 'procedure ${loaded.header.id} reported failure'
-                    '${failureOutputs.isEmpty ? '' : ': $failureOutputs'}',
+                      '${failureOutputs.isEmpty ? '' : ': $failureOutputs'}',
             producedNodeIds: producedNodeIds,
             details: failureOutputs.isEmpty
                 ? const <String, Object?>{}
@@ -1344,8 +1353,7 @@ final class ProcedureEngine {
     final timedOut = cause == RunCancelCause.timedOut;
     recorder.note(
       TrailNote(
-        category:
-            timedOut ? runTimedOutNoteCategory : runCancelledNoteCategory,
+        category: timedOut ? runTimedOutNoteCategory : runCancelledNoteCategory,
         recordedAt: _now(),
         payload: <String, Object?>{
           if (timedOut && timeout != null) 'timeoutMs': timeout.inMilliseconds,
@@ -1474,16 +1482,15 @@ final class ProcedureEngine {
     required List<TrailEntry> entries,
     required ProcedureResult? result,
     Object? error,
-  }) =>
-      ProcedureOutcome(
-        runId: runId,
-        procedureId: procedureId,
-        status: record.status,
-        record: record,
-        entries: entries,
-        result: result,
-        error: error,
-      );
+  }) => ProcedureOutcome(
+    runId: runId,
+    procedureId: procedureId,
+    status: record.status,
+    record: record,
+    entries: entries,
+    result: result,
+    error: error,
+  );
 
   /// Assembles one run's combined structural tree (§5.7 / §10 step #9).
   ///
@@ -1567,22 +1574,28 @@ final class ProcedureEngine {
               tokensOut: obs.report.tokensOut,
             );
           }
-          nodes.add(ProcedurePrimitiveNode(
-            primitive: primitive,
-            input: _asStringMap(payload['input']),
-            result: _asStringMap(payload['result']),
-            llm: llm,
-          ));
+          nodes.add(
+            ProcedurePrimitiveNode(
+              primitive: primitive,
+              input: _asStringMap(payload['input']),
+              result: _asStringMap(payload['result']),
+              llm: llm,
+            ),
+          );
         case TrailEntryKind.note:
-          nodes.add(ProcedureNoteNode(
-            category: '${entry.payload['category']}',
-            payload: _asStringMap(entry.payload['payload']),
-          ));
+          nodes.add(
+            ProcedureNoteNode(
+              category: '${entry.payload['category']}',
+              payload: _asStringMap(entry.payload['payload']),
+            ),
+          );
         case TrailEntryKind.error:
-          nodes.add(ProcedureErrorNode(
-            errorKind: '${entry.payload['errorKind']}',
-            message: '${entry.payload['message']}',
-          ));
+          nodes.add(
+            ProcedureErrorNode(
+              errorKind: '${entry.payload['errorKind']}',
+              message: '${entry.payload['message']}',
+            ),
+          );
         case TrailEntryKind.invocation:
         case TrailEntryKind.persist:
         case TrailEntryKind.edge:
@@ -1696,27 +1709,27 @@ final class _PositionedToolNode {
 /// `argSummary` and the result `resultSize` (a size, never the payload), so
 /// this only re-shapes them into the tree node.
 ProcedureToolNode? _toolNodeOf(ToolEvent event) => switch (event) {
-      ToolInvoked(:final name, :final argSummary, :final resultSize) =>
-        ProcedureToolNode(
-          name: name,
-          argSummary: argSummary,
-          outcome: ProcedureToolOutcome.invoked,
-          resultSize: resultSize,
-        ),
-      ToolFailed(:final name, :final argSummary, :final reason) =>
-        ProcedureToolNode(
-          name: name,
-          argSummary: argSummary,
-          outcome: ProcedureToolOutcome.failed,
-          reason: reason,
-        ),
-      ToolDenied(:final name, :final argSummary, :final reason) =>
-        ProcedureToolNode(
-          name: name,
-          argSummary: argSummary,
-          outcome: ProcedureToolOutcome.denied,
-          reason: reason,
-        ),
-      // `ToolListed` — an enumeration, not an effect; no tree node.
-      _ => null,
-    };
+  ToolInvoked(:final name, :final argSummary, :final resultSize) =>
+    ProcedureToolNode(
+      name: name,
+      argSummary: argSummary,
+      outcome: ProcedureToolOutcome.invoked,
+      resultSize: resultSize,
+    ),
+  ToolFailed(:final name, :final argSummary, :final reason) =>
+    ProcedureToolNode(
+      name: name,
+      argSummary: argSummary,
+      outcome: ProcedureToolOutcome.failed,
+      reason: reason,
+    ),
+  ToolDenied(:final name, :final argSummary, :final reason) =>
+    ProcedureToolNode(
+      name: name,
+      argSummary: argSummary,
+      outcome: ProcedureToolOutcome.denied,
+      reason: reason,
+    ),
+  // `ToolListed` — an enumeration, not an effect; no tree node.
+  _ => null,
+};

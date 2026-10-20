@@ -19,9 +19,9 @@
 //   - Prove failure-shape: an HTTP failure on the non-streaming path
 //     surfaces as a thrown exception (per spec § 4.1 "router catches"
 //     contract); on the streaming path it surfaces as a terminal
-//     [LlmStreamFailed] event with a typed [LlmFailure] envelope
+//     [LlmRunFailed] event with a typed [LlmFailure] envelope
 //     (`classCode: 'unknown'` until B.18 wires the classifier).
-//   - Prove the streaming path terminates with [LlmStreamFailed] when
+//   - Prove the streaming path terminates with [LlmRunFailed] when
 //     the fake adapter ends the stream without emitting a `done: true`
 //     fragment (protocol-shape failure, classCode `format`).
 //   - Prove `embedRaw` / `listAvailableModels` (the off-interface
@@ -66,41 +66,44 @@ void main() {
       expect(provider, isA<LlmProvider>());
     });
 
-    test('complete stamps anchor + provider + template metadata onto the report',
-        () async {
-      final fake = _FakeOllamaHttpClient()
-        ..chatResponse = const OllamaChatResponse(
-          model: 'gemma3:27b',
-          content: 'hello back',
-          promptEvalCount: 12,
-          evalCount: 5,
-          totalDurationNs: 9000,
-        );
-      final provider = _newProvider(httpClient: fake);
-
-      final report = await provider.complete(
-        const WirePrompt(
-          system: 'anchor + body',
-          anchorHash: 'sha256:anchor-stamp',
-          roleId: 'assistant_to_user',
-          templateSha: 'tpl-1',
-        ),
-        const LlmOptions(),
-      );
-
-      expect(report.providerId, 'ollama:local');
-      expect(report.modelId, 'gemma3:27b'); // echo from response
-      expect(report.anchorHash, 'sha256:anchor-stamp');
-      expect(report.templateSha, 'tpl-1');
-      expect(report.tokensIn, 12);
-      expect(report.tokensOut, 5);
-      expect(report.retries, 0);
-      expect(report.wallClockMs, greaterThanOrEqualTo(0));
-      expect(report.promptHash, _sha256Stamp('anchor + body'));
-    });
-
     test(
-        'complete sends system + user as two messages '
+      'complete stamps anchor + provider + template metadata onto the report',
+      () async {
+        final fake = _FakeOllamaHttpClient()
+          ..chatResponse = const OllamaChatResponse(
+            model: 'gemma3:27b',
+            content: 'hello back',
+            promptEvalCount: 12,
+            evalCount: 5,
+            totalDurationNs: 9000,
+          );
+        final provider = _newProvider(httpClient: fake);
+
+        final report = await provider.complete(
+          LlmRequest(
+            prompt: const WirePrompt(
+              system: 'anchor + body',
+              anchorHash: 'sha256:anchor-stamp',
+              roleId: 'assistant_to_user',
+              templateSha: 'tpl-1',
+            ),
+            options: const LlmOptions(),
+          ),
+        );
+
+        expect(report.providerId, 'ollama:local');
+        expect(report.modelId, 'gemma3:27b'); // echo from response
+        expect(report.anchorHash, 'sha256:anchor-stamp');
+        expect(report.templateSha, 'tpl-1');
+        expect(report.tokensIn, 12);
+        expect(report.tokensOut, 5);
+        expect(report.retries, 0);
+        expect(report.wallClockMs, greaterThanOrEqualTo(0));
+        expect(report.promptHash, _sha256Stamp('anchor + body'));
+      },
+    );
+
+    test('complete sends system + user as two messages '
         '([{role:system}, {role:user}])', () async {
       final fake = _FakeOllamaHttpClient()
         ..chatResponse = const OllamaChatResponse(
@@ -110,13 +113,15 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       await provider.complete(
-        const WirePrompt(
-          system: 'I am dedicated to this user.',
-          user: 'user question',
-          anchorHash: 'sha256:x',
-          roleId: 'assistant_to_user',
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'I am dedicated to this user.',
+            user: 'user question',
+            anchorHash: 'sha256:x',
+            roleId: 'assistant_to_user',
+          ),
+          options: const LlmOptions(),
         ),
-        const LlmOptions(),
       );
 
       final call = fake.chatCalls.single;
@@ -139,13 +144,15 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       await provider.complete(
-        const WirePrompt(
-          system: '',
-          user: 'just the user turn',
-          anchorHash: 'sha256:x',
-          roleId: 'assistant_to_user',
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: '',
+            user: 'just the user turn',
+            anchorHash: 'sha256:x',
+            roleId: 'assistant_to_user',
+          ),
+          options: const LlmOptions(),
         ),
-        const LlmOptions(),
       );
 
       final call = fake.chatCalls.single;
@@ -160,15 +167,20 @@ void main() {
           model: 'llama3:8b',
           content: '',
         );
-      final provider = _newProvider(httpClient: fake, defaultModel: 'gemma3:27b');
+      final provider = _newProvider(
+        httpClient: fake,
+        defaultModel: 'gemma3:27b',
+      );
 
       final report = await provider.complete(
-        const WirePrompt(
-          system: 'x',
-          anchorHash: 'sha256:y',
-          roleId: 'analyser',
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'x',
+            anchorHash: 'sha256:y',
+            roleId: 'analyser',
+          ),
+          options: const LlmOptions(model: 'llama3:8b'),
         ),
-        const LlmOptions(model: 'llama3:8b'),
       );
 
       expect(fake.chatCalls.single.model, 'llama3:8b');
@@ -177,16 +189,20 @@ void main() {
 
     test('options knobs translate onto the Ollama generation map', () async {
       final fake = _FakeOllamaHttpClient()
-        ..chatResponse =
-            const OllamaChatResponse(model: 'gemma3:27b', content: '');
+        ..chatResponse = const OllamaChatResponse(
+          model: 'gemma3:27b',
+          content: '',
+        );
       final provider = _newProvider(httpClient: fake);
 
       await provider.complete(
-        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(
-          temperature: 0.42,
-          maxOutputTokens: 256,
-          stopSequences: <String>['STOP', 'END'],
+        LlmRequest(
+          prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+          options: const LlmOptions(
+            temperature: 0.42,
+            maxOutputTokens: 256,
+            stopSequences: <String>['STOP', 'END'],
+          ),
         ),
       );
 
@@ -199,54 +215,63 @@ void main() {
 
     test('responseFormat non-null sets the Ollama format flag', () async {
       final fake = _FakeOllamaHttpClient()
-        ..chatResponse =
-            const OllamaChatResponse(model: 'gemma3:27b', content: '');
+        ..chatResponse = const OllamaChatResponse(
+          model: 'gemma3:27b',
+          content: '',
+        );
       final provider = _newProvider(httpClient: fake);
 
       await provider.complete(
-        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(responseFormat: <String, Object?>{'type': 'object'}),
+        LlmRequest(
+          prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+          options: const LlmOptions(
+            responseFormat: <String, Object?>{'type': 'object'},
+          ),
+        ),
       );
 
       expect(fake.chatCalls.single.options.jsonFormat, isTrue);
     });
 
-    test('missing eval counters surface as 0 + a note (router classifies later)',
-        () async {
-      final fake = _FakeOllamaHttpClient()
-        ..chatResponse = const OllamaChatResponse(
-          model: 'gemma3:27b',
-          content: '',
-        ); // no counters
-      final provider = _newProvider(httpClient: fake);
-
-      final report = await provider.complete(
-        const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
-      );
-
-      expect(report.tokensIn, 0);
-      expect(report.tokensOut, 0);
-      expect(report.notes, contains('ollama:prompt_eval_count_missing'));
-      expect(report.notes, contains('ollama:eval_count_missing'));
-    });
-
     test(
-      'tool catalogue present surfaces a "not yet dispatched" note '
-      '(spec § 4.1; tool dispatch lands at B.27)',
+      'missing eval counters surface as 0 + a note (router classifies later)',
       () async {
         final fake = _FakeOllamaHttpClient()
           ..chatResponse = const OllamaChatResponse(
             model: 'gemma3:27b',
             content: '',
-            promptEvalCount: 1,
-            evalCount: 1,
-          );
+          ); // no counters
         final provider = _newProvider(httpClient: fake);
 
         final report = await provider.complete(
-          const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-          const LlmOptions(
+          LlmRequest(
+            prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+            options: const LlmOptions(),
+          ),
+        );
+
+        expect(report.tokensIn, 0);
+        expect(report.tokensOut, 0);
+        expect(report.notes, contains('ollama:prompt_eval_count_missing'));
+        expect(report.notes, contains('ollama:eval_count_missing'));
+      },
+    );
+
+    test('tool catalogue present surfaces a "not yet dispatched" note '
+        '(spec § 4.1; tool dispatch lands at B.27)', () async {
+      final fake = _FakeOllamaHttpClient()
+        ..chatResponse = const OllamaChatResponse(
+          model: 'gemma3:27b',
+          content: '',
+          promptEvalCount: 1,
+          evalCount: 1,
+        );
+      final provider = _newProvider(httpClient: fake);
+
+      final report = await provider.complete(
+        LlmRequest(
+          prompt: const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
+          options: const LlmOptions(
             toolCatalogue: ToolCatalogue(<ToolDescriptor>[
               ToolDescriptor(
                 name: 'noop',
@@ -255,33 +280,41 @@ void main() {
               ),
             ]),
           ),
-        );
+        ),
+      );
 
-        expect(
-          report.notes,
-          contains('tool_catalogue_present:not_yet_dispatched'),
+      expect(
+        report.notes,
+        contains('tool_catalogue_present:not_yet_dispatched'),
+      );
+    });
+
+    test(
+      'complete re-throws transport failures unclassified (router classifies)',
+      () async {
+        final fake = _FakeOllamaHttpClient()
+          ..chatException = OllamaHttpException(
+            statusCode: 503,
+            body: 'overloaded',
+            endpoint: Uri.parse('http://localhost:11434/api/chat'),
+          );
+        final provider = _newProvider(httpClient: fake);
+
+        await expectLater(
+          provider.complete(
+            LlmRequest(
+              prompt: const WirePrompt(
+                system: 'x',
+                anchorHash: 'a',
+                roleId: 'r',
+              ),
+              options: const LlmOptions(),
+            ),
+          ),
+          throwsA(isA<OllamaHttpException>()),
         );
       },
     );
-
-    test('complete re-throws transport failures unclassified (router classifies)',
-        () async {
-      final fake = _FakeOllamaHttpClient()
-        ..chatException = OllamaHttpException(
-          statusCode: 503,
-          body: 'overloaded',
-          endpoint: Uri.parse('http://localhost:11434/api/chat'),
-        );
-      final provider = _newProvider(httpClient: fake);
-
-      await expectLater(
-        provider.complete(
-          const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-          const LlmOptions(),
-        ),
-        throwsA(isA<OllamaHttpException>()),
-      );
-    });
   });
 
   group('B.14 / OllamaLlmProvider — streaming path', () {
@@ -312,33 +345,31 @@ void main() {
         final provider = _newProvider(httpClient: fake);
 
         final events = await provider
-            .completeStream(
-              const WirePrompt(
-                system: 'streaming body',
-                anchorHash: 'sha256:stream-anchor',
-                roleId: 'assistant_to_user',
-                templateSha: 'tpl-2',
+            .run(
+              LlmRequest(
+                prompt: const WirePrompt(
+                  system: 'streaming body',
+                  anchorHash: 'sha256:stream-anchor',
+                  roleId: 'assistant_to_user',
+                  templateSha: 'tpl-2',
+                ),
+                options: const LlmOptions(),
               ),
-              const LlmOptions(),
             )
             .toList();
 
-        expect(events.first, isA<LlmStreamStarted>());
-        expect(events.last, isA<LlmStreamCompleted>());
+        expect(events.first, isA<LlmRunStarted>());
+        expect(events.last, isA<LlmRunCompleted>());
 
-        final started = events.first as LlmStreamStarted;
+        final started = events.first as LlmRunStarted;
         expect(started.providerId, 'ollama:local');
         expect(started.modelId, 'gemma3:27b');
         expect(started.callId, isNotEmpty);
 
-        final chunks =
-            events.whereType<LlmStreamChunk>().toList(growable: false);
+        final chunks = events.whereType<LlmTextDelta>().toList(growable: false);
         expect(chunks.map((c) => c.text).toList(), <String>['Hello ', 'world']);
-        for (final chunk in chunks) {
-          expect(chunk.callId, started.callId);
-        }
 
-        final completed = events.last as LlmStreamCompleted;
+        final completed = events.last as LlmRunCompleted;
         expect(completed.callId, started.callId);
         expect(completed.report.providerId, 'ollama:local');
         expect(completed.report.modelId, 'gemma3:27b');
@@ -374,19 +405,25 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final events = await provider
-          .completeStream(
-            const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-            const LlmOptions(),
+          .run(
+            LlmRequest(
+              prompt: const WirePrompt(
+                system: 'x',
+                anchorHash: 'a',
+                roleId: 'r',
+              ),
+              options: const LlmOptions(),
+            ),
           )
           .toList();
 
-      final chunks = events.whereType<LlmStreamChunk>().toList();
+      final chunks = events.whereType<LlmTextDelta>().toList();
       expect(chunks, hasLength(1));
       expect(chunks.single.text, 'first text');
     });
 
     test(
-      'no terminal done=true frame surfaces as LlmStreamFailed(format)',
+      'no terminal done=true frame surfaces as LlmRunFailed(format)',
       () async {
         final fake = _FakeOllamaHttpClient()
           ..streamFragments = const <OllamaStreamFragment>[
@@ -399,61 +436,84 @@ void main() {
         final provider = _newProvider(httpClient: fake);
 
         final events = await provider
-            .completeStream(
-              const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-              const LlmOptions(),
+            .run(
+              LlmRequest(
+                prompt: const WirePrompt(
+                  system: 'x',
+                  anchorHash: 'a',
+                  roleId: 'r',
+                ),
+                options: const LlmOptions(),
+              ),
             )
             .toList();
 
-        expect(events.last, isA<LlmStreamFailed>());
-        final failed = events.last as LlmStreamFailed;
+        expect(events.last, isA<LlmRunFailed>());
+        final failed = events.last as LlmRunFailed;
         expect(failed.failure.classCode, 'format');
-        expect(failed.report.anchorHash, 'a');
+        expect(failed.report!.anchorHash, 'a');
       },
     );
 
-    test(
-      'transport failure mid-stream surfaces as LlmStreamFailed(unknown) '
-      '(B.18 will reclassify)',
-      () async {
-        final fake = _FakeOllamaHttpClient()
-          ..streamException = OllamaHttpException(
-            statusCode: 500,
-            body: 'boom',
-            endpoint: Uri.parse('http://localhost:11434/api/chat'),
-          );
-        final provider = _newProvider(httpClient: fake);
+    test('transport failure mid-stream surfaces as LlmRunFailed(unknown) '
+        '(B.18 will reclassify)', () async {
+      final fake = _FakeOllamaHttpClient()
+        ..streamException = OllamaHttpException(
+          statusCode: 500,
+          body: 'boom',
+          endpoint: Uri.parse('http://localhost:11434/api/chat'),
+        );
+      final provider = _newProvider(httpClient: fake);
 
-        final events = await provider
-            .completeStream(
-              const WirePrompt(system: 'x', anchorHash: 'a', roleId: 'r'),
-              const LlmOptions(),
-            )
-            .toList();
+      final events = await provider
+          .run(
+            LlmRequest(
+              prompt: const WirePrompt(
+                system: 'x',
+                anchorHash: 'a',
+                roleId: 'r',
+              ),
+              options: const LlmOptions(),
+            ),
+          )
+          .toList();
 
-        expect(events.first, isA<LlmStreamStarted>());
-        expect(events.last, isA<LlmStreamFailed>());
-        final failed = events.last as LlmStreamFailed;
-        expect(failed.failure.classCode, 'unknown');
-        expect(failed.failure.cause, isA<OllamaHttpException>());
-      },
-    );
+      expect(events.first, isA<LlmRunStarted>());
+      expect(events.last, isA<LlmRunFailed>());
+      final failed = events.last as LlmRunFailed;
+      expect(failed.failure.classCode, 'unknown');
+      expect(failed.failure.cause, isA<OllamaHttpException>());
+    });
   });
 
   group('B.14 / OllamaLlmProvider — promptHash determinism', () {
     test('same prompt body → same promptHash', () async {
       final fake = _FakeOllamaHttpClient()
-        ..chatResponse =
-            const OllamaChatResponse(model: 'gemma3:27b', content: '');
+        ..chatResponse = const OllamaChatResponse(
+          model: 'gemma3:27b',
+          content: '',
+        );
       final provider = _newProvider(httpClient: fake);
 
       final r1 = await provider.complete(
-        const WirePrompt(system: 'deterministic', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'deterministic',
+            anchorHash: 'a',
+            roleId: 'r',
+          ),
+          options: const LlmOptions(),
+        ),
       );
       final r2 = await provider.complete(
-        const WirePrompt(system: 'deterministic', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'deterministic',
+            anchorHash: 'a',
+            roleId: 'r',
+          ),
+          options: const LlmOptions(),
+        ),
       );
       expect(r1.promptHash, r2.promptHash);
       expect(r1.promptHash, startsWith('sha256:'));
@@ -461,17 +521,31 @@ void main() {
 
     test('different prompt body → different promptHash', () async {
       final fake = _FakeOllamaHttpClient()
-        ..chatResponse =
-            const OllamaChatResponse(model: 'gemma3:27b', content: '');
+        ..chatResponse = const OllamaChatResponse(
+          model: 'gemma3:27b',
+          content: '',
+        );
       final provider = _newProvider(httpClient: fake);
 
       final r1 = await provider.complete(
-        const WirePrompt(system: 'first', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'first',
+            anchorHash: 'a',
+            roleId: 'r',
+          ),
+          options: const LlmOptions(),
+        ),
       );
       final r2 = await provider.complete(
-        const WirePrompt(system: 'second', anchorHash: 'a', roleId: 'r'),
-        const LlmOptions(),
+        LlmRequest(
+          prompt: const WirePrompt(
+            system: 'second',
+            anchorHash: 'a',
+            roleId: 'r',
+          ),
+          options: const LlmOptions(),
+        ),
       );
       expect(r1.promptHash, isNot(equals(r2.promptHash)));
     });
@@ -492,8 +566,7 @@ void main() {
     });
 
     test('embedRaw honours an explicit model id', () async {
-      final fake = _FakeOllamaHttpClient()
-        ..embedResponse = const <double>[1.0];
+      final fake = _FakeOllamaHttpClient()..embedResponse = const <double>[1.0];
       final provider = _newProvider(httpClient: fake);
 
       await provider.embedRaw(prompt: 'a', model: 'nomic-embed-text');
@@ -509,30 +582,30 @@ void main() {
       final provider = _newProvider(httpClient: fake);
 
       final tags = await provider.listAvailableModels();
-      expect(tags.map((t) => t.name).toList(), <String>['gemma3:27b', 'llama3:8b']);
+      expect(tags.map((t) => t.name).toList(), <String>[
+        'gemma3:27b',
+        'llama3:8b',
+      ]);
     });
   });
 
   group('B.14 / barrel surface', () {
-    test(
-      'OllamaLlmProvider + OllamaHttpClient surfaces import from the '
-      'top-level package barrel only (no `package:foo/src/...`)',
-      () {
-        // The single test-file import line is
-        //   import 'package:tom_brain_substrate/tom_brain_substrate.dart';
-        // — reaching every B.14-added symbol under that constraint is
-        // the proof.
-        expect(OllamaHttpClient, isNotNull);
-        expect(DefaultOllamaHttpClient, isNotNull);
-        expect(OllamaMessage, isNotNull);
-        expect(OllamaGenerationOptions, isNotNull);
-        expect(OllamaChatResponse, isNotNull);
-        expect(OllamaStreamFragment, isNotNull);
-        expect(OllamaTagEntry, isNotNull);
-        expect(OllamaHttpException, isNotNull);
-        expect(OllamaLlmProvider, isNotNull);
-      },
-    );
+    test('OllamaLlmProvider + OllamaHttpClient surfaces import from the '
+        'top-level package barrel only (no `package:foo/src/...`)', () {
+      // The single test-file import line is
+      //   import 'package:tom_brain_substrate/tom_brain_substrate.dart';
+      // — reaching every B.14-added symbol under that constraint is
+      // the proof.
+      expect(OllamaHttpClient, isNotNull);
+      expect(DefaultOllamaHttpClient, isNotNull);
+      expect(OllamaMessage, isNotNull);
+      expect(OllamaGenerationOptions, isNotNull);
+      expect(OllamaChatResponse, isNotNull);
+      expect(OllamaStreamFragment, isNotNull);
+      expect(OllamaTagEntry, isNotNull);
+      expect(OllamaHttpException, isNotNull);
+      expect(OllamaLlmProvider, isNotNull);
+    });
   });
 }
 
@@ -567,8 +640,10 @@ final class _FakeOllamaHttpClient implements OllamaHttpClient {
   final List<_EmbedInvocation> embedCalls = <_EmbedInvocation>[];
 
   /// Response for the next `chat` call.
-  OllamaChatResponse chatResponse =
-      const OllamaChatResponse(model: 'gemma3:27b', content: '');
+  OllamaChatResponse chatResponse = const OllamaChatResponse(
+    model: 'gemma3:27b',
+    content: '',
+  );
 
   /// If set, the next `chat` call throws this instead of returning.
   Object? chatException;
@@ -595,12 +670,14 @@ final class _FakeOllamaHttpClient implements OllamaHttpClient {
     required OllamaGenerationOptions options,
     Duration? requestTimeout,
   }) async {
-    chatCalls.add(_ChatInvocation(
-      baseUri: baseUri,
-      model: model,
-      messages: messages,
-      options: options,
-    ));
+    chatCalls.add(
+      _ChatInvocation(
+        baseUri: baseUri,
+        model: model,
+        messages: messages,
+        options: options,
+      ),
+    );
     if (chatException != null) throw chatException!;
     return chatResponse;
   }
@@ -614,12 +691,14 @@ final class _FakeOllamaHttpClient implements OllamaHttpClient {
     Duration? requestTimeout,
     CancellationToken? cancellationToken,
   }) async* {
-    chatCalls.add(_ChatInvocation(
-      baseUri: baseUri,
-      model: model,
-      messages: messages,
-      options: options,
-    ));
+    chatCalls.add(
+      _ChatInvocation(
+        baseUri: baseUri,
+        model: model,
+        messages: messages,
+        options: options,
+      ),
+    );
     if (streamException != null) throw streamException!;
     for (final frag in streamFragments) {
       yield frag;
@@ -633,11 +712,9 @@ final class _FakeOllamaHttpClient implements OllamaHttpClient {
     required String prompt,
     Duration? requestTimeout,
   }) async {
-    embedCalls.add(_EmbedInvocation(
-      baseUri: baseUri,
-      model: model,
-      prompt: prompt,
-    ));
+    embedCalls.add(
+      _EmbedInvocation(baseUri: baseUri, model: model, prompt: prompt),
+    );
     return embedResponse;
   }
 

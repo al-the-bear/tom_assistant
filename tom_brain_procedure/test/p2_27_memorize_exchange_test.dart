@@ -75,9 +75,10 @@ Vec _v768({required int seed}) {
 String? _findSqliteVecRoot() {
   var dir = Directory.current.absolute;
   for (var i = 0; i < 8; i++) {
-    final candidate =
-        Directory('${dir.path}${Platform.pathSeparator}tom_binaries'
-            '${Platform.pathSeparator}sqlite_vec');
+    final candidate = Directory(
+      '${dir.path}${Platform.pathSeparator}tom_binaries'
+      '${Platform.pathSeparator}sqlite_vec',
+    );
     if (candidate.existsSync()) return candidate.path;
     final parent = dir.parent;
     if (parent.path == dir.path) break;
@@ -87,7 +88,8 @@ String? _findSqliteVecRoot() {
 }
 
 /// Builds the exchange Event [NodeDraft] the curator's Claim is edged back to.
-NodeDraft _eventDraft({required String summary, required int seed}) => NodeDraft(
+NodeDraft _eventDraft({required String summary, required int seed}) =>
+    NodeDraft(
       typeName: 'Event',
       values: <String, Object?>{
         'summary': summary,
@@ -107,22 +109,22 @@ WriteBudget _unboundedBudget() =>
 /// passes its full declared surface; the scope-enforcement case omits
 /// `node:Claim` so the Claim write is refused.
 AgentRegistration _curatorAgent(Set<String> scopes) => AgentRegistration(
-      agentName: 'memorize_exchange_v1',
-      procedureId: 'memorize_exchange_v1',
-      defaultBudget: _unboundedBudget(),
-      readScopes: const <String>{AgentRegistration.globalWildcard},
-      writeScopes: scopes,
-    );
+  agentName: 'memorize_exchange_v1',
+  procedureId: 'memorize_exchange_v1',
+  defaultBudget: _unboundedBudget(),
+  readScopes: const <String>{AgentRegistration.globalWildcard},
+  writeScopes: scopes,
+);
 
 /// The curator's full declared write surface (memory § 9 / part f): it adds
 /// Claim and Question nodes, the `derived_from` provenance edge, and pushes onto
 /// the `questions_open` stack — and nothing else.
 Set<String> _fullScope() => <String>{
-      AgentRegistration.nodeScope('Claim'),
-      AgentRegistration.nodeScope('Question'),
-      AgentRegistration.edgeScope('derived_from'),
-      AgentRegistration.stackScope('questions_open'),
-    };
+  AgentRegistration.nodeScope('Claim'),
+  AgentRegistration.nodeScope('Question'),
+  AgentRegistration.edgeScope('derived_from'),
+  AgentRegistration.stackScope('questions_open'),
+};
 
 void main() {
   final vecRoot = _findSqliteVecRoot();
@@ -136,8 +138,8 @@ void main() {
 
   final skipNoBinary = resolvedPath == null
       ? 'No packaged vec0 binary for this platform under '
-          'tom_binaries/sqlite_vec (resolver.isSupported='
-          '${resolver.isSupported}, vecRoot=$vecRoot).'
+            'tom_binaries/sqlite_vec (resolver.isSupported='
+            '${resolver.isSupported}, vecRoot=$vecRoot).'
       : null;
 
   MemoryConfig freshConfig() {
@@ -202,126 +204,142 @@ void main() {
     required String prompt,
     required String answer,
     String? eventId,
-  }) =>
-      engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'memorize_exchange_v1',
-            arguments: <String, Object?>{
-              'prompt': prompt,
-              'answer': answer,
-              'eventId': ?eventId,
-            },
-          ))
-          .outcome;
+  }) => engine
+      .invoke(
+        ProcedureInvocation(
+          procedureId: 'memorize_exchange_v1',
+          arguments: <String, Object?>{
+            'prompt': prompt,
+            'answer': answer,
+            'eventId': ?eventId,
+          },
+        ),
+      )
+      .outcome;
 
-  group('memory curator through the engine against real memory (needs vec0)',
-      () {
-    test('stores a Claim (edged derived_from the Event) and a Question '
-        '(pushed onto questions_open)', () async {
-      final store = await openStore();
-      final eventId = await seedExchangeEvent(store);
-      store.registerAgent(_curatorAgent(_fullScope()));
+  group(
+    'memory curator through the engine against real memory (needs vec0)',
+    () {
+      test('stores a Claim (edged derived_from the Event) and a Question '
+          '(pushed onto questions_open)', () async {
+        final store = await openStore();
+        final eventId = await seedExchangeEvent(store);
+        store.registerAgent(_curatorAgent(_fullScope()));
 
-      final outcome = await runCurator(
-        engine: await engineFor(
-          store: store,
-          substrate: _CuratorSubstrate(
-            verdict: 'Claim :: The user prefers the dark editor theme.\n'
-                'Question :: Which keybinding scheme does the user use?',
+        final outcome = await runCurator(
+          engine: await engineFor(
+            store: store,
+            substrate: _CuratorSubstrate(
+              verdict:
+                  'Claim :: The user prefers the dark editor theme.\n'
+                  'Question :: Which keybinding scheme does the user use?',
+            ),
           ),
-        ),
-        prompt: 'I always work in dark mode.',
-        answer: 'Noted — I will assume a dark editor theme.',
-        eventId: eventId,
-      );
+          prompt: 'I always work in dark mode.',
+          answer: 'Noted — I will assume a dark editor theme.',
+          eventId: eventId,
+        );
 
-      // Accepted ⇒ the run stayed within its declared header budget.
-      expect(outcome.status, TrailOutcomeStatus.accepted);
+        // Accepted ⇒ the run stayed within its declared header budget.
+        expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      // The body returns every persisted id as `storedIds` (Claim + Question).
-      final storedIds = outcome.result!.output<List<Object?>>('storedIds');
-      expect(storedIds, isNotNull);
-      expect(storedIds, hasLength(2));
+        // The body returns every persisted id as `storedIds` (Claim + Question).
+        final storedIds = outcome.result!.output<List<Object?>>('storedIds');
+        expect(storedIds, isNotNull);
+        expect(storedIds, hasLength(2));
 
-      // The Verify: one Claim row and one Question row exist in the real store.
-      final stats = await store.stats();
-      expect(stats.nodeCountByType['Claim'] ?? 0, equals(1));
-      expect(stats.nodeCountByType['Question'] ?? 0, equals(1));
+        // The Verify: one Claim row and one Question row exist in the real store.
+        final stats = await store.stats();
+        expect(stats.nodeCountByType['Claim'] ?? 0, equals(1));
+        expect(stats.nodeCountByType['Question'] ?? 0, equals(1));
 
-      // The Claim records its provenance back to the exchange Event.
-      expect(stats.edgeCountByType['derived_from'] ?? 0, equals(1),
-          reason: 'the Claim is edged derived_from the exchange Event');
+        // The Claim records its provenance back to the exchange Event.
+        expect(
+          stats.edgeCountByType['derived_from'] ?? 0,
+          equals(1),
+          reason: 'the Claim is edged derived_from the exchange Event',
+        );
 
-      // The Question is queued for the Researcher on `questions_open`; it
-      // carries no outgoing edge, so no extra edge appears for it.
-      final stackEntries = await store.stacks.peek('questions_open');
-      expect(stackEntries, hasLength(1),
-          reason: 'the Question is pushed onto questions_open');
-    });
+        // The Question is queued for the Researcher on `questions_open`; it
+        // carries no outgoing edge, so no extra edge appears for it.
+        final stackEntries = await store.stacks.peek('questions_open');
+        expect(
+          stackEntries,
+          hasLength(1),
+          reason: 'the Question is pushed onto questions_open',
+        );
+      });
 
-    test('stores nothing when the curator emits NONE', () async {
-      final store = await openStore();
-      final eventId = await seedExchangeEvent(store);
-      store.registerAgent(_curatorAgent(_fullScope()));
+      test('stores nothing when the curator emits NONE', () async {
+        final store = await openStore();
+        final eventId = await seedExchangeEvent(store);
+        store.registerAgent(_curatorAgent(_fullScope()));
 
-      final outcome = await runCurator(
-        engine: await engineFor(
-          store: store,
-          substrate: _CuratorSubstrate(verdict: 'NONE'),
-        ),
-        prompt: 'What time is it?',
-        answer: 'It is just past noon.',
-        eventId: eventId,
-      );
-
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-
-      final storedIds = outcome.result!.output<List<Object?>>('storedIds');
-      expect(storedIds, isNotNull);
-      expect(storedIds, isEmpty);
-
-      // The Verify: the ephemeral exchange leaves no Claim or Question behind.
-      final stats = await store.stats();
-      expect(stats.nodeCountByType['Claim'] ?? 0, equals(0));
-      expect(stats.nodeCountByType['Question'] ?? 0, equals(0));
-      final stackEntries = await store.stacks.peek('questions_open');
-      expect(stackEntries, isEmpty);
-    });
-
-    test('an out-of-scope curator Claim write is refused with '
-        'AgentScopeViolation and writes no Claim', () async {
-      final store = await openStore();
-      final eventId = await seedExchangeEvent(store);
-
-      // The curator is registered WITHOUT the `node:Claim` scope: its first
-      // `mem.persist('Claim', …)` is rejected by the AgentRegistry before any
-      // row is written — the "within scope" half.
-      store.registerAgent(_curatorAgent(<String>{
-        AgentRegistration.nodeScope('Question'),
-        AgentRegistration.edgeScope('derived_from'),
-        AgentRegistration.stackScope('questions_open'),
-      }));
-
-      final outcome = await runCurator(
-        engine: await engineFor(
-          store: store,
-          substrate: _CuratorSubstrate(
-            verdict: 'Claim :: The user prefers the dark editor theme.',
+        final outcome = await runCurator(
+          engine: await engineFor(
+            store: store,
+            substrate: _CuratorSubstrate(verdict: 'NONE'),
           ),
-        ),
-        prompt: 'I always work in dark mode.',
-        answer: 'Noted.',
-        eventId: eventId,
-      );
+          prompt: 'What time is it?',
+          answer: 'It is just past noon.',
+          eventId: eventId,
+        );
 
-      expect(outcome.status, isNot(TrailOutcomeStatus.accepted));
-      expect(outcome.error, isA<AgentScopeViolation>());
+        expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      final stats = await store.stats();
-      expect(stats.nodeCountByType['Claim'] ?? 0, equals(0),
-          reason: 'the Claim write was refused, so no Claim row exists');
-    });
-  }, skip: skipNoBinary);
+        final storedIds = outcome.result!.output<List<Object?>>('storedIds');
+        expect(storedIds, isNotNull);
+        expect(storedIds, isEmpty);
+
+        // The Verify: the ephemeral exchange leaves no Claim or Question behind.
+        final stats = await store.stats();
+        expect(stats.nodeCountByType['Claim'] ?? 0, equals(0));
+        expect(stats.nodeCountByType['Question'] ?? 0, equals(0));
+        final stackEntries = await store.stacks.peek('questions_open');
+        expect(stackEntries, isEmpty);
+      });
+
+      test('an out-of-scope curator Claim write is refused with '
+          'AgentScopeViolation and writes no Claim', () async {
+        final store = await openStore();
+        final eventId = await seedExchangeEvent(store);
+
+        // The curator is registered WITHOUT the `node:Claim` scope: its first
+        // `mem.persist('Claim', …)` is rejected by the AgentRegistry before any
+        // row is written — the "within scope" half.
+        store.registerAgent(
+          _curatorAgent(<String>{
+            AgentRegistration.nodeScope('Question'),
+            AgentRegistration.edgeScope('derived_from'),
+            AgentRegistration.stackScope('questions_open'),
+          }),
+        );
+
+        final outcome = await runCurator(
+          engine: await engineFor(
+            store: store,
+            substrate: _CuratorSubstrate(
+              verdict: 'Claim :: The user prefers the dark editor theme.',
+            ),
+          ),
+          prompt: 'I always work in dark mode.',
+          answer: 'Noted.',
+          eventId: eventId,
+        );
+
+        expect(outcome.status, isNot(TrailOutcomeStatus.accepted));
+        expect(outcome.error, isA<AgentScopeViolation>());
+
+        final stats = await store.stats();
+        expect(
+          stats.nodeCountByType['Claim'] ?? 0,
+          equals(0),
+          reason: 'the Claim write was refused, so no Claim row exists',
+        );
+      });
+    },
+    skip: skipNoBinary,
+  );
 }
 
 // ── A deterministic curator-substrate stub ──────────────────────────────
@@ -337,10 +355,10 @@ class _CuratorSubstrate implements TomBrainSubstrateClient {
   final String verdict;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: verdict),
-      const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) {
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(verdict),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -358,16 +376,15 @@ class _CuratorSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: _v768(seed: text.length),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'nomic-embed-text',
-          dims: _bootstrapDims,
-          normalized: true,
-        ),
-      );
+    vec: _v768(seed: text.length),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'nomic-embed-text',
+      dims: _bootstrapDims,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

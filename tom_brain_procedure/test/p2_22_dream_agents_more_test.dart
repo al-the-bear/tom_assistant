@@ -86,9 +86,10 @@ Vec _v768({required int seed}) {
 String? _findSqliteVecRoot() {
   var dir = Directory.current.absolute;
   for (var i = 0; i < 8; i++) {
-    final candidate =
-        Directory('${dir.path}${Platform.pathSeparator}tom_binaries'
-            '${Platform.pathSeparator}sqlite_vec');
+    final candidate = Directory(
+      '${dir.path}${Platform.pathSeparator}tom_binaries'
+      '${Platform.pathSeparator}sqlite_vec',
+    );
     if (candidate.existsSync()) return candidate.path;
     final parent = dir.parent;
     if (parent.path == dir.path) break;
@@ -128,12 +129,12 @@ WriteBudget _unboundedBudget() =>
 /// Registers a cognitive agent whose id equals [name] (the dream procedures'
 /// id equals their agent name) with the given write [scopes].
 AgentRegistration _agent(String name, Set<String> scopes) => AgentRegistration(
-      agentName: name,
-      procedureId: name,
-      defaultBudget: _unboundedBudget(),
-      readScopes: const <String>{AgentRegistration.globalWildcard},
-      writeScopes: scopes,
-    );
+  agentName: name,
+  procedureId: name,
+  defaultBudget: _unboundedBudget(),
+  readScopes: const <String>{AgentRegistration.globalWildcard},
+  writeScopes: scopes,
+);
 
 void main() {
   final vecRoot = _findSqliteVecRoot();
@@ -147,8 +148,8 @@ void main() {
 
   final skipNoBinary = resolvedPath == null
       ? 'No packaged vec0 binary for this platform under '
-          'tom_binaries/sqlite_vec (resolver.isSupported='
-          '${resolver.isSupported}, vecRoot=$vecRoot).'
+            'tom_binaries/sqlite_vec (resolver.isSupported='
+            '${resolver.isSupported}, vecRoot=$vecRoot).'
       : null;
 
   MemoryConfig freshConfig() {
@@ -187,10 +188,7 @@ void main() {
   /// vector (recall does not rehydrate it — Q-A.35.1) but on re-embedding the
   /// Claim's text, so the seeded embedding here only has to be a valid 768-dim
   /// vector.
-  Future<void> seedClaims(
-    SqliteTomBrainMemory store, {
-    int count = 3,
-  }) async {
+  Future<void> seedClaims(SqliteTomBrainMemory store, {int count = 3}) async {
     for (var i = 0; i < count; i++) {
       await store.persist(
         _claimDraft(
@@ -241,13 +239,11 @@ void main() {
     Map<String, Object?> arguments = const <String, Object?>{
       'source': _salientTerm,
     },
-  }) =>
-      engine
-          .invoke(ProcedureInvocation(
-            procedureId: procedureId,
-            arguments: arguments,
-          ))
-          .outcome;
+  }) => engine
+      .invoke(
+        ProcedureInvocation(procedureId: procedureId, arguments: arguments),
+      )
+      .outcome;
 
   group('remaining dream agents through the engine against real memory '
       '(needs vec0)', () {
@@ -255,16 +251,19 @@ void main() {
         'derived_from edges', () async {
       final store = await openStore();
       await seedClaims(store);
-      store.registerAgent(_agent('dream_synthesise_v1', <String>{
-        AgentRegistration.nodeScope('Conclusion'),
-        AgentRegistration.edgeScope('derived_from'),
-      }));
+      store.registerAgent(
+        _agent('dream_synthesise_v1', <String>{
+          AgentRegistration.nodeScope('Conclusion'),
+          AgentRegistration.edgeScope('derived_from'),
+        }),
+      );
 
       final outcome = await runDream(
         engine: await engineFor(
           store: store,
           substrate: _AgentSubstrate(
-              llmText: 'The project is consistently deployed to bomber.'),
+            llmText: 'The project is consistently deployed to bomber.',
+          ),
           agentName: 'dream_synthesise_v1',
         ),
         procedureId: 'dream_synthesise_v1',
@@ -272,26 +271,35 @@ void main() {
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       final stats = await store.stats();
-      expect(stats.nodeCountByType['Conclusion'] ?? 0, greaterThan(0),
-          reason: 'a synthesised Conclusion node was persisted');
-      expect(stats.edgeCountByType['derived_from'] ?? 0, greaterThan(0),
-          reason: 'the Conclusion is tied to its source Claims');
+      expect(
+        stats.nodeCountByType['Conclusion'] ?? 0,
+        greaterThan(0),
+        reason: 'a synthesised Conclusion node was persisted',
+      );
+      expect(
+        stats.edgeCountByType['derived_from'] ?? 0,
+        greaterThan(0),
+        reason: 'the Conclusion is tied to its source Claims',
+      );
     });
 
     test('Inquisitor raises Question nodes and pushes them onto '
         'questions_open', () async {
       final store = await openStore();
       await seedClaims(store);
-      store.registerAgent(_agent('dream_inquisitor_v1', <String>{
-        AgentRegistration.nodeScope('Question'),
-        AgentRegistration.stackScope('questions_open'),
-      }));
+      store.registerAgent(
+        _agent('dream_inquisitor_v1', <String>{
+          AgentRegistration.nodeScope('Question'),
+          AgentRegistration.stackScope('questions_open'),
+        }),
+      );
 
       final outcome = await runDream(
         engine: await engineFor(
           store: store,
           substrate: _AgentSubstrate(
-              llmText: 'What does the project deployment depend on?'),
+            llmText: 'What does the project deployment depend on?',
+          ),
           agentName: 'dream_inquisitor_v1',
         ),
         procedureId: 'dream_inquisitor_v1',
@@ -299,12 +307,18 @@ void main() {
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       final stats = await store.stats();
-      expect(stats.nodeCountByType['Question'] ?? 0, greaterThan(0),
-          reason: 'an open Question was persisted');
+      expect(
+        stats.nodeCountByType['Question'] ?? 0,
+        greaterThan(0),
+        reason: 'an open Question was persisted',
+      );
 
       final pushed = await store.stacks.peek('questions_open', k: 16);
-      expect(pushed, isNotEmpty,
-          reason: 'the Question was pushed onto questions_open');
+      expect(
+        pushed,
+        isNotEmpty,
+        reason: 'the Question was pushed onto questions_open',
+      );
     });
 
     test('Reconsolidator records a Contradiction and demotes the superseded '
@@ -315,16 +329,19 @@ void main() {
       final claimsBefore = before.nodeCountByType['Claim'] ?? 0;
       expect(claimsBefore, greaterThan(1));
 
-      store.registerAgent(_agent('dream_reconsolidate_v1', <String>{
-        AgentRegistration.nodeScope('Contradiction'),
-        AgentRegistration.edgeScope('contradicts'),
-      }));
+      store.registerAgent(
+        _agent('dream_reconsolidate_v1', <String>{
+          AgentRegistration.nodeScope('Contradiction'),
+          AgentRegistration.edgeScope('contradicts'),
+        }),
+      );
 
       final outcome = await runDream(
         engine: await engineFor(
           store: store,
           substrate: _AgentSubstrate(
-              llmText: 'The two project facts conflict on the deploy target.'),
+            llmText: 'The two project facts conflict on the deploy target.',
+          ),
           agentName: 'dream_reconsolidate_v1',
         ),
         procedureId: 'dream_reconsolidate_v1',
@@ -332,12 +349,21 @@ void main() {
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       final after = await store.stats();
-      expect(after.nodeCountByType['Contradiction'] ?? 0, greaterThan(0),
-          reason: 'a Contradiction node summarises the conflict');
-      expect(after.edgeCountByType['contradicts'] ?? 0, greaterThan(0),
-          reason: 'the Contradiction is tied to the conflicting Claims');
-      expect(after.nodeCountByType['Claim'] ?? 0, lessThan(claimsBefore),
-          reason: 'the superseded Claim was demoted (no longer active)');
+      expect(
+        after.nodeCountByType['Contradiction'] ?? 0,
+        greaterThan(0),
+        reason: 'a Contradiction node summarises the conflict',
+      );
+      expect(
+        after.edgeCountByType['contradicts'] ?? 0,
+        greaterThan(0),
+        reason: 'the Contradiction is tied to the conflicting Claims',
+      );
+      expect(
+        after.nodeCountByType['Claim'] ?? 0,
+        lessThan(claimsBefore),
+        reason: 'the superseded Claim was demoted (no longer active)',
+      );
     });
 
     test('Pruner can only demote — it carries no node write scope and reduces '
@@ -356,35 +382,47 @@ void main() {
       final outcome = await runDream(
         engine: await engineFor(
           store: store,
-          substrate: _AgentSubstrate(llmText: 'prune: this project fact is '
-              'redundant'),
+          substrate: _AgentSubstrate(
+            llmText:
+                'prune: this project fact is '
+                'redundant',
+          ),
           agentName: 'dream_prune_v1',
         ),
         procedureId: 'dream_prune_v1',
       );
 
-      expect(outcome.status, TrailOutcomeStatus.accepted,
-          reason: 'the Pruner only demotes — no out-of-scope write occurs');
+      expect(
+        outcome.status,
+        TrailOutcomeStatus.accepted,
+        reason: 'the Pruner only demotes — no out-of-scope write occurs',
+      );
       final after = await store.stats();
-      expect(after.nodeCountByType['Claim'] ?? 0, lessThan(claimsBefore),
-          reason: 'the Pruner demoted at least one redundant Claim');
+      expect(
+        after.nodeCountByType['Claim'] ?? 0,
+        lessThan(claimsBefore),
+        reason: 'the Pruner demoted at least one redundant Claim',
+      );
     });
 
     test('Repetition detector records a Pattern and an AutomationIdea pushed '
         'onto automation_ideas', () async {
       final store = await openStore();
       await seedEvents(store);
-      store.registerAgent(_agent('dream_repetition_detect_v1', <String>{
-        AgentRegistration.nodeScope('Pattern'),
-        AgentRegistration.nodeScope('AutomationIdea'),
-        AgentRegistration.stackScope('automation_ideas'),
-      }));
+      store.registerAgent(
+        _agent('dream_repetition_detect_v1', <String>{
+          AgentRegistration.nodeScope('Pattern'),
+          AgentRegistration.nodeScope('AutomationIdea'),
+          AgentRegistration.stackScope('automation_ideas'),
+        }),
+      );
 
       final outcome = await runDream(
         engine: await engineFor(
           store: store,
           substrate: _AgentSubstrate(
-              llmText: 'The project build-and-deploy step repeats.'),
+            llmText: 'The project build-and-deploy step repeats.',
+          ),
           agentName: 'dream_repetition_detect_v1',
         ),
         procedureId: 'dream_repetition_detect_v1',
@@ -392,24 +430,35 @@ void main() {
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       final stats = await store.stats();
-      expect(stats.nodeCountByType['Pattern'] ?? 0, greaterThan(0),
-          reason: 'a recurring Pattern was recorded');
-      expect(stats.nodeCountByType['AutomationIdea'] ?? 0, greaterThan(0),
-          reason: 'a candidate AutomationIdea was recorded');
+      expect(
+        stats.nodeCountByType['Pattern'] ?? 0,
+        greaterThan(0),
+        reason: 'a recurring Pattern was recorded',
+      );
+      expect(
+        stats.nodeCountByType['AutomationIdea'] ?? 0,
+        greaterThan(0),
+        reason: 'a candidate AutomationIdea was recorded',
+      );
 
       final pushed = await store.stacks.peek('automation_ideas', k: 16);
-      expect(pushed, isNotEmpty,
-          reason: 'the AutomationIdea was pushed onto automation_ideas');
+      expect(
+        pushed,
+        isNotEmpty,
+        reason: 'the AutomationIdea was pushed onto automation_ideas',
+      );
     });
 
     test('Researcher turns a web search + fetch into a Source and a Claim '
         'with an evidence_for edge', () async {
       final store = await openStore();
-      store.registerAgent(_agent('research_v1', <String>{
-        AgentRegistration.nodeScope('Source'),
-        AgentRegistration.nodeScope('Claim'),
-        AgentRegistration.edgeScope('evidence_for'),
-      }));
+      store.registerAgent(
+        _agent('research_v1', <String>{
+          AgentRegistration.nodeScope('Source'),
+          AgentRegistration.nodeScope('Claim'),
+          AgentRegistration.edgeScope('evidence_for'),
+        }),
+      );
 
       final outcome = await runDream(
         engine: await engineFor(
@@ -434,12 +483,21 @@ void main() {
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       final stats = await store.stats();
-      expect(stats.nodeCountByType['Source'] ?? 0, greaterThan(0),
-          reason: 'the fetched page became a Source node');
-      expect(stats.nodeCountByType['Claim'] ?? 0, greaterThan(0),
-          reason: 'the researched fact became a Claim node');
-      expect(stats.edgeCountByType['evidence_for'] ?? 0, greaterThan(0),
-          reason: 'the Source is evidence for the Claim');
+      expect(
+        stats.nodeCountByType['Source'] ?? 0,
+        greaterThan(0),
+        reason: 'the fetched page became a Source node',
+      );
+      expect(
+        stats.nodeCountByType['Claim'] ?? 0,
+        greaterThan(0),
+        reason: 'the researched fact became a Claim node',
+      );
+      expect(
+        stats.edgeCountByType['evidence_for'] ?? 0,
+        greaterThan(0),
+        reason: 'the Source is evidence for the Claim',
+      );
     });
 
     test('Recentroid recomputes the Claim centroid so classify resolves to '
@@ -478,12 +536,17 @@ void main() {
       // re-embedding. Classifying that same vector (the substrate's embedding
       // of a member's statement) resolves to Claim; cold-start would return
       // `unknown`.
-      final memberVec =
-          (await substrate.embed('The project fact number 0 is recorded.')).vec;
+      final memberVec = (await substrate.embed(
+        'The project fact number 0 is recorded.',
+      )).vec;
       final result = await store.classify(memberVec);
-      expect(result.bestMatch, 'Claim',
-          reason: 'the recomputed centroid makes a member vector classify as '
-              'Claim');
+      expect(
+        result.bestMatch,
+        'Claim',
+        reason:
+            'the recomputed centroid makes a member vector classify as '
+            'Claim',
+      );
     });
   }, skip: skipNoBinary);
 }
@@ -512,10 +575,10 @@ class _AgentSubstrate implements TomBrainSubstrateClient {
   final String fetchText;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: llmText),
-      const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) {
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(llmText),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -533,36 +596,33 @@ class _AgentSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: _v768(seed: text.length),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'nomic-embed-text',
-          dims: _bootstrapDims,
-          normalized: true,
-        ),
-      );
+    vec: _v768(seed: text.length),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'nomic-embed-text',
+      dims: _bootstrapDims,
+      normalized: true,
+    ),
+  );
 
   @override
   Future<WebSearchResult> webSearch(
     String query, {
     WebSearchOptions options = WebSearchOptions.empty,
-  }) async =>
-      WebSearchResult(provider: 'stub', query: query, hits: searchHits);
+  }) async => WebSearchResult(provider: 'stub', query: query, hits: searchHits);
 
   @override
   Future<WebFetchResult> webFetch(
     Uri url, {
     WebFetchOptions options = WebFetchOptions.empty,
-  }) async =>
-      WebFetchResult(
-        url: url,
-        status: 200,
-        contentType: 'text/html',
-        text: fetchText,
-        contentBytes: fetchText.length,
-      );
+  }) async => WebFetchResult(
+    url: url,
+    status: 200,
+    contentType: 'text/html',
+    text: fetchText,
+    contentBytes: fetchText.length,
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

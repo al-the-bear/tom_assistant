@@ -88,9 +88,10 @@ Vec _v768({required int seed}) {
 String? _findSqliteVecRoot() {
   var dir = Directory.current.absolute;
   for (var i = 0; i < 8; i++) {
-    final candidate =
-        Directory('${dir.path}${Platform.pathSeparator}tom_binaries'
-            '${Platform.pathSeparator}sqlite_vec');
+    final candidate = Directory(
+      '${dir.path}${Platform.pathSeparator}tom_binaries'
+      '${Platform.pathSeparator}sqlite_vec',
+    );
     if (candidate.existsSync()) return candidate.path;
     final parent = dir.parent;
     if (parent.path == dir.path) break;
@@ -102,7 +103,8 @@ String? _findSqliteVecRoot() {
 /// Builds an Event [NodeDraft] (requires an embedding; `summary` is the
 /// embedding + FTS source). Every summary carries [_salientTerm] so the
 /// dream scripts' BM25 recall surfaces it.
-NodeDraft _eventDraft({required String summary, required int seed}) => NodeDraft(
+NodeDraft _eventDraft({required String summary, required int seed}) =>
+    NodeDraft(
       typeName: 'Event',
       values: <String, Object?>{
         'summary': summary,
@@ -122,25 +124,25 @@ WriteBudget _unboundedBudget() =>
 /// path passes `{node:Claim}`; the scope-enforcement case passes a deliberately
 /// wrong scope so the Claim write is refused.
 AgentRegistration _extractorAgent(Set<String> scopes) => AgentRegistration(
-      agentName: 'dream_extract_v1',
-      procedureId: 'dream_extract_v1',
-      defaultBudget: _unboundedBudget(),
-      readScopes: const <String>{AgentRegistration.globalWildcard},
-      writeScopes: scopes,
-    );
+  agentName: 'dream_extract_v1',
+  procedureId: 'dream_extract_v1',
+  defaultBudget: _unboundedBudget(),
+  readScopes: const <String>{AgentRegistration.globalWildcard},
+  writeScopes: scopes,
+);
 
 /// Registers the Connector agent. It draws only `derived_from` and `mentions`
 /// edges, so those two edge scopes are its whole write surface.
 AgentRegistration _connectorAgent() => AgentRegistration(
-      agentName: 'dream_connect_v1',
-      procedureId: 'dream_connect_v1',
-      defaultBudget: _unboundedBudget(),
-      readScopes: const <String>{AgentRegistration.globalWildcard},
-      writeScopes: <String>{
-        AgentRegistration.edgeScope('derived_from'),
-        AgentRegistration.edgeScope('mentions'),
-      },
-    );
+  agentName: 'dream_connect_v1',
+  procedureId: 'dream_connect_v1',
+  defaultBudget: _unboundedBudget(),
+  readScopes: const <String>{AgentRegistration.globalWildcard},
+  writeScopes: <String>{
+    AgentRegistration.edgeScope('derived_from'),
+    AgentRegistration.edgeScope('mentions'),
+  },
+);
 
 void main() {
   final vecRoot = _findSqliteVecRoot();
@@ -154,8 +156,8 @@ void main() {
 
   final skipNoBinary = resolvedPath == null
       ? 'No packaged vec0 binary for this platform under '
-          'tom_binaries/sqlite_vec (resolver.isSupported='
-          '${resolver.isSupported}, vecRoot=$vecRoot).'
+            'tom_binaries/sqlite_vec (resolver.isSupported='
+            '${resolver.isSupported}, vecRoot=$vecRoot).'
       : null;
 
   /// A fresh real-store config rooted in a unique temp dir, with teardown
@@ -231,125 +233,149 @@ void main() {
   Future<ProcedureOutcome> runDream({
     required ProcedureEngine engine,
     required String procedureId,
-  }) =>
-      engine
-          .invoke(ProcedureInvocation(
-            procedureId: procedureId,
-            arguments: <String, Object?>{'source': _salientTerm},
-          ))
-          .outcome;
+  }) => engine
+      .invoke(
+        ProcedureInvocation(
+          procedureId: procedureId,
+          arguments: <String, Object?>{'source': _salientTerm},
+        ),
+      )
+      .outcome;
 
-  group('dream agents through the engine against real memory (needs vec0)', () {
-    test('Extractor over a seeded trail produces Claim nodes', () async {
-      final store = await openStore();
-      await seedTrail(store);
-      store.registerAgent(
-        _extractorAgent(<String>{AgentRegistration.nodeScope('Claim')}),
-      );
+  group(
+    'dream agents through the engine against real memory (needs vec0)',
+    () {
+      test('Extractor over a seeded trail produces Claim nodes', () async {
+        final store = await openStore();
+        await seedTrail(store);
+        store.registerAgent(
+          _extractorAgent(<String>{AgentRegistration.nodeScope('Claim')}),
+        );
 
-      final engine = await engineFor(
-        store: store,
-        substrate: _DreamSubstrate(llmText: 'The project claim was extracted.'),
-        agentName: 'dream_extract_v1',
-      );
-      final outcome = await runDream(
-        engine: engine,
-        procedureId: 'dream_extract_v1',
-      );
+        final engine = await engineFor(
+          store: store,
+          substrate: _DreamSubstrate(
+            llmText: 'The project claim was extracted.',
+          ),
+          agentName: 'dream_extract_v1',
+        );
+        final outcome = await runDream(
+          engine: engine,
+          procedureId: 'dream_extract_v1',
+        );
 
-      // Accepted ⇒ the run stayed within its declared header budget (a budget
-      // breach would close it `budgetExceeded`, not `accepted`) — the "within
-      // budget" half of #21.
-      expect(outcome.status, TrailOutcomeStatus.accepted);
+        // Accepted ⇒ the run stayed within its declared header budget (a budget
+        // breach would close it `budgetExceeded`, not `accepted`) — the "within
+        // budget" half of #21.
+        expect(outcome.status, TrailOutcomeStatus.accepted);
 
-      // The body returns the ids it persisted as `claimIds`.
-      final claimIds = outcome.result!.output<List<Object?>>('claimIds');
-      expect(claimIds, isNotNull);
-      expect(claimIds, isNotEmpty);
+        // The body returns the ids it persisted as `claimIds`.
+        final claimIds = outcome.result!.output<List<Object?>>('claimIds');
+        expect(claimIds, isNotNull);
+        expect(claimIds, isNotEmpty);
 
-      // The Verify: Claim rows exist in the real store, one per recalled Event.
-      final stats = await store.stats();
-      expect(stats.nodeCountByType['Claim'] ?? 0, greaterThan(0));
-      expect(stats.nodeCountByType['Claim'], claimIds!.length);
-    });
+        // The Verify: Claim rows exist in the real store, one per recalled Event.
+        final stats = await store.stats();
+        expect(stats.nodeCountByType['Claim'] ?? 0, greaterThan(0));
+        expect(stats.nodeCountByType['Claim'], claimIds!.length);
+      });
 
-    test('Connector adds derived_from and mentions edges over extracted Claims',
+      test(
+        'Connector adds derived_from and mentions edges over extracted Claims',
         () async {
-      final store = await openStore();
-      await seedTrail(store);
+          final store = await openStore();
+          await seedTrail(store);
 
-      // First the Extractor distils the trail into Claims.
-      store.registerAgent(
-        _extractorAgent(<String>{AgentRegistration.nodeScope('Claim')}),
-      );
-      final extractOutcome = await runDream(
-        engine: await engineFor(
-          store: store,
-          substrate:
-              _DreamSubstrate(llmText: 'The project claim was extracted.'),
-          agentName: 'dream_extract_v1',
-        ),
-        procedureId: 'dream_extract_v1',
-      );
-      expect(extractOutcome.status, TrailOutcomeStatus.accepted);
+          // First the Extractor distils the trail into Claims.
+          store.registerAgent(
+            _extractorAgent(<String>{AgentRegistration.nodeScope('Claim')}),
+          );
+          final extractOutcome = await runDream(
+            engine: await engineFor(
+              store: store,
+              substrate: _DreamSubstrate(
+                llmText: 'The project claim was extracted.',
+              ),
+              agentName: 'dream_extract_v1',
+            ),
+            procedureId: 'dream_extract_v1',
+          );
+          expect(extractOutcome.status, TrailOutcomeStatus.accepted);
 
-      // Then the Connector weaves them into the graph. Its verdict stub affirms
-      // every Claim ("yes"), so each links back to the recalled Events.
-      store.registerAgent(_connectorAgent());
-      final connectOutcome = await runDream(
-        engine: await engineFor(
-          store: store,
-          substrate: _DreamSubstrate(llmText: 'yes, it derives from an event.'),
-          agentName: 'dream_connect_v1',
-        ),
-        procedureId: 'dream_connect_v1',
-      );
+          // Then the Connector weaves them into the graph. Its verdict stub affirms
+          // every Claim ("yes"), so each links back to the recalled Events.
+          store.registerAgent(_connectorAgent());
+          final connectOutcome = await runDream(
+            engine: await engineFor(
+              store: store,
+              substrate: _DreamSubstrate(
+                llmText: 'yes, it derives from an event.',
+              ),
+              agentName: 'dream_connect_v1',
+            ),
+            procedureId: 'dream_connect_v1',
+          );
 
-      expect(connectOutcome.status, TrailOutcomeStatus.accepted);
-      final edgeIds = connectOutcome.result!.output<List<Object?>>('edgeIds');
-      expect(edgeIds, isNotNull);
-      expect(edgeIds, isNotEmpty);
+          expect(connectOutcome.status, TrailOutcomeStatus.accepted);
+          final edgeIds = connectOutcome.result!.output<List<Object?>>(
+            'edgeIds',
+          );
+          expect(edgeIds, isNotNull);
+          expect(edgeIds, isNotEmpty);
 
-      // The Verify: both edge kinds are present in the real store.
-      final stats = await store.stats();
-      expect(stats.edgeCountByType['derived_from'] ?? 0, greaterThan(0),
-          reason: 'affirmed Claims link back to the Events they derived from');
-      expect(stats.edgeCountByType['mentions'] ?? 0, greaterThan(0),
-          reason: 'consecutive Claims mention one another');
-    });
-
-    test('an out-of-scope Extractor write is refused with AgentScopeViolation '
-        'and writes no Claim', () async {
-      final store = await openStore();
-      await seedTrail(store);
-
-      // The Extractor is registered with the WRONG write scope (Concept, not
-      // Claim): its first `mem.persist('Claim', …)` is rejected by the store's
-      // AgentRegistry before any row is written — the "within scope" half.
-      store.registerAgent(
-        _extractorAgent(<String>{AgentRegistration.nodeScope('Concept')}),
-      );
-
-      final outcome = await runDream(
-        engine: await engineFor(
-          store: store,
-          substrate:
-              _DreamSubstrate(llmText: 'The project claim was extracted.'),
-          agentName: 'dream_extract_v1',
-        ),
-        procedureId: 'dream_extract_v1',
+          // The Verify: both edge kinds are present in the real store.
+          final stats = await store.stats();
+          expect(
+            stats.edgeCountByType['derived_from'] ?? 0,
+            greaterThan(0),
+            reason: 'affirmed Claims link back to the Events they derived from',
+          );
+          expect(
+            stats.edgeCountByType['mentions'] ?? 0,
+            greaterThan(0),
+            reason: 'consecutive Claims mention one another',
+          );
+        },
       );
 
-      // The refusal surfaces as a run error carrying the typed violation.
-      expect(outcome.status, isNot(TrailOutcomeStatus.accepted));
-      expect(outcome.error, isA<AgentScopeViolation>());
+      test('an out-of-scope Extractor write is refused with AgentScopeViolation '
+          'and writes no Claim', () async {
+        final store = await openStore();
+        await seedTrail(store);
 
-      // A scope-denied write must not create a row.
-      final stats = await store.stats();
-      expect(stats.nodeCountByType['Claim'] ?? 0, equals(0),
-          reason: 'the Claim write was refused, so no Claim row exists');
-    });
-  }, skip: skipNoBinary);
+        // The Extractor is registered with the WRONG write scope (Concept, not
+        // Claim): its first `mem.persist('Claim', …)` is rejected by the store's
+        // AgentRegistry before any row is written — the "within scope" half.
+        store.registerAgent(
+          _extractorAgent(<String>{AgentRegistration.nodeScope('Concept')}),
+        );
+
+        final outcome = await runDream(
+          engine: await engineFor(
+            store: store,
+            substrate: _DreamSubstrate(
+              llmText: 'The project claim was extracted.',
+            ),
+            agentName: 'dream_extract_v1',
+          ),
+          procedureId: 'dream_extract_v1',
+        );
+
+        // The refusal surfaces as a run error carrying the typed violation.
+        expect(outcome.status, isNot(TrailOutcomeStatus.accepted));
+        expect(outcome.error, isA<AgentScopeViolation>());
+
+        // A scope-denied write must not create a row.
+        final stats = await store.stats();
+        expect(
+          stats.nodeCountByType['Claim'] ?? 0,
+          equals(0),
+          reason: 'the Claim write was refused, so no Claim row exists',
+        );
+      });
+    },
+    skip: skipNoBinary,
+  );
 }
 
 // ── A deterministic dream-substrate stub ────────────────────────────────
@@ -366,10 +392,10 @@ class _DreamSubstrate implements TomBrainSubstrateClient {
   final String llmText;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: llmText),
-      const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) {
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(llmText),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -387,16 +413,15 @@ class _DreamSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: _v768(seed: text.length),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'nomic-embed-text',
-          dims: _bootstrapDims,
-          normalized: true,
-        ),
-      );
+    vec: _v768(seed: text.length),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'nomic-embed-text',
+      dims: _bootstrapDims,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

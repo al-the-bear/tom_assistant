@@ -33,7 +33,7 @@
 
 import '../api/embedding_result.dart';
 import '../api/llm_call.dart';
-import '../api/llm_stream_event.dart';
+import 'package:tom_core_llm/tom_core_llm.dart';
 import '../api/mcp_endpoint.dart';
 import '../api/substrate_event.dart';
 import '../api/substrate_stats.dart';
@@ -53,8 +53,7 @@ final class IsolateTomBrainSubstrateAdapter implements TomBrainSubstrateClient {
 
   /// The last stats snapshot piggybacked on a unary reply. Seeded empty
   /// so `stats()` is answerable before any call has round-tripped.
-  SubstrateStats _cachedStats =
-      SubstrateStats.empty(DateTime.now().toUtc());
+  SubstrateStats _cachedStats = SubstrateStats.empty(DateTime.now().toUtc());
 
   IsolateTomBrainSubstrateAdapter({required this.host});
 
@@ -85,14 +84,14 @@ final class IsolateTomBrainSubstrateAdapter implements TomBrainSubstrateClient {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) async* {
+  Stream<LlmEvent> completeStream(LlmCall call) async* {
     final streamId = host.streamIdAllocator.next();
-    final stream = host.openStream<LlmStreamEvent>(
+    final stream = host.openStream<LlmEvent>(
       OpenCompleteStreamRequest(streamId: streamId, call: _stripForWire(call)),
       streamId: streamId,
     );
     await for (final event in stream) {
-      if (event is LlmStreamCompleted) {
+      if (event is LlmRunCompleted) {
         // Re-check before surfacing: never yield an unanchored report.
         _enforceAnchorOrThrow(report: event.report, roleId: call.roleId);
       }
@@ -188,11 +187,11 @@ final class IsolateTomBrainSubstrateAdapter implements TomBrainSubstrateClient {
   /// supported — substrate streams self-terminate and are torn down via
   /// the host's `closeStream`.
   LlmCall _stripForWire(LlmCall call) => LlmCall(
-        roleId: call.roleId,
-        inputs: call.inputs,
-        options: call.options,
-        budget: call.budget,
-        turnId: call.turnId,
-        callSeq: call.callSeq,
-      );
+    roleId: call.roleId,
+    inputs: call.inputs,
+    options: call.options,
+    budget: call.budget,
+    turnId: call.turnId,
+    callSeq: call.callSeq,
+  );
 }

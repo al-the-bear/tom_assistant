@@ -111,7 +111,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import 'package:tom_core_agentic/tom_core_agentic.dart' show textPreview;
 
 import '../llm/anchor_registry.dart';
-import '../llm/wire_prompt.dart';
+import 'package:tom_core_llm/tom_core_llm.dart';
 import 'allowed_action.dart';
 import 'role_budget_defaults.dart';
 import 'system_scaffold.dart';
@@ -449,12 +449,13 @@ final class RoleTemplate {
   /// marker present iff `outputSchema != null`) and
   /// `system_scaffold_test.dart` pins the exact assembled layout.
   String _composeSystem({bool anchored = true}) => SystemScaffold.render(
-        persona: personaText,
-        objective: objective,
-        outputSchemaSection:
-            outputSchema == null ? '' : _outputSchemaSection(outputSchema!),
-        anchored: anchored,
-      );
+    persona: personaText,
+    objective: objective,
+    outputSchemaSection: outputSchema == null
+        ? ''
+        : _outputSchemaSection(outputSchema!),
+    anchored: anchored,
+  );
 
   /// The fully composed `OUTPUT SCHEMA:` section for a role that declares an
   /// [outputSchema], including its own leading `\n\n` separator so the
@@ -525,17 +526,18 @@ final class RoleTemplate {
 
   @override
   int get hashCode => Object.hash(
-        id,
-        personaText,
-        objective,
-        Object.hashAllUnordered(allowedActions),
-        Object.hashAllUnordered(forbiddenActions),
-        outputSchema == null ? null : Object.hashAll(outputSchema!.keys),
-        budgetDefaults,
-      );
+    id,
+    personaText,
+    objective,
+    Object.hashAllUnordered(allowedActions),
+    Object.hashAllUnordered(forbiddenActions),
+    outputSchema == null ? null : Object.hashAll(outputSchema!.keys),
+    budgetDefaults,
+  );
 
   @override
-  String toString() => 'RoleTemplate('
+  String toString() =>
+      'RoleTemplate('
       'id: $id, '
       'personaText: "${textPreview(personaText, limit: 37, ellipsis: '...')}", '
       'objective: "${textPreview(objective, limit: 37, ellipsis: '...')}", '

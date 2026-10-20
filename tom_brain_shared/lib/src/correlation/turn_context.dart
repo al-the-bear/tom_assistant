@@ -21,7 +21,7 @@ final class TurnContext {
   /// serves, or `null` when the turn runs outside a session (internal /
   /// free-time / dream).
   ///
-  /// Stamped onto every user-turn LLM call's [LlmOptions.brainSessionId] by the
+  /// Stamped onto every user-turn LLM call's [LlmOptions.sessionId] by the
   /// `SubstrateBridge`, where the run-layer `AgentSdkLlmProvider` in
   /// `sessionMode: brain` reads it to key the persisted Claude-Code session id
   /// by the tom_brain session (agent-SDK design spec § 1.5).

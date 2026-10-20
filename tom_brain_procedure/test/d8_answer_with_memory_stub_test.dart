@@ -89,8 +89,7 @@ void main() {
       );
     });
 
-    test('the disk procedure parses with the answer_with_memory_v1 v1 header',
-        () async {
+    test('the disk procedure parses with the answer_with_memory_v1 v1 header', () async {
       final resolver = await systemResolver();
       final loaded = resolver.resolve('answer_with_memory_v1');
       expect(loaded.header.id, 'answer_with_memory_v1');
@@ -110,22 +109,20 @@ void main() {
       // via `sub.run` (already declared) over the `completion_check` prompt. The
       // direct `sub.llm` call is gone, so `llm` is replaced by `render` in the
       // requires set.
-      expect(
-          loaded.header.requires,
-          <String>[
-            'runProcedure',
-            'run',
-            'render',
-            'embed',
-            'classify',
-            'persist',
-            'edge',
-            'stack.push',
-            'note',
-            'tool.invoke',
-            // § 16 — the curation overlay marks the cited nodes as used.
-            'recordAccess',
-          ]);
+      expect(loaded.header.requires, <String>[
+        'runProcedure',
+        'run',
+        'render',
+        'embed',
+        'classify',
+        'persist',
+        'edge',
+        'stack.push',
+        'note',
+        'tool.invoke',
+        // § 16 — the curation overlay marks the cited nodes as used.
+        'recordAccess',
+      ]);
       // The only declared cap is the wall-clock deadline (§ 5.4): the
       // user-facing answer budget is "virtually unlimited" on every count
       // dimension — the per-run `MemoryWriteGuard` is the non-fatal backstop
@@ -141,10 +138,12 @@ void main() {
       final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
 
       final outcome = await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'answer_with_memory_v1',
-            arguments: <String, Object?>{'text': 'how do I back up?'},
-          ))
+          .invoke(
+            ProcedureInvocation(
+              procedureId: 'answer_with_memory_v1',
+              arguments: <String, Object?>{'text': 'how do I back up?'},
+            ),
+          )
           .outcome;
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
@@ -171,13 +170,18 @@ void main() {
   });
 
   group('D.8-3 the two system stubs coexist in the shipped directory', () {
-    test('the resolver indexes both think_v1 and answer_with_memory_v1',
-        () async {
-      final resolver = await systemResolver();
-      expect(resolver.knows('think_v1'), isTrue);
-      expect(resolver.knows('answer_with_memory_v1'), isTrue);
-      expect(resolver.ids, containsAll(<String>['answer_with_memory_v1', 'think_v1']));
-    });
+    test(
+      'the resolver indexes both think_v1 and answer_with_memory_v1',
+      () async {
+        final resolver = await systemResolver();
+        expect(resolver.knows('think_v1'), isTrue);
+        expect(resolver.knows('answer_with_memory_v1'), isTrue);
+        expect(
+          resolver.ids,
+          containsAll(<String>['answer_with_memory_v1', 'think_v1']),
+        );
+      },
+    );
   });
 }
 
@@ -189,10 +193,10 @@ void main() {
 // accepted with an `answer` output, so the canned answer is a fixed marker.
 class _InertSubstrate implements TomBrainSubstrateClient {
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c', text: 'ok'),
-        const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) =>
+      Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        const LlmTextDelta('ok'),
+        const LlmRunCompleted(
           callId: 'c',
           report: LlmCallReport(
             providerId: 'p',
@@ -209,18 +213,17 @@ class _InertSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A stateful in-memory `TomBrainMemoryClient` ─────────────────────
@@ -278,8 +281,7 @@ class _StatefulMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -344,12 +346,10 @@ class _StatefulMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -399,6 +399,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

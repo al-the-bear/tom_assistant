@@ -84,10 +84,12 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'answer_with_memory_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'answer_with_memory_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
@@ -115,45 +117,53 @@ void main() {
       );
 
       final prompt = substrate.lastCall!.inputs['prompt']! as String;
-      expect(prompt.indexOf('Tools available to you'),
-          lessThan(prompt.indexOf('which tools do you have?')));
-    });
-
-    test('the block explains how to invoke a tool with a call: example',
-        () async {
-      await runWith(
-        'which tools do you have?',
-        toolCatalogue: defaultToolCatalogue(),
+      expect(
+        prompt.indexOf('Tools available to you'),
+        lessThan(prompt.indexOf('which tools do you have?')),
       );
-
-      final prompt = substrate.lastCall!.inputs['prompt']! as String;
-      // The model must be told the exact, parseable call format — without it
-      // (the live bug) it guesses its provider's native chat-template dialect.
-      expect(prompt, contains('To use a tool'));
-      expect(prompt, contains('call:'));
-      // The how-to-call guidance follows the catalogue listing.
-      expect(prompt.indexOf('Tools available to you'),
-          lessThan(prompt.indexOf('To use a tool')));
     });
+
+    test(
+      'the block explains how to invoke a tool with a call: example',
+      () async {
+        await runWith(
+          'which tools do you have?',
+          toolCatalogue: defaultToolCatalogue(),
+        );
+
+        final prompt = substrate.lastCall!.inputs['prompt']! as String;
+        // The model must be told the exact, parseable call format — without it
+        // (the live bug) it guesses its provider's native chat-template dialect.
+        expect(prompt, contains('To use a tool'));
+        expect(prompt, contains('call:'));
+        // The how-to-call guidance follows the catalogue listing.
+        expect(
+          prompt.indexOf('Tools available to you'),
+          lessThan(prompt.indexOf('To use a tool')),
+        );
+      },
+    );
   });
 
   group('D.38c-3 each tool renders its argument schema (§ 9.1)', () {
-    test('todo.add / todo.remove / memory.read show their real arg keys',
-        () async {
-      await runWith(
-        'which tools do you have?',
-        toolCatalogue: defaultToolCatalogue(),
-      );
+    test(
+      'todo.add / todo.remove / memory.read show their real arg keys',
+      () async {
+        await runWith(
+          'which tools do you have?',
+          toolCatalogue: defaultToolCatalogue(),
+        );
 
-      final prompt = substrate.lastCall!.inputs['prompt']! as String;
-      // The live trail showed the model guessing `{item: …}` / `{description: …}`
-      // for todo.add instead of the schema's `{text: …}`. The catalogue now
-      // renders the exact key + type + required marker per tool, so the model
-      // can copy the parameter names rather than guess them.
-      expect(prompt, contains('args: {text: string (required)}'));
-      expect(prompt, contains('args: {id: string (required)}'));
-      expect(prompt, contains('args: {text: string (required), k: integer}'));
-    });
+        final prompt = substrate.lastCall!.inputs['prompt']! as String;
+        // The live trail showed the model guessing `{item: …}` / `{description: …}`
+        // for todo.add instead of the schema's `{text: …}`. The catalogue now
+        // renders the exact key + type + required marker per tool, so the model
+        // can copy the parameter names rather than guess them.
+        expect(prompt, contains('args: {text: string (required)}'));
+        expect(prompt, contains('args: {id: string (required)}'));
+        expect(prompt, contains('args: {text: string (required), k: integer}'));
+      },
+    );
 
     test('a no-argument tool is rendered as taking no arguments', () async {
       await runWith(
@@ -169,40 +179,46 @@ void main() {
       expect(prompt, contains('Lists the run-scoped todo entries. args: {}'));
     });
 
-    test('the worked call example uses a schema-correct parameter key',
-        () async {
-      await runWith(
-        'which tools do you have?',
-        toolCatalogue: defaultToolCatalogue(),
-      );
+    test(
+      'the worked call example uses a schema-correct parameter key',
+      () async {
+        await runWith(
+          'which tools do you have?',
+          toolCatalogue: defaultToolCatalogue(),
+        );
 
-      final prompt = substrate.lastCall!.inputs['prompt']! as String;
-      // memory.read's schema requires `text`, not `query` — the single
-      // authoritative example must match a real key so the model copies a
-      // valid call.
-      expect(prompt, contains('call:memory.read{text:'));
-      expect(prompt, isNot(contains('call:memory.read{query')));
-    });
+        final prompt = substrate.lastCall!.inputs['prompt']! as String;
+        // memory.read's schema requires `text`, not `query` — the single
+        // authoritative example must match a real key so the model copies a
+        // valid call.
+        expect(prompt, contains('call:memory.read{text:'));
+        expect(prompt, isNot(contains('call:memory.read{query')));
+      },
+    );
   });
 
-  group('D.38c-2 a run with no catalogue carries no tool block (PE-9 guard)',
-      () {
-    test('with no toolCatalogue the prompt holds no tool block', () async {
-      await runWith('plain question');
+  group(
+    'D.38c-2 a run with no catalogue carries no tool block (PE-9 guard)',
+    () {
+      test('with no toolCatalogue the prompt holds no tool block', () async {
+        await runWith('plain question');
 
-      final prompt = substrate.lastCall!.inputs['prompt']! as String;
-      expect(prompt, contains('plain question'));
-      expect(prompt, isNot(contains('Tools available to you')));
-    });
+        final prompt = substrate.lastCall!.inputs['prompt']! as String;
+        expect(prompt, contains('plain question'));
+        expect(prompt, isNot(contains('Tools available to you')));
+      });
 
-    test('an empty toolCatalogue list is treated as no tools', () async {
-      await runWith('plain question',
-          toolCatalogue: const <Map<String, Object?>>[]);
+      test('an empty toolCatalogue list is treated as no tools', () async {
+        await runWith(
+          'plain question',
+          toolCatalogue: const <Map<String, Object?>>[],
+        );
 
-      final prompt = substrate.lastCall!.inputs['prompt']! as String;
-      expect(prompt, isNot(contains('Tools available to you')));
-    });
-  });
+        final prompt = substrate.lastCall!.inputs['prompt']! as String;
+        expect(prompt, isNot(contains('Tools available to you')));
+      });
+    },
+  );
 }
 
 // ── An answer-capturing `TomBrainSubstrateClient` ───────────────────
@@ -217,17 +233,18 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
       'You have just produced an answer for the user.';
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     final rawPrompt = call.inputs['prompt'];
-    final isConfirmation = call.roleId == 'assistant_to_user' &&
+    final isConfirmation =
+        call.roleId == 'assistant_to_user' &&
         rawPrompt is String &&
         rawPrompt.trimLeft().startsWith(_confirmationSentinel);
     // The confirmation call terminates the loop with `DONE`; only the answer
     // call is captured for assertion.
     if (isConfirmation) {
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c', text: 'DONE'),
-        const LlmStreamCompleted(
+      return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        const LlmTextDelta('DONE'),
+        const LlmRunCompleted(
           callId: 'c',
           report: LlmCallReport(
             providerId: 'p',
@@ -243,10 +260,9 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
       ]);
     }
     lastCall = call;
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -264,18 +280,17 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recall-capturing `TomBrainMemoryClient` ───────────────────────
@@ -315,8 +330,7 @@ class _RecallCapturingMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -381,12 +395,10 @@ class _RecallCapturingMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -436,6 +448,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

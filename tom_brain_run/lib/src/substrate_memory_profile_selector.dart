@@ -46,9 +46,9 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show
         LlmCall,
-        LlmStreamChunk,
-        LlmStreamCompleted,
-        LlmStreamFailed,
+        LlmTextDelta,
+        LlmRunCompleted,
+        LlmRunFailed,
         ProfileSelectorOutput,
         RetrievalRoleDegraded,
         RetrievalRoleParsed,
@@ -109,10 +109,10 @@ final class SubstrateMemoryProfileSelector implements MemoryProfileSelector {
     required Future<List<String>> Function() knownProfiles,
     String role = 'profile_selector',
     Budget? budget,
-  })  : _substrate = substrate,
-        _knownProfiles = knownProfiles,
-        _role = role,
-        _budget = budget ?? _selectorBudget;
+  }) : _substrate = substrate,
+       _knownProfiles = knownProfiles,
+       _role = role,
+       _budget = budget ?? _selectorBudget;
 
   final TomBrainSubstrateClient _substrate;
   final Future<List<String>> Function() _knownProfiles;
@@ -184,11 +184,11 @@ final class SubstrateMemoryProfileSelector implements MemoryProfileSelector {
     final StringBuffer buffer = StringBuffer();
     await for (final event in _substrate.completeStream(call)) {
       switch (event) {
-        case LlmStreamChunk(:final text):
+        case LlmTextDelta(:final text):
           buffer.write(text);
-        case LlmStreamCompleted():
+        case LlmRunCompleted():
           return buffer.toString();
-        case LlmStreamFailed(:final failure):
+        case LlmRunFailed(:final failure):
           throw MemoryProfileSelectorException(
             'profile_selector completion failed '
             '(${failure.classCode}): ${failure.message}',

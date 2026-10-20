@@ -75,34 +75,44 @@ void main() {
       expect(resolved!.role, 'base');
     });
 
-    test('an id absent from both layers resolves to null (still fatal)',
-        () async {
-      final layered = LayeredPromptResolver(
-        base: mapResolver(const <String, ResolvedPrompt>{}),
-        overlay: mapResolver(const <String, ResolvedPrompt>{}),
-      );
+    test(
+      'an id absent from both layers resolves to null (still fatal)',
+      () async {
+        final layered = LayeredPromptResolver(
+          base: mapResolver(const <String, ResolvedPrompt>{}),
+          overlay: mapResolver(const <String, ResolvedPrompt>{}),
+        );
 
-      expect(await layered.resolve('missing', const <String, Object?>{}),
-          isNull);
-    });
+        expect(
+          await layered.resolve('missing', const <String, Object?>{}),
+          isNull,
+        );
+      },
+    );
 
-    test('the overlay is re-read live — an edit between calls is seen',
-        () async {
-      final overlayBacking = <String, ResolvedPrompt>{};
-      final layered = LayeredPromptResolver(
-        base: mapResolver(<String, ResolvedPrompt>{'p': prompt('base')}),
-        overlay: mapResolver(overlayBacking),
-      );
+    test(
+      'the overlay is re-read live — an edit between calls is seen',
+      () async {
+        final overlayBacking = <String, ResolvedPrompt>{};
+        final layered = LayeredPromptResolver(
+          base: mapResolver(<String, ResolvedPrompt>{'p': prompt('base')}),
+          overlay: mapResolver(overlayBacking),
+        );
 
-      // First call: overlay has no 'p' → fall through to base.
-      expect((await layered.resolve('p', const <String, Object?>{}))!.role,
-          'base');
+        // First call: overlay has no 'p' → fall through to base.
+        expect(
+          (await layered.resolve('p', const <String, Object?>{}))!.role,
+          'base',
+        );
 
-      // Edit the overlay backing — the next resolve must shadow live.
-      overlayBacking['p'] = prompt('edited');
-      expect((await layered.resolve('p', const <String, Object?>{}))!.role,
-          'edited');
-    });
+        // Edit the overlay backing — the next resolve must shadow live.
+        overlayBacking['p'] = prompt('edited');
+        expect(
+          (await layered.resolve('p', const <String, Object?>{}))!.role,
+          'edited',
+        );
+      },
+    );
 
     test('asResolver exposes the layered lookup as a PromptResolver', () async {
       final layered = LayeredPromptResolver(
@@ -118,10 +128,12 @@ void main() {
 
   // ── d56-2 composeMcpGate: allowlist ∩ global liveness gate ──────────
   group('d56-2 composeMcpGate composes the offered-server set', () {
-    test('an empty allowlist + no global gate → null (all-exposed sentinel)',
-        () {
-      expect(composeMcpGate(const <String>[], null), isNull);
-    });
+    test(
+      'an empty allowlist + no global gate → null (all-exposed sentinel)',
+      () {
+        expect(composeMcpGate(const <String>[], null), isNull);
+      },
+    );
 
     test('an empty allowlist keeps the global gate verbatim', () {
       // exposeToLlms:false (or dead) servers fail the global gate and are
@@ -218,8 +230,9 @@ void main() {
       );
       return ProcedureEngine(
         resolver: ProcedureResolver(<LoadedProcedure>[]),
-        procedureReloadStore:
-            DiskProcedureStore(systemDir: Directory('scripts/system')),
+        procedureReloadStore: DiskProcedureStore(
+          systemDir: Directory('scripts/system'),
+        ),
         memory: memory,
         memoryBridge: MemoryBridge(memory),
         substrateBridge: substrateBridge,
@@ -228,42 +241,48 @@ void main() {
     }
 
     ResolvedProfile passthroughWithRole(String? role) => ResolvedProfile(
-          id: 'r',
-          mode: ProfileMode.passthrough,
-          entryProcedure: 'passthrough_v1',
-          role: role,
-        );
+      id: 'r',
+      mode: ProfileMode.passthrough,
+      entryProcedure: 'passthrough_v1',
+      role: role,
+    );
 
     test('an empty procedure role is filled by the profile role', () async {
       final prompts = StubPromptResolver(role: ''); // procedure names no role
       final engine = engineFor(prompts);
 
       await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'passthrough_v1',
-            arguments: const <String, Object?>{'text': 'hi'},
-            profile: passthroughWithRole('researcher'),
-          ))
+          .invoke(
+            ProcedureInvocation(
+              procedureId: 'passthrough_v1',
+              arguments: const <String, Object?>{'text': 'hi'},
+              profile: passthroughWithRole('researcher'),
+            ),
+          )
           .outcome;
 
       expect(substrate.lastCall!.roleId, 'researcher');
     });
 
-    test('a procedure-named role is not overridden by the profile role',
-        () async {
-      final prompts = StubPromptResolver(role: 'analyst');
-      final engine = engineFor(prompts);
+    test(
+      'a procedure-named role is not overridden by the profile role',
+      () async {
+        final prompts = StubPromptResolver(role: 'analyst');
+        final engine = engineFor(prompts);
 
-      await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'passthrough_v1',
-            arguments: const <String, Object?>{'text': 'hi'},
-            profile: passthroughWithRole('researcher'),
-          ))
-          .outcome;
+        await engine
+            .invoke(
+              ProcedureInvocation(
+                procedureId: 'passthrough_v1',
+                arguments: const <String, Object?>{'text': 'hi'},
+                profile: passthroughWithRole('researcher'),
+              ),
+            )
+            .outcome;
 
-      expect(substrate.lastCall!.roleId, 'analyst');
-    });
+        expect(substrate.lastCall!.roleId, 'analyst');
+      },
+    );
   });
 
   // ── d56-5 budget tighten + clamp, driven through the engine ─────────
@@ -285,9 +304,7 @@ void main() {
           now: () => DateTime.utc(2026, 6, 24, 12, 0, 0),
         );
 
-    LoadedProcedure embedTwice(String budget) => _procedure(
-          'greedy_v1',
-          '''
+    LoadedProcedure embedTwice(String budget) => _procedure('greedy_v1', '''
 import '${BridgeLibraries.substrateLibrary}';
 
 Future<Object?> run(inputs) async {
@@ -295,53 +312,59 @@ Future<Object?> run(inputs) async {
   await sub.embed('second');
   return 1;
 }
-''',
-          budget: budget,
-        );
+''', budget: budget);
 
     ResolvedProfile profileBudget(ProfileBudget? budget) => ResolvedProfile(
-          id: 'r',
-          mode: ProfileMode.answer,
-          entryProcedure: 'greedy_v1',
-          budget: budget,
-        );
+      id: 'r',
+      mode: ProfileMode.answer,
+      entryProcedure: 'greedy_v1',
+      budget: budget,
+    );
 
-    test('a tighter profile toolCalls cap refuses the second tool call',
-        () async {
-      // Header allows 5 tool calls; the profile tightens it to 1.
-      final engine = engineFor(<LoadedProcedure>[
-        embedTwice('{ wallClockMs: 60000, toolCalls: 5 }'),
-      ]);
+    test(
+      'a tighter profile toolCalls cap refuses the second tool call',
+      () async {
+        // Header allows 5 tool calls; the profile tightens it to 1.
+        final engine = engineFor(<LoadedProcedure>[
+          embedTwice('{ wallClockMs: 60000, toolCalls: 5 }'),
+        ]);
 
-      final outcome = await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'greedy_v1',
-            profile: profileBudget(const ProfileBudget(maxToolCalls: 1)),
-          ))
-          .outcome;
+        final outcome = await engine
+            .invoke(
+              ProcedureInvocation(
+                procedureId: 'greedy_v1',
+                profile: profileBudget(const ProfileBudget(maxToolCalls: 1)),
+              ),
+            )
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.budgetExceeded);
-      expect(outcome.error, isA<ProcedureBudgetExceeded>());
-      expect((outcome.error! as ProcedureBudgetExceeded).limit, 1);
-    });
+        expect(outcome.status, TrailOutcomeStatus.budgetExceeded);
+        expect(outcome.error, isA<ProcedureBudgetExceeded>());
+        expect((outcome.error! as ProcedureBudgetExceeded).limit, 1);
+      },
+    );
 
-    test('a looser profile cap cannot loosen the header (still refused)',
-        () async {
-      // Header allows 1 tool call; the profile asks for 50 — the header wins.
-      final engine = engineFor(<LoadedProcedure>[
-        embedTwice('{ wallClockMs: 60000, toolCalls: 1 }'),
-      ]);
+    test(
+      'a looser profile cap cannot loosen the header (still refused)',
+      () async {
+        // Header allows 1 tool call; the profile asks for 50 — the header wins.
+        final engine = engineFor(<LoadedProcedure>[
+          embedTwice('{ wallClockMs: 60000, toolCalls: 1 }'),
+        ]);
 
-      final outcome = await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'greedy_v1',
-            profile: profileBudget(const ProfileBudget(maxToolCalls: 50)),
-          ))
-          .outcome;
+        final outcome = await engine
+            .invoke(
+              ProcedureInvocation(
+                procedureId: 'greedy_v1',
+                profile: profileBudget(const ProfileBudget(maxToolCalls: 50)),
+              ),
+            )
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.budgetExceeded);
-      expect((outcome.error! as ProcedureBudgetExceeded).limit, 1);
-    });
+        expect(outcome.status, TrailOutcomeStatus.budgetExceeded);
+        expect((outcome.error! as ProcedureBudgetExceeded).limit, 1);
+      },
+    );
 
     test('without a profile budget the header alone governs', () async {
       // Header allows 5 tool calls; no profile override → two embeds pass.
@@ -350,10 +373,12 @@ Future<Object?> run(inputs) async {
       ]);
 
       final outcome = await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'greedy_v1',
-            profile: profileBudget(null),
-          ))
+          .invoke(
+            ProcedureInvocation(
+              procedureId: 'greedy_v1',
+              profile: profileBudget(null),
+            ),
+          )
           .outcome;
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
@@ -371,48 +396,48 @@ Future<Object?> run(inputs) async {
       memory = _Memory();
     });
 
-    test('a restrictive profile MCP allowlist still lets mem.persist write',
-        () async {
-      final engine = ProcedureEngine(
-        resolver: ProcedureResolver(<LoadedProcedure>[
-          _procedure(
-            'writer_v1',
-            '''
+    test(
+      'a restrictive profile MCP allowlist still lets mem.persist write',
+      () async {
+        final engine = ProcedureEngine(
+          resolver: ProcedureResolver(<LoadedProcedure>[
+            _procedure('writer_v1', '''
 import '${BridgeLibraries.memoryLibrary}';
 
 Future<Object?> run(inputs) async {
   await mem.persist('Event', {'summary': 'x'}, producer: 'p');
   return {'done': true};
 }
-''',
-            budget: '{ wallClockMs: 60000 }',
-          ),
-        ]),
-        memory: memory,
-        memoryBridge: MemoryBridge(memory),
-        substrateBridge: SubstrateBridge(substrate),
-        now: () => DateTime.utc(2026, 6, 24, 12, 0, 0),
-      );
+''', budget: '{ wallClockMs: 60000 }'),
+          ]),
+          memory: memory,
+          memoryBridge: MemoryBridge(memory),
+          substrateBridge: SubstrateBridge(substrate),
+          now: () => DateTime.utc(2026, 6, 24, 12, 0, 0),
+        );
 
-      final outcome = await engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'writer_v1',
-            // A profile whose MCP allowlist excludes every server — mem.* must
-            // be untouched by the MCP list (it routes through MemoryBridge).
-            profile: ResolvedProfile(
-              id: 'r',
-              mode: ProfileMode.answer,
-              entryProcedure: 'writer_v1',
-              offeredMcpServers: const <String>['nonexistent'],
-            ),
-          ))
-          .outcome;
+        final outcome = await engine
+            .invoke(
+              ProcedureInvocation(
+                procedureId: 'writer_v1',
+                // A profile whose MCP allowlist excludes every server — mem.* must
+                // be untouched by the MCP list (it routes through MemoryBridge).
+                profile: ResolvedProfile(
+                  id: 'r',
+                  mode: ProfileMode.answer,
+                  entryProcedure: 'writer_v1',
+                  offeredMcpServers: const <String>['nonexistent'],
+                ),
+              ),
+            )
+            .outcome;
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      // The recorder writes its own ProcedureRun markers; the body's Event is
-      // the extra write the MCP allowlist must not have blocked.
-      expect(memory.persistedTypeNames, contains('Event'));
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        // The recorder writes its own ProcedureRun markers; the body's Event is
+        // the extra write the MCP allowlist must not have blocked.
+        expect(memory.persistedTypeNames, contains('Event'));
+      },
+    );
   });
 }
 
@@ -424,7 +449,8 @@ LoadedProcedure _procedure(
   required String budget,
   int version = 1,
 }) {
-  final source = '''
+  final source =
+      '''
 /// @procedure
 /// id: $id
 /// version: $version
@@ -453,12 +479,12 @@ class _Substrate implements TomBrainSubstrateClient {
   String reply = 'ok';
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     lastCall = call;
     callCount++;
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: reply),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(reply),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -476,18 +502,17 @@ class _Substrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recorder-only `TomBrainMemory` ────────────────────────────────
@@ -575,12 +600,10 @@ class _Memory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -630,6 +653,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

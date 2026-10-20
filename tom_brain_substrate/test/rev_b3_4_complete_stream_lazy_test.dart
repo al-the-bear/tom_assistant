@@ -39,29 +39,31 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 void main() {
   group('B.3.4 / completeStream drives lazily', () {
-    test('does no router/provider work until the stream is listened to',
-        () async {
-      final f = _buildFacade();
-      await f.facade.open(_minimalConfig());
-      addTearDown(f.facade.close);
+    test(
+      'does no router/provider work until the stream is listened to',
+      () async {
+        final f = _buildFacade();
+        await f.facade.open(_minimalConfig());
+        addTearDown(f.facade.close);
 
-      final stream = f.facade.completeStream(_assistantCall());
+        final stream = f.facade.completeStream(_assistantCall());
 
-      // Give any (incorrectly) eager driver several turns of the event
-      // loop to start — a fire-and-forget `unawaited(drive())` would
-      // have invoked the provider by now.
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      expect(
-        f.provider.streamInvocations,
-        0,
-        reason: 'provider must not be invoked before the consumer listens',
-      );
+        // Give any (incorrectly) eager driver several turns of the event
+        // loop to start — a fire-and-forget `unawaited(drive())` would
+        // have invoked the provider by now.
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        expect(
+          f.provider.streamInvocations,
+          0,
+          reason: 'provider must not be invoked before the consumer listens',
+        );
 
-      // Subscribing kicks off the work.
-      await stream.toList();
-      expect(f.provider.streamInvocations, 1);
-    });
+        // Subscribing kicks off the work.
+        await stream.toList();
+        expect(f.provider.streamInvocations, 1);
+      },
+    );
 
     test('is a single-subscription stream', () {
       final f = _buildFacade();
@@ -74,28 +76,28 @@ void main() {
       expect(() => stream.listen((_) {}), throwsStateError);
     });
 
-    test('relays events and emits one LlmCallCompleted once listened',
-        () async {
-      final f = _buildFacade();
-      await f.facade.open(_minimalConfig());
-      addTearDown(f.facade.close);
+    test(
+      'relays events and emits one LlmCallCompleted once listened',
+      () async {
+        final f = _buildFacade();
+        await f.facade.open(_minimalConfig());
+        addTearDown(f.facade.close);
 
-      final substrateEvents = <SubstrateEvent>[];
-      final sub = f.facade.events().listen(substrateEvents.add);
-      addTearDown(sub.cancel);
+        final substrateEvents = <SubstrateEvent>[];
+        final sub = f.facade.events().listen(substrateEvents.add);
+        addTearDown(sub.cancel);
 
-      final streamEvents =
-          await f.facade.completeStream(_assistantCall()).toList();
+        final streamEvents = await f.facade
+            .completeStream(_assistantCall())
+            .toList();
 
-      expect(streamEvents.first, isA<LlmStreamStarted>());
-      expect(streamEvents.last, isA<LlmStreamCompleted>());
+        expect(streamEvents.first, isA<LlmRunStarted>());
+        expect(streamEvents.last, isA<LlmRunCompleted>());
 
-      await Future<void>.delayed(Duration.zero);
-      expect(
-        substrateEvents.whereType<LlmCallCompleted>(),
-        hasLength(1),
-      );
-    });
+        await Future<void>.delayed(Duration.zero);
+        expect(substrateEvents.whereType<LlmCallCompleted>(), hasLength(1));
+      },
+    );
   });
 }
 
@@ -134,38 +136,38 @@ _FacadeFixture _buildFacade() {
 }
 
 LlmCall _assistantCall() => LlmCall(
-      roleId: 'assistant_to_user',
-      inputs: const <String, Object?>{'question': 'hi'},
-      budget: Budget(
-        wallClockMs: 5000,
-        tokenSpend: 1000,
-        toolCalls: 1,
-        memoryWrites: 0,
-      ),
-    );
+  roleId: 'assistant_to_user',
+  inputs: const <String, Object?>{'question': 'hi'},
+  budget: Budget(
+    wallClockMs: 5000,
+    tokenSpend: 1000,
+    toolCalls: 1,
+    memoryWrites: 0,
+  ),
+);
 
 SubstrateConfig _minimalConfig() => SubstrateConfig(
-      providers: const <ProviderProfile>[],
-      roleRoutes: const <String, List<RoleRouteEntryConfig>>{
-        'assistant_to_user': <RoleRouteEntryConfig>[
-          RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
-        ],
-      },
-      embedding: const EmbeddingChoice(
-        providerId: 'stub',
-        model: 'nomic-embed-text',
-        dims: 768,
-        normalize: true,
-      ),
-      webSearch: const WebSearchConfig(
-        defaultProvider: 'duckduckgo',
-        providers: <String, WebSearchProviderConfig>{
-          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
-        },
-      ),
-      webFetch: const WebFetchConfig(),
-      mcpClient: const McpClientConfigBlock(),
-    );
+  providers: const <ProviderProfile>[],
+  roleRoutes: const <String, List<RoleRouteEntryConfig>>{
+    'assistant_to_user': <RoleRouteEntryConfig>[
+      RoleRouteEntryConfig(providerId: 'stub', model: 'stub-model'),
+    ],
+  },
+  embedding: const EmbeddingChoice(
+    providerId: 'stub',
+    model: 'nomic-embed-text',
+    dims: 768,
+    normalize: true,
+  ),
+  webSearch: const WebSearchConfig(
+    defaultProvider: 'duckduckgo',
+    providers: <String, WebSearchProviderConfig>{
+      'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
+    },
+  ),
+  webFetch: const WebFetchConfig(),
+  mcpClient: const McpClientConfigBlock(),
+);
 
 // ─── Test doubles ─────────────────────────────────────────────────
 
@@ -173,7 +175,7 @@ SubstrateConfig _minimalConfig() => SubstrateConfig(
 /// been entered. The counter increments only when the `async*` body
 /// actually runs — i.e. when something listens — so the test can prove
 /// the facade does not drive the router before subscription.
-final class _RecordingProvider implements LlmProvider {
+final class _RecordingProvider extends LlmProvider {
   @override
   final String id;
   final String defaultModel;
@@ -182,40 +184,41 @@ final class _RecordingProvider implements LlmProvider {
   _RecordingProvider({required this.id, required this.defaultModel});
 
   @override
-  Future<LlmCallReport> complete(WirePrompt prompt, LlmOptions options) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     return _report(prompt, options);
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     streamInvocations++;
     final modelId = options.model ?? defaultModel;
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
       callId: 'rec-$streamInvocations',
       providerId: id,
       modelId: modelId,
     );
-    yield LlmStreamCompleted(
+    yield LlmRunCompleted(
       callId: 'rec-$streamInvocations',
       report: _report(prompt, options),
     );
   }
 
   LlmCallReport _report(WirePrompt prompt, LlmOptions options) => LlmCallReport(
-        providerId: id,
-        modelId: options.model ?? defaultModel,
-        anchorHash: prompt.anchorHash,
-        promptHash: 'sha256:0',
-        tokensIn: prompt.combined.length,
-        tokensOut: 0,
-        retries: 0,
-        wallClockMs: 0,
-        templateSha: prompt.templateSha,
-        notes: const <String>['recording'],
-      );
+    providerId: id,
+    modelId: options.model ?? defaultModel,
+    anchorHash: prompt.anchorHash,
+    promptHash: 'sha256:0',
+    tokensIn: prompt.combined.length,
+    tokensOut: 0,
+    retries: 0,
+    wallClockMs: 0,
+    templateSha: prompt.templateSha,
+    notes: const <String>['recording'],
+  );
 }
 
 final class _NoopEmbeddingService implements EmbeddingService {
@@ -243,12 +246,11 @@ final class _NoopEmbeddingService implements EmbeddingService {
   Future<EmbeddingProbeResult> probeIdentity({
     EmbeddingModelIdentity? previousIdentity,
     String probeText = 'tom-brain embedding probe',
-  }) async =>
-      EmbeddingProbeResult(
-        currentIdentity: _identity,
-        probeResult: await embed(probeText),
-        driftEvent: null,
-      );
+  }) async => EmbeddingProbeResult(
+    currentIdentity: _identity,
+    probeResult: await embed(probeText),
+    driftEvent: null,
+  );
 
   @override
   Future<void> close() async {}
@@ -259,12 +261,11 @@ final class _NoopWebSearch implements WebSearch {
   Future<WebSearchResult> search(
     String query, {
     WebSearchOptions options = WebSearchOptions.empty,
-  }) async =>
-      WebSearchResult(
-        provider: 'noop',
-        query: query,
-        hits: const <SearchHit>[],
-      );
+  }) async => WebSearchResult(
+    provider: 'noop',
+    query: query,
+    hits: const <SearchHit>[],
+  );
 
   @override
   void close() {}
@@ -275,13 +276,12 @@ final class _NoopWebFetch implements WebFetch {
   Future<WebFetchResult> fetch(
     Uri url, {
     WebFetchOptions options = WebFetchOptions.empty,
-  }) async =>
-      WebFetchResult(
-        url: url,
-        status: 200,
-        contentType: 'text/plain',
-        text: '',
-      );
+  }) async => WebFetchResult(
+    url: url,
+    status: 200,
+    contentType: 'text/plain',
+    text: '',
+  );
 
   @override
   void close() {}

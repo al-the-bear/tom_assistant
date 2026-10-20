@@ -53,23 +53,23 @@ void main() {
     // substrate ignores the resolved chain (route plumbing is pinned elsewhere).
     substrateBridge = SubstrateBridge(
       substrate,
-      routeChainOf: (_) =>
-          const <RouteEntry>[RouteEntry(providerId: 'p', model: 'm')],
+      routeChainOf: (_) => const <RouteEntry>[
+        RouteEntry(providerId: 'p', model: 'm'),
+      ],
     );
   });
 
   ProcedureEngine engineFor(
     Iterable<LoadedProcedure> procedures, {
     ProcedureTreeSink? procedureTreeSink,
-  }) =>
-      ProcedureEngine(
-        resolver: ProcedureResolver(procedures),
-        memory: memory,
-        memoryBridge: memoryBridge,
-        substrateBridge: substrateBridge,
-        now: () => DateTime.utc(2026, 6, 2, 12, 0, 0),
-        procedureTreeSink: procedureTreeSink,
-      );
+  }) => ProcedureEngine(
+    resolver: ProcedureResolver(procedures),
+    memory: memory,
+    memoryBridge: memoryBridge,
+    substrateBridge: substrateBridge,
+    now: () => DateTime.utc(2026, 6, 2, 12, 0, 0),
+    procedureTreeSink: procedureTreeSink,
+  );
 
   Future<ProcedureResolver> systemResolver() async {
     final store = DiskProcedureStore(systemDir: Directory('scripts/system'));
@@ -86,10 +86,12 @@ void main() {
       procedureTreeSink: procedureTreeSink,
     );
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'tool_loop_v1',
-          arguments: arguments,
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'tool_loop_v1',
+            arguments: arguments,
+          ),
+        )
         .outcome;
   }
 
@@ -113,27 +115,34 @@ void main() {
         ..proposeReadFor = 'the tool probe'
         ..answerText = 'answered after the tool ran';
 
-      final outcome = await runLoop(arguments: <String, Object?>{
-        'transcript': 'please use a tool',
-        'route': 'default',
-        'maxToolLoops': 4,
-        'role': 'assistant_to_user',
-        'tools': <Object?>[memoryReadTool],
-        'temperature': 0.2,
-      });
+      final outcome = await runLoop(
+        arguments: <String, Object?>{
+          'transcript': 'please use a tool',
+          'route': 'default',
+          'maxToolLoops': 4,
+          'role': 'assistant_to_user',
+          'tools': <Object?>[memoryReadTool],
+          'temperature': 0.2,
+        },
+      );
 
       // The loop ran the proposed tool through `tool.invoke`, which reached the
       // shipped `memory.read` tool, which called `memory.recall` with the text
       // the model proposed.
-      expect(memory.recallQueries.map((q) => q.text), contains('the tool probe'));
+      expect(
+        memory.recallQueries.map((q) => q.text),
+        contains('the tool probe'),
+      );
       // The follow-up completion saw the folded-back tool result, then answered.
       final answeringPrompt = substrate.toolBearingPrompts.last;
       expect(answeringPrompt, contains('Tool results:'));
       expect(answeringPrompt, contains('memory.read'));
       // The run surfaced the model's answer and did not exhaust.
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'),
-          'answered after the tool ran');
+      expect(
+        outcome.result!.output<String>('answer'),
+        'answered after the tool ran',
+      );
       expect(outcome.result!.output<bool>('toolLoopExhausted'), false);
     });
   });
@@ -144,12 +153,14 @@ void main() {
         ..proposeReadFor = 'never stops'
         ..alwaysPropose = true;
 
-      final outcome = await runLoop(arguments: <String, Object?>{
-        'transcript': 'loop forever',
-        'route': 'default',
-        'maxToolLoops': 3,
-        'tools': <Object?>[memoryReadTool],
-      });
+      final outcome = await runLoop(
+        arguments: <String, Object?>{
+          'transcript': 'loop forever',
+          'route': 'default',
+          'maxToolLoops': 3,
+          'tools': <Object?>[memoryReadTool],
+        },
+      );
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       expect(outcome.result!.output<bool>('toolLoopExhausted'), true);
@@ -169,26 +180,30 @@ void main() {
       return null;
     }
 
-    test('a plain answer emits "loop-complete: llm returned no tool call"',
-        () async {
-      substrate.answerText = 'plain answer';
+    test(
+      'a plain answer emits "loop-complete: llm returned no tool call"',
+      () async {
+        substrate.answerText = 'plain answer';
 
-      final records = <ProcedureTreeRecord>[];
-      final outcome = await runLoop(
-        arguments: <String, Object?>{
-          'transcript': 'no tools needed',
-          'route': 'default',
-          'maxToolLoops': 4,
-          'tools': <Object?>[],
-        },
-        procedureTreeSink: records.add,
-      );
+        final records = <ProcedureTreeRecord>[];
+        final outcome = await runLoop(
+          arguments: <String, Object?>{
+            'transcript': 'no tools needed',
+            'route': 'default',
+            'maxToolLoops': 4,
+            'tools': <Object?>[],
+          },
+          procedureTreeSink: records.add,
+        );
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(records, hasLength(1));
-      expect(lastNoteCategory(records.single),
-          'loop-complete: llm returned no tool call');
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(records, hasLength(1));
+        expect(
+          lastNoteCategory(records.single),
+          'loop-complete: llm returned no tool call',
+        );
+      },
+    );
 
     test('exhaustion on a pending tool call emits "loop-exhausted: max '
         'iterations reached"', () async {
@@ -210,8 +225,10 @@ void main() {
       expect(outcome.status, TrailOutcomeStatus.accepted);
       expect(outcome.result!.output<bool>('toolLoopExhausted'), true);
       expect(records, hasLength(1));
-      expect(lastNoteCategory(records.single),
-          'loop-exhausted: max iterations reached');
+      expect(
+        lastNoteCategory(records.single),
+        'loop-exhausted: max iterations reached',
+      );
     });
   });
 
@@ -219,12 +236,14 @@ void main() {
     test('with no tools offered the model answers immediately', () async {
       substrate.answerText = 'plain answer';
 
-      final outcome = await runLoop(arguments: <String, Object?>{
-        'transcript': 'no tools needed',
-        'route': 'default',
-        'maxToolLoops': 4,
-        'tools': <Object?>[],
-      });
+      final outcome = await runLoop(
+        arguments: <String, Object?>{
+          'transcript': 'no tools needed',
+          'route': 'default',
+          'maxToolLoops': 4,
+          'tools': <Object?>[],
+        },
+      );
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       expect(outcome.result!.output<String>('answer'), 'plain answer');
@@ -257,14 +276,14 @@ class _LoopSubstrate implements TomBrainSubstrateClient {
   final List<String> toolBearingPrompts = <String>[];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     completions += 1;
     final hasTools = call.options.toolCatalogue.isNotEmpty;
     if (hasTools) {
       toolBearingPrompts.add(call.inputs['prompt']! as String);
     }
 
-    const completed = LlmStreamCompleted(
+    const completed = LlmRunCompleted(
       callId: 'c',
       report: LlmCallReport(
         providerId: 'p',
@@ -282,37 +301,35 @@ class _LoopSubstrate implements TomBrainSubstrateClient {
         hasTools && proposeReadFor != null && (alwaysPropose || !_proposed);
     if (shouldPropose) {
       _proposed = true;
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        LlmStreamToolCallProposed(
-          callId: 'c',
-          toolCallId: 'tc1',
-          toolName: 'memory.read',
+      return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        LlmToolCall(
+          callId: 'tc1',
+          name: 'memory.read',
           arguments: <String, Object?>{'text': proposeReadFor!},
         ),
         completed,
       ]);
     }
 
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: answerText),
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(answerText),
       completed,
     ]);
   }
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recall-capturing `TomBrainMemory` (mirrors D.43's double) ─────
@@ -346,14 +363,14 @@ class _RecallCapturingMemory implements TomBrainMemory {
   }
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -418,12 +435,10 @@ class _RecallCapturingMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -473,6 +488,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

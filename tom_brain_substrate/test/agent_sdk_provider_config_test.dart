@@ -8,7 +8,7 @@
 //   * the agent-SDK provider's exemption from `baseUrl` (bridge host/port live
 //     in `options`) and its rejection of substrate-side `auth` (the bridge owns
 //     the Anthropic credential);
-//   * `LlmOptions.brainSessionId`, the per-call seam that carries the live
+//   * `LlmOptions.sessionId`, the per-call seam that carries the live
 //     tom_brain session id to the provider for `sessionMode: brain`.
 
 import 'package:test/test.dart';
@@ -70,25 +70,24 @@ void main() {
     });
   });
 
-  group('LlmOptions.brainSessionId', () {
+  group('LlmOptions.sessionId', () {
     test('defaults to null', () {
-      expect(const LlmOptions().brainSessionId, isNull);
-      expect(LlmOptions.empty.brainSessionId, isNull);
+      expect(const LlmOptions().sessionId, isNull);
+      expect(LlmOptions.empty.sessionId, isNull);
     });
 
     test('copyWith sets, preserves, and clears it', () {
-      const base = LlmOptions(brainSessionId: 'sess-1');
-      expect(base.brainSessionId, equals('sess-1'));
+      const base = LlmOptions(sessionId: 'sess-1');
+      expect(base.sessionId, equals('sess-1'));
 
       // Omitting the parameter preserves the existing value.
-      expect(base.copyWith(temperature: 0.5).brainSessionId, equals('sess-1'));
+      expect(base.copyWith(temperature: 0.5).sessionId, equals('sess-1'));
 
       // Passing a new value replaces it.
-      expect(base.copyWith(brainSessionId: 'sess-2').brainSessionId,
-          equals('sess-2'));
+      expect(base.copyWith(sessionId: 'sess-2').sessionId, equals('sess-2'));
 
       // Passing null explicitly clears it.
-      expect(base.copyWith(brainSessionId: null).brainSessionId, isNull);
+      expect(base.copyWith(sessionId: null).sessionId, isNull);
     });
   });
 }

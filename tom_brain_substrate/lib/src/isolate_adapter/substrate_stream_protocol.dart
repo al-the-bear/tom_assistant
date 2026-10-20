@@ -18,7 +18,7 @@
 // Sendability:
 //
 //   The chunk payload is a sanitized stream event — for `completeStream`
-//   an `LlmStreamEvent` (with `LlmFailure.cause` nulled), for `events`
+//   an `LlmEvent` (with `LlmFailure.cause` nulled), for `events`
 //   a `SubstrateEvent` (likewise). All other envelope fields are
 //   primitives or sendable value classes.
 
@@ -54,7 +54,7 @@ final class StreamIdAllocator {
 
 /// Open a `completeStream` over [call]. The executor starts an
 /// unbounded producer over `substrate.completeStream(call)` and pushes
-/// each `LlmStreamEvent` as a [StreamChunkEnvelope] payload.
+/// each `LlmEvent` as a [StreamChunkEnvelope] payload.
 final class OpenCompleteStreamRequest extends IsolateRequest {
   final StreamId streamId;
   final LlmCall call;
@@ -103,7 +103,7 @@ abstract class StreamSideChannelMessage {
 }
 
 /// One chunk pushed from the isolate to the host. The `payload` is a
-/// sanitized stream event (`LlmStreamEvent` or `SubstrateEvent`); the
+/// sanitized stream event (`LlmEvent` or `SubstrateEvent`); the
 /// producer is responsible for its sendability.
 final class StreamChunkEnvelope extends StreamSideChannelMessage {
   @override

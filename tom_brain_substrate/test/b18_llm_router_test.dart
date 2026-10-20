@@ -43,7 +43,7 @@
 //   8. **Streaming dispatch.** Success: replays buffered Started+Chunks
 //      and the terminal Completed with retries folded in. Failure path
 //      with retry: the failing route's buffered events are not relayed.
-//      Chain exhaustion on streaming: yields one terminal LlmStreamFailed
+//      Chain exhaustion on streaming: yields one terminal LlmRunFailed
 //      whose `classCode` is the last classification.
 
 import 'dart:async';
@@ -144,10 +144,7 @@ void main() {
     });
 
     test('Unknown exception → unknown', () {
-      expect(
-        classifier.classify(StateError('???')),
-        LlmFailureClass.unknown,
-      );
+      expect(classifier.classify(StateError('???')), LlmFailureClass.unknown);
     });
 
     test('Preserves provider-supplied LlmFailure classCode', () {
@@ -258,10 +255,7 @@ void main() {
       );
       final paid = StubLlmProvider(id: 'paid', defaultModel: 'paid-model');
       final router = LlmRouter(
-        providers: <String, LlmProvider>{
-          'free': failing,
-          'paid': paid,
-        },
+        providers: <String, LlmProvider>{'free': failing, 'paid': paid},
         policy: RouterPolicy(
           roleRoutes: <String, List<RouteEntry>>{
             'analyser': <RouteEntry>[
@@ -328,15 +322,9 @@ void main() {
       );
 
       clock.advance(const Duration(hours: 23, minutes: 59));
-      expect(
-        router.isInCooldown(providerId: 'free', modelId: 'm'),
-        isTrue,
-      );
+      expect(router.isInCooldown(providerId: 'free', modelId: 'm'), isTrue);
       clock.advance(const Duration(minutes: 2));
-      expect(
-        router.isInCooldown(providerId: 'free', modelId: 'm'),
-        isFalse,
-      );
+      expect(router.isInCooldown(providerId: 'free', modelId: 'm'), isFalse);
     });
 
     test('auth_permanent removes credential (provider-wide park)', () async {
@@ -354,10 +342,7 @@ void main() {
       );
       final local = StubLlmProvider(id: 'local', defaultModel: 'm0');
       final router = LlmRouter(
-        providers: <String, LlmProvider>{
-          'paid': failing,
-          'local': local,
-        },
+        providers: <String, LlmProvider>{'paid': failing, 'local': local},
         policy: RouterPolicy(
           roleRoutes: <String, List<RouteEntry>>{
             'r': <RouteEntry>[
@@ -379,14 +364,8 @@ void main() {
       expect(report.providerId, 'local');
       // Both paid models are now parked because the credential is
       // provider-wide.
-      expect(
-        router.isInCooldown(providerId: 'paid', modelId: 'm1'),
-        isTrue,
-      );
-      expect(
-        router.isInCooldown(providerId: 'paid', modelId: 'm2'),
-        isTrue,
-      );
+      expect(router.isInCooldown(providerId: 'paid', modelId: 'm1'), isTrue);
+      expect(router.isInCooldown(providerId: 'paid', modelId: 'm2'), isTrue);
     });
 
     test('model_not_found drops (provider, model) only', () async {
@@ -426,52 +405,49 @@ void main() {
       );
       expect(report.providerId, 'paid');
       expect(report.modelId, 'm2');
-      expect(
-        router.isInCooldown(providerId: 'paid', modelId: 'm1'),
-        isTrue,
-      );
-      expect(
-        router.isInCooldown(providerId: 'paid', modelId: 'm2'),
-        isFalse,
-      );
+      expect(router.isInCooldown(providerId: 'paid', modelId: 'm1'), isTrue);
+      expect(router.isInCooldown(providerId: 'paid', modelId: 'm2'), isFalse);
     });
 
-    test('context_overflow surfaces ContextOverflowError; no rotation', () async {
-      final failing = _ScriptedFailureProvider(
-        id: 'p',
-        defaultModel: 'm',
-        exceptions: <Object>[
-          OpenAiHttpException(
-            statusCode: 400,
-            body: 'maximum context length is 8192 tokens',
-            endpoint: Uri.parse('http://x/y'),
+    test(
+      'context_overflow surfaces ContextOverflowError; no rotation',
+      () async {
+        final failing = _ScriptedFailureProvider(
+          id: 'p',
+          defaultModel: 'm',
+          exceptions: <Object>[
+            OpenAiHttpException(
+              statusCode: 400,
+              body: 'maximum context length is 8192 tokens',
+              endpoint: Uri.parse('http://x/y'),
+            ),
+          ],
+        );
+        final fallback = StubLlmProvider(id: 'fb', defaultModel: 'fbm');
+        final router = LlmRouter(
+          providers: <String, LlmProvider>{'p': failing, 'fb': fallback},
+          policy: RouterPolicy(
+            roleRoutes: <String, List<RouteEntry>>{
+              'r': <RouteEntry>[
+                const RouteEntry(providerId: 'p', model: 'm'),
+                const RouteEntry(providerId: 'fb', model: 'fbm'),
+              ],
+            },
           ),
-        ],
-      );
-      final fallback = StubLlmProvider(id: 'fb', defaultModel: 'fbm');
-      final router = LlmRouter(
-        providers: <String, LlmProvider>{'p': failing, 'fb': fallback},
-        policy: RouterPolicy(
-          roleRoutes: <String, List<RouteEntry>>{
-            'r': <RouteEntry>[
-              const RouteEntry(providerId: 'p', model: 'm'),
-              const RouteEntry(providerId: 'fb', model: 'fbm'),
-            ],
-          },
-        ),
-      );
+        );
 
-      await expectLater(
-        router.dispatch(
-          roleId: 'r',
-          prompt: _prompt('p'),
-          options: LlmOptions.empty,
-          budget: _bigBudget,
-        ),
-        throwsA(isA<ContextOverflowError>()),
-      );
-      expect(fallback.callCount, 0); // not rotated to
-    });
+        await expectLater(
+          router.dispatch(
+            roleId: 'r',
+            prompt: _prompt('p'),
+            options: LlmOptions.empty,
+            budget: _bigBudget,
+          ),
+          throwsA(isA<ContextOverflowError>()),
+        );
+        expect(fallback.callCount, 0); // not rotated to
+      },
+    );
 
     test('overloaded retries once on the same route then rotates', () async {
       final failing = _ScriptedFailureProvider(
@@ -574,31 +550,34 @@ void main() {
       }
     });
 
-    test('Cancelled token: NoRouteAvailable with cancelledByConsumer', () async {
-      final source = CancellationTokenSource()..cancel();
-      final stub = StubLlmProvider(id: 'p', defaultModel: 'm');
-      final router = LlmRouter(
-        providers: <String, LlmProvider>{'p': stub},
-        policy: RouterPolicy(
-          roleRoutes: <String, List<RouteEntry>>{
-            'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
-          },
-        ),
-      );
-      try {
-        await router.dispatch(
-          roleId: 'r',
-          prompt: _prompt('p'),
-          options: LlmOptions.empty,
-          budget: _bigBudget,
-          cancellationToken: source.token,
+    test(
+      'Cancelled token: NoRouteAvailable with cancelledByConsumer',
+      () async {
+        final source = CancellationTokenSource()..cancel();
+        final stub = StubLlmProvider(id: 'p', defaultModel: 'm');
+        final router = LlmRouter(
+          providers: <String, LlmProvider>{'p': stub},
+          policy: RouterPolicy(
+            roleRoutes: <String, List<RouteEntry>>{
+              'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
+            },
+          ),
         );
-        fail('expected NoRouteAvailable');
-      } on NoRouteAvailable catch (e) {
-        expect(e.lastClass, LlmFailureClass.cancelledByConsumer);
-      }
-      expect(stub.callCount, 0);
-    });
+        try {
+          await router.dispatch(
+            roleId: 'r',
+            prompt: _prompt('p'),
+            options: LlmOptions.empty,
+            budget: _bigBudget,
+            cancellationToken: source.token,
+          );
+          fail('expected NoRouteAvailable');
+        } on NoRouteAvailable catch (e) {
+          expect(e.lastClass, LlmFailureClass.cancelledByConsumer);
+        }
+        expect(stub.callCount, 0);
+      },
+    );
   });
 
   group('LlmRouter — budget enforcement', () {
@@ -677,14 +656,14 @@ void main() {
           )
           .toList();
 
-      expect(events.first, isA<LlmStreamStarted>());
-      expect(events.last, isA<LlmStreamCompleted>());
-      final chunks = events.whereType<LlmStreamChunk>().toList();
+      expect(events.first, isA<LlmRunStarted>());
+      expect(events.last, isA<LlmRunCompleted>());
+      final chunks = events.whereType<LlmTextDelta>().toList();
       expect(chunks.length, 3);
       expect(chunks.map((c) => c.text), <String>['one', 'two', 'three']);
     });
 
-    test('Chain exhaustion yields a single terminal LlmStreamFailed', () async {
+    test('Chain exhaustion yields a single terminal LlmRunFailed', () async {
       final failing = _ScriptedFailureProvider(
         id: 'p',
         defaultModel: 'm',
@@ -716,8 +695,8 @@ void main() {
           .toList();
 
       expect(events.length, 1);
-      expect(events.single, isA<LlmStreamFailed>());
-      final f = events.single as LlmStreamFailed;
+      expect(events.single, isA<LlmRunFailed>());
+      final f = events.single as LlmRunFailed;
       expect(f.failure.classCode, LlmFailureClass.rateLimit.code);
     });
   });
@@ -726,11 +705,11 @@ void main() {
 // ─── Test helpers ────────────────────────────────────────────────
 
 WirePrompt _prompt(String body) => WirePrompt(
-      system: body,
-      anchorHash: 'sha256:anchor',
-      roleId: 'analyser',
-      templateSha: 'sha-abc',
-    );
+  system: body,
+  anchorHash: 'sha256:anchor',
+  roleId: 'analyser',
+  templateSha: 'sha-abc',
+);
 
 final Budget _bigBudget = Budget(
   wallClockMs: 60000,
@@ -754,7 +733,7 @@ class _MutableClock {
 ///
 /// Used to inject deterministic failures into the router's chain
 /// without binding tests to a real HTTP backend.
-class _ScriptedFailureProvider implements LlmProvider {
+class _ScriptedFailureProvider extends LlmProvider {
   @override
   final String id;
   final String defaultModel;
@@ -772,10 +751,9 @@ class _ScriptedFailureProvider implements LlmProvider {
   }) : _exceptions = List<Object>.of(exceptions);
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     callCount++;
     if (delay > Duration.zero) {
       await Future<void>.delayed(delay);
@@ -801,20 +779,19 @@ class _ScriptedFailureProvider implements LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     callCount++;
     final callId = 'sfp-$id-$callCount';
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
       callId: callId,
       providerId: id,
       modelId: options.model ?? defaultModel,
     );
     if (_exceptions.isNotEmpty) {
       final ex = _exceptions.removeAt(0);
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: callId,
         failure: LlmFailure(
           classCode: 'unknown',
@@ -834,7 +811,7 @@ class _ScriptedFailureProvider implements LlmProvider {
       );
       return;
     }
-    yield LlmStreamCompleted(
+    yield LlmRunCompleted(
       callId: callId,
       report: LlmCallReport(
         providerId: id,

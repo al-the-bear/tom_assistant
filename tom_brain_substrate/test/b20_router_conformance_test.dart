@@ -80,95 +80,104 @@ void main() {
       final report = await ctx.dispatch();
       expect(report.providerId, 'p2');
       // First route parked under the configured rate_limit cooldown.
-      expect(
-        ctx.router.isInCooldown(providerId: 'p1', modelId: 'm1'),
-        isTrue,
-      );
+      expect(ctx.router.isInCooldown(providerId: 'p1', modelId: 'm1'), isTrue);
     });
 
-    test('billing → cooldownAndRotate, longer window than rate_limit', () async {
-      final ctx = _scenario(
-        chain: <_RouteSpec>[
-          _RouteSpec.fail('p1', 'm1', _http(402, 'payment required')),
-          _RouteSpec.ok('p2', 'm2'),
-        ],
-      );
+    test(
+      'billing → cooldownAndRotate, longer window than rate_limit',
+      () async {
+        final ctx = _scenario(
+          chain: <_RouteSpec>[
+            _RouteSpec.fail('p1', 'm1', _http(402, 'payment required')),
+            _RouteSpec.ok('p2', 'm2'),
+          ],
+        );
 
-      final report = await ctx.dispatch();
-      expect(report.providerId, 'p2');
-      // Billing default is 24 h — still in cooldown after 23 h 59 m.
-      ctx.clock.advance(const Duration(hours: 23, minutes: 59));
-      expect(
-        ctx.router.isInCooldown(providerId: 'p1', modelId: 'm1'),
-        isTrue,
-      );
-    });
+        final report = await ctx.dispatch();
+        expect(report.providerId, 'p2');
+        // Billing default is 24 h — still in cooldown after 23 h 59 m.
+        ctx.clock.advance(const Duration(hours: 23, minutes: 59));
+        expect(
+          ctx.router.isInCooldown(providerId: 'p1', modelId: 'm1'),
+          isTrue,
+        );
+      },
+    );
 
-    test('auth_permanent → removeCredential parks every model under that provider', () async {
-      // Chain has two models on the same paid provider + a local fallback.
-      // 403 on m1 should also park m2 because the credential is
-      // provider-scoped, not route-scoped.
-      final ctx = _scenario(
-        chain: <_RouteSpec>[
-          _RouteSpec.fail('paid', 'm1', _http(403, 'forbidden')),
-          _RouteSpec.ok('paid', 'm2'),
-          _RouteSpec.ok('local', 'lm'),
-        ],
-      );
+    test(
+      'auth_permanent → removeCredential parks every model under that provider',
+      () async {
+        // Chain has two models on the same paid provider + a local fallback.
+        // 403 on m1 should also park m2 because the credential is
+        // provider-scoped, not route-scoped.
+        final ctx = _scenario(
+          chain: <_RouteSpec>[
+            _RouteSpec.fail('paid', 'm1', _http(403, 'forbidden')),
+            _RouteSpec.ok('paid', 'm2'),
+            _RouteSpec.ok('local', 'lm'),
+          ],
+        );
 
-      final report = await ctx.dispatch();
-      expect(report.providerId, 'local');
-      expect(
-        ctx.router.isInCooldown(providerId: 'paid', modelId: 'm1'),
-        isTrue,
-      );
-      expect(
-        ctx.router.isInCooldown(providerId: 'paid', modelId: 'm2'),
-        isTrue,
-      );
-      // Different provider id is untouched.
-      expect(
-        ctx.router.isInCooldown(providerId: 'local', modelId: 'lm'),
-        isFalse,
-      );
-    });
+        final report = await ctx.dispatch();
+        expect(report.providerId, 'local');
+        expect(
+          ctx.router.isInCooldown(providerId: 'paid', modelId: 'm1'),
+          isTrue,
+        );
+        expect(
+          ctx.router.isInCooldown(providerId: 'paid', modelId: 'm2'),
+          isTrue,
+        );
+        // Different provider id is untouched.
+        expect(
+          ctx.router.isInCooldown(providerId: 'local', modelId: 'lm'),
+          isFalse,
+        );
+      },
+    );
 
-    test('model_not_found → removeRoute parks only the (provider, model) pair', () async {
-      final ctx = _scenario(
-        chain: <_RouteSpec>[
-          _RouteSpec.fail('paid', 'm1', _http(404, 'model "m1" not found')),
-          _RouteSpec.ok('paid', 'm2'),
-        ],
-      );
+    test(
+      'model_not_found → removeRoute parks only the (provider, model) pair',
+      () async {
+        final ctx = _scenario(
+          chain: <_RouteSpec>[
+            _RouteSpec.fail('paid', 'm1', _http(404, 'model "m1" not found')),
+            _RouteSpec.ok('paid', 'm2'),
+          ],
+        );
 
-      final report = await ctx.dispatch();
-      expect(report.providerId, 'paid');
-      expect(report.modelId, 'm2');
-      // m1 parked, m2 (same provider) reachable.
-      expect(
-        ctx.router.isInCooldown(providerId: 'paid', modelId: 'm1'),
-        isTrue,
-      );
-      expect(
-        ctx.router.isInCooldown(providerId: 'paid', modelId: 'm2'),
-        isFalse,
-      );
-    });
+        final report = await ctx.dispatch();
+        expect(report.providerId, 'paid');
+        expect(report.modelId, 'm2');
+        // m1 parked, m2 (same provider) reachable.
+        expect(
+          ctx.router.isInCooldown(providerId: 'paid', modelId: 'm1'),
+          isTrue,
+        );
+        expect(
+          ctx.router.isInCooldown(providerId: 'paid', modelId: 'm2'),
+          isFalse,
+        );
+      },
+    );
 
-    test('overloaded → retryThenRotate burns retriesPerClass retries on same route', () async {
-      final ctx = _scenario(
-        chain: <_RouteSpec>[
-          _RouteSpec.failTimes('p1', 'm1', _http(503, 'overloaded'), 3),
-          _RouteSpec.ok('p2', 'm2'),
-        ],
-        retriesPerClass: 2,
-      );
+    test(
+      'overloaded → retryThenRotate burns retriesPerClass retries on same route',
+      () async {
+        final ctx = _scenario(
+          chain: <_RouteSpec>[
+            _RouteSpec.failTimes('p1', 'm1', _http(503, 'overloaded'), 3),
+            _RouteSpec.ok('p2', 'm2'),
+          ],
+          retriesPerClass: 2,
+        );
 
-      final report = await ctx.dispatch();
-      // 2 retries permitted, third 503 forces rotation.
-      expect(report.providerId, 'p2');
-      expect(ctx.callsTo('p1'), 3);
-    });
+        final report = await ctx.dispatch();
+        // 2 retries permitted, third 503 forces rotation.
+        expect(report.providerId, 'p2');
+        expect(ctx.callsTo('p1'), 3);
+      },
+    );
 
     test('timeout → retryThenRotate (same action as overloaded)', () async {
       final ctx = _scenario(
@@ -207,206 +216,212 @@ void main() {
       expect(ctx.callsTo('p1'), 2);
     });
 
-    test('context_overflow → surfaceToCaller, chain not consulted further', () async {
-      final ctx = _scenario(
-        chain: <_RouteSpec>[
-          _RouteSpec.fail(
-            'p1',
-            'm1',
-            _http(400, 'maximum context length is 8192 tokens'),
-          ),
-          _RouteSpec.ok('p2', 'm2'),
-        ],
-      );
-
-      await expectLater(ctx.dispatch(), throwsA(isA<ContextOverflowError>()));
-      // Fallback never reached.
-      expect(ctx.callsTo('p2'), 0);
-      // No cooldown applied (surfaceToCaller does not park).
-      expect(
-        ctx.router.isInCooldown(providerId: 'p1', modelId: 'm1'),
-        isFalse,
-      );
-    });
-
-    test('single immutable RouterPolicy shared across concurrent routers — no state leak',
-        () async {
-      // Spec § 1 invariant: the policy is pure data; cooldown state lives
-      // on the router. Constructing two routers from the same policy and
-      // tripping a cooldown on one must not affect the other.
-      final policy = RouterPolicy(
-        roleRoutes: <String, List<RouteEntry>>{
-          'r': <RouteEntry>[
-            const RouteEntry(providerId: 'p', model: 'm'),
-            const RouteEntry(providerId: 'fb', model: 'fbm'),
+    test(
+      'context_overflow → surfaceToCaller, chain not consulted further',
+      () async {
+        final ctx = _scenario(
+          chain: <_RouteSpec>[
+            _RouteSpec.fail(
+              'p1',
+              'm1',
+              _http(400, 'maximum context length is 8192 tokens'),
+            ),
+            _RouteSpec.ok('p2', 'm2'),
           ],
-        },
-      );
-      final clockA = _MutableClock(DateTime.utc(2026, 1, 1, 12));
-      final clockB = _MutableClock(DateTime.utc(2026, 1, 1, 12));
+        );
 
-      final failingA = _ScriptedProvider(
-        id: 'p',
-        defaultModel: 'm',
-        exceptions: <Object>[_http(429, 'r')],
-      );
-      final routerA = LlmRouter(
-        providers: <String, LlmProvider>{
-          'p': failingA,
-          'fb': StubLlmProvider(id: 'fb', defaultModel: 'fbm'),
-        },
-        policy: policy,
-        now: clockA.read,
-      );
+        await expectLater(ctx.dispatch(), throwsA(isA<ContextOverflowError>()));
+        // Fallback never reached.
+        expect(ctx.callsTo('p2'), 0);
+        // No cooldown applied (surfaceToCaller does not park).
+        expect(
+          ctx.router.isInCooldown(providerId: 'p1', modelId: 'm1'),
+          isFalse,
+        );
+      },
+    );
 
-      final routerB = LlmRouter(
-        providers: <String, LlmProvider>{
-          'p': StubLlmProvider(id: 'p', defaultModel: 'm'),
-          'fb': StubLlmProvider(id: 'fb', defaultModel: 'fbm'),
-        },
-        policy: policy,
-        now: clockB.read,
-      );
+    test(
+      'single immutable RouterPolicy shared across concurrent routers — no state leak',
+      () async {
+        // Spec § 1 invariant: the policy is pure data; cooldown state lives
+        // on the router. Constructing two routers from the same policy and
+        // tripping a cooldown on one must not affect the other.
+        final policy = RouterPolicy(
+          roleRoutes: <String, List<RouteEntry>>{
+            'r': <RouteEntry>[
+              const RouteEntry(providerId: 'p', model: 'm'),
+              const RouteEntry(providerId: 'fb', model: 'fbm'),
+            ],
+          },
+        );
+        final clockA = _MutableClock(DateTime.utc(2026, 1, 1, 12));
+        final clockB = _MutableClock(DateTime.utc(2026, 1, 1, 12));
 
-      await routerA.dispatch(
-        roleId: 'r',
-        prompt: _prompt('h'),
-        options: LlmOptions.empty,
-        budget: _bigBudget,
-      );
+        final failingA = _ScriptedProvider(
+          id: 'p',
+          defaultModel: 'm',
+          exceptions: <Object>[_http(429, 'r')],
+        );
+        final routerA = LlmRouter(
+          providers: <String, LlmProvider>{
+            'p': failingA,
+            'fb': StubLlmProvider(id: 'fb', defaultModel: 'fbm'),
+          },
+          policy: policy,
+          now: clockA.read,
+        );
 
-      // Router A parked p:m. Router B has not seen the failure and
-      // therefore considers p:m perfectly healthy.
-      expect(
-        routerA.isInCooldown(providerId: 'p', modelId: 'm'),
-        isTrue,
-      );
-      expect(
-        routerB.isInCooldown(providerId: 'p', modelId: 'm'),
-        isFalse,
-      );
-      // The policy itself is unchanged after both dispatches.
-      expect(policy.routesFor('r')!.first.providerId, 'p');
-    });
+        final routerB = LlmRouter(
+          providers: <String, LlmProvider>{
+            'p': StubLlmProvider(id: 'p', defaultModel: 'm'),
+            'fb': StubLlmProvider(id: 'fb', defaultModel: 'fbm'),
+          },
+          policy: policy,
+          now: clockB.read,
+        );
+
+        await routerA.dispatch(
+          roleId: 'r',
+          prompt: _prompt('h'),
+          options: LlmOptions.empty,
+          budget: _bigBudget,
+        );
+
+        // Router A parked p:m. Router B has not seen the failure and
+        // therefore considers p:m perfectly healthy.
+        expect(routerA.isInCooldown(providerId: 'p', modelId: 'm'), isTrue);
+        expect(routerB.isInCooldown(providerId: 'p', modelId: 'm'), isFalse);
+        // The policy itself is unchanged after both dispatches.
+        expect(policy.routesFor('r')!.first.providerId, 'p');
+      },
+    );
   });
 
   group('B.20 — failover does not retry past the budget', () {
-    test('zero wall-clock budget short-circuits chain on first attempt', () async {
-      final stub = StubLlmProvider(id: 'p', defaultModel: 'm');
-      final router = LlmRouter(
-        providers: <String, LlmProvider>{'p': stub},
-        policy: RouterPolicy(
-          roleRoutes: <String, List<RouteEntry>>{
-            'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
-          },
-        ),
-      );
+    test(
+      'zero wall-clock budget short-circuits chain on first attempt',
+      () async {
+        final stub = StubLlmProvider(id: 'p', defaultModel: 'm');
+        final router = LlmRouter(
+          providers: <String, LlmProvider>{'p': stub},
+          policy: RouterPolicy(
+            roleRoutes: <String, List<RouteEntry>>{
+              'r': <RouteEntry>[const RouteEntry(providerId: 'p', model: 'm')],
+            },
+          ),
+        );
 
-      try {
-        await router.dispatch(
+        try {
+          await router.dispatch(
+            roleId: 'r',
+            prompt: _prompt('h'),
+            options: LlmOptions.empty,
+            budget: Budget(
+              wallClockMs: 0,
+              tokenSpend: 100,
+              toolCalls: 0,
+              memoryWrites: 0,
+            ),
+          );
+          fail('expected NoRouteAvailable');
+        } on NoRouteAvailable catch (e) {
+          // No provider call should have happened.
+          expect(stub.callCount, 0);
+          // Audit trail names budget_wall_clock as the skip reason.
+          expect(e.attempts, hasLength(1));
+          expect(e.attempts.single.outcome, 'skipped:budget_wall_clock');
+        }
+      },
+    );
+
+    test(
+      'wall-clock budget enforced between routes (not only between retries)',
+      () async {
+        // Route 1 fails slowly (consuming the budget). Route 2 should
+        // never be attempted because the elapsed wall-clock exceeds the
+        // budget before we get to it.
+        final r1 = _ScriptedProvider(
+          id: 'p1',
+          defaultModel: 'm',
+          exceptions: <Object>[_http(429, 'r')],
+          delay: const Duration(milliseconds: 40),
+        );
+        final r2 = StubLlmProvider(id: 'p2', defaultModel: 'm');
+        final router = LlmRouter(
+          providers: <String, LlmProvider>{'p1': r1, 'p2': r2},
+          policy: RouterPolicy(
+            roleRoutes: <String, List<RouteEntry>>{
+              'r': <RouteEntry>[
+                const RouteEntry(providerId: 'p1', model: 'm'),
+                const RouteEntry(providerId: 'p2', model: 'm'),
+              ],
+            },
+          ),
+        );
+
+        try {
+          await router.dispatch(
+            roleId: 'r',
+            prompt: _prompt('h'),
+            options: LlmOptions.empty,
+            budget: Budget(
+              wallClockMs: 20, // less than r1's 40 ms delay
+              tokenSpend: 100,
+              toolCalls: 0,
+              memoryWrites: 0,
+            ),
+          );
+          fail('expected NoRouteAvailable');
+        } on NoRouteAvailable catch (e) {
+          // r2 must not have been called — the wall-clock guard between
+          // routes parked the rest of the chain.
+          expect(r2.callCount, 0);
+          // Audit trail's last entry should be a budget-related skip.
+          final last = e.attempts.last.outcome;
+          expect(
+            last,
+            'skipped:budget_wall_clock',
+            reason: 'expected last attempt to be a wall-clock skip, got: $last',
+          );
+        }
+      },
+    );
+
+    test(
+      'retriesPerClass = 0 ⇒ no retries; first failure rotates immediately',
+      () async {
+        final r1 = _ScriptedProvider(
+          id: 'p1',
+          defaultModel: 'm',
+          exceptions: <Object>[_http(503, 'overloaded')],
+        );
+        final r2 = StubLlmProvider(id: 'p2', defaultModel: 'm');
+        final router = LlmRouter(
+          providers: <String, LlmProvider>{'p1': r1, 'p2': r2},
+          policy: RouterPolicy(
+            roleRoutes: <String, List<RouteEntry>>{
+              'r': <RouteEntry>[
+                const RouteEntry(providerId: 'p1', model: 'm'),
+                const RouteEntry(providerId: 'p2', model: 'm'),
+              ],
+            },
+            retriesPerClass: 0,
+            overloadedBackoff: Duration.zero,
+          ),
+        );
+
+        final report = await router.dispatch(
           roleId: 'r',
           prompt: _prompt('h'),
           options: LlmOptions.empty,
-          budget: Budget(
-            wallClockMs: 0,
-            tokenSpend: 100,
-            toolCalls: 0,
-            memoryWrites: 0,
-          ),
+          budget: _bigBudget,
         );
-        fail('expected NoRouteAvailable');
-      } on NoRouteAvailable catch (e) {
-        // No provider call should have happened.
-        expect(stub.callCount, 0);
-        // Audit trail names budget_wall_clock as the skip reason.
-        expect(e.attempts, hasLength(1));
-        expect(e.attempts.single.outcome, 'skipped:budget_wall_clock');
-      }
-    });
-
-    test('wall-clock budget enforced between routes (not only between retries)',
-        () async {
-      // Route 1 fails slowly (consuming the budget). Route 2 should
-      // never be attempted because the elapsed wall-clock exceeds the
-      // budget before we get to it.
-      final r1 = _ScriptedProvider(
-        id: 'p1',
-        defaultModel: 'm',
-        exceptions: <Object>[_http(429, 'r')],
-        delay: const Duration(milliseconds: 40),
-      );
-      final r2 = StubLlmProvider(id: 'p2', defaultModel: 'm');
-      final router = LlmRouter(
-        providers: <String, LlmProvider>{'p1': r1, 'p2': r2},
-        policy: RouterPolicy(
-          roleRoutes: <String, List<RouteEntry>>{
-            'r': <RouteEntry>[
-              const RouteEntry(providerId: 'p1', model: 'm'),
-              const RouteEntry(providerId: 'p2', model: 'm'),
-            ],
-          },
-        ),
-      );
-
-      try {
-        await router.dispatch(
-          roleId: 'r',
-          prompt: _prompt('h'),
-          options: LlmOptions.empty,
-          budget: Budget(
-            wallClockMs: 20, // less than r1's 40 ms delay
-            tokenSpend: 100,
-            toolCalls: 0,
-            memoryWrites: 0,
-          ),
-        );
-        fail('expected NoRouteAvailable');
-      } on NoRouteAvailable catch (e) {
-        // r2 must not have been called — the wall-clock guard between
-        // routes parked the rest of the chain.
-        expect(r2.callCount, 0);
-        // Audit trail's last entry should be a budget-related skip.
-        final last = e.attempts.last.outcome;
-        expect(
-          last,
-          'skipped:budget_wall_clock',
-          reason: 'expected last attempt to be a wall-clock skip, got: $last',
-        );
-      }
-    });
-
-    test('retriesPerClass = 0 ⇒ no retries; first failure rotates immediately',
-        () async {
-      final r1 = _ScriptedProvider(
-        id: 'p1',
-        defaultModel: 'm',
-        exceptions: <Object>[_http(503, 'overloaded')],
-      );
-      final r2 = StubLlmProvider(id: 'p2', defaultModel: 'm');
-      final router = LlmRouter(
-        providers: <String, LlmProvider>{'p1': r1, 'p2': r2},
-        policy: RouterPolicy(
-          roleRoutes: <String, List<RouteEntry>>{
-            'r': <RouteEntry>[
-              const RouteEntry(providerId: 'p1', model: 'm'),
-              const RouteEntry(providerId: 'p2', model: 'm'),
-            ],
-          },
-          retriesPerClass: 0,
-          overloadedBackoff: Duration.zero,
-        ),
-      );
-
-      final report = await router.dispatch(
-        roleId: 'r',
-        prompt: _prompt('h'),
-        options: LlmOptions.empty,
-        budget: _bigBudget,
-      );
-      expect(report.providerId, 'p2');
-      // Single attempt on r1, no retries.
-      expect(r1.callCount, 1);
-    });
+        expect(report.providerId, 'p2');
+        // Single attempt on r1, no retries.
+        expect(r1.callCount, 1);
+      },
+    );
 
     test('retriesPerClass is per-route, not global across the chain', () async {
       // Both routes throw 503; the policy allows 2 retries per route.
@@ -449,7 +464,11 @@ void main() {
       } on NoRouteAvailable catch (_) {
         // Each route burned its own budget independently.
         expect(r1.callCount, 3, reason: 'r1 should have used 1 + 2 retries');
-        expect(r2.callCount, 3, reason: 'r2 should also have used 1 + 2 retries');
+        expect(
+          r2.callCount,
+          3,
+          reason: 'r2 should also have used 1 + 2 retries',
+        );
       }
     });
 
@@ -495,191 +514,136 @@ void main() {
   });
 
   group('B.20 — "down" provider parked for configurable cooldown', () {
-    test('cooldown duration honours policy.cooldownByClass to the millisecond', () async {
-      for (final window in <Duration>[
-        const Duration(milliseconds: 10),
-        const Duration(milliseconds: 250),
-        const Duration(seconds: 60),
-      ]) {
+    test(
+      'cooldown duration honours policy.cooldownByClass to the millisecond',
+      () async {
+        for (final window in <Duration>[
+          const Duration(milliseconds: 10),
+          const Duration(milliseconds: 250),
+          const Duration(seconds: 60),
+        ]) {
+          final ctx = _scenario(
+            chain: <_RouteSpec>[
+              _RouteSpec.fail('p', 'm', _http(429, 'r')),
+              _RouteSpec.ok('fb', 'fbm'),
+            ],
+            cooldowns: <LlmFailureClass, Duration>{
+              LlmFailureClass.rateLimit: window,
+            },
+          );
+
+          await ctx.dispatch();
+          // 1 ms before the window expires — still parked.
+          ctx.clock.advance(window - const Duration(microseconds: 1));
+          expect(
+            ctx.router.isInCooldown(providerId: 'p', modelId: 'm'),
+            isTrue,
+            reason:
+                'route should still be parked just before window expiry '
+                '($window)',
+          );
+          // 2 µs later — past the boundary.
+          ctx.clock.advance(const Duration(microseconds: 2));
+          expect(
+            ctx.router.isInCooldown(providerId: 'p', modelId: 'm'),
+            isFalse,
+            reason: 'route should have come back at window expiry ($window)',
+          );
+        }
+      },
+    );
+
+    test(
+      'audit trail names cooldown as the skip reason on a re-dispatch',
+      () async {
         final ctx = _scenario(
           chain: <_RouteSpec>[
             _RouteSpec.fail('p', 'm', _http(429, 'r')),
             _RouteSpec.ok('fb', 'fbm'),
           ],
           cooldowns: <LlmFailureClass, Duration>{
-            LlmFailureClass.rateLimit: window,
+            LlmFailureClass.rateLimit: const Duration(seconds: 60),
           },
         );
 
+        // First call: fails, parks p:m, lands on fb.
         await ctx.dispatch();
-        // 1 ms before the window expires — still parked.
-        ctx.clock.advance(window - const Duration(microseconds: 1));
+        // Second call within cooldown: must skip p:m with audit reason.
+        // Bind a fresh dispatch that surfaces audit trail via NoRouteAvailable
+        // — but the chain has a healthy fallback so dispatch succeeds. So
+        // we shorten the chain to just the parked route and assert the
+        // single attempt is `skipped:cooldown`.
+        try {
+          await ctx.router.dispatch(
+            roleId: 'parked_only',
+            prompt: _prompt('h'),
+            options: LlmOptions.empty,
+            budget: _bigBudget,
+          );
+          fail('expected RoleNotFound (parked_only role not declared)');
+        } on RoleNotFound {
+          // Expected — `parked_only` is not in the test scenario's policy.
+          // Fall back to checking via a fresh chain that has only the parked
+          // route. That requires re-building the router with a new policy.
+        }
+
+        // Re-build with a single-route chain pointing only at the parked
+        // (provider, model) — the cooldown state survives because it lives
+        // on the router; we need a new router that *shares* the cooldown.
+        //
+        // Approach: assert the cooldown is active and that a fresh dispatch
+        // on the existing router (using the existing 'r' role) does NOT
+        // re-invoke the failing provider — the audit trail visible via
+        // `callsTo` shows the call count did not advance.
+        final callsBefore = ctx.callsTo('p');
+        final report = await ctx.dispatch();
+        expect(report.providerId, 'fb');
         expect(
-          ctx.router.isInCooldown(providerId: 'p', modelId: 'm'),
-          isTrue,
-          reason: 'route should still be parked just before window expiry '
-              '($window)',
+          ctx.callsTo('p'),
+          callsBefore,
+          reason:
+              'parked provider must not have been re-invoked while in cooldown',
         );
-        // 2 µs later — past the boundary.
-        ctx.clock.advance(const Duration(microseconds: 2));
+      },
+    );
+
+    test(
+      'cooldown on one (provider, model) does not park a sibling model',
+      () async {
+        // Two models on the same provider. 404 on m1 parks (p, m1) only.
+        // A subsequent dispatch must still try p/m2.
+        final ctx = _scenario(
+          chain: <_RouteSpec>[
+            _RouteSpec.fail('p', 'm1', _http(404, 'no such model')),
+            _RouteSpec.ok('p', 'm2'),
+          ],
+        );
+
+        final report = await ctx.dispatch();
+        expect(report.providerId, 'p');
+        expect(report.modelId, 'm2');
+        expect(ctx.router.isInCooldown(providerId: 'p', modelId: 'm1'), isTrue);
         expect(
-          ctx.router.isInCooldown(providerId: 'p', modelId: 'm'),
+          ctx.router.isInCooldown(providerId: 'p', modelId: 'm2'),
           isFalse,
-          reason: 'route should have come back at window expiry ($window)',
         );
-      }
-    });
+      },
+    );
 
-    test('audit trail names cooldown as the skip reason on a re-dispatch', () async {
-      final ctx = _scenario(
-        chain: <_RouteSpec>[
-          _RouteSpec.fail('p', 'm', _http(429, 'r')),
-          _RouteSpec.ok('fb', 'fbm'),
-        ],
-        cooldowns: <LlmFailureClass, Duration>{
-          LlmFailureClass.rateLimit: const Duration(seconds: 60),
-        },
-      );
-
-      // First call: fails, parks p:m, lands on fb.
-      await ctx.dispatch();
-      // Second call within cooldown: must skip p:m with audit reason.
-      // Bind a fresh dispatch that surfaces audit trail via NoRouteAvailable
-      // — but the chain has a healthy fallback so dispatch succeeds. So
-      // we shorten the chain to just the parked route and assert the
-      // single attempt is `skipped:cooldown`.
-      try {
-        await ctx.router.dispatch(
-          roleId: 'parked_only',
-          prompt: _prompt('h'),
-          options: LlmOptions.empty,
-          budget: _bigBudget,
-        );
-        fail('expected RoleNotFound (parked_only role not declared)');
-      } on RoleNotFound {
-        // Expected — `parked_only` is not in the test scenario's policy.
-        // Fall back to checking via a fresh chain that has only the parked
-        // route. That requires re-building the router with a new policy.
-      }
-
-      // Re-build with a single-route chain pointing only at the parked
-      // (provider, model) — the cooldown state survives because it lives
-      // on the router; we need a new router that *shares* the cooldown.
-      //
-      // Approach: assert the cooldown is active and that a fresh dispatch
-      // on the existing router (using the existing 'r' role) does NOT
-      // re-invoke the failing provider — the audit trail visible via
-      // `callsTo` shows the call count did not advance.
-      final callsBefore = ctx.callsTo('p');
-      final report = await ctx.dispatch();
-      expect(report.providerId, 'fb');
-      expect(
-        ctx.callsTo('p'),
-        callsBefore,
-        reason: 'parked provider must not have been re-invoked while in cooldown',
-      );
-    });
-
-    test('cooldown on one (provider, model) does not park a sibling model',
-        () async {
-      // Two models on the same provider. 404 on m1 parks (p, m1) only.
-      // A subsequent dispatch must still try p/m2.
-      final ctx = _scenario(
-        chain: <_RouteSpec>[
-          _RouteSpec.fail('p', 'm1', _http(404, 'no such model')),
-          _RouteSpec.ok('p', 'm2'),
-        ],
-      );
-
-      final report = await ctx.dispatch();
-      expect(report.providerId, 'p');
-      expect(report.modelId, 'm2');
-      expect(
-        ctx.router.isInCooldown(providerId: 'p', modelId: 'm1'),
-        isTrue,
-      );
-      expect(
-        ctx.router.isInCooldown(providerId: 'p', modelId: 'm2'),
-        isFalse,
-      );
-    });
-
-    test('after cooldown expires the parked route is dispatchable again',
-        () async {
-      // First dispatch fails p:m with 429; second dispatch (within
-      // cooldown) routes to fb; advance past cooldown; third dispatch
-      // routes back to p:m.
-      final fail1 = _http(429, 'r');
-      final p = _ScriptedProvider(
-        id: 'p',
-        defaultModel: 'm',
-        exceptions: <Object>[fail1], // one failure, then healthy
-      );
-      final fb = StubLlmProvider(id: 'fb', defaultModel: 'fbm');
-      final clock = _MutableClock(DateTime.utc(2026, 1, 1, 12));
-      final router = LlmRouter(
-        providers: <String, LlmProvider>{'p': p, 'fb': fb},
-        policy: RouterPolicy(
-          roleRoutes: <String, List<RouteEntry>>{
-            'r': <RouteEntry>[
-              const RouteEntry(providerId: 'p', model: 'm'),
-              const RouteEntry(providerId: 'fb', model: 'fbm'),
-            ],
-          },
-          cooldownByClass: const <LlmFailureClass, Duration>{
-            LlmFailureClass.rateLimit: Duration(seconds: 30),
-          },
-        ),
-        now: clock.read,
-      );
-
-      final r1 = await router.dispatch(
-        roleId: 'r',
-        prompt: _prompt('h'),
-        options: LlmOptions.empty,
-        budget: _bigBudget,
-      );
-      expect(r1.providerId, 'fb');
-
-      // Mid-cooldown: still rotates to fb.
-      clock.advance(const Duration(seconds: 10));
-      final r2 = await router.dispatch(
-        roleId: 'r',
-        prompt: _prompt('h'),
-        options: LlmOptions.empty,
-        budget: _bigBudget,
-      );
-      expect(r2.providerId, 'fb');
-      expect(p.callCount, 1, reason: 'p must still be parked');
-
-      // Past cooldown: p comes back as the first choice.
-      clock.advance(const Duration(seconds: 21));
-      final r3 = await router.dispatch(
-        roleId: 'r',
-        prompt: _prompt('h'),
-        options: LlmOptions.empty,
-        budget: _bigBudget,
-      );
-      expect(r3.providerId, 'p');
-      expect(p.callCount, 2);
-    });
-
-    test('different policies yield different cooldown windows for the same class',
-        () async {
-      // Two routers built from two policies. Same failure (429), same
-      // (provider, model). Policy A cools 5 s; policy B cools 100 ms.
-      // Both routers should agree on "in cooldown" at t=10 ms, but only
-      // policy B should have the route back at t=200 ms.
-      Future<LlmRouter> mkRouter(
-        Duration cooldown,
-        _MutableClock clock,
-      ) async {
+    test(
+      'after cooldown expires the parked route is dispatchable again',
+      () async {
+        // First dispatch fails p:m with 429; second dispatch (within
+        // cooldown) routes to fb; advance past cooldown; third dispatch
+        // routes back to p:m.
+        final fail1 = _http(429, 'r');
         final p = _ScriptedProvider(
           id: 'p',
           defaultModel: 'm',
-          exceptions: <Object>[_http(429, 'r')],
+          exceptions: <Object>[fail1], // one failure, then healthy
         );
         final fb = StubLlmProvider(id: 'fb', defaultModel: 'fbm');
+        final clock = _MutableClock(DateTime.utc(2026, 1, 1, 12));
         final router = LlmRouter(
           providers: <String, LlmProvider>{'p': p, 'fb': fb},
           policy: RouterPolicy(
@@ -689,62 +653,119 @@ void main() {
                 const RouteEntry(providerId: 'fb', model: 'fbm'),
               ],
             },
-            cooldownByClass: <LlmFailureClass, Duration>{
-              LlmFailureClass.rateLimit: cooldown,
+            cooldownByClass: const <LlmFailureClass, Duration>{
+              LlmFailureClass.rateLimit: Duration(seconds: 30),
             },
           ),
           now: clock.read,
         );
-        await router.dispatch(
+
+        final r1 = await router.dispatch(
           roleId: 'r',
           prompt: _prompt('h'),
           options: LlmOptions.empty,
           budget: _bigBudget,
         );
-        return router;
-      }
+        expect(r1.providerId, 'fb');
 
-      final clockA = _MutableClock(DateTime.utc(2026, 1, 1, 12));
-      final clockB = _MutableClock(DateTime.utc(2026, 1, 1, 12));
-      final routerA = await mkRouter(const Duration(seconds: 5), clockA);
-      final routerB = await mkRouter(const Duration(milliseconds: 100), clockB);
+        // Mid-cooldown: still rotates to fb.
+        clock.advance(const Duration(seconds: 10));
+        final r2 = await router.dispatch(
+          roleId: 'r',
+          prompt: _prompt('h'),
+          options: LlmOptions.empty,
+          budget: _bigBudget,
+        );
+        expect(r2.providerId, 'fb');
+        expect(p.callCount, 1, reason: 'p must still be parked');
 
-      // At t=10 ms, both still parked.
-      clockA.advance(const Duration(milliseconds: 10));
-      clockB.advance(const Duration(milliseconds: 10));
-      expect(
-        routerA.isInCooldown(providerId: 'p', modelId: 'm'),
-        isTrue,
-      );
-      expect(
-        routerB.isInCooldown(providerId: 'p', modelId: 'm'),
-        isTrue,
-      );
+        // Past cooldown: p comes back as the first choice.
+        clock.advance(const Duration(seconds: 21));
+        final r3 = await router.dispatch(
+          roleId: 'r',
+          prompt: _prompt('h'),
+          options: LlmOptions.empty,
+          budget: _bigBudget,
+        );
+        expect(r3.providerId, 'p');
+        expect(p.callCount, 2);
+      },
+    );
 
-      // At t=200 ms, B has released (100 ms window), A still parked
-      // (5 s window).
-      clockA.advance(const Duration(milliseconds: 190));
-      clockB.advance(const Duration(milliseconds: 190));
-      expect(
-        routerA.isInCooldown(providerId: 'p', modelId: 'm'),
-        isTrue,
-      );
-      expect(
-        routerB.isInCooldown(providerId: 'p', modelId: 'm'),
-        isFalse,
-      );
-    });
+    test(
+      'different policies yield different cooldown windows for the same class',
+      () async {
+        // Two routers built from two policies. Same failure (429), same
+        // (provider, model). Policy A cools 5 s; policy B cools 100 ms.
+        // Both routers should agree on "in cooldown" at t=10 ms, but only
+        // policy B should have the route back at t=200 ms.
+        Future<LlmRouter> mkRouter(
+          Duration cooldown,
+          _MutableClock clock,
+        ) async {
+          final p = _ScriptedProvider(
+            id: 'p',
+            defaultModel: 'm',
+            exceptions: <Object>[_http(429, 'r')],
+          );
+          final fb = StubLlmProvider(id: 'fb', defaultModel: 'fbm');
+          final router = LlmRouter(
+            providers: <String, LlmProvider>{'p': p, 'fb': fb},
+            policy: RouterPolicy(
+              roleRoutes: <String, List<RouteEntry>>{
+                'r': <RouteEntry>[
+                  const RouteEntry(providerId: 'p', model: 'm'),
+                  const RouteEntry(providerId: 'fb', model: 'fbm'),
+                ],
+              },
+              cooldownByClass: <LlmFailureClass, Duration>{
+                LlmFailureClass.rateLimit: cooldown,
+              },
+            ),
+            now: clock.read,
+          );
+          await router.dispatch(
+            roleId: 'r',
+            prompt: _prompt('h'),
+            options: LlmOptions.empty,
+            budget: _bigBudget,
+          );
+          return router;
+        }
+
+        final clockA = _MutableClock(DateTime.utc(2026, 1, 1, 12));
+        final clockB = _MutableClock(DateTime.utc(2026, 1, 1, 12));
+        final routerA = await mkRouter(const Duration(seconds: 5), clockA);
+        final routerB = await mkRouter(
+          const Duration(milliseconds: 100),
+          clockB,
+        );
+
+        // At t=10 ms, both still parked.
+        clockA.advance(const Duration(milliseconds: 10));
+        clockB.advance(const Duration(milliseconds: 10));
+        expect(routerA.isInCooldown(providerId: 'p', modelId: 'm'), isTrue);
+        expect(routerB.isInCooldown(providerId: 'p', modelId: 'm'), isTrue);
+
+        // At t=200 ms, B has released (100 ms window), A still parked
+        // (5 s window).
+        clockA.advance(const Duration(milliseconds: 190));
+        clockB.advance(const Duration(milliseconds: 190));
+        expect(routerA.isInCooldown(providerId: 'p', modelId: 'm'), isTrue);
+        expect(routerB.isInCooldown(providerId: 'p', modelId: 'm'), isFalse);
+      },
+    );
   });
 }
 
 // ─── Test helpers ────────────────────────────────────────────────
 
 WirePrompt _prompt(String body) => WirePrompt(
-      system: body,
-      anchorHash: 'sha256:anchor',
-      roleId: 'analyser',
-      templateSha: 'sha-abc',
-    );
+  system: body,
+  anchorHash: 'sha256:anchor',
+  roleId: 'analyser',
+  templateSha: 'sha-abc',
+);
 
 final Budget _bigBudget = Budget(
   wallClockMs: 60000,
@@ -754,10 +775,10 @@ final Budget _bigBudget = Budget(
 );
 
 OpenAiHttpException _http(int status, String body) => OpenAiHttpException(
-      statusCode: status,
-      body: body,
-      endpoint: Uri.parse('http://x/y'),
-    );
+  statusCode: status,
+  body: body,
+  endpoint: Uri.parse('http://x/y'),
+);
 
 /// A raw exception class used to assert that a non-HTTP, non-IO error
 /// follows the `unknown` → retryThenRotate path. Keeps the test free of
@@ -807,12 +828,11 @@ class _RouteSpec {
     String model,
     Object exception,
     int times,
-  ) =>
-      _RouteSpec._(
-        providerId: providerId,
-        model: model,
-        failures: List<Object>.filled(times, exception),
-      );
+  ) => _RouteSpec._(
+    providerId: providerId,
+    model: model,
+    failures: List<Object>.filled(times, exception),
+  );
 }
 
 /// Bundles the router-under-test, the mutable clock, and the providers
@@ -829,10 +849,7 @@ class _Scenario {
     required this.providers,
   });
 
-  Future<LlmCallReport> dispatch({
-    String roleId = 'r',
-    Budget? budget,
-  }) =>
+  Future<LlmCallReport> dispatch({String roleId = 'r', Budget? budget}) =>
       router.dispatch(
         roleId: roleId,
         prompt: _prompt('h'),
@@ -840,8 +857,7 @@ class _Scenario {
         budget: budget ?? _bigBudget,
       );
 
-  int callsTo(String providerId) =>
-      providers[providerId]?.callCount ?? 0;
+  int callsTo(String providerId) => providers[providerId]?.callCount ?? 0;
 }
 
 /// Common entry point for the routing-decision tests: build a router
@@ -898,7 +914,7 @@ _Scenario _scenario({
 ///
 /// Hand-rolled to match the no-`mocktail` / no-`mockito` posture
 /// established in B.14 / B.15 / B.16 / B.18 / B.19.
-class _CountingProvider implements LlmProvider {
+class _CountingProvider extends LlmProvider {
   @override
   final String id;
   final String defaultModel;
@@ -912,10 +928,9 @@ class _CountingProvider implements LlmProvider {
   });
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     callCount++;
     final model = options.model ?? defaultModel;
     final queue = perModelFailures[model];
@@ -936,15 +951,14 @@ class _CountingProvider implements LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     // B.20 only exercises buffered dispatch. Streaming is exercised in
     // B.18; this method exists to satisfy the LlmProvider contract.
     callCount++;
     final model = options.model ?? defaultModel;
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
       callId: 'cp-$id-$callCount',
       providerId: id,
       modelId: model,
@@ -952,7 +966,7 @@ class _CountingProvider implements LlmProvider {
     final queue = perModelFailures[model];
     if (queue != null && queue.isNotEmpty) {
       final ex = queue.removeAt(0);
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: 'cp-$id-$callCount',
         failure: LlmFailure(
           classCode: 'unknown',
@@ -972,7 +986,7 @@ class _CountingProvider implements LlmProvider {
       );
       return;
     }
-    yield LlmStreamCompleted(
+    yield LlmRunCompleted(
       callId: 'cp-$id-$callCount',
       report: LlmCallReport(
         providerId: id,
@@ -991,7 +1005,7 @@ class _CountingProvider implements LlmProvider {
 /// Mirror of B.18 / B.19's hand-rolled scripted provider — used by the
 /// budget tests where the test wants a single-model provider with an
 /// explicit per-call delay.
-class _ScriptedProvider implements LlmProvider {
+class _ScriptedProvider extends LlmProvider {
   @override
   final String id;
   final String defaultModel;
@@ -1007,10 +1021,9 @@ class _ScriptedProvider implements LlmProvider {
   }) : _exceptions = List<Object>.of(exceptions);
 
   @override
-  Future<LlmCallReport> complete(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async {
+  Future<LlmCallReport> complete(LlmRequest request) async {
+    final prompt = request.prompt;
+    final options = request.options;
     callCount++;
     if (delay > Duration.zero) {
       await Future<void>.delayed(delay);
@@ -1032,19 +1045,18 @@ class _ScriptedProvider implements LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(
-    WirePrompt prompt,
-    LlmOptions options,
-  ) async* {
+  Stream<LlmEvent> run(LlmRequest request) async* {
+    final prompt = request.prompt;
+    final options = request.options;
     callCount++;
-    yield LlmStreamStarted(
+    yield LlmRunStarted(
       callId: 'sp-$id-$callCount',
       providerId: id,
       modelId: options.model ?? defaultModel,
     );
     if (_exceptions.isNotEmpty) {
       final ex = _exceptions.removeAt(0);
-      yield LlmStreamFailed(
+      yield LlmRunFailed(
         callId: 'sp-$id-$callCount',
         failure: LlmFailure(
           classCode: 'unknown',
@@ -1064,7 +1076,7 @@ class _ScriptedProvider implements LlmProvider {
       );
       return;
     }
-    yield LlmStreamCompleted(
+    yield LlmRunCompleted(
       callId: 'sp-$id-$callCount',
       report: LlmCallReport(
         providerId: id,

@@ -10,7 +10,7 @@
 //
 // ── Why `emit` and `sub.llm`'s token forwarding share one sink ───────
 //
-// `sub.llm(...)` already forwards each substrate `LlmStreamChunk` to the
+// `sub.llm(...)` already forwards each substrate `LlmTextDelta` to the
 // per-run [SubstrateTokenSink] the engine binds for an external request
 // (P1.3 #7). `emit` is the *explicit* counterpart for text the body itself
 // authors. Both write to the **same** per-run outbound channel (the engine

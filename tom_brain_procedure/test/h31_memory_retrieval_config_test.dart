@@ -31,7 +31,14 @@ import 'package:test/test.dart';
 
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
-    show EdgeId, MultiRecallQuery, NodeId, RecallMode, StackEntryId, TrailId, Vec;
+    show
+        EdgeId,
+        MultiRecallQuery,
+        NodeId,
+        RecallMode,
+        StackEntryId,
+        TrailId,
+        Vec;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:tom_core_agentic/tom_core_agentic.dart' show YamlConfigWriter;
 
@@ -71,8 +78,7 @@ void main() {
   });
 
   group('H.31-model the plain-map loader never leaks a YamlMap', () {
-    test('every map/list in the parsed config is a plain typed collection',
-        () {
+    test('every map/list in the parsed config is a plain typed collection', () {
       final cfg = MemoryRetrievalConfig.fromYamlString('''
 profile: focused
 strategies:
@@ -102,31 +108,43 @@ strategies:
     });
   });
 
-  group('H.31-model resolve is a deep merge (defaults <- surface <- callType)',
-      () {
-    test('a thin overlay narrows only the named field; the rest survives', () {
-      const surface = '''
+  group(
+    'H.31-model resolve is a deep merge (defaults <- surface <- callType)',
+    () {
+      test(
+        'a thin overlay narrows only the named field; the rest survives',
+        () {
+          const surface = '''
 strategies:
   vector:
     hypothetical_answers: { enabled: false }
 ''';
-      final cfg = MemoryRetrievalConfig.resolveYaml(<String>[surface]);
-      // The overlay disabled one strategy …
-      expect(cfg.strategy('vector', 'hypothetical_answers')!.enabled, isFalse);
-      // … and everything else fell through to defaults.
-      expect(cfg.strategy('vector', 'prompt')!.enabled, isTrue);
-      expect(cfg.strategy('vector', 'hypothetical_answers')!.role,
-          'hypothesis_writer');
-    });
+          final cfg = MemoryRetrievalConfig.resolveYaml(<String>[surface]);
+          // The overlay disabled one strategy …
+          expect(
+            cfg.strategy('vector', 'hypothetical_answers')!.enabled,
+            isFalse,
+          );
+          // … and everything else fell through to defaults.
+          expect(cfg.strategy('vector', 'prompt')!.enabled, isTrue);
+          expect(
+            cfg.strategy('vector', 'hypothetical_answers')!.role,
+            'hypothesis_writer',
+          );
+        },
+      );
 
-    test('a later layer wins over an earlier one per field', () {
-      const surface = 'fusion: { rrfK: 70 }\n';
-      const callType = 'fusion: { rrfK: 90 }\n';
-      final cfg =
-          MemoryRetrievalConfig.resolveYaml(<String>[surface, callType]);
-      expect(cfg.fusion.rrfK, 90);
-    });
-  });
+      test('a later layer wins over an earlier one per field', () {
+        const surface = 'fusion: { rrfK: 70 }\n';
+        const callType = 'fusion: { rrfK: 90 }\n';
+        final cfg = MemoryRetrievalConfig.resolveYaml(<String>[
+          surface,
+          callType,
+        ]);
+        expect(cfg.fusion.rrfK, 90);
+      });
+    },
+  );
 
   group('H.31-model withOnly disables all but the named strategies', () {
     test('only vector.prompt stays enabled; weight/k are preserved', () {
@@ -141,34 +159,43 @@ strategies:
   });
 
   group('H.31-model withWeights retunes named strategy weights only', () {
-    test('a named strategy is retuned; enablement and others are untouched',
-        () {
-      final base = MemoryRetrievalConfig.defaults();
-      final cfg = base.withWeights(<String, double>{
-        'vector.prompt': 0.01,
-        'graphWalk.seed_from_concepts': 0.0,
-      });
+    test(
+      'a named strategy is retuned; enablement and others are untouched',
+      () {
+        final base = MemoryRetrievalConfig.defaults();
+        final cfg = base.withWeights(<String, double>{
+          'vector.prompt': 0.01,
+          'graphWalk.seed_from_concepts': 0.0,
+        });
 
-      // The named weights moved …
-      expect(cfg.strategy('vector', 'prompt')!.weight, 0.01);
-      expect(cfg.strategy('graphWalk', 'seed_from_concepts')!.weight, 0.0);
-      // … enablement is preserved (withWeights never flips a strategy) …
-      expect(cfg.strategy('vector', 'prompt')!.enabled, isTrue);
-      expect(cfg.strategy('graphWalk', 'seed_from_concepts')!.enabled, isTrue);
-      // … and an unnamed strategy keeps its default weight.
-      expect(cfg.strategy('vector', 'hypothetical_answers')!.weight,
-          base.strategy('vector', 'hypothetical_answers')!.weight);
-    });
+        // The named weights moved …
+        expect(cfg.strategy('vector', 'prompt')!.weight, 0.01);
+        expect(cfg.strategy('graphWalk', 'seed_from_concepts')!.weight, 0.0);
+        // … enablement is preserved (withWeights never flips a strategy) …
+        expect(cfg.strategy('vector', 'prompt')!.enabled, isTrue);
+        expect(
+          cfg.strategy('graphWalk', 'seed_from_concepts')!.enabled,
+          isTrue,
+        );
+        // … and an unnamed strategy keeps its default weight.
+        expect(
+          cfg.strategy('vector', 'hypothetical_answers')!.weight,
+          base.strategy('vector', 'hypothetical_answers')!.weight,
+        );
+      },
+    );
 
-    test('an unknown path is ignored; the retuned weight reaches the conductor',
-        () {
-      final cfg = MemoryRetrievalConfig.defaults().withWeights(
-        <String, double>{'vector.prompt': 0.25, 'no.such_strategy': 9.0},
-      );
-      final seeds = cfg.toConductorMap()['seeds'] as Map<String, Object?>;
-      final vp = seeds['vector.prompt'] as Map<String, Object?>;
-      expect(vp['weight'], 0.25);
-    });
+    test(
+      'an unknown path is ignored; the retuned weight reaches the conductor',
+      () {
+        final cfg = MemoryRetrievalConfig.defaults().withWeights(
+          <String, double>{'vector.prompt': 0.25, 'no.such_strategy': 9.0},
+        );
+        final seeds = cfg.toConductorMap()['seeds'] as Map<String, Object?>;
+        final vp = seeds['vector.prompt'] as Map<String, Object?>;
+        expect(vp['weight'], 0.25);
+      },
+    );
 
     test('StrategyConfig.copyWith can override weight in isolation', () {
       const sc = StrategyConfig(enabled: true, weight: 1.0, k: 8);
@@ -184,127 +211,159 @@ strategies:
       expect(MemoryRetrievalConfig.defaults().hasEnabledLlmStrategy, isTrue);
     });
 
-    test('a non-LLM-only config passes checkNonLlm; an LLM one is rejected',
-        () {
-      final nonLlm = MemoryRetrievalConfig.defaults().withOnly(
-          ['vector.prompt', 'bm25.prompt_terms', 'symbolic.scope_filter']);
-      expect(nonLlm.hasEnabledLlmStrategy, isFalse);
-      expect(nonLlm.checkNonLlm, returnsNormally);
+    test(
+      'a non-LLM-only config passes checkNonLlm; an LLM one is rejected',
+      () {
+        final nonLlm = MemoryRetrievalConfig.defaults().withOnly([
+          'vector.prompt',
+          'bm25.prompt_terms',
+          'symbolic.scope_filter',
+        ]);
+        expect(nonLlm.hasEnabledLlmStrategy, isFalse);
+        expect(nonLlm.checkNonLlm, returnsNormally);
 
-      expect(
-        MemoryRetrievalConfig.defaults().checkNonLlm,
-        throwsA(isA<MemoryRetrievalConfigInvalid>().having(
-            (e) => e.code, 'code', 'retrieval.config.llm_in_memory')),
-      );
-    });
+        expect(
+          MemoryRetrievalConfig.defaults().checkNonLlm,
+          throwsA(
+            isA<MemoryRetrievalConfigInvalid>().having(
+              (e) => e.code,
+              'code',
+              'retrieval.config.llm_in_memory',
+            ),
+          ),
+        );
+      },
+    );
   });
 
-  group('H.31-model the AST-preserving writer round-trips through the loader',
-      () {
-    test('a surgical set keeps comments and re-parses to the new value', () {
-      const src = '''
+  group(
+    'H.31-model the AST-preserving writer round-trips through the loader',
+    () {
+      test('a surgical set keeps comments and re-parses to the new value', () {
+        const src = '''
 # memory_retrieval defaults
 fusion: { rrfK: 60 }   # RRF smoothing constant
 diversity: { lambda: 0.7 }
 ''';
-      final writer = YamlConfigWriter(src);
-      writer.set(['fusion', 'rrfK'], 80);
+        final writer = YamlConfigWriter(src);
+        writer.set(['fusion', 'rrfK'], 80);
 
-      // Comment preserved (AST surgery, not a re-serialize) …
-      expect(writer.source, contains('# RRF smoothing constant'));
-      // … and the new value re-parses through the plain-map loader.
-      final reparsed = MemoryRetrievalConfig.fromYamlString(writer.source);
-      expect(reparsed.fusion.rrfK, 80);
-      expect(reparsed.diversity.lambda, 0.7);
-    });
-  });
+        // Comment preserved (AST surgery, not a re-serialize) …
+        expect(writer.source, contains('# RRF smoothing constant'));
+        // … and the new value re-parses through the plain-map loader.
+        final reparsed = MemoryRetrievalConfig.fromYamlString(writer.source);
+        expect(reparsed.fusion.rrfK, 80);
+        expect(reparsed.diversity.lambda, 0.7);
+      });
+    },
+  );
 
-  group('H.31-model toConductorMap projects the catalogue for the conductor',
-      () {
-    test('defaults() maps inline seeds + sub-procedure gates', () {
-      final m = MemoryRetrievalConfig.defaults().toConductorMap();
-      final seeds = m['seeds'] as Map<String, Object?>;
-      final vp = seeds['vector.prompt'] as Map<String, Object?>;
-      expect(vp['enabled'], isTrue);
-      expect(vp['weight'], 1.0);
-      expect(vp['k'], 12);
+  group(
+    'H.31-model toConductorMap projects the catalogue for the conductor',
+    () {
+      test('defaults() maps inline seeds + sub-procedure gates', () {
+        final m = MemoryRetrievalConfig.defaults().toConductorMap();
+        final seeds = m['seeds'] as Map<String, Object?>;
+        final vp = seeds['vector.prompt'] as Map<String, Object?>;
+        expect(vp['enabled'], isTrue);
+        expect(vp['weight'], 1.0);
+        expect(vp['k'], 12);
 
-      final subs = m['subProcedures'] as Map<String, Object?>;
-      // HyDE strategies on in defaults ⇒ recall_hyde_v1 dispatched.
-      expect(subs['recall_hyde_v1'], isTrue);
-      // Both lexical LLM strategies off in defaults ⇒ recall_lexical_v1 off.
-      expect(subs['recall_lexical_v1'], isFalse);
-      // scope_filter / type_filter_by_classify on ⇒ symbolic + semantic on.
-      expect(subs['recall_symbolic_v1'], isTrue);
-      expect(subs['recall_semantic_v1'], isTrue);
+        final subs = m['subProcedures'] as Map<String, Object?>;
+        // HyDE strategies on in defaults ⇒ recall_hyde_v1 dispatched.
+        expect(subs['recall_hyde_v1'], isTrue);
+        // Both lexical LLM strategies off in defaults ⇒ recall_lexical_v1 off.
+        expect(subs['recall_lexical_v1'], isFalse);
+        // scope_filter / type_filter_by_classify on ⇒ symbolic + semantic on.
+        expect(subs['recall_symbolic_v1'], isTrue);
+        expect(subs['recall_semantic_v1'], isTrue);
 
-      expect((m['fusion'] as Map)['rrfK'], 60);
-      expect((m['diversity'] as Map)['lambda'], 0.7);
-      expect((m['budget'] as Map)['k'], 24);
-    });
-  });
+        expect((m['fusion'] as Map)['rrfK'], 60);
+        expect((m['diversity'] as Map)['lambda'], 0.7);
+        expect((m['budget'] as Map)['k'], 24);
+      });
+    },
+  );
 
   // ── The shipped example `memory_retrieval/` family ────────────────
 
-  group('H.31-example the shipped memory_retrieval/ family loads & resolves',
-      () {
-    String read(String name) =>
-        File('memory_retrieval/$name').readAsStringSync();
+  group(
+    'H.31-example the shipped memory_retrieval/ family loads & resolves',
+    () {
+      String read(String name) =>
+          File('memory_retrieval/$name').readAsStringSync();
 
-    test('defaults.yml documents every catalogue strategy (Verify clause)',
+      test(
+        'defaults.yml documents every catalogue strategy (Verify clause)',
         () {
-      final cfg = MemoryRetrievalConfig.fromYamlString(read('defaults.yml'));
-      // The example must carry every strategy in the § 23.4 catalogue — the
-      // same set the documented `defaults()` constant carries.
-      final expected = MemoryRetrievalConfig.defaults();
-      for (final family in expected.strategies.entries) {
-        for (final name in family.value.keys) {
-          expect(cfg.strategy(family.key, name), isNotNull,
-              reason: 'defaults.yml is missing ${family.key}.$name');
-        }
-      }
-      // And the documented constants flow through verbatim.
-      expect(cfg.strategy('vector', 'prompt')!.weight, 1.0);
-      expect(cfg.fusion.rrfK, 60);
-      expect(cfg.budget.k, 24);
-    });
+          final cfg = MemoryRetrievalConfig.fromYamlString(
+            read('defaults.yml'),
+          );
+          // The example must carry every strategy in the § 23.4 catalogue — the
+          // same set the documented `defaults()` constant carries.
+          final expected = MemoryRetrievalConfig.defaults();
+          for (final family in expected.strategies.entries) {
+            for (final name in family.value.keys) {
+              expect(
+                cfg.strategy(family.key, name),
+                isNotNull,
+                reason: 'defaults.yml is missing ${family.key}.$name',
+              );
+            }
+          }
+          // And the documented constants flow through verbatim.
+          expect(cfg.strategy('vector', 'prompt')!.weight, 1.0);
+          expect(cfg.fusion.rrfK, 60);
+          expect(cfg.budget.k, 24);
+        },
+      );
 
-    test('memory_mcp.yml resolves to a non-LLM-only config (§ 23.7)', () {
-      final cfg = MemoryRetrievalConfig.resolveYaml(
-          <String>[read('defaults.yml'), read('memory_mcp.yml')]);
-      expect(cfg.hasEnabledLlmStrategy, isFalse);
-      expect(cfg.checkNonLlm, returnsNormally);
-    });
+      test('memory_mcp.yml resolves to a non-LLM-only config (§ 23.7)', () {
+        final cfg = MemoryRetrievalConfig.resolveYaml(<String>[
+          read('defaults.yml'),
+          read('memory_mcp.yml'),
+        ]);
+        expect(cfg.hasEnabledLlmStrategy, isFalse);
+        expect(cfg.checkNonLlm, returnsNormally);
+      });
 
-    test('brain_mcp.yml resolves to an LLM-bearing config', () {
-      final cfg = MemoryRetrievalConfig.resolveYaml(
-          <String>[read('defaults.yml'), read('brain_mcp.yml')]);
-      expect(cfg.hasEnabledLlmStrategy, isTrue);
-      expect(cfg.rerank.enabled, isTrue);
-      expect(cfg.strategy('bm25', 'llm_query_terms')!.enabled, isTrue);
-    });
+      test('brain_mcp.yml resolves to an LLM-bearing config', () {
+        final cfg = MemoryRetrievalConfig.resolveYaml(<String>[
+          read('defaults.yml'),
+          read('brain_mcp.yml'),
+        ]);
+        expect(cfg.hasEnabledLlmStrategy, isTrue);
+        expect(cfg.rerank.enabled, isTrue);
+        expect(cfg.strategy('bm25', 'llm_query_terms')!.enabled, isTrue);
+      });
 
-    test('access.yml resolves and turns profile selection on', () {
-      final cfg = MemoryRetrievalConfig.resolveYaml(
-          <String>[read('defaults.yml'), read('access.yml')]);
-      expect(cfg.selection.enabled, isTrue);
-      expect(cfg.strategy('vector', 'hypothetical_answers')!.enabled, isTrue);
-    });
+      test('access.yml resolves and turns profile selection on', () {
+        final cfg = MemoryRetrievalConfig.resolveYaml(<String>[
+          read('defaults.yml'),
+          read('access.yml'),
+        ]);
+        expect(cfg.selection.enabled, isTrue);
+        expect(cfg.strategy('vector', 'hypothetical_answers')!.enabled, isTrue);
+      });
 
-    test('the optional call_types overlay applies last', () {
-      final cfg = MemoryRetrievalConfig.resolveYaml(<String>[
-        read('defaults.yml'),
-        read('brain_mcp.yml'),
-        read('call_types/retrieval_reranker.yml'),
-      ]);
-      // The call-type layer stripped the expensive seeds …
-      expect(cfg.strategy('vector', 'questions')!.enabled, isFalse);
-      expect(cfg.strategy('graphWalk', 'seed_from_concepts')!.enabled, isFalse);
-      // … and tightened the re-rank.
-      expect(cfg.rerank.enabled, isTrue);
-      expect(cfg.rerank.keepTop, 8);
-    });
-  });
+      test('the optional call_types overlay applies last', () {
+        final cfg = MemoryRetrievalConfig.resolveYaml(<String>[
+          read('defaults.yml'),
+          read('brain_mcp.yml'),
+          read('call_types/retrieval_reranker.yml'),
+        ]);
+        // The call-type layer stripped the expensive seeds …
+        expect(cfg.strategy('vector', 'questions')!.enabled, isFalse);
+        expect(
+          cfg.strategy('graphWalk', 'seed_from_concepts')!.enabled,
+          isFalse,
+        );
+        // … and tightened the re-rank.
+        expect(cfg.rerank.enabled, isTrue);
+        expect(cfg.rerank.keepTop, 8);
+      });
+    },
+  );
 
   // ── Conductor wiring ──────────────────────────────────────────────
 
@@ -350,61 +409,74 @@ diversity: { lambda: 0.7 }
       final args = <String, Object?>{'text': text};
       if (retrievalConfig != null) args['retrievalConfig'] = retrievalConfig;
       return engine
-          .invoke(ProcedureInvocation(
-            procedureId: 'retrieve_for_prompt_v1',
-            arguments: args,
-          ))
+          .invoke(
+            ProcedureInvocation(
+              procedureId: 'retrieve_for_prompt_v1',
+              arguments: args,
+            ),
+          )
           .outcome;
     }
 
-    test('Test #1 — only:[vector.prompt] reproduces naive recall byte-for-byte',
-        () async {
-      final cfg =
-          MemoryRetrievalConfig.defaults().withOnly(['vector.prompt']);
+    test(
+      'Test #1 — only:[vector.prompt] reproduces naive recall byte-for-byte',
+      () async {
+        final cfg = MemoryRetrievalConfig.defaults().withOnly([
+          'vector.prompt',
+        ]);
 
-      final outcome = await retrieve('how do I automate backups?',
-          retrievalConfig: cfg.toConductorMap());
+        final outcome = await retrieve(
+          'how do I automate backups?',
+          retrievalConfig: cfg.toConductorMap(),
+        );
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      final query = memory.lastMultiRecallQuery!;
-      // Exactly one seed — a vector seed over the prompt, weight 1.0, k 12.
-      expect(query.seeds, hasLength(1));
-      expect(query.seeds.single.mode, RecallMode.vector);
-      expect(query.seeds.single.text, 'how do I automate backups?');
-      expect(query.seeds.single.weight, 1.0);
-      expect(query.seeds.single.k, 12);
-      // No sub-procedure ran — only the conductor itself. The recorder
-      // writes two `ProcedureRun` nodes per run (§ 8): a `status: running`
-      // marker at start and the authoritative final node at completion. So
-      // the conductor alone persists exactly 2, and zero sub-procedures means
-      // no further pair — the proof that `only:[vector.prompt]` skipped the
-      // whole fan-out.
-      expect(memory.procedureRunPersists, 2);
-      // Fusion / diversity / final-k are the documented defaults.
-      expect(query.fusion.rrfK, 60);
-      expect(query.diversity.lambda, 0.7);
-      expect(query.k, 24);
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        final query = memory.lastMultiRecallQuery!;
+        // Exactly one seed — a vector seed over the prompt, weight 1.0, k 12.
+        expect(query.seeds, hasLength(1));
+        expect(query.seeds.single.mode, RecallMode.vector);
+        expect(query.seeds.single.text, 'how do I automate backups?');
+        expect(query.seeds.single.weight, 1.0);
+        expect(query.seeds.single.k, 12);
+        // No sub-procedure ran — only the conductor itself. The recorder
+        // writes two `ProcedureRun` nodes per run (§ 8): a `status: running`
+        // marker at start and the authoritative final node at completion. So
+        // the conductor alone persists exactly 2, and zero sub-procedures means
+        // no further pair — the proof that `only:[vector.prompt]` skipped the
+        // whole fan-out.
+        expect(memory.procedureRunPersists, 2);
+        // Fusion / diversity / final-k are the documented defaults.
+        expect(query.fusion.rrfK, 60);
+        expect(query.diversity.lambda, 0.7);
+        expect(query.k, 24);
+      },
+    );
 
     test('Test #2 — enabling more strategies only adds candidates', () async {
-      final base =
-          MemoryRetrievalConfig.defaults().withOnly(['vector.prompt']);
-      await retrieve('how do I automate backups?',
-          retrievalConfig: base.toConductorMap());
+      final base = MemoryRetrievalConfig.defaults().withOnly(['vector.prompt']);
+      await retrieve(
+        'how do I automate backups?',
+        retrievalConfig: base.toConductorMap(),
+      );
       final baseSeedCount = memory.lastMultiRecallQuery!.seeds.length;
 
       // Add a second inline strategy: strictly more seeds, never fewer.
-      final more = MemoryRetrievalConfig.defaults()
-          .withOnly(['vector.prompt', 'bm25.prompt_terms']);
-      await retrieve('how do I automate backups?',
-          retrievalConfig: more.toConductorMap());
+      final more = MemoryRetrievalConfig.defaults().withOnly([
+        'vector.prompt',
+        'bm25.prompt_terms',
+      ]);
+      await retrieve(
+        'how do I automate backups?',
+        retrievalConfig: more.toConductorMap(),
+      );
       final moreSeedCount = memory.lastMultiRecallQuery!.seeds.length;
 
       expect(moreSeedCount, greaterThan(baseSeedCount));
       // The original vector seed is still present (pure superset).
       expect(
-        memory.lastMultiRecallQuery!.seeds
-            .any((s) => s.mode == RecallMode.vector),
+        memory.lastMultiRecallQuery!.seeds.any(
+          (s) => s.mode == RecallMode.vector,
+        ),
         isTrue,
       );
     });
@@ -421,8 +493,10 @@ diversity: { lambda: 0.7 }
         },
       };
 
-      final outcome = await retrieve('how do I automate backups?',
-          retrievalConfig: sparse);
+      final outcome = await retrieve(
+        'how do I automate backups?',
+        retrievalConfig: sparse,
+      );
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
       final query = memory.lastMultiRecallQuery!;
@@ -433,9 +507,10 @@ diversity: { lambda: 0.7 }
       expect(query.k, 24);
     });
 
-    test('Test #4 — weights, rrfK, lambda and final-k flow into the query',
-        () async {
-      final cfg = MemoryRetrievalConfig.fromYamlString('''
+    test(
+      'Test #4 — weights, rrfK, lambda and final-k flow into the query',
+      () async {
+        final cfg = MemoryRetrievalConfig.fromYamlString('''
 fusion: { rrfK: 99 }
 diversity: { lambda: 0.25 }
 budget: { k: 7 }
@@ -444,26 +519,31 @@ strategies:
     prompt: { enabled: true, weight: 2.5, k: 5 }
 ''').withOnly(['vector.prompt']);
 
-      await retrieve('how do I automate backups?',
-          retrievalConfig: cfg.toConductorMap());
+        await retrieve(
+          'how do I automate backups?',
+          retrievalConfig: cfg.toConductorMap(),
+        );
 
-      final query = memory.lastMultiRecallQuery!;
-      expect(query.seeds.single.weight, 2.5);
-      expect(query.seeds.single.k, 5);
-      expect(query.fusion.rrfK, 99);
-      expect(query.diversity.lambda, 0.25);
-      expect(query.k, 7);
-    });
+        final query = memory.lastMultiRecallQuery!;
+        expect(query.seeds.single.weight, 2.5);
+        expect(query.seeds.single.k, 5);
+        expect(query.fusion.rrfK, 99);
+        expect(query.diversity.lambda, 0.25);
+        expect(query.k, 7);
+      },
+    );
 
-    test('no retrievalConfig ⇒ legacy full fan-out (h30 parity preserved)',
-        () async {
-      final outcome = await retrieve('how do I automate backups?');
+    test(
+      'no retrievalConfig ⇒ legacy full fan-out (h30 parity preserved)',
+      () async {
+        final outcome = await retrieve('how do I automate backups?');
 
-      expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(memory.lastMultiRecallQuery!.seeds, isNotEmpty);
-      // Conductor + four sub-procedures each persist a run (PE-4).
-      expect(memory.procedureRunPersists, greaterThanOrEqualTo(5));
-    });
+        expect(outcome.status, TrailOutcomeStatus.accepted);
+        expect(memory.lastMultiRecallQuery!.seeds, isNotEmpty);
+        // Conductor + four sub-procedures each persist a run (PE-4).
+        expect(memory.procedureRunPersists, greaterThanOrEqualTo(5));
+      },
+    );
   });
 }
 
@@ -473,14 +553,20 @@ strategies:
 /// fails on it.
 void _assertPlain(Object? value) {
   if (value is Map) {
-    expect(value, isA<Map<String, Object?>>(),
-        reason: 'a non-plain map leaked into the conductor view');
+    expect(
+      value,
+      isA<Map<String, Object?>>(),
+      reason: 'a non-plain map leaked into the conductor view',
+    );
     for (final v in value.values) {
       _assertPlain(v);
     }
   } else if (value is List) {
-    expect(value, isA<List<Object?>>(),
-        reason: 'a non-plain list leaked into the conductor view');
+    expect(
+      value,
+      isA<List<Object?>>(),
+      reason: 'a non-plain list leaked into the conductor view',
+    );
     for (final v in value) {
       _assertPlain(v);
     }
@@ -501,28 +587,28 @@ class _RetrievalMemory implements TomBrainMemory {
   ClassificationResult classifyResult = const ClassificationResult.unknown();
 
   RecallResult _cannedResult() => RecallResult(
-        nodes: <Node>[
-          Node(
-            id: NodeId.fromString('n_00000000000000000000000042'),
-            typeName: 'Conclusion',
-            values: const <String, Object?>{'text': 'rsync nightly to NAS'},
-            createdAt: DateTime.utc(2026, 6, 1),
-          ),
-        ],
-        report: const RecallReport(
-          candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 3},
-          fusionStrategy: FusionStrategy.rrf,
-          diversityStrategy: DiversityStrategy.mmr,
-          elapsedMs: 5,
-        ),
-        provenance: <RecallProvenanceEntry>[
-          RecallProvenanceEntry(
-            nodeId: NodeId.fromString('n_00000000000000000000000042'),
-            seedIndexes: const <int>[0],
-            fusedScore: 0.5,
-          ),
-        ],
-      );
+    nodes: <Node>[
+      Node(
+        id: NodeId.fromString('n_00000000000000000000000042'),
+        typeName: 'Conclusion',
+        values: const <String, Object?>{'text': 'rsync nightly to NAS'},
+        createdAt: DateTime.utc(2026, 6, 1),
+      ),
+    ],
+    report: const RecallReport(
+      candidatesPerMode: <RecallMode, int>{RecallMode.bm25: 3},
+      fusionStrategy: FusionStrategy.rrf,
+      diversityStrategy: DiversityStrategy.mmr,
+      elapsedMs: 5,
+    ),
+    provenance: <RecallProvenanceEntry>[
+      RecallProvenanceEntry(
+        nodeId: NodeId.fromString('n_00000000000000000000000042'),
+        seedIndexes: const <int>[0],
+        fusedScore: 0.5,
+      ),
+    ],
+  );
 
   @override
   StackApi get stacks => _stacks;
@@ -540,8 +626,7 @@ class _RetrievalMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -607,12 +692,10 @@ class _RetrievalMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _RoleSubstrate implements TomBrainSubstrateClient {
@@ -620,10 +703,10 @@ class _RoleSubstrate implements TomBrainSubstrateClient {
   bool failAll = false;
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
+  Stream<LlmEvent> completeStream(LlmCall call) {
     if (failAll) {
-      return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamFailed(
+      return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        const LlmRunFailed(
           callId: 'c',
           failure: LlmFailure(classCode: 'network', message: 'stubbed'),
           report: LlmCallReport(
@@ -639,9 +722,9 @@ class _RoleSubstrate implements TomBrainSubstrateClient {
         ),
       ]);
     }
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      LlmStreamChunk(callId: 'c', text: _jsonFor(call.roleId)),
-      const LlmStreamCompleted(
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      LlmTextDelta(_jsonFor(call.roleId)),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -688,8 +771,7 @@ class _RoleSubstrate implements TomBrainSubstrateClient {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -739,6 +821,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

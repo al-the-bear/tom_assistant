@@ -76,10 +76,12 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'answer_with_memory_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'answer_with_memory_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
@@ -92,15 +94,23 @@ void main() {
       // `recall`.
       await runWith('how do I automate backups?');
 
-      expect(memory.lastRecallQuery, isNull,
-          reason: 'the conductor fuses seeds through recallMulti, '
-              'not single-seed recall');
+      expect(
+        memory.lastRecallQuery,
+        isNull,
+        reason:
+            'the conductor fuses seeds through recallMulti, '
+            'not single-seed recall',
+      );
       expect(memory.lastMultiRecallQuery, isNotNull);
       final promptSeeds = memory.lastMultiRecallQuery!.seeds.where(
-        (s) => s.mode == RecallMode.bm25 && s.text == 'how do I automate backups?',
+        (s) =>
+            s.mode == RecallMode.bm25 && s.text == 'how do I automate backups?',
       );
-      expect(promptSeeds, isNotEmpty,
-          reason: 'the cheap BM25 pass should carry the raw prompt text');
+      expect(
+        promptSeeds,
+        isNotEmpty,
+        reason: 'the cheap BM25 pass should carry the raw prompt text',
+      );
     });
   });
 
@@ -149,10 +159,10 @@ void main() {
 // the D.38 suite asserts the assembled prompt and the answer plumbing.
 class _InertSubstrate implements TomBrainSubstrateClient {
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-        const LlmStreamChunk(callId: 'c', text: 'ok'),
-        const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) =>
+      Stream<LlmEvent>.fromIterable(<LlmEvent>[
+        const LlmTextDelta('ok'),
+        const LlmRunCompleted(
           callId: 'c',
           report: LlmCallReport(
             providerId: 'p',
@@ -169,18 +179,17 @@ class _InertSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── A recall-capturing `TomBrainMemoryClient` ───────────────────────
@@ -232,8 +241,7 @@ class _RecallCapturingMemory implements TomBrainMemory {
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -298,12 +306,10 @@ class _RecallCapturingMemory implements TomBrainMemory {
     required Scope scope,
     double weight = 1.0,
     Map<String, Object?>? attrs,
-  }) async =>
-      EdgeId.generate();
+  }) async => EdgeId.generate();
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -353,6 +359,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

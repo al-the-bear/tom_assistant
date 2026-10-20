@@ -1,7 +1,7 @@
 // TurnSummary — the turn-complete seam the §5.4 / §5.5 summary fan-out needs
 // (`tom_brain_logging.md` §5.4 / §5.5 / §9; §10 build-order step #5).
 //
-// The per-call `LlmTrailRecord` (the raw §5.2 trail) carries everything the
+// The per-call `LlmCallTrailRecord` (the raw §5.2 trail) carries everything the
 // §5.8 by-role / by-llm projections need — but the §5.4 *session narrative* and
 // the §5.5 *global narrative* are organised per **turn**, and a turn block's
 // two headline facts — the **user prompt** and the **final answer** — live on
@@ -10,7 +10,7 @@
 // run's outcome.
 //
 // So the route emits one `TurnSummary` when a turn finishes (§9's "final-answer
-// delivery sink"). The summary fan-out buffers the turn's `LlmTrailRecord`s as
+// delivery sink"). The summary fan-out buffers the turn's `LlmCallTrailRecord`s as
 // they arrive during the run, then on this signal flushes one session + one
 // global turn block built from the buffered calls plus this summary's
 // prompt/answer. Turn-less (dream) calls never produce a `TurnSummary`; they

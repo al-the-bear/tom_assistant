@@ -82,10 +82,12 @@ void main() {
     final resolver = await systemResolver();
     final engine = engineFor(resolver.ids.map(resolver.resolve).toList());
     return engine
-        .invoke(ProcedureInvocation(
-          procedureId: 'answer_with_memory_v1',
-          arguments: <String, Object?>{'text': text},
-        ))
+        .invoke(
+          ProcedureInvocation(
+            procedureId: 'answer_with_memory_v1',
+            arguments: <String, Object?>{'text': text},
+          ),
+        )
         .outcome;
   }
 
@@ -118,16 +120,18 @@ void main() {
   }
 
   group('D.40-1 the cold path records an InterestItem', () {
-    test('an InterestItem carries the prompt as topic and a non-empty why',
-        () async {
-      // Default classifyResult is `unknown` → cold path.
-      await runWith('what is a quasar?');
+    test(
+      'an InterestItem carries the prompt as topic and a non-empty why',
+      () async {
+        // Default classifyResult is `unknown` → cold path.
+        await runWith('what is a quasar?');
 
-      final interest = memory.persistedOfType('InterestItem').single;
-      expect(interest.draft.values['topic'], 'what is a quasar?');
-      expect(interest.draft.values['why'], isNotNull);
-      expect((interest.draft.values['why'] as String).isNotEmpty, isTrue);
-    });
+        final interest = memory.persistedOfType('InterestItem').single;
+        expect(interest.draft.values['topic'], 'what is a quasar?');
+        expect(interest.draft.values['why'], isNotNull);
+        expect((interest.draft.values['why'] as String).isNotEmpty, isTrue);
+      },
+    );
 
     test('the InterestItem is pushed onto the `interests` stack', () async {
       await runWith('what is a quasar?');
@@ -159,26 +163,32 @@ void main() {
       expect(memory.persistedOfType('InterestItem'), isEmpty);
     });
 
-    test('nothing pushed onto `interests` when recall returned nodes',
-        () async {
-      seedWarmRecall();
+    test(
+      'nothing pushed onto `interests` when recall returned nodes',
+      () async {
+        seedWarmRecall();
 
-      await runWith('how do I back up?');
+        await runWith('how do I back up?');
 
-      final entries = await memory.stacks.peek('interests');
-      expect(entries, isEmpty);
-    });
+        final entries = await memory.stacks.peek('interests');
+        expect(entries, isEmpty);
+      },
+    );
   });
 
   group('D.40-3 the run still succeeds on both paths', () {
     test('cold: accepted outcome with an answer output', () async {
-      substrate.answerChunks = <String>['A quasar is a luminous galactic core.'];
+      substrate.answerChunks = <String>[
+        'A quasar is a luminous galactic core.',
+      ];
 
       final outcome = await runWith('what is a quasar?');
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'),
-          'A quasar is a luminous galactic core.');
+      expect(
+        outcome.result!.output<String>('answer'),
+        'A quasar is a luminous galactic core.',
+      );
     });
 
     test('warm: accepted outcome with an answer output', () async {
@@ -188,8 +198,10 @@ void main() {
       final outcome = await runWith('how do I back up?');
 
       expect(outcome.status, TrailOutcomeStatus.accepted);
-      expect(outcome.result!.output<String>('answer'),
-          'Back up by rsyncing nightly.');
+      expect(
+        outcome.result!.output<String>('answer'),
+        'Back up by rsyncing nightly.',
+      );
     });
   });
 }
@@ -241,14 +253,14 @@ class _InterestCapturingMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -320,8 +332,7 @@ class _InterestCapturingMemory implements TomBrainMemory {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ── An answer-capturing `TomBrainSubstrateClient` ───────────────────
@@ -333,11 +344,10 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
   List<String> answerChunks = <String>['ok'];
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) {
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -355,18 +365,17 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -416,6 +425,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

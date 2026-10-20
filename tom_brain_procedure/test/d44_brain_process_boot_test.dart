@@ -70,56 +70,59 @@ void main() {
     AccessLayerInstaller? installAccessLayer,
     FileScope? toolFileScope,
     String? sessionTodoStoreRoot,
-  }) =>
-      BrainProcessConfig(
-        substrate: substrate,
-        substrateConfig: substrateConfig,
-        memoryProvisioning: MemoryProvisioningConfig.inProcess(
-          client: memory,
-          memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d44_boot'),
-        ),
-        installAccessLayer: installAccessLayer,
-        toolFileScope: toolFileScope,
-        sessionTodoStoreRoot: sessionTodoStoreRoot,
-        // Increment 6 (§6): the booted `answer_with_memory_v1` resolves its
-        // prompt through the host `PromptResolver`. Boot threads these seams onto
-        // the engine's `SubstrateBridge`; the parity fake reproduces the
-        // pre-migration assembled prompt so the substrate sees identical text.
-        promptResolver: parity.resolver,
-        routeChainOf: parity.routeChainOf,
-      );
+  }) => BrainProcessConfig(
+    substrate: substrate,
+    substrateConfig: substrateConfig,
+    memoryProvisioning: MemoryProvisioningConfig.inProcess(
+      client: memory,
+      memoryConfig: MemoryConfig.forTesting(root: 'ztmp/d44_boot'),
+    ),
+    installAccessLayer: installAccessLayer,
+    toolFileScope: toolFileScope,
+    sessionTodoStoreRoot: sessionTodoStoreRoot,
+    // Increment 6 (§6): the booted `answer_with_memory_v1` resolves its
+    // prompt through the host `PromptResolver`. Boot threads these seams onto
+    // the engine's `SubstrateBridge`; the parity fake reproduces the
+    // pre-migration assembled prompt so the substrate sees identical text.
+    promptResolver: parity.resolver,
+    routeChainOf: parity.routeChainOf,
+  );
 
   Access userPrompt(String text) => Access(
-        // After the Todo-6 route-flip (§ 4.0.1) the only routable procedure is
-        // the entry router; a confident hint names it, and the two-phase route
-        // then runs the answer branch it selects (here `answer_with_memory_v1`,
-        // since the prompts carry no deliberation cue).
-        envelope: InboundRequest(
-            text: text, kindHint: SystemProcedures.promptAnalyzerV1),
-        identity: ResolvedIdentity(principalId: 'p1'),
-        session: Session(sessionId: 's1'),
-        persona: Persona.assistant(),
-        deliver: (chunk) => Stream<OutboundChunk>.value(chunk),
-      );
+    // After the Todo-6 route-flip (§ 4.0.1) the only routable procedure is
+    // the entry router; a confident hint names it, and the two-phase route
+    // then runs the answer branch it selects (here `answer_with_memory_v1`,
+    // since the prompts carry no deliberation cue).
+    envelope: InboundRequest(
+      text: text,
+      kindHint: SystemProcedures.promptAnalyzerV1,
+    ),
+    identity: ResolvedIdentity(principalId: 'p1'),
+    session: Session(sessionId: 's1'),
+    persona: Persona.assistant(),
+    deliver: (chunk) => Stream<OutboundChunk>.value(chunk),
+  );
 
   group('D.44-1 bring-up assembles the process', () {
-    test('boot returns a BootedBrain with the parts live (in-process memory)',
-        () async {
-      final booted = await BrainProcessBoot.boot(configWith());
-      addTearDown(booted.shutdown);
+    test(
+      'boot returns a BootedBrain with the parts live (in-process memory)',
+      () async {
+        final booted = await BrainProcessBoot.boot(configWith());
+        addTearDown(booted.shutdown);
 
-      // Memory was provisioned over the in-process transport and opened.
-      expect(booted.memory.transport, MemoryTransport.inProcess);
-      expect(booted.memory.host, isNull);
-      expect(memory.openCount, 1);
-      expect(memory.openedWithRoot, 'ztmp/d44_boot');
+        // Memory was provisioned over the in-process transport and opened.
+        expect(booted.memory.transport, MemoryTransport.inProcess);
+        expect(booted.memory.host, isNull);
+        expect(memory.openCount, 1);
+        expect(memory.openedWithRoot, 'ztmp/d44_boot');
 
-      // The dispatcher is ready, and the engine/coordinator are exposed.
-      expect(booted.dispatcher, isA<Dispatcher>());
-      expect(booted.engine, isA<ProcedureEngine>());
-      expect(booted.coordinator, isA<RunCoordinator>());
-      expect(identical(booted.substrate, substrate), isTrue);
-    });
+        // The dispatcher is ready, and the engine/coordinator are exposed.
+        expect(booted.dispatcher, isA<Dispatcher>());
+        expect(booted.engine, isA<ProcedureEngine>());
+        expect(booted.coordinator, isA<RunCoordinator>());
+        expect(identical(booted.substrate, substrate), isTrue);
+      },
+    );
 
     test('the engine and coordinator share one PreemptionState', () async {
       final booted = await BrainProcessBoot.boot(configWith());
@@ -133,15 +136,17 @@ void main() {
       );
     });
 
-    test('boot opens the in-process substrate when a config is supplied',
-        () async {
-      final booted = await BrainProcessBoot.boot(
-        configWith(substrateConfig: _minimalSubstrateConfig()),
-      );
-      addTearDown(booted.shutdown);
+    test(
+      'boot opens the in-process substrate when a config is supplied',
+      () async {
+        final booted = await BrainProcessBoot.boot(
+          configWith(substrateConfig: _minimalSubstrateConfig()),
+        );
+        addTearDown(booted.shutdown);
 
-      expect(substrate.openCount, 1);
-    });
+        expect(substrate.openCount, 1);
+      },
+    );
 
     test('boot skips the substrate open when no config is supplied', () async {
       final booted = await BrainProcessBoot.boot(configWith());
@@ -150,76 +155,90 @@ void main() {
       expect(substrate.openCount, 0);
     });
 
-    test('boot threads the configured tool file-scope onto the engine',
-        () async {
-      final booted = await BrainProcessBoot.boot(
-        configWith(
-          toolFileScope: FileScope(
-            writeRoots: const <String>['/scope/a'],
-            readRoots: const <String>['/scope/b'],
+    test(
+      'boot threads the configured tool file-scope onto the engine',
+      () async {
+        final booted = await BrainProcessBoot.boot(
+          configWith(
+            toolFileScope: FileScope(
+              writeRoots: const <String>['/scope/a'],
+              readRoots: const <String>['/scope/b'],
+            ),
           ),
-        ),
-      );
-      addTearDown(booted.shutdown);
+        );
+        addTearDown(booted.shutdown);
 
-      expect(
-        booted.engine.toolFileScope.writeableRoots,
-        const <String>['/scope/a'],
-      );
-      expect(
-        booted.engine.toolFileScope.readableRoots,
-        const <String>['/scope/a', '/scope/b'],
-      );
-    });
+        expect(booted.engine.toolFileScope.writeableRoots, const <String>[
+          '/scope/a',
+        ]);
+        expect(booted.engine.toolFileScope.readableRoots, const <String>[
+          '/scope/a',
+          '/scope/b',
+        ]);
+      },
+    );
 
-    test('boot falls back to the engine placeholder root when none configured',
-        () async {
-      final booted = await BrainProcessBoot.boot(configWith());
-      addTearDown(booted.shutdown);
+    test(
+      'boot falls back to the engine placeholder root when none configured',
+      () async {
+        final booted = await BrainProcessBoot.boot(configWith());
+        addTearDown(booted.shutdown);
 
-      // A null config leaves the engine on its neutral placeholder, so the
-      // tool-calling path stays well-formed even with no `tools.fileScope`.
-      expect(booted.engine.toolFileScope.writeableRoots,
-          const <String>['/tom-brain-engine']);
-    });
+        // A null config leaves the engine on its neutral placeholder, so the
+        // tool-calling path stays well-formed even with no `tools.fileScope`.
+        expect(booted.engine.toolFileScope.writeableRoots, const <String>[
+          '/tom-brain-engine',
+        ]);
+      },
+    );
 
-    test('a configured sessionTodoStoreRoot makes session todos persist to disk',
-        () async {
-      final dir = Directory.systemTemp.createTempSync('d44_session_todos_');
-      addTearDown(() {
-        if (dir.existsSync()) dir.deleteSync(recursive: true);
-      });
-      final booted = await BrainProcessBoot.boot(
-        configWith(sessionTodoStoreRoot: dir.path),
-      );
-      addTearDown(booted.shutdown);
+    test(
+      'a configured sessionTodoStoreRoot makes session todos persist to disk',
+      () async {
+        final dir = Directory.systemTemp.createTempSync('d44_session_todos_');
+        addTearDown(() {
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        });
+        final booted = await BrainProcessBoot.boot(
+          configWith(sessionTodoStoreRoot: dir.path),
+        );
+        addTearDown(booted.shutdown);
 
-      // A todo added under a session is flushed to `<root>/session_todos.json`,
-      // so a later boot over the same root would rehydrate it (the
-      // survives-a-restart contract proven directly in
-      // session_todo_persistence_test.dart).
-      booted.engine.sessionTodoStores.forSession('s1').add('remember this');
+        // A todo added under a session is flushed to `<root>/session_todos.json`,
+        // so a later boot over the same root would rehydrate it (the
+        // survives-a-restart contract proven directly in
+        // session_todo_persistence_test.dart).
+        booted.engine.sessionTodoStores.forSession('s1').add('remember this');
 
-      final file = File('${dir.path}/session_todos.json');
-      expect(file.existsSync(), isTrue,
-          reason: 'the booted engine wired a persistent session-todo registry');
-      final decoded = jsonDecode(file.readAsStringSync()) as Map;
-      expect(decoded.keys, contains('s1'));
-    });
+        final file = File('${dir.path}/session_todos.json');
+        expect(
+          file.existsSync(),
+          isTrue,
+          reason: 'the booted engine wired a persistent session-todo registry',
+        );
+        final decoded = jsonDecode(file.readAsStringSync()) as Map;
+        expect(decoded.keys, contains('s1'));
+      },
+    );
 
-    test('no sessionTodoStoreRoot keeps the in-memory (non-persistent) registry',
-        () async {
-      final dir = Directory.systemTemp.createTempSync('d44_session_todos_');
-      addTearDown(() {
-        if (dir.existsSync()) dir.deleteSync(recursive: true);
-      });
-      final booted = await BrainProcessBoot.boot(configWith());
-      addTearDown(booted.shutdown);
+    test(
+      'no sessionTodoStoreRoot keeps the in-memory (non-persistent) registry',
+      () async {
+        final dir = Directory.systemTemp.createTempSync('d44_session_todos_');
+        addTearDown(() {
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        });
+        final booted = await BrainProcessBoot.boot(configWith());
+        addTearDown(booted.shutdown);
 
-      booted.engine.sessionTodoStores.forSession('s1').add('ephemeral');
-      expect(File('${dir.path}/session_todos.json').existsSync(), isFalse,
-          reason: 'a root-less boot persists nothing');
-    });
+        booted.engine.sessionTodoStores.forSession('s1').add('ephemeral');
+        expect(
+          File('${dir.path}/session_todos.json').existsSync(),
+          isFalse,
+          reason: 'a root-less boot persists nothing',
+        );
+      },
+    );
   });
 
   group('D.44-2 boot → submit → shutdown sequence completes', () {
@@ -233,8 +252,10 @@ void main() {
       final event = memory.persistedOfType('Event').single;
       expect(event.draft.values['summary'], 'what is a quasar?');
       final conclusion = memory.persistedOfType('Conclusion').single;
-      expect(conclusion.draft.values['statement'],
-          'I have no notes on that yet.');
+      expect(
+        conclusion.draft.values['statement'],
+        'I have no notes on that yet.',
+      );
 
       // The full sequence then shuts down cleanly.
       await booted.shutdown();
@@ -253,7 +274,9 @@ void main() {
       final delivered = <OutboundChunk>[];
       final access = Access(
         envelope: InboundRequest(
-            text: 'greet me', kindHint: SystemProcedures.promptAnalyzerV1),
+          text: 'greet me',
+          kindHint: SystemProcedures.promptAnalyzerV1,
+        ),
         identity: ResolvedIdentity(principalId: 'p1'),
         session: Session(sessionId: 's1'),
         persona: Persona.assistant(),
@@ -269,10 +292,13 @@ void main() {
       // Tool-call notices ride the same stream as separate non-final chunks
       // (`OutboundChunk.notice`, P2) — so the answer deltas are the non-final
       // chunks that carry no notice.
-      final answerDeltas =
-          delivered.where((c) => !c.isFinal && c.notice == null).toList();
-      expect(answerDeltas.map((c) => c.textDelta).toList(),
-          <String>['Hello, ', 'world.']);
+      final answerDeltas = delivered
+          .where((c) => !c.isFinal && c.notice == null)
+          .toList();
+      expect(answerDeltas.map((c) => c.textDelta).toList(), <String>[
+        'Hello, ',
+        'world.',
+      ]);
 
       // Increment 6 (§6) migrated the answer step onto `sub.run`: the procedure
       // no longer opens with a bare `tool.list()`. Its outer-loop termination
@@ -297,8 +323,7 @@ void main() {
   });
 
   group('D.44-3 shutdown teardown order + idempotency', () {
-    test('the access layer is torn down before memory and substrate',
-        () async {
+    test('the access layer is torn down before memory and substrate', () async {
       final order = <String>[];
       memory.onClose = () => order.add('memory');
       substrate.onClose = () => order.add('substrate');
@@ -312,21 +337,27 @@ void main() {
 
       await booted.shutdown();
 
-      expect(order, <String>['access_layer', 'memory', 'substrate'],
-          reason: 'stop inbound first, then memory (flush/checkpoint), then '
-              'substrate');
+      expect(
+        order,
+        <String>['access_layer', 'memory', 'substrate'],
+        reason:
+            'stop inbound first, then memory (flush/checkpoint), then '
+            'substrate',
+      );
     });
 
-    test('shutdown is idempotent — memory and substrate close exactly once',
-        () async {
-      final booted = await BrainProcessBoot.boot(configWith());
+    test(
+      'shutdown is idempotent — memory and substrate close exactly once',
+      () async {
+        final booted = await BrainProcessBoot.boot(configWith());
 
-      await booted.shutdown();
-      await booted.shutdown();
+        await booted.shutdown();
+        await booted.shutdown();
 
-      expect(memory.closeCount, 1);
-      expect(substrate.closeCount, 1);
-    });
+        expect(memory.closeCount, 1);
+        expect(substrate.closeCount, 1);
+      },
+    );
 
     test('the installer receives the booted dispatcher', () async {
       Dispatcher? handed;
@@ -345,32 +376,34 @@ void main() {
   });
 
   group('D.44-4 failure hygiene — a failed boot leaks nothing', () {
-    test('a throwing access-layer installer tears down memory + substrate',
-        () async {
-      // D.46 contract: a bring-up failure surfaces as a typed `BrainStartupError`
-      // tagged with the phase it failed in (here `accessLayer`), with the
-      // original error preserved in `cause`.
-      await expectLater(
-        BrainProcessBoot.boot(
-          configWith(
-            substrateConfig: _minimalSubstrateConfig(),
-            installAccessLayer: (_) async =>
-                throw StateError('install failed'),
+    test(
+      'a throwing access-layer installer tears down memory + substrate',
+      () async {
+        // D.46 contract: a bring-up failure surfaces as a typed `BrainStartupError`
+        // tagged with the phase it failed in (here `accessLayer`), with the
+        // original error preserved in `cause`.
+        await expectLater(
+          BrainProcessBoot.boot(
+            configWith(
+              substrateConfig: _minimalSubstrateConfig(),
+              installAccessLayer: (_) async =>
+                  throw StateError('install failed'),
+            ),
           ),
-        ),
-        throwsA(
-          isA<BrainStartupError>()
-              .having((e) => e.phase, 'phase', BootPhase.accessLayer)
-              .having((e) => e.cause, 'cause', isA<StateError>()),
-        ),
-      );
+          throwsA(
+            isA<BrainStartupError>()
+                .having((e) => e.phase, 'phase', BootPhase.accessLayer)
+                .having((e) => e.cause, 'cause', isA<StateError>()),
+          ),
+        );
 
-      // The substrate was opened, the memory provisioned — both must be torn
-      // back down by boot's failure path.
-      expect(substrate.openCount, 1);
-      expect(memory.closeCount, 1);
-      expect(substrate.closeCount, 1);
-    });
+        // The substrate was opened, the memory provisioned — both must be torn
+        // back down by boot's failure path.
+        expect(substrate.openCount, 1);
+        expect(memory.closeCount, 1);
+        expect(substrate.closeCount, 1);
+      },
+    );
   });
 }
 
@@ -378,21 +411,21 @@ void main() {
 /// The fake substrate's `open` records the call and ignores the value, so the
 /// config only needs to construct — it is never validated here.
 SubstrateConfig _minimalSubstrateConfig() => const SubstrateConfig(
-      providers: <ProviderProfile>[],
-      roleRoutes: <String, List<RoleRouteEntryConfig>>{},
-      embedding: EmbeddingChoice(
-        providerId: 'p',
-        model: 'm',
-        dims: 1,
-        normalize: true,
-      ),
-      webSearch: WebSearchConfig(
-        defaultProvider: 'none',
-        providers: <String, WebSearchProviderConfig>{},
-      ),
-      webFetch: WebFetchConfig(),
-      mcpClient: McpClientConfigBlock(),
-    );
+  providers: <ProviderProfile>[],
+  roleRoutes: <String, List<RoleRouteEntryConfig>>{},
+  embedding: EmbeddingChoice(
+    providerId: 'p',
+    model: 'm',
+    dims: 1,
+    normalize: true,
+  ),
+  webSearch: WebSearchConfig(
+    defaultProvider: 'none',
+    providers: <String, WebSearchProviderConfig>{},
+  ),
+  webFetch: WebFetchConfig(),
+  mcpClient: McpClientConfigBlock(),
+);
 
 // ─── A stateful in-process `TomBrainMemoryClient` ───────────────────
 //
@@ -454,14 +487,14 @@ class _BootMemory implements TomBrainMemory {
   Future<RecallResult> recall(RecallQuery query) async => recallResult;
 
   @override
-  Future<RecallResult> recallMulti(MultiRecallQuery query) async => recallResult;
+  Future<RecallResult> recallMulti(MultiRecallQuery query) async =>
+      recallResult;
 
   @override
   Future<ClassificationResult> classify(
     Vec embedding, {
     ClassificationTarget target = ClassificationTarget.nodeType,
-  }) async =>
-      classifyResult;
+  }) async => classifyResult;
 
   @override
   Future<TrailId> openTrail(ProcedureRunRef run) async {
@@ -543,8 +576,7 @@ class _BootMemory implements TomBrainMemory {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ─── An answer-capturing `TomBrainSubstrateClient` ──────────────────
@@ -571,11 +603,10 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
   }
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) {
-    return Stream<LlmStreamEvent>.fromIterable(<LlmStreamEvent>[
-      for (final chunk in answerChunks)
-        LlmStreamChunk(callId: 'c', text: chunk),
-      const LlmStreamCompleted(
+  Stream<LlmEvent> completeStream(LlmCall call) {
+    return Stream<LlmEvent>.fromIterable(<LlmEvent>[
+      for (final chunk in answerChunks) LlmTextDelta(chunk),
+      const LlmRunCompleted(
         callId: 'c',
         report: LlmCallReport(
           providerId: 'p',
@@ -593,18 +624,17 @@ class _AnsweringSubstrate implements TomBrainSubstrateClient {
 
   @override
   Future<EmbeddingResult> embed(String text) async => EmbeddingResult(
-        vec: Vec(Float32List.fromList(<double>[0.0])),
-        modelIdentity: const EmbeddingModelIdentity(
-          providerId: 'p',
-          modelId: 'm',
-          dims: 1,
-          normalized: true,
-        ),
-      );
+    vec: Vec(Float32List.fromList(<double>[0.0])),
+    modelIdentity: const EmbeddingModelIdentity(
+      providerId: 'p',
+      modelId: 'm',
+      dims: 1,
+      normalized: true,
+    ),
+  );
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _InMemoryStacks implements StackApi {
@@ -654,6 +684,5 @@ class _InMemoryStacks implements StackApi {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

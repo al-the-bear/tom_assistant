@@ -64,24 +64,21 @@ void main() {
   group('B.40 / engine-bridge contract', () {
     // ─── Interface-only consumption ─────────────────────────────
 
-    test(
-      '_EngineBridgeStub binds against TomBrainSubstrateClient only',
-      () {
-        // Constructing the stub with a fake client is the load-bearing
-        // assertion: the stub's constructor parameter type is the
-        // interface, not the marker base class, not the concrete impl.
-        // If a future plan step widened the bridge to require the
-        // marker class (e.g. for a synchronous fast path), this test
-        // would still pass on the fake but would surface in the
-        // dependency graph — see Q-B.40.1 in
-        // `prototype_implementation_questions.md`.
-        final TomBrainSubstrateClient client = _FakeSubstrateClient();
-        final bridge = _EngineBridgeStub(client);
+    test('_EngineBridgeStub binds against TomBrainSubstrateClient only', () {
+      // Constructing the stub with a fake client is the load-bearing
+      // assertion: the stub's constructor parameter type is the
+      // interface, not the marker base class, not the concrete impl.
+      // If a future plan step widened the bridge to require the
+      // marker class (e.g. for a synchronous fast path), this test
+      // would still pass on the fake but would surface in the
+      // dependency graph — see Q-B.40.1 in
+      // `prototype_implementation_questions.md`.
+      final TomBrainSubstrateClient client = _FakeSubstrateClient();
+      final bridge = _EngineBridgeStub(client);
 
-        expect(bridge.client, same(client));
-        expect(bridge.client, isA<TomBrainSubstrateClient>());
-      },
-    );
+      expect(bridge.client, same(client));
+      expect(bridge.client, isA<TomBrainSubstrateClient>());
+    });
 
     test(
       'every surface method is reachable through the interface alone',
@@ -143,42 +140,36 @@ void main() {
       expect(client, isA<TomBrainSubstrate>());
     });
 
-    test(
-      'TomBrainSubstrate adds no extra abstract surface at B.40',
-      () {
-        // `_FakeInProcessSubstrate` extends `_FakeSubstrateClient`
-        // and declares no additional method overrides. If a future
-        // plan step added an abstract member to `TomBrainSubstrate`
-        // (a synchronous route-lookup fast path, say), this class
-        // would fail to instantiate — surfacing the addition as a
-        // compile error here so it is documented intentionally.
-        final TomBrainSubstrate inProcess = _FakeInProcessSubstrate();
-        expect(inProcess, isA<TomBrainSubstrate>());
-        expect(inProcess, isA<TomBrainSubstrateClient>());
-      },
-    );
+    test('TomBrainSubstrate adds no extra abstract surface at B.40', () {
+      // `_FakeInProcessSubstrate` extends `_FakeSubstrateClient`
+      // and declares no additional method overrides. If a future
+      // plan step added an abstract member to `TomBrainSubstrate`
+      // (a synchronous route-lookup fast path, say), this class
+      // would fail to instantiate — surfacing the addition as a
+      // compile error here so it is documented intentionally.
+      final TomBrainSubstrate inProcess = _FakeInProcessSubstrate();
+      expect(inProcess, isA<TomBrainSubstrate>());
+      expect(inProcess, isA<TomBrainSubstrateClient>());
+    });
 
     // ─── Negative discipline ───────────────────────────────────
 
-    test(
-      'engine consumers never need a concrete substrate impl',
-      () {
-        // The engine-bridge stub holds only `TomBrainSubstrateClient`.
-        // Asking it for the marker base class type is meaningless
-        // from the engine's POV — the bridge does not know whether
-        // it has the in-process marker or an isolate adapter. This
-        // test makes that distinction explicit: the stub exposes
-        // no `TomBrainSubstrate` getter, no `cast`, no `as`-check.
-        final bridge = _EngineBridgeStub(_FakeSubstrateClient());
+    test('engine consumers never need a concrete substrate impl', () {
+      // The engine-bridge stub holds only `TomBrainSubstrateClient`.
+      // Asking it for the marker base class type is meaningless
+      // from the engine's POV — the bridge does not know whether
+      // it has the in-process marker or an isolate adapter. This
+      // test makes that distinction explicit: the stub exposes
+      // no `TomBrainSubstrate` getter, no `cast`, no `as`-check.
+      final bridge = _EngineBridgeStub(_FakeSubstrateClient());
 
-        // The runtime check here is a sanity rail: the fake we
-        // injected is NOT a `TomBrainSubstrate`, and the engine
-        // does not care. If we had injected the marker subclass
-        // (`_FakeInProcessSubstrate`), it would be both; the engine
-        // still does not branch.
-        expect(bridge.client, isNot(isA<TomBrainSubstrate>()));
-      },
-    );
+      // The runtime check here is a sanity rail: the fake we
+      // injected is NOT a `TomBrainSubstrate`, and the engine
+      // does not care. If we had injected the marker subclass
+      // (`_FakeInProcessSubstrate`), it would be both; the engine
+      // still does not branch.
+      expect(bridge.client, isNot(isA<TomBrainSubstrate>()));
+    });
   });
 }
 
@@ -291,8 +282,7 @@ final class _EngineBridgeStub {
 /// § 3.1 wire shape will break exactly one of these tests.
 class _FakeSubstrateClient implements TomBrainSubstrateClient {
   @override
-  Future<void> open(SubstrateConfig config) async =>
-      throw UnimplementedError();
+  Future<void> open(SubstrateConfig config) async => throw UnimplementedError();
 
   @override
   Future<void> close() async => throw UnimplementedError();
@@ -301,8 +291,7 @@ class _FakeSubstrateClient implements TomBrainSubstrateClient {
   Future<LlmCallReport> complete(LlmCall call) => throw UnimplementedError();
 
   @override
-  Stream<LlmStreamEvent> completeStream(LlmCall call) =>
-      throw UnimplementedError();
+  Stream<LlmEvent> completeStream(LlmCall call) => throw UnimplementedError();
 
   @override
   Future<EmbeddingResult> embed(String text) => throw UnimplementedError();
@@ -315,15 +304,13 @@ class _FakeSubstrateClient implements TomBrainSubstrateClient {
   Future<WebSearchResult> webSearch(
     String query, {
     WebSearchOptions options = WebSearchOptions.empty,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<WebFetchResult> webFetch(
     Uri url, {
     WebFetchOptions options = WebFetchOptions.empty,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   McpClient mcpClient(McpEndpoint endpoint) => throw UnimplementedError();
@@ -358,23 +345,21 @@ class _FakeInProcessSubstrate extends _FakeSubstrateClient
 // fixture so any change to the config root surfaces in both files
 // together.
 SubstrateConfig _minimalSubstrateConfig() => SubstrateConfig(
-      providers: const [],
-      roleRoutes: const {},
-      embedding: const EmbeddingChoice(
-        providerId: 'stub',
-        model: 'nomic-embed-text',
-        dims: 768,
-        normalize: true,
-      ),
-      webSearch: const WebSearchConfig(
-        defaultProvider: 'duckduckgo',
-        providers: {
-          'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html'),
-        },
-      ),
-      webFetch: const WebFetchConfig(),
-      mcpClient: const McpClientConfigBlock(),
-    );
+  providers: const [],
+  roleRoutes: const {},
+  embedding: const EmbeddingChoice(
+    providerId: 'stub',
+    model: 'nomic-embed-text',
+    dims: 768,
+    normalize: true,
+  ),
+  webSearch: const WebSearchConfig(
+    defaultProvider: 'duckduckgo',
+    providers: {'duckduckgo': WebSearchProviderConfig(kind: 'ddg_html')},
+  ),
+  webFetch: const WebFetchConfig(),
+  mcpClient: const McpClientConfigBlock(),
+);
 
 // Suppress unused-import lints from `dart:async` (the `Stream`
 // references in `_FakeSubstrateClient` keep `Stream` reachable; the
