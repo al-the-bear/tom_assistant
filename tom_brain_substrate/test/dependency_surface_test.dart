@@ -15,7 +15,9 @@
 //                            `BrainEvent`, `BrainTime`, `BrainVersion`,
 //                            and most importantly for substrate
 //                            `AssistantDedicationAnchor`).
-//   2. tom_basics          — `TomLogger`. The plan attributes
+//   2. tom_basics          — `TomLogger`, and the cooperative
+//                            cancellation (`TomCancellationToken` and
+//                            its source and exception). The plan attributes
 //                            `TomLogger` to `tom_core_kernel`, but the
 //                            class actually lives here. The dependency
 //                            list is unaffected — see Q-B.7.2 (mirrors
@@ -102,6 +104,14 @@ void main() {
       expect(basics.tomLog, isA<basics.TomLogger>());
     });
 
+    test('tom_basics exposes the cooperative cancellation', () {
+      // `LlmCall.cancellationToken` and every provider take tom_basics'
+      // token; the substrate declares no cancellation type of its own.
+      expect(basics.TomCancellationToken, isNotNull);
+      expect(basics.TomCancellationSource, isNotNull);
+      expect(basics.TomOperationCancelled, isNotNull);
+    });
+
     test('tom_core_kernel exposes TomBean and TomBearerAuthentication', () {
       // TomBean is the workspace's bean-locator surface; the plan
       // calls it `BeanLocator`. Q-B.7.2 captures the naming gap.
@@ -124,13 +134,9 @@ void main() {
     });
 
     test('tom_core_agentic exposes the generic agentic building blocks', () {
-      // B.1 extraction: the substrate-local cancellation primitive,
-      // close-guard, dedup-by-id, text preview, and HTTP-date parser
-      // now live in this domain-free package. The substrate consumes
-      // them rather than re-declaring its own copies.
-      expect(agentic.CancellationToken, isNotNull);
-      expect(agentic.CancellationTokenSource, isNotNull);
-      expect(agentic.OperationCancelled, isNotNull);
+      // B.1 extraction: the close-guard, dedup-by-id, text preview, and
+      // HTTP-date parser live in this domain-free package. The substrate
+      // consumes them rather than re-declaring its own copies.
       expect(agentic.CloseGuard, isNotNull);
       expect(agentic.HttpDate, isNotNull);
       expect(agentic.textPreview, isA<Function>());

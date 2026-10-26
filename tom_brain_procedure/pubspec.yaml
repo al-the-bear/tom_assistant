@@ -135,7 +135,7 @@ dependencies:
     path: ../tom_brain_memory
   tom_brain_substrate:
     path: ../tom_brain_substrate
-  tom_basics: ">=1.0.0"
+  tom_basics: ">=3.3.0"
   # tom_core_agentic — generic, domain-free agentic building blocks
   #   (the `CategoryLog` logging facade, `CloseGuard`, `formatException`,
   #   `YamlConfigReader`, cancellation, …). Extracted at the Phase-C/D

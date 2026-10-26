@@ -34,8 +34,8 @@
 ///   sealed `LlmEvent` family, `LlmFailure`,
 ///   `EmbeddingResult`, `EmbeddingModelIdentity`, web-tool result /
 ///   option types, `McpEndpoint`, sealed `SubstrateEvent` family,
-///   `SubstrateStats`, `CancellationToken` /
-///   `CancellationTokenSource`). The B.9 `SubstrateConfig` placeholder
+///   `SubstrateStats`, `TomCancellationToken` /
+///   `TomCancellationSource`). The B.9 `SubstrateConfig` placeholder
 ///   was replaced at B.36 by the concrete `SubstrateConfig` (rooted in
 ///   `lib/src/config/`); the api/ barrel re-exports the config barrel
 ///   so the consumer-facing import path is unchanged. No

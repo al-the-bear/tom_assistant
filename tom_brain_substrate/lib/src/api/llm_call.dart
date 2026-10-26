@@ -48,8 +48,9 @@
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget, TurnId;
 import 'package:tom_core_llm/tom_core_llm.dart' show LlmOptions;
 
+import 'package:tom_basics/utilities.dart' show TomCancellationToken;
+
 import '../router/route_entry.dart';
-import 'cancellation.dart';
 
 export 'package:tom_core_llm/tom_core_llm.dart'
     show LlmOptions, ToolCatalogue, ToolDescriptor, LlmCallReport;
@@ -103,8 +104,8 @@ final class LlmCall {
   final Budget budget;
 
   /// Read-only cancellation channel. Defaults to
-  /// [CancellationToken.none] — i.e., uncancellable.
-  final CancellationToken cancellationToken;
+  /// [TomCancellationToken.none] — i.e., uncancellable.
+  final TomCancellationToken cancellationToken;
 
   /// The turn this call belongs to (logging-spec §3). Stamped by the
   /// procedure engine's per-run `SubstrateBridge` as the call is built — the
@@ -151,7 +152,7 @@ final class LlmCall {
     required this.inputs,
     this.options = LlmOptions.empty,
     required this.budget,
-    this.cancellationToken = CancellationToken.none,
+    this.cancellationToken = TomCancellationToken.none,
     this.turnId,
     this.callSeq,
     this.routeChain,

@@ -17,8 +17,9 @@
 //     `WebFetchResult`, `WebFetchOptions`, `BinaryFetchMeta`);
 //     `McpEndpoint`; sealed `SubstrateEvent` family;
 //     `SubstrateStats`.
-//   * `CancellationToken` / `CancellationTokenSource` — minimal
-//     cancellation primitive used by `LlmCall.cancellationToken`.
+//   (`LlmCall.cancellationToken` takes `tom_basics`' `TomCancellationToken`;
+//   the surface does not re-export it — import
+//   `package:tom_basics/utilities.dart`.)
 //   * `SubstrateConfig` — concrete configuration root (B.36).
 //     Re-exported from `../config/config_barrel.dart` so the api/
 //     surface keeps offering the type under the same import path
@@ -56,7 +57,6 @@
 //             (`InProcessTomBrainSubstrate`) lands under
 //             `lib/src/facade/`.
 
-export 'cancellation.dart';
 export 'embedding_result.dart';
 export 'llm_call.dart';
 export 'package:tom_core_llm/tom_core_llm.dart'

@@ -30,7 +30,7 @@
 //     the returned list matches input order regardless of completion
 //     order. The first failure short-circuits the batch via
 //     `Future.wait(eagerError: true)` and cancels the shared
-//     `CancellationTokenSource` threaded into `embedRaw` (B.3.3), so
+//     `TomCancellationSource` threaded into `embedRaw` (B.3.3), so
 //     no new dispatch happens and in-flight round-trips are abandoned
 //     rather than run to completion.
 //   * B.27 ✅ — Identity reporting: `probeIdentity()` plus

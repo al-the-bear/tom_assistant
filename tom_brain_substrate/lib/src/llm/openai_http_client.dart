@@ -48,6 +48,7 @@
 
 import 'dart:convert';
 
+import 'package:tom_basics/utilities.dart' show TomCancellationToken;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 // Hide the top-level `decodeJsonObject`: this client relies on the richer
 // inherited `DefaultWireHttpClientBase.decodeJsonObject` (status + endpoint
@@ -128,7 +129,7 @@ abstract class OpenAiHttpClient {
     String? apiKey,
     Map<String, String> extraHeaders = const <String, String>{},
     Duration? requestTimeout,
-    CancellationToken? cancellationToken,
+    TomCancellationToken? cancellationToken,
   });
 
   /// `/v1/embeddings`: produce the embedding for [input] under
@@ -423,7 +424,7 @@ final class DefaultOpenAiHttpClient extends DefaultWireHttpClientBase
     String? apiKey,
     Map<String, String> extraHeaders = const <String, String>{},
     Duration? requestTimeout,
-    CancellationToken? cancellationToken,
+    TomCancellationToken? cancellationToken,
   }) async* {
     final url = baseUri.resolve('v1/chat/completions');
     final lines = sendForLines(

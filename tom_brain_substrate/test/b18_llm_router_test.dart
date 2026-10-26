@@ -50,6 +50,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:test/test.dart';
+import 'package:tom_basics/utilities.dart' show TomCancellationSource;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
@@ -553,7 +554,7 @@ void main() {
     test(
       'Cancelled token: NoRouteAvailable with cancelledByConsumer',
       () async {
-        final source = CancellationTokenSource()..cancel();
+        final source = TomCancellationSource()..cancel();
         final stub = StubLlmProvider(id: 'p', defaultModel: 'm');
         final router = LlmRouter(
           providers: <String, LlmProvider>{'p': stub},

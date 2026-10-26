@@ -58,6 +58,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget;
+import 'package:tom_basics/utilities.dart' show TomCancellationToken;
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 import 'llm_failure_classifier.dart';
@@ -211,7 +212,7 @@ class LlmRouter {
     required WirePrompt prompt,
     required LlmOptions options,
     required Budget budget,
-    CancellationToken cancellationToken = CancellationToken.none,
+    TomCancellationToken cancellationToken = TomCancellationToken.none,
     int? inputTokensHint,
   }) {
     final chain = roleRoutes[roleId];
@@ -237,7 +238,7 @@ class LlmRouter {
     required WirePrompt prompt,
     required LlmOptions options,
     required Budget budget,
-    CancellationToken cancellationToken = CancellationToken.none,
+    TomCancellationToken cancellationToken = TomCancellationToken.none,
     int? inputTokensHint,
   }) {
     if (chain.isEmpty) throw EmptyRouteChain(roleId);
@@ -258,7 +259,7 @@ class LlmRouter {
     required WirePrompt prompt,
     required LlmOptions options,
     required Budget budget,
-    CancellationToken cancellationToken = CancellationToken.none,
+    TomCancellationToken cancellationToken = TomCancellationToken.none,
     int? inputTokensHint,
   }) async {
     final attempts = <RouteAttempt>[];
@@ -435,7 +436,7 @@ class LlmRouter {
     required WirePrompt prompt,
     required LlmOptions options,
     required Budget budget,
-    CancellationToken cancellationToken = CancellationToken.none,
+    TomCancellationToken cancellationToken = TomCancellationToken.none,
     int? inputTokensHint,
   }) async* {
     final chain = roleRoutes[roleId];
@@ -471,7 +472,7 @@ class LlmRouter {
     required WirePrompt prompt,
     required LlmOptions options,
     required Budget budget,
-    CancellationToken cancellationToken = CancellationToken.none,
+    TomCancellationToken cancellationToken = TomCancellationToken.none,
     int? inputTokensHint,
   }) async* {
     if (chain.isEmpty) throw EmptyRouteChain(roleId);
@@ -492,7 +493,7 @@ class LlmRouter {
     required WirePrompt prompt,
     required LlmOptions options,
     required Budget budget,
-    CancellationToken cancellationToken = CancellationToken.none,
+    TomCancellationToken cancellationToken = TomCancellationToken.none,
     int? inputTokensHint,
   }) async* {
     final attempts = <RouteAttempt>[];

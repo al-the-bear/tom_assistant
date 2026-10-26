@@ -46,6 +46,7 @@
 //   * Ollama   — `TOM_BRAIN_OLLAMA_BASE_URI` (default `http://127.0.0.1:11434/`),
 //                embedding model `nomic-embed-text`, 768 dims.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -176,7 +177,7 @@ void main() {
       test(
         'embed: a real 768-d vector through the facade',
         () async {
-          final reason = await target.unreachableReason();
+          final reason = await target.ollamaModelMissingReason();
           if (reason != null) return markTestSkipped(reason);
 
           final fixture = _buildLiveFacade(embed: target);
@@ -201,7 +202,7 @@ void main() {
       test(
         'embedBatch: each input yields a real 768-d vector',
         () async {
-          final reason = await target.unreachableReason();
+          final reason = await target.ollamaModelMissingReason();
           if (reason != null) return markTestSkipped(reason);
 
           final fixture = _buildLiveFacade(embed: target);
@@ -309,6 +310,41 @@ class _LiveTarget {
     } on Object catch (e) {
       return 'no TCP connect to $host:$port within 2s ($daemonName not '
           'reachable; this live smoke is skipped off-host by design): $e';
+    }
+  }
+
+  /// [unreachableReason], then asks Ollama's `api/tags` whether [model] is
+  /// pulled. A daemon that answers without the model is a machine that has
+  /// not been provisioned for this smoke, not a defect in the substrate, so
+  /// it is a skip naming the command that provisions it.
+  Future<String?> ollamaModelMissingReason() async {
+    final unreachable = await unreachableReason();
+    if (unreachable != null) return unreachable;
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
+    try {
+      final request = await client.getUrl(baseUri.resolve('api/tags'));
+      final response = await request.close().timeout(
+        const Duration(seconds: 5),
+      );
+      final body = await response.transform(utf8.decoder).join();
+      final models = (jsonDecode(body) as Map<String, Object?>)['models'];
+      final names = [
+        for (final m in models as List<Object?>)
+          if (m is Map<String, Object?> && m['name'] is String)
+            m['name']! as String,
+      ];
+      final pulled = names.any(
+        (name) => name == model || name.startsWith('$model:'),
+      );
+      return pulled
+          ? null
+          : '$daemonName at $baseUri has no model "$model" (has: '
+                '${names.join(', ')}); run `ollama pull $model` to enable '
+                'this live smoke';
+    } on Object catch (e) {
+      return '$daemonName at $baseUri did not list its models: $e';
+    } finally {
+      client.close(force: true);
     }
   }
 }

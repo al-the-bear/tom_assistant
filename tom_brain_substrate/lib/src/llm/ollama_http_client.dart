@@ -43,13 +43,14 @@
 //     `tom_core_server.TomBearerAuthentication`.
 //   - Cancellation token wiring. Per B.11 spec, cancellation arrives
 //     through a router-mediated channel that lands at B.18. The
-//     B.14 surface accepts an optional `CancellationToken` so the
+//     B.14 surface accepts an optional `TomCancellationToken` so the
 //     provider has a one-line wire-up at B.18; today it is honoured
 //     only on the streaming path (where the consumer can race the
 //     stream against `token.whenCancelled`).
 
 import 'dart:convert';
 
+import 'package:tom_basics/utilities.dart' show TomCancellationToken;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 // Hide the top-level `decodeJsonObject`: this client relies on the richer
 // inherited `DefaultWireHttpClientBase.decodeJsonObject` (status + endpoint
@@ -118,7 +119,7 @@ abstract class OllamaHttpClient {
     required List<OllamaMessage> messages,
     required OllamaGenerationOptions options,
     Duration? requestTimeout,
-    CancellationToken? cancellationToken,
+    TomCancellationToken? cancellationToken,
   });
 
   /// `/api/embeddings`: produce the embedding for [prompt] under
@@ -372,7 +373,7 @@ final class DefaultOllamaHttpClient extends DefaultWireHttpClientBase
     required List<OllamaMessage> messages,
     required OllamaGenerationOptions options,
     Duration? requestTimeout,
-    CancellationToken? cancellationToken,
+    TomCancellationToken? cancellationToken,
   }) async* {
     final url = baseUri.resolve('/api/chat');
     final lines = sendForLines(

@@ -69,6 +69,7 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget, Vec;
+import 'package:tom_basics/utilities.dart' show TomCancellationSource;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 void main() {
@@ -347,7 +348,7 @@ void main() {
           // stream error. Either shape satisfies the surface contract;
           // the conformance gate is that the stream must not complete
           // with `LlmRunCompleted`.
-          final cts = CancellationTokenSource();
+          final cts = TomCancellationSource();
           cts.cancel();
 
           final TomBrainSubstrateClient client = await _openClient();

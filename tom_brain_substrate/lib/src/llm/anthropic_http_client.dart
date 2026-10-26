@@ -47,6 +47,7 @@
 
 import 'dart:convert';
 
+import 'package:tom_basics/utilities.dart' show TomCancellationToken;
 import 'package:tom_brain_shared/tom_brain_shared.dart';
 // Hide the top-level `decodeJsonObject`: this client relies on the richer
 // inherited `DefaultWireHttpClientBase.decodeJsonObject` (status + endpoint
@@ -115,7 +116,7 @@ abstract class AnthropicHttpClient {
     String anthropicVersion = '2023-06-01',
     Map<String, String> extraHeaders = const <String, String>{},
     Duration? requestTimeout,
-    CancellationToken? cancellationToken,
+    TomCancellationToken? cancellationToken,
   });
 
   /// Releases any underlying HTTP client resources.
@@ -318,7 +319,7 @@ final class DefaultAnthropicHttpClient extends DefaultWireHttpClientBase
     String anthropicVersion = '2023-06-01',
     Map<String, String> extraHeaders = const <String, String>{},
     Duration? requestTimeout,
-    CancellationToken? cancellationToken,
+    TomCancellationToken? cancellationToken,
   }) async* {
     final url = baseUri.resolve('v1/messages');
     final lines = sendForLines(

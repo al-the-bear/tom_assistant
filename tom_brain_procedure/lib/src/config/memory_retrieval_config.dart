@@ -21,7 +21,7 @@
 //
 // Loading goes through the canonical plain-map loader (`loadYamlAsMap`) so no
 // `YamlMap`/`YamlList` node leaks into a `MemoryRetrievalConfig`; mutation of
-// the on-disk text goes through the AST-preserving `YamlConfigWriter`. The
+// the on-disk text goes through the AST-preserving `TomYamlConfigWriter`. The
 // typed model is read-only — it never re-serialises a document.
 //
 // ── The conductor projection ([toConductorMap]) ─────────────────────

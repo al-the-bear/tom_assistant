@@ -182,7 +182,7 @@ final class IsolateTomBrainSubstrateAdapter implements TomBrainSubstrateClient {
 
   /// Rebuilds [call] without its `cancellationToken`. A live token may
   /// capture a `Completer` / `StreamController` and is not sendable; the
-  /// rebuilt call carries `CancellationToken.none` (a const, field-free,
+  /// rebuilt call carries `TomCancellationToken.none` (a const, field-free,
   /// sendable singleton). Cancellation across the boundary is not
   /// supported — substrate streams self-terminate and are torn down via
   /// the host's `closeStream`.

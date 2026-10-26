@@ -47,6 +47,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
+import 'package:tom_basics/utilities.dart' show TomCancellationToken;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 void main() {
@@ -917,7 +918,7 @@ final class _FakeOpenAiHttpClient implements OpenAiHttpClient {
     String? apiKey,
     Map<String, String> extraHeaders = const <String, String>{},
     Duration? requestTimeout,
-    CancellationToken? cancellationToken,
+    TomCancellationToken? cancellationToken,
   }) async* {
     chatCalls.add(
       _OpenAiChatInvocation(

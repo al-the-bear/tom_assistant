@@ -29,6 +29,7 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 
+import 'package:tom_basics/utilities.dart' show TomYamlConfigWriter;
 import 'package:tom_brain_memory/tom_brain_memory.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart'
     show
@@ -40,7 +41,6 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
         TrailId,
         Vec;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
-import 'package:tom_core_agentic/tom_core_agentic.dart' show YamlConfigWriter;
 
 import 'package:tom_brain_procedure/tom_brain_procedure.dart';
 
@@ -245,7 +245,7 @@ strategies:
 fusion: { rrfK: 60 }   # RRF smoothing constant
 diversity: { lambda: 0.7 }
 ''';
-        final writer = YamlConfigWriter(src);
+        final writer = TomYamlConfigWriter(src);
         writer.set(['fusion', 'rrfK'], 80);
 
         // Comment preserved (AST surgery, not a re-serialize) …

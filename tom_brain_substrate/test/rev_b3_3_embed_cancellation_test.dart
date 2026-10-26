@@ -6,14 +6,14 @@
 // true)` to surface the first per-input failure, but the surviving
 // workers kept running every remaining backend call to completion and
 // then silently discarded the results — there was no `embedRaw`-side
-// cancellation. The fix threads a `CancellationToken` into `embedRaw`
+// cancellation. The fix threads a `TomCancellationToken` into `embedRaw`
 // (the provider races the in-flight call against the token) and gives
-// `embedBatch` a shared `CancellationTokenSource` it cancels on the
+// `embedBatch` a shared `TomCancellationSource` it cancels on the
 // first failure.
 //
 // These tests pin:
 //   1. `embedRaw` returns normally when the token never fires.
-//   2. `embedRaw` completes with `OperationCancelled` when the token
+//   2. `embedRaw` completes with `TomOperationCancelled` when the token
 //      fires before the round-trip returns (the blocking backend call
 //      is abandoned, not awaited).
 //   3. `embedBatch` surfaces the *original* per-input failure (not a
@@ -23,6 +23,8 @@
 import 'dart:async';
 
 import 'package:test/test.dart';
+import 'package:tom_basics/utilities.dart'
+    show TomCancellationToken, TomCancellationSource, TomOperationCancelled;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 void main() {
@@ -41,7 +43,7 @@ void main() {
       expect(vec, hasLength(8));
     });
 
-    test('completes with OperationCancelled when the token fires first',
+    test('completes with TomOperationCancelled when the token fires first',
         () async {
       final http = _BlockingEmbedHttpClient()..block = true;
       final provider = OllamaLlmProvider(
@@ -50,7 +52,7 @@ void main() {
         defaultModel: 'gemma3:27b',
         httpClient: http,
       );
-      final cts = CancellationTokenSource();
+      final cts = TomCancellationSource();
 
       final future = provider.embedRaw(
         prompt: 'hi',
@@ -61,7 +63,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       cts.cancel();
 
-      await expectLater(future, throwsA(isA<OperationCancelled>()));
+      await expectLater(future, throwsA(isA<TomOperationCancelled>()));
       // The backend call was never released — the caller stopped
       // waiting on its own.
       expect(http.releaseCount, 0);
@@ -174,7 +176,7 @@ final class _BlockingEmbedHttpClient implements OllamaHttpClient {
     required List<OllamaMessage> messages,
     required OllamaGenerationOptions options,
     Duration? requestTimeout,
-    CancellationToken? cancellationToken,
+    TomCancellationToken? cancellationToken,
   }) =>
       throw UnimplementedError();
 
@@ -258,7 +260,7 @@ final class _ScriptedEmbedHttpClient implements OllamaHttpClient {
     required List<OllamaMessage> messages,
     required OllamaGenerationOptions options,
     Duration? requestTimeout,
-    CancellationToken? cancellationToken,
+    TomCancellationToken? cancellationToken,
   }) =>
       throw UnimplementedError();
 

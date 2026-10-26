@@ -49,6 +49,7 @@ import 'dart:math' as math;
 
 import 'package:test/test.dart';
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Vec;
+import 'package:tom_basics/utilities.dart' show TomCancellationToken;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 void main() {
@@ -517,7 +518,7 @@ final class _FakeOllamaHttpClient implements OllamaHttpClient {
     required List<OllamaMessage> messages,
     required OllamaGenerationOptions options,
     Duration? requestTimeout,
-    CancellationToken? cancellationToken,
+    TomCancellationToken? cancellationToken,
   }) async* {
     chatCalls.add(_ChatInvocation(model: model));
     if (streamException != null) throw streamException!;

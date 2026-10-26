@@ -47,6 +47,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';
+import 'package:tom_basics/utilities.dart' show TomCancellationToken;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 
 void main() {
@@ -994,7 +995,7 @@ final class _FakeAnthropicHttpClient implements AnthropicHttpClient {
     String anthropicVersion = '2023-06-01',
     Map<String, String> extraHeaders = const <String, String>{},
     Duration? requestTimeout,
-    CancellationToken? cancellationToken,
+    TomCancellationToken? cancellationToken,
   }) async* {
     messageCalls.add(
       _AnthropicMessageInvocation(

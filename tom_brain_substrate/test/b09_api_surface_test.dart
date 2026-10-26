@@ -11,9 +11,6 @@
 //     subtype compiles cleanly under the strict-mode analyzer.
 //   - Prove the two-class split (`TomBrainSubstrate implements
 //     TomBrainSubstrateClient`) holds at the type level.
-//   - Prove the cancellation primitive behaves: `none` is
-//     uncancellable; sources fire exactly once; `whenCancelled` on
-//     an already-cancelled source resolves immediately.
 //   - Prove the substrate-event subtypes serialise through
 //     `BrainEvent.toJson` correctly (UTC-only `occurredAt` invariant
 //     is inherited from `tom_brain_shared`).
@@ -31,6 +28,7 @@
 import 'dart:async';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget, Vec;
+import 'package:tom_basics/utilities.dart' show TomCancellationToken;
 import 'package:tom_brain_substrate/tom_brain_substrate.dart';
 import 'package:test/test.dart';
 
@@ -77,7 +75,7 @@ void main() {
       expect(call.inputs, equals(<String, Object?>{'question': 'hi'}));
       expect(call.options, same(LlmOptions.empty));
       expect(call.budget, same(budget));
-      expect(call.cancellationToken, same(CancellationToken.none));
+      expect(call.cancellationToken, same(TomCancellationToken.none));
     });
 
     test('LlmOptions.empty has documented defaults', () {
@@ -527,48 +525,6 @@ void main() {
       expect(cfg.providers, isEmpty);
       expect(cfg.roleRoutes, isEmpty);
     });
-
-    // ─── CancellationToken ──────────────────────────────────────
-
-    test('CancellationToken.none is never cancelled', () {
-      const token = CancellationToken.none;
-      expect(token.isCancelled, isFalse);
-
-      // whenCancelled on `none` blocks forever — verify by racing
-      // it against a short timeout.
-      final outcome = Future.any(<Future<String>>[
-        token.whenCancelled.then((_) => 'cancelled'),
-        Future<String>.delayed(const Duration(milliseconds: 30), () => 'never'),
-      ]);
-      expect(outcome, completion(equals('never')));
-    });
-
-    test('CancellationTokenSource fires exactly once', () async {
-      final src = CancellationTokenSource();
-      final token = src.token;
-      expect(token.isCancelled, isFalse);
-      expect(src.isCancelled, isFalse);
-
-      final futureSeenCancel = token.whenCancelled.then((_) => true);
-      src.cancel();
-      expect(src.isCancelled, isTrue);
-      expect(token.isCancelled, isTrue);
-
-      // Idempotent — second cancel is a no-op.
-      src.cancel();
-      expect(await futureSeenCancel, isTrue);
-    });
-
-    test(
-      'whenCancelled on already-cancelled source resolves immediately',
-      () async {
-        final src = CancellationTokenSource();
-        src.cancel();
-        // Awaiting after cancellation returns without blocking.
-        await src.token.whenCancelled.timeout(const Duration(milliseconds: 50));
-        expect(src.token.isCancelled, isTrue);
-      },
-    );
   });
 }
 

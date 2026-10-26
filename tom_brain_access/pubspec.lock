@@ -909,10 +909,10 @@ packages:
     dependency: "direct main"
     description:
       name: tom_basics
-      sha256: "631b7951c9685d8fdcecd7501202f122276016ddba9fb18862669421440502aa"
+      sha256: "643aa9402345c40d4ca7beba645c733b662c37288aa5048f71b4b116b248bec7"
       url: "https://pub.dev"
     source: hosted
-    version: "3.1.2"
+    version: "3.3.0"
   tom_basics_console:
     dependency: transitive
     description:

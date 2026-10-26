@@ -53,6 +53,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Vec;
+import 'package:tom_basics/utilities.dart'
+    show TomCancellationSource, TomCancellationToken;
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 import '../api/embedding_result.dart';
@@ -196,15 +198,15 @@ final class OllamaEmbeddingService implements EmbeddingService {
 
   @override
   Future<EmbeddingResult> embed(String text) =>
-      _embed(text, CancellationToken.none);
+      _embed(text, TomCancellationToken.none);
 
   /// Shared embed implementation. [cancellationToken] is threaded into
   /// [OllamaLlmProvider.embedRaw] so [embedBatch] can stop the in-flight
   /// round-trips on the first per-input failure. The public [embed]
-  /// passes [CancellationToken.none].
+  /// passes [TomCancellationToken.none].
   Future<EmbeddingResult> _embed(
     String text,
-    CancellationToken cancellationToken,
+    TomCancellationToken cancellationToken,
   ) async {
     // Note: we do NOT validate empty / whitespace input here. Some
     // models accept the empty string and return a "neutral" vector;
@@ -288,7 +290,7 @@ final class OllamaEmbeddingService implements EmbeddingService {
     // surviving workers ran every remaining input to completion and
     // discarded the results — wasted backend calls on a batch that had
     // already failed.
-    final cancellation = CancellationTokenSource();
+    final cancellation = TomCancellationSource();
 
     Future<void> worker() async {
       while (true) {
@@ -300,7 +302,7 @@ final class OllamaEmbeddingService implements EmbeddingService {
         // the worker; Future.wait(eagerError: true) surfaces the first
         // such error on the batch future. We cancel the shared source
         // first so siblings halt cleanly, then re-throw so the real
-        // failure — not a sibling's OperationCancelled — is what the
+        // failure — not a sibling's TomOperationCancelled — is what the
         // batch future completes with (the original error fires first,
         // so eagerError surfaces it).
         try {

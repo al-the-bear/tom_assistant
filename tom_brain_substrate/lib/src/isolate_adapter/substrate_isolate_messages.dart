@@ -30,7 +30,7 @@
 //   (primitives, `Map`/`List` of sendable values, `Uri`, package value
 //   types whose fields recursively honour this rule). The proxy strips
 //   `LlmCall.cancellationToken` before sending (a live token may capture
-//   a `Completer`); the rebuilt call carries `CancellationToken.none`
+//   a `Completer`); the rebuilt call carries `TomCancellationToken.none`
 //   (a const, field-free, sendable singleton).
 
 import '../api/embedding_result.dart';

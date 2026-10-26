@@ -37,7 +37,8 @@
 
 import 'dart:async';
 
-import '../api/cancellation.dart';
+import 'package:tom_basics/utilities.dart'
+    show TomCancellationToken, TomOperationCancelled;
 import 'package:tom_core_llm/tom_core_llm.dart';
 import 'http_llm_provider_base.dart';
 import 'ollama_http_client.dart';
@@ -208,7 +209,7 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
   /// bind against it in the same change that grows the interface.
   ///
   /// When [cancellationToken] signals before the round-trip completes,
-  /// the returned future completes with [OperationCancelled] and the
+  /// the returned future completes with [TomOperationCancelled] and the
   /// in-flight HTTP result is abandoned. (`package:http`'s standard
   /// `Client` has no per-request abort handle — the socket is left to
   /// the daemon to finish — but the caller stops waiting, which is what
@@ -218,7 +219,7 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
   Future<List<double>> embedRaw({
     required String prompt,
     String? model,
-    CancellationToken cancellationToken = CancellationToken.none,
+    TomCancellationToken cancellationToken = TomCancellationToken.none,
   }) {
     final call = httpClient.embed(
       baseUri: baseUri,
@@ -226,19 +227,19 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
       prompt: prompt,
       requestTimeout: requestTimeout,
     );
-    if (identical(cancellationToken, CancellationToken.none)) {
+    if (identical(cancellationToken, TomCancellationToken.none)) {
       return call;
     }
     return _raceCancellation(call, cancellationToken);
   }
 
-  /// Resolves with [work]'s result, or with [OperationCancelled] if
+  /// Resolves with [work]'s result, or with [TomOperationCancelled] if
   /// [token] signals first. The loser of the race is abandoned; its
   /// eventual completion is observed (so it never surfaces as an
   /// unhandled async error) but ignored.
   static Future<T> _raceCancellation<T>(
     Future<T> work,
-    CancellationToken token,
+    TomCancellationToken token,
   ) {
     final completer = Completer<T>();
     work.then(
@@ -251,7 +252,7 @@ final class OllamaLlmProvider extends HttpLlmProviderBase {
     );
     token.whenCancelled.then((_) {
       if (!completer.isCompleted) {
-        completer.completeError(const OperationCancelled('embedRaw'));
+        completer.completeError(const TomOperationCancelled('embedRaw'));
       }
     });
     return completer.future;
