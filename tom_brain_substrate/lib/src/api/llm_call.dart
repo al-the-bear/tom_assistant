@@ -1,7 +1,7 @@
 // `LlmCall` — what a consumer submits to the substrate's LLM path.
 //
 // The per-call knobs (`LlmOptions`), the tool types and the `LlmCallReport` a
-// call is attributed by are the provider contract's, in `tom_core_llm`; this
+// call is attributed by are the provider contract's, in `tom_llm`; this
 // file re-exports them so the `api/` surface names everything a substrate
 // call takes and returns.
 //
@@ -46,13 +46,13 @@
 //     a single-line aliasing change that does not propagate.
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Budget, TurnId;
-import 'package:tom_core_llm/tom_core_llm.dart' show LlmOptions;
+import 'package:tom_llm/tom_llm.dart' show LlmOptions;
 
 import 'package:tom_basics/utilities.dart' show TomCancellationToken;
 
 import '../router/route_entry.dart';
 
-export 'package:tom_core_llm/tom_core_llm.dart'
+export 'package:tom_llm/tom_llm.dart'
     show LlmOptions, ToolCatalogue, ToolDescriptor, LlmCallReport;
 
 /// One submission to the substrate's LLM path.

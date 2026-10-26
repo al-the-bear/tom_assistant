@@ -42,7 +42,7 @@
 ///   implementations yet — interfaces and value classes only.
 /// - B.10 ✅ — Documented no-op per policy override 5
 ///   (`.tom_metadata/tom_master.yaml` is out of scope for Tom Brain).
-/// - B.11 ✅ — the provider contract, now `tom_core_llm`'s: `String get id`,
+/// - B.11 ✅ — the provider contract, now `tom_llm`'s: `String get id`,
 ///   `run(LlmRequest)` returning a `Stream<LlmEvent>`, and
 ///   `complete(LlmRequest)` returning a `Future<LlmCallReport>`. `WirePrompt` is the
 ///   post-anchor-injection prompt; only the (B.21+) role registry

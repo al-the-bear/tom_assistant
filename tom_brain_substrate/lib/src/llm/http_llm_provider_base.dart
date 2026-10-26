@@ -32,7 +32,7 @@
 //     not classify; the router (B.18+) maps raw exceptions onto the
 //     spec § 5.4 taxonomy.
 
-import 'package:tom_core_llm/tom_core_llm.dart';
+import 'package:tom_llm/tom_llm.dart';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show promptSha256;
 

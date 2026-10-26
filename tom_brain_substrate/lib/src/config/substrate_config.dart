@@ -71,7 +71,7 @@
 //   there, and consumers using `package:tom_brain_substrate/
 //   tom_brain_substrate.dart` see no change.
 
-import 'package:tom_core_llm/tom_core_llm.dart' show LlmProvider;
+import 'package:tom_llm/tom_llm.dart' show LlmProvider;
 import '../mcp_client/mcp_auth.dart' show McpAuthConfig;
 import '../roles/role_registry.dart' show RoleRegistry, RoleTemplateNotFound;
 import '../router/llm_failure_classifier.dart' show LlmFailureClass;

@@ -59,7 +59,7 @@
 
 export 'embedding_result.dart';
 export 'llm_call.dart';
-export 'package:tom_core_llm/tom_core_llm.dart'
+export 'package:tom_llm/tom_llm.dart'
     show
         CapturedWirePrompt,
         LlmEvent,

@@ -111,7 +111,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import 'package:tom_core_agentic/tom_core_agentic.dart' show textPreview;
 
 import '../llm/anchor_registry.dart';
-import 'package:tom_core_llm/tom_core_llm.dart';
+import 'package:tom_llm/tom_llm.dart';
 import 'allowed_action.dart';
 import 'role_budget_defaults.dart';
 import 'system_scaffold.dart';

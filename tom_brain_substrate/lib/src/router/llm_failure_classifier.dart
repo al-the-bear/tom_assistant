@@ -47,7 +47,7 @@
 import 'dart:async' show TimeoutException;
 import 'dart:io' show HandshakeException, SocketException, TlsException;
 
-import 'package:tom_core_llm/tom_core_llm.dart' show LlmFailure;
+import 'package:tom_llm/tom_llm.dart' show LlmFailure;
 import '../llm/wire_http_transport.dart' show WireHttpException;
 
 /// Closed taxonomy of LLM-call failure classes (spec § 5.4).

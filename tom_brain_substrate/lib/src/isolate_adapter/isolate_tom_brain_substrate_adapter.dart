@@ -33,7 +33,7 @@
 
 import '../api/embedding_result.dart';
 import '../api/llm_call.dart';
-import 'package:tom_core_llm/tom_core_llm.dart';
+import 'package:tom_llm/tom_llm.dart';
 import '../api/mcp_endpoint.dart';
 import '../api/substrate_event.dart';
 import '../api/substrate_stats.dart';

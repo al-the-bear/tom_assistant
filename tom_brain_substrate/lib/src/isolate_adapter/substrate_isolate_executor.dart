@@ -36,7 +36,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart'
 import 'package:tom_core_kernel/tom_core_kernel.dart'
     show TomExecutor, TomWorker;
 
-import 'package:tom_core_llm/tom_core_llm.dart';
+import 'package:tom_llm/tom_llm.dart';
 import '../api/substrate_event.dart';
 import '../api/tom_brain_substrate_client.dart';
 import 'substrate_isolate_exceptions.dart';

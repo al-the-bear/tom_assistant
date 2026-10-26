@@ -7,7 +7,7 @@
 //     `templateSha`) so a future drop / rename triggers a compile failure
 //     here. (`body` was replaced by the `system` + `user` split in
 //     `prompt_restructuring_and_configuration_plan.md` step 2.)
-//   - Pin the `LlmProvider` contract shape (`tom_core_llm`):
+//   - Pin the `LlmProvider` contract shape (`tom_llm`):
 //       * `String get id;`
 //       * `Stream<LlmEvent> run(LlmRequest);`
 //       * `Future<LlmCallReport> complete(LlmRequest);` (derived from `run`

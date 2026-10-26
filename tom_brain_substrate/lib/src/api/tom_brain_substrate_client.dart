@@ -32,7 +32,7 @@ import '../mcp_client/mcp_client_barrel.dart';
 
 import 'embedding_result.dart';
 import 'llm_call.dart';
-import 'package:tom_core_llm/tom_core_llm.dart';
+import 'package:tom_llm/tom_llm.dart';
 import '../config/substrate_config.dart';
 import 'mcp_endpoint.dart';
 import 'substrate_event.dart';

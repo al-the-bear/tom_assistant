@@ -28,7 +28,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart' show BrainEvent;
 
 import 'embedding_result.dart' show EmbeddingModelIdentity;
 import 'llm_call.dart' show LlmCallReport;
-import 'package:tom_core_llm/tom_core_llm.dart' show LlmFailure;
+import 'package:tom_llm/tom_llm.dart' show LlmFailure;
 
 /// Marker / base for every typed substrate observability event.
 ///

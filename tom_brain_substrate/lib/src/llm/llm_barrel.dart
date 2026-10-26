@@ -131,7 +131,7 @@
 //     B.46 conformance test exercises every emitted report against
 //     the registry.
 
-export 'package:tom_core_llm/tom_core_llm.dart'
+export 'package:tom_llm/tom_llm.dart'
     show
         LlmCapabilities,
         LlmContextSummary,
