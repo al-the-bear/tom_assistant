@@ -111,27 +111,95 @@ void main() {
       );
     });
 
-    test('a deleted prose file reverts that role half to the in-code value',
-        () {
-      final inCodePersona =
-          bootstrapRoleRegistry().get('analyser').personaText;
-      writePersona('analyser', 'TEMPORARY OVERRIDE');
+    test('RRR-SAMESIZE-1: a same-size edit within one modification-time tick '
+        'is picked up', () {
+      // Two writes of the same length that land in one timestamp tick leave
+      // the file's size and modification time unchanged; forcing the second
+      // write's mtime back to the first's makes that tick deterministic. The
+      // tick is set on both writes, whole seconds, because setting a time
+      // truncates it and reading back the first write's own time would
+      // change it.
+      final file = File('${rolesDir.path}/analyser.objective.md');
+      final now = DateTime.now();
+      final tick = DateTime.fromMillisecondsSinceEpoch(
+        now.millisecondsSinceEpoch - now.millisecondsSinceEpoch % 1000,
+      );
+      writeObjective('analyser', 'OLD OBJECTIVE');
+      file.setLastModifiedSync(tick);
       final holder = ReloadingRoleRegistry.reloading(
         base: bootstrapRoleRegistry(),
         rolesDir: rolesDir,
       );
-      expect(
-        holder.current().get('analyser').personaText,
-        equals('TEMPORARY OVERRIDE'),
-      );
+      expect(holder.current().get('analyser').objective, 'OLD OBJECTIVE');
 
-      File('${rolesDir.path}/analyser.persona.md').deleteSync();
+      writeObjective('analyser', 'NEW OBJECTIVE');
+      file.setLastModifiedSync(tick);
+      expect(file.statSync().size, 'OLD OBJECTIVE'.length);
 
-      expect(
-        holder.current().get('analyser').personaText,
-        equals(inCodePersona),
-      );
+      expect(holder.current().get('analyser').objective, 'NEW OBJECTIVE');
     });
+
+    test('RRR-SAMESIZE-2: once its files have settled, a no-change current() '
+        'is a stat walk and keeps the same overlay', () {
+      // A file last modified long before the build cannot share a tick with
+      // a later write, so nothing about it is hashed.
+      final file = File('${rolesDir.path}/analyser.persona.md');
+      writePersona('analyser', 'SETTLED VOICE');
+      file.setLastModifiedSync(
+        DateTime.now().subtract(const Duration(hours: 1)),
+      );
+      final holder = ReloadingRoleRegistry.reloading(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
+
+      expect(holder.pendingContentChecks, isZero);
+      final first = holder.current();
+      expect(identical(holder.current(), first), isTrue);
+    });
+
+    test('RRR-SAMESIZE-3: a freshly written file is compared by content until '
+        'the tick window has passed, then settles without a reload', () async {
+      writePersona('analyser', 'FRESH VOICE');
+      final holder = ReloadingRoleRegistry.reloading(
+        base: bootstrapRoleRegistry(),
+        rolesDir: rolesDir,
+      );
+      expect(holder.pendingContentChecks, 1);
+      final first = holder.current();
+      expect(identical(first, holder.current()), isTrue);
+
+      await Future<void>.delayed(
+        ReloadingRoleRegistry.tickWindow + const Duration(milliseconds: 100),
+      );
+      expect(identical(holder.current(), first), isTrue);
+      expect(holder.pendingContentChecks, isZero);
+    });
+
+    test(
+      'a deleted prose file reverts that role half to the in-code value',
+      () {
+        final inCodePersona = bootstrapRoleRegistry()
+            .get('analyser')
+            .personaText;
+        writePersona('analyser', 'TEMPORARY OVERRIDE');
+        final holder = ReloadingRoleRegistry.reloading(
+          base: bootstrapRoleRegistry(),
+          rolesDir: rolesDir,
+        );
+        expect(
+          holder.current().get('analyser').personaText,
+          equals('TEMPORARY OVERRIDE'),
+        );
+
+        File('${rolesDir.path}/analyser.persona.md').deleteSync();
+
+        expect(
+          holder.current().get('analyser').personaText,
+          equals(inCodePersona),
+        );
+      },
+    );
 
     test('the roster and capability surface are invariant across a reload', () {
       final base = bootstrapRoleRegistry();
