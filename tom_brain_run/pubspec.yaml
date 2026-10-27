@@ -66,7 +66,7 @@ dependencies:
   # `retrieval_eval.yaml` through the canonical plain-map loader so no
   # `YamlMap`/`YamlList` node leaks into a `RetrievalEvalConfig`.
   tom_core_agentic:
-    path: ../../tom_ai/core/tom_core_agentic
+    path: ../../tom_ai/core_extension/tom_core_agentic
   tom_basics: ">=1.0.0"
   # The unified `tom_brain` CLI binary (CLI plan step #8) is built on the
   # `tom_build_base` v2 tool framework (ToolRunner + ToolDefinition +

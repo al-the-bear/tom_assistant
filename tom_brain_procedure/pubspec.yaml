@@ -142,7 +142,7 @@ dependencies:
   #   review reuse-extraction pass; the engine + dispatcher logs subclass
   #   `CategoryLog` rather than re-deriving the tag/forward shape. Path dep.
   tom_core_agentic:
-    path: ../../tom_ai/core/tom_core_agentic
+    path: ../../tom_ai/core_extension/tom_core_agentic
   tom_core_kernel:
     path: ../../tom_ai/core/tom_core_kernel
   tom_d4rt: ">=1.11.0"

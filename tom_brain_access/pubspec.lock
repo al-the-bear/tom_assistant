@@ -968,10 +968,10 @@ packages:
   tom_core_agentic:
     dependency: "direct main"
     description:
-      path: "../../tom_ai/core/tom_core_agentic"
+      path: "../../tom_ai/core_extension/tom_core_agentic"
       relative: true
     source: path
-    version: "1.8.0"
+    version: "1.9.0"
   tom_core_kernel:
     dependency: "direct main"
     description:
@@ -1025,14 +1025,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
+  tom_todo_model:
+    dependency: transitive
+    description:
+      name: tom_todo_model
+      sha256: c983828d81e986befd50dc07347e492d568b51b55a13de6c542be9a18c55bcf3
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
   tom_vscode_scripting_api:
     dependency: transitive
     description:
       name: tom_vscode_scripting_api
-      sha256: "57559643503106527f92b02b794ff053b15710facba05a531c8f1db0ddc8a7e2"
+      sha256: "902e6e4af6b909d2a60b98ea8dadab42973ab682578cf38708f65360bf386c2f"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.2"
+    version: "2.0.0"
   tuple:
     dependency: transitive
     description:

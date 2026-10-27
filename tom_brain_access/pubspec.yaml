@@ -131,7 +131,7 @@ dependencies:
   # Depends only on `tom_basics` (+ `yaml`), so it adds no transport, memory,
   # or substrate coupling — the layering contract above is preserved.
   tom_core_agentic:
-    path: ../../tom_ai/core/tom_core_agentic
+    path: ../../tom_ai/core_extension/tom_core_agentic
   tom_core_kernel:
     path: ../../tom_ai/core/tom_core_kernel
   tom_core_server:

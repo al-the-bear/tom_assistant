@@ -100,7 +100,7 @@ dependencies:
   #                          `tom_basics` (+ yaml); no Tom-Brain types.
   #                          Path dep — `publish_to: none`.
   tom_core_agentic:
-    path: ../../tom_ai/core/tom_core_agentic
+    path: ../../tom_ai/core_extension/tom_core_agentic
   #   - tom_llm       — the provider contract every substrate
   #                          provider implements (`LlmProvider`,
   #                          `LlmRequest`, the `LlmEvent` union,

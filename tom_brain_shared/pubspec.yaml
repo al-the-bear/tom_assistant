@@ -23,7 +23,7 @@ environment:
 dependencies:
   tom_basics: ">=1.0.0"
   tom_core_agentic:
-    path: ../../tom_ai/core/tom_core_agentic
+    path: ../../tom_ai/core_extension/tom_core_agentic
 
 dev_dependencies:
   lints: ^6.0.0

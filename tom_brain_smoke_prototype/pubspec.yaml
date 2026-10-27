@@ -59,7 +59,7 @@ dependencies:
   # the memory package's recall-latency tracker derives), so the bench consumes
   # them rather than carrying its own copy.
   tom_core_agentic:
-    path: ../../tom_ai/core/tom_core_agentic
+    path: ../../tom_ai/core_extension/tom_core_agentic
   # The E.58 process bench is a CLI entry point, so its arg parsing
   # (`--samples` / `--warmup` / `--output`), `--version`, and `--help` are built
   # on the shared `tom_build_base` framework rather than hand-rolled — the
