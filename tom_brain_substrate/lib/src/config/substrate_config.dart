@@ -93,12 +93,12 @@ enum ProviderKind {
   /// `AnthropicLlmProvider` against the Anthropic Messages API.
   anthropic,
 
-  /// `AgentSdkLlmProvider` (run layer) — drives the Anthropic Agent SDK
-  /// through the VS Code Scripting API bridge. Control-inverted: Claude
-  /// Code owns the tool / MCP / memory loop; the provider sees a single
-  /// black-box completion. Construction lives in `tom_brain_run`
-  /// (`brain_substrate_builder.dart`) because it depends on
-  /// `tom_vscode_scripting_api` + a live bridge. Its bridge host/port,
+  /// `tom_core_agentic`'s `AgentSdkSessionProvider` — drives the Anthropic
+  /// Agent SDK through the VS Code CLI server. Control-inverted: Claude Code
+  /// owns the tool / MCP / memory loop; the provider sees a single black-box
+  /// completion. Construction lives in `tom_brain_run`
+  /// (`brain_substrate_builder.dart`), which owns the run's storage root and
+  /// the `/cli_server_port` rebind. Its bridge host/port,
   /// session mode, and MCP allow-list ride in [ProviderProfile.options]
   /// rather than [ProviderProfile.baseUrl] / `auth` (the bridge owns the
   /// Anthropic credential).

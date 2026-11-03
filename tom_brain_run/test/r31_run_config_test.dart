@@ -79,10 +79,11 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
         WebFetchConfig,
         WebSearchConfig,
         WebSearchProviderConfig;
+import 'package:tom_core_agentic/agent_sdk.dart';
 import 'package:tom_core_server/tom_core_server.dart'
     show standalonePlatformUtils;
 import 'package:tom_vscode_scripting_api/tom_vscode_scripting_api.dart'
-    show PermissionMode;
+    show PermissionMode, defaultVSCodeBridgePort;
 import 'package:test/test.dart';
 
 /// Locates `<workspace>/tom_binaries/sqlite_vec`. Mirrors the #30 suite.
@@ -621,19 +622,30 @@ substrate:
     dims: 768
     normalize: true''';
 
-    test('manufactures an AgentSdkLlmProvider with route default + defaults',
+    test('manufactures an AgentSdkSessionProvider with route default + defaults',
         () {
       final SubstrateConfig cfg =
           SubstrateConfigLoader.parse('${agentSdkSubstrate()}\n');
       final substrate = buildSubstrate(cfg);
 
       final provider = substrate.providers['claude'];
-      expect(provider, isA<AgentSdkLlmProvider>());
-      final sdk = provider as AgentSdkLlmProvider;
+      expect(provider, isA<AgentSdkSessionProvider>());
+      final sdk = provider as AgentSdkSessionProvider;
       expect(sdk.id, 'claude');
-      expect(sdk.defaultModel, 'claude-sonnet-4-6');
-      expect(sdk.maxTurns, isNull);
-      expect(sdk.permissionMode, PermissionMode.default_);
+      expect(sdk.model, 'claude-sonnet-4-6');
+      expect(sdk.agentLoop!.maxTurns, isNull);
+      expect(sdk.agentLoop!.permissionMode, PermissionMode.default_.wire);
+      expect(sdk.whenBusy, AgentSdkWhenBusy.queue);
+      expect(sdk.connectOnDemand, isTrue);
+      expect(sdk.attribution, AgentSdkRunAttribution.provider);
+      expect(sdk.sessions.idleClose, const Duration(minutes: 10));
+      addTearDown(sdk.sessions.dispose);
+      final transport = sdk.selector.candidates.single
+          as HostedCliServerAiTransport;
+      expect(transport.minPort, defaultVSCodeBridgePort);
+      expect(transport.maxPort, defaultVSCodeBridgePort);
+      // Manufacture is offline: nothing has been probed.
+      expect(sdk.isAvailable, isFalse);
     });
 
     test('reads permissionMode + maxTurns from options', () {
@@ -644,19 +656,21 @@ substrate:
         maxTurns: 12''';
       final SubstrateConfig cfg =
           SubstrateConfigLoader.parse('${agentSdkSubstrate(options: options)}\n');
-      final sdk = buildSubstrate(cfg).providers['claude'] as AgentSdkLlmProvider;
-      expect(sdk.permissionMode, PermissionMode.acceptEdits);
-      expect(sdk.maxTurns, 12);
+      final sdk =
+          buildSubstrate(cfg).providers['claude'] as AgentSdkSessionProvider;
+      expect(sdk.agentLoop!.permissionMode, PermissionMode.acceptEdits.wire);
+      expect(sdk.agentLoop!.maxTurns, 12);
     });
 
-    test('the default session mode is `none` → NoSessionStrategy', () {
+    test('the default session mode is `none` → no resume', () {
       final SubstrateConfig cfg =
           SubstrateConfigLoader.parse('${agentSdkSubstrate()}\n');
-      final sdk = buildSubstrate(cfg).providers['claude'] as AgentSdkLlmProvider;
-      expect(sdk.sessionStrategy, isA<NoSessionStrategy>());
+      final sdk =
+          buildSubstrate(cfg).providers['claude'] as AgentSdkSessionProvider;
+      expect(sdk.resume, isNull);
     });
 
-    test('sessionMode brain builds a BrainSessionStrategy under the run root',
+    test('sessionMode brain builds an AgentSdkStoredResume under the run root',
         () {
       const String options = '''
 
@@ -665,8 +679,8 @@ substrate:
       final SubstrateConfig cfg =
           SubstrateConfigLoader.parse('${agentSdkSubstrate(options: options)}\n');
       final sdk = buildSubstrate(cfg, agentSdkSessionRoot: '/run/store')
-          .providers['claude'] as AgentSdkLlmProvider;
-      expect(sdk.sessionStrategy, isA<BrainSessionStrategy>());
+          .providers['claude'] as AgentSdkSessionProvider;
+      expect(sdk.resume, isA<AgentSdkStoredResume>());
     });
 
     test('sessionMode brain without a run root is a located error', () {
@@ -683,7 +697,7 @@ substrate:
       );
     });
 
-    test('sessionMode quest builds a QuestSessionStrategy from its options', () {
+    test('sessionMode quest builds an AgentSdkQuestResume from its options', () {
       const String options = '''
 
       options:
@@ -693,8 +707,9 @@ substrate:
         questHistoryRoot: /srv/quests''';
       final SubstrateConfig cfg =
           SubstrateConfigLoader.parse('${agentSdkSubstrate(options: options)}\n');
-      final sdk = buildSubstrate(cfg).providers['claude'] as AgentSdkLlmProvider;
-      expect(sdk.sessionStrategy, isA<QuestSessionStrategy>());
+      final sdk =
+          buildSubstrate(cfg).providers['claude'] as AgentSdkSessionProvider;
+      expect(sdk.resume, isA<AgentSdkQuestResume>());
     });
 
     test('sessionMode quest missing a required option is a located error', () {

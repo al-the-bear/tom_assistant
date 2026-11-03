@@ -93,16 +93,8 @@ export 'src/brain_substrate_builder.dart'
         NoWebSearch,
         buildSubstrate,
         buildWebFetch,
+        brainCliServerTransport,
         buildWebSearch;
-export 'src/agent_sdk_llm_provider.dart' show AgentSdkLlmProvider;
-export 'src/agent_sdk_session.dart'
-    show
-        AgentSdkSessionStore,
-        AgentSdkSessionStrategy,
-        BrainSessionStrategy,
-        NoSessionStrategy,
-        QuestSessionStrategy,
-        agentSdkLooksLikeSessionError;
 export 'src/provision_brain.dart'
     show
         BrainProcess,

@@ -10,9 +10,10 @@
 //   1. The run config on disk — every `agent_sdk` provider row's
 //      `options.bridgePort` is rewritten via comment-preserving `yaml_edit`, so
 //      the new port survives a restart. ([CliServerPortConfigWriter].)
-//   2. The live providers — each [AgentSdkLlmProvider] is rebound, dropping its
-//      memoised bridge client on the old port and lazily reconnecting on the new
-//      one at its next call. ([AgentSdkLlmProvider.rebindBridgePort].)
+//   2. The live providers — each [AgentSdkSessionProvider]'s selector gets a
+//      transport on the new port in place of the old one, which is closed; the
+//      provider reaches the new port on its next call, and a session still on
+//      the old transport restarts there. ([rebindAgentSdkProvider].)
 //
 // This file holds the two pieces that seam needs:
 //
@@ -30,7 +31,29 @@ import 'package:tom_brain_access/tom_brain_access.dart'
 import 'package:yaml/yaml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
-import 'agent_sdk_llm_provider.dart';
+import 'package:tom_core_agentic/agent_sdk.dart'
+    show AgentSdkSessionProvider, HostedCliServerAiTransport;
+
+import 'brain_substrate_builder.dart' show brainCliServerTransport;
+
+/// Moves [provider] to the CLI server on [port]: its selector's transport is
+/// replaced by one on the new port (same host), and the old one closed.
+///
+/// Returns `true` when the port changed, `false` when the provider already
+/// targets [port] (a no-op).
+Future<bool> rebindAgentSdkProvider(
+  AgentSdkSessionProvider provider,
+  int port,
+) async {
+  final current = provider.selector.candidates
+      .whereType<HostedCliServerAiTransport>()
+      .first;
+  if (current.minPort == port && current.maxPort == port) return false;
+  await provider.selector.replaceCandidates([
+    brainCliServerTransport(current.host, port),
+  ]);
+  return true;
+}
 
 /// Thrown when a `/cli_server_port` change cannot be written to the run config
 /// on disk — a missing file, an unparseable one, or one with no `agent_sdk`
@@ -124,14 +147,14 @@ final class CliServerPortConfigWriter {
 /// Validates the port range first, so an invalid switch is a rendered notice
 /// rather than a corrupting write. On a valid port it persists through [writer]
 /// (when one is wired) and then rebinds every live agent-SDK [providers] entry —
-/// each drops its memoised bridge client on the old port and reconnects on the
-/// new one at its next call. The outcome string reports how many providers were
+/// each closes its transport on the old port and reaches the new one at its
+/// next call. The outcome string reports how many providers were
 /// rebound and whether the change was persisted.
 final class TomBrainCliServerPortController
     implements TelegramCliServerPortController {
   /// The live agent-SDK providers to rebind (the `agent_sdk` rows of the running
   /// substrate). May be empty when the deployment has no agent-SDK providers.
-  final List<AgentSdkLlmProvider> providers;
+  final List<AgentSdkSessionProvider> providers;
 
   /// Persists the port to the run config, or `null` when the deployment has no
   /// run-config path to write into (the port then changes for this process only,
@@ -172,7 +195,7 @@ final class TomBrainCliServerPortController
 
     var rebound = 0;
     for (final provider in providers) {
-      if (await provider.rebindBridgePort(port)) rebound++;
+      if (await rebindAgentSdkProvider(provider, port)) rebound++;
     }
 
     final providerNote = providers.isEmpty

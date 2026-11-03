@@ -754,7 +754,8 @@ class SubstrateBridge {
     final callSeq = turn?.nextCallSeq();
     // Stamp the live tom_brain session id onto the call (agent-SDK spec
     // § 1.5). Every HTTP / stub provider ignores `brainSessionId`; only
-    // the run-layer `AgentSdkLlmProvider` in `sessionMode: brain` reads it.
+    // the Agent SDK provider reads it — the session it serves the call from,
+    // and in `sessionMode: brain` the key of the conversation it resumes.
     // A turn-less (internal / dream) call carries a null session id.
     final stampedOptions = turn?.brainSessionId == null
         ? options

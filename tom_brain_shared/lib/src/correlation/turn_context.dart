@@ -22,9 +22,9 @@ final class TurnContext {
   /// free-time / dream).
   ///
   /// Stamped onto every user-turn LLM call's [LlmOptions.sessionId] by the
-  /// `SubstrateBridge`, where the run-layer `AgentSdkLlmProvider` in
-  /// `sessionMode: brain` reads it to key the persisted Claude-Code session id
-  /// by the tom_brain session (agent-SDK design spec § 1.5).
+  /// `SubstrateBridge`, where the Agent SDK provider (`AgentSdkSessionProvider`)
+  /// serves the call from that session and, in `sessionMode: brain`, keys the
+  /// persisted conversation id by it (agent-SDK design spec § 1.5).
   final String? brainSessionId;
 
   int _callSeq = 0;

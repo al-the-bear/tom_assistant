@@ -1,6 +1,6 @@
 // Agent-SDK provider config surface (agent-SDK design spec § 1.2 / § 1.3 /
 // § 1.5). Phase 1: the substrate-level config additions that make the run-layer
-// `AgentSdkLlmProvider` configurable —
+// `AgentSdkSessionProvider` configurable —
 //
 //   * `ProviderKind.agentSdk` + the loader's `agent_sdk` string;
 //   * `ProviderProfile.options` (a generic passthrough bag) + the loader's

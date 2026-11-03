@@ -7,6 +7,7 @@
 import 'dart:io';
 
 import 'package:tom_brain_run/tom_brain_run.dart';
+import 'package:tom_core_agentic/agent_sdk.dart';
 import 'package:test/test.dart';
 
 /// A minimal run-config with two `agent_sdk` providers (on the old port) plus
@@ -32,15 +33,29 @@ substrate:
         bridgePort: 19900
 ''';
 
-/// An agent-SDK provider whose factory is never invoked (no completion is run),
-/// so a rebind only flips the recorded port — no bridge dependency.
-AgentSdkLlmProvider _provider(String id) => AgentSdkLlmProvider(
-      id: id,
-      defaultModel: 'm',
-      bridgePort: 19900,
-      clientFactory: (port) async =>
-          throw StateError('factory should not be called in this test'),
-    );
+/// An agent-SDK provider on port 19900 that is never asked to complete, so a
+/// rebind only replaces its transport — no bridge dependency.
+AgentSdkSessionProvider _provider(String id) {
+  final sessions = AgentSdkSessionManager();
+  addTearDown(sessions.dispose);
+  return AgentSdkSessionProvider(
+    id: id,
+    selector: AgentSdkTransportSelector([
+      brainCliServerTransport('127.0.0.1', 19900),
+    ]),
+    sessions: sessions,
+    toolServerName: 'tom_brain',
+    connectOnDemand: true,
+  );
+}
+
+/// The port [provider]'s transport targets.
+int _port(AgentSdkSessionProvider provider) {
+  final transport =
+      provider.selector.candidates.single as HostedCliServerAiTransport;
+  expect(transport.maxPort, transport.minPort);
+  return transport.minPort;
+}
 
 void main() {
   group('CliServerPortConfigWriter', () {
@@ -94,7 +109,7 @@ void main() {
       final out = await controller.setCliServerPort(port: 70000);
       expect(out, contains('out of range'));
       // Port unchanged — nothing was rebound.
-      expect(p.bridgePort, 19900);
+      expect(_port(p), 19900);
     });
 
     test('rebinds the live providers and reports the count (no writer)',
@@ -105,8 +120,8 @@ void main() {
           TomBrainCliServerPortController(providers: [a, b]);
 
       final out = await controller.setCliServerPort(port: 20000);
-      expect(a.bridgePort, 20000);
-      expect(b.bridgePort, 20000);
+      expect(_port(a), 20000);
+      expect(_port(b), 20000);
       expect(out, contains('20000'));
       expect(out, contains('2 of 2'));
       expect(out, contains('not persisted'));
@@ -126,7 +141,7 @@ void main() {
       );
 
       final out = await controller.setCliServerPort(port: 21000);
-      expect(a.bridgePort, 21000);
+      expect(_port(a), 21000);
       expect(out, contains('persisted'));
       expect(out, contains('survives a restart'));
       expect(file.readAsStringSync(), contains('bridgePort: 21000'));

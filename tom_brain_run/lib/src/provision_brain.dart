@@ -112,7 +112,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
         TomBrainSubstrateClient,
         bootstrapRoleRegistryWithRetrievalProcedureCreationPlanningDreamAndHistory;
 
-import 'agent_sdk_llm_provider.dart' show AgentSdkLlmProvider;
+import 'package:tom_core_agentic/agent_sdk.dart' show AgentSdkSessionProvider;
 import 'api_key_persist.dart' show appendApiKeyToRunConfig;
 import 'brain_run_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
@@ -980,7 +980,7 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
     runConfig.substrate,
     roleProseReload: roleProseReload,
     // The run's storage root: a `sessionMode: brain` agent-SDK provider keys
-    // its persisted Claude session ids under `<root>/agent_sdk_sessions.json`
+    // its persisted conversation ids under `<root>/agent_sdk_sessions.json`
     // (agent-SDK design spec § 1.4).
     agentSdkSessionRoot: runConfig.memory.root,
   );
@@ -1005,8 +1005,10 @@ Future<BrainProcess> standUpBrainProcessFromConfig(
   // config (when [runConfigPath] is known) so it survives a restart. Wired only
   // when there is at least one agent-SDK provider to rebind; otherwise the
   // command reports as unavailable.
-  final List<AgentSdkLlmProvider> agentSdkProviders = substrate.providers.values
-      .whereType<AgentSdkLlmProvider>()
+  final List<AgentSdkSessionProvider> agentSdkProviders = substrate
+      .providers
+      .values
+      .whereType<AgentSdkSessionProvider>()
       .toList();
   final TelegramCliServerPortController? cliServerPortController =
       agentSdkProviders.isEmpty

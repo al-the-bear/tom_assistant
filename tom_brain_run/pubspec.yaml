@@ -110,13 +110,11 @@ dependencies:
   # before `yaml_edit` rewrites each one's `options.bridgePort` — the read uses
   # `package:yaml`'s `loadYaml` + `YamlMap` / `YamlList` to walk the structure.
   yaml: ^3.1.0
-  # The agent-SDK provider (`AgentSdkLlmProvider`, request a / design-spec § 1.2)
-  # drives the Anthropic Agent SDK through the VS Code Scripting API bridge: it
-  # constructs an `AgentSdkClient` over a `VSCodeBridgeAgentSdkTransport` bound to
-  # a `VSCodeBridgeClient` (the CLI server on 127.0.0.1:19900) and translates the
-  # `Stream<SdkMessage>` into substrate stream events. The provider lives in the
-  # run layer (not the transport-pure substrate) precisely because it depends on
-  # this bridge package and a live VS Code window.
+  # The agent-SDK provider is `tom_core_agentic`'s `AgentSdkSessionProvider`
+  # (`package:tom_core_agentic/agent_sdk.dart`), built here over the hosted
+  # CLI-server transport. The run builder reads `PermissionMode` (validating the
+  # config's `permissionMode`) and `defaultVSCodeBridgePort` from the scripting
+  # API, which is why it is a direct dependency.
   tom_vscode_scripting_api: ">=1.1.0"
 
 dev_dependencies:

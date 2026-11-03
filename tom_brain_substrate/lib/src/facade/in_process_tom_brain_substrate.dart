@@ -115,6 +115,7 @@
 
 import 'dart:async';
 
+import 'package:tom_core_agentic/agent_sdk.dart' show AgentSdkSessionProvider;
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
 import '../api/embedding_result.dart';
@@ -362,6 +363,18 @@ final class InProcessTomBrainSubstrate extends TomBrainSubstrate
       _webFetch.close();
     } on Object {
       // Same.
+    }
+
+    // The Agent SDK providers the substrate was built with own their sessions
+    // (an isolate each) and their transport, which nothing else releases.
+    for (final provider in _providers.values) {
+      if (provider is! AgentSdkSessionProvider) continue;
+      try {
+        await provider.sessions.dispose();
+        await provider.selector.dispose();
+      } on Object {
+        // Same.
+      }
     }
 
     await _eventBus.close();
