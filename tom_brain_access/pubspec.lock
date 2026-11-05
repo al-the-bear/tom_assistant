@@ -9,14 +9,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "96.0.0"
-  adaptive_number:
-    dependency: transitive
-    description:
-      name: adaptive_number
-      sha256: "3a567544e9b5c9c803006f51140ad544aedc79604fd4f3f2c1380003f97c1d77"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.0"
   analyzer:
     dependency: transitive
     description:
@@ -229,10 +221,10 @@ packages:
     dependency: transitive
     description:
       name: dart_jsonwebtoken
-      sha256: b268ff9bb87a16360a397f1accb50e7c781384e1119010b34f6d7c25820c44d8
+      sha256: ad84e60181696513d04d5f2078e0bbc20365b911f46f647797317414bdc88fbe
       url: "https://pub.dev"
     source: hosted
-    version: "3.1.1"
+    version: "3.4.1"
   dart_mcp:
     dependency: transitive
     description:
@@ -297,14 +289,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.2"
-  ed25519_edwards:
-    dependency: transitive
-    description:
-      name: ed25519_edwards
-      sha256: f3c3b109a0e470ee35f6346a155cab290578660852237fce10df6bbd92758534
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.2"
   equatable:
     dependency: transitive
     description:
@@ -465,14 +449,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.0"
-  js:
-    dependency: transitive
-    description:
-      name: js
-      sha256: "53385261521cc4a0c4658fd0ad07a7d14591cf8fc33abbceae306ddb974888dc"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.7.2"
   json2yaml:
     dependency: transitive
     description:
@@ -577,6 +553,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.2"
+  opentelemetry:
+    dependency: transitive
+    description:
+      name: opentelemetry
+      sha256: f2c433064f5e4d8e3947883e0944dfa924928be76f5052089e2dd9873d2cafc4
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.18.11+1"
+  opentelemetry_wk:
+    dependency: transitive
+    description:
+      name: opentelemetry_wk
+      sha256: "6f95c96b4d997cbc2e8f92bd51038f8441ba27308a8876628c9b18e8e72a6537"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.18.11"
   package_config:
     dependency: transitive
     description:
@@ -621,10 +613,10 @@ packages:
     dependency: transitive
     description:
       name: pointycastle
-      sha256: "4be0097fcf3fd3e8449e53730c631200ebc7b88016acecab2b0da2f0149222fe"
+      sha256: "92aa3841d083cc4b0f4709b5c74fd6409a3e6ba833ffc7dc6a8fee096366acf5"
       url: "https://pub.dev"
     source: hosted
-    version: "3.9.1"
+    version: "4.0.0"
   pool:
     dependency: transitive
     description:
@@ -649,6 +641,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.5.20"
+  protobuf:
+    dependency: transitive
+    description:
+      name: protobuf
+      sha256: "13b6717366aa7ec3792dd62c19c7d33a785708224365f2db23c5ca01f1c1a0f2"
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.1.0"
   pub_semver:
     dependency: transitive
     description:
@@ -689,6 +689,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.2"
+  quiver:
+    dependency: transitive
+    description:
+      name: quiver
+      sha256: ea0b925899e64ecdfbf9c7becb60d5b50e706ade44a85b2363be2a22d88117d2
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.2.2"
   scope:
     dependency: transitive
     description:
@@ -971,7 +979,7 @@ packages:
       path: "../../tom_ai/core_extension/tom_core_agentic"
       relative: true
     source: path
-    version: "1.9.0"
+    version: "2.0.0"
   tom_core_kernel:
     dependency: "direct main"
     description:
@@ -979,6 +987,13 @@ packages:
       relative: true
     source: path
     version: "1.1.16"
+  tom_core_message_bus:
+    dependency: transitive
+    description:
+      path: "../../tom_ai/core/tom_core_message_bus"
+      relative: true
+    source: path
+    version: "0.1.0"
   tom_core_server:
     dependency: "direct main"
     description:
@@ -990,10 +1005,10 @@ packages:
     dependency: transitive
     description:
       name: tom_crypto
-      sha256: "3ae659e99e60e196f19b7b72333e004332101a76a56b74bfcc6a7deac5623dd1"
+      sha256: "63e5f02374e0199773a45158ea9d261803b567527696696915344a6450f764ce"
       url: "https://pub.dev"
     source: hosted
-    version: "1.3.0"
+    version: "1.4.0"
   tom_d4rt:
     dependency: transitive
     description:
@@ -1029,18 +1044,18 @@ packages:
     dependency: transitive
     description:
       name: tom_todo_model
-      sha256: c983828d81e986befd50dc07347e492d568b51b55a13de6c542be9a18c55bcf3
+      sha256: "393cf0970bffdf2de5ac6c764b87cc4a8d1dca5bca0a4dc65f8b0924205a8130"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.1"
+    version: "1.2.0"
   tom_vscode_scripting_api:
     dependency: transitive
     description:
       name: tom_vscode_scripting_api
-      sha256: "902e6e4af6b909d2a60b98ea8dadab42973ab682578cf38708f65360bf386c2f"
+      sha256: "5e2323857ce243467ffe57a37dd8a37cf7a038946d60ebd9742da8670cbb1357"
       url: "https://pub.dev"
     source: hosted
-    version: "2.0.0"
+    version: "2.0.3"
   tuple:
     dependency: transitive
     description:
