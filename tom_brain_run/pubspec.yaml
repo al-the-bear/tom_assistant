@@ -120,6 +120,11 @@ dependencies:
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
+  # The live Agent SDK suite (`live_agent_sdk_brain_test.dart`) reads a run's
+  # events (`LlmRetry`, `LlmRunError`, `llmAnswerText`), which the substrate's
+  # barrel does not re-export.
+  tom_llm:
+    path: ../../tom_ai/basics/tom_llm
   # The r38 HTTP MCP channel test drives the opened channel through a
   # `StreamQueue` (`package:async`) against a loopback `HttpServer` fixture.
   async: ^2.11.0
