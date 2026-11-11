@@ -5,3 +5,5 @@
 # pubspec.lock is NOT committed: this package is a library + test harness (no
 # bin/ executable), so the standard library convention applies.
 pubspec.lock
+# Application package: its pubspec.lock is tracked (al_the_bear tom_app_locks, todo oqa2).
+!/pubspec.lock
