@@ -62,6 +62,11 @@ dependencies:
   # `startObservatoryServer` library function keeps it a genuine second isolate.
   tom_brain_observatory:
     path: ../tom_brain_observatory
+  # The brain's configuration model and loaders (moved out of this package so
+  # the observatory can read them without depending on the run). Re-exported
+  # from lib/tom_brain_run.dart, so callers keep importing tom_brain_run.
+  tom_brain_config:
+    path: ../tom_brain_config
   # The retrieval eval harness (Plan-2 ext step #33; spec § 23.8) parses its
   # `retrieval_eval.yaml` through the canonical plain-map loader so no
   # `YamlMap`/`YamlList` node leaks into a `RetrievalEvalConfig`.

@@ -28,8 +28,7 @@ import 'package:tom_brain_observatory/tom_brain_observatory.dart'
     show ObservatoryOptions;
 import 'package:tom_core_agentic/tom_core_agentic.dart' show loadYamlAsMap;
 
-import '../brain_run_config.dart';
-import '../brain_run_config_loader.dart';
+import 'package:tom_brain_config/tom_brain_config.dart';
 import '../cli_env_expansion.dart';
 import '../project_home.dart';
 import 'config_overlay.dart';

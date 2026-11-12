@@ -34,12 +34,12 @@
 ///     [BrainRunConfig] to a running [BrainProcess].
 library;
 
-export 'src/brain_run_config.dart' show BrainRunConfig;
+export 'package:tom_brain_config/tom_brain_config.dart' show BrainRunConfig;
 export 'src/builtin_bindings.dart' show BrainBuiltins;
-export 'src/cognition_run_config.dart'
+export 'package:tom_brain_config/tom_brain_config.dart'
     show CognitionRunConfig, CognitionRunConfigException;
-export 'src/cognition_run_config_loader.dart' show CognitionRunConfigLoader;
-export 'src/cognition_config.dart'
+export 'package:tom_brain_config/tom_brain_config.dart' show CognitionRunConfigLoader;
+export 'package:tom_brain_config/tom_brain_config.dart'
     show
         CatalogueConfigFile,
         CatalogueConfigKind,
@@ -65,7 +65,7 @@ export 'src/cognition_config.dart'
         ToolsReadonly,
         ToolsSetting,
         UnregisteredPromptException;
-export 'src/cognition_config_loader.dart' show CognitionConfigLoader;
+export 'package:tom_brain_config/tom_brain_config.dart' show CognitionConfigLoader;
 export 'src/cognition_prompt_resolver.dart'
     show
         buildBundledPromptResolver,
@@ -84,8 +84,8 @@ export 'src/cli_server_port_switch.dart'
         TomBrainCliServerPortController;
 export 'src/api_key_persist.dart'
     show ApiKeyPersistException, appendApiKeyToRunConfig;
-export 'src/llm_route_config.dart' show LlmRouteConfig, UnknownLlmRouteException;
-export 'src/brain_run_config_loader.dart'
+export 'package:tom_brain_config/tom_brain_config.dart' show LlmRouteConfig, UnknownLlmRouteException;
+export 'package:tom_brain_config/tom_brain_config.dart'
     show BrainRunConfigException, BrainRunConfigLoader;
 export 'src/brain_substrate_builder.dart'
     show
@@ -124,7 +124,7 @@ export 'src/legacy_store_migration.dart'
     show LegacyMigrationOutcome, migrateLegacyMemoryRoot;
 
 // ── Scheduled dream cadence driver (memory-spec § 9.7; G-M3) ──────────
-export 'src/dream_cadence_driver.dart'
+export 'package:tom_brain_config/tom_brain_config.dart'
     show
         CadenceSchedule,
         DreamCadenceDriver,
@@ -136,15 +136,15 @@ export 'src/dream_cadence_wiring.dart'
         DreamCadenceLoop,
         dreamCadenceDriverOverScheduler,
         fireThroughScheduler;
-export 'src/dream_throttle.dart'
+export 'package:tom_brain_config/tom_brain_config.dart'
     show DreamThrottle, DreamThrottleSettings;
-export 'src/dream_window_schedule.dart'
+export 'package:tom_brain_config/tom_brain_config.dart'
     show DreamWindow, DreamWindowSchedule;
 export 'src/dream_controller.dart'
     show DreamController, DreamModeKind, DreamStatus;
 export 'src/late_dream_surface.dart' show LateDreamSurface;
-export 'src/dream_config.dart' show DreamConfig, DreamConfigException;
-export 'src/dream_config_loader.dart' show DreamConfigLoader;
+export 'package:tom_brain_config/tom_brain_config.dart' show DreamConfig, DreamConfigException;
+export 'package:tom_brain_config/tom_brain_config.dart' show DreamConfigLoader;
 
 // ── Trail config + mode + banner (logging-spec §4.1 / §8; §10 step #1) ─
 export 'src/trail_banner.dart' show TrailBanner;
@@ -173,8 +173,8 @@ export 'src/bundle/bundled_sqlite_vec.dart'
         SqliteVecResolution,
         SqliteVecUnavailable,
         resolveSqliteVecBinariesRoot;
-export 'src/scripts_config.dart' show ScriptsConfig, ScriptsConfigException;
-export 'src/scripts_config_loader.dart' show ScriptsConfigLoader;
+export 'package:tom_brain_config/tom_brain_config.dart' show ScriptsConfig, ScriptsConfigException;
+export 'package:tom_brain_config/tom_brain_config.dart' show ScriptsConfigLoader;
 
 // ── The unified `tom_brain` CLI (tom_brain_cli.md § 5; CLI plan step #8) ──────
 export 'src/cli/config_overlay.dart'
@@ -232,8 +232,8 @@ export 'src/project_home.dart'
 //    CLI plan step #7) ──────────────────────────────────────────────────────
 export 'src/cli_env_expansion.dart'
     show CliEnvExpansionException, expandCliFlag, expandCliFlags, expandSetValue;
-export 'src/tools_config.dart' show ToolsConfig, ToolsConfigException;
-export 'src/tools_config_loader.dart' show ToolsConfigLoader;
+export 'package:tom_brain_config/tom_brain_config.dart' show ToolsConfig, ToolsConfigException;
+export 'package:tom_brain_config/tom_brain_config.dart' show ToolsConfigLoader;
 
 // ── The in-process embedding facade (tom_brain_cli.md § 10; CLI plan step
 //    #10) ────────────────────────────────────────────────────────────────
@@ -251,13 +251,13 @@ export 'src/embed/tom_brain.dart'
 
 // ── Profile selection axis: config DTO + boot registry (session_configuration
 //    plan step 3; spec § 3) ──────────────────────────────────────────────
-export 'src/profile/profile.dart' show Profile;
-export 'src/profile/profile_config_errors.dart'
+export 'package:tom_brain_config/tom_brain_config.dart' show Profile;
+export 'package:tom_brain_config/tom_brain_config.dart'
     show ProfileConfigException, UnknownProfileException;
-export 'src/profile/profile_registry.dart'
+export 'package:tom_brain_config/tom_brain_config.dart'
     show ProfileAuthoringContext, ProfileRegistry;
-export 'src/trail_config.dart' show TrailConfig, TrailConfigException, TrailMode;
-export 'src/trail_config_loader.dart' show TrailConfigLoader;
+export 'package:tom_brain_config/tom_brain_config.dart' show TrailConfig, TrailConfigException, TrailMode;
+export 'package:tom_brain_config/tom_brain_config.dart' show TrailConfigLoader;
 
 // ── Raw LLM-call trail writer (logging-spec §5.2 / §5.1; §10 step #4) ──
 export 'src/llm_trail_writer.dart'

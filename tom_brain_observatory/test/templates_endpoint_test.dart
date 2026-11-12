@@ -31,7 +31,7 @@ import 'dart:io';
 
 import 'package:shelf/shelf.dart' show Response;
 import 'package:tom_brain_observatory/tom_brain_observatory.dart';
-import 'package:tom_brain_run/tom_brain_run.dart';
+import 'package:tom_brain_config/tom_brain_config.dart';
 import 'package:test/test.dart';
 
 import 'support/obs_harness.dart';

@@ -23,7 +23,7 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:shelf_static/shelf_static.dart';
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show ProcedureValidationChain;
-import 'package:tom_brain_run/tom_brain_run.dart'
+import 'package:tom_brain_config/tom_brain_config.dart'
     show
         BrainRunConfigLoader,
         CatalogueConfigFile,

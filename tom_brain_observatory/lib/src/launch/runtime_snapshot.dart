@@ -21,7 +21,7 @@
 // whose `String` / `Duration` / `List<String>` / `int?` fields are all
 // sendable), so `Isolate.spawn` deep-copies it cleanly.
 
-import 'package:tom_brain_run/tom_brain_run.dart' show CadenceSchedule;
+import 'package:tom_brain_config/tom_brain_config.dart' show CadenceSchedule;
 
 /// The live runtime values the running brain bound, for `GET /api/runtime`.
 final class RuntimeSnapshot {

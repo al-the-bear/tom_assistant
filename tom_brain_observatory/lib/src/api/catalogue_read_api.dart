@@ -19,7 +19,7 @@ import 'dart:convert';
 
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
-import 'package:tom_brain_run/tom_brain_run.dart'
+import 'package:tom_brain_config/tom_brain_config.dart'
     show
         CatalogueConfigFile,
         CatalogueRole,

@@ -38,8 +38,7 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show RoleRouteEntryConfig, SubstrateConfig;
 import 'package:yaml_edit/yaml_edit.dart';
 
-import 'cognition_config.dart';
-import 'llm_route_config.dart';
+import 'package:tom_brain_config/tom_brain_config.dart';
 
 /// Thrown when a `/switch_model` change cannot be written to the cognition
 /// config on disk — a missing main-procedure file, or an unparseable one.

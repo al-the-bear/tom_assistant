@@ -10,7 +10,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:tom_brain_observatory/tom_brain_observatory.dart';
-import 'package:tom_brain_run/tom_brain_run.dart' show CadenceSchedule, DreamLaneSpec;
+import 'package:tom_brain_config/tom_brain_config.dart' show CadenceSchedule, DreamLaneSpec;
 import 'package:test/test.dart';
 
 import 'support/obs_harness.dart';

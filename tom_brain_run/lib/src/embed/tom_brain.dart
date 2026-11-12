@@ -30,8 +30,7 @@ import 'dart:io';
 
 import 'package:tom_brain_shared/tom_brain_shared.dart' show SqliteVecConfig;
 
-import '../brain_run_config.dart';
-import '../brain_run_config_loader.dart';
+import 'package:tom_brain_config/tom_brain_config.dart';
 import '../bundle/brain_bundle.g.dart' show brainBundle;
 import '../bundle/bundle_manifest.dart' show BundleManifest;
 import '../bundle/bundled_sqlite_vec.dart'
@@ -39,8 +38,6 @@ import '../bundle/bundled_sqlite_vec.dart'
 import '../cli/serve_config_assembler.dart' show ServeRuntimeOptions;
 import '../cli/serve_runner.dart'
     show BrainServeSession, ServeBoot, ServeNarrate, defaultServeBoot;
-import '../profile/profile.dart' show Profile;
-import '../profile/profile_registry.dart' show ProfileRegistry;
 import '../project_home.dart' show HomeOverrides, ProjectHome;
 
 /// Where a programmatic brain's prompt templates come from ([BrainConfig.prompts]).

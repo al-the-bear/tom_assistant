@@ -31,8 +31,7 @@ import 'dart:io';
 
 import 'package:tom_core_agentic/tom_core_agentic.dart' show loadYamlAsMap;
 
-import 'brain_run_config.dart';
-import 'brain_run_config_loader.dart';
+import 'package:tom_brain_config/tom_brain_config.dart';
 import 'cli/config_overlay.dart';
 
 /// Which layer of the precedence ladder (§ 6) supplied a resolved path.

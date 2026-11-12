@@ -22,7 +22,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
-import 'package:tom_brain_run/tom_brain_run.dart' show CadenceSchedule;
+import 'package:tom_brain_config/tom_brain_config.dart' show CadenceSchedule;
 
 import '../model/run_tree.dart';
 import '../parse/dream_list_builder.dart';

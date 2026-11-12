@@ -23,8 +23,7 @@ import 'package:tom_brain_memory/tom_brain_memory.dart'
 import 'package:tom_core_server/tom_core_server.dart'
     show standalonePlatformUtils;
 
-import '../brain_run_config.dart';
-import '../dream_cadence_driver.dart' show CadenceSchedule;
+import 'package:tom_brain_config/tom_brain_config.dart';
 import '../memory_mcp_isolate_host.dart'
     show MemoryMcpIsolateHost, spawnMemoryMcpIsolate;
 import '../observatory_banner.dart' show ObservatoryBanner;

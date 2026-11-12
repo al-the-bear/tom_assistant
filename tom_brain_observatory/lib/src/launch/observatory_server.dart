@@ -22,7 +22,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf_io.dart' as shelf_io;
-import 'package:tom_brain_run/tom_brain_run.dart'
+import 'package:tom_brain_config/tom_brain_config.dart'
     show CognitionConfig, CognitionConfigException, CognitionConfigLoader;
 
 import '../api/trail_read_api.dart';

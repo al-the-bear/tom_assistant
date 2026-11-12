@@ -15,7 +15,7 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
-import 'package:tom_brain_run/tom_brain_run.dart'
+import 'package:tom_brain_config/tom_brain_config.dart'
     show CadenceSchedule, DreamLaneSpec;
 
 import '../model/dream_run.dart';

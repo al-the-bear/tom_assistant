@@ -1,0 +1,30 @@
+name: tom_brain_config
+description: The Tom Brain's configuration model and loaders (brain run, cognition, LLM routes, dream cadence, scripts, tools, trail, profiles). Read by tom_brain_run, which boots from it, and by tom_brain_observatory, which shows and validates it with the same parsers.
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.8
+
+# Why this package exists: tom_brain_run hosts the observatory, and the
+# observatory reads the run's configuration with the run's own parsers (so the
+# registry shape cannot drift). With both in tom_brain_run the two packages
+# depended on each other. The configuration lives here, below both; it cannot
+# live in tom_brain_shared, which every package it imports depends on.
+dependencies:
+  tom_brain_access:
+    path: ../tom_brain_access
+  tom_brain_memory:
+    path: ../tom_brain_memory
+  tom_brain_procedure:
+    path: ../tom_brain_procedure
+  tom_brain_shared:
+    path: ../tom_brain_shared
+  tom_brain_substrate:
+    path: ../tom_brain_substrate
+  tom_core_agentic:
+    path: ../../tom_ai/core_extension/tom_core_agentic
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6

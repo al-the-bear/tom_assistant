@@ -40,7 +40,7 @@
 
 import 'dart:io';
 
-import 'trail_config.dart' show TrailConfig;
+import 'package:tom_brain_config/tom_brain_config.dart' show TrailConfig;
 
 /// Enforces the §8 raw-tier overgrowth caps and writes the §7 `.gitignore`.
 ///

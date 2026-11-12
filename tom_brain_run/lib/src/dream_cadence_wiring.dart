@@ -23,8 +23,7 @@ import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show FreeTimeScheduler, RunSlotBusy;
 import 'package:tom_brain_shared/tom_brain_shared.dart' show Clock, SystemClock;
 
-import 'dream_cadence_driver.dart';
-import 'dream_throttle.dart';
+import 'package:tom_brain_config/tom_brain_config.dart';
 
 /// Builds a [MaintenanceFire] that fires each agent through [scheduler]'s
 /// background slot.

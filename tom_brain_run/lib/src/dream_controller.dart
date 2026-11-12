@@ -38,9 +38,9 @@ import 'dart:async';
 import 'package:tom_brain_procedure/tom_brain_procedure.dart'
     show ToolDreamSurface;
 
-import 'dream_cadence_driver.dart' show CadenceSchedule, DreamCadenceDriver;
+import 'package:tom_brain_config/tom_brain_config.dart'
+    show CadenceSchedule, DreamCadenceDriver, DreamWindowSchedule;
 import 'dream_cadence_wiring.dart' show DreamCadenceLoop;
-import 'dream_window_schedule.dart' show DreamWindowSchedule;
 
 /// The persistent base dreaming mode the control surface drives (item c).
 ///

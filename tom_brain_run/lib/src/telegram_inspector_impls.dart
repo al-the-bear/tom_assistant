@@ -57,10 +57,8 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
 import 'package:tom_brain_substrate/tom_brain_substrate.dart'
     show ProviderAuthConfigCases, ProviderProfile, SubstrateConfig;
 
-import 'cognition_config.dart';
-import 'dream_cadence_driver.dart' show DreamLaneSpec;
+import 'package:tom_brain_config/tom_brain_config.dart';
 import 'dream_controller.dart' show DreamController, DreamModeKind, DreamStatus;
-import 'dream_window_schedule.dart' show DreamWindow;
 
 /// Reads the §5.3 `incoming/` raw-prompt trail back for the `/observatory_*`
 /// commands (parts b + c).

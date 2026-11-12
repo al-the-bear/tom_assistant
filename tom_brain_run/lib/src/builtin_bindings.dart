@@ -22,7 +22,7 @@ import 'package:tom_brain_shared/tom_brain_shared.dart'
     show AssistantDedicationAnchor;
 import 'package:tom_core_agentic/tom_core_agentic.dart';
 
-import 'brain_run_config.dart';
+import 'package:tom_brain_config/tom_brain_config.dart';
 
 /// The six §6 built-in placeholder values, bound into every resolver the run
 /// assembly constructs.

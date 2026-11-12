@@ -41,7 +41,7 @@ import 'package:tom_core_agentic/tom_core_agentic.dart'
     show PlaceholderExpressions, PlaceholderResolver;
 
 import 'builtin_bindings.dart';
-import 'cognition_config.dart';
+import 'package:tom_brain_config/tom_brain_config.dart';
 
 /// Builds the `PromptResolver` seam over a loaded [config].
 ///

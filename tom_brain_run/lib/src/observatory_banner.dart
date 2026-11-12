@@ -17,7 +17,7 @@
 // banner a pure string helper. Keep them in step if the Observatory's defaults
 // move.
 
-import 'trail_config.dart';
+import 'package:tom_brain_config/tom_brain_config.dart';
 
 /// Builds the startup banner announcing the Observatory URL and how to reach it.
 abstract final class ObservatoryBanner {

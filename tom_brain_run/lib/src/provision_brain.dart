@@ -114,25 +114,20 @@ import 'package:tom_brain_substrate/tom_brain_substrate.dart'
 
 import 'package:tom_core_agentic/agent_sdk.dart' show AgentSdkSessionProvider;
 import 'api_key_persist.dart' show appendApiKeyToRunConfig;
-import 'brain_run_config.dart';
+import 'package:tom_brain_config/tom_brain_config.dart';
 import 'brain_substrate_builder.dart' show buildSubstrate;
 import 'embedding_boot_probe.dart' show probeEmbeddingReachableAtBoot;
 import 'cli_server_port_switch.dart'
     show CliServerPortConfigWriter, TomBrainCliServerPortController;
 import 'builtin_bindings.dart' show BrainBuiltins;
-import 'cognition_config.dart' show CognitionConfig;
-import 'cognition_config_loader.dart' show CognitionConfigLoader;
 import 'legacy_store_migration.dart' show migrateLegacyMemoryRoot;
 import 'cognition_prompt_resolver.dart'
     show
         buildOverlayPromptResolver,
         buildPromptResolver,
         buildRouteChainResolver;
-import 'dream_cadence_driver.dart' show CadenceSchedule;
 import 'dream_cadence_wiring.dart' show dreamCadenceDriverOverScheduler;
-import 'dream_config.dart' show DreamConfig;
 import 'dream_controller.dart' show DreamController;
-import 'dream_throttle.dart' show DreamThrottle;
 import 'late_dream_surface.dart' show LateDreamSurface;
 import 'mcp_channel_factory.dart' show productionMcpChannelFactory;
 import 'mcp_liveness_monitor.dart' show McpLivenessMonitor;
@@ -144,7 +139,6 @@ import 'llm_trail_writer.dart' show LlmTrailWriter;
 import 'memory_profile_log_writer.dart' show MemoryProfileLogWriter;
 import 'procedure_tree_writer.dart' show ProcedureTreeWriter;
 import 'creation_trail_writer.dart' show CreationTrailWriter;
-import 'profile/profile_config_errors.dart' show UnknownProfileException;
 import 'streaming_live_trail.dart' show StreamingLiveTrailWriter;
 import 'substrate_memory_profile_selector.dart' show buildMemoryProfileSelector;
 import 'summary_fanout.dart' show SummaryFanout;
@@ -162,7 +156,6 @@ import 'telegram_inspector_impls.dart'
         TrailIncomingPromptInspector,
         TrailLogInspector,
         TrailStatusInspector;
-import 'trail_config.dart' show TrailConfig;
 import 'trail_janitor.dart' show TrailJanitor;
 
 /// Boots the real cognition (the injected [substrate] + the real on-disk

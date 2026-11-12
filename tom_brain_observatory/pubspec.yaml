@@ -44,19 +44,21 @@ dependencies:
   # The editable-catalogue route (`GET /api/catalogue`, plan step 14) serves the
   # `CognitionConfig.catalogue()` index (plan step 13) — every registered
   # template, the role prose files, and the config-file inventory. That model
-  # lives in `tom_brain_run` (the cognition composition root), so the observatory
-  # reads it from there rather than re-deriving the registry shape (which would
-  # drift from what the brain actually loads). In-tree path dep like the rest of
-  # the brain tree; read-only — the observatory only *reads* the parsed config.
-  tom_brain_run:
-    path: ../tom_brain_run
+  # lives in `tom_brain_config` (the configuration the run boots from), so the
+  # observatory reads it from there rather than re-deriving the registry shape
+  # (which would drift from what the brain actually loads). Not `tom_brain_run`:
+  # the run hosts the observatory, and depending on it closed a cycle. In-tree
+  # path dep like the rest of the brain tree; read-only — the observatory only
+  # *reads* the parsed config.
+  tom_brain_config:
+    path: ../tom_brain_config
   # The config-authoring surface (`GET`/`PUT /api/config`, plan step 16, § 6.3
   # AUTH-3) validates a `substrate:` block *before* it lands, and the gate must be
   # the brain's own parser — never a divergent copy that could accept a config the
   # brain rejects at boot (or reject a valid one). So a substrate edit is parsed by
   # `SubstrateConfigLoader.parse` (pure, no I/O), the same loader the run assembly
   # uses. Registry/procedure/llm edits go through `CognitionConfigLoader` (already
-  # available via `tom_brain_run`). In-tree path dep like the rest of the tree.
+  # available via `tom_brain_config`). In-tree path dep like the rest of the tree.
   tom_brain_substrate:
     path: ../tom_brain_substrate
   # The Trail Read API (PT-1.4 / PT-1.5) is a thin read-only shelf service.

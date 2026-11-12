@@ -8,7 +8,7 @@
 // example shows. The `[tom_brain.trail]` category prefix is part of the body
 // (the same convention `MemoryLog`/`SubstrateLog` use via their `_tag`).
 
-import 'trail_config.dart';
+import 'package:tom_brain_config/tom_brain_config.dart';
 
 /// Builds the §4.1 startup banner announcing the active [TrailMode].
 abstract final class TrailBanner {
