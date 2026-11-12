@@ -77,7 +77,7 @@ dependencies:
   # `tom_build_base` v2 tool framework (ToolRunner + ToolDefinition +
   # CommandExecutor), so `--help` / `--version` / subcommand dispatch / error
   # formatting are uniform with every other workspace CLI rather than hand-rolled.
-  tom_build_base: ">=2.6.25"
+  tom_build_base: ">=2.19.1"
   # The production entrypoint (`bin/tom_brain.dart serve`) and the #31 Verify suite
   # both manufacture the *real* substrate (OpenAI-passthrough + Ollama
   # providers), whose default wire HTTP client is sourced from the

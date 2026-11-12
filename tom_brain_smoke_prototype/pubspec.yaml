@@ -64,7 +64,7 @@ dependencies:
   # (`--samples` / `--warmup` / `--output`), `--version`, and `--help` are built
   # on the shared `tom_build_base` framework rather than hand-rolled — the
   # workspace rule that every CLI tool consumes that parser.
-  tom_build_base: ">=2.6.25"
+  tom_build_base: ">=2.19.1"
   tom_basics: ">=1.0.0"
 
 dev_dependencies:
