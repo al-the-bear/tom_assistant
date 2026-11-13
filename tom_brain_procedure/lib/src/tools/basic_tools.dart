@@ -35,7 +35,7 @@
 
 import 'dart:io';
 
-import 'package:tom_dcli/dcli.dart' show find;
+import 'package:dcli/dcli.dart' show find;
 import 'package:path/path.dart' as p;
 import 'package:tom_core_agentic/tom_core_agentic.dart'
     show PathScope, ScopedPath;
