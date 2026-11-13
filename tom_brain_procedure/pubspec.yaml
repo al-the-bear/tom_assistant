@@ -80,7 +80,7 @@ environment:
 #                           the d4rt runtime uniform with the hosted
 #                           `tom_d4rt_dcli` below (which pulls `tom_d4rt`
 #                           with an `any` constraint). See Q-C.7.2.
-#   - tom_d4rt_dcli       — `>=1.1.6`, the workspace floor. Provides
+#   - tom_d4rt_dcli       — `>=2.0.0`, the release on `tom_dcli`. Provides
 #                           `D4rtCliApi` (`lib/src/api/cli_api.dart`), the
 #                           REPL/CLI base `D4rtDcliHost` (C.16) composes.
 #                           Hosted.
@@ -146,7 +146,7 @@ dependencies:
   tom_core_kernel:
     path: ../../tom_ai/core/tom_core_kernel
   tom_d4rt: ">=1.11.0"
-  tom_d4rt_dcli: ">=1.1.6"
+  tom_d4rt_dcli: ">=2.0.0"
   # C.24 procedure loader — the structured header (§ 4.4) is a YAML
   # doc-comment block; the loader parses it with the canonical `yaml`
   # package rather than a hand-rolled flow-map parser. Already present
@@ -166,9 +166,10 @@ dependencies:
   # file *contents*). The glob matching is delegated to dcli's `find()`
   # rather than re-implementing a globber. Already present transitively
   # (via `tom_d4rt_dcli`); promoted to a direct dependency because
-  # `lib/src/tools/basic_tools.dart` now imports `package:dcli/dcli.dart`
-  # directly (never import a symbol from a transitive dep).
-  dcli: ^10.0.0
+  # `lib/src/tools/basic_tools.dart` now imports `package:tom_dcli/dcli.dart`
+  # directly (never import a symbol from a transitive dep). `tom_dcli` is the
+  # Tom Framework's fork of dcli without the LGPL-3.0 `ini` package.
+  tom_dcli: ^10.4.7+tom.1
   # F.8 MCP client — `mcp.servers` / `mcp.list` / `mcp.call` (§ 21.3) call
   # out to MCP servers over the workspace MCP library. `lib/src/mcp/`
   # imports `dart_mcp` (the client) and `stream_channel` (the transport
