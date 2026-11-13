@@ -52,7 +52,7 @@
 //
 // The adapter is therefore self-contained and unit-testable against an
 // injected `ChatApi` double (the E.5 `LoopbackChatApi`), with no socket,
-// no televerse `Bot`, and no real Telegram network — mirroring the way
+// no Bot API client, and no real Telegram network — mirroring the way
 // the OpenAI adapter is driven through its `handler` with no port bind.
 
 import 'dart:async';

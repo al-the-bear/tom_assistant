@@ -136,7 +136,7 @@ dependencies:
     path: ../../tom_ai/core/tom_core_kernel
   tom_core_server:
     path: ../../tom_ai/core/tom_core_server
-  tom_chattools: ">=1.0.2"
+  tom_chattools: ^2.0.0
   tom_build_base: ">=2.19.1"
   # ADDED AT E.11 (Q-E.3.2 strategy 2 / Q-E.3.1 / Q-E.7.1). The OpenAI
   # `/v1/` adapter is mounted as a raw `shelf_router.Router`, NOT via

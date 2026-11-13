@@ -7,7 +7,7 @@
 //     sends one already-consolidated, size-compliant message to the bound
 //     chat. Abstracting the wire (rather than calling `ChatApi.sendMessage`
 //     from inside the path) keeps the delivery path testable without a
-//     `ChatApi` / televerse `Bot`: tests collect the sent messages in
+//     `ChatApi` / Bot API client: tests collect the sent messages in
 //     memory; boot (E.41+) backs it with `ChatApiTelegramSink`.
 //
 //   * `ChatApiTelegramSink` — the runtime sink. Each consolidated part is
@@ -56,9 +56,9 @@
 // through its `delivered` future — the documented Telegram delivery surface
 // (E.38, Q-E.38.1). This asymmetry with the SSE path (which signals
 // per-chunk through the backpressure stream) is the structural consequence of
-// buffered-vs-streamed delivery. Mapping a real televerse 429 to that signal
-// inside `ChatApiTelegramSink` needs televerse's exception shape and is a
-// documented seam (Q-E.39.3).
+// buffered-vs-streamed delivery. Mapping a real Telegram 429 to that signal
+// inside `ChatApiTelegramSink` is a documented seam (Q-E.39.3): `tom_chattools`
+// throws `TelegramApiException` with `errorCode` 429 for it.
 
 import 'dart:async';
 

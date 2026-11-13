@@ -73,7 +73,7 @@ dev_dependencies:
   # The Telegram smoke (E.49) injects a loopback `ChatApi` double through the
   # access process's `TelegramChatApiFactory` seam. The double `implements
   # ChatApi`, so the test layer needs `tom_chattools`; production code does not.
-  tom_chattools: ">=1.0.2"
+  tom_chattools: ^2.0.0
   # The OpenAI conformance suite (E.53) drives the running process over a real
   # TCP socket with `tom_core_kernel`'s HTTP client (`TomServerChannel` /
   # `TomServerCall`) — the plan names this client by name. Test-only: the

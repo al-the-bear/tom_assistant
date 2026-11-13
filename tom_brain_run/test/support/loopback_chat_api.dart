@@ -2,10 +2,10 @@
 // from `tom_brain_access/test/_support/loopback_chat_api.dart` (E.5 / E.19).
 //
 // `tom_chattools` ships only the abstract `ChatApi` plus its single
-// televerse-backed Telegram implementation — there is no fake. This
+// Bot API-backed Telegram implementation — there is no fake. This
 // consumer-authored double therefore `implements ChatApi` so the r52 LIVE
 // end-to-end Telegram suite can drive the access edge's inbound relay + outbound
-// delivery with no Telegram network, no televerse `Bot`, and no socket: it is
+// delivery with no Telegram network, no Bot API client, and no socket: it is
 // handed to `standUpBrainProcessFromConfig` through the `telegramChatApiFactory`
 // seam, and the test injects inbound messages / reads the recorded outbound.
 //

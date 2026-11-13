@@ -5,11 +5,11 @@
 // needs).
 //
 // `tom_chattools` ships only the abstract `ChatApi` plus its single
-// televerse-backed Telegram implementation — there is no fake (E.4 /
+// Bot API-backed Telegram implementation — there is no fake (E.4 /
 // E.5 finding, Q-E.5.1). This consumer-authored double therefore
 // `implements ChatApi` so the access prototype's tests can drive the
 // adapter's lifecycle and inbound relay with no Telegram network, no
-// televerse `Bot`, and no socket.
+// Bot API client, and no socket.
 //
 // Shape (per the E.5 decision):
 //   * Inbound — `onMessage` is backed by a broadcast controller fed by

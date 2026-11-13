@@ -58,9 +58,8 @@ void main() {
 
     test('falls back to the sender id for conversationId in a private chat',
         () {
-      // No flat telegram_chat_id (mirrors the real backend, which carries the
-      // televerse Message under rawData[telegram_message] instead). For a
-      // private chat the chat id equals the user id.
+      // No flat telegram_chat_id (an older backend; tom_chattools 2.0.0 and
+      // later stamps it). For a private chat the chat id equals the user id.
       final result = _telegramMessage(
         senderId: '12345',
         text: 'private message',

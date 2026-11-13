@@ -2,12 +2,12 @@
 // end-to-end smoke (E.49).
 //
 // `tom_chattools` ships only the abstract `ChatApi` plus its single
-// televerse-backed Telegram implementation — there is no fake. The access
+// Bot API-backed Telegram implementation — there is no fake. The access
 // prototype carries its own loopback in *its* test layer; this is the smoke
 // package's equivalent (a separate package cannot import another package's
 // test files). It `implements ChatApi` so the smoke can drive the whole running
 // process's Telegram edge — inbound injection, outbound delivery — with no
-// televerse `Bot` and no Telegram network.
+// Bot API client and no Telegram network.
 //
 // Shape:
 //   * Inbound — `onMessage` is a broadcast controller the smoke feeds through

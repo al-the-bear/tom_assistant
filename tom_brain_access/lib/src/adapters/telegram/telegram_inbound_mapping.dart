@@ -66,11 +66,12 @@ const String telegramSenderIdMetadataKey = 'telegram_sender_id';
 ///
 /// The E.5 `LoopbackChatApi` stamps this key in [LoopbackChatApi.injectText]
 /// (E.19) so the mapping is exercised without the Telegram network. The real
-/// `tom_chattools` Telegram backend instead carries the full televerse
-/// `Message` under `rawData['telegram_message']` and exposes no flat chat id
-/// — for the prototype's single-user **private-chat** whitelist the chat id
-/// equals the sender id, so [_telegramConversationId] falls back to the
-/// sender id when this key is absent. (See the production-gap note: Q-E.20.1.)
+/// `tom_chattools` Telegram backend (2.0.0 and later) stamps it too, from the
+/// Bot API message's `chat.id`, beside the message itself as JSON under
+/// `rawData['telegram_message']` — so a group chat maps to its own
+/// conversation. When the key is absent (an older backend) the chat id of the
+/// prototype's single-user **private-chat** whitelist equals the sender id, so
+/// [_telegramConversationId] falls back to the sender id. (Q-E.20.1.)
 const String telegramChatIdRawDataKey = 'telegram_chat_id';
 
 /// Why a [ChatMessage] could not be mapped to an [InboundRequest].

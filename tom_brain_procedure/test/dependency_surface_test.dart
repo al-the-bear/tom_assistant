@@ -117,7 +117,7 @@ void main() {
     // Four facts an import cannot express. That a dependency is *direct*
     // rather than pulled in transitively — an import compiles either way,
     // so only the manifest proves it. That `tom_d4rt_dcli` clears its
-    // version floor. And that `tom_core_server` and `tom_core_d4rt` are
+    // version floor (>=1.15.0). And that `tom_core_server` and `tom_core_d4rt` are
     // absent: you cannot import a package to assert it is not there.
     late final String pubspec;
 
@@ -146,15 +146,17 @@ void main() {
       }
     });
 
-    test('tom_d4rt_dcli is pinned to the workspace constraint >=1.1.6', () {
+    test('tom_d4rt_dcli is pinned to the workspace constraint >=1.15.0', () {
       // The workspace floor for `D4rtCliApi`. Locked here so the host
-      // (C.16) cannot silently resolve against an older CLI surface.
+      // (C.16) cannot silently resolve against an older CLI surface:
+      // 1.15.0 bridges tom_todo_model 2.x (repeated todos) and the
+      // scripting API 4 (and keeps ProjectInfo/WorkspaceInfo hidden, which
+      // 1.1.6 introduced, so the bridge barrel re-exports do not collide).
       expect(
-        pubspec.contains(RegExp(r'^  tom_d4rt_dcli:\s*">=1\.1\.6"', multiLine: true)),
+        pubspec.contains(RegExp(r'^  tom_d4rt_dcli:\s*">=1\.15\.0"', multiLine: true)),
         isTrue,
-        reason: 'tom_d4rt_dcli must be pinned to >=1.1.6 (the constraint that '
-            'hides ProjectInfo/WorkspaceInfo so the bridge barrel re-exports '
-            'do not collide).',
+        reason: 'tom_d4rt_dcli must be pinned to >=1.15.0 (the repeated-todo '
+            'bridges; a current tom_d4rt).',
       );
     });
 

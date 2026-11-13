@@ -80,7 +80,8 @@ environment:
 #                           the d4rt runtime uniform with the hosted
 #                           `tom_d4rt_dcli` below (which pulls `tom_d4rt`
 #                           with an `any` constraint). See Q-C.7.2.
-#   - tom_d4rt_dcli       — `>=1.1.6`, the workspace floor. Provides
+#   - tom_d4rt_dcli       — `>=1.15.0`: the bridges of tom_todo_model 2.x
+#                           (repeated todos) and scripting API 4. Provides
 #                           `D4rtCliApi` (`lib/src/api/cli_api.dart`), the
 #                           REPL/CLI base `D4rtDcliHost` (C.16) composes.
 #                           Hosted.
@@ -146,7 +147,7 @@ dependencies:
   tom_core_kernel:
     path: ../../tom_ai/core/tom_core_kernel
   tom_d4rt: ">=1.11.0"
-  tom_d4rt_dcli: ">=1.1.6"
+  tom_d4rt_dcli: ">=1.15.0"
   # C.24 procedure loader — the structured header (§ 4.4) is a YAML
   # doc-comment block; the loader parses it with the canonical `yaml`
   # package rather than a hand-rolled flow-map parser. Already present

@@ -21,7 +21,7 @@
 //
 // The Telegram backend is an in-process `LoopbackChatApi` (a `ChatApi` double)
 // injected through the `telegramChatApiFactory` seam `standUpBrainProcessFromConfig`
-// threads to the access process — no televerse `Bot`, no socket. The test feeds
+// threads to the access process — no Bot API client, no socket. The test feeds
 // inbound messages into the loopback and reads the recorded outbound to assert
 // the command acknowledgement and the delivered answer; the on-disk trail proves
 // which entry procedure ran.
