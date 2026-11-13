@@ -864,10 +864,10 @@ packages:
     dependency: "direct main"
     description:
       name: tom_build_base
-      sha256: "37124f5f544d0a9230df32e2d19c25f3c20ba50b6a9be422292a25b33573ef31"
+      sha256: ea26693266fb6f1f8fa2f12df8cb37a8a89c70f2aebdfdf8d7ac70eddd228162
       url: "https://pub.dev"
     source: hosted
-    version: "2.26.1"
+    version: "2.28.0"
   tom_chattools:
     dependency: "direct dev"
     description:
