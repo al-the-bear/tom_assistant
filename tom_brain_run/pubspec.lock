@@ -885,10 +885,10 @@ packages:
     dependency: "direct main"
     description:
       name: tom_build_base
-      sha256: ff65880a8f0b16a64d305e0144f33c0a908d337958ca716559ee7222059b6389
+      sha256: "052b8cc6821800b3f0477969b0a7f90d838709d3843778830d739b004330d789"
       url: "https://pub.dev"
     source: hosted
-    version: "2.34.2"
+    version: "2.38.2"
   tom_chattools:
     dependency: "direct dev"
     description:
@@ -924,7 +924,7 @@ packages:
       path: "../../tom_ai/core/tom_core_server"
       relative: true
     source: path
-    version: "1.4.0"
+    version: "1.5.0"
   tom_crypto:
     dependency: transitive
     description:
@@ -937,18 +937,18 @@ packages:
     dependency: transitive
     description:
       name: tom_d4rt
-      sha256: eec43dcd850a1111cc01405adaa06604d53ad8e2833d52cf1b4067cd9805bb93
+      sha256: "3eabef769ff0c925b418396547c7654c04d0970f7ccdc8e8bae5a046196e93c6"
       url: "https://pub.dev"
     source: hosted
-    version: "1.257.0"
+    version: "1.264.0"
   tom_d4rt_dcli:
     dependency: transitive
     description:
       name: tom_d4rt_dcli
-      sha256: e996463956bc784aeb94b3500e4b4c5b3e17007db1efef3d926e2f6b631f56ac
+      sha256: "94dffea231a6d103dbde784c4dbcbb4cb65ef9b1cc20e76559581403b1a4e917"
       url: "https://pub.dev"
     source: hosted
-    version: "2.0.0"
+    version: "2.2.0"
   tom_dcli:
     dependency: transitive
     description:
@@ -983,10 +983,10 @@ packages:
     dependency: transitive
     description:
       name: tom_todo_model
-      sha256: f5b7dae7c8614fd08a701f466a0ceac102d18fd064d326b9670b646487ca967a
+      sha256: b80dbd958a64b2c9505c21167cc835585349187fdd08cbb8f6199de2d2513fe4
       url: "https://pub.dev"
     source: hosted
-    version: "2.1.0"
+    version: "2.2.0"
   tom_vscode_scripting_api:
     dependency: "direct main"
     description:
