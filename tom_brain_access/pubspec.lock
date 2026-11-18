@@ -950,7 +950,7 @@ packages:
       path: "../../tom_ai/basics/tom_llm"
       relative: true
     source: path
-    version: "0.1.1"
+    version: "0.1.2"
   tom_reflection:
     dependency: transitive
     description:
