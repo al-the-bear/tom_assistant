@@ -19,7 +19,7 @@
 /// the LLM / role / embed / web / config / facade subsystems:
 ///
 /// - B.6 ✅ — Project skeleton (`lib/`, `test/`, `pubspec.yaml`,
-///   `_copilot_guidelines/`).
+///   `_agent_guidelines/`).
 /// - B.7 ✅ — Runtime dependencies (`tom_brain_shared`, `tom_basics`,
 ///   `tom_core_kernel`, `tom_core_server`, `dart_mcp`).
 /// - B.8 ✅ — Outbound MCP client (`McpClient`, `McpSession`,

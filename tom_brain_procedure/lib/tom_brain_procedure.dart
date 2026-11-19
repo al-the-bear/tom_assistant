@@ -22,7 +22,7 @@
 /// incrementally across the remaining Phase C steps:
 ///
 /// - C.6 ✅ — Project skeleton (`lib/`, `test/`, `pubspec.yaml`,
-///   `_copilot_guidelines/`).
+///   `_agent_guidelines/`).
 /// - C.7 — Runtime dependencies (`tom_brain_shared`,
 ///   `tom_brain_memory` interface, `tom_brain_substrate` interface,
 ///   `tom_basics`, `tom_core_kernel`, `tom_d4rt`, `tom_d4rt_dcli`).

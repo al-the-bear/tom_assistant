@@ -88,7 +88,7 @@ Initial project scaffold:
 - Empty barrel `lib/tom_brain_procedure.dart`.
 - `lib/src/` placeholder (`.gitkeep`) for the module layout that lands in C.8.
 - Smoke test verifying the package loads (`test/package_loads_test.dart`).
-- Local copilot guidelines at `_copilot_guidelines/index.md`.
+- Local copilot guidelines at `_agent_guidelines/index.md`.
 - `analysis_options.yaml` with `package:lints/recommended.yaml`.
 - C.12 — `MemoryBridge` source class (`lib/src/bridges/memory_bridge.dart`):
   the eleven memory primitives (`recall`, `persist`, `edge`,

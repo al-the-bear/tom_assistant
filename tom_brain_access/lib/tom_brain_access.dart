@@ -18,7 +18,7 @@
 /// further edit to this top-level barrel is needed for them to surface.
 ///
 /// - E.6  ✅ — Project skeleton (`lib/`, `test/`, `pubspec.yaml`,
-///   `analysis_options.yaml`, `_copilot_guidelines/`, README, CHANGELOG).
+///   `analysis_options.yaml`, `_agent_guidelines/`, README, CHANGELOG).
 /// - E.7  ✅ — Runtime dependencies (`tom_brain_shared`,
 ///   `tom_brain_procedure`, `tom_basics`, `tom_core_kernel`,
 ///   `tom_core_server`, `tom_chattools`), locked by

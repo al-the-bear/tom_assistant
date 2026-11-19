@@ -9,5 +9,5 @@ Initial project scaffold:
 - Empty barrel `lib/tom_brain_memory.dart`.
 - `lib/src/` placeholder for the module layout that lands in A.23.
 - Smoke test verifying the package loads (`test/package_loads_test.dart`).
-- Local copilot guidelines at `_copilot_guidelines/index.md`.
+- Local copilot guidelines at `_agent_guidelines/index.md`.
 - `analysis_options.yaml` with `package:lints/recommended.yaml`.
