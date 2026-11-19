@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../../.tom/json-schema/tom_brain/brain_run.schema.json
+# yaml-language-server: $schema=../../../../../../../.tom/json-schema/tom_brain/brain_run.schema.json
 # Worked example of the Profile selection axis (session_configuration.md § 3.8).
 #
 # This is a STANDALONE snippet, not a whole-process config. It carries only the

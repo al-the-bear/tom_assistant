@@ -53,8 +53,8 @@ It owns nothing memory or substrate already owns. The engine half (Phase C) runs
 | [Coding Guidelines](../../../_copilot_guidelines/dart/coding_guidelines.md) | Naming, error handling, structure |
 | [Clean Code Principles](../../../_copilot_guidelines/dart/clean_code_principles.md) | DRY, abstraction, code smells |
 | [Unit Tests](../../../_copilot_guidelines/dart/unit_tests.md) | Test layout, matchers, mocking |
-| [Test-Driven Development](../../../_copilot_guidelines/test_driven_development.md) | Red → green → refactor |
-| [Issue Implementation](../../../_copilot_guidelines/issue_implementation.md) | Investigate → test → implement → verify |
+| [Test-Driven Development](../../../../../../../_agent_guidelines/test_driven_development.md) | Red → green → refactor |
+| [Issue Implementation](../../../../../../../_agent_guidelines/issue_implementation.md) | Investigate → test → implement → verify |
 | [D4rt BridgedClass Guidelines](../../../_copilot_guidelines/d4rt/d4rt_bridgedclass_guidelines.md) | Bridge registration patterns (C.11 – C.15) |
 | [Testing D4rt Bridges](../../../_copilot_guidelines/d4rt/testing_d4rt_bridges.md) | Bridge e2e testing (C.47) |
 

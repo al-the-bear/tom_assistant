@@ -66,8 +66,8 @@ gets started.
 | [Coding Guidelines](../../../_copilot_guidelines/dart/coding_guidelines.md) | Naming, error handling, structure |
 | [Clean Code Principles](../../../_copilot_guidelines/dart/clean_code_principles.md) | DRY, abstraction, code smells |
 | [Unit Tests](../../../_copilot_guidelines/dart/unit_tests.md) | Test layout, matchers, mocking |
-| [Test-Driven Development](../../../_copilot_guidelines/test_driven_development.md) | Red → green → refactor |
-| [Issue Implementation](../../../_copilot_guidelines/issue_implementation.md) | Investigate → test → implement → verify |
+| [Test-Driven Development](../../../../../../../_agent_guidelines/test_driven_development.md) | Red → green → refactor |
+| [Issue Implementation](../../../../../../../_agent_guidelines/issue_implementation.md) | Investigate → test → implement → verify |
 
 ## Driving documents
 
